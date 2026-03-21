@@ -28,7 +28,7 @@ exports.handler = async function(event, context) {
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ error: 'API key not configured.' })
+      body: JSON.stringify({ error: 'API key not configured. Set ANTHROPIC_API_KEY in Netlify environment variables.' })
     };
   }
 
@@ -44,4 +44,52 @@ exports.handler = async function(event, context) {
       messages: messages
     });
 
-    c
+    const result = await new Promise((resolve, reject) => {
+      const options = {
+        hostname: 'api.anthropic.com',
+        path: '/v1/messages',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'Content-Length': Buffer.byteLength(requestBody)
+        }
+      };
+
+      const req = https.request(options, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            // If Anthropic returned an error status, pass it through clearly
+            if (res.statusCode !== 200) {
+              reject(new Error('Anthropic API error ' + res.statusCode + ': ' + data));
+            } else {
+              resolve(parsed);
+            }
+          }
+          catch(e) { reject(new Error('Invalid JSON from Anthropic (status ' + res.statusCode + '): ' + data)); }
+        });
+      });
+
+      req.on('error', reject);
+      req.write(requestBody);
+      req.end();
+    });
+
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify(result)
+    };
+
+  } catch (error) {
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ error: error.message })
+    };
+  }
+};
