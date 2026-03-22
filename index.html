@@ -528,6 +528,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     </div>
     <div class="card">
       <div class="db-section"><div class="db-label">Pattern</div><div class="db-text" id="drill-db-pattern" style="font-weight:600;color:var(--teal)">--</div></div>
+      <div class="db-section" style="display:flex;gap:16px">
+        <div><div class="db-label">Category</div><div class="db-text" id="drill-db-category">--</div></div>
+        <div><div class="db-label">Difficulty</div><div class="db-text" id="drill-db-difficulty">--</div></div>
+      </div>
       <div class="db-section"><div class="db-label">Teaching point</div><div class="db-text" id="drill-db-teaching">--</div></div>
       <div class="db-section"><div class="db-label">Key rule</div><div class="db-text" id="drill-db-rule">--</div></div>
     </div>
@@ -1255,21 +1259,28 @@ function showDrillView(id) {
 function renderDrillGrid() {
   var grid = document.getElementById('drill-grid');
   if (!grid) return;
-  var catColors = {modifier:'#EBF0FF',diagnosis:'#FEF9E3',credentialing:'#FDECEA',patient_responsibility:'#EDFAF1',administrative:'#F3F4F6',bundling:'#FFF3E0',payment_posting:'#E0F7FA'};
-  var catText = {modifier:'#3456C2',diagnosis:'#C4711A',credentialing:'#A32D2D',patient_responsibility:'#1A7A4A',administrative:'#4B5563',bundling:'#8B4A00',payment_posting:'#005F6B'};
-  var catLabels = {modifier:'Modifier',diagnosis:'Diagnosis',credentialing:'Credentialing',patient_responsibility:'Pt. Responsibility',administrative:'Administrative',bundling:'Bundling',payment_posting:'Payment Posting'};
-  var diffColors = {beginner:'var(--green)',intermediate:'var(--amber)',advanced:'var(--red)'};
   var html = '';
   for (var i=0;i<DRILLS.length;i++) {
     var d=DRILLS[i];
-    var done=drillCompleted[d.id]?'<span style="color:var(--green);font-size:14px;margin-left:6px">&#10003;</span>':'';
+    var done=drillCompleted[d.id]?'<span style="color:var(--green);font-size:13px;margin-left:6px">&#10003; Completed</span>':'';
+    var paid=d.era.paid;
+    var paidNum=parseFloat(paid.replace(/[^0-9.]/g,''));
+    var paidColor=paidNum>0?'var(--green)':'var(--red)';
+    var statusLabel=d.era.denial?'<span style="color:var(--red);font-weight:700;font-size:11px">&#9679; Denial returned</span>':paidNum===0?'<span style="color:var(--red);font-weight:700;font-size:11px">&#9679; Paid $0.00</span>':'<span style="color:var(--amber);font-weight:700;font-size:11px">&#9679; Partial payment</span>';
+    // Build code list
+    var codes=d.claim.lines.map(function(l){return l.code+(l.mod?'-'+l.mod:'');}).join(' + ');
     html+='<div class="card" style="cursor:pointer;transition:border-color 0.15s,transform 0.1s" onmouseover="this.style.borderColor=\'var(--border2)\';this.style.transform=\'translateY(-2px)\'" onmouseout="this.style.borderColor=\'\';this.style.transform=\'\'" onclick="loadDrill('+d.id+')">';
-    html+='<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px">';
-    html+='<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:'+catColors[d.category]+';color:'+catText[d.category]+'">'+catLabels[d.category]+'</span>';
-    html+='<span style="font-size:10px;font-weight:700;color:'+diffColors[d.difficulty]+';text-transform:uppercase;letter-spacing:0.05em">'+d.difficulty+'</span>';
+    html+='<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:6px">';
+    html+=statusLabel;
+    html+='<span style="font-size:11px;color:var(--text3)">#'+d.id+''+done+'</span>';
     html+='</div>';
-    html+='<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">'+d.title+done+'</div>';
-    html+='<div style="font-size:11px;color:var(--text2)">Drill '+d.id+' of '+DRILLS.length+'</div>';
+    html+='<div style="font-size:14px;font-weight:700;color:var(--text);margin-bottom:2px">'+d.claim.patient+'</div>';
+    html+='<div style="font-size:12px;color:var(--text2);margin-bottom:6px">'+d.claim.payer+' &middot; '+d.claim.dos+'</div>';
+    html+='<div style="font-size:12px;color:var(--text2);margin-bottom:8px;font-family:monospace">'+codes+'</div>';
+    html+='<div style="display:flex;justify-content:space-between;font-size:12px">';
+    html+='<span style="color:var(--text2)">Billed <strong>'+d.claim.totalBilled+'</strong></span>';
+    html+='<span style="color:'+paidColor+'">Paid <strong>'+paid+'</strong></span>';
+    html+='</div>';
     html+='</div>';
   }
   grid.innerHTML = html;
@@ -1287,8 +1298,8 @@ function loadDrill(id) {
 
   // Header
   var set2=function(eid,txt){var e=document.getElementById(eid);if(e)e.textContent=txt;};
-  set2('drill-era-title', drill.title);
-  set2('drill-era-meta', 'DOS: '+drill.claim.dos+' | Patient: '+drill.claim.patient+' | Payer: '+drill.claim.payer);
+  set2('drill-era-title', drill.claim.patient + ' \u2014 ' + drill.claim.payer);
+  set2('drill-era-meta', 'DOS: '+drill.claim.dos+' | Billed: '+drill.claim.totalBilled+' | Paid: '+drill.era.paid);
   set2('drill-counter', 'Drill '+drill.id+' of '+DRILLS.length);
 
   // Claim lines
@@ -1396,6 +1407,11 @@ function showDrillDebrief() {
   if (!drill) return;
   var set2=function(eid,txt){var e=document.getElementById(eid);if(e)e.textContent=txt;};
   set2('drill-db-pattern', drill.debrief.pattern);
+  var catLabels = {modifier:'Modifier',diagnosis:'Diagnosis',credentialing:'Credentialing',patient_responsibility:'Patient Responsibility',administrative:'Administrative',bundling:'Bundling',payment_posting:'Payment Posting'};
+  var diffColors = {beginner:'var(--green)',intermediate:'var(--amber)',advanced:'var(--red)'};
+  set2('drill-db-category', catLabels[drill.category]||drill.category);
+  var diffEl=document.getElementById('drill-db-difficulty');
+  if(diffEl){diffEl.textContent=drill.difficulty.charAt(0).toUpperCase()+drill.difficulty.slice(1);diffEl.style.color=diffColors[drill.difficulty]||'var(--text)';}
   set2('drill-db-teaching', drill.debrief.teaching);
   set2('drill-db-rule', drill.debrief.rule);
   var nextBtn=document.getElementById('drill-next-btn');
