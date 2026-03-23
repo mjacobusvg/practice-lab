@@ -564,13 +564,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         <div id="drill-post-result" style="display:none;margin-top:12px"></div>
       </div>
 
-      <!-- Write-off tool (opens automatically when pathway is writeoff and learner has engaged enough) -->
-      <div id="drill-tool-writeoff" style="display:none">
-        <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px" id="drill-writeoff-prompt">--</div>
-        <div id="drill-writeoff-options" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px"></div>
-        <div id="drill-writeoff-result" style="display:none;margin-top:12px"></div>
-      </div>
-
       <!-- Rep tool exchange tracker (shown when rep modal closes) -->
       <div id="drill-tool-rep" style="display:none">
         <div style="font-size:12px;color:var(--text2);margin-bottom:6px" id="drill-rep-goal"></div>
@@ -992,10 +985,10 @@ function evalClaim(em, mod1, addon, mod2, charge1, charge2, addon3, mod3, charge
   var out={type:'clean',lines:[],totalBilled:0,totalAllowed:0,totalPaid:0,copay:copay,denial:null,auditRisk:null,responses:[],debrief:{}};
   if(isNewPt){
     out.type='denial';
-    out.denial={code:'CO-18',title:'Denial - CO-18',sub:'New patient code billed for established patient.',mono:'SVC: '+em+'\nADJ: CO-18 -- No service from same provider within past 3 years required for new patient codes.'};
+    out.denial={code:'CO-18',title:'Denial - CO-18',sub:'New patient code billed for established patient.',mono:'SVC: '+em+'\nADJ: CO-18 -- Patient record shows prior service from same provider or same specialty/subspecialty in same group within 3 years. Recode as established.'};
     out.responses=[{text:'Submit corrected claim with the appropriate established patient code (99211-99215).',correct:true,feedback:'Correct. Recode to 99211-99215 and resubmit.'},{text:'Appeal with visit complexity documentation.',correct:false,feedback:'Incorrect. CO-18 is a patient status error. The fix is a corrected claim.'},{text:'Write off the claim.',correct:false,feedback:'Incorrect. This is correctable.'}];
     out.debrief.pattern='New patient code on established patient';
-    out.debrief.coding='New patient codes require no service from same provider within 3 years. Recode to 99211-99215.';
+    out.debrief.coding='New patient codes require no professional services from the same provider or another provider of the exact same specialty and subspecialty in the same group practice within 3 years. Recode to 99211-99215.';
     out.totalBilled=c1+c2+c3; out.totalAllowed=0; out.totalPaid=0;
     out.lines=[{code:em,mod:mod1||'--',charges:'$'+c1.toFixed(2),allowed:'$0.00',paid:'$0.00'}];
     if(addon)out.lines.push({code:addon,mod:mod2||'--',charges:'$'+c2.toFixed(2),allowed:'$0.00',paid:'$0.00'});
@@ -1295,7 +1288,7 @@ function openRep() {
     if(eraResult.type==='denial'&&eraResult.denial){
       var d=eraResult.denial;
       var resolutions={
-        'CO-18':'The provider billed a new patient code (99202-99205) but the patient is established (seen within 3 years). The correct fix is to resubmit with an established patient code (99211-99215). This is not a coverage issue.',
+        'CO-18':'The provider billed a new patient code (99202-99205) but the patient is established -- seen within 3 years by the same provider or another provider of the exact same specialty and subspecialty in the same group. The correct fix is to resubmit with an established patient code (99211-99215). This is not a coverage issue.',
         'CO-4/CO-16':'The claim was submitted with POS 11 (office) but the service was rendered via telehealth. POS 10 is required for telehealth at patient home. Modifier 95 is also required on all lines. Resubmit with corrected POS and modifier.',
         'CO-4':'Modifier 95 is missing on one or more CPT lines. For telehealth claims with POS 10, modifier 95 must appear on every single service line independently -- both the E/M line and any add-on lines. The E/M having modifier 95 does not cover the add-on line. Each line is adjudicated separately. The fix is to resubmit a corrected claim with modifier 95 on all lines.'
       };
@@ -1353,12 +1346,12 @@ var DRILLS = [
    claim:{dos:'03/20/2026',claimNum:'CLM-20260320-104',memberId:'PRE-389201746',npi:'1234567890',pos:'10',patient:'R. Alvarez, est. 2 yrs',payer:'Premera Blue Cross',lines:[{code:'99204',mod:'95',charges:'$250.00',dx1:'F31.81',dx2:''}],totalBilled:'$250.00'},
    era:{paid:'$0.00',denial:{code:'CO-18',title:'Denial - CO-18',sub:'New patient code billed for established patient. No service within past 3 years required for new patient code.',mono:'SVC: 99204\nADJ: CO-18 -- Patient record shows prior service within 3 years. Recode as established.'},lines:[{code:'99204',mod:'95',charges:'$250.00',allowed:'$0.00',paid:'$0.00',status:'denied',denialCode:'CO-18'}]},
    responses:[{text:'Submit corrected claim with the appropriate established patient code (99211-99215).',correct:true,feedback:'Correct. CO-18 is a patient status error. Recode to 99211-99215 and resubmit.'},{text:'Appeal with documentation of visit complexity.',correct:false,feedback:'Incorrect. CO-18 is not about visit complexity -- it is about patient status. The fix is a corrected claim with the right code.'},{text:'Write off the claim.',correct:false,feedback:'Incorrect. This is correctable.'}],
-   debrief:{pattern:'New patient code on established patient',teaching:'New patient codes (99202-99205) require no service from the same provider or same group within 3 years. If the patient was seen within 3 years, even by a different provider in your group practice, they are established. CO-18 fires when the payer\'s records show a prior encounter within that window.',rule:'New patient = no service from same provider/group in 3 years. Established patient = any prior service within 3 years. When in doubt, use established patient codes.'},pathway:'claim',action:{wrongPaths:{rep:'CO-18 is a coding error on your end. Angela cannot override a patient status mismatch. Resubmit with the correct code.',post:'Nothing to post -- the claim was denied.',writeoff:'This is correctable. Recode to the appropriate established patient code.'},fixLabel:'Recode to established patient E/M',fixLines:[{idx:0,field:'code',from:'99204',to:'99214',hint:'Patient is established -- use 99211-99215'}],successEra:{paid:'$43.00',note:'Corrected claim accepted with 99214. Established patient code processed correctly.'}}},
+   debrief:{pattern:'New patient code on established patient',teaching:'New patient codes (99202-99205) require no professional services from the same provider or another provider of the exact same specialty and subspecialty in the same group practice within the past 3 years. A patient seen by another PMHNP in your group within 3 years is established. A patient seen by a therapist or family medicine physician in the same building is still a new patient to you, because the specialty differs. CO-18 fires when the payer\'s records show a prior encounter that meets this threshold.',rule:'New patient = no professional services from the same provider or another provider of the exact same specialty and subspecialty in the same group practice within 3 years. Established patient = any such prior service within 3 years. When in doubt, use established patient codes.'},pathway:'claim',action:{wrongPaths:{rep:'CO-18 is a coding error on your end. Angela cannot override a patient status mismatch. Resubmit with the correct code.',post:'Nothing to post -- the claim was denied.',writeoff:'This is correctable. Recode to the appropriate established patient code.'},fixLabel:'Recode to established patient E/M',fixLines:[{idx:0,field:'code',from:'99204',to:'99214',hint:'Patient is established -- use 99211-99215'}],successEra:{paid:'$43.00',note:'Corrected claim accepted with 99214. Established patient code processed correctly.'}}},
   {id:5,title:'90833 bundled with E/M -- CO-97',category:'bundling',difficulty:'intermediate',
    claim:{dos:'03/22/2026',claimNum:'CLM-20260322-105',memberId:'UHC-774920183',npi:'1234567890',pos:'10',patient:'D. Park, est.',payer:'United Healthcare',lines:[{code:'99214',mod:'95',charges:'$200.00',dx1:'F31.81',dx2:'F40.10'},{code:'90833',mod:'95',charges:'$150.00',dx1:'F31.81',dx2:'F40.10'}],totalBilled:'$350.00'},
    era:{paid:'$43.00',denial:{code:'CO-97',title:'Denial - CO-97',sub:'90833 is included in the allowance for 99214 per this payer\'s policy. Add-on code not separately reimbursable.',mono:'SVC: 99214-95 (paid) / 90833-95 (CO-97)\nADJ: CO-97 -- 90833 bundled. Not separately payable with 99214 under this plan.'},lines:[{code:'99214',mod:'95',charges:'$200.00',allowed:'$95.00',paid:'$43.00',status:'paid'},{code:'90833',mod:'95',charges:'$150.00',allowed:'$0.00',paid:'$0.00',status:'denied',denialCode:'CO-97'}]},
    responses:[{text:'Check this payer\'s policy on psychotherapy add-on codes before resubmitting or appealing.',correct:true,feedback:'Correct. CO-97 means the payer considers 90833 bundled into the E/M. Unlike CO-4, this may not be correctable. Verify the payer\'s policy first -- some payers do not reimburse psychotherapy add-ons separately.'},{text:'Resubmit with modifier 59 to unbundle.',correct:false,feedback:'Incorrect. Modifier 59 does not override a payer bundling policy. CO-97 is a contractual bundling denial, not a modifier issue.'},{text:'Write off the add-on and bill as E/M only going forward.',correct:false,feedback:'Not necessarily correct. Verify payer policy first. If 90833 is truly not separately reimbursable by this payer, you may need to adjust your billing -- but verify before writing off.'}],
-   debrief:{pattern:'Psychotherapy add-on bundled by payer (CO-97)',teaching:'CO-97 means the payer has determined that 90833 is included in the allowed amount for the E/M code -- it is not separately reimbursable. This is a payer policy issue, not a coding error. Some commercial payers (particularly United) bundle 90833 into E/M reimbursement. Verify each payer\'s policy before billing add-ons.',rule:'CO-97 = bundled/inclusive. Not the same as CO-4 (modifier issue). Check payer contracts and policies for psychotherapy add-on reimbursement before assuming 90833/90836/90838 will pay with every payer.'},pathway:'writeoff',action:{wrongPaths:{claim:'CO-97 is a payer bundling policy, not a coding error. Resubmitting the same codes will generate the same denial.',rep:'Calling Angela will confirm the bundling policy but will not change it. You already know what CO-97 means. Verify the policy first, then act.',post:'You cannot post a paid amount that does not exist. CO-97 means the add-on was not reimbursed.'},writeoffPrompt:'Before writing off, confirm: has this payer definitively excluded 90833 from separate reimbursement with E/M codes?',writeoffOptions:[{text:'Yes -- verified with payer and contract. Write off 90833 for this payer going forward.',correct:true,feedback:'Correct. CO-97 is a contractual bundling denial. Once you have verified the payer policy, write off the add-on and update your billing rules for this payer. Do not continue billing 90833 to United if they have confirmed it is bundled.'},{text:'Not verified -- appeal anyway with modifier 59.',correct:false,feedback:'Incorrect. Modifier 59 does not override a confirmed payer bundling policy. CO-97 with a confirmed policy is not appealable. Verify first, then act.'}]}},
+   debrief:{pattern:'Psychotherapy add-on bundled by payer (CO-97)',teaching:'CO-97 means the payer has determined that 90833 is included in the allowed amount for the E/M code -- it is not separately reimbursable. This is a payer policy issue, not a coding error. Some commercial payers (particularly United) bundle 90833 into E/M reimbursement. Verify each payer\'s policy before billing add-ons.',rule:'CO-97 = bundled/inclusive. Not the same as CO-4 (modifier issue). Check payer contracts and policies for psychotherapy add-on reimbursement before assuming 90833/90836/90838 will pay with every payer.'},pathway:'post',action:{wrongPaths:{claim:'CO-97 is a payer bundling policy, not a coding error. Resubmitting the same codes will generate the same denial.',rep:'Calling Angela can help you understand CO-97 and whether this payer bundles 90833 -- but the claim still needs to be posted either way.',writeoff:''},postFields:{insurancePaid:43,co45:105,patientOwed:52,copayCollected:0},successMsg:'Correct. Post $43.00 insurance payment on 99214. Write off $105.00 CO-45 on 99214. Write off $150.00 CO-97 on 90833 (bundled, not reimbursable by this payer). Patient owes $52.00 copay on the E/M line. Update billing rules -- do not bill 90833 to United Healthcare going forward.'}},
   {id:6,title:'Patient deductible -- full allowed billed to patient',category:'patient_responsibility',difficulty:'beginner',
    claim:{dos:'03/25/2026',claimNum:'CLM-20260325-106',memberId:'PRE-901345627',npi:'1234567890',pos:'10',patient:'M. Nguyen, est.',payer:'Premera Blue Cross',lines:[{code:'99214',mod:'95',charges:'$200.00',dx1:'F33.1',dx2:'F41.1'},{code:'90833',mod:'95',charges:'$150.00',dx1:'F33.1',dx2:'F41.1'}],totalBilled:'$350.00'},
    era:{paid:'$0.00',denial:null,lines:[{code:'99214',mod:'95',charges:'$200.00',allowed:'$98.00',paid:'$0.00',status:'deductible'},{code:'90833',mod:'95',charges:'$150.00',allowed:'$70.00',paid:'$0.00',status:'deductible'}]},
@@ -1393,7 +1386,7 @@ var DRILLS = [
    claim:{dos:'04/10/2026',claimNum:'CLM-20260410-112',memberId:'UHC-662038195',npi:'1234567890',pos:'10',patient:'E. Reyes, est.',payer:'United Healthcare',lines:[{code:'99213',mod:'95',charges:'$150.00',dx1:'F31.70',dx2:''}],totalBilled:'$150.00'},
    era:{paid:'$0.00',denial:{code:'CO-50',title:'Denial - CO-50',sub:'Medical necessity not established. Diagnosis code F31.70 (Bipolar II, currently in remission) does not support the level of service billed.',mono:'SVC: 99213-95\nDX: F31.70\nADJ: CO-50 -- Remission diagnosis does not support ongoing medical necessity for E/M service at this frequency.'},lines:[{code:'99213',mod:'95',charges:'$150.00',allowed:'$0.00',paid:'$0.00',status:'denied',denialCode:'CO-50'}]},
    responses:[{text:'Review the clinical documentation and consider whether a more accurate diagnosis code reflects the patient\'s current status. If documentation supports ongoing management, prepare a medical necessity appeal with clinical notes.',correct:true,feedback:'Correct. CO-50 is a medical necessity denial. Remission codes can trigger automatic edits at some payers. Review whether F31.70 accurately reflects the patient\'s status. If the patient is being actively managed (medication titration, monitoring), documentation supporting ongoing need is critical for appeal.'},{text:'Resubmit with a different diagnosis code to avoid the denial.',correct:false,feedback:'Incorrect. Do not change a diagnosis code to avoid a denial unless the original code was genuinely wrong. Upcoding or changing diagnosis codes to game payer edits is fraud. Use the code that accurately reflects the clinical picture.'},{text:'Write off -- remission diagnoses can never be billed.',correct:false,feedback:'Incorrect. Patients in remission can still require and receive medically necessary psychiatric services. CO-50 is not a categorical bar -- it requires documentation of ongoing medical necessity.'}],
-   debrief:{pattern:'Medical necessity denial -- remission diagnosis (CO-50)',teaching:'CO-50 fires when the payer\'s automated edits determine that the diagnosis code does not support medical necessity for the service billed. Remission codes (F31.70, F32.5, F33.40, etc.) trigger these edits at some payers because "remission" implies the condition is not active. If you bill a remission code, your documentation must clearly support why ongoing management is medically necessary.',rule:'CO-50 = medical necessity. The fix is clinical documentation that establishes why the service was necessary -- medication management, relapse prevention, monitoring -- not a diagnosis code change unless the original code was wrong.'},pathway:'writeoff',action:{wrongPaths:{claim:'Changing a diagnosis code to avoid a denial is fraudulent if the original code was accurate. Only correct genuine coding errors.',rep:'Angela can explain CO-50 but cannot override a medical necessity determination without clinical documentation.',post:'There is nothing to post -- the claim was denied.'},writeoffPrompt:'CO-50 medical necessity denial. What is the appropriate next step?',writeoffOptions:[{text:'Prepare a medical necessity appeal with clinical notes documenting why ongoing management is needed despite remission.',correct:true,feedback:'Correct. CO-50 can be appealed with clinical documentation. A remission diagnosis does not categorically bar reimbursement -- it requires documentation showing why ongoing management is medically necessary. Submit the appeal with supporting notes.'},{text:'Change the diagnosis to an active episode code and resubmit.',correct:false,feedback:'Incorrect. Do not change a diagnosis to avoid a denial unless the original code was genuinely wrong. Changing F31.70 to F31.81 when the patient is in remission is upcoding. Address the medical necessity question with documentation, not a code change.'}]}},
+   debrief:{pattern:'Medical necessity denial -- remission diagnosis (CO-50)',teaching:'CO-50 fires when the payer\'s automated edits determine that the diagnosis code does not support medical necessity for the service billed. Remission codes (F31.70, F32.5, F33.40, etc.) trigger these edits at some payers because "remission" implies the condition is not active. If you bill a remission code, your documentation must clearly support why ongoing management is medically necessary.',rule:'CO-50 = medical necessity. The fix is clinical documentation that establishes why the service was necessary -- medication management, relapse prevention, monitoring -- not a diagnosis code change unless the original code was wrong.'},pathway:'rep',action:{wrongPaths:{claim:'Changing a diagnosis code to avoid a denial is fraudulent if the original code was accurate. Only correct genuine coding errors.',post:'There is nothing to post -- the claim was denied.',writeoff:''},repContext:'CO-50 -- medical necessity denial. Diagnosis F31.70 (Bipolar II in remission) triggered a medical necessity edit. DOS: 04/10/2026.',repGoal:'Understand what CO-50 means, whether an appeal is viable, and what documentation would be needed.',repMinExchanges:3,successMsg:'Correct resolution: CO-50 requires a medical necessity appeal with clinical notes demonstrating why ongoing management is necessary despite remission status. The diagnosis itself is not wrong -- the documentation needs to support why the visit was medically necessary.'}},
   {id:13,title:'All diagnoses marked historical -- claim goes out blank',category:'diagnosis',difficulty:'intermediate',
    claim:{dos:'04/12/2026',claimNum:'CLM-20260412-113',memberId:'PRE-445720836',npi:'1234567890',pos:'10',patient:'N. Clarke, est.',payer:'Premera Blue Cross',lines:[{code:'99214',mod:'95',charges:'$200.00',dx1:'F31.81',dx2:'F41.1'},{code:'90833',mod:'95',charges:'$150.00',dx1:'F31.81',dx2:'F41.1'}],totalBilled:'$350.00'},
    era:{paid:'$0.00',denial:{code:'CO-16',title:'Denial - CO-16 / MA130',sub:'Claim submitted without diagnosis codes. Required field missing. Claim cannot be processed.',mono:'SVC: 99214-95 / 90833-95\nADJ: CO-16 -- Missing required diagnosis information.\nRemark: MA130 -- Your claim contains incomplete or invalid information.'},lines:[{code:'99214',mod:'95',charges:'$200.00',allowed:'$0.00',paid:'$0.00',status:'denied',denialCode:'CO-16'},{code:'90833',mod:'95',charges:'$150.00',allowed:'$0.00',paid:'$0.00',status:'denied',denialCode:'CO-16'}]},
@@ -1580,11 +1573,6 @@ function loadDrill(id) {
   var dcb=document.getElementById('drill-chat-body'); if(dcb) dcb.innerHTML='';
   var repTool=document.getElementById('drill-tool-rep'); if(repTool) repTool.style.display='none';
 
-  // For writeoff drills — show write-off tool pre-loaded (no claim form applies)
-  if(drill.pathway==='writeoff') {
-    loadWriteoffTool(drill);
-  }
-
   showDrillView('drill-era-view');
 }
 
@@ -1649,7 +1637,7 @@ function showDrillToolFeedback(drill, toolId) {
 }
 
 function hideAllDrillTools() {
-  ['claim','post','writeoff'].forEach(function(t){
+  ['claim','post'].forEach(function(t){
     var e=document.getElementById('drill-tool-'+t); if(e) e.style.display='none';
   });
 }
@@ -1805,41 +1793,6 @@ function submitDrillPosting() {
   if(pr){pr.innerHTML='<div class="denial-block" style="border-left:3px solid var(--green)"><div class="denial-head" style="color:var(--green)">&#x2713; Posted correctly</div><div class="denial-sub">'+(drill.action.successMsg||'Account reconciled.')+'</div></div>';pr.style.display='block';}
   drillRespSubmitted=true; drillCompleted[currentDrillId]=true;
   var nr=document.getElementById('drill-resp-next-row'); if(nr) nr.style.display='flex';
-}
-
-// ── PATHWAY 4: Write-off ──────────────────────────────────────────────────
-function loadWriteoffTool(drill) {
-  var el=document.getElementById('drill-tool-writeoff'); if(!el) return;
-  el.style.display='block';
-  var wp=document.getElementById('drill-writeoff-prompt'); if(wp) wp.textContent=drill.action.writeoffPrompt||'What is the appropriate next step?';
-  var wo=document.getElementById('drill-writeoff-options'); if(!wo) return;
-  var html='';
-  var opts=drill.action.writeoffOptions||[];
-  for(var i=0;i<opts.length;i++){
-    html+='<button class="resp-btn" onclick="selectWriteoffOption('+i+')" id="wo-opt-'+i+'">'+opts[i].text+'</button>';
-  }
-  wo.innerHTML=html;
-  var wr=document.getElementById('drill-writeoff-result'); if(wr){wr.innerHTML='';wr.style.display='none';}
-}
-
-function selectWriteoffOption(i) {
-  if(drillRespSubmitted) return;
-  var drill=getDrill(currentDrillId); if(!drill) return;
-  var opts=drill.action.writeoffOptions||[];
-  var opt=opts[i];
-  var btns=document.querySelectorAll('#drill-writeoff-options .resp-btn');
-  for(var j=0;j<btns.length;j++){
-    btns[j].classList.remove('selected','correct','incorrect');
-    if(opts[j]&&opts[j].correct) btns[j].classList.add('correct');
-    else if(j===i&&opt&&!opt.correct) btns[j].classList.add('incorrect');
-    btns[j].disabled=true;
-  }
-  var wr=document.getElementById('drill-writeoff-result');
-  if(wr){wr.innerHTML='<div class="feedback-box">'+(opt?opt.feedback:'')+'</div>';wr.style.display='block';}
-  if(opt&&opt.correct){
-    drillRespSubmitted=true; drillCompleted[currentDrillId]=true;
-    var nr=document.getElementById('drill-resp-next-row'); if(nr) nr.style.display='flex';
-  }
 }
 
 // ── PATHWAY 2: Insurance rep ──────────────────────────────────────────────
