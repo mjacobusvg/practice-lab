@@ -1087,6 +1087,111 @@ function saveSetup() {
   }
   launchSim();
 }
+// ── PATTERN TRACKING ─────────────────────────────────────────────────────
+// Tracks which billing patterns the learner has encountered across sessions.
+// After seeing a pattern 2+ times, debrief surfaces a recognition callout.
+
+var patternHistory = JSON.parse(sessionStorage.getItem('tbp_patterns') || '{}');
+
+function recordPattern(patternKey) {
+  if(!patternKey || patternKey === '--') return;
+  patternHistory[patternKey] = (patternHistory[patternKey] || 0) + 1;
+  sessionStorage.setItem('tbp_patterns', JSON.stringify(patternHistory));
+}
+
+function getPatternCount(patternKey) {
+  return patternHistory[patternKey] || 0;
+}
+
+var TOP_REVENUE_LEAKS = [
+  'Suboptimal E/M level',
+  'Add-on missed or incorrect',
+  'Telehealth modifier missing on all lines',
+  'Telehealth modifier missing on add-on line only',
+  'Wrong place of service -- POS 11 on telehealth'
+];
+
+// ── ROTATING PATIENT PANEL (Option C) ────────────────────────────────────
+// Pool of 4 patients. Each session picks one at random, creating a different
+// experience on repeat use. New patients can be added to the pool.
+
+var PATIENT_POOL = [
+  {
+    // Patient 1: J. Mercer (existing S1 patient -- baseline)
+    scenarioId: 'P1',
+    patient: 'J. Mercer', memberId: 'PRE-882041937', dos: '03/12/2026',
+    claimNum: 'CLM-20260312-001', payer: 'premera', payerName: 'Premera Blue Cross',
+    copay: 55, pos: '10',
+    poolNote: 'Follow-up on lamotrigine titration. Mood 5/10, sleep improved, no SI/HI. Two active chronic conditions managed (Bipolar II, GAD). Reviewed CBC and metabolic panel from 03/01/2026. Dose increased from 150mg to 200mg. Adherence counseling provided. 17 minutes of psychotherapy using CBT techniques.',
+    poolTimes: {prep:8, ftf:22, doc:10, total:40},
+    optimalEM: '99214', optimalAddon: '90833',
+    poolDebrief: 'J. Mercer: Two chronic conditions, lab review, prescription management = moderate MDM. 17 min psychotherapy in range for 90833. Full-value coding: 99214 + 90833.'
+  },
+  {
+    // Patient 2: T. Washington — UHC, MDD recurrent moderate, simpler visit
+    scenarioId: 'P2',
+    patient: 'T. Washington', memberId: 'UHC-334827610', dos: '03/15/2026',
+    claimNum: 'CLM-20260315-002', payer: 'uhc', payerName: 'United Healthcare',
+    copay: 40, pos: '10',
+    poolNote: 'Established patient, MDD recurrent moderate. Mood 4/10, sleep 5 hrs/night, energy low. One chronic condition actively managed. Medication adjustment: sertraline increased from 100mg to 150mg -- reviewed side effect profile and timeline for response. No lab review this visit. No formal psychotherapy performed. Patient education on medication adherence provided. 28 min face-to-face.',
+    poolTimes: {prep:5, ftf:28, doc:7, total:40},
+    optimalEM: '99214', optimalAddon: '',
+    poolDebrief: 'T. Washington: One chronic condition managed, prescription drug change with documented monitoring discussion = moderate risk. MDM reaches moderate. Correct code: 99214 alone -- no psychotherapy was performed.'
+  },
+  {
+    // Patient 3: S. Kim — Premera, Bipolar I + SUD, complex visit with 42 min psych
+    scenarioId: 'P3',
+    patient: 'S. Kim', memberId: 'PRE-778293041', dos: '03/19/2026',
+    claimNum: 'CLM-20260319-003', payer: 'premera', payerName: 'Premera Blue Cross',
+    copay: 55, pos: '10',
+    poolNote: 'Complex established patient: Bipolar I, AUD in remission. Two chronic conditions with high complexity -- recent hospitalization for mixed episode 6 weeks ago, now stable on lithium 900mg + aripiprazole 10mg. Reviewed lithium level from 03/10/2026 (0.8 mEq/L, therapeutic). Discussed relapse prevention and alcohol triggers. 42 minutes of psychotherapy using CBT and motivational interviewing targeting relapse prevention and mood monitoring.',
+    poolTimes: {prep:12, ftf:35, doc:13, total:60},
+    optimalEM: '99214', optimalAddon: '90836',
+    poolDebrief: 'S. Kim: Two chronic conditions (one with recent hospitalization = high complexity per that domain), external lab reviewed, prescription management with monitoring = high MDM overall. However, note that 42 min psychotherapy supports 90836 (38-52 min range), not 90833. The correct add-on is 90836, not 90833.'
+  },
+  {
+    // Patient 4: R. Osei — Regence, GAD only, straightforward visit
+    scenarioId: 'P4',
+    patient: 'R. Osei', memberId: 'REG-556102938', dos: '03/22/2026',
+    claimNum: 'CLM-20260322-004', payer: 'regence', payerName: 'Regence BlueCross BlueShield',
+    copay: 30, pos: '10',
+    poolNote: 'Established patient, GAD moderate. Mood stable, anxiety 3/10 this week down from 5/10. One chronic condition managed. Medication continued -- sertraline 100mg, no changes. Reviewed PHQ-9 administered by patient portal (score 6, mild). No psychotherapy performed. Patient reports improvement with mindfulness techniques discussed last visit.',
+    poolTimes: {prep:5, ftf:18, doc:7, total:30},
+    optimalEM: '99213', optimalAddon: '',
+    poolDebrief: 'R. Osei: One chronic condition, minimal data (PHQ-9 review = low data), prescription continued without change (low risk). MDM is low -- correct code is 99213, not 99214. This is a stability visit and should not be upcoded.'
+  }
+];
+
+var currentPatientIdx = null;
+
+function pickPatient() {
+  // Rotate through pool, not purely random, to ensure variety
+  var stored = parseInt(sessionStorage.getItem('tbp_patient_idx') || '-1');
+  var next = (stored + 1) % PATIENT_POOL.length;
+  sessionStorage.setItem('tbp_patient_idx', next);
+  currentPatientIdx = next;
+  return PATIENT_POOL[next];
+}
+
+function applyPatientToScenario(patient) {
+  // Patch the active scenario with the pool patient's data
+  var scen = SCENARIOS[currentScenario];
+  scen.patient = patient.patient;
+  scen.memberId = patient.memberId;
+  scen.dos = patient.dos;
+  scen.claimNum = patient.claimNum;
+  scen.payer = patient.payer;
+  scen.payerName = patient.payerName;
+  scen.copay = patient.copay;
+  scen.pos = patient.pos;
+  scen.optimalEM = patient.optimalEM;
+  scen.optimalAddon = patient.optimalAddon;
+  // Store pool debrief for reveal
+  scen._poolDebrief = patient.poolDebrief;
+  scen._poolNote = patient.poolNote;
+  scen._poolTimes = patient.poolTimes;
+}
+
 function launchSim() {
   // Pick rotating patient from pool and apply to scenario
   var poolPatient = pickPatient();
@@ -3545,110 +3650,6 @@ function submitFeedback(source) {
 
 
 
-// ── PATTERN TRACKING ─────────────────────────────────────────────────────
-// Tracks which billing patterns the learner has encountered across sessions.
-// After seeing a pattern 2+ times, debrief surfaces a recognition callout.
-
-var patternHistory = JSON.parse(sessionStorage.getItem('tbp_patterns') || '{}');
-
-function recordPattern(patternKey) {
-  if(!patternKey || patternKey === '--') return;
-  patternHistory[patternKey] = (patternHistory[patternKey] || 0) + 1;
-  sessionStorage.setItem('tbp_patterns', JSON.stringify(patternHistory));
-}
-
-function getPatternCount(patternKey) {
-  return patternHistory[patternKey] || 0;
-}
-
-var TOP_REVENUE_LEAKS = [
-  'Suboptimal E/M level',
-  'Add-on missed or incorrect',
-  'Telehealth modifier missing on all lines',
-  'Telehealth modifier missing on add-on line only',
-  'Wrong place of service -- POS 11 on telehealth'
-];
-
-// ── ROTATING PATIENT PANEL (Option C) ────────────────────────────────────
-// Pool of 4 patients. Each session picks one at random, creating a different
-// experience on repeat use. New patients can be added to the pool.
-
-var PATIENT_POOL = [
-  {
-    // Patient 1: J. Mercer (existing S1 patient -- baseline)
-    scenarioId: 'P1',
-    patient: 'J. Mercer', memberId: 'PRE-882041937', dos: '03/12/2026',
-    claimNum: 'CLM-20260312-001', payer: 'premera', payerName: 'Premera Blue Cross',
-    copay: 55, pos: '10',
-    poolNote: 'Follow-up on lamotrigine titration. Mood 5/10, sleep improved, no SI/HI. Two active chronic conditions managed (Bipolar II, GAD). Reviewed CBC and metabolic panel from 03/01/2026. Dose increased from 150mg to 200mg. Adherence counseling provided. 17 minutes of psychotherapy using CBT techniques.',
-    poolTimes: {prep:8, ftf:22, doc:10, total:40},
-    optimalEM: '99214', optimalAddon: '90833',
-    poolDebrief: 'J. Mercer: Two chronic conditions, lab review, prescription management = moderate MDM. 17 min psychotherapy in range for 90833. Full-value coding: 99214 + 90833.'
-  },
-  {
-    // Patient 2: T. Washington — UHC, MDD recurrent moderate, simpler visit
-    scenarioId: 'P2',
-    patient: 'T. Washington', memberId: 'UHC-334827610', dos: '03/15/2026',
-    claimNum: 'CLM-20260315-002', payer: 'uhc', payerName: 'United Healthcare',
-    copay: 40, pos: '10',
-    poolNote: 'Established patient, MDD recurrent moderate. Mood 4/10, sleep 5 hrs/night, energy low. One chronic condition actively managed. Medication adjustment: sertraline increased from 100mg to 150mg -- reviewed side effect profile and timeline for response. No lab review this visit. No formal psychotherapy performed. Patient education on medication adherence provided. 28 min face-to-face.',
-    poolTimes: {prep:5, ftf:28, doc:7, total:40},
-    optimalEM: '99214', optimalAddon: '',
-    poolDebrief: 'T. Washington: One chronic condition managed, prescription drug change with documented monitoring discussion = moderate risk. MDM reaches moderate. Correct code: 99214 alone -- no psychotherapy was performed.'
-  },
-  {
-    // Patient 3: S. Kim — Premera, Bipolar I + SUD, complex visit with 42 min psych
-    scenarioId: 'P3',
-    patient: 'S. Kim', memberId: 'PRE-778293041', dos: '03/19/2026',
-    claimNum: 'CLM-20260319-003', payer: 'premera', payerName: 'Premera Blue Cross',
-    copay: 55, pos: '10',
-    poolNote: 'Complex established patient: Bipolar I, AUD in remission. Two chronic conditions with high complexity -- recent hospitalization for mixed episode 6 weeks ago, now stable on lithium 900mg + aripiprazole 10mg. Reviewed lithium level from 03/10/2026 (0.8 mEq/L, therapeutic). Discussed relapse prevention and alcohol triggers. 42 minutes of psychotherapy using CBT and motivational interviewing targeting relapse prevention and mood monitoring.',
-    poolTimes: {prep:12, ftf:35, doc:13, total:60},
-    optimalEM: '99214', optimalAddon: '90836',
-    poolDebrief: 'S. Kim: Two chronic conditions (one with recent hospitalization = high complexity per that domain), external lab reviewed, prescription management with monitoring = high MDM overall. However, note that 42 min psychotherapy supports 90836 (38-52 min range), not 90833. The correct add-on is 90836, not 90833.'
-  },
-  {
-    // Patient 4: R. Osei — Regence, GAD only, straightforward visit
-    scenarioId: 'P4',
-    patient: 'R. Osei', memberId: 'REG-556102938', dos: '03/22/2026',
-    claimNum: 'CLM-20260322-004', payer: 'regence', payerName: 'Regence BlueCross BlueShield',
-    copay: 30, pos: '10',
-    poolNote: 'Established patient, GAD moderate. Mood stable, anxiety 3/10 this week down from 5/10. One chronic condition managed. Medication continued -- sertraline 100mg, no changes. Reviewed PHQ-9 administered by patient portal (score 6, mild). No psychotherapy performed. Patient reports improvement with mindfulness techniques discussed last visit.',
-    poolTimes: {prep:5, ftf:18, doc:7, total:30},
-    optimalEM: '99213', optimalAddon: '',
-    poolDebrief: 'R. Osei: One chronic condition, minimal data (PHQ-9 review = low data), prescription continued without change (low risk). MDM is low -- correct code is 99213, not 99214. This is a stability visit and should not be upcoded.'
-  }
-];
-
-var currentPatientIdx = null;
-
-function pickPatient() {
-  // Rotate through pool, not purely random, to ensure variety
-  var stored = parseInt(sessionStorage.getItem('tbp_patient_idx') || '-1');
-  var next = (stored + 1) % PATIENT_POOL.length;
-  sessionStorage.setItem('tbp_patient_idx', next);
-  currentPatientIdx = next;
-  return PATIENT_POOL[next];
-}
-
-function applyPatientToScenario(patient) {
-  // Patch the active scenario with the pool patient's data
-  var scen = SCENARIOS[currentScenario];
-  scen.patient = patient.patient;
-  scen.memberId = patient.memberId;
-  scen.dos = patient.dos;
-  scen.claimNum = patient.claimNum;
-  scen.payer = patient.payer;
-  scen.payerName = patient.payerName;
-  scen.copay = patient.copay;
-  scen.pos = patient.pos;
-  scen.optimalEM = patient.optimalEM;
-  scen.optimalAddon = patient.optimalAddon;
-  // Store pool debrief for reveal
-  scen._poolDebrief = patient.poolDebrief;
-  scen._poolNote = patient.poolNote;
-  scen._poolTimes = patient.poolTimes;
-}
 
 // ── POST-APRIL 1 ROADMAP (spec only — do not build until after launch) ────
 //
