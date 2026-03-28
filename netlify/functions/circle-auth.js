@@ -1,6 +1,7 @@
 const CIRCLE_API_TOKEN = process.env.CIRCLE_API_TOKEN;
+const CIRCLE_HEADLESS_TOKEN = process.env.CIRCLE_HEADLESS_TOKEN;
+const CIRCLE_DOMAIN = 'think-beyond-practice.circle.so';
 const REDIRECT_URL = 'https://community.thinkbeyondpractice.com';
-const COMMUNITY_ID = 377699;
 const GATED_SPACE_ID = 2546298;
 
 exports.handler = async function(event, context) {
@@ -23,35 +24,83 @@ exports.handler = async function(event, context) {
   }
 
   if (!email || !email.includes('@')) return { statusCode: 400, headers, body: JSON.stringify({ message: 'Valid email required' }) };
-  if (!CIRCLE_API_TOKEN) return { statusCode: 500, headers, body: JSON.stringify({ message: 'Server configuration error' }) };
+  if (!CIRCLE_HEADLESS_TOKEN || !CIRCLE_API_TOKEN) return { statusCode: 500, headers, body: JSON.stringify({ message: 'Server configuration error' }) };
 
   try {
-    // Use Circle Admin API v2 which supports proper email filtering
-    const memberUrl = `https://app.circle.so/api/headless/admin/v2/community_members?email=${encodeURIComponent(email)}&community_id=${COMMUNITY_ID}`;
-    console.log('Trying v2 URL:', memberUrl);
-
-    const memberRes = await fetch(memberUrl, {
-      headers: { 'Authorization': `Bearer ${CIRCLE_API_TOKEN}`, 'Content-Type': 'application/json' }
+    // Step 1: Use Headless Auth API to get member JWT
+    // This confirms the email belongs to a real member
+    const authRes = await fetch(`https://${CIRCLE_DOMAIN}/api/v1/headless/auth_token`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${CIRCLE_HEADLESS_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ email })
     });
 
-    console.log('v2 status:', memberRes.status);
-    const memberText = await memberRes.text();
-    console.log('v2 response:', memberText.substring(0, 400));
+    console.log('Headless auth status:', authRes.status);
 
-    // Also try v1 with different param to see what works
-    const v1Url = `https://app.circle.so/api/v1/community_members?email_cont=${encodeURIComponent(email)}&community_id=${COMMUNITY_ID}`;
-    const v1Res = await fetch(v1Url, {
-      headers: { 'Authorization': `Bearer ${CIRCLE_API_TOKEN}`, 'Content-Type': 'application/json' }
+    if (authRes.status === 404 || authRes.status === 422) {
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({ verified: false, message: 'No Think Beyond Practice account found for this email.' })
+      };
+    }
+
+    if (!authRes.ok) {
+      const t = await authRes.text();
+      console.log('Auth error:', t.substring(0, 200));
+      return { statusCode: 200, headers, body: JSON.stringify({ verified: false, message: 'Unable to verify membership. Please try again.' }) };
+    }
+
+    const authData = await authRes.json();
+    console.log('Auth data keys:', Object.keys(authData));
+
+    const memberToken = authData.access_token;
+    const communityMemberId = authData.community_member_id;
+    console.log('Member ID from auth:', communityMemberId);
+
+    if (!memberToken || !communityMemberId) {
+      return { statusCode: 200, headers, body: JSON.stringify({ verified: false, message: 'Unable to verify membership. Please try again.' }) };
+    }
+
+    // Step 2: Check space membership using admin API with the real member ID
+    const spaceUrl = `https://app.circle.so/api/v1/space_members?space_id=${GATED_SPACE_ID}&community_member_id=${communityMemberId}`;
+    console.log('Space check URL:', spaceUrl);
+
+    const spaceRes = await fetch(spaceUrl, {
+      headers: {
+        'Authorization': `Bearer ${CIRCLE_API_TOKEN}`,
+        'Content-Type': 'application/json'
+      }
     });
-    console.log('v1 email_cont status:', v1Res.status);
-    const v1Text = await v1Res.text();
-    console.log('v1 email_cont response:', v1Text.substring(0, 300));
 
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({ verified: false, message: 'DEBUG — check logs' })
-    };
+    console.log('Space check status:', spaceRes.status);
+    const spaceData = await spaceRes.json();
+    console.log('Space count:', spaceData.count, 'records:', (spaceData.records || []).length);
+
+    const records = spaceData.records || [];
+    const hasAccess = records.some(r =>
+      Number(r.community_member_id) === Number(communityMemberId) &&
+      r.status === 'active'
+    );
+
+    console.log('hasAccess:', hasAccess, 'communityMemberId:', communityMemberId);
+
+    if (!hasAccess) {
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          verified: false,
+          message: 'Practice Lab access requires the $89 or $119 Think Beyond Practice plan. Your current plan does not include Practice Lab access.'
+        })
+      };
+    }
+
+    const token = Buffer.from(email + ':' + Date.now()).toString('base64');
+    return { statusCode: 200, headers, body: JSON.stringify({ verified: true, token, message: 'Access verified' }) };
 
   } catch(err) {
     console.error('circle-auth error:', err.message);
