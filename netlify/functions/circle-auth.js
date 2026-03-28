@@ -100,7 +100,13 @@ exports.handler = async function(event, context) {
     }
 
     const token = Buffer.from(email + ':' + Date.now()).toString('base64');
-    return { statusCode: 200, headers, body: JSON.stringify({ verified: true, token, message: 'Access verified' }) };
+    return { statusCode: 200, headers, body: JSON.stringify({ 
+      verified: true, 
+      token, 
+      memberToken,
+      communityMemberId,
+      message: 'Access verified' 
+    }) };
 
   } catch(err) {
     console.error('circle-auth error:', err.message);
