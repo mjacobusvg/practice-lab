@@ -1,10 +1,7 @@
 const CIRCLE_API_TOKEN = process.env.CIRCLE_API_TOKEN;
 const REDIRECT_URL = 'https://community.thinkbeyondpractice.com';
-
-const ACCESS_PAYWALLS = [
-  'TBP_$89_Full_Access',
-  'TBP_$89_Trial_NewMembers'
-];
+const COMMUNITY_ID = 377699;
+const GATED_SPACE_SLUG = 'billing-coding-simulator';
 
 exports.handler = async function(event, context) {
   const headers = {
@@ -52,41 +49,50 @@ exports.handler = async function(event, context) {
 
     const memberId = member.id;
 
-    // Log the FULL member object to see all fields
-    const fullMemberText = JSON.stringify(memberData);
-    console.log('FULL member length:', fullMemberText.length);
-    console.log('FULL member part 1:', fullMemberText.substring(0, 1000));
-    console.log('FULL member part 2:', fullMemberText.substring(1000, 2000));
-    console.log('FULL member part 3:', fullMemberText.substring(2000, 3000));
+    // Step 2: Check if member has access to the gated space
+    // Get spaces this member belongs to
+    const spaceRes = await fetch(
+      `https://app.circle.so/api/v1/space_members?community_member_id=${memberId}&per_page=100`,
+      { headers: { 'Authorization': `Bearer ${CIRCLE_API_TOKEN}`, 'Content-Type': 'application/json' } }
+    );
 
-    // Try Circle's paywall_subscriptions endpoint with member_id param
-    const endpoints = [
-      `https://app.circle.so/api/v1/paywall_subscriptions?member_id=${memberId}`,
-      `https://app.circle.so/api/v1/members/${memberId}/paywall_subscriptions`,
-      `https://app.circle.so/api/v1/community_members/${memberId}/paywalls`,
-    ];
+    console.log('Space members status:', spaceRes.status);
 
-    for (const url of endpoints) {
-      const res = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${CIRCLE_API_TOKEN}`, 'Content-Type': 'application/json' }
-      });
-      console.log(`${url} → ${res.status}`);
-      if (res.ok) {
-        const data = await res.json();
-        console.log('Success data:', JSON.stringify(data).substring(0, 500));
-      }
+    if (!spaceRes.ok) {
+      const t = await spaceRes.text();
+      console.log('Space members error:', t.substring(0, 200));
+      return { statusCode: 200, headers, body: JSON.stringify({ verified: false, message: 'Unable to verify access level. Please try again.' }) };
     }
 
-    // For now return the member data so we can see what's available
-    return {
-      statusCode: 200,
-      headers,
-      body: JSON.stringify({
-        verified: false,
-        message: 'DEBUG MODE: Check function logs for paywall endpoint data.',
-        debug: true
-      })
-    };
+    const spaceData = await spaceRes.json();
+    console.log('Space data sample:', JSON.stringify(spaceData).substring(0, 600));
+
+    // Look for the gated space in member's spaces
+    const spaces = Array.isArray(spaceData) ? spaceData : (spaceData.space_members || spaceData.records || spaceData.data || []);
+    
+    const hasAccess = spaces.some(sm => {
+      const slug = sm.space_slug || (sm.space && sm.space.slug) || sm.slug || '';
+      const name = sm.space_name || (sm.space && sm.space.name) || sm.name || '';
+      console.log('Space:', slug, name);
+      return slug === GATED_SPACE_SLUG || name === 'Billing & Coding Simulator';
+    });
+
+    console.log('hasAccess:', hasAccess, 'total spaces:', spaces.length);
+
+    if (!hasAccess) {
+      return {
+        statusCode: 200,
+        headers,
+        body: JSON.stringify({
+          verified: false,
+          message: 'Practice Lab access requires the $89 or $119 Think Beyond Practice plan. Your current plan does not include Practice Lab access.',
+          upgradeUrl: REDIRECT_URL
+        })
+      };
+    }
+
+    const token = Buffer.from(email + ':' + Date.now()).toString('base64');
+    return { statusCode: 200, headers, body: JSON.stringify({ verified: true, token, message: 'Access verified' }) };
 
   } catch(err) {
     console.error('circle-auth error:', err.message);
