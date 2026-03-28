@@ -265,6 +265,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <div class="mode-card" onclick="startCodeRef()"><div class="mode-icon green">&#x1F50D;</div><div class="mode-title">Code Reference</div><div class="mode-desc">What does this code mean and what do you do with it? Search any CO, PR, OA, or remark code instantly.</div><div class="mode-tag" style="background:var(--green-light);color:var(--green);font-weight:700">Available</div></div>
   </div>
 </div></div>
+  <div style="text-align:center;margin-top:24px">
+    <button onclick="openDiagnostics()" style="background:none;border:none;font-size:11px;color:var(--text3);cursor:pointer;text-decoration:underline;padding:4px 8px">Run diagnostics</button>
+  </div>
+</div>
+
+<div id="screen-diagnostics" style="display:none">
+<div class="wrap" style="max-width:760px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;padding-top:12px">
+    <div style="font-size:18px;font-weight:700;color:var(--text)">Variant Engine Diagnostics</div>
+    <button class="btn" onclick="goLanding()" style="font-size:12px;padding:6px 14px">&larr; Back</button>
+  </div>
+  <div class="card" style="margin-bottom:14px">
+    <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Runs 100 variant generations headlessly and checks for logic errors. Results appear below.</div>
+    <button class="btn btn-green" onclick="runDiagnostics()" style="font-size:13px;padding:8px 20px">&#9658; Run 100 variants</button>
+    <button class="btn" onclick="runDiagnostics(500)" style="font-size:13px;padding:8px 20px;margin-left:8px">Run 500 variants</button>
+  </div>
+  <div id="diag-summary" style="display:none;margin-bottom:14px"></div>
+  <div id="diag-results"></div>
+</div>
 </div>
 
 <div id="screen-setup" style="display:none">
@@ -1429,7 +1448,7 @@ function goSim() {
   show('screen-sim');
 }
 function hideAll() {
-  var ids = ['screen-landing','screen-setup','screen-sim','screen-denial','screen-mdm','screen-psych','screen-coderef'];
+  var ids = ['screen-landing','screen-setup','screen-sim','screen-denial','screen-mdm','screen-psych','screen-coderef','screen-diagnostics'];
   for (var i=0;i<ids.length;i++) {
     var el = document.getElementById(ids[i]);
     if (el) el.style.display = 'none';
@@ -4853,6 +4872,135 @@ function renderCodeRef(codes) {
     html+='</div></div>';
   }
   results.innerHTML=html;
+}
+
+
+// ── VARIANT ENGINE DIAGNOSTICS ───────────────────────────────────────────────
+function openDiagnostics() {
+  hideAll();
+  show('screen-diagnostics');
+  document.getElementById('diag-results').innerHTML = '';
+  document.getElementById('diag-summary').style.display = 'none';
+}
+
+function runDiagnostics(n) {
+  n = n || 100;
+  var failures = [];
+  var trapCounts = {};
+  var mdmCounts = {moderate:0, high:0};
+  var therapyCounts = {real:0, not_billable:0, none:0};
+  var addonCounts = {'90833':0,'90836':0,'90838':0,'':0};
+
+  for (var i = 0; i < n; i++) {
+    var v = generateVariant(Math.random() < 0.5); // randomly TH or in-person
+    var trap = v._trapType || 'unknown';
+    trapCounts[trap] = (trapCounts[trap] || 0) + 1;
+    mdmCounts[v._mdmLevel] = (mdmCounts[v._mdmLevel] || 0) + 1;
+    var tType = v._therapyType || 'none';
+    therapyCounts[tType] = (therapyCounts[tType] || 0) + 1;
+    var addon = v.optimalAddon || '';
+    addonCounts[addon] = (addonCounts[addon] || 0) + 1;
+
+    // CHECK 1: Time math
+    var t = v.times;
+    var sum = t.prep + t.ftf + t.doc;
+    if (sum !== t.total) {
+      failures.push({idx:i+1, trap:trap, check:'TIME MATH', detail: t.prep+'+'+t.ftf+'+'+t.doc+'='+sum+' but total='+t.total});
+    }
+
+    // CHECK 2: therapy_not_billable must have no optimalAddon
+    if (trap === 'therapy_not_billable' && v.optimalAddon && v.optimalAddon !== '') {
+      failures.push({idx:i+1, trap:trap, check:'ADDON ON NOT_BILLABLE', detail:'optimalAddon='+v.optimalAddon+' but trap is therapy_not_billable'});
+    }
+
+    // CHECK 3: upcode_stable and undercode must have no therapy
+    if ((trap === 'upcode_stable' || trap === 'undercode') && v._hasTherapy) {
+      failures.push({idx:i+1, trap:trap, check:'THERAPY ON NO-THERAPY TRAP', detail:'_hasTherapy=true on '+trap});
+    }
+
+    // CHECK 4: MDM level matches trap intent
+    if (trap === 'undercode' && v._mdmLevel !== 'high') {
+      failures.push({idx:i+1, trap:trap, check:'MDM LEVEL', detail:'undercode trap should force high MDM, got: '+v._mdmLevel});
+    }
+    if (trap === 'upcode_stable' && v._mdmLevel !== 'moderate') {
+      failures.push({idx:i+1, trap:trap, check:'MDM LEVEL', detail:'upcode_stable trap should force moderate MDM, got: '+v._mdmLevel});
+    }
+
+    // CHECK 5: addon code matches therapy time range
+    if (v._hasTherapy && v._therapyType === 'real' && v.optimalAddon) {
+      var tt = v._therapyTime;
+      var expectedAddon = tt <= 37 ? '90833' : (tt <= 52 ? '90836' : '90838');
+      if (v.optimalAddon !== expectedAddon) {
+        failures.push({idx:i+1, trap:trap, check:'ADDON/TIME MISMATCH', detail:'therapyTime='+tt+' should map to '+expectedAddon+' but optimalAddon='+v.optimalAddon});
+      }
+    }
+
+    // CHECK 6: MDM code matches level
+    var expectedEM = v._mdmLevel === 'high' ? '99215' : '99214';
+    if (v.optimalEM !== expectedEM) {
+      failures.push({idx:i+1, trap:trap, check:'EM/MDM MISMATCH', detail:'mdmLevel='+v._mdmLevel+' should map to '+expectedEM+' but optimalEM='+v.optimalEM});
+    }
+
+    // CHECK 7: note text not empty
+    if (!v.note || v.note.length < 50) {
+      failures.push({idx:i+1, trap:trap, check:'EMPTY NOTE', detail:'note length='+((v.note||'').length)});
+    }
+
+    // CHECK 8: wrong_addon trap should have therapy with mismatched addon pattern
+    // (engine sets correct addon, trap label tells debrief to surface the teaching)
+    // no structural check needed — just verify therapy is present
+    if (trap === 'wrong_addon' && (!v._hasTherapy || v._therapyType !== 'real')) {
+      failures.push({idx:i+1, trap:trap, check:'WRONG_ADDON MISSING THERAPY', detail:'wrong_addon trap needs real therapy, got therapyType='+v._therapyType});
+    }
+  }
+
+  // Render summary
+  var sumEl = document.getElementById('diag-summary');
+  var passColor = failures.length === 0 ? 'var(--green)' : 'var(--red)';
+  var passLabel = failures.length === 0 ? '&#x2705; All checks passed' : '&#x274C; '+failures.length+' failure(s) found';
+  var html = '<div class="card" style="border:2px solid '+(failures.length===0?'var(--green)':'var(--red)')+';">';
+  html += '<div style="font-size:15px;font-weight:700;color:'+passColor+';margin-bottom:10px">'+passLabel+'</div>';
+  html += '<div style="display:flex;gap:24px;flex-wrap:wrap;font-size:13px;margin-bottom:12px">';
+  html += '<div><strong>'+n+'</strong> variants generated</div>';
+  html += '<div><strong>'+failures.length+'</strong> failures</div>';
+  html += '</div>';
+
+  // Trap distribution
+  html += '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:6px">Trap distribution</div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;font-size:12px;margin-bottom:10px">';
+  var traps = Object.keys(trapCounts).sort();
+  for (var ti=0; ti<traps.length; ti++) {
+    var pct = Math.round(trapCounts[traps[ti]]/n*100);
+    html += '<div style="background:var(--surface2);border:1px solid var(--border);border-radius:4px;padding:3px 8px">'+traps[ti]+': '+trapCounts[traps[ti]]+' ('+pct+'%)</div>';
+  }
+  html += '</div>';
+
+  // MDM / therapy / addon distribution
+  html += '<div style="font-size:12px;color:var(--text2)">MDM: moderate='+mdmCounts.moderate+' high='+mdmCounts.high+' | ';
+  html += 'Therapy: real='+therapyCounts.real+' not_billable='+therapyCounts.not_billable+' none='+therapyCounts.none+' | ';
+  html += 'Add-on: 90833='+addonCounts['90833']+' 90836='+addonCounts['90836']+' 90838='+addonCounts['90838']+' none='+addonCounts['']+'</div>';
+  html += '</div>';
+  sumEl.innerHTML = html;
+  sumEl.style.display = 'block';
+
+  // Render failures
+  var resEl = document.getElementById('diag-results');
+  if (failures.length === 0) {
+    resEl.innerHTML = '';
+    return;
+  }
+  var fhtml = '<div class="card"><div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--red)">Failures</div>';
+  for (var fi=0; fi<failures.length; fi++) {
+    var f = failures[fi];
+    fhtml += '<div style="border-bottom:1px solid var(--border);padding:8px 0;font-size:12px">';
+    fhtml += '<span style="color:var(--text2)">Variant '+f.idx+'</span> ';
+    fhtml += '<span style="background:var(--red-light);color:var(--red);font-weight:700;padding:2px 6px;border-radius:4px;font-size:11px">'+f.check+'</span> ';
+    fhtml += '<span style="color:var(--text2);margin-left:4px">trap: '+f.trap+'</span><br>';
+    fhtml += '<span style="color:var(--text);margin-left:0">'+f.detail+'</span>';
+    fhtml += '</div>';
+  }
+  fhtml += '</div>';
+  resEl.innerHTML = fhtml;
 }
 
 </script>
