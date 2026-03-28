@@ -492,6 +492,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         <div class="db-section"><div class="db-label">Key rule</div><div class="db-text" id="db-rule">--</div></div>
       </div>
       <div class="btn-row" style="border:none;padding-top:0"><button class="btn" onclick="goLanding()">Back to Practice Lab</button><button class="btn btn-primary" onclick="alert('More scenarios coming soon.')">Next scenario &rarr;</button></div>
+      <!-- Feedback panel -->
+      <div style="margin:16px 20px 20px;border:1px solid var(--border);border-radius:10px;padding:16px;background:var(--surface)">
+        <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Share feedback on this scenario</div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Your comment will post directly to the member thread in the forum.</div>
+        <select id="sim-feedback-category" style="width:100%;border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:12px;color:var(--text);background:white;margin-bottom:8px">
+          <option value="General feedback">General feedback</option>
+          <option value="Bug report">Bug report</option>
+          <option value="Scenario suggestion">Scenario suggestion</option>
+          <option value="Question">Question</option>
+        </select>
+        <textarea id="sim-feedback-text" placeholder="What worked, what didn't, or what would make this better..." style="width:100%;border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:13px;color:var(--text);background:white;resize:vertical;min-height:80px;font-family:inherit;margin-bottom:8px"></textarea>
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div id="sim-feedback-status" style="font-size:12px;color:var(--text3)"></div>
+          <button class="btn btn-primary" style="font-size:12px;padding:7px 16px" onclick="submitFeedback('sim')">Post to forum</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -620,6 +636,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
       </div>
       <div class="db-section"><div class="db-label">Teaching point</div><div class="db-text" id="drill-db-teaching">--</div></div>
       <div class="db-section"><div class="db-label">Key rule</div><div class="db-text" id="drill-db-rule">--</div></div>
+    </div>
+    <!-- Feedback panel -->
+    <div class="card" style="margin-top:14px;border:1px solid var(--border)">
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Share feedback on this drill</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Your comment will post directly to the member thread in the forum.</div>
+      <select id="drill-feedback-category" style="width:100%;border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:12px;color:var(--text);background:var(--surface);margin-bottom:8px">
+        <option value="General feedback">General feedback</option>
+        <option value="Bug report">Bug report</option>
+        <option value="Scenario suggestion">Scenario suggestion</option>
+        <option value="Question">Question</option>
+      </select>
+      <textarea id="drill-feedback-text" placeholder="What worked, what didn't, or what would make this better..." style="width:100%;border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:13px;color:var(--text);background:var(--surface);resize:vertical;min-height:80px;font-family:inherit;margin-bottom:8px"></textarea>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div id="drill-feedback-status" style="font-size:12px;color:var(--text3)"></div>
+        <button class="btn btn-primary" style="font-size:12px;padding:7px 16px" onclick="submitFeedback('drill')">Post to forum</button>
+      </div>
     </div>
   </div>
 </div>
@@ -3219,7 +3251,73 @@ function retryPsychStage(){psychCurrentQ=0;psychScore=0;loadPsychQuestion();show
 function goNextPsychStage(){var next=psychCurrentStage+1;if(next<=3)startPsychStage(next);}
 function backToPsychStages(){showPsychView('psych-stage-select');updatePsychStageCards();}
 
-// ── END PSYCHOTHERAPY DOCUMENTATION ────────────────────────────────────────</script>
+
+// ── FEEDBACK / CIRCLE COMMENT POSTING ──────────────────────────────────────
+
+// Wire in the post ID after Monday posts go live
+// Format: think-beyond-practice.circle.so/c/billing-coding-simulator/post-title-XXXXXX
+// The number at the end is the post ID
+var CIRCLE_FEEDBACK_POST_ID = null; // SET THIS AFTER MONDAY
+var CIRCLE_DOMAIN_POST = 'think-beyond-practice.circle.so';
+
+function submitFeedback(source) {
+  var textId = source === 'sim' ? 'sim-feedback-text' : 'drill-feedback-text';
+  var catId = source === 'sim' ? 'sim-feedback-category' : 'drill-feedback-category';
+  var statusId = source === 'sim' ? 'sim-feedback-status' : 'drill-feedback-status';
+
+  var text = (document.getElementById(textId) || {}).value || '';
+  var category = (document.getElementById(catId) || {}).value || 'General feedback';
+  var statusEl = document.getElementById(statusId);
+
+  if (!text.trim()) {
+    if (statusEl) { statusEl.textContent = 'Please write something first.'; statusEl.style.color = 'var(--red)'; }
+    return;
+  }
+
+  if (!CIRCLE_FEEDBACK_POST_ID) {
+    if (statusEl) { statusEl.textContent = 'Feedback posting goes live Monday. Thanks for trying it out!'; statusEl.style.color = 'var(--text3)'; }
+    return;
+  }
+
+  var memberJwt = '';
+  try { memberJwt = sessionStorage.getItem('tbp_member_jwt') || ''; } catch(e) {}
+
+  if (!memberJwt) {
+    if (statusEl) { statusEl.textContent = 'Session expired. Please refresh and sign in again.'; statusEl.style.color = 'var(--red)'; }
+    return;
+  }
+
+  // Build comment body — include context about which mode/drill
+  var context = source === 'drill' ? ('Drill: ' + (currentDrillId || '?')) : ('Scenario: ' + (currentScenarioId || 'S1'));
+  var body = '[' + category + ' — ' + context + ']\n\n' + text.trim();
+
+  if (statusEl) { statusEl.textContent = 'Posting...'; statusEl.style.color = 'var(--text3)'; }
+
+  fetch('/.netlify/functions/circle-comment', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      postId: CIRCLE_FEEDBACK_POST_ID,
+      body: body,
+      memberJwt: memberJwt
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.success) {
+      if (statusEl) { statusEl.textContent = 'Posted to the forum.'; statusEl.style.color = 'var(--green)'; }
+      var textEl = document.getElementById(textId);
+      if (textEl) textEl.value = '';
+    } else {
+      if (statusEl) { statusEl.textContent = data.message || 'Failed to post. Try again.'; statusEl.style.color = 'var(--red)'; }
+    }
+  })
+  .catch(function() {
+    if (statusEl) { statusEl.textContent = 'Connection error. Try again.'; statusEl.style.color = 'var(--red)'; }
+  });
+}
+
+// ── END FEEDBACK ────────────────────────────────────────────────────────────</script>
 </div><!-- end tbp-app -->
 <script src="/auth-gate.js"></script>
 <script>
