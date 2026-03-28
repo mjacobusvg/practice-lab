@@ -150,6 +150,10 @@
         setLoading(false);
         if (data.verified) {
           setSessionToken(data.token || email);
+          try {
+            if (data.memberToken) sessionStorage.setItem('tbp_member_jwt', data.memberToken);
+            if (data.communityMemberId) sessionStorage.setItem('tbp_member_id', String(data.communityMemberId));
+          } catch(e) {}
           removeGate();
           onVerified();
         } else if (data.redirect) {
