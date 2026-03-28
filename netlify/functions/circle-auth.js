@@ -1,6 +1,7 @@
 const CIRCLE_API_TOKEN = process.env.CIRCLE_API_TOKEN;
 const REDIRECT_URL = 'https://community.thinkbeyondpractice.com';
-const GATED_SPACE_ID = 2546298; // Billing & Coding Simulator
+const COMMUNITY_ID = 377699;
+const GATED_SPACE_ID = 2546298;
 
 exports.handler = async function(event, context) {
   const headers = {
@@ -25,20 +26,36 @@ exports.handler = async function(event, context) {
   if (!CIRCLE_API_TOKEN) return { statusCode: 500, headers, body: JSON.stringify({ message: 'Server configuration error' }) };
 
   try {
-    // Step 1: Look up member by email
-    const memberRes = await fetch(
-      `https://app.circle.so/api/v1/community_members?email=${encodeURIComponent(email)}`,
-      { headers: { 'Authorization': `Bearer ${CIRCLE_API_TOKEN}`, 'Content-Type': 'application/json' } }
-    );
+    // Step 1: Look up member by email — must include community_id
+    const memberUrl = `https://app.circle.so/api/v1/community_members?email=${encodeURIComponent(email)}&community_id=${COMMUNITY_ID}`;
+    console.log('Member URL:', memberUrl);
+    
+    const memberRes = await fetch(memberUrl, {
+      headers: { 'Authorization': `Bearer ${CIRCLE_API_TOKEN}`, 'Content-Type': 'application/json' }
+    });
 
     if (!memberRes.ok) {
+      const t = await memberRes.text();
+      console.log('Member lookup failed:', memberRes.status, t.substring(0, 100));
       return { statusCode: 200, headers, body: JSON.stringify({ verified: false, message: 'Unable to verify membership. Please try again.' }) };
     }
 
     const memberData = await memberRes.json();
+    console.log('Raw member response type:', Array.isArray(memberData) ? 'array len=' + memberData.length : 'object');
+    console.log('Member response:', JSON.stringify(memberData).substring(0, 300));
+
     const member = Array.isArray(memberData) ? memberData[0] : memberData;
 
     if (!member || !member.id) {
+      return { statusCode: 200, headers, body: JSON.stringify({ verified: false, redirect: true, message: 'No Think Beyond Practice account found for this email.' }) };
+    }
+
+    // Verify the returned member actually matches the email we searched for
+    const returnedEmail = (member.email || '').toLowerCase();
+    console.log('Searched email:', email, 'Returned email:', returnedEmail, 'Member ID:', member.id);
+
+    if (returnedEmail && returnedEmail !== email) {
+      console.log('Email mismatch — member not found');
       return { statusCode: 200, headers, body: JSON.stringify({ verified: false, redirect: true, message: 'No Think Beyond Practice account found for this email.' }) };
     }
 
@@ -46,30 +63,26 @@ exports.handler = async function(event, context) {
       return { statusCode: 200, headers, body: JSON.stringify({ verified: false, redirect: true, message: 'Your Think Beyond Practice membership is not active.' }) };
     }
 
-    const memberId = member.id; // this is community_member_id
-    console.log('Checking member ID:', memberId, 'email:', email);
+    const memberId = member.id;
 
-    // Step 2: Check if THIS member is in the gated space
-    // Filter by both space_id AND community_member_id
-    const spaceCheckRes = await fetch(
-      `https://app.circle.so/api/v1/space_members?space_id=${GATED_SPACE_ID}&community_member_id=${memberId}`,
-      { headers: { 'Authorization': `Bearer ${CIRCLE_API_TOKEN}`, 'Content-Type': 'application/json' } }
+    // Step 2: Check if this member is in the gated space
+    const spaceUrl = `https://app.circle.so/api/v1/space_members?space_id=${GATED_SPACE_ID}&community_member_id=${memberId}&community_id=${COMMUNITY_ID}`;
+    console.log('Space URL:', spaceUrl);
+
+    const spaceRes = await fetch(spaceUrl, {
+      headers: { 'Authorization': `Bearer ${CIRCLE_API_TOKEN}`, 'Content-Type': 'application/json' }
+    });
+
+    console.log('Space check status:', spaceRes.status);
+    const spaceData = await spaceRes.json();
+    console.log('Space data:', JSON.stringify(spaceData).substring(0, 400));
+
+    const records = spaceData.records || [];
+    const hasAccess = records.length > 0 && records.some(r => 
+      Number(r.community_member_id) === Number(memberId) && r.status === 'active'
     );
 
-    console.log('Space check status:', spaceCheckRes.status);
-
-    if (!spaceCheckRes.ok) {
-      return { statusCode: 200, headers, body: JSON.stringify({ verified: false, message: 'Unable to verify access level. Please try again.' }) };
-    }
-
-    const spaceData = await spaceCheckRes.json();
-    const records = spaceData.records || [];
-    console.log('Records count:', records.length, 'count field:', spaceData.count);
-
-    // Member is in the space if records exist and count > 0
-    const hasAccess = records.length > 0 && records.some(r => r.community_member_id === memberId && r.status === 'active');
-
-    console.log('hasAccess:', hasAccess);
+    console.log('hasAccess:', hasAccess, 'memberId:', memberId, 'records:', records.length);
 
     if (!hasAccess) {
       return {
