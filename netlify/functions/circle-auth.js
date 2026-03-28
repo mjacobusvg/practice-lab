@@ -52,70 +52,41 @@ exports.handler = async function(event, context) {
 
     const memberId = member.id;
 
-    // Step 2: Get paywall subscriptions via the correct endpoint
-    // Try multiple endpoints since v1 API structure varies
-    let hasAccess = false;
+    // Log the FULL member object to see all fields
+    const fullMemberText = JSON.stringify(memberData);
+    console.log('FULL member length:', fullMemberText.length);
+    console.log('FULL member part 1:', fullMemberText.substring(0, 1000));
+    console.log('FULL member part 2:', fullMemberText.substring(1000, 2000));
+    console.log('FULL member part 3:', fullMemberText.substring(2000, 3000));
 
-    // Try 1: paywall_subscriptions on member
-    const pwRes1 = await fetch(
-      `https://app.circle.so/api/v1/paywall_subscriptions?community_member_id=${memberId}`,
-      { headers: { 'Authorization': `Bearer ${CIRCLE_API_TOKEN}`, 'Content-Type': 'application/json' } }
-    );
-    console.log('Paywall endpoint 1 status:', pwRes1.status);
+    // Try Circle's paywall_subscriptions endpoint with member_id param
+    const endpoints = [
+      `https://app.circle.so/api/v1/paywall_subscriptions?member_id=${memberId}`,
+      `https://app.circle.so/api/v1/members/${memberId}/paywall_subscriptions`,
+      `https://app.circle.so/api/v1/community_members/${memberId}/paywalls`,
+    ];
 
-    if (pwRes1.ok) {
-      const pwData = await pwRes1.json();
-      console.log('Paywall data 1:', JSON.stringify(pwData).substring(0, 500));
-      const subs = Array.isArray(pwData) ? pwData : (pwData.paywall_subscriptions || pwData.records || pwData.data || []);
-      hasAccess = subs.some(sub => {
-        const name = sub.paywall_name || sub.name || (sub.paywall && sub.paywall.name) || '';
-        const active = sub.status === 'active' || sub.active === true;
-        console.log('Sub:', name, active);
-        return active && ACCESS_PAYWALLS.includes(name);
+    for (const url of endpoints) {
+      const res = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${CIRCLE_API_TOKEN}`, 'Content-Type': 'application/json' }
       });
-    } else {
-      const t1 = await pwRes1.text();
-      console.log('Endpoint 1 failed:', t1.substring(0, 100));
-
-      // Try 2: member_paywalls
-      const pwRes2 = await fetch(
-        `https://app.circle.so/api/v1/community_members/${memberId}?include_paywalls=true`,
-        { headers: { 'Authorization': `Bearer ${CIRCLE_API_TOKEN}`, 'Content-Type': 'application/json' } }
-      );
-      console.log('Paywall endpoint 2 status:', pwRes2.status);
-
-      if (pwRes2.ok) {
-        const pwData2 = await pwRes2.json();
-        console.log('Member with paywalls:', JSON.stringify(pwData2).substring(0, 800));
-        const subs = pwData2.paywall_subscriptions || pwData2.paywalls || pwData2.member_paywalls || [];
-        hasAccess = subs.some(sub => {
-          const name = sub.paywall_name || sub.name || (sub.paywall && sub.paywall.name) || '';
-          const active = sub.status === 'active' || sub.active === true;
-          console.log('Sub2:', name, active);
-          return active && ACCESS_PAYWALLS.includes(name);
-        });
-      } else {
-        const t2 = await pwRes2.text();
-        console.log('Endpoint 2 failed:', t2.substring(0, 100));
+      console.log(`${url} → ${res.status}`);
+      if (res.ok) {
+        const data = await res.json();
+        console.log('Success data:', JSON.stringify(data).substring(0, 500));
       }
     }
 
-    console.log('Final hasAccess:', hasAccess);
-
-    if (!hasAccess) {
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({
-          verified: false,
-          message: 'Practice Lab access requires the $89 or $119 Think Beyond Practice plan. Your current plan does not include Practice Lab access.',
-          upgradeUrl: REDIRECT_URL
-        })
-      };
-    }
-
-    const token = Buffer.from(email + ':' + Date.now()).toString('base64');
-    return { statusCode: 200, headers, body: JSON.stringify({ verified: true, token, message: 'Access verified' }) };
+    // For now return the member data so we can see what's available
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({
+        verified: false,
+        message: 'DEBUG MODE: Check function logs for paywall endpoint data.',
+        debug: true
+      })
+    };
 
   } catch(err) {
     console.error('circle-auth error:', err.message);
