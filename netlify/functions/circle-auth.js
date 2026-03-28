@@ -1,7 +1,5 @@
 const CIRCLE_API_TOKEN = process.env.CIRCLE_API_TOKEN;
 const REDIRECT_URL = 'https://community.thinkbeyondpractice.com';
-const COMMUNITY_ID = 377699;
-const GATED_SPACE_SLUG = 'billing-coding-simulator';
 
 exports.handler = async function(event, context) {
   const headers = {
@@ -49,35 +47,50 @@ exports.handler = async function(event, context) {
 
     const memberId = member.id;
 
-    // Step 2: Check if member has access to the gated space
-    // Get spaces this member belongs to
-    const spaceRes = await fetch(
-      `https://app.circle.so/api/v1/space_members?community_member_id=${memberId}&per_page=100`,
+    // Step 2: Get all spaces to find the Billing & Coding Simulator space ID
+    const spacesRes = await fetch(
+      `https://app.circle.so/api/v1/spaces`,
       { headers: { 'Authorization': `Bearer ${CIRCLE_API_TOKEN}`, 'Content-Type': 'application/json' } }
     );
 
-    console.log('Space members status:', spaceRes.status);
+    console.log('Spaces status:', spacesRes.status);
+    const spacesData = await spacesRes.json();
+    console.log('Spaces sample:', JSON.stringify(spacesData).substring(0, 800));
 
-    if (!spaceRes.ok) {
-      const t = await spaceRes.text();
-      console.log('Space members error:', t.substring(0, 200));
-      return { statusCode: 200, headers, body: JSON.stringify({ verified: false, message: 'Unable to verify access level. Please try again.' }) };
-    }
+    const spaces = Array.isArray(spacesData) ? spacesData : (spacesData.spaces || spacesData.records || spacesData.data || []);
+    console.log('Total spaces:', spaces.length);
 
-    const spaceData = await spaceRes.json();
-    console.log('Space data sample:', JSON.stringify(spaceData).substring(0, 600));
-
-    // Look for the gated space in member's spaces
-    const spaces = Array.isArray(spaceData) ? spaceData : (spaceData.space_members || spaceData.records || spaceData.data || []);
-    
-    const hasAccess = spaces.some(sm => {
-      const slug = sm.space_slug || (sm.space && sm.space.slug) || sm.slug || '';
-      const name = sm.space_name || (sm.space && sm.space.name) || sm.name || '';
-      console.log('Space:', slug, name);
-      return slug === GATED_SPACE_SLUG || name === 'Billing & Coding Simulator';
+    // Find the gated space
+    const gatedSpace = spaces.find(s => {
+      const slug = s.slug || s.space_slug || '';
+      const name = s.name || s.space_name || '';
+      return slug === 'billing-coding-simulator' || name === 'Billing & Coding Simulator';
     });
 
-    console.log('hasAccess:', hasAccess, 'total spaces:', spaces.length);
+    console.log('Gated space found:', JSON.stringify(gatedSpace));
+
+    if (!gatedSpace) {
+      console.error('Could not find Billing & Coding Simulator space');
+      return { statusCode: 200, headers, body: JSON.stringify({ verified: false, message: 'Unable to verify access. Please try again.' }) };
+    }
+
+    const spaceId = gatedSpace.id || gatedSpace.space_id;
+    console.log('Space ID:', spaceId);
+
+    // Step 3: Check if this member is in the gated space
+    const spaceMemberRes = await fetch(
+      `https://app.circle.so/api/v1/space_members?space_id=${spaceId}&community_member_id=${memberId}`,
+      { headers: { 'Authorization': `Bearer ${CIRCLE_API_TOKEN}`, 'Content-Type': 'application/json' } }
+    );
+
+    console.log('Space member check status:', spaceMemberRes.status);
+    const spaceMemberData = await spaceMemberRes.json();
+    console.log('Space member data:', JSON.stringify(spaceMemberData).substring(0, 400));
+
+    const members = Array.isArray(spaceMemberData) ? spaceMemberData : (spaceMemberData.space_members || spaceMemberData.records || spaceMemberData.data || []);
+    const hasAccess = members.length > 0;
+
+    console.log('hasAccess:', hasAccess);
 
     if (!hasAccess) {
       return {
