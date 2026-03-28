@@ -26,36 +26,33 @@ exports.handler = async function(event, context) {
   if (!CIRCLE_API_TOKEN) return { statusCode: 500, headers, body: JSON.stringify({ message: 'Server configuration error' }) };
 
   try {
-    // Step 1: Look up member by email — must include community_id
-    const memberUrl = `https://app.circle.so/api/v1/community_members?email=${encodeURIComponent(email)}&community_id=${COMMUNITY_ID}`;
+    // Step 1: Look up member using the search endpoint with email filter
+    // Circle v1 API uses 'search' param not 'email' for filtering
+    const memberUrl = `https://app.circle.so/api/v1/community_members?search=${encodeURIComponent(email)}&community_id=${COMMUNITY_ID}&per_page=1`;
     console.log('Member URL:', memberUrl);
-    
+
     const memberRes = await fetch(memberUrl, {
       headers: { 'Authorization': `Bearer ${CIRCLE_API_TOKEN}`, 'Content-Type': 'application/json' }
     });
 
+    const memberText = await memberRes.text();
+    console.log('Member response:', memberText.substring(0, 400));
+
     if (!memberRes.ok) {
-      const t = await memberRes.text();
-      console.log('Member lookup failed:', memberRes.status, t.substring(0, 100));
       return { statusCode: 200, headers, body: JSON.stringify({ verified: false, message: 'Unable to verify membership. Please try again.' }) };
     }
 
-    const memberData = await memberRes.json();
-    console.log('Raw member response type:', Array.isArray(memberData) ? 'array len=' + memberData.length : 'object');
-    console.log('Member response:', JSON.stringify(memberData).substring(0, 300));
+    let memberData;
+    try { memberData = JSON.parse(memberText); } catch(e) { memberData = []; }
 
-    const member = Array.isArray(memberData) ? memberData[0] : memberData;
+    const members = Array.isArray(memberData) ? memberData : (memberData.records || memberData.community_members || []);
+    
+    // Find the member whose email matches exactly
+    const member = members.find(m => (m.email || '').toLowerCase() === email);
+    console.log('Matched member:', member ? `id=${member.id} email=${member.email}` : 'none found');
+    console.log('All returned emails:', members.map(m => m.email).join(', '));
 
-    if (!member || !member.id) {
-      return { statusCode: 200, headers, body: JSON.stringify({ verified: false, redirect: true, message: 'No Think Beyond Practice account found for this email.' }) };
-    }
-
-    // Verify the returned member actually matches the email we searched for
-    const returnedEmail = (member.email || '').toLowerCase();
-    console.log('Searched email:', email, 'Returned email:', returnedEmail, 'Member ID:', member.id);
-
-    if (returnedEmail && returnedEmail !== email) {
-      console.log('Email mismatch — member not found');
+    if (!member) {
       return { statusCode: 200, headers, body: JSON.stringify({ verified: false, redirect: true, message: 'No Think Beyond Practice account found for this email.' }) };
     }
 
@@ -64,25 +61,23 @@ exports.handler = async function(event, context) {
     }
 
     const memberId = member.id;
+    console.log('Member found:', memberId, email);
 
     // Step 2: Check if this member is in the gated space
     const spaceUrl = `https://app.circle.so/api/v1/space_members?space_id=${GATED_SPACE_ID}&community_member_id=${memberId}&community_id=${COMMUNITY_ID}`;
-    console.log('Space URL:', spaceUrl);
-
     const spaceRes = await fetch(spaceUrl, {
       headers: { 'Authorization': `Bearer ${CIRCLE_API_TOKEN}`, 'Content-Type': 'application/json' }
     });
 
-    console.log('Space check status:', spaceRes.status);
     const spaceData = await spaceRes.json();
-    console.log('Space data:', JSON.stringify(spaceData).substring(0, 400));
-
     const records = spaceData.records || [];
-    const hasAccess = records.length > 0 && records.some(r => 
+    console.log('Space records:', records.length, 'count:', spaceData.count);
+
+    const hasAccess = records.some(r =>
       Number(r.community_member_id) === Number(memberId) && r.status === 'active'
     );
 
-    console.log('hasAccess:', hasAccess, 'memberId:', memberId, 'records:', records.length);
+    console.log('hasAccess:', hasAccess);
 
     if (!hasAccess) {
       return {
