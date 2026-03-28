@@ -26,73 +26,32 @@ exports.handler = async function(event, context) {
   if (!CIRCLE_API_TOKEN) return { statusCode: 500, headers, body: JSON.stringify({ message: 'Server configuration error' }) };
 
   try {
-    // Step 1: Look up member using the search endpoint with email filter
-    // Circle v1 API uses 'search' param not 'email' for filtering
-    const memberUrl = `https://app.circle.so/api/v1/community_members?search=${encodeURIComponent(email)}&community_id=${COMMUNITY_ID}&per_page=1`;
-    console.log('Member URL:', memberUrl);
+    // Use Circle Admin API v2 which supports proper email filtering
+    const memberUrl = `https://app.circle.so/api/headless/admin/v2/community_members?email=${encodeURIComponent(email)}&community_id=${COMMUNITY_ID}`;
+    console.log('Trying v2 URL:', memberUrl);
 
     const memberRes = await fetch(memberUrl, {
       headers: { 'Authorization': `Bearer ${CIRCLE_API_TOKEN}`, 'Content-Type': 'application/json' }
     });
 
+    console.log('v2 status:', memberRes.status);
     const memberText = await memberRes.text();
-    console.log('Member response:', memberText.substring(0, 400));
+    console.log('v2 response:', memberText.substring(0, 400));
 
-    if (!memberRes.ok) {
-      return { statusCode: 200, headers, body: JSON.stringify({ verified: false, message: 'Unable to verify membership. Please try again.' }) };
-    }
-
-    let memberData;
-    try { memberData = JSON.parse(memberText); } catch(e) { memberData = []; }
-
-    const members = Array.isArray(memberData) ? memberData : (memberData.records || memberData.community_members || []);
-    
-    // Find the member whose email matches exactly
-    const member = members.find(m => (m.email || '').toLowerCase() === email);
-    console.log('Matched member:', member ? `id=${member.id} email=${member.email}` : 'none found');
-    console.log('All returned emails:', members.map(m => m.email).join(', '));
-
-    if (!member) {
-      return { statusCode: 200, headers, body: JSON.stringify({ verified: false, redirect: true, message: 'No Think Beyond Practice account found for this email.' }) };
-    }
-
-    if (member.active === false) {
-      return { statusCode: 200, headers, body: JSON.stringify({ verified: false, redirect: true, message: 'Your Think Beyond Practice membership is not active.' }) };
-    }
-
-    const memberId = member.id;
-    console.log('Member found:', memberId, email);
-
-    // Step 2: Check if this member is in the gated space
-    const spaceUrl = `https://app.circle.so/api/v1/space_members?space_id=${GATED_SPACE_ID}&community_member_id=${memberId}&community_id=${COMMUNITY_ID}`;
-    const spaceRes = await fetch(spaceUrl, {
+    // Also try v1 with different param to see what works
+    const v1Url = `https://app.circle.so/api/v1/community_members?email_cont=${encodeURIComponent(email)}&community_id=${COMMUNITY_ID}`;
+    const v1Res = await fetch(v1Url, {
       headers: { 'Authorization': `Bearer ${CIRCLE_API_TOKEN}`, 'Content-Type': 'application/json' }
     });
+    console.log('v1 email_cont status:', v1Res.status);
+    const v1Text = await v1Res.text();
+    console.log('v1 email_cont response:', v1Text.substring(0, 300));
 
-    const spaceData = await spaceRes.json();
-    const records = spaceData.records || [];
-    console.log('Space records:', records.length, 'count:', spaceData.count);
-
-    const hasAccess = records.some(r =>
-      Number(r.community_member_id) === Number(memberId) && r.status === 'active'
-    );
-
-    console.log('hasAccess:', hasAccess);
-
-    if (!hasAccess) {
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({
-          verified: false,
-          message: 'Practice Lab access requires the $89 or $119 Think Beyond Practice plan. Your current plan does not include Practice Lab access.',
-          upgradeUrl: REDIRECT_URL
-        })
-      };
-    }
-
-    const token = Buffer.from(email + ':' + Date.now()).toString('base64');
-    return { statusCode: 200, headers, body: JSON.stringify({ verified: true, token, message: 'Access verified' }) };
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({ verified: false, message: 'DEBUG — check logs' })
+    };
 
   } catch(err) {
     console.error('circle-auth error:', err.message);
