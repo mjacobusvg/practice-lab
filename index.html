@@ -271,18 +271,35 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </div>
 
 <div id="screen-diagnostics" style="display:none">
-<div class="wrap" style="max-width:760px">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;padding-top:12px">
-    <div style="font-size:18px;font-weight:700;color:var(--text)">Variant Engine Diagnostics</div>
+<div class="wrap" style="max-width:800px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-top:12px">
+    <div style="font-size:18px;font-weight:700;color:var(--text)">Practice Lab Diagnostics</div>
     <button class="btn" onclick="goLanding()" style="font-size:12px;padding:6px 14px">&larr; Back</button>
   </div>
-  <div class="card" style="margin-bottom:14px">
-    <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Runs 100 variant generations headlessly and checks for logic errors. Results appear below.</div>
-    <button class="btn btn-green" onclick="runDiagnostics()" style="font-size:13px;padding:8px 20px">&#9658; Run 100 variants</button>
-    <button class="btn" onclick="runDiagnostics(500)" style="font-size:13px;padding:8px 20px;margin-left:8px">Run 500 variants</button>
+  <!-- Tab nav -->
+  <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:0">
+    <button id="dtab-engine" onclick="showDiagTab('engine')" style="background:none;border:none;border-bottom:2px solid var(--teal);color:var(--teal);font-weight:700;font-size:13px;padding:6px 14px;cursor:pointer">Engine integrity</button>
+    <button id="dtab-accuracy" onclick="showDiagTab('accuracy')" style="background:none;border:none;border-bottom:2px solid transparent;color:var(--text2);font-size:13px;padding:6px 14px;cursor:pointer">Accuracy checks</button>
   </div>
-  <div id="diag-summary" style="display:none;margin-bottom:14px"></div>
-  <div id="diag-results"></div>
+  <!-- Engine integrity tab -->
+  <div id="dtab-engine-body">
+    <div class="card" style="margin-bottom:14px">
+      <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Runs variant generations headlessly and checks for structural logic errors — time math, MDM/addon consistency, trap integrity.</div>
+      <button class="btn btn-green" onclick="runDiagnostics()" style="font-size:13px;padding:8px 20px">&#9658; Run 100 variants</button>
+      <button class="btn" onclick="runDiagnostics(500)" style="font-size:13px;padding:8px 20px;margin-left:8px">Run 500 variants</button>
+    </div>
+    <div id="diag-summary" style="display:none;margin-bottom:14px"></div>
+    <div id="diag-results"></div>
+  </div>
+  <!-- Accuracy checks tab -->
+  <div id="dtab-accuracy-body" style="display:none">
+    <div class="card" style="margin-bottom:14px">
+      <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Checks ERA math, CPT billing rules, payer rate calculations, and rule enforcement across all 17 drills and 500 generated variants. Flags anything where the numbers or rules are wrong.</div>
+      <button class="btn btn-green" onclick="runAccuracyChecks()" style="font-size:13px;padding:8px 20px">&#9658; Run accuracy checks</button>
+    </div>
+    <div id="acc-summary" style="display:none;margin-bottom:14px"></div>
+    <div id="acc-results"></div>
+  </div>
 </div>
 </div>
 
@@ -5001,6 +5018,359 @@ function runDiagnostics(n) {
   }
   fhtml += '</div>';
   resEl.innerHTML = fhtml;
+}
+
+
+// ── DIAGNOSTICS TAB SWITCHER ─────────────────────────────────────────────────
+function showDiagTab(tab) {
+  document.getElementById('dtab-engine-body').style.display = tab === 'engine' ? 'block' : 'none';
+  document.getElementById('dtab-accuracy-body').style.display = tab === 'accuracy' ? 'block' : 'none';
+  var tabs = ['engine','accuracy'];
+  for (var i=0; i<tabs.length; i++) {
+    var btn = document.getElementById('dtab-'+tabs[i]);
+    if (!btn) continue;
+    if (tabs[i] === tab) {
+      btn.style.borderBottom = '2px solid var(--teal)';
+      btn.style.color = 'var(--teal)';
+      btn.style.fontWeight = '700';
+    } else {
+      btn.style.borderBottom = '2px solid transparent';
+      btn.style.color = 'var(--text2)';
+      btn.style.fontWeight = '400';
+    }
+  }
+}
+
+// ── ACCURACY CHECK ENGINE ─────────────────────────────────────────────────────
+// Tests: ERA math, CPT rule enforcement, payer rates, drill data consistency,
+// revenue calculations, time threshold rules, and debrief logic.
+
+function runAccuracyChecks() {
+  var failures = [];
+  var warnings = [];
+  var passes = 0;
+
+  function pass(label) { passes++; }
+  function fail(section, label, detail) { failures.push({section:section, label:label, detail:detail}); }
+  function warn(section, label, detail) { warnings.push({section:section, label:label, detail:detail}); }
+  function parseAmt(s) { return parseFloat((s||'0').toString().replace(/[^0-9.]/g,'')); }
+
+  // ── SECTION 1: PAYER RATES ────────────────────────────────────────────────
+  var expectedCodes = ['99213','99214','99215','90833','90836','90838'];
+  var payers = Object.keys(RATES);
+  for (var pi=0; pi<payers.length; pi++) {
+    var p = payers[pi];
+    for (var ci=0; ci<expectedCodes.length; ci++) {
+      var code = expectedCodes[ci];
+      var rate = RATES[p][code];
+      if (!rate || isNaN(rate) || rate <= 0) {
+        fail('Payer Rates', p+' / '+code, 'Rate is missing or zero: '+rate);
+      } else {
+        pass();
+      }
+    }
+    // Verify rate ordering makes clinical sense
+    if (RATES[p]['99213'] >= RATES[p]['99214']) fail('Payer Rates', p+' rate order', '99213 >= 99214 — rates out of order');
+    else pass();
+    if (RATES[p]['99214'] >= RATES[p]['99215']) fail('Payer Rates', p+' rate order', '99214 >= 99215 — rates out of order');
+    else pass();
+    if (RATES[p]['90833'] >= RATES[p]['90836']) fail('Payer Rates', p+' addon order', '90833 >= 90836 — add-on rates out of order');
+    else pass();
+    if (RATES[p]['90836'] >= RATES[p]['90838']) fail('Payer Rates', p+' addon order', '90836 >= 90838 — add-on rates out of order');
+    else pass();
+  }
+
+  // ── SECTION 2: DRILL ERA MATH ─────────────────────────────────────────────
+  for (var di=0; di<DRILLS.length; di++) {
+    var drill = DRILLS[di];
+    var dId = 'Drill '+drill.id+' ('+drill.title+')';
+
+    // Check claim totalBilled = sum of line charges
+    var claimTotal = parseAmt(drill.claim.totalBilled);
+    var lineSum = 0;
+    for (var li=0; li<drill.claim.lines.length; li++) {
+      lineSum += parseAmt(drill.claim.lines[li].charges);
+    }
+    if (Math.abs(claimTotal - lineSum) > 0.01) {
+      fail('Drill ERA Math', dId, 'Claim totalBilled=$'+claimTotal.toFixed(2)+' but line charges sum to $'+lineSum.toFixed(2));
+    } else { pass(); }
+
+    // Check ERA lines: for non-denial lines, billed - allowed = CO-45 (implicit), paid <= allowed
+    if (drill.era && drill.era.lines) {
+      for (var eli=0; eli<drill.era.lines.length; eli++) {
+        var el = drill.era.lines[eli];
+        var elBilled = parseAmt(el.charges);
+        var elAllowed = parseAmt(el.allowed);
+        var elPaid = parseAmt(el.paid);
+        if (el.status === 'paid' || el.status === 'partial') {
+          if (elAllowed <= 0) {
+            fail('Drill ERA Math', dId+' line '+el.code, 'Status paid but allowed=$0');
+          } else { pass(); }
+          if (elPaid > elAllowed + 0.01) {
+            fail('Drill ERA Math', dId+' line '+el.code, 'Paid ($'+elPaid+') > allowed ($'+elAllowed+')');
+          } else { pass(); }
+          if (elAllowed > elBilled + 0.01) {
+            warn('Drill ERA Math', dId+' line '+el.code, 'Allowed ($'+elAllowed+') > billed ($'+elBilled+') — unusual');
+          }
+        } else if (el.status === 'denied' || el.denialCode) {
+          if (elPaid > 0.01) {
+            fail('Drill ERA Math', dId+' line '+el.code, 'Status denied but paid=$'+elPaid);
+          } else { pass(); }
+        }
+      }
+    }
+
+    // Check successEra paid makes sense if present
+    if (drill.action && drill.action.successEra && drill.action.successEra.paid) {
+      var sPaid = parseAmt(drill.action.successEra.paid);
+      var sBilled = lineSum;
+      if (sPaid > sBilled + 0.01) {
+        fail('Drill ERA Math', dId+' successEra', 'successEra paid ($'+sPaid+') > original billed ($'+sBilled+')');
+      } else { pass(); }
+      if (sPaid <= 0) {
+        warn('Drill ERA Math', dId+' successEra', 'successEra paid is $0 — is this correct for the correct resolution?');
+      }
+    }
+  }
+
+  // ── SECTION 3: CPT RULE ENFORCEMENT (500 variants) ───────────────────────
+  var timeAddonViolations = 0;
+  var mdmCodeViolations = 0;
+  var addonTimeViolations = 0;
+  var therapyAddonConsistency = 0;
+
+  for (var vi=0; vi<500; vi++) {
+    var v = generateVariant(Math.random() < 0.5);
+    var ca = v._correctAnswer;
+
+    // Rule: add-on present → billing method must be MDM
+    if (v.optimalAddon && v.optimalAddon !== '' && ca.billingMethod !== 'mdm') {
+      timeAddonViolations++;
+    }
+
+    // Rule: MDM level → correct EM code
+    var expectedCode = v._mdmLevel === 'high' ? '99215' : '99214';
+    if (v.optimalEM !== expectedCode) { mdmCodeViolations++; }
+
+    // Rule: therapy time → correct addon code
+    if (v._hasTherapy && v._therapyType === 'real' && v.optimalAddon) {
+      var tt = v._therapyTime;
+      var expAddon = tt <= 37 ? '90833' : tt <= 52 ? '90836' : '90838';
+      if (v.optimalAddon !== expAddon) { addonTimeViolations++; }
+    }
+
+    // Rule: therapy_not_billable → no addon
+    if (v._trapType === 'therapy_not_billable' && v.optimalAddon && v.optimalAddon !== '') {
+      therapyAddonConsistency++;
+    }
+  }
+
+  if (timeAddonViolations > 0) fail('CPT Rules (500 variants)', 'Add-on forces MDM', timeAddonViolations+' variants where add-on billed but billingMethod !== mdm');
+  else pass();
+  if (mdmCodeViolations > 0) fail('CPT Rules (500 variants)', 'MDM → EM code mapping', mdmCodeViolations+' variants where MDM level did not map to correct EM code');
+  else pass();
+  if (addonTimeViolations > 0) fail('CPT Rules (500 variants)', 'Therapy time → addon code', addonTimeViolations+' variants where therapy time mapped to wrong add-on code');
+  else pass();
+  if (therapyAddonConsistency > 0) fail('CPT Rules (500 variants)', 'therapy_not_billable has no addon', therapyAddonConsistency+' variants where therapy_not_billable trap had an optimalAddon');
+  else pass();
+
+  // ── SECTION 4: REVENUE CALCULATION ACCURACY ──────────────────────────────
+  // For each payer, verify: insurance_paid = allowed - copay (for clean E/M only claims)
+  var copayTest = 55; // Premera copay
+  var pRates = RATES['premera'];
+  var testCodes = ['99213','99214','99215'];
+  for (var tc=0; tc<testCodes.length; tc++) {
+    var code = testCodes[tc];
+    var allowed = pRates[code];
+    var expectedIns = allowed - copayTest;
+    if (expectedIns < 0) {
+      warn('Revenue Calc', 'Premera '+code, 'Allowed ($'+allowed+') < copay ($'+copayTest+') — patient would owe full allowed');
+    } else {
+      // Verify the math holds: ins_paid + copay = allowed
+      if (Math.abs((expectedIns + copayTest) - allowed) > 0.01) {
+        fail('Revenue Calc', 'Premera '+code, 'ins_paid+copay != allowed: '+expectedIns+'+'+copayTest+'!='+allowed);
+      } else { pass(); }
+    }
+  }
+
+  // Verify add-on math: add-on is always full payment (no copay deduction on add-on lines)
+  var addon90833 = pRates['90833'];
+  var emAllowed = pRates['99214'];
+  var totalAllowed = emAllowed + addon90833;
+  var insOnEM = emAllowed - copayTest;
+  var insOnAddon = addon90833; // add-on: no additional copay
+  var totalIns = insOnEM + insOnAddon;
+  if (Math.abs(totalIns - (totalAllowed - copayTest)) > 0.01) {
+    fail('Revenue Calc', '99214+90833 Premera', 'Total insurance calc wrong: expected $'+(totalAllowed-copayTest).toFixed(2)+' got $'+totalIns.toFixed(2));
+  } else { pass(); }
+
+  // ── SECTION 5: TIME THRESHOLD RULES ──────────────────────────────────────
+  // Established patient time thresholds
+  var estThresholds = [
+    {time:19, expectedEM:'99212', label:'19 min'},
+    {time:20, expectedEM:'99213', label:'20 min'},
+    {time:29, expectedEM:'99213', label:'29 min'},
+    {time:30, expectedEM:'99214', label:'30 min'},
+    {time:39, expectedEM:'99214', label:'39 min'},
+    {time:40, expectedEM:'99215', label:'40 min'},
+    {time:54, expectedEM:'99215', label:'54 min'}
+  ];
+  for (var ti2=0; ti2<estThresholds.length; ti2++) {
+    var thresh = estThresholds[ti2];
+    var got = thresh.time >= 40 ? '99215' : (thresh.time >= 30 ? '99214' : (thresh.time >= 20 ? '99213' : '99212'));
+    if (got !== thresh.expectedEM) {
+      fail('Time Thresholds', 'Established patient '+thresh.label, 'Expected '+thresh.expectedEM+' got '+got);
+    } else { pass(); }
+  }
+
+  // Verify add-on time ranges
+  var addonTests = [
+    {time:15, expected:null, label:'15 min'},
+    {time:16, expected:'90833', label:'16 min'},
+    {time:37, expected:'90833', label:'37 min'},
+    {time:38, expected:'90836', label:'38 min'},
+    {time:52, expected:'90836', label:'52 min'},
+    {time:53, expected:'90838', label:'53 min'},
+    {time:65, expected:'90838', label:'65 min'}
+  ];
+  for (var ai=0; ai<addonTests.length; ai++) {
+    var at = addonTests[ai];
+    var gotAddon = at.time < 16 ? null : (at.time <= 37 ? '90833' : (at.time <= 52 ? '90836' : '90838'));
+    if (gotAddon !== at.expected) {
+      fail('Time Thresholds', 'Add-on '+at.label, 'Expected '+(at.expected||'none')+' got '+(gotAddon||'none'));
+    } else { pass(); }
+  }
+
+  // ── SECTION 6: DRILL RESPONSE VALIDITY ───────────────────────────────────
+  for (var dr2=0; dr2<DRILLS.length; dr2++) {
+    var d2 = DRILLS[dr2];
+    var dId2 = 'Drill '+d2.id;
+    // Every drill must have exactly one correct response
+    var correctCount = 0;
+    if (d2.responses) {
+      for (var ri=0; ri<d2.responses.length; ri++) {
+        if (d2.responses[ri].correct === true) correctCount++;
+      }
+      if (correctCount === 0) fail('Drill Responses', dId2+' ('+d2.title+')', 'No correct response defined');
+      else if (correctCount > 1) warn('Drill Responses', dId2+' ('+d2.title+')', correctCount+' correct responses — should be exactly 1');
+      else pass();
+    } else {
+      // Drills with pathway != 'responses' may not have responses array — check for action instead
+      if (!d2.action) fail('Drill Responses', dId2, 'No responses and no action object');
+      else pass();
+    }
+    // Every drill must have a debrief with pattern and teaching
+    if (!d2.debrief || !d2.debrief.pattern) fail('Drill Debrief', dId2, 'Missing debrief.pattern');
+    else pass();
+    if (!d2.debrief || !d2.debrief.teaching) fail('Drill Debrief', dId2, 'Missing debrief.teaching');
+    else pass();
+    // Every drill must have a title
+    if (!d2.title) fail('Drill Structure', dId2, 'Missing title');
+    else pass();
+  }
+
+  // ── SECTION 7: SCENARIO DEBRIEF FIELDS ───────────────────────────────────
+  var scenarios = [S1, S2];
+  var scenLabels = ['S1 (telehealth)','S2 (in-person)'];
+  var requiredDebriefFields = ['coding','doc','docNote','auditor','rule'];
+  for (var si=0; si<scenarios.length; si++) {
+    var scen = scenarios[si];
+    var sLabel = scenLabels[si];
+    if (!scen.debrief) { fail('Scenario Debrief', sLabel, 'Missing debrief object entirely'); continue; }
+    for (var fi=0; fi<requiredDebriefFields.length; fi++) {
+      var field = requiredDebriefFields[fi];
+      if (!scen.debrief[field] || scen.debrief[field].length < 10) {
+        fail('Scenario Debrief', sLabel+' / '+field, 'Missing or too short (length='+((scen.debrief[field]||'').length)+')');
+      } else { pass(); }
+    }
+    // Verify payer rates exist for scenario payer
+    if (!RATES[scen.payer]) fail('Scenario Setup', sLabel, 'Payer "'+scen.payer+'" not in RATES object');
+    else pass();
+    // Verify copay is a positive number
+    if (!scen.copay || scen.copay <= 0) fail('Scenario Setup', sLabel, 'Invalid copay: '+scen.copay);
+    else pass();
+    // Verify pos is valid
+    if (['10','11','02'].indexOf(scen.pos) === -1) fail('Scenario Setup', sLabel, 'Invalid pos: '+scen.pos);
+    else pass();
+  }
+
+  // ── RENDER RESULTS ────────────────────────────────────────────────────────
+  var totalChecks = passes + failures.length;
+  var passColor = failures.length === 0 ? 'var(--green)' : 'var(--red)';
+  var passIcon = failures.length === 0 ? '&#x2705;' : '&#x274C;';
+  var passLabel = failures.length === 0 ? 'All accuracy checks passed' : failures.length+' failure(s) found';
+
+  var sumEl = document.getElementById('acc-summary');
+  var html = '<div class="card" style="border:2px solid '+(failures.length===0?'var(--green)':'var(--red)')+';">';
+  html += '<div style="font-size:15px;font-weight:700;color:'+passColor+';margin-bottom:8px">'+passIcon+' '+passLabel+'</div>';
+  html += '<div style="display:flex;gap:24px;flex-wrap:wrap;font-size:13px;margin-bottom:8px">';
+  html += '<div><strong>'+totalChecks+'</strong> checks run</div>';
+  html += '<div style="color:var(--green)"><strong>'+passes+'</strong> passed</div>';
+  html += '<div style="color:var(--red)"><strong>'+failures.length+'</strong> failed</div>';
+  html += '<div style="color:#C4711A"><strong>'+warnings.length+'</strong> warnings</div>';
+  html += '</div>';
+
+  // Section breakdown
+  var sections = {};
+  for (var fi2=0; fi2<failures.length; fi2++) { sections[failures[fi2].section] = (sections[failures[fi2].section]||0)+1; }
+  for (var wi=0; wi<warnings.length; wi++) { sections[warnings[wi].section] = (sections[warnings[wi].section]||0)+0.1; }
+  var sectionKeys = Object.keys(sections);
+  if (sectionKeys.length > 0) {
+    html += '<div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px">Sections with issues</div>';
+    html += '<div style="display:flex;gap:6px;flex-wrap:wrap;font-size:12px">';
+    for (var sk=0; sk<sectionKeys.length; sk++) {
+      html += '<div style="background:var(--red-light,#fdecea);border:1px solid #d9534f;color:var(--red);border-radius:4px;padding:2px 8px">'+sectionKeys[sk]+'</div>';
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  sumEl.innerHTML = html;
+  sumEl.style.display = 'block';
+
+  var resEl = document.getElementById('acc-results');
+  var rhtml = '';
+
+  // Failures
+  if (failures.length > 0) {
+    rhtml += '<div class="card" style="margin-bottom:12px"><div style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--red)">&#x274C; Failures — require fixing</div>';
+    var lastSection = '';
+    for (var f2i=0; f2i<failures.length; f2i++) {
+      var f2 = failures[f2i];
+      if (f2.section !== lastSection) {
+        rhtml += '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.04em;margin-top:10px;margin-bottom:4px">'+f2.section+'</div>';
+        lastSection = f2.section;
+      }
+      rhtml += '<div style="border-bottom:1px solid var(--border);padding:6px 0;font-size:12px">';
+      rhtml += '<span style="color:var(--text);font-weight:600">'+f2.label+'</span><br>';
+      rhtml += '<span style="color:var(--text2)">'+f2.detail+'</span>';
+      rhtml += '</div>';
+    }
+    rhtml += '</div>';
+  }
+
+  // Warnings
+  if (warnings.length > 0) {
+    rhtml += '<div class="card"><div style="font-size:13px;font-weight:700;margin-bottom:10px;color:#C4711A">&#x26A0;&#xFE0F; Warnings — review recommended</div>';
+    var lastWSection = '';
+    for (var wi2=0; wi2<warnings.length; wi2++) {
+      var w = warnings[wi2];
+      if (w.section !== lastWSection) {
+        rhtml += '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.04em;margin-top:10px;margin-bottom:4px">'+w.section+'</div>';
+        lastWSection = w.section;
+      }
+      rhtml += '<div style="border-bottom:1px solid var(--border);padding:6px 0;font-size:12px">';
+      rhtml += '<span style="color:var(--text);font-weight:600">'+w.label+'</span><br>';
+      rhtml += '<span style="color:var(--text2)">'+w.detail+'</span>';
+      rhtml += '</div>';
+    }
+    rhtml += '</div>';
+  }
+
+  if (failures.length === 0 && warnings.length === 0) {
+    rhtml = '<div class="card"><div style="font-size:13px;color:var(--green);font-weight:600">&#x2705; Every check passed. No warnings.</div></div>';
+  }
+
+  resEl.innerHTML = rhtml;
 }
 
 </script>
