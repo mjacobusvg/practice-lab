@@ -4644,6 +4644,7 @@ var PSYCH_STAGE3 = [
     ],
     timeOptions:[16,20,25,38,45],
     correctChoices:{modality:0,intervention:0,focus:0,response:0,time:1},
+    acceptableChoices:{intervention:[0]}, // index 0 is both optimal and only defensible CBT here
     elementFeedback:{
       modality:{correct:'Correct. The provider worked with the patient to examine her predictions against actual evidence and generate alternative interpretations \u2014 that is cognitive restructuring, a CBT intervention.',wrong:'Not quite. The core mechanism here is examining the evidence for and against a distorted thought and generating alternatives. That is cognitive restructuring, which maps to CBT. Reflective listening, TIPP, and scaling questions belong to other modalities.'},
       intervention:{correct:'Correct. Cognitive restructuring involves examining the evidence for distorted thinking and generating alternative interpretations. That is exactly what this session describes.',wrong:'Not quite. The session describes examining predictions against actual past experience and building alternative thoughts. That is cognitive restructuring \u2014 not validation, not skills training, not motivational work.'},
@@ -4681,6 +4682,7 @@ var PSYCH_STAGE3 = [
     ],
     timeOptions:[16,20,22,38,45],
     correctChoices:{modality:0,intervention:0,focus:0,response:0,time:2},
+    acceptableChoices:{intervention:[0]}, // decisional balance is the only defensible MI option here
     elementFeedback:{
       modality:{correct:'Correct. The provider explored both sides of adherence with the patient rather than advising him. The patient arrived at his own reasons for change. That is the mechanism of MI, not psychoeducation or CBT.',wrong:'Not quite. The provider deliberately avoided advising and instead explored ambivalence, letting the patient generate his own reasons for change. That is motivational interviewing. Psychoeducation would mean providing information. CBT would mean challenging distorted thinking.'},
       intervention:{correct:'Correct. Exploring the pros and cons of a behavior to help the patient arrive at their own reasons for change is decisional balance \u2014 a core MI technique.',wrong:'Not quite. The provider explored "both sides" of adherence with the patient. That structure \u2014 examining the perceived benefits and costs of a behavior \u2014 is a decisional balance exercise. It is not cognitive restructuring or psychoeducation.'},
@@ -4718,6 +4720,7 @@ var PSYCH_STAGE3 = [
     ],
     timeOptions:[16,18,20,38,45],
     correctChoices:{modality:0,intervention:0,focus:0,response:0,time:2},
+    acceptableChoices:{intervention:[0]}, // affect labeling + validation is the only defensible supportive option here
     elementFeedback:{
       modality:{correct:'Correct. The primary mechanism was naming and validating emotions to reduce acute distress and restore stability. That is supportive therapy. CBT would involve challenging distorted thoughts. DBT would use a named skill like TIPP.',wrong:'Not quite. When the therapeutic work centers on naming emotions, validating the experience, and stabilizing the patient \u2014 without a structured behavioral or cognitive technique \u2014 that is supportive therapy. The provider did not challenge thoughts or teach skills. She normalized and contained.'},
       intervention:{correct:'Correct. Affect labeling (asking the patient to name emotions with specificity) and validation (explicitly normalizing the response as understandable) are the two documented techniques. Both have therapeutic mechanisms that go beyond good listening.',wrong:'Not quite. The provider asked the patient to name emotions precisely (affect labeling) and explicitly normalized them (validation). These are documentable therapeutic techniques, not just supportive presence. Cognitive restructuring, TIPP, and exposure work are different frameworks.'},
@@ -5020,20 +5023,40 @@ function submitS3Answer(q) {
 
   required.forEach(function(key){
     var selected=psychS3Selections[key];
-    var isCorrect=(selected===correct[key]);
+    // Check for acceptable range first (tiered grading for intervention)
+    var acceptable = q.acceptableChoices && q.acceptableChoices[key] ? q.acceptableChoices[key] : null;
+    var isOptimal = (selected===correct[key]);
+    var isAcceptable = acceptable && acceptable.indexOf(selected) !== -1;
+    var isCorrect = isOptimal || isAcceptable;
+
     if(isCorrect) score++;
-    else errors.push({key:key,feedback:q.elementFeedback&&q.elementFeedback[key]?q.elementFeedback[key].wrong:'Review the '+key+' choice.'});
+    else errors.push({key:key, feedback:q.elementFeedback&&q.elementFeedback[key]?q.elementFeedback[key].wrong:'Review the '+key+' choice.'});
 
     // Color the selected button
     var group=document.getElementById('s3-opts-'+key);
     if(group) group.querySelectorAll('.resp-btn').forEach(function(b,i){
-      if(i===selected) b.className='resp-btn '+(isCorrect?'correct':'incorrect');
+      if(i===selected && isOptimal) b.className='resp-btn correct';
+      else if(i===selected && isAcceptable) b.className='resp-btn correct'; // acceptable also green
+      else if(i===selected && !isCorrect) b.className='resp-btn incorrect';
       else if(i===correct[key]) b.className='resp-btn correct';
     });
+
+    // Store whether this key was acceptable-but-not-optimal for feedback
+    if(isAcceptable && !isOptimal) {
+      if(!window._s3SuboptimalKeys) window._s3SuboptimalKeys = [];
+      window._s3SuboptimalKeys.push(key);
+    }
   });
 
   var isFullCorrect=(score===required.length);
   if(isFullCorrect) psychScore++;
+
+  // Collect suboptimal keys (acceptable but not optimal)
+  var suboptimalNote = '';
+  if(window._s3SuboptimalKeys && window._s3SuboptimalKeys.length) {
+    suboptimalNote = ' More specific phrasing could strengthen audit clarity.';
+    window._s3SuboptimalKeys = [];
+  }
 
   var fb=document.getElementById('psych-feedback');
   var fv=document.getElementById('psych-feedback-verdict');
@@ -5041,13 +5064,46 @@ function submitS3Answer(q) {
   var fm=document.getElementById('psych-feedback-missing');
   if(fb) fb.style.display='block';
   if(fv){fv.textContent=isFullCorrect?'All five elements correct':'Not quite — '+score+'/5 correct';fv.style.color=isFullCorrect?'var(--green)':'var(--red)';}
-  if(ft) ft.textContent=isFullCorrect?'This note section is audit-defensible. All five required elements are present and correctly matched to the clinical scenario.':'Review the highlighted selections. A defensible note requires all five elements to match the clinical scenario precisely.';
+
+  // Post-correct confirmation: explain why this answer was right
+  var confirmMap = {
+    'cbt_panic':     'This documents cognitive restructuring \u2014 examining distorted predictions against actual evidence and building alternative interpretations. That is the CBT mechanism. An auditor can see the technique, the target, and what the patient produced.',
+    'cbt_rumination':'This documents CBT cognitive restructuring targeting rumination. Named modality, named technique, specific therapeutic target, documented patient engagement. That is what audit-defensible documentation looks like.',
+    'cbt_social':    'This documents behavioral experiment work within CBT. Named modality, named technique, graduated exposure planning, patient committed to a specific next step. All five elements present and specific.',
+    'mi_adherence':  'This documents the MI mechanism: the patient generated his own reasons for change rather than being advised. Decisional balance surfaces ambivalence in a documentable way. Named modality, named technique, self-directed patient outcome.',
+    'mi_substance':  'This documents MI eliciting change talk. The patient generated insight rather than receiving advice. Named modality, named technique, patient-directed outcome. Audit-defensible.',
+    'mi_discrepancy':'This documents MI reflecting discrepancy \u2014 the patient arrived at their own recognition of the mismatch. Named modality, named technique, patient-generated commitment.',
+    'sup_grief':     'This documents affect labeling and validation \u2014 specific, named supportive techniques. Not just good listening. The patient named emotions, showed reduced distress, and identified a coping action. All five elements present.',
+    'sup_conflict':  'This documents validation within supportive therapy \u2014 a specific named technique. The patient demonstrated emotional processing and developed a plan. Audit-defensible.',
+    'sup_distress':  'This documents affect labeling and validation to restore stability. Named modality, named technique, patient showed improved affect regulation and identified a coping action. That is what supportive therapy documentation should look like.',
+    's3_1':          'This documents cognitive restructuring \u2014 examining distorted predictions against evidence and generating alternatives. Named modality, named technique, specific target, patient produced something. All five elements present and defensible.',
+    's3_2':          'This documents the MI decisional balance mechanism: the patient arrived at his own reasons for change. Named modality, named technique, patient-generated insight and commitment. Audit-defensible.',
+    's3_3':          'This documents affect labeling and validation \u2014 named supportive techniques with documented patient response. The patient named emotions, showed stabilization, and identified a coping action. All five elements present.'
+  };
+  var q2 = getStageData()[psychCurrentQ];
+  var scenId = q2 ? q2.id : '';
+  var confirmText = confirmMap[scenId] || 'All five required elements present and correctly matched to the clinical scenario. This documentation would hold up under review.';
+  var baseText = isFullCorrect
+    ? confirmText + (suboptimalNote ? ' ' + suboptimalNote : '')
+    : 'Review the highlighted selections. A defensible note requires all five elements to match the clinical scenario precisely.';
+  if(ft) ft.textContent=baseText;
   if(fm&&errors.length){
     fm.innerHTML=errors.map(function(e){return '<strong>'+e.key.charAt(0).toUpperCase()+e.key.slice(1)+':</strong> '+e.feedback;}).join('<br>');
     fm.style.display='block';
   } else if(fm) fm.style.display='none';
 
   document.getElementById('psych-score-display').textContent='Score: '+psychScore+'/'+(psychCurrentQ+1);
+
+  // Show billing gate
+  setTimeout(function() {
+    var gate = document.getElementById('psych-s3-bill-gate');
+    var btns = document.getElementById('psych-s3-bill-btns');
+    if(gate) { gate.style.display='block'; gate._scoreTier=score>=5?'strong':score>=3?'borderline':'fail'; }
+    if(btns) btns.style.display='flex';
+    var bf = document.getElementById('psych-s3-bill-feedback');
+    if(bf) bf.style.display='none';
+  }, 700);
+
   showPsychNav();
 }
 
@@ -6607,6 +6663,7 @@ function teachInitS7() {
   var lines = [
     { label: 'Modality', desc: 'Names the therapeutic frame. CBT, MI, DBT \u2014 not \u201csupportive therapy.\u201d' },
     { label: 'Intervention', desc: 'What you actually did. The specific technique, not the category.' },
+    { label: 'Focus', desc: 'The specific clinical target you worked on. Not a general topic \u2014 a defined problem.' },
     { label: 'Patient response', desc: 'What the patient did. Not \u201cengaged\u201d \u2014 what they demonstrated.' },
     { label: 'Time', desc: 'Psychotherapy minutes only. Separate from E/M time.' }
   ];
