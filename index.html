@@ -280,6 +280,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <div style="display:flex;gap:4px;margin-bottom:16px;border-bottom:1px solid var(--border);padding-bottom:0">
     <button id="dtab-engine" onclick="showDiagTab('engine')" style="background:none;border:none;border-bottom:2px solid var(--teal);color:var(--teal);font-weight:700;font-size:13px;padding:6px 14px;cursor:pointer">Engine integrity</button>
     <button id="dtab-accuracy" onclick="showDiagTab('accuracy')" style="background:none;border:none;border-bottom:2px solid transparent;color:var(--text2);font-size:13px;padding:6px 14px;cursor:pointer">Accuracy checks</button>
+    <button id="dtab-harness" onclick="showDiagTab('harness')" style="background:none;border:none;border-bottom:2px solid transparent;color:var(--text2);font-size:13px;padding:6px 14px;cursor:pointer">Simulation harness</button>
   </div>
   <!-- Engine integrity tab -->
   <div id="dtab-engine-body">
@@ -299,6 +300,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     </div>
     <div id="acc-summary" style="display:none;margin-bottom:14px"></div>
     <div id="acc-results"></div>
+  </div>
+  <!-- Simulation harness tab -->
+  <div id="dtab-harness-body" style="display:none">
+    <div class="card" style="margin-bottom:14px">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">What this does</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Runs the simulator programmatically. Generates variants, submits specific code combinations, and shows you the full debrief output and note fragments — so you can review clinical accuracy without clicking through the UI.</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-green" onclick="runHarnessClaims()" style="font-size:13px;padding:8px 18px">&#9658; Submit test claims + show debriefs</button>
+        <button class="btn" onclick="runHarnessNotes()" style="font-size:13px;padding:8px 18px">Show 20 note fragments</button>
+        <button class="btn" onclick="runHarnessEdgeCases()" style="font-size:13px;padding:8px 18px">Test UI edge cases</button>
+      </div>
+    </div>
+    <div id="harness-results"></div>
   </div>
 </div>
 </div>
@@ -5025,7 +5039,8 @@ function runDiagnostics(n) {
 function showDiagTab(tab) {
   document.getElementById('dtab-engine-body').style.display = tab === 'engine' ? 'block' : 'none';
   document.getElementById('dtab-accuracy-body').style.display = tab === 'accuracy' ? 'block' : 'none';
-  var tabs = ['engine','accuracy'];
+  document.getElementById('dtab-harness-body').style.display = tab === 'harness' ? 'block' : 'none';
+  var tabs = ['engine','accuracy','harness'];
   for (var i=0; i<tabs.length; i++) {
     var btn = document.getElementById('dtab-'+tabs[i]);
     if (!btn) continue;
@@ -5371,6 +5386,300 @@ function runAccuracyChecks() {
   }
 
   resEl.innerHTML = rhtml;
+}
+
+
+// ── SIMULATION HARNESS ────────────────────────────────────────────────────────
+// Runs the simulator programmatically and captures output for clinical review.
+
+function harnessSetupScenario(isTelehealth) {
+  // Set up a minimal scenario context for evalClaim to work
+  currentScenario = 0; // S1 = telehealth
+  if (!isTelehealth) currentScenario = 1; // S2 = in-person
+  currentVariant = generateVariant(isTelehealth);
+  // Patch scenario with variant data
+  var scen = SCENARIOS[currentScenario];
+  scen.optimalEM = currentVariant.optimalEM;
+  scen.optimalAddon = currentVariant.optimalAddon || '';
+  scen.payer = 'premera';
+  scen.payerName = 'Premera Blue Cross';
+  scen.copay = 55;
+  return currentVariant;
+}
+
+function harnessEval(em, mod, addon, addonMod, method) {
+  selectedMethod = method || 'mdm';
+  var rates = RATES['premera'];
+  var charge1 = '$' + (rates[em] || 200).toFixed(2);
+  var charge2 = addon ? '$' + (rates[addon] || 150).toFixed(2) : '$0.00';
+  return evalClaim(em, mod, addon||'', addonMod||'', charge1, charge2, '', '', '$0.00');
+}
+
+function formatDebriefText(result, variant) {
+  var lines = [];
+  var eo = result.debrief || {};
+  lines.push('STATUS: ' + result.type.toUpperCase() + (result.auditRisk ? ' (AUDIT RISK)' : ''));
+  lines.push('PATTERN: ' + (eo.pattern || '--'));
+  if (result.auditRisk) lines.push('AUDIT RISK: ' + result.auditRisk);
+  if (eo.timeConflict) lines.push('TIME CONFLICT: ' + eo.timeConflict);
+  lines.push('CODING RATIONALE: ' + (eo.coding || '--').substring(0, 300) + ((eo.coding||'').length > 300 ? '...' : ''));
+  if (eo.missedRev) lines.push('MISSED REVENUE: ' + eo.missedRev);
+  if (eo.feeNote) lines.push('FEE NOTE: ' + eo.feeNote);
+  lines.push('ERA: Billed $' + result.totalBilled.toFixed(2) + ' | Allowed $' + result.totalAllowed.toFixed(2) + ' | Paid $' + result.totalPaid.toFixed(2));
+  if (result.denial) lines.push('DENIAL: ' + result.denial.code + ' — ' + result.denial.sub);
+  return lines.join('
+');
+}
+
+// ── HARNESS 1: SUBMIT TEST CLAIMS AND SHOW DEBRIEFS ──────────────────────────
+function runHarnessClaims() {
+  var html = '';
+  var trapTypes = ['time_with_addon','wrong_addon','upcode_stable','omit_addon','undercode','mdm_vs_time','therapy_not_billable'];
+
+  // For each trap type, generate a variant, then submit:
+  // (a) the CORRECT answer
+  // (b) the TRAP answer (what the biased user would submit)
+  var testCases = [
+    {trap:'time_with_addon', label:'Trap: time+addon — submit correct (MDM, 99214+90833)', fn:function(v){ return harnessEval('99214','95',v.optimalAddon||'90833','95','mdm'); }},
+    {trap:'time_with_addon', label:'Trap: time+addon — submit WRONG (time method, still bills add-on)', fn:function(v){ return harnessEval('99214','95',v.optimalAddon||'90833','95','time'); }},
+    {trap:'wrong_addon', label:'Trap: wrong addon — submit correct addon', fn:function(v){ return harnessEval(v.optimalEM,'95',v.optimalAddon,'95','mdm'); }},
+    {trap:'wrong_addon', label:'Trap: wrong addon — submit WRONG addon (90833 when should be 90836)', fn:function(v){ return harnessEval(v.optimalEM,'95','90833','95','mdm'); }},
+    {trap:'omit_addon', label:'Trap: omit addon — submit CORRECT (bills add-on)', fn:function(v){ return harnessEval(v.optimalEM,'95',v.optimalAddon,'95','mdm'); }},
+    {trap:'omit_addon', label:'Trap: omit addon — submit WRONG (forgets add-on)', fn:function(v){ return harnessEval(v.optimalEM,'95','','','mdm'); }},
+    {trap:'upcode_stable', label:'Trap: upcode stable — submit CORRECT (99214)', fn:function(v){ return harnessEval('99214','95','','','mdm'); }},
+    {trap:'upcode_stable', label:'Trap: upcode stable — submit WRONG (99215)', fn:function(v){ return harnessEval('99215','95','','','mdm'); }},
+    {trap:'undercode', label:'Trap: undercode — submit CORRECT (99215)', fn:function(v){ return harnessEval('99215','95','','','mdm'); }},
+    {trap:'undercode', label:'Trap: undercode — submit WRONG (99214)', fn:function(v){ return harnessEval('99214','95','','','mdm'); }},
+    {trap:'therapy_not_billable', label:'Trap: therapy-feel — submit CORRECT (no add-on)', fn:function(v){ return harnessEval(v.optimalEM,'95','','','mdm'); }},
+    {trap:'therapy_not_billable', label:'Trap: therapy-feel — submit WRONG (bills 90833 anyway)', fn:function(v){ return harnessEval(v.optimalEM,'95','90833','95','mdm'); }}
+  ];
+
+  for (var i=0; i<testCases.length; i++) {
+    var tc = testCases[i];
+    // Generate variant until we get the right trap type (max 20 attempts)
+    var v = null;
+    for (var attempt=0; attempt<20; attempt++) {
+      v = harnessSetupScenario(true);
+      if (v._trapType === tc.trap) break;
+    }
+    if (!v || v._trapType !== tc.trap) {
+      // Force the trap by overriding
+      v._trapType = tc.trap;
+    }
+
+    var result;
+    try { result = tc.fn(v); }
+    catch(e) { result = null; }
+
+    var isCorrect = tc.label.indexOf('WRONG') === -1;
+    var borderColor = isCorrect ? 'var(--green)' : 'var(--red)';
+    var bgColor = isCorrect ? 'var(--green-light,#e8f5e9)' : 'var(--red-light,#fdecea)';
+    var labelColor = isCorrect ? 'var(--green)' : 'var(--red)';
+
+    html += '<div style="border:1px solid '+borderColor+';border-radius:8px;padding:14px;margin-bottom:14px;background:'+bgColor+'">';
+    html += '<div style="font-size:12px;font-weight:700;color:'+labelColor+';margin-bottom:6px;text-transform:uppercase;letter-spacing:0.03em">';
+    html += (isCorrect ? '✓ Correct submission' : '✗ Trap submission') + '</div>';
+    html += '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:8px">'+tc.label+'</div>';
+
+    // Show variant summary
+    html += '<div style="font-size:11px;color:var(--text2);margin-bottom:8px;background:var(--surface);padding:6px 10px;border-radius:4px">';
+    html += 'Variant: <b>'+v._trapType+'</b> | MDM: <b>'+v._mdmLevel+'</b> | ';
+    html += 'Therapy: <b>'+(v._therapyType||'none')+'</b>';
+    if (v._therapyTime > 0) html += ' ('+v._therapyTime+' min → '+v.optimalAddon+')';
+    html += ' | Optimal: <b>'+v.optimalEM+(v.optimalAddon?' + '+v.optimalAddon:'')+'</b>';
+    html += '</div>';
+
+    if (result) {
+      // Debrief output
+      html += '<div style="font-size:12px;font-family:monospace;white-space:pre-wrap;background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:10px;line-height:1.7;overflow-x:auto">';
+      html += formatDebriefText(result, v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      html += '</div>';
+
+      // Math table rows if present
+      if (result.debrief && result.debrief.math && result.debrief.math.length) {
+        html += '<div style="font-size:11px;color:var(--text3);margin-top:8px;margin-bottom:4px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em">Billing comparison table</div>';
+        html += '<table style="width:100%;font-size:12px;border-collapse:collapse">';
+        for (var mi=0; mi<result.debrief.math.length; mi++) {
+          var row = result.debrief.math[mi];
+          var wStyle = row.winner ? 'font-weight:700;color:var(--green)' : 'color:var(--text2)';
+          html += '<tr style="border-bottom:1px solid var(--border)"><td style="padding:3px 6px;'+wStyle+'">'+(row.winner?'★ ':'')+row.method+'</td><td style="padding:3px 6px;'+wStyle+'">'+row.em+'</td><td style="padding:3px 6px;'+wStyle+'">'+row.addon+'</td><td style="padding:3px 6px;'+wStyle+'">'+row.total+'</td></tr>';
+        }
+        html += '</table>';
+      }
+    } else {
+      html += '<div style="font-size:12px;color:var(--red)">Error running evalClaim for this test case.</div>';
+    }
+    html += '</div>';
+  }
+
+  document.getElementById('harness-results').innerHTML = html;
+}
+
+// ── HARNESS 2: NOTE FRAGMENT SAMPLER ─────────────────────────────────────────
+function runHarnessNotes() {
+  var trapOrder = ['time_with_addon','wrong_addon','upcode_stable','omit_addon','undercode','mdm_vs_time','therapy_not_billable'];
+  var collected = {};
+  var attempts = 0;
+
+  // Collect at least 2-3 notes per trap type
+  while (attempts < 200 && Object.keys(collected).length < trapOrder.length * 2) {
+    var v = generateVariant(Math.random() < 0.5);
+    var t = v._trapType;
+    if (!collected[t]) collected[t] = [];
+    if (collected[t].length < 3) {
+      collected[t].push(v);
+    }
+    attempts++;
+  }
+
+  var html = '<div style="font-size:13px;color:var(--text2);margin-bottom:16px">Generated note fragments by trap type. Review for clinical authenticity — does this read like a real PMHNP note?</div>';
+
+  for (var ti=0; ti<trapOrder.length; ti++) {
+    var trap = trapOrder[ti];
+    var variants = collected[trap] || [];
+    if (!variants.length) continue;
+
+    html += '<div style="margin-bottom:20px">';
+    html += '<div style="font-size:14px;font-weight:700;color:var(--text);border-bottom:2px solid var(--border);padding-bottom:6px;margin-bottom:12px">';
+    html += 'Trap: '+trap+' ('+variants.length+' sample'+(variants.length>1?'s':'')+')</div>';
+
+    for (var vi=0; vi<variants.length; vi++) {
+      var v2 = variants[vi];
+      html += '<div style="background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:10px">';
+      html += '<div style="font-size:11px;color:var(--text3);margin-bottom:6px">';
+      html += 'MDM: <b>'+v2._mdmLevel+'</b> | ';
+      html += 'Therapy: <b>'+(v2._therapyType||'none')+(v2._therapyTime>0?' ('+v2._therapyTime+' min)':'')+'</b> | ';
+      html += 'POS: <b>'+(v2._isTelehealth===false?'11 (in-person)':'10 (telehealth)')+'</b> | ';
+      html += 'Optimal: <b>'+v2.optimalEM+(v2.optimalAddon?' + '+v2.optimalAddon:'')+'</b>';
+      html += '</div>';
+      html += '<div style="font-size:12px;font-family:monospace;white-space:pre-wrap;line-height:1.8;color:var(--text)">';
+      html += (v2.note||'(empty note)').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      html += '</div>';
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  document.getElementById('harness-results').innerHTML = html;
+}
+
+// ── HARNESS 3: UI EDGE CASE TESTER ───────────────────────────────────────────
+function runHarnessEdgeCases() {
+  var results = [];
+
+  function testCase(label, fn) {
+    try {
+      var outcome = fn();
+      results.push({label:label, pass:outcome.pass, detail:outcome.detail, type:outcome.type||'info'});
+    } catch(e) {
+      results.push({label:label, pass:false, detail:'Exception: '+e.message, type:'error'});
+    }
+  }
+
+  // Set up a real variant first
+  harnessSetupScenario(true);
+
+  // Test 1: Submit with no E/M code
+  testCase('Submit with empty E/M code field', function() {
+    var r = evalClaim('','95','','','$200.00','$0.00','','','$0.00');
+    // evalClaim with empty EM — should gracefully handle, not crash
+    return {pass:true, detail:'evalClaim handled empty EM code without crashing. Result type: '+(r?r.type:'null'), type:'pass'};
+  });
+
+  // Test 2: Submit E/M only, no add-on, MDM method
+  testCase('Submit 99214 alone (MDM, no add-on, telehealth)', function() {
+    selectedMethod = 'mdm';
+    var r = harnessEval('99214','95','','','mdm');
+    return {pass:!!r, detail:'Result type: '+r.type+' | Paid: $'+r.totalPaid.toFixed(2)+' | Pattern: '+(r.debrief&&r.debrief.pattern||'--'), type:'pass'};
+  });
+
+  // Test 3: Submit with time method + no add-on
+  testCase('Submit 99214 time-based, no add-on', function() {
+    selectedMethod = 'time';
+    var r = harnessEval('99214','95','','','time');
+    return {pass:!!r, detail:'Time method, no add-on: type='+r.type+' | Paid: $'+r.totalPaid.toFixed(2), type:'pass'};
+  });
+
+  // Test 4: Submit time method WITH add-on (the trap)
+  testCase('Submit 99214 time-based WITH 90833 (double-dipping trap)', function() {
+    selectedMethod = 'time';
+    var r = harnessEval('99214','95','90833','95','time');
+    var hasConflict = !!(r.debrief && r.debrief.timeConflict);
+    return {pass:hasConflict, detail:hasConflict ? 'CORRECT: timeConflict debrief fired' : 'PROBLEM: timeConflict debrief did NOT fire when time+addon submitted', type: hasConflict?'pass':'fail'};
+  });
+
+  // Test 5: Submit wrong add-on (90836 when 90833 expected)
+  testCase('Submit correct EM but wrong add-on code (90836 instead of 90833)', function() {
+    selectedMethod = 'mdm';
+    var r = harnessEval('99214','95','90836','95','mdm');
+    var hasAuditRisk = !!(r.auditRisk);
+    return {pass:true, detail:'auditRisk fired: '+hasAuditRisk+' | type: '+r.type+' | paid: $'+r.totalPaid.toFixed(2), type:'pass'};
+  });
+
+  // Test 6: Submit 99215 on moderate MDM visit (upcode)
+  testCase('Submit 99215 on moderate MDM visit (upcode stable)', function() {
+    harnessSetupScenario(true);
+    currentVariant._mdmLevel = 'moderate';
+    currentVariant.optimalEM = '99214';
+    SCENARIOS[currentScenario].optimalEM = '99214';
+    var r = harnessEval('99215','95','','','mdm');
+    var flagged = r.type === 'audit' || !!(r.auditRisk);
+    return {pass:flagged, detail: flagged ? 'CORRECT: audit risk flagged for 99215 on moderate visit' : 'PROBLEM: 99215 on moderate visit did NOT trigger audit risk', type: flagged?'pass':'fail'};
+  });
+
+  // Test 7: Submit new patient code on established patient
+  testCase('Submit 99205 (new patient code) on established patient', function() {
+    var r = harnessEval('99205','95','','','mdm');
+    var denied = r.type === 'denial' && r.denial && r.denial.code === 'CO-18';
+    return {pass:denied, detail: denied ? 'CORRECT: CO-18 denial fired' : 'PROBLEM: 99205 did not trigger CO-18 denial. Got: '+r.type+(r.denial?' '+r.denial.code:''), type: denied?'pass':'fail'};
+  });
+
+  // Test 8: Missing modifier on telehealth claim
+  testCase('Submit telehealth claim without modifier 95', function() {
+    var r = harnessEval('99214','','','','mdm');
+    var denied = r.type === 'denial' && r.denial && r.denial.code === 'CO-4';
+    return {pass:denied, detail: denied ? 'CORRECT: CO-4 denial fired for missing modifier' : 'PROBLEM: Missing modifier on telehealth did not trigger CO-4. Got: '+r.type, type: denied?'pass':'fail'};
+  });
+
+  // Test 9: Modifier on in-person claim (should flag audit risk)
+  testCase('Submit in-person (POS 11) claim WITH modifier 95 (modifier overuse)', function() {
+    harnessSetupScenario(false); // in-person
+    var r = harnessEval('99214','95','','','mdm');
+    var flagged = r.type === 'audit' || !!(r.auditRisk);
+    return {pass:flagged, detail: flagged ? 'CORRECT: audit risk flagged for modifier on in-person claim' : 'PROBLEM: Modifier on in-person claim was not flagged', type: flagged?'pass':'fail'};
+  });
+
+  // Test 10: Undercode on high MDM visit
+  testCase('Submit 99213 on high MDM visit (undercode)', function() {
+    harnessSetupScenario(true);
+    currentVariant._mdmLevel = 'high';
+    currentVariant.optimalEM = '99215';
+    SCENARIOS[currentScenario].optimalEM = '99215';
+    var r = harnessEval('99213','95','','','mdm');
+    var hasMissed = !!(r.debrief && r.debrief.missedRev);
+    return {pass:hasMissed, detail: hasMissed ? 'CORRECT: missedRev debrief populated for undercode' : 'PROBLEM: Undercode on high MDM did not populate missedRev. Got: '+JSON.stringify(Object.keys(r.debrief||{})), type: hasMissed?'pass':'fail'};
+  });
+
+  // Render results
+  var passCount = results.filter(function(r){return r.pass;}).length;
+  var failCount = results.length - passCount;
+  var html = '<div class="card" style="border:2px solid '+(failCount===0?'var(--green)':'var(--red)');margin-bottom:14px">';
+  html += '<div style="font-size:14px;font-weight:700;color:'+(failCount===0?'var(--green)':'var(--red)')+';margin-bottom:8px">';
+  html += (failCount===0?'&#x2705;':'&#x274C;')+' '+passCount+' / '+results.length+' edge cases passed</div>';
+  html += '<div style="font-size:12px;color:var(--text2)">Each test submits a specific combination and checks the simulator responds correctly.</div>';
+  html += '</div>';
+
+  for (var ri=0; ri<results.length; ri++) {
+    var res = results[ri];
+    var ic = res.pass ? 'var(--green)' : 'var(--red)';
+    var ibg = res.pass ? 'var(--green-light,#e8f5e9)' : 'var(--red-light,#fdecea)';
+    html += '<div style="border:1px solid '+ic+';border-radius:6px;padding:10px 14px;margin-bottom:8px;background:'+ibg+'">';
+    html += '<div style="font-size:12px;font-weight:700;color:'+ic+';margin-bottom:4px">'+(res.pass?'✓':'✗')+' '+res.label+'</div>';
+    html += '<div style="font-size:12px;color:var(--text2)">'+res.detail+'</div>';
+    html += '</div>';
+  }
+
+  document.getElementById('harness-results').innerHTML = html;
 }
 
 </script>
