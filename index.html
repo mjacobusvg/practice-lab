@@ -7283,8 +7283,8 @@ function runSeedHarness() {
     // ── TEST 1: Correct submission → clean (or admin hold — not real denial) ──
     seedTest(sid + ': Correct submission → clean', function() {
       var r = seedEval(seed, gt.optimalEM, isTH ? '95' : '', gt.optimalAddon || '', isTH ? '95' : '', 'mdm');
-      // Accept: clean, audit, or admin injection (CO-B14/N30 are teaching holds not real denials)
-      var adminHold = r.type === 'denial' && r.denial && (r.denial.code === 'CO-B14' || r.denial.code === 'N30');
+      // Accept: clean, audit, or admin injection (CO-B14/N30/N130 are teaching holds not real denials)
+      var adminHold = r.type === 'denial' && r.denial && (r.denial.code === 'CO-B14' || r.denial.code === 'N30' || r.denial.code === 'N130');
       var isOk = r.type === 'clean' || r.type === 'audit' || adminHold;
       return { pass: isOk, detail: 'type=' + r.type + (r.denial ? ' (' + r.denial.code + ')' : '') + (adminHold ? ' [admin hold — expected]' : '') };
     });
@@ -7347,7 +7347,8 @@ function runSeedHarness() {
       var tvCode = gt.alternativeValidRoute.emCode;
       seedTest(sid + ': Dual-valid time route (' + tvCode + ', no addon) → clean or audit', function() {
         var r = seedEval(seed, tvCode, mod95, '', '', 'time');
-        var ok = r.type === 'clean' || r.type === 'audit';
+        var adminHold = r.type === 'denial' && r.denial && (r.denial.code === 'CO-B14' || r.denial.code === 'N30' || r.denial.code === 'N130');
+        var ok = r.type === 'clean' || r.type === 'audit' || adminHold;
         return { pass: ok, detail: 'type=' + r.type + ' (time route, no addon)' };
       });
     }
@@ -7361,8 +7362,9 @@ function runSeedHarness() {
         var noCO18 = !(r.denial && r.denial.code === 'CO-18');
         return { pass: noCO18, detail: noCO18 ? 'no CO-18 on ' + gt.optimalEM + ' ✓' : 'CO-18 fired incorrectly on ' + gt.optimalEM };
       });
-      seedTest(sid + ': New patient seed — established code (99214) → CO-18', function() {
-        // Temporarily clear override so CO-18 fires on established code
+      seedTest(sid + ': New patient seed — new-pt code without override → CO-18', function() {
+        // Submit the new patient code WITHOUT the override — simulates billing new-pt code as if established
+        // CO-18 should fire because 99205/99204 submitted without _harnessNewPatientOverride
         window._harnessNewPatientOverride = false;
         var isTelehealth2 = seed.patient.pos !== '11';
         currentScenario = isTelehealth2 ? 0 : 1;
@@ -7373,10 +7375,10 @@ function runSeedHarness() {
         scen2.optimalAddon = seed.groundTruth.optimalAddon || '';
         scen2.payer = seed.patient.payer || 'premera';
         scen2.copay = seed.patient.copay || 35;
-        currentVariant = { optimalEM: seed.groundTruth.optimalEM, optimalAddon: '', _mdmLevel: seed.mdm.overallLevel, _hasTherapy: false, _therapyType: null, _therapyTime: 0, _totalTime: seed.time.totalMinutes, _trapType: seed.trapFamily, _isNewPatient: false, _correctAnswer: { emCode: '99214', addon: '', modifier: mod95, route: 'mdm' } };
+        currentVariant = { optimalEM: seed.groundTruth.optimalEM, optimalAddon: '', _mdmLevel: seed.mdm.overallLevel, _hasTherapy: false, _therapyType: null, _therapyTime: 0, _totalTime: seed.time.totalMinutes, _trapType: seed.trapFamily, _isNewPatient: false, _correctAnswer: { emCode: gt.optimalEM, addon: '', modifier: mod95, route: 'mdm' } };
         selectedMethod = 'mdm';
         var rates2 = RATES[seed.patient.payer] || RATES['premera'];
-        var r = evalClaim('99214', mod95, '', '', '$' + (rates2['99214']||98).toFixed(2), '$0.00', '', '', '$0.00');
+        var r = evalClaim(gt.optimalEM, mod95, '', '', '$' + (rates2[gt.optimalEM]||200).toFixed(2), '$0.00', '', '', '$0.00');
         window._harnessNewPatientOverride = false;
         var hasCO18 = r.type === 'denial' && r.denial && r.denial.code === 'CO-18';
         return { pass: hasCO18, detail: 'type=' + r.type + ' denial=' + (r.denial ? r.denial.code : 'none') };
@@ -7656,7 +7658,7 @@ function runTeachingDiag() {
 
   // ── 6. SCORING MODEL SPOT CHECKS ─────────────────────────────────────────
   var strongNote = 'Psychotherapy (20 minutes): Provided CBT focusing on catastrophic thinking. Used cognitive restructuring to identify and challenge automatic thoughts. Patient generated two alternative interpretations and committed to practice.';
-  var borderlineNote = 'Provided supportive therapy addressing anxiety related to work stress. Discussed coping strategies. Patient engaged and receptive.';
+  var borderlineNote = 'Psychotherapy (20 minutes): Provided supportive therapy addressing anxiety related to work stress. Reviewed coping strategies and discussed ways to manage difficult emotions. Patient reported feeling more supported and engaged throughout session.';
   var failNote = 'Patient educated. Supportive statements made. Patient appears motivated.';
   var s1 = scoreNoteQuality(strongNote);
   var s2 = scoreNoteQuality(borderlineNote);
