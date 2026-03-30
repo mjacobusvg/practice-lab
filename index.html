@@ -472,6 +472,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         <option value="BS-PR96-BENEFIT-TX-031">Non-covered benefit &mdash; PR-96, no appeal path</option>
         <option value="BS-TELEHEALTH-CONTRACT-TX-033">Telehealth rate gap &mdash; parity vs contract</option>
       </optgroup>
+      <optgroup label="─── Pattern chaining ──────────────────────────">
+        <option value="BS-ADDON-STRUCT-TX-034">Add-on structure &mdash; 90836 without E/M</option>
+        <option value="BS-MOD-FLIP-TX-035">Modifier flip &mdash; 95 on in-person visit</option>
+        <option value="BS-TIME-ADDON-CHAIN-TX-036">Time + add-on &mdash; better docs, same rule</option>
+        <option value="BS-PSYCH-BURIED-TX-037">Therapy in note &mdash; not identifiable as psychotherapy</option>
+        <option value="BS-TIME-INFLATE-TX-038">Visit length inflation &mdash; 45 min billed as 99215</option>
+      </optgroup>
       <optgroup label="─── Multi-provider coordination ──────────────">
         <option value="BS-TWO-PROVIDERS-TX-032">Same-day PMHNP + therapist &mdash; payer conflict</option>
       </optgroup>
@@ -2343,6 +2350,102 @@ var BS_SEED_POOL = [
     groundTruth: { optimalEM:'99214', optimalAddon:'', optimalModifier:'95', optimalRoute:'mdm', alternativeValidRoute: null, claimOutcomeType:'clean' },
     debrief: { primaryPattern:'You assumed parity. The contract didn\'t.', financialTeachingPoint:'Telehealth reimbursement is determined by your contract, not by the existence of a parity law. State mental health parity laws require covered benefits to be treated equivalently to medical benefits — but parity applies to coverage, not necessarily to payment rate. Many commercial payers reimburse telehealth at a percentage of in-person rates in their contracts, and self-funded ERISA plans are exempt from state parity requirements entirely. The ERA reflects what the contract says, not what the visit felt equivalent to. If the telehealth rate in your contract is below in-person, that is a contract negotiation issue — not a billing error to correct.', clinicalTeachingPoint:'Knowing your contracted telehealth rate for each payer is a basic practice management task. If a payer is reimbursing telehealth at 80% of in-person, that fact belongs in your fee schedule and financial planning. Discovering it on the ERA after the visit produces frustration but no billing pathway to recover the difference. Request your fee schedule from each payer, compare telehealth vs in-person rates, and factor the difference into your payer mix decisions.' }
   }
+  ,
+  {
+    scenarioId: 'BS-ADDON-STRUCT-TX-034',
+    teachingPattern: 'addon_standalone_wrong_code',
+    trapFamily: 'wrong_addon',
+    patient: { status:'established', age:36, sex:'female', setting:'telehealth', pos:'10', payer:'premera', copay:35 },
+    clinical: {
+      primaryDx: { code:'F33.1', label:'Major depressive disorder, moderate' },
+      secondaryDx: { code:'F41.1', label:'Generalized anxiety disorder' },
+      symptomThemes: ['visit primarily therapeutic in nature', 'extended psychotherapy focused session', 'medication briefly reviewed', 'provider considered visit therapy-dominant', 'no distinct E/M service documented'],
+      functionalImpact: ['improved mood', 'engaged in treatment'],
+      medications: ['sertraline 100mg daily'], medChanges: false, prescriptionDrugManagement: false,
+      riskContext: { suicidality:'denied', hospitalizationRisk:'low' }
+    },
+    psychotherapy: { performed: true, minutes: 45, codeSupported: '90836', modality: 'CBT', focus: 'behavioral activation and mood monitoring', intervention: 'Used behavioral activation to identify avoided activities and schedule graded re-engagement. Discussed relationship between activity level and mood.', patientResponse: 'Patient identified three avoided activities and committed to scheduling one before next visit.' },
+    time: { totalMinutes: 53, psychotherapyIncluded: true, timeBasedEMCandidate: '99214', timeRouteAllowedIfAddonBilled: false },
+    mdm: { overallLevel:'moderate', problems:'moderate', data:'low', risk:'moderate' },
+    groundTruth: { optimalEM:'99214', optimalAddon:'90836', optimalModifier:'95', optimalRoute:'mdm', alternativeValidRoute: null, claimOutcomeType:'clean' },
+    debrief: { primaryPattern:'Right idea. Wrong structure.', financialTeachingPoint:'90836 (38-52 minutes of individual psychotherapy as add-on) is the correct add-on code when the psychotherapy time is 38 minutes or longer — and it requires an E/M service on the same date, exactly as 90833 does. Billing 90836 without an E/M denies the same way 90833 does: CO-4 or CO-97, because there is nothing for the add-on to attach to. The visit included medication review and clinical status assessment — that is an E/M service. 99214 + 90836 is the correct structure. The add-on code alone, regardless of which one, is not billable as a standalone service.', clinicalTeachingPoint:'The distinction between 90833 and 90836 is time: 90833 is 16-37 minutes of psychotherapy, 90836 is 38-52 minutes. Both require an E/M. The error here is not the code selection — it is the structural misunderstanding that a longer therapy session removes the E/M requirement. It does not. The E/M reflects the medication management and clinical assessment work that occurred alongside the psychotherapy.' }
+  },
+  {
+    scenarioId: 'BS-MOD-FLIP-TX-035',
+    teachingPattern: 'modifier_95_on_in_person',
+    trapFamily: 'wrong_addon',
+    patient: { status:'established', age:44, sex:'male', setting:'in_person', pos:'11', payer:'premera', copay:35 },
+    clinical: {
+      primaryDx: { code:'F31.81', label:'Bipolar II disorder' },
+      secondaryDx: { code:'F41.1', label:'Generalized anxiety disorder' },
+      symptomThemes: ['in-office visit', 'medication monitoring', 'stable on current regimen', 'provider added modifier 95 to add specificity to claim'],
+      functionalImpact: ['stable functioning', 'working full time'],
+      medications: ['lamotrigine 200mg daily', 'quetiapine 50mg QHS'], medChanges: false, prescriptionDrugManagement: true,
+      riskContext: { suicidality:'denied', hospitalizationRisk:'low' }
+    },
+    psychotherapy: { performed: false, minutes: 0, codeSupported: null, modality: null, focus: null, intervention: null, patientResponse: null },
+    time: { totalMinutes: 26, psychotherapyIncluded: false, timeBasedEMCandidate: '99214', timeRouteAllowedIfAddonBilled: false },
+    mdm: { overallLevel:'moderate', problems:'moderate', data:'low', risk:'moderate' },
+    groundTruth: { optimalEM:'99214', optimalAddon:'', optimalModifier:'', optimalRoute:'mdm', alternativeValidRoute: null, claimOutcomeType:'clean' },
+    debrief: { primaryPattern:'Telehealth facts, in-person claim.', financialTeachingPoint:'Modifier 95 identifies a service as delivered via synchronous telemedicine. Applying it to a POS 11 (in-person office) claim creates a direct contradiction: the place of service says in-person, the modifier says telehealth. Payer processing varies — some flag the claim for review, some reject it outright, some correct it and pay at a different rate. None of these outcomes is clean. The correct claim for an in-person 99214 is the code alone, no modifier, POS 11. No modifier is required or appropriate for an in-person visit.', clinicalTeachingPoint:'The modifier 95 / POS 10 (telehealth) pairing is a real billing requirement. The error here is applying a modifier that was learned for one context to a different context where it does not apply. Telehealth modifiers signal the nature of the visit to the payer. Adding one to an in-person visit does not add information — it contradicts the place of service and creates inconsistency the payer has to resolve.' }
+  },
+  {
+    scenarioId: 'BS-TIME-ADDON-CHAIN-TX-036',
+    teachingPattern: 'time_with_addon_better_docs',
+    trapFamily: 'time_with_addon',
+    patient: { status:'established', age:51, sex:'female', setting:'telehealth', pos:'10', payer:'united', copay:55 },
+    clinical: {
+      primaryDx: { code:'F43.10', label:'PTSD' },
+      secondaryDx: { code:'F33.1', label:'Major depressive disorder, moderate' },
+      symptomThemes: ['complex trauma follow-up', 'psychotherapy and medication management in same session', 'psychotherapy time explicitly documented as separate section', 'total visit time 48 minutes', 'provider selected time basis believing clearer documentation resolved the rule'],
+      functionalImpact: ['ongoing mild-moderate symptoms', 'improved engagement'],
+      medications: ['sertraline 150mg daily', 'prazosin 1mg QHS'], medChanges: false, prescriptionDrugManagement: true,
+      riskContext: { suicidality:'passive ideation without plan', hospitalizationRisk:'low' }
+    },
+    psychotherapy: { performed: true, minutes: 22, codeSupported: '90833', modality: 'CPT-focused therapy', focus: 'trauma processing and grounding', intervention: 'Used trauma-focused CPT techniques including stuck point identification and cognitive processing worksheets. Patient worked through one stuck point related to self-blame.', patientResponse: 'Patient identified and challenged one stuck point. Demonstrated reduced emotional activation when revisiting the memory.' },
+    time: { totalMinutes: 48, psychotherapyIncluded: true, timeBasedEMCandidate: '99214', timeRouteAllowedIfAddonBilled: false },
+    mdm: { overallLevel:'moderate', problems:'moderate', data:'moderate', risk:'moderate' },
+    groundTruth: { optimalEM:'99214', optimalAddon:'90833', optimalModifier:'95', optimalRoute:'mdm', alternativeValidRoute: null, claimOutcomeType:'clean' },
+    debrief: { primaryPattern:'Two clocks running. Payers only pay one.', financialTeachingPoint:'Documenting psychotherapy time separately does not change the time-versus-MDM rule. CPT is explicit: when a psychotherapy add-on code (90833, 90836) is billed on the same date as an E/M, time may not be used as the basis for E/M code selection. The psychotherapy time has already been captured by the add-on code. Using time to select the E/M level on top of billing the add-on is double-counting. The fix is to select the E/M by MDM, which this visit supports at 99214. The note quality is irrelevant to the billing rule — better documentation does not change which selection basis is permitted.', clinicalTeachingPoint:'This seed tests whether the rule was understood or the documentation fix was memorized. The rule is: add-on billed = E/M must be selected by MDM. Period. The quality of psychotherapy documentation, the clarity of time documentation, and the existence of a separate psychotherapy section all have no effect on this requirement. MDM was available here and supports 99214. That is the correct path.' }
+  },
+  {
+    scenarioId: 'BS-PSYCH-BURIED-TX-037',
+    teachingPattern: 'psychotherapy_not_identifiable',
+    trapFamily: 'therapy_not_billable',
+    patient: { status:'established', age:39, sex:'female', setting:'telehealth', pos:'10', payer:'premera', copay:35 },
+    clinical: {
+      primaryDx: { code:'F33.1', label:'Major depressive disorder, moderate' },
+      secondaryDx: { code:'F41.1', label:'Generalized anxiety disorder' },
+      symptomThemes: ['medication management visit', 'therapy referenced in assessment and plan', 'coping strategies discussed throughout visit', 'no distinct psychotherapy section', 'no documented psychotherapy time', 'no named modality or intervention'],
+      functionalImpact: ['mild improvement', 'functional at work'],
+      medications: ['escitalopram 20mg daily'], medChanges: false, prescriptionDrugManagement: true,
+      riskContext: { suicidality:'denied', hospitalizationRisk:'low' }
+    },
+    psychotherapy: { performed: false, minutes: 0, codeSupported: null, modality: null, focus: null, intervention: null, patientResponse: null },
+    time: { totalMinutes: 28, psychotherapyIncluded: false, timeBasedEMCandidate: '99213', timeRouteAllowedIfAddonBilled: false },
+    mdm: { overallLevel:'moderate', problems:'moderate', data:'low', risk:'moderate' },
+    groundTruth: { optimalEM:'99214', optimalAddon:'', optimalModifier:'95', optimalRoute:'mdm', alternativeValidRoute: null, claimOutcomeType:'audit' },
+    debrief: { primaryPattern:'Paid on submission. Dead on audit.', financialTeachingPoint:'90833 requires that psychotherapy be clearly identifiable as a distinct, time-based service. CPT does not require a specific section label or note structure — but it does require that an auditor can immediately identify: what psychotherapy was performed, what modality and intervention were used, how long it took, and what the patient did in response. A note that mentions coping strategies in the assessment section, without a documented time, modality, or patient response, does not support 90833. The billing may process — but it fails on review. The issue is not where the documentation sits. The issue is whether the service is distinguishable from general supportive conversation.', clinicalTeachingPoint:'The standard is detectability, not structure. An auditor reviewing this note cannot quickly answer: was psychotherapy performed as a distinct service separate from the E/M? If that question cannot be answered in seconds, the add-on is not supported. Documentation that is technically present but buried in the visit narrative — without time, modality, intervention, and response — creates the same audit exposure as no documentation at all.' }
+  },
+  {
+    scenarioId: 'BS-TIME-INFLATE-TX-038',
+    teachingPattern: 'time_length_inflation_99215',
+    trapFamily: 'upcode_stable',
+    patient: { status:'established', age:47, sex:'male', setting:'telehealth', pos:'10', payer:'premera', copay:55 },
+    clinical: {
+      primaryDx: { code:'F31.81', label:'Bipolar II disorder' },
+      secondaryDx: { code:'F41.1', label:'Generalized anxiety disorder' },
+      symptomThemes: ['stable follow-up', 'medication monitoring', 'extended discussion of life stressors', 'no medication changes', 'no acute symptoms', 'provider coded 99215 because visit felt long'],
+      functionalImpact: ['stable functioning', 'mild ongoing stress'],
+      medications: ['lamotrigine 200mg daily'], medChanges: false, prescriptionDrugManagement: true,
+      riskContext: { suicidality:'denied', hospitalizationRisk:'low' }
+    },
+    psychotherapy: { performed: false, minutes: 0, codeSupported: null, modality: null, focus: null, intervention: null, patientResponse: null },
+    time: { totalMinutes: 45, psychotherapyIncluded: false, timeBasedEMCandidate: '99214', timeRouteAllowedIfAddonBilled: false },
+    mdm: { overallLevel:'moderate', problems:'moderate', data:'low', risk:'moderate' },
+    groundTruth: { optimalEM:'99214', optimalAddon:'', optimalModifier:'95', optimalRoute:'mdm', alternativeValidRoute: { route:'time', emCode:'99214', addon: null, allowed: true, requiresDocumentation: 'Total time must be documented' }, claimOutcomeType:'clean' },
+    debrief: { primaryPattern:'Stable patient, inflated code.', financialTeachingPoint:'45 minutes of total time for an established patient supports 99214 (40-54 minutes) — not 99215 (55-74 minutes). Time-based billing also requires that the provider explicitly use time as the basis for code selection and document total time in the note. A 45-minute visit where the provider selected 99215 is wrong in both directions: the time doesn\'t support the code, and if the note doesn\'t document total time with time explicitly selected as the basis, the time route isn\'t even available. MDM at moderate level also supports 99214 for this visit. Either route leads to the same answer: 99214.', clinicalTeachingPoint:'Visit length is not the same as MDM complexity, and neither is a substitute for the other. A stable bipolar II patient on lamotrigine who discusses life stressors for 45 minutes has a moderate MDM visit (two chronic conditions, medication monitoring) and a 45-minute time visit. Both support 99214. The duration of a conversation does not create high MDM — it creates a longer moderate visit. The code follows the work, not the clock.' }
+  }
 ];
 
 // ── AI NOTE GENERATOR FROM SEED ───────────────────────────────────────────────
@@ -3397,7 +3500,23 @@ function launchSimFromSeed(seed) {
 
   // Generate AI note async — note populates when ready
   generateNoteFromSeed(seed, function(note) {
-    if(noteEl) noteEl.textContent = note;
+    // Render note with psychotherapy section visually distinguished
+    if(noteEl) {
+      // Check for PSYCHOTHERAPY section in note
+      var psychMatch = note.match(/([\s\S]*?)(PSYCHOTHERAPY\s*\([^)]+\):[\s\S]*?)$/);
+      if(psychMatch && psychMatch[2]) {
+        var emPart = psychMatch[1].trim();
+        var therapyPart = psychMatch[2].trim();
+        noteEl.innerHTML =
+          '<span class="note-em-section">' + emPart.replace(/\n/g, '<br>') + '</span>' +
+          '<div class="note-psych-section" style="margin-top:10px;padding:8px 10px;border-left:2px solid var(--teal);background:var(--surface2);border-radius:0 4px 4px 0;font-size:11.5px;color:var(--text)">' +
+          '<div style="font-size:10px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">Psychotherapy</div>' +
+          therapyPart.replace(/PSYCHOTHERAPY\s*\([^)]+\):\s*/,'').replace(/\n/g, '<br>') +
+          '</div>';
+      } else {
+        noteEl.textContent = note;
+      }
+    }
     currentVariant.note = note;
   });
 
@@ -3782,20 +3901,20 @@ function evalClaim(em, mod1, addon, mod2, charge1, charge2, addon3, mod3, charge
   // Trap 5: Undercode on high MDM visit
   if(em==='99213'&&cvOptEM==='99214'){
     var md=(rates['99214']||0)-(rates['99213']||0);
-    out.debrief.missedRev='You billed 99213. This visit supported 99214. Revenue difference: $'+md.toFixed(2)+' per visit -- $'+(md*200).toLocaleString()+' per 200 visits/year.';
+    out.debrief.missedRev='You billed 99213. This visit supported 99214. Revenue difference: $'+md.toFixed(2)+' per visit -- $'+(md*40).toFixed(0)+'/month ($'+(md*480).toLocaleString(undefined,{maximumFractionDigits:0})+'/year) at 40 visits/month.';
   }
   if(em==='99214'&&cvOptEM==='99215'){
     var mh=(rates['99215']||0)-(rates['99214']||0);
-    out.debrief.missedRev='You billed 99214. This visit supported 99215 (high MDM). Revenue difference: $'+mh.toFixed(2)+' per visit -- $'+(mh*200).toLocaleString()+' per 200 visits/year.';
+    out.debrief.missedRev='You billed 99214. This visit supported 99215 (high MDM). Revenue difference: $'+mh.toFixed(2)+' per visit -- $'+(mh*40).toFixed(0)+'/month ($'+(mh*480).toLocaleString(undefined,{maximumFractionDigits:0})+'/year) at 40 visits/month.';
   }
   if(em==='99213'&&cvOptEM==='99215'){
     var m2=(rates['99215']||0)-(rates['99213']||0);
-    out.debrief.missedRev='You billed 99213. This visit supported 99215 (high MDM). Revenue difference: $'+m2.toFixed(2)+' per visit -- $'+(m2*200).toLocaleString()+' per 200 visits/year.';
+    out.debrief.missedRev='You billed 99213. This visit supported 99215 (high MDM). Revenue difference: $'+m2.toFixed(2)+' per visit -- $'+(m2*40).toFixed(0)+'/month ($'+(m2*480).toLocaleString(undefined,{maximumFractionDigits:0})+'/year) at 40 visits/month.';
   }
   // Trap 4: Missed add-on when therapy documented
   if(!addon && cvOptAddon && cvOptAddon!==''){
     var addonRev=rates[cvOptAddon]||0;
-    out.debrief.missedRev=(out.debrief.missedRev?out.debrief.missedRev+' ':'')+'Psychotherapy was documented but no add-on was billed. '+cvOptAddon+' was supported and would have added $'+addonRev.toFixed(2)+' to this visit ($'+(addonRev*200).toLocaleString()+' per 200 visits/year).';
+    out.debrief.missedRev=(out.debrief.missedRev?out.debrief.missedRev+' ':'')+'Psychotherapy was documented but no add-on was billed. '+cvOptAddon+' was supported and would have added $'+addonRev.toFixed(2)+' to this visit ($'+(addonRev*40).toFixed(0)+'/month, $'+(addonRev*480).toLocaleString(undefined,{maximumFractionDigits:0})+'/year at 40 visits/month/year).';
   }
   // Trap 7: Therapy-feel billed as 90833 when it was not structured
   if(addon && (addon==='90833'||addon==='90836'||addon==='90838') && trapType==='therapy_not_billable'){
@@ -4204,6 +4323,26 @@ function buildDebrief() {
     'You assumed parity. The contract didn\'t.': {
       line: 'The visit was identical to in-person. That made equal payment feel expected. But telehealth reimbursement follows the contract \u2014 not what feels equivalent.',
       anchor: 'Parity affects coverage. Your contract determines payment.'
+    },
+    'Right idea. Wrong structure. (90836)': {
+      line: 'The therapy happened and was documented. 90836 felt like it captured it. But it\u2019s still an add-on \u2014 without an E/M, there\u2019s nothing for it to attach to.',
+      anchor: 'Every add-on requires an E/M. 90836 is no different from 90833 in that requirement.'
+    },
+    'Telehealth facts, in-person claim. (modifier flip)': {
+      line: 'The visit was in-person and clean. Adding 95 felt like extra specificity. But 95 signals telehealth \u2014 pairing it with POS 11 creates a mismatch the payer flags.',
+      anchor: 'Modifier 95 belongs on telehealth claims. In-person visits need no modifier.'
+    },
+    'Two clocks running. Payers only pay one. (chain)': {
+      line: 'The therapy was clearly documented this time. The time was documented too. It felt fixed. But when an add-on is billed, you don\u2019t get to run both clocks \u2014 E/M has to be selected by MDM.',
+      anchor: 'Add-on billed = MDM required for E/M selection. Documentation quality doesn\u2019t change the rule.'
+    },
+    'Paid on submission. Dead on audit. (buried therapy)': {
+      line: 'The therapy was in the note, so it felt covered. But if it isn\u2019t clearly identifiable as a distinct, time-based service, it doesn\u2019t count \u2014 regardless of where it sits.',
+      anchor: 'The test is detectability: can an auditor identify psychotherapy as a distinct service in seconds?'
+    },
+    'Stable patient, inflated code. (time length)': {
+      line: 'The visit took 45 minutes. That felt like 99215. But time has to be explicitly used and documented \u2014 and 45 minutes supports 99214, not 99215.',
+      anchor: '45 minutes = 99214 (40-54 min). 99215 requires 55-74 minutes.'
     }
   };
 
@@ -4270,12 +4409,33 @@ function buildDebrief() {
     // Append confidence reveal if user answered
     if(_userConfidence) {
       var isWrong = eraResult.type === 'denial' || eraResult.type === 'audit';
+      var isAudit = eraResult.type === 'audit';
+      var isDenial = eraResult.type === 'denial' && !(eraResult.denial && (eraResult.denial.code === 'CO-B14' || eraResult.denial.code === 'N30' || eraResult.denial.code === 'N130'));
       var confLabel = confLabels[_userConfidence] || _userConfidence;
       var isOverconfident = isWrong && (_userConfidence === 'very' || _userConfidence === 'fairly');
-      var confColor = isOverconfident ? '#C4711A' : 'var(--text3)';
-      var confMsg = isOverconfident
-        ? 'You selected <strong>' + confLabel + '</strong> — and the claim had issues. The most dangerous billing errors are the ones you don\'t see coming.'
-        : 'You selected <strong>' + confLabel + '</strong>.';
+      var isUnderconfident = !isWrong && (_userConfidence === 'unsure' || _userConfidence === 'guessing');
+
+      // Confidence mismatch — most important case: confident + audit exposure
+      var confMsg, confColor;
+      if(isOverconfident && isAudit) {
+        confColor = '#C4711A';
+        confMsg = 'You selected <strong>' + confLabel + '</strong> — and the claim has audit exposure. ' +
+          'This is the most common pattern in post-payment recoupment: the claim paid, the coding felt right, and the risk was invisible at submission.';
+      } else if(isOverconfident && isDenial) {
+        confColor = 'var(--red)';
+        confMsg = 'You selected <strong>' + confLabel + '</strong> — and the claim denied. ' +
+          'Confidence and correctness are not the same thing.';
+      } else if(isUnderconfident && !isWrong) {
+        confColor = 'var(--green)';
+        confMsg = 'You selected <strong>' + confLabel + '</strong> — and the claim was correct. ' +
+          'That uncertainty is worth examining. The pattern was right even when it didn\'t feel certain.';
+      } else if(isOverconfident && !isWrong) {
+        confColor = 'var(--green)';
+        confMsg = 'You selected <strong>' + confLabel + '</strong> — and it was correct.';
+      } else {
+        confColor = 'var(--text3)';
+        confMsg = 'You selected <strong>' + confLabel + '</strong>.';
+      }
       consHTML += '<div style="margin-top:10px;padding:8px 12px;background:var(--surface);border-radius:6px;border:1px solid var(--border);font-size:12px;color:' + confColor + '">' + confMsg + '</div>';
     }
     consBlock.innerHTML = consHTML;
@@ -4324,6 +4484,19 @@ function buildDebrief() {
   }
   var patternKey = eo.pattern || 'Claim processed';
   recordPattern(patternKey);
+  // Track confidence+outcome mismatch for fingerprint insight
+  if(_userConfidence && patternKey) {
+    var outcomeType = eraResult.type;
+    var isAuditOutcome = outcomeType === 'audit';
+    var isErrorOutcome = outcomeType === 'denial' || outcomeType === 'audit';
+    var wasConfident = _userConfidence === 'very' || _userConfidence === 'fairly';
+    // Record overconfident+audit as a special mismatch signature
+    if(wasConfident && isAuditOutcome) {
+      var mismatchKey = '__audit_overconfident';
+      patternHistory[mismatchKey] = (patternHistory[mismatchKey] || 0) + 1;
+      sessionStorage.setItem('tbp_patterns', JSON.stringify(patternHistory));
+    }
+  }
   var patCount = getPatternCount(patternKey);
   var badge=document.getElementById('status-badge');
   if(badge)badge.textContent=patternKey;
@@ -4530,7 +4703,12 @@ function buildDebrief() {
       'You did the work before you were allowed to bill it.': 'You tend to assume enrollment status without verifying each payer\'s effective date.',
       'The care exists. The benefit doesn\'t.': 'You tend to assume coverage based on service type rather than verifying plan-specific benefit design.',
       'Two real services. One payer conflict.': 'You tend to bill for legitimate work without anticipating payer coordination conflicts.',
-      'You assumed parity. The contract didn\'t.': 'You tend to use clinical equivalence as a proxy for payment equivalence.'
+      'You assumed parity. The contract didn\'t.': 'You tend to use clinical equivalence as a proxy for payment equivalence.',
+      'Right idea. Wrong structure. (90836)': 'You tend to miss the structural requirement even when the clinical work is correct.',
+      'Telehealth facts, in-person claim. (modifier flip)': 'You tend to apply modifiers from one context to visits where they don\'t belong.',
+      'Two clocks running. Payers only pay one. (chain)': 'You tend to repeat the same billing error even when documentation improves.',
+      'Paid on submission. Dead on audit. (buried therapy)': 'You tend to treat documentation presence as documentation sufficiency.',
+      'Stable patient, inflated code. (time length)': 'You tend to use visit length as a proxy for visit complexity.'
     };
 
     if(totalRuns >= 3) {
@@ -4549,6 +4727,11 @@ function buildDebrief() {
       html += '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em">Your pattern fingerprint — this session</div>';
       if(interpretation) {
         html += '<div style="font-size:12px;color:var(--text2);margin-top:5px;font-style:italic">' + interpretation + '</div>';
+      }
+      // Confidence mismatch insight — surfaces when user was confident on audit exposure 2+ times
+      var auditOverconfidentCount = patternHistory['__audit_overconfident'] || 0;
+      if(auditOverconfidentCount >= 2) {
+        html += '<div style="font-size:12px;color:#C4711A;margin-top:5px;font-style:italic">You tend to be most confident when the claim has audit exposure.</div>';
       }
       html += '</div>';
 
@@ -5210,7 +5393,33 @@ function submitCorrectedDrillClaim() {
 
   var cr=document.getElementById('drill-claim-result');
   if(!allCorrect){
-    if(cr){cr.innerHTML='<div class="feedback-box" style="border-left:3px solid var(--red)">Not quite. Review the ERA and try again.</div>';cr.style.display='block';}
+    // Check if user submitted without changing anything from the original (duplicate resubmit)
+    var nothingChanged = true;
+    for(var ci=0; ci<fixLines.length; ci++){
+      var cfl=fixLines[ci];
+      var cinp=null;
+      if(cfl.field==='mod')       cinp=document.getElementById('dcf-mod-'+cfl.idx);
+      else if(cfl.field==='code') cinp=document.getElementById('dcf-code-'+cfl.idx);
+      else if(cfl.field==='dx1')  cinp=document.getElementById('dcf-dx1-'+cfl.idx);
+      else if(cfl.field==='dx2')  cinp=document.getElementById('dcf-dx2-'+cfl.idx);
+      else if(cfl.field==='taxonomy') cinp=document.getElementById('dcf-taxonomy');
+      if(!cinp) continue;
+      var enteredVal=cinp.value.trim().toUpperCase().replace('$','');
+      var originalVal=(cfl.from||'').toUpperCase().replace('$','');
+      if(enteredVal !== originalVal) { nothingChanged=false; break; }
+    }
+    // Also check POS if it's one of the fixes
+    if(nothingChanged && posInp){
+      var posFix2=fixLines.find(function(f){return f.field==='pos';});
+      if(posFix2){
+        var origPos=(posFix2.from||drill.claim.pos||'10');
+        if(posInp.value.trim()!==origPos) nothingChanged=false;
+      }
+    }
+    var feedbackMsg = nothingChanged
+      ? 'Resubmitting without correcting the issue doesn\\'t change the outcome \u2014 the same edit will fire again. Review the ERA and identify what needs to change before resubmitting.'
+      : 'Not quite. Review the ERA and try again.';
+    if(cr){cr.innerHTML='<div class="feedback-box" style="border-left:3px solid var(--red)">'+feedbackMsg+'</div>';cr.style.display='block';}
     return;
   }
   var successEra=drill.action.successEra||{};
