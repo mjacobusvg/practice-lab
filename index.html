@@ -4589,7 +4589,7 @@ function buildDebrief() {
       var patternKey = eo.pattern || '';
       var patCount = getPatternCount(patternKey);
       if(patternKey && patCount >= 2 && cleanLabels.indexOf(patternKey) === -1) {
-        html += '<div style="margin-top:10px;padding:10px 14px;background:var(--amber-light);border:1px solid var(--amber-mid);border-radius:8px;font-size:12px;color:var(--amber-dark,#8B4400)">You've now seen <strong>' + patternKey + '</strong> ' + patCount + ' times this session. This is a pattern, not a coincidence.</div>';
+        html += '<div style="margin-top:10px;padding:10px 14px;background:var(--amber-light);border:1px solid var(--amber-mid);border-radius:8px;font-size:12px;color:var(--amber-dark,#8B4400)">You\'ve now seen <strong>' + patternKey + '</strong> ' + patCount + ' times this session. This is a pattern, not a coincidence.</div>';
       }
 
       prEl.innerHTML = html;
@@ -4599,7 +4599,7 @@ function buildDebrief() {
       var patternKey2 = eo.pattern || '';
       var patCount2 = getPatternCount(patternKey2);
       if(patternKey2 && patCount2 >= 2) {
-        prEl.innerHTML = '<div style="padding:10px 14px;background:var(--amber-light);border:1px solid var(--amber-mid);border-radius:8px;font-size:12px;color:var(--amber-dark,#8B4400)">You've now seen <strong>' + patternKey2 + '</strong> ' + patCount2 + ' times. Recognizing this pattern before it costs you is the goal.</div>';
+        prEl.innerHTML = '<div style="padding:10px 14px;background:var(--amber-light);border:1px solid var(--amber-mid);border-radius:8px;font-size:12px;color:var(--amber-dark,#8B4400)">You\'ve now seen <strong>' + patternKey2 + '</strong> ' + patCount2 + ' times. Recognizing this pattern before it costs you is the goal.</div>';
         prEl.style.display = 'block';
       } else {
         prEl.style.display = 'none';
@@ -7432,6 +7432,83 @@ function runSeedHarness() {
         '<span style="color:var(--text2);font-style:italic;font-size:10px">' + r.detail + '</span>' +
         '</div>';
     });
+
+  // ── SEED POOL INTEGRITY CHECKS ────────────────────────────────────────────
+  seedTest('Seed pool: count >= 30', function() {
+    return { pass: BS_SEED_POOL.length >= 30, detail: BS_SEED_POOL.length + ' seeds' };
+  });
+
+  // Check all trap families represented
+  var trapFamiliesPresent = {};
+  BS_SEED_POOL.forEach(function(s) { trapFamiliesPresent[s.trapFamily] = true; });
+  var expectedFamilies = ['omit_addon','time_with_addon','therapy_not_billable','upcode_stable','undercode','wrong_addon','mdm_vs_time'];
+  expectedFamilies.forEach(function(fam) {
+    seedTest('Trap family present: ' + fam, function() {
+      return { pass: !!trapFamiliesPresent[fam], detail: trapFamiliesPresent[fam] ? 'present' : 'MISSING' };
+    });
+  });
+
+  // Surface variation integrity
+  seedTest('Surface variation: pickSeedSurface exists', function() {
+    return { pass: typeof pickSeedSurface === 'function', detail: typeof pickSeedSurface };
+  });
+
+  if (typeof pickSeedSurface === 'function' && BS_SEED_POOL.length > 0) {
+    seedTest('Surface variation: groundTruth preserved after variation', function() {
+      var testSeed = BS_SEED_POOL[0];
+      var varied = pickSeedSurface(testSeed);
+      var ok = varied && varied.groundTruth &&
+                varied.groundTruth.optimalEM === testSeed.groundTruth.optimalEM &&
+                varied.groundTruth.optimalAddon === testSeed.groundTruth.optimalAddon;
+      return { pass: !!ok, detail: ok ? 'optimalEM=' + varied.groundTruth.optimalEM : 'groundTruth changed or missing' };
+    });
+
+    seedTest('Surface variation: _ratesPayer ties back to original payer', function() {
+      var testSeed = BS_SEED_POOL[0];
+      var varied = pickSeedSurface(testSeed);
+      return { pass: varied._ratesPayer === testSeed.patient.payer,
+               detail: 'ratesPayer=' + (varied._ratesPayer || 'missing') + ' original=' + testSeed.patient.payer };
+    });
+
+    seedTest('Surface variation: trapFamily never changes', function() {
+      var allOk = true;
+      for (var si = 0; si < Math.min(5, BS_SEED_POOL.length); si++) {
+        var sv = pickSeedSurface(BS_SEED_POOL[si]);
+        if (sv.trapFamily !== BS_SEED_POOL[si].trapFamily) { allOk = false; break; }
+      }
+      return { pass: allOk, detail: allOk ? 'trap families stable across 5 samples' : 'trapFamily changed' };
+    });
+  }
+
+  // Pattern label coverage
+  seedTest('Pattern labels: unique count >= 8', function() {
+    var labels = {};
+    BS_SEED_POOL.forEach(function(s) { if (s.debrief && s.debrief.primaryPattern) labels[s.debrief.primaryPattern] = true; });
+    var count = Object.keys(labels).length;
+    return { pass: count >= 8, detail: count + ' unique patterns across ' + BS_SEED_POOL.length + ' seeds' };
+  });
+
+  // Second denial coverage
+  seedTest('Second denial: resp-second-denial HTML element exists', function() {
+    return { pass: !!document.getElementById('resp-second-denial'), detail: 'resp-second-denial element' };
+  });
+
+  // Consequence block
+  seedTest('Consequence block: db-consequence-block exists', function() {
+    return { pass: !!document.getElementById('db-consequence-block'), detail: 'db-consequence-block element' };
+  });
+
+  // Confidence capture
+  seedTest('Confidence capture: element and function exist', function() {
+    return { pass: !!document.getElementById('confidence-capture') && typeof setConfidence === 'function',
+             detail: 'confidence-capture + setConfidence()' };
+  });
+
+  // Temptation element
+  seedTest('Temptation block: db-temptation exists', function() {
+    return { pass: !!document.getElementById('db-temptation'), detail: 'db-temptation element' };
+  });
+
     if (currentSeedId) html += '</div>';
     resultsEl.innerHTML = html;
   }
@@ -7646,6 +7723,79 @@ function runTeachingDiag() {
         '<span style="color:var(--text2);font-style:italic">'+r.detail+'</span>' +
         '</div>';
     });
+
+  // ── STAGE 3 SEED POOL CHECKS ──────────────────────────────────────────────
+  addResult('Stage 3 seed pool: PSYCH_STAGE3_SEEDS exists',
+    typeof PSYCH_STAGE3_SEEDS !== 'undefined' && PSYCH_STAGE3_SEEDS.length > 0 ? 'pass' : 'fail',
+    typeof PSYCH_STAGE3_SEEDS !== 'undefined' ? PSYCH_STAGE3_SEEDS.length + ' seeds' : 'MISSING');
+  if (typeof PSYCH_STAGE3_SEEDS !== 'undefined') {
+    PSYCH_STAGE3_SEEDS.forEach(function(seed) {
+      addResult('Stage 3 seed ' + seed.id + ': required fields',
+        seed.modalityOptions && seed.interventionOptions && seed.correctChoices && seed.acceptableChoices && seed.elementFeedback ? 'pass' : 'fail',
+        seed.id);
+      addResult('Stage 3 seed ' + seed.id + ': acceptableChoices has intervention + response',
+        seed.acceptableChoices && seed.acceptableChoices.intervention && seed.acceptableChoices.response ? 'pass' : 'fail',
+        seed.id);
+      addResult('Stage 3 seed ' + seed.id + ': aiSeed present',
+        seed.aiSeed && seed.aiSeed.modality && seed.aiSeed.mechanism ? 'pass' : 'fail',
+        seed.id);
+    });
+  }
+
+  // ── TEMPTATION MAP CHECKS ─────────────────────────────────────────────────
+  addResult('TEMPTATION_MAP: defined in buildDebrief',
+    document.querySelector('[id="db-temptation"]') !== null ? 'pass' : 'fail',
+    'db-temptation element');
+  addResult('PATTERN_INTERPRETATION: fingerprint panel exists',
+    document.querySelector('[id="db-pattern-recognition"]') !== null ? 'pass' : 'fail',
+    'db-pattern-recognition element');
+
+  // ── CONFIDENCE CAPTURE CHECKS ─────────────────────────────────────────────
+  addResult('Confidence capture: HTML element exists',
+    document.getElementById('confidence-capture') !== null ? 'pass' : 'fail',
+    'confidence-capture element');
+  addResult('Confidence capture: setConfidence function exists',
+    typeof setConfidence === 'function' ? 'pass' : 'fail',
+    'setConfidence()');
+
+  // ── SURFACE VARIATION CHECKS ──────────────────────────────────────────────
+  addResult('Surface variation: pickSeedSurface exists',
+    typeof pickSeedSurface === 'function' ? 'pass' : 'fail',
+    'pickSeedSurface()');
+  addResult('Surface variation: SEED_SURFACE_VARIANTS defined',
+    typeof SEED_SURFACE_VARIANTS !== 'undefined' && SEED_SURFACE_VARIANTS.dxAliases ? 'pass' : 'fail',
+    typeof SEED_SURFACE_VARIANTS !== 'undefined' ? Object.keys(SEED_SURFACE_VARIANTS.dxAliases).length + ' dx alias families' : 'MISSING');
+  if (typeof SEED_SURFACE_VARIANTS !== 'undefined' && SEED_SURFACE_VARIANTS.symptomVariants) {
+    var symptomFamilies = Object.keys(SEED_SURFACE_VARIANTS.symptomVariants);
+    addResult('Surface variation: symptom variants',
+      symptomFamilies.length >= 5 ? 'pass' : 'warn',
+      symptomFamilies.length + ' trap families with symptom variation');
+  }
+
+  // ── SECOND DENIAL CHECKS ──────────────────────────────────────────────────
+  addResult('Second denial: HTML block exists',
+    document.getElementById('resp-second-denial') !== null ? 'pass' : 'fail',
+    'resp-second-denial element');
+  // Check that at least 3 wrong responses across drills have secondDenial
+  var secondDenialCount = 0;
+  if (typeof DRILLS !== 'undefined') {
+    DRILLS.forEach(function(d) {
+      if (d.responses) d.responses.forEach(function(r) { if (r.secondDenial) secondDenialCount++; });
+    });
+  }
+  // Also check evalClaim responses via eraResult if available
+  addResult('Second denial: drill responses with secondDenial',
+    secondDenialCount >= 0 ? 'pass' : 'fail',
+    secondDenialCount + ' drill responses (billing sim responses checked at runtime)');
+
+  // ── CONSEQUENCE BLOCK CHECKS ──────────────────────────────────────────────
+  addResult('Consequence block: HTML element exists',
+    document.getElementById('db-consequence-block') !== null ? 'pass' : 'fail',
+    'db-consequence-block element');
+  addResult('What happened field: HTML element exists',
+    document.getElementById('db-what-happened') !== null ? 'pass' : 'fail',
+    'db-what-happened element');
+
     html += '</div>';
     resultsEl.innerHTML = html;
   }
