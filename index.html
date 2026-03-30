@@ -2583,6 +2583,7 @@ function generateNoteFromSeed(seed, callback) {
     'Patient: ' + (seed.patient.status === 'new' ? 'New patient' : 'Established patient') + ', age ' + seed.patient.age + ', ' + seed.patient.sex + '.',
     'Setting: ' + (seed.patient.setting === 'telehealth' ? 'Synchronous telehealth, patient at home.' : 'In-person office visit.'),
     'Diagnoses: ' + seed.clinical.primaryDx.label + (seed.clinical.secondaryDx ? ' and ' + seed.clinical.secondaryDx.label : '') + '.',
+    'Only mention these diagnoses in the note. Do not introduce additional conditions, comorbidities, or diagnoses not listed above.',
     'Presenting themes: ' + seed.clinical.symptomThemes.join('; ') + '.',
     'Functional impact: ' + seed.clinical.functionalImpact.join('; ') + '.',
     'Medications: ' + seed.clinical.medications.join(', ') + (seed.clinical.medChanges ? ' — medication change made this visit.' : ' — no medication changes.'),
@@ -3305,7 +3306,6 @@ function show(id) {
   if (el) { el.style.display = 'block'; window.scrollTo(0,0); }
 }
 function startSim() {
-  if (!SETUP.npi) { goSetup(); return; }
   hideAll();
   show('screen-sim-entry');
 }
@@ -3553,6 +3553,9 @@ function launchSimFromSeed(seed) {
     _isNewPatient: surfaceSeed.patient.status === 'new',
     _seedGroundTruth: gt,
     _seedDebrief: surfaceSeed.debrief,
+    _primaryDx: surfaceSeed.clinical.primaryDx,
+    _secondaryDx: surfaceSeed.clinical.secondaryDx || null,
+    _symptomThemes: surfaceSeed.clinical.symptomThemes || [],
     _correctAnswer: {
       emCode: gt.optimalEM,
       addon: gt.optimalAddon || '',
@@ -3729,39 +3732,23 @@ function launchSim() {
   // Update diagnoses to match MDM level (ensures chart DX matches note content)
   var dxRowEl = document.getElementById('chart-dx-row');
   if(dxRowEl && currentVariant) {
-    var mdm = currentVariant._mdmLevel || 'moderate';
-    // DX sets: max 2 codes to match autoFill field support (dx1a/dx2a)
-    // High MDM uses a primary + secondary pair that reflects complexity
-    var dxSets = {
-      moderate: [
-        ['F31.81','F41.1'],
-        ['F33.1','F41.1'],
-        ['F33.1','F90.2'],
-        ['F31.81','F41.0']
-      ],
-      high: [
-        ['F31.81','F10.20'],
-        ['F31.10','F43.10'],
-        ['F25.0','F10.20'],
-        ['F31.81','F33.1']
-      ]
-    };
-    var dxLabels = {
-      'F31.81':'Bipolar II, current depressed','F41.1':'GAD','F33.1':'MDD, recurrent moderate',
-      'F90.2':'ADHD, combined type','F41.0':'Panic disorder','F10.20':'AUD, moderate',
-      'F31.10':'Bipolar I, manic episode','F43.10':'PTSD','F25.0':'Schizoaffective disorder, bipolar type',
-      'F31.81':'Bipolar II','F33.1':'MDD, moderate'
-    };
-    var dxOptions = dxSets[mdm] || dxSets.moderate;
-    var chosen = dxOptions[Math.floor(Math.random() * dxOptions.length)];
-    // Build pill display with code + label
-    dxRowEl.innerHTML = chosen.map(function(code){
-      var label = dxLabels[code] || code;
-      return '<div class="dx-pill">' + code + ' -- ' + label + '</div>';
-    }).join('');
-    // Store codes for autoFill
-    window._simDx1 = chosen[0] || 'F31.81';
-    window._simDx2 = chosen[1] || 'F41.1';
+    // Build dx pills from actual seed clinical data — not random lookup
+    var pills = '';
+    if (currentVariant._primaryDx) {
+      pills += '<div class="dx-pill">' + currentVariant._primaryDx.code + ' -- ' + currentVariant._primaryDx.label + '</div>';
+      window._simDx1 = currentVariant._primaryDx.code;
+    }
+    if (currentVariant._secondaryDx) {
+      pills += '<div class="dx-pill">' + currentVariant._secondaryDx.code + ' -- ' + currentVariant._secondaryDx.label + '</div>';
+      window._simDx2 = currentVariant._secondaryDx.code;
+    }
+    // Fallback if seed data unavailable
+    if (!pills) {
+      window._simDx1 = 'F31.81';
+      window._simDx2 = 'F41.1';
+      pills = '<div class="dx-pill">F31.81 -- Bipolar II, current depressed</div><div class="dx-pill">F41.1 -- GAD</div>';
+    }
+    dxRowEl.innerHTML = pills;
   }
   setTabActive('chart');
   lockTab('benefits','Benefits'); lockTab('coding','Coding');
@@ -6299,6 +6286,8 @@ function retryMdmLayer() { startMdmLayer(mdmCurrentLayer); }
 var MDM_SEEDS = [
   {
     id: 'MS-001',
+    outcomeType_correct: 'clean',
+    outcomeType_wrong: 'undercoded',
     label: 'Established patient — MDD + GAD',
     chart: 'Visit type: Established patient\nDiagnosis: MDD, GAD\n\nTotal time: 47 minutes\n  \u2022 12 min chart review (prior notes, medication history, PHQ-9 trends)\n  \u2022 25 min face-to-face\n  \u2022 10 min documentation',
     note: 'Patient presents for follow-up of depression and anxiety. Reports partial response to sertraline with persistent low mood, anhedonia, and early morning awakening.\n\nPHQ-9 reviewed (score 15). Symptoms discussed in context of recent job stress and interpersonal conflict.\n\nSertraline increased from 50 mg to 100 mg daily. Risks, benefits, and side effects reviewed.\n\nSupportive therapy provided, including discussion of coping strategies and behavioral activation techniques.\n\nPlan: medication adjustment, follow-up in 4 weeks.',
@@ -6314,6 +6303,8 @@ var MDM_SEEDS = [
   },
   {
     id: 'MS-002',
+    outcomeType_correct: 'clean',
+    outcomeType_wrong: 'unsupported',
     label: 'Established patient — MDD + GAD (no time documented)',
     chart: 'Visit type: Established patient\nDiagnosis: MDD, GAD',
     note: 'Patient presents for follow-up of depression and anxiety. Reports partial response to sertraline with persistent low mood, anhedonia, and early morning awakening.\n\nPHQ-9 reviewed (score 15). Symptoms discussed in context of recent job stress and interpersonal conflict.\n\nSertraline increased from 50 mg to 100 mg daily. Risks, benefits, and side effects reviewed.\n\nSupportive therapy provided, including discussion of coping strategies and behavioral activation techniques.\n\nTotal time spent on encounter: extended visit with detailed discussion, medication adjustment, and care planning.',
@@ -6329,6 +6320,8 @@ var MDM_SEEDS = [
   },
   {
     id: 'MS-003',
+    outcomeType_correct: 'clean',
+    outcomeType_wrong: 'audit_risk',
     label: 'Established patient — PTSD + MDD with psychotherapy',
     chart: 'Visit type: Established patient\nDiagnosis: PTSD, MDD\n\nTotal time: 52 minutes\n  \u2022 10 min chart review\n  \u2022 30 min face-to-face\n  \u2022 12 min documentation\n\nPsychotherapy: 22 minutes (documented separately)',
     note: 'Persistent nightmares, irritability, and depressed mood. Fluoxetine continued. Prazosin initiated after discussion of risks, benefits, dizziness, and blood pressure precautions.\n\nPSYCHOTHERAPY (22 minutes): Trauma-focused CBT. Cognitive processing of stuck point related to self-blame following assault. Patient identified distorted belief and generated alternative interpretation. Demonstrated reduced emotional activation when revisiting the memory. Progress toward CPT goals documented.',
@@ -6344,6 +6337,8 @@ var MDM_SEEDS = [
   },
   {
     id: 'MS-004',
+    outcomeType_correct: 'clean',
+    outcomeType_wrong: 'audit_risk',
     label: 'Established patient — Bipolar I, stable on lithium',
     chart: 'Visit type: Established patient\nDiagnosis: Bipolar I disorder, stable on lithium\n\nTotal time: 31 minutes\n  \u2022 6 min chart review\n  \u2022 17 min face-to-face\n  \u2022 8 min documentation',
     note: 'Mood remains euthymic. No manic symptoms, no depressive relapse, sleeping well. Lithium continued at same dose. Reviewed recent lithium level and BMP, both within range. No side effects reported. No psychotherapy conducted. Follow-up in 8 weeks.',
@@ -6356,6 +6351,23 @@ var MDM_SEEDS = [
     whatHappened: 'Both MDM and time support 99214 here. The trap is billing 99215 because Bipolar I on lithium feels serious. MDM measures the work done today, not the reputation of the diagnosis. Today\'s visit was stable monitoring with no changes. That is moderate, not high.',
     temptation: 'Bipolar disorder on lithium felt high stakes, and that made 99215 feel justified. But serious diagnoses do not automatically create high MDM. MDM measures what happened in the visit today.',
     anchor: 'MDM measures the work and risk addressed today, not the reputation of the diagnosis.'
+  }  ,
+  {
+    id: 'MS-005',
+    label: 'Established patient — MDD, Data overcounting trap',
+    outcomeType_correct: 'clean',
+    outcomeType_wrong: 'downcoded',
+    chart: 'Visit type: Established patient\nDiagnosis: MDD\n\nTotal time: 24 minutes\n  \u2022 4 min chart review\n  \u2022 14 min face-to-face\n  \u2022 6 min documentation',
+    note: 'PHQ-9 score 18 documented. Patient reports ongoing low mood and low motivation. Escitalopram continued at current dose. Encouraged exercise, therapy follow-up, and sleep hygiene. No psychotherapy conducted. Return in 4 weeks.',
+    mdmBreakdown: 'Problems: MDD, partially controlled \u2192 Moderate\nData: PHQ-9 score documented \u2014 not interpreted or linked to a decision \u2192 Low\nRisk: Medication continued unchanged \u2192 Low-to-Moderate\n\nMDM: Problems moderate, but Data and Risk are low.\n2/3 domains must reach the target level.\n\nIf Data is overcounted \u2192 99214 (wrong)\nIf Data is correctly scored \u2192 only 1/3 domains at moderate \u2192 99213',
+    timeResult: '24 minutes \u2192 20\u201329 min range \u2192 99213 by time\n\nBoth lanes agree here.',
+    correctCode: '99213',
+    correctBasis: 'mdm',
+    trapBasis: 'mdm',
+    trapCode: '99214',
+    whatHappened: 'A PHQ-9 score in the note is data collection, not data analysis. To count toward the Data domain, the result must be interpreted and linked to a clinical decision. This note documents the score only. Data = Low. With only Problems at moderate, MDM supports 99213, not 99214. Overcounting Data is one of the most common MDM inflation errors in outpatient psychiatry.',
+    temptation: 'The PHQ-9 was in the note. That made the Data domain feel stronger. But documenting a score is not the same as analyzing and using it in decision-making.',
+    anchor: 'Data counts when it is reviewed, interpreted, and integrated into the clinical decision \u2014 not just copied into the note.'
   }
 ];
 
@@ -6445,25 +6457,63 @@ function submitMdmSim() {
     else if (c === mdmSimSelectedCode && !codeCorrect) b.classList.add('incorrect');
   });
 
-  // Build debrief
+  // Build consequence block using outcome categories
   var consEl = document.getElementById('mdm-sim-consequence');
   if (consEl) {
-    if (fullyCorrect) {
-      consEl.style.background = 'var(--green-light)';
-      consEl.style.border = '1px solid var(--green)';
-      consEl.style.color = 'var(--green)';
-      consEl.innerHTML = '<strong>&#x2713; Correct.</strong> ' + seed.correctBasis.toUpperCase() + ' \u2192 ' + seed.correctCode + '.';
-    } else if (codeCorrect && !basisCorrect) {
-      consEl.style.background = 'var(--amber-light,#FFF3E0)';
-      consEl.style.border = '1px solid var(--amber-mid,#FFB74D)';
-      consEl.style.color = 'var(--amber,#C4711A)';
-      consEl.innerHTML = '<strong>Code correct, basis wrong.</strong> ' + seed.correctCode + ' is right, but the basis should be ' + seed.correctBasis.toUpperCase() + ' not ' + mdmSimSelectedLane.toUpperCase() + '.';
-    } else {
-      consEl.style.background = 'var(--red-light)';
-      consEl.style.border = '1px solid var(--red)';
-      consEl.style.color = 'var(--red)';
-      consEl.innerHTML = '<strong>&#x2717; Not quite.</strong> Correct: ' + seed.correctBasis.toUpperCase() + ' \u2192 ' + seed.correctCode + '. You selected: ' + mdmSimSelectedLane.toUpperCase() + ' \u2192 ' + mdmSimSelectedCode + '.';
+    var outcomeType = fullyCorrect
+      ? (seed.outcomeType_correct || 'clean')
+      : (seed.outcomeType_wrong || 'incorrect');
+
+    var outcomeConfig = {
+      clean: {
+        bg: 'var(--green-light)', border: 'var(--green)', color: 'var(--green)',
+        icon: '&#x2713;',
+        label: 'CLEAN',
+        msg: seed.correctBasis.toUpperCase() + ' \u2192 ' + seed.correctCode + '. Documentation supports the level billed.'
+      },
+      undercoded: {
+        bg: 'var(--amber-light,#FFF3E0)', border: 'var(--amber-mid,#FFB74D)', color: 'var(--amber,#C4711A)',
+        icon: '&#x26A0;',
+        label: 'PAID \u2014 but undercoded',
+        msg: 'The claim will pay at ' + mdmSimSelectedCode + '. But the visit supported ' + seed.correctCode + ' by ' + seed.correctBasis.toUpperCase() + '. Revenue left behind: the difference between levels, every visit this pattern repeats.'
+      },
+      audit_risk: {
+        bg: 'var(--amber-light,#FFF3E0)', border: 'var(--amber-mid,#FFB74D)', color: 'var(--amber,#C4711A)',
+        icon: '&#x26A0;',
+        label: 'PAID \u2014 but audit exposure',
+        msg: 'The claim pays at ' + mdmSimSelectedCode + '. But the documentation does not support that level. On audit, the code gets pulled back to ' + seed.correctCode + '. Recoupment plus pattern flag.'
+      },
+      downcoded: {
+        bg: 'var(--red-light)', border: 'var(--red)', color: 'var(--red)',
+        icon: '&#x2717;',
+        label: 'DOWNCODED',
+        msg: 'You billed ' + mdmSimSelectedCode + '. The documentation supports ' + seed.correctCode + '. Payer downcodes on review. You receive ' + seed.correctCode + ' payment, and the overcoding pattern flags your account.'
+      },
+      unsupported: {
+        bg: 'var(--red-light)', border: 'var(--red)', color: 'var(--red)',
+        icon: '&#x2717;',
+        label: 'NOT SUPPORTED',
+        msg: 'You selected ' + seed.correctBasis.toUpperCase() + ' \u2192 ' + seed.correctCode + '. The documentation cannot support this. Correct: ' + seed.correctBasis.toUpperCase() + ' \u2192 ' + seed.correctCode + '.'
+      },
+      incorrect: {
+        bg: 'var(--red-light)', border: 'var(--red)', color: 'var(--red)',
+        icon: '&#x2717;',
+        label: 'INCORRECT',
+        msg: 'Correct: ' + seed.correctBasis.toUpperCase() + ' \u2192 ' + seed.correctCode + '. You selected: ' + mdmSimSelectedLane.toUpperCase() + ' \u2192 ' + mdmSimSelectedCode + '.'
+      }
+    };
+
+    // Code-correct-but-basis-wrong overrides outcome
+    if (!fullyCorrect && codeCorrect && !basisCorrect) {
+      outcomeType = 'audit_risk';
+      outcomeConfig.audit_risk.msg = seed.correctCode + ' is the right code. But the basis matters: ' + seed.correctBasis.toUpperCase() + ' is required here, not ' + mdmSimSelectedLane.toUpperCase() + '. Using the wrong basis creates audit exposure even when the code is correct.';
     }
+
+    var cfg = outcomeConfig[outcomeType] || outcomeConfig.incorrect;
+    consEl.style.background = cfg.bg;
+    consEl.style.border = '1px solid ' + cfg.border;
+    consEl.style.color = cfg.color;
+    consEl.innerHTML = '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">' + cfg.icon + ' ' + cfg.label + '</div><div style="font-size:13px">' + cfg.msg + '</div>';
   }
 
   // MDM breakdown
