@@ -6467,42 +6467,72 @@ function submitMdmSim() {
       ? (seed.outcomeType_correct || 'clean')
       : (seed.outcomeType_wrong || 'incorrect');
 
+    // Pull rates for revenue impact figures
+    var payer = (typeof CUR_PAYER !== 'undefined' && RATES[CUR_PAYER]) ? CUR_PAYER : 'premera';
+    var payerRates = RATES[payer];
+    var billedRate   = payerRates[mdmSimSelectedCode] || 0;
+    var correctRate  = payerRates[seed.correctCode]   || 0;
+    var perVisitDiff = Math.abs(correctRate - billedRate);
+    var annual15     = perVisitDiff * 15 * 52;   // 15 visits/week, 52 weeks
+    var annual10     = perVisitDiff * 10 * 52;   // 10 visits/week
+
+    function fmt(n) { return '$' + n.toFixed(0); }
+
+    // Revenue impact line — shown on undercoded, downcoded, audit_risk
+    function revenueImpactHTML(lostPerVisit, correctCode, billedCode, labelPrefix) {
+      if (!lostPerVisit) return '';
+      return '<div style="margin-top:10px;padding-top:10px;border-top:1px solid rgba(0,0,0,0.08);font-size:12px;line-height:1.8">' +
+        '<div style="font-weight:700;margin-bottom:2px">' + labelPrefix + '</div>' +
+        '<div>' + billedCode + ' \u2192 ' + fmt(payerRates[billedCode] || 0) + ' &nbsp;&nbsp; ' +
+        correctCode + ' \u2192 ' + fmt(payerRates[correctCode] || 0) + '</div>' +
+        '<div>Per visit: <strong>' + fmt(lostPerVisit) + '</strong></div>' +
+        '<div>Annualized (10 visits/wk): <strong>' + fmt(annual10) + '</strong></div>' +
+        '<div>Annualized (15 visits/wk): <strong>' + fmt(annual15) + '</strong></div>' +
+        '</div>';
+    }
+
     var outcomeConfig = {
       clean: {
         bg: 'var(--green-light)', border: 'var(--green)', color: 'var(--green)',
         icon: '&#x2713;',
-        label: 'CLEAN',
-        msg: seed.correctBasis.toUpperCase() + ' \u2192 ' + seed.correctCode + '. Documentation supports the level billed.'
+        label: 'DEFENSIBLE CLAIM',
+        msg: seed.correctBasis.toUpperCase() + ' \u2192 ' + seed.correctCode + '. Documentation supports the level billed. Claim stands on audit.',
+        extra: ''
       },
       undercoded: {
         bg: 'var(--amber-light,#FFF3E0)', border: 'var(--amber-mid,#FFB74D)', color: 'var(--amber,#C4711A)',
         icon: '&#x26A0;',
-        label: 'PAID \u2014 but undercoded',
-        msg: 'The claim will pay at ' + mdmSimSelectedCode + '. But the visit supported ' + seed.correctCode + ' by ' + seed.correctBasis.toUpperCase() + '. Revenue left behind: the difference between levels, every visit this pattern repeats.'
+        label: 'PAID \u2014 REVENUE LOST',
+        msg: 'You billed ' + mdmSimSelectedCode + '. The visit supported ' + seed.correctCode + ' by ' + seed.correctBasis.toUpperCase() + '. The claim pays \u2014 but you left revenue behind. No audit risk, but consistent undercoding compounds quietly.',
+        extra: revenueImpactHTML(perVisitDiff, seed.correctCode, mdmSimSelectedCode, 'Revenue lost per visit:')
       },
       audit_risk: {
         bg: 'var(--amber-light,#FFF3E0)', border: 'var(--amber-mid,#FFB74D)', color: 'var(--amber,#C4711A)',
         icon: '&#x26A0;',
-        label: 'PAID \u2014 but audit exposure',
-        msg: 'The claim pays at ' + mdmSimSelectedCode + '. But the documentation does not support that level. On audit, the code gets pulled back to ' + seed.correctCode + '. Recoupment plus pattern flag.'
+        label: 'PAID \u2014 AUDIT EXPOSURE',
+        msg: 'The claim pays at ' + mdmSimSelectedCode + '. But the documentation does not support that level. On audit, the code pulls back to ' + seed.correctCode + '. Recoupment plus pattern flag. The difference is not just this visit.',
+        extra: revenueImpactHTML(perVisitDiff, seed.correctCode, mdmSimSelectedCode, 'Recoupment exposure per visit:')
       },
       downcoded: {
         bg: 'var(--red-light)', border: 'var(--red)', color: 'var(--red)',
         icon: '&#x2717;',
-        label: 'DOWNCODED',
-        msg: 'You billed ' + mdmSimSelectedCode + '. The documentation supports ' + seed.correctCode + '. Payer downcodes on review. You receive ' + seed.correctCode + ' payment, and the overcoding pattern flags your account.'
+        label: 'DOWNCODED ON REVIEW',
+        msg: 'You billed ' + mdmSimSelectedCode + '. Documentation supports ' + seed.correctCode + '. Payer downcodes on review. You receive ' + seed.correctCode + ' payment. The overcoding pattern flags your account for additional review.',
+        extra: revenueImpactHTML(perVisitDiff, seed.correctCode, mdmSimSelectedCode, 'Downcode impact per visit:')
       },
       unsupported: {
         bg: 'var(--red-light)', border: 'var(--red)', color: 'var(--red)',
         icon: '&#x2717;',
-        label: 'NOT SUPPORTED',
-        msg: 'You selected ' + seed.correctBasis.toUpperCase() + ' \u2192 ' + seed.correctCode + '. The documentation cannot support this. Correct: ' + seed.correctBasis.toUpperCase() + ' \u2192 ' + seed.correctCode + '.'
+        label: 'BASIS NOT AVAILABLE',
+        msg: 'The ' + mdmSimSelectedLane.toUpperCase() + ' route is not available for this visit. ' + seed.correctBasis.toUpperCase() + ' is the only defensible basis here, and it supports ' + seed.correctCode + '.',
+        extra: ''
       },
       incorrect: {
         bg: 'var(--red-light)', border: 'var(--red)', color: 'var(--red)',
         icon: '&#x2717;',
         label: 'INCORRECT',
-        msg: 'Correct: ' + seed.correctBasis.toUpperCase() + ' \u2192 ' + seed.correctCode + '. You selected: ' + mdmSimSelectedLane.toUpperCase() + ' \u2192 ' + mdmSimSelectedCode + '.'
+        msg: 'Correct: ' + seed.correctBasis.toUpperCase() + ' \u2192 ' + seed.correctCode + '. You selected: ' + mdmSimSelectedLane.toUpperCase() + ' \u2192 ' + mdmSimSelectedCode + '.',
+        extra: ''
       }
     };
 
@@ -6510,13 +6540,16 @@ function submitMdmSim() {
     if (!fullyCorrect && codeCorrect && !basisCorrect) {
       outcomeType = 'audit_risk';
       outcomeConfig.audit_risk.msg = seed.correctCode + ' is the right code. But the basis matters: ' + seed.correctBasis.toUpperCase() + ' is required here, not ' + mdmSimSelectedLane.toUpperCase() + '. Using the wrong basis creates audit exposure even when the code is correct.';
+      outcomeConfig.audit_risk.extra = '';
     }
 
     var cfg = outcomeConfig[outcomeType] || outcomeConfig.incorrect;
     consEl.style.background = cfg.bg;
     consEl.style.border = '1px solid ' + cfg.border;
     consEl.style.color = cfg.color;
-    consEl.innerHTML = '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">' + cfg.icon + ' ' + cfg.label + '</div><div style="font-size:13px">' + cfg.msg + '</div>';
+    consEl.innerHTML = '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">' + cfg.icon + ' ' + cfg.label + '</div>' +
+      '<div style="font-size:13px">' + cfg.msg + '</div>' +
+      (cfg.extra || '');
   }
 
   // MDM breakdown
