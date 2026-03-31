@@ -342,12 +342,32 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   <!-- Teaching & Psych diagnostics tab -->
   <div id="dtab-teaching-body" style="display:none">
     <div class="card" style="margin-bottom:14px">
-      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">What this checks</div>
-      <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Validates every Stage 1, 2, and 3 scenario: index bounds, acceptableChoices alignment, grading logic, seed pool integrity, Unit 1 and Unit 2 screen flow, and phrasing bank consistency. Flags structural errors without requiring manual walkthrough.</div>
-      <button class="btn btn-green" onclick="runTeachingDiag()" style="font-size:13px;padding:8px 20px">&#9658; Run all checks</button>
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Structural checks</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Validates every Stage 1, 2, and 3 scenario: index bounds, acceptableChoices alignment, grading logic, seed pool integrity, Unit 1 and Unit 2 screen flow, phrasing bank consistency, and MS-006 contrast mode wiring.</div>
+      <button class="btn btn-green" onclick="runTeachingDiag()" style="font-size:13px;padding:8px 20px">&#9658; Run structural checks</button>
     </div>
     <div id="teach-diag-summary" style="display:none;margin-bottom:14px"></div>
     <div id="teach-diag-results"></div>
+
+    <div class="card" style="margin-top:20px;margin-bottom:14px">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">MS-006 contrast pair evaluator (LLM)</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:8px">Sends each MS-006 contrast pair to Claude and evaluates teaching integrity: same-visit preservation, documentation-as-differentiator, clinical plausibility, and whether the pair reinforces the Lesson 5 insight.</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Evaluates all 14 reasoning blocks. Each call uses the API — takes ~30 seconds total.</div>
+      <button class="btn btn-green" onclick="runContrastQualityEval()" style="font-size:13px;padding:8px 20px">&#9658; Evaluate all contrast pairs</button>
+      <button class="btn" onclick="runContrastQualityEval(true)" style="font-size:13px;padding:8px 20px;margin-left:8px">Spot-check 3 random pairs</button>
+    </div>
+    <div id="contrast-eval-summary" style="display:none;margin-bottom:14px"></div>
+    <div id="contrast-eval-results"></div>
+
+    <div class="card" style="margin-top:20px;margin-bottom:14px">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Full-program teaching quality evaluator (LLM)</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:8px">Samples debrief content from all modes — Billing Sim, Denial Drills, MDM Sim, and Guided Learning — and scores each against four teaching quality criteria: clinical accuracy, reasoning failure addressed, consequence clarity, and pattern transferability. Catches semantic drift and weak teaching that structural checks miss.</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Samples ~20 items across all modes. Each call uses the API — takes ~60 seconds total.</div>
+      <button class="btn btn-green" onclick="runFullProgramEval()" style="font-size:13px;padding:8px 20px">&#9658; Evaluate all modes</button>
+      <button class="btn" onclick="runFullProgramEval(true)" style="font-size:13px;padding:8px 20px;margin-left:8px">Spot-check 5 items</button>
+    </div>
+    <div id="full-eval-summary" style="display:none;margin-bottom:14px"></div>
+    <div id="full-eval-results"></div>
   </div>
 
   <!-- Seed Harness tab -->
@@ -6383,8 +6403,112 @@ var MDM_SEEDS = [
     whatHappened: 'A PHQ-9 score in the note is data collection, not data analysis. To count toward the Data domain, the result must be interpreted and linked to a clinical decision. This note documents the score only. Data = Low. With only Problems at moderate, MDM supports 99213, not 99214. Overcounting Data is one of the most common MDM inflation errors in outpatient psychiatry.',
     temptation: 'The PHQ-9 was in the note. That made the Data domain feel stronger. But documenting a score is not the same as analyzing and using it in decision-making.',
     anchor: 'Data counts when it is reviewed, interpreted, and integrated into the clinical decision \u2014 not just copied into the note.'
+  },
+  {
+    id: 'MS-006',
+    contrastMode: true,
+    outcomeType_correct: 'clean',
+    outcomeType_wrong: 'audit_risk',
+    label: 'Same visit. Two notes. Which supports 99214?',
+    basePatient: 'Established patient \u2014 MDD + GAD, stable on SSRI',
+    noteA_base: 'Patient presents for follow-up of MDD and GAD. Reports stable mood and minimal anxiety. PHQ-9 score 7, GAD-7 score 5, both consistent with prior visit.\n\nMedication continued without change. No new concerns raised.',
+    noteB_prefix: 'Patient presents for follow-up of MDD and GAD. Reports stable mood and minimal anxiety. PHQ-9 score 7, GAD-7 score 5, both consistent with prior visit.\n\nMedication continued. ',
+    correctNote: 'B',
+    correctCode: '99214',
+    correctBasis: 'mdm',
+    trapCode: '99213',
+    mdmBreakdown: 'Note A \u2014 99213:\nProblems: MDD + GAD stable \u2192 Moderate signal\nData: Scores documented as stable, no decision driven \u2192 Low\nRisk: Passive continuation, no reasoning documented \u2192 Low\nOnly 1 of 3 domains at moderate \u2192 99213\n\nNote B \u2014 99214:\nProblems: MDD + GAD stable \u2192 Moderate\nRisk: Active medication management documented \u2192 Moderate\n2 of 3 domains at moderate \u2192 99214',
+    timeResult: 'No time documented in either note. MDM is the only available basis.',
+    whatHappened: 'The visit was identical. The clinical thinking may have been identical. The difference is documentation. Note A records the outcome only. Note B documents the reasoning behind the decision \u2014 and that documented reasoning is what moves Risk to moderate.',
+    temptation: 'Note A looks complete \u2014 diagnosis, scores, medication status. But it shows what was decided, not why. The reasoning that was already happening in the clinician\u2019s head is invisible. Without it, Risk stays low and MDM stays at 99213.',
+    anchor: 'The code follows the documented work \u2014 not the work you did in your head.'
   }
 ];
+
+var CONTRAST_REASONING_BANK = [
+  { domain: 'Risk', label: 'QTc monitoring', text: 'At current dose, QTc prolongation risk reviewed and weighed against ongoing symptom control. No cardiac symptoms reported; patient tolerating well. Risk-benefit favors continuation. Will monitor.' },
+  { domain: 'Risk', label: 'Side effect evaluation', text: 'Patient reports intermittent fatigue over past several weeks. Considered medication-related vs residual depressive symptoms vs situational factors. No clear functional impairment. Risk-benefit of continuation vs adjustment discussed. Decision to continue current dose with monitoring.' },
+  { domain: 'Risk', label: 'Sexual side effects', text: 'Patient endorses mild decrease in libido since last visit. Discussed potential SSRI-related side effect vs baseline variability. Reviewed options including dose reduction, switch, or continuation. Patient prefers to continue given mood stability. Plan to monitor.' },
+  { domain: 'Risk', label: 'Dose adequacy', text: 'Reviewed current symptom control and whether dose remains adequate. Residual low energy noted but not functionally impairing. Considered dose increase vs continuation. Decision to maintain current dose with reassessment next visit.' },
+  { domain: 'Risk', label: 'Long-term treatment planning', text: 'Reviewed duration of treatment given history of recurrent depressive episodes. Discussed relapse risk with discontinuation vs continued maintenance therapy. Decision to continue medication at this time with plan to revisit duration at a future visit.' },
+  { domain: 'Risk', label: 'Symptom vs side effect', text: 'Patient reports intermittent fatigue and reduced motivation. Considered whether symptoms reflect residual depression vs medication effect. No clear pattern suggesting medication intolerance. Decision to continue current regimen and monitor trajectory.' },
+  { domain: 'Risk', label: 'Risk vs stability', text: 'Patient clinically stable, though mild residual symptoms present. Weighed benefit of stability against potential risks of medication change at this time. Decision to maintain current regimen to preserve functional gains.' },
+  { domain: 'Data', label: 'PHQ-9 trend', text: 'PHQ-9 reviewed and compared to prior score. Improvement noted from 12 to 7 since last visit. Clinical course consistent with medication response. Decision to continue current regimen without adjustment based on positive trajectory.' },
+  { domain: 'Data', label: 'Score vs reported experience', text: 'PHQ-9 score 7 but patient describes intermittent anhedonia not fully reflected in total score. Reviewed item-level responses; fatigue and concentration items worsening despite stable total. Considered adjustment vs continued monitoring. Decision to continue with closer follow-up interval.' },
+  { domain: 'Data', label: 'GAD-7 contextualized', text: 'GAD-7 reviewed and stable. Anxiety symptoms discussed in context of current occupational stressors. Determined symptoms remain situational rather than reflecting inadequate medication response. No adjustment indicated at this time.' },
+  { domain: 'Data', label: 'External input integrated', text: 'Patient reports therapist noted avoidance patterns increasing over past month. Reviewed in context of current medication response. Decision to hold dose adjustment pending therapy progress; will reassess at next visit.' },
+  { domain: 'Mixed', label: 'Monitoring threshold stated', text: 'Symptoms stable overall. Discussed specific thresholds that would prompt medication adjustment: worsening PHQ-9 above 10, increased functional impairment, or new sleep disruption. Patient in agreement with plan to monitor and return sooner if thresholds met.' },
+  { domain: 'Mixed', label: 'Clinical uncertainty', text: 'Symptoms reviewed with some variability noted week to week. Unclear if fluctuations represent normal variation vs emerging partial response. Decision to continue current regimen with closer monitoring interval. Will reassess at next visit with attention to functional trajectory.' },
+  { domain: 'Mixed', label: 'Function-based reasoning', text: 'Symptoms reviewed in context of daily functioning. Patient maintaining work and relationships without significant impairment despite residual symptoms. Considered whether adjustment warranted. Decision to continue current dose given preserved function and tolerability.' }
+];
+
+var mdmContrastReasoningIdx = null;
+var mdmContrastSelected = '';
+
+function loadMdmContrastSeed(seed) {
+  mdmContrastReasoningIdx = Math.floor(Math.random() * CONTRAST_REASONING_BANK.length);
+  var block = CONTRAST_REASONING_BANK[mdmContrastReasoningIdx];
+  var noteB = seed.noteB_prefix + block.text;
+
+  var setTxt = function(id, txt) { var e = document.getElementById(id); if (e) e.textContent = txt; };
+  setTxt('mdm-sim-progress', 'Scenario ' + (mdmSimCurrentIdx + 1) + ' of ' + MDM_SEEDS.length);
+  setTxt('mdm-sim-label', seed.label);
+
+  var chartEl = document.getElementById('mdm-sim-chart');
+  if (chartEl) chartEl.textContent = seed.basePatient;
+
+  var noteEl = document.getElementById('mdm-sim-note');
+  if (noteEl) {
+    noteEl.innerHTML =
+      '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+        '<div style="flex:1;min-width:220px">' +
+          '<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Note A</div>' +
+          '<div style="font-size:12px;color:var(--text2);line-height:1.7;white-space:pre-line">' + seed.noteA_base + '</div>' +
+        '</div>' +
+        '<div style="flex:1;min-width:220px">' +
+          '<div style="font-size:10px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Note B</div>' +
+          '<div style="font-size:12px;color:var(--text2);line-height:1.7;white-space:pre-line">' + noteB + '</div>' +
+        '</div>' +
+      '</div>';
+    noteEl.style.fontFamily = 'inherit';
+  }
+
+  // Hide lane/code UI, show contrast question
+  var laneArea = document.getElementById('mdm-sim-lane-mdm');
+  if (laneArea && laneArea.parentNode) laneArea.parentNode.style.display = 'none';
+  var codeArea = document.getElementById('mdm-sim-code-btns');
+  if (codeArea) codeArea.style.display = 'none';
+  var laneQ = document.querySelector('#mdm-sim-view > [style*="Which basis"]');
+
+  var contrastDiv = document.getElementById('mdm-contrast-btns');
+  if (!contrastDiv) {
+    contrastDiv = document.createElement('div');
+    contrastDiv.id = 'mdm-contrast-btns';
+    var submitBtn = document.getElementById('mdm-sim-submit');
+    submitBtn.parentNode.insertBefore(contrastDiv, submitBtn);
+  }
+  contrastDiv.innerHTML =
+    '<div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:10px">Which note supports 99214 \u2014 and what changed?</div>' +
+    '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px">' +
+      '<button class="mdm-ans-btn" id="contrast-btn-A" onclick="selectContrastAnswer('A')" style="text-align:left;padding:10px 14px;font-size:13px">Note A \u2014 nothing changed, so the visit was stable and supports the higher code</button>' +
+      '<button class="mdm-ans-btn" id="contrast-btn-B-outcome" onclick="selectContrastAnswer('B-outcome')" style="text-align:left;padding:10px 14px;font-size:13px">Note B \u2014 because the clinical outcome was different</button>' +
+      '<button class="mdm-ans-btn" id="contrast-btn-B-reasoning" onclick="selectContrastAnswer('B-reasoning')" style="text-align:left;padding:10px 14px;font-size:13px">Note B \u2014 because clinical reasoning was documented</button>' +
+    '</div>';
+  contrastDiv.style.display = 'block';
+  mdmContrastSelected = '';
+  mdmSimSelectedLane = 'mdm';
+  mdmSimSelectedCode = '';
+}
+
+function selectContrastAnswer(val) {
+  mdmContrastSelected = val;
+  ['contrast-btn-A','contrast-btn-B-outcome','contrast-btn-B-reasoning'].forEach(function(id) {
+    var btn = document.getElementById(id);
+    if (btn) btn.className = 'mdm-ans-btn' + (id === 'contrast-btn-' + val ? ' selected' : '');
+  });
+  mdmSimSelectedCode = (val === 'B-reasoning') ? '99214' : '99213';
+  mdmSimSelectedLane = 'mdm';
+}
 
 var mdmSimCurrentIdx = 0;
 var mdmSimSelectedLane = '';
@@ -6403,6 +6527,21 @@ function startMdmSim() {
 function loadMdmSimSeed() {
   var seed = MDM_SEEDS[mdmSimCurrentIdx];
   if (!seed) { showMdmSimComplete(); return; }
+
+  // Contrast mode — different rendering path
+  if (seed.contrastMode) {
+    // Show/restore normal UI elements that may have been hidden
+    var laneArea = document.getElementById('mdm-sim-lane-mdm');
+    if (laneArea && laneArea.parentNode) laneArea.parentNode.style.display = '';
+    var codeArea = document.getElementById('mdm-sim-code-btns');
+    if (codeArea) codeArea.style.display = '';
+    var db = document.getElementById('mdm-sim-debrief');
+    if (db) db.style.display = 'none';
+    var sb = document.getElementById('mdm-sim-submit');
+    if (sb) sb.style.display = 'inline-block';
+    loadMdmContrastSeed(seed);
+    return;
+  }
 
   var set2 = function(id, txt) { var e = document.getElementById(id); if (e) e.innerHTML = txt; };
   var setTxt = function(id, txt) { var e = document.getElementById(id); if (e) e.textContent = txt; };
@@ -6450,8 +6589,15 @@ function selectMdmSimCode(code) {
 }
 
 function submitMdmSim() {
-  if (!mdmSimSelectedLane) { alert('Select a basis first (MDM or Time).'); return; }
-  if (!mdmSimSelectedCode) { alert('Select a code.'); return; }
+  var seed = MDM_SEEDS[mdmSimCurrentIdx];
+
+  // Contrast mode validation
+  if (seed.contrastMode) {
+    if (!mdmContrastSelected) { alert('Select an answer first.'); return; }
+  } else {
+    if (!mdmSimSelectedLane) { alert('Select a basis first (MDM or Time).'); return; }
+    if (!mdmSimSelectedCode) { alert('Select a code.'); return; }
+  }
 
   var seed = MDM_SEEDS[mdmSimCurrentIdx];
   var codeCorrect = mdmSimSelectedCode === seed.correctCode;
@@ -6570,7 +6716,15 @@ function submitMdmSim() {
 
   // What happened
   var whEl = document.getElementById('mdm-sim-what');
-  if (whEl) whEl.textContent = seed.whatHappened;
+  if (whEl) {
+    var whatText = seed.whatHappened;
+    // Contrast mode: append which domain carried the 99214
+    if (seed.contrastMode && mdmContrastReasoningIdx !== null) {
+      var block = CONTRAST_REASONING_BANK[mdmContrastReasoningIdx];
+      whatText += '\n\nIn this version, the reasoning documented was ' + block.domain + '-driven (\u201c' + block.label + '\u201d). The same visit documented with a different reasoning pattern would carry a different domain \u2014 but the outcome is always the same: documented reasoning = 99214, documented outcome only = 99213.';
+    }
+    whEl.textContent = whatText;
+  }
 
   // Temptation (only on wrong answer)
   var tempBlock = document.getElementById('mdm-sim-temptation-block');
@@ -8270,6 +8424,231 @@ function runSeedHarness() {
   }
 }
 
+// ── CONTRAST QUALITY EVALUATOR (LLM-based teaching diagnostic) ───────────────
+async function runContrastQualityEval(spotCheck) {
+  var summaryEl = document.getElementById('contrast-eval-summary');
+  var resultsEl = document.getElementById('contrast-eval-results');
+  if (!summaryEl || !resultsEl) return;
+
+  summaryEl.style.display = 'none';
+  resultsEl.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px 0">Running evaluation\u2026</div>';
+
+  var ms006 = (MDM_SEEDS||[]).find(function(s) { return s.id === 'MS-006'; });
+  if (!ms006 || typeof CONTRAST_REASONING_BANK === 'undefined') {
+    resultsEl.innerHTML = '<div style="color:var(--red);font-size:13px">MS-006 or CONTRAST_REASONING_BANK not found. Run structural checks first.</div>';
+    return;
+  }
+
+  var bank = spotCheck
+    ? [0, Math.floor(CONTRAST_REASONING_BANK.length / 2), CONTRAST_REASONING_BANK.length - 1]
+        .map(function(i) { return CONTRAST_REASONING_BANK[i]; })
+    : CONTRAST_REASONING_BANK;
+
+  var EVAL_SYSTEM = 'You are a clinical billing education evaluator. You assess whether a pair of psychiatric visit notes correctly teaches the concept that documented clinical reasoning changes MDM complexity \u2014 not the clinical outcome itself. You are strict, precise, and return only valid JSON.';
+
+  var makePrompt = function(noteA, noteB, domain, label) {
+    return 'You are evaluating a contrast pair used in a billing education simulator. The teaching goal is:\n\n"The visit is identical. The clinical thinking may be identical. The difference is whether the clinician documented their reasoning. That documented reasoning is what changes the MDM level from 99213 to 99214."\n\nBASE VISIT: Established patient, MDD + GAD, stable on SSRI, PHQ-9 and GAD-7 reviewed and stable, no psychotherapy.\n\nNOTE A (expected: 99213):\n' + noteA + '\n\nNOTE B (expected: 99214, via ' + domain + ' domain \u2014 ' + label + '):\n' + noteB + '\n\nEvaluate this pair and return ONLY valid JSON with these exact fields:\n{\n  "same_visit": true/false,\n  "substantive_change_detected": true/false,\n  "note_a_supported_code": "99213" or "99214" or "unclear",\n  "note_b_supported_code": "99213" or "99214" or "unclear",\n  "difference_is_documented_reasoning": true/false,\n  "clinical_plausibility_score": 1-5,\n  "teaching_clarity_score": 1-5,\n  "too_obvious": true/false,\n  "too_subtle": true/false,\n  "failure_reasons": []\n}\n\nScoring:\n- same_visit: true if both notes describe the same encounter with no new clinical events\n- substantive_change_detected: true if Note B introduces a med change, new symptom, new diagnosis, or new clinical event not in Note A\n- difference_is_documented_reasoning: true if the ONLY meaningful difference is that Note B documents the clinician\'s reasoning process\n- clinical_plausibility_score: 1=implausible, 5=exactly what a PMHNP would write\n- teaching_clarity_score: 1=confusing, 5=clearly teaches that documentation of reasoning changes the code\n- failure_reasons: array of strings describing any issues\n\nReturn ONLY the JSON object. No explanation, no markdown.';
+  };
+
+  var passed = 0, failed = 0;
+  var htmlRows = '';
+
+  for (var i = 0; i < bank.length; i++) {
+    var entry = bank[i];
+    var noteA = ms006.noteA_base;
+    var noteB = ms006.noteB_prefix + entry.text;
+
+    resultsEl.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px 0">Evaluating ' + (i+1) + ' of ' + bank.length + ': ' + entry.label + '\u2026</div>';
+
+    try {
+      var response = await fetch('/.netlify/functions/anthropic-proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system: EVAL_SYSTEM,
+          messages: [{ role: 'user', content: makePrompt(noteA, noteB, entry.domain, entry.label) }]
+        })
+      });
+      var data = await response.json();
+      var raw = (data.content || []).map(function(c) { return c.text || ''; }).join('');
+      var clean = raw.replace(/```json|```/g, '').trim();
+      var result = JSON.parse(clean);
+
+      var issues = [];
+      if (result.same_visit !== true) issues.push('same_visit failed');
+      if (result.substantive_change_detected !== false) issues.push('substantive change detected');
+      if (result.note_a_supported_code !== '99213') issues.push('Note A coded as ' + result.note_a_supported_code);
+      if (result.note_b_supported_code !== '99214') issues.push('Note B coded as ' + result.note_b_supported_code);
+      if (result.difference_is_documented_reasoning !== true) issues.push('difference not attributed to documented reasoning');
+      if ((result.clinical_plausibility_score || 0) < 4) issues.push('plausibility ' + result.clinical_plausibility_score + '/5');
+      if ((result.teaching_clarity_score || 0) < 4) issues.push('clarity ' + result.teaching_clarity_score + '/5');
+      if (result.too_obvious) issues.push('too obvious');
+      if (result.too_subtle) issues.push('too subtle');
+      if (result.failure_reasons && result.failure_reasons.length) issues = issues.concat(result.failure_reasons);
+
+      var status = issues.length === 0 ? 'pass' : 'fail';
+      if (status === 'pass') passed++; else failed++;
+
+      var bg = status === 'pass' ? 'var(--surface)' : '#FDECEA';
+      var icon = status === 'pass' ? '\u2713' : '\u2717';
+      var col = status === 'pass' ? 'var(--text2)' : 'var(--red)';
+      htmlRows += '<div style="background:' + bg + ';border:1px solid var(--border);border-radius:4px;padding:8px 12px;font-size:12px;margin-bottom:4px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:baseline">' +
+          '<strong style="color:' + col + '">' + icon + ' [' + entry.domain + '] ' + entry.label + '</strong>' +
+          '<span style="color:var(--text3);font-size:11px">plausibility ' + result.clinical_plausibility_score + '/5 \u00b7 clarity ' + result.teaching_clarity_score + '/5</span>' +
+        '</div>' +
+        (issues.length ? '<div style="color:var(--red);margin-top:4px;font-size:11px">' + issues.join(' \u00b7 ') + '</div>' : '') +
+      '</div>';
+
+    } catch(err) {
+      failed++;
+      htmlRows += '<div style="background:#FDECEA;border:1px solid var(--red);border-radius:4px;padding:8px 12px;font-size:12px;margin-bottom:4px">' +
+        '<strong style="color:var(--red)">\u2717 [' + entry.domain + '] ' + entry.label + ' \u2014 error: ' + err.message + '</strong>' +
+      '</div>';
+    }
+  }
+
+  summaryEl.style.display = 'block';
+  var sumColor = failed > 0 ? 'var(--red)' : 'var(--green)';
+  summaryEl.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);border-left:4px solid ' + sumColor + ';border-radius:6px;padding:12px 16px;font-size:13px">' +
+    '<strong style="color:' + sumColor + '">' + (failed === 0 ? 'All passed' : failed + ' failed') + '</strong>' +
+    ' \u00b7 ' + passed + ' passed \u00b7 ' + failed + ' failed \u00b7 ' + bank.length + ' evaluated' +
+    (spotCheck ? ' (spot check \u2014 3 entries)' : '') + '</div>';
+  resultsEl.innerHTML = htmlRows;
+}
+
+// ── FULL PROGRAM TEACHING QUALITY EVALUATOR ──────────────────────────────────
+async function runFullProgramEval(spotCheck) {
+  var summaryEl = document.getElementById('full-eval-summary');
+  var resultsEl = document.getElementById('full-eval-results');
+  if (!summaryEl || !resultsEl) return;
+
+  summaryEl.style.display = 'none';
+  resultsEl.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px 0">Building sample set\u2026</div>';
+
+  var EVAL_SYSTEM = 'You are a clinical billing education evaluator for a psychiatric prescriber training platform. You assess debrief and teaching content against four criteria. You are strict, evidence-based, and return only valid JSON.';
+
+  var makeEvalPrompt = function(mode, id, content) {
+    return 'Evaluate the following debrief/teaching content from a clinical billing education simulator for PMHNPs (psychiatric nurse practitioners).\n\nMODE: ' + mode + '\nID: ' + id + '\n\nCONTENT:\n' + content + '\n\nScore against these four criteria and return ONLY valid JSON:\n{\n  "clinical_accuracy": true/false,\n  "addresses_reasoning_failure": true/false,\n  "consequence_is_clear": true/false,\n  "pattern_is_transferable": true/false,\n  "clinical_accuracy_score": 1-5,\n  "teaching_clarity_score": 1-5,\n  "issues": []\n}\n\nCriteria definitions:\n- clinical_accuracy: Is the clinical/billing content factually correct for outpatient psychiatric prescribers billing CPT 2021 E/M codes?\n- addresses_reasoning_failure: Does the content explain WHY a clinician would make this error, not just that the error is wrong?\n- consequence_is_clear: Does the learner understand what happens if they make this mistake (denial, audit risk, revenue loss, recoupment)?\n- pattern_is_transferable: Is the teaching generalizable beyond this specific scenario, so the learner can apply it to future visits?\n- issues: array of specific problems found. Empty array if none.\n\nReturn ONLY the JSON object. No explanation, no markdown.';
+  };
+
+  // Build sample set from all modes
+  var samples = [];
+
+  // Billing Sim — sample first 5 + 5 mid-range seeds
+  var bsIndices = [0, 2, 3, 7, 9, 15, 19, 22, 27, 32];
+  if (spotCheck) bsIndices = [0, 15, 32];
+  bsIndices.forEach(function(i) {
+    var seed = SCENARIOS ? Object.values(SCENARIOS)[i] : null;
+    if (!seed || !seed.debrief) return;
+    var d = seed.debrief;
+    var content = 'Pattern: ' + (d.primaryPattern || '') +
+      '\nFinancial: ' + (d.financialTeachingPoint || '') +
+      '\nClinical: ' + (d.clinicalTeachingPoint || '') +
+      (d.temptation ? '\nTemptation: ' + d.temptation : '');
+    samples.push({ mode: 'Billing Sim', id: seed.scenarioId || ('BS-' + i), content: content });
+  });
+
+  // Denial Drills — sample 3 drills
+  var drillKeys = typeof DRILLS !== 'undefined' ? Object.keys(DRILLS) : [];
+  var drillSample = spotCheck ? drillKeys.slice(0,1) : drillKeys.slice(0,4);
+  drillSample.forEach(function(k) {
+    var d = DRILLS[k];
+    if (!d || !d.debrief) return;
+    var content = 'Pattern: ' + (d.debrief.pattern || '') +
+      '\nTeaching: ' + (d.debrief.teaching || '') +
+      '\nRule: ' + (d.debrief.rule || '');
+    samples.push({ mode: 'Denial Drill', id: k, content: content });
+  });
+
+  // MDM Seeds — all 6
+  var mdmSample = spotCheck ? [MDM_SEEDS[0], MDM_SEEDS[4]] : MDM_SEEDS.filter(function(s){ return !s.contrastMode; });
+  mdmSample.forEach(function(s) {
+    if (!s) return;
+    var content = 'Label: ' + s.label +
+      '\nWhat happened: ' + (s.whatHappened || '') +
+      '\nMDM breakdown: ' + (s.mdmBreakdown || '') +
+      '\nAnchor: ' + (s.anchor || '') +
+      (s.temptation ? '\nTemptation: ' + s.temptation : '');
+    samples.push({ mode: 'MDM Sim', id: s.id, content: content });
+  });
+
+  // Guided Learning U2 — sample screen 3 and 5 feedback text
+  samples.push({ mode: 'Guided Learning U2-S3', id: 'Screen 3 wrong-answer debrief',
+    content: 'Teaching: Psychotherapy constraint. When psychotherapy is billed, E/M must be justified by MDM alone \u2014 time cannot be used. MDM supports 99214, not 99215. The claim would likely pay but fails under audit. Getting paid is not the same as being defensible.' });
+  if (!spotCheck) {
+    samples.push({ mode: 'Guided Learning U2-S5', id: 'Screen 5 level-up section',
+      content: 'Teaching: Same visit, same decision, different documentation. Note A: "Medications continued without change." Note B: Documents QTc risk review, risk-benefit weighing, decision to continue with monitoring. Same outcome. Risk = moderate in Note B because active management was documented. The code follows the documented work, not the work done in the clinician\'s head.' });
+  }
+
+  if (samples.length === 0) {
+    resultsEl.innerHTML = '<div style="color:var(--red);font-size:13px">Could not build sample set. Check that SCENARIOS, DRILLS, and MDM_SEEDS are loaded.</div>';
+    return;
+  }
+
+  var passed = 0, failed = 0;
+  var htmlRows = '';
+
+  for (var i = 0; i < samples.length; i++) {
+    var s = samples[i];
+    resultsEl.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px 0">Evaluating ' + (i+1) + ' of ' + samples.length + ': [' + s.mode + '] ' + s.id + '\u2026</div>';
+
+    try {
+      var response = await fetch('/.netlify/functions/anthropic-proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system: EVAL_SYSTEM,
+          messages: [{ role: 'user', content: makeEvalPrompt(s.mode, s.id, s.content) }]
+        })
+      });
+      var data = await response.json();
+      var raw = (data.content || []).map(function(c){ return c.text || ''; }).join('');
+      var clean = raw.replace(/```json|```/g, '').trim();
+      var result = JSON.parse(clean);
+
+      var issues = result.issues || [];
+      if (!result.clinical_accuracy) issues.push('clinical accuracy concern');
+      if (!result.addresses_reasoning_failure) issues.push('reasoning failure not addressed');
+      if (!result.consequence_is_clear) issues.push('consequence unclear');
+      if (!result.pattern_is_transferable) issues.push('pattern not transferable');
+      if ((result.clinical_accuracy_score || 0) < 4) issues.push('accuracy ' + result.clinical_accuracy_score + '/5');
+      if ((result.teaching_clarity_score || 0) < 4) issues.push('clarity ' + result.teaching_clarity_score + '/5');
+
+      var status = issues.length === 0 ? 'pass' : (result.clinical_accuracy === false ? 'fail' : 'warn');
+      if (status === 'pass') passed++;
+      else if (status === 'fail') failed++;
+
+      var bg = status === 'pass' ? 'var(--surface)' : status === 'fail' ? '#FDECEA' : '#FEF0E3';
+      var col = status === 'pass' ? 'var(--text2)' : status === 'fail' ? 'var(--red)' : '#C4711A';
+      var icon = status === 'pass' ? '\u2713' : status === 'fail' ? '\u2717' : '\u26A0';
+      htmlRows += '<div style="background:' + bg + ';border:1px solid var(--border);border-radius:4px;padding:8px 12px;font-size:12px;margin-bottom:4px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:baseline">' +
+          '<strong style="color:' + col + '">' + icon + ' [' + s.mode + '] ' + s.id + '</strong>' +
+          '<span style="color:var(--text3);font-size:11px">accuracy ' + (result.clinical_accuracy_score||'?') + '/5 \u00b7 clarity ' + (result.teaching_clarity_score||'?') + '/5</span>' +
+        '</div>' +
+        (issues.length ? '<div style="color:' + col + ';margin-top:4px;font-size:11px">' + issues.join(' \u00b7 ') + '</div>' : '') +
+      '</div>';
+
+    } catch(err) {
+      failed++;
+      htmlRows += '<div style="background:#FDECEA;border:1px solid var(--red);border-radius:4px;padding:8px 12px;font-size:12px;margin-bottom:4px">' +
+        '<strong style="color:var(--red)">\u2717 [' + s.mode + '] ' + s.id + ' \u2014 error: ' + err.message + '</strong>' +
+      '</div>';
+    }
+  }
+
+  summaryEl.style.display = 'block';
+  var total = samples.length;
+  var warned = total - passed - failed;
+  var sumColor = failed > 0 ? 'var(--red)' : warned > 0 ? '#C4711A' : 'var(--green)';
+  summaryEl.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);border-left:4px solid ' + sumColor + ';border-radius:6px;padding:12px 16px;font-size:13px">' +
+    '<strong style="color:' + sumColor + '">' + (failed > 0 ? failed + ' failed' : warned > 0 ? warned + ' warnings' : 'All passed') + '</strong>' +
+    ' \u00b7 ' + passed + ' passed \u00b7 ' + warned + ' warnings \u00b7 ' + failed + ' failed \u00b7 ' + total + ' evaluated' +
+    (spotCheck ? ' (spot check)' : '') + '</div>';
+  resultsEl.innerHTML = htmlRows;
+}
+
 // ── TEACHING & PSYCH DIAGNOSTICS HARNESS ─────────────────────────────────────
 function runTeachingDiag() {
   var results = [];
@@ -8454,6 +8833,62 @@ function runTeachingDiag() {
   (PSYCH_BORDERLINE_NOTES||[]).forEach(function(n) { if(scoreNoteQuality(n) === 'strong') borderlinePoolUpscored++; });
   addResult('Borderline pool: none accidentally score as strong', borderlinePoolUpscored === 0 ? 'pass' : 'warn',
     borderlinePoolUpscored + ' of ' + (PSYCH_BORDERLINE_NOTES||[]).length + ' scored as strong (too easy)');
+
+  // ── 10. MDM SIM + CONTRAST MODE (MS-006) ────────────────────────────────────
+  addResult('MDM Seeds: pool count', MDM_SEEDS && MDM_SEEDS.length >= 5 ? 'pass' : 'fail',
+    (MDM_SEEDS||[]).length + ' seeds');
+
+  // MS-006 contrast seed present
+  var ms006 = (MDM_SEEDS||[]).find(function(s) { return s.id === 'MS-006'; });
+  addResult('MS-006 contrast seed: present', ms006 ? 'pass' : 'fail', ms006 ? 'found' : 'MISSING');
+
+  if (ms006) {
+    addResult('MS-006: contrastMode flag set', ms006.contrastMode === true ? 'pass' : 'fail', '');
+    addResult('MS-006: noteA_base present', ms006.noteA_base && ms006.noteA_base.length > 20 ? 'pass' : 'fail', '');
+    addResult('MS-006: noteB_prefix present', ms006.noteB_prefix && ms006.noteB_prefix.length > 20 ? 'pass' : 'fail', '');
+    addResult('MS-006: correctNote is B', ms006.correctNote === 'B' ? 'pass' : 'fail', '');
+    addResult('MS-006: correctCode is 99214', ms006.correctCode === '99214' ? 'pass' : 'fail', '');
+    addResult('MS-006: anchor present', ms006.anchor && ms006.anchor.length > 10 ? 'pass' : 'fail', '');
+    addResult('MS-006: temptation present', ms006.temptation && ms006.temptation.length > 10 ? 'pass' : 'fail', '');
+    addResult('MS-006: whatHappened present', ms006.whatHappened && ms006.whatHappened.length > 20 ? 'pass' : 'fail', '');
+  }
+
+  // Contrast reasoning bank
+  addResult('CONTRAST_REASONING_BANK: defined', typeof CONTRAST_REASONING_BANK !== 'undefined' ? 'pass' : 'fail', '');
+  addResult('CONTRAST_REASONING_BANK: count >= 10', CONTRAST_REASONING_BANK && CONTRAST_REASONING_BANK.length >= 10 ? 'pass' : 'fail',
+    (CONTRAST_REASONING_BANK||[]).length + ' entries');
+
+  if (typeof CONTRAST_REASONING_BANK !== 'undefined') {
+    var domainCounts = { Risk: 0, Data: 0, Mixed: 0 };
+    var bankErrors = [];
+    CONTRAST_REASONING_BANK.forEach(function(entry, i) {
+      if (!entry.domain) bankErrors.push('Entry ' + i + ' missing domain');
+      if (!entry.label) bankErrors.push('Entry ' + i + ' missing label');
+      if (!entry.text || entry.text.length < 20) bankErrors.push('Entry ' + i + ' text too short');
+      if (entry.domain) domainCounts[entry.domain] = (domainCounts[entry.domain] || 0) + 1;
+    });
+    addResult('CONTRAST_REASONING_BANK: all entries valid', bankErrors.length === 0 ? 'pass' : 'fail',
+      bankErrors.length === 0 ? 'all valid' : bankErrors.join('; '));
+    addResult('CONTRAST_REASONING_BANK: Risk entries >= 4', domainCounts.Risk >= 4 ? 'pass' : 'warn', domainCounts.Risk + ' Risk entries');
+    addResult('CONTRAST_REASONING_BANK: Data entries >= 3', domainCounts.Data >= 3 ? 'pass' : 'warn', domainCounts.Data + ' Data entries');
+    addResult('CONTRAST_REASONING_BANK: Mixed entries >= 2', domainCounts.Mixed >= 2 ? 'pass' : 'warn', domainCounts.Mixed + ' Mixed entries');
+
+    // Spot-check: each entry produces a non-trivial Note B when combined with MS-006 prefix
+    if (ms006) {
+      var noteComboErrors = 0;
+      CONTRAST_REASONING_BANK.forEach(function(entry) {
+        var combined = ms006.noteB_prefix + entry.text;
+        if (combined.length < 80) noteComboErrors++;
+      });
+      addResult('MS-006: all reasoning blocks produce valid Note B', noteComboErrors === 0 ? 'pass' : 'fail',
+        noteComboErrors + ' entries produce short/invalid Note B');
+    }
+  }
+
+  // loadMdmContrastSeed function exists
+  addResult('loadMdmContrastSeed: function defined', typeof loadMdmContrastSeed === 'function' ? 'pass' : 'fail', '');
+  addResult('selectContrastAnswer: function defined', typeof selectContrastAnswer === 'function' ? 'pass' : 'fail', '');
+  addResult('mdmContrastSelected: variable exists', typeof mdmContrastSelected !== 'undefined' ? 'pass' : 'fail', '');
 
   // ── RENDER RESULTS ────────────────────────────────────────────────────────
   var total = pass + fail + warn;
