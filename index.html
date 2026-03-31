@@ -726,8 +726,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
           <option value="Bug report">Bug report</option>
           <option value="Scenario suggestion">Scenario suggestion</option>
           <option value="Question">Question</option>
+          <option value="This was helpful">This was helpful</option>
         </select>
-        <textarea id="sim-feedback-text" placeholder="What worked, what didn't, or what would make this better..." style="width:100%;border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:13px;color:var(--text);background:white;resize:vertical;min-height:80px;font-family:inherit;margin-bottom:8px"></textarea>
+        <textarea id="sim-feedback-text" placeholder="What confused you, what felt off, or what would you have done differently?" style="width:100%;border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:13px;color:var(--text);background:white;resize:vertical;min-height:80px;font-family:inherit;margin-bottom:8px"></textarea>
         <div style="display:flex;align-items:center;justify-content:space-between">
           <div id="sim-feedback-status" style="font-size:12px;color:var(--text3)"></div>
           <button class="btn btn-primary" style="font-size:12px;padding:7px 16px" onclick="submitFeedback('sim')">Post to forum</button>
@@ -881,14 +882,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <!-- Feedback panel -->
     <div class="card" style="margin-top:14px;border:1px solid var(--border)">
       <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px">Share feedback on this drill</div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Your comment will post directly to the member thread in the forum.</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Your comment will post directly to the member thread in the forum. Choose "This was helpful" to share publicly.</div>
       <select id="drill-feedback-category" style="width:100%;border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:12px;color:var(--text);background:var(--surface);margin-bottom:8px">
         <option value="General feedback">General feedback</option>
         <option value="Bug report">Bug report</option>
         <option value="Scenario suggestion">Scenario suggestion</option>
         <option value="Question">Question</option>
+        <option value="This was helpful">This was helpful</option>
       </select>
-      <textarea id="drill-feedback-text" placeholder="What worked, what didn't, or what would make this better..." style="width:100%;border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:13px;color:var(--text);background:var(--surface);resize:vertical;min-height:80px;font-family:inherit;margin-bottom:8px"></textarea>
+      <textarea id="drill-feedback-text" placeholder="What confused you, what felt off, or what would you have done differently?" style="width:100%;border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:13px;color:var(--text);background:var(--surface);resize:vertical;min-height:80px;font-family:inherit;margin-bottom:8px"></textarea>
       <div style="display:flex;align-items:center;justify-content:space-between">
         <div id="drill-feedback-status" style="font-size:12px;color:var(--text3)"></div>
         <button class="btn btn-primary" style="font-size:12px;padding:7px 16px" onclick="submitFeedback('drill')">Post to forum</button>
@@ -7840,10 +7842,10 @@ function backToPsychStages(){showPsychView('psych-stage-select');updatePsychStag
 
 // ── FEEDBACK / CIRCLE COMMENT POSTING ──────────────────────────────────────
 
-// Wire in the post ID after Monday posts go live
-// Format: think-beyond-practice.circle.so/c/billing-coding-simulator/post-title-XXXXXX
-// The number at the end is the post ID
-var CIRCLE_FEEDBACK_POST_ID = null; // SET THIS AFTER MONDAY
+// Wire in post IDs after Circle posts go live
+// Format: get post ID from the Circle post URL (number at end of URL)
+var CIRCLE_MEMBER_THREAD_POST_ID = 31095927;   // Member Thread (private space)
+var CIRCLE_PUBLIC_POST_ID = 31181578;           // "What Members Are Saying" (public space)
 var CIRCLE_DOMAIN_POST = 'think-beyond-practice.circle.so';
 
 function submitFeedback(source) {
@@ -7860,8 +7862,12 @@ function submitFeedback(source) {
     return;
   }
 
-  if (!CIRCLE_FEEDBACK_POST_ID) {
-    if (statusEl) { statusEl.textContent = 'Feedback posting goes live Monday. Thanks for trying it out!'; statusEl.style.color = 'var(--text3)'; }
+  // Route: "This was helpful" goes to public post, everything else to member thread
+  var isPublic = (category === 'This was helpful');
+  var targetPostId = isPublic ? CIRCLE_PUBLIC_POST_ID : CIRCLE_MEMBER_THREAD_POST_ID;
+
+  if (!targetPostId) {
+    if (statusEl) { statusEl.textContent = 'Feedback posting goes live April 1. Thanks for trying it out!'; statusEl.style.color = 'var(--text3)'; }
     return;
   }
 
@@ -7875,7 +7881,8 @@ function submitFeedback(source) {
 
   // Build comment body — include context about which mode/drill
   var context = source === 'drill' ? ('Drill: ' + (currentDrillId || '?')) : ('Scenario: ' + (currentScenarioId || 'S1'));
-  var body = '[' + category + ' — ' + context + ']\n\n' + text.trim();
+  var closingQuestion = '\n\nWhat would you have done differently \u2014 or would you have made the same call?';
+  var body = '[' + category + ' \u2014 ' + context + ']\n\n' + text.trim() + (isPublic ? '' : closingQuestion);
 
   if (statusEl) { statusEl.textContent = 'Posting...'; statusEl.style.color = 'var(--text3)'; }
 
@@ -7883,7 +7890,7 @@ function submitFeedback(source) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      postId: CIRCLE_FEEDBACK_POST_ID,
+      postId: targetPostId,
       body: body,
       memberJwt: memberJwt
     })
@@ -7891,7 +7898,8 @@ function submitFeedback(source) {
   .then(function(r) { return r.json(); })
   .then(function(data) {
     if (data.success) {
-      if (statusEl) { statusEl.textContent = 'Posted to the forum.'; statusEl.style.color = 'var(--green)'; }
+      var msg = isPublic ? 'Posted publicly. Thank you.' : 'Posted to the member thread.';
+      if (statusEl) { statusEl.textContent = msg; statusEl.style.color = 'var(--green)'; }
       var textEl = document.getElementById(textId);
       if (textEl) textEl.value = '';
     } else {
@@ -10406,9 +10414,9 @@ function u2S3Answer(choice) {
       '<div style="font-size:13px;color:var(--text2);line-height:1.7">Because psychotherapy is billed, the E/M level is evaluated using MDM only \u2014 regardless of total time. MDM supports 99214 here. Time may be documented in the note, but it cannot drive the E/M code when a psychotherapy add-on is billed.<br><br><strong style="color:var(--text)">Teaching point:</strong> When psychotherapy is billed, E/M is determined by MDM regardless of total time documented.</div>';
   } else {
     fb.innerHTML =
-      '<div style="background:#FDECEA;border:1px solid var(--red);border-radius:6px;padding:10px 14px;font-size:13px;color:#7A1A1A;line-height:1.7"><strong>Not the defensible claim \u2014 and here is why this matters.</strong><br><br>This claim combination would likely be paid as submitted. Payers do not know how you selected the E/M code \u2014 they see valid codes, a valid pairing, and they process it.<br><br>But under audit, the question is: how did you arrive at 99215? Because psychotherapy is billed, E/M must be justified by MDM alone. MDM in this visit supports 99214, not 99215. Time cannot be used to justify the higher level when psychotherapy is also billed \u2014 that is double-counting.</div>' +
+      '<div style="background:#FDECEA;border:1px solid var(--red);border-radius:6px;padding:10px 14px;font-size:13px;color:#7A1A1A;line-height:1.7"><strong>Not the defensible claim for this visit.</strong><br><br>This claim combination would likely be paid as submitted. Payers do not know how you selected the E/M code \u2014 they see valid codes, a valid pairing, and they process it.<br><br>But under audit, the question is: does this visit support 99215? Because psychotherapy is billed, E/M must be justified by MDM alone. MDM in this visit supports 99214, not 99215. Regardless of the reason 99215 was chosen, the E/M level has to stand on MDM \u2014 and here, it does not.<br><br>Additionally: even if MDM did support high complexity, time cannot be used to select E/M when psychotherapy is billed. The add-on already accounts for time.</div>' +
       constraintPanel +
-      '<div style="font-size:13px;color:var(--text2);line-height:1.7">The defensible claim is <strong>99214 + 90833</strong>.<br><br><strong style="color:var(--text)">Teaching point:</strong> Getting paid is not the same as being defensible. Audits ask how you selected the code, not just whether it processed.</div>';
+      '<div style="font-size:13px;color:var(--text2);line-height:1.7">The defensible claim is <strong>99214 + 90833</strong>.<br><br><strong style="color:var(--text)">Teaching point:</strong> When psychotherapy is billed, E/M must stand on MDM alone. A higher code is only defensible if MDM supports it \u2014 not time, and not clinical intuition about complexity.</div>';
   }
   document.getElementById('u2s3-next').style.display = 'block';
 }
