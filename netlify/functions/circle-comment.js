@@ -39,7 +39,7 @@ exports.handler = async function(event, context) {
         'Authorization': `Bearer ${memberJwt}`,
         'Content-Type': 'application/json'
       },
-      JSON.stringify({ comment: body })
+      body: JSON.stringify({ comment: body })
     });
 
     console.log('Comment post status:', res.status);
