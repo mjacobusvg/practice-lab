@@ -368,6 +368,55 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     </div>
     <div id="full-eval-summary" style="display:none;margin-bottom:14px"></div>
     <div id="full-eval-results"></div>
+
+    <div class="card" style="margin-top:20px;margin-bottom:14px">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Cognitive trap validator (LLM)</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:8px">Tests whether wrong answers are doing their job. A trap that is too obvious teaches nothing. A trap that is unfair creates frustration. Evaluates plausibility, whether it targets the real cognitive error, and whether the temptation language explains the pull correctly.</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Samples traps from Billing Sim, Denial Drills, and MDM Sim. Takes ~45 seconds.</div>
+      <button class="btn btn-green" onclick="runTrapValidator()" style="font-size:13px;padding:8px 20px">&#9658; Validate traps</button>
+      <button class="btn" onclick="runTrapValidator(true)" style="font-size:13px;padding:8px 20px;margin-left:8px">Spot-check 4 traps</button>
+    </div>
+    <div id="trap-eval-summary" style="display:none;margin-bottom:14px"></div>
+    <div id="trap-eval-results"></div>
+
+    <div class="card" style="margin-top:20px;margin-bottom:14px">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Scenario realism checker (LLM)</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:8px">Asks whether a real PMHNP would actually write this note. Catches textbook-sounding language, unnatural phrasing, and unrealistic clinical presentations. Credibility depends on scenarios that feel like real practice.</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Samples notes from Billing Sim seeds and Unit 2 cases. Takes ~30 seconds.</div>
+      <button class="btn btn-green" onclick="runRealismChecker()" style="font-size:13px;padding:8px 20px">&#9658; Check realism</button>
+      <button class="btn" onclick="runRealismChecker(true)" style="font-size:13px;padding:8px 20px;margin-left:8px">Spot-check 4 notes</button>
+    </div>
+    <div id="realism-eval-summary" style="display:none;margin-bottom:14px"></div>
+    <div id="realism-eval-results"></div>
+
+    <div class="card" style="margin-top:20px;margin-bottom:14px">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Outcome integrity checker (LLM)</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:8px">Asks: given this note, is the stated optimal code actually defensible? Catches cases where the ground truth code is asserted but the note content does not support it. Second-lens sanity check on top of the rules engine.</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Samples Billing Sim seeds with full note content. Takes ~40 seconds.</div>
+      <button class="btn btn-green" onclick="runOutcomeIntegrityChecker()" style="font-size:13px;padding:8px 20px">&#9658; Check outcome integrity</button>
+      <button class="btn" onclick="runOutcomeIntegrityChecker(true)" style="font-size:13px;padding:8px 20px;margin-left:8px">Spot-check 4 seeds</button>
+    </div>
+    <div id="outcome-eval-summary" style="display:none;margin-bottom:14px"></div>
+    <div id="outcome-eval-results"></div>
+
+    <div class="card" style="margin-top:20px;margin-bottom:14px">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Cross-module consistency checker (LLM)</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:8px">Checks whether the program contradicts itself. Samples teaching content from different modes and asks whether any two items conflict on the same clinical or billing concept. Catches drift before members notice it.</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Sends paired samples across modes. Takes ~30 seconds.</div>
+      <button class="btn btn-green" onclick="runConsistencyChecker()" style="font-size:13px;padding:8px 20px">&#9658; Check consistency</button>
+    </div>
+    <div id="consistency-eval-summary" style="display:none;margin-bottom:14px"></div>
+    <div id="consistency-eval-results"></div>
+
+    <div class="card" style="margin-top:20px;margin-bottom:14px">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Behavior change evaluator (LLM)</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:8px">The highest-order test: after this scenario, will a clinician document or bill differently next time? Evaluates whether content is transformational (changes behavior) or merely informational (explains a rule). Flags content that is technically correct but unlikely to change practice.</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Samples debriefs across all modes. Takes ~40 seconds.</div>
+      <button class="btn btn-green" onclick="runBehaviorChangeEval()" style="font-size:13px;padding:8px 20px">&#9658; Evaluate behavior change potential</button>
+      <button class="btn" onclick="runBehaviorChangeEval(true)" style="font-size:13px;padding:8px 20px;margin-left:8px">Spot-check 4 items</button>
+    </div>
+    <div id="behavior-eval-summary" style="display:none;margin-bottom:14px"></div>
+    <div id="behavior-eval-results"></div>
   </div>
 
   <!-- Seed Harness tab -->
@@ -8664,6 +8713,308 @@ async function runFullProgramEval(spotCheck) {
     '<strong style="color:' + sumColor + '">' + (failed > 0 ? failed + ' failed' : warned > 0 ? warned + ' warnings' : 'All passed') + '</strong>' +
     ' \u00b7 ' + passed + ' passed \u00b7 ' + warned + ' warnings \u00b7 ' + failed + ' failed \u00b7 ' + total + ' evaluated' +
     (spotCheck ? ' (spot check)' : '') + '</div>';
+  resultsEl.innerHTML = htmlRows;
+}
+
+// ── COGNITIVE TRAP VALIDATOR ──────────────────────────────────────────────────
+async function runTrapValidator(spotCheck) {
+  var summaryEl = document.getElementById('trap-eval-summary');
+  var resultsEl = document.getElementById('trap-eval-results');
+  if (!summaryEl || !resultsEl) return;
+  summaryEl.style.display = 'none';
+  resultsEl.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px 0">Building trap sample set\u2026</div>';
+
+  var SYSTEM = 'You are a clinical education evaluator assessing whether wrong-answer traps in a billing simulator are pedagogically effective. You return only valid JSON.';
+
+  var makePrompt = function(mode, id, correctAnswer, trapAnswer, temptation, feedback) {
+    return 'Evaluate this wrong-answer trap from a clinical billing simulator for PMHNPs.\n\nMODE: ' + mode + '\nID: ' + id + '\nCORRECT ANSWER: ' + correctAnswer + '\nTRAP (wrong answer): ' + trapAnswer + '\nTEMPTATION EXPLANATION: ' + (temptation || 'none provided') + '\nFEEDBACK ON WRONG ANSWER: ' + (feedback || 'none provided') + '\n\nReturn ONLY valid JSON:\n{\n  "trap_is_plausible": true/false,\n  "targets_real_cognitive_error": true/false,\n  "too_obvious": true/false,\n  "too_tricky_or_unfair": true/false,\n  "temptation_explains_the_pull": true/false,\n  "plausibility_score": 1-5,\n  "issues": []\n}\n\nDefinitions:\n- trap_is_plausible: Would a practicing PMHNP genuinely consider this wrong answer?\n- targets_real_cognitive_error: Does the trap exploit a common real-world billing mistake, not just a logical error?\n- too_obvious: Is the wrong answer clearly wrong to anyone with basic billing knowledge?\n- too_tricky_or_unfair: Does the trap require obscure knowledge that most PMHNPs would not have?\n- temptation_explains_the_pull: Does the temptation text explain WHY the wrong answer feels right, not just that it is wrong?\n- issues: Only list substantive problems that would reduce learning effectiveness.\n\nReturn ONLY the JSON. No explanation, no markdown.';
+  };
+
+  var samples = [];
+  var bsPool = typeof BS_SEED_POOL !== 'undefined' ? BS_SEED_POOL : [];
+  var bsIndices = spotCheck ? [0, 3, 8, 15] : [0, 1, 2, 3, 4, 7, 9, 11, 15, 19, 22, 27];
+  bsIndices.forEach(function(i) {
+    var seed = bsPool[i];
+    if (!seed || !seed.debrief || !seed.debrief.temptation) return;
+    var d = seed.debrief;
+    samples.push({ mode: 'Billing Sim', id: seed.scenarioId,
+      correct: d.primaryPattern || 'correct claim', trap: 'common wrong answer (' + seed.trapFamily + ')',
+      temptation: d.temptation, feedback: d.financialTeachingPoint });
+  });
+
+  var drillKeys = typeof DRILLS !== 'undefined' ? Object.keys(DRILLS) : [];
+  var drillSample = spotCheck ? drillKeys.slice(0,2) : drillKeys.slice(0,5);
+  drillSample.forEach(function(k) {
+    var d = DRILLS[k];
+    if (!d || !d.responses) return;
+    var wrong = d.responses.filter(function(r){ return !r.correct; });
+    if (!wrong.length) return;
+    var correct = d.responses.filter(function(r){ return r.correct; });
+    samples.push({ mode: 'Denial Drill', id: 'Drill-' + k,
+      correct: correct[0] ? correct[0].text : 'correct response',
+      trap: wrong[0].text, temptation: null, feedback: wrong[0].feedback });
+  });
+
+  MDM_SEEDS.filter(function(s){ return !s.contrastMode && s.temptation; }).forEach(function(s) {
+    samples.push({ mode: 'MDM Sim', id: s.id,
+      correct: s.correctCode + ' by ' + s.correctBasis,
+      trap: s.trapCode + ' by ' + s.trapBasis,
+      temptation: s.temptation, feedback: s.whatHappened });
+  });
+
+  await runGenericEval(samples, SYSTEM, makePrompt, 'trap-eval-summary', 'trap-eval-results',
+    function(r) {
+      var issues = r.issues || [];
+      if (!r.trap_is_plausible) issues.push('trap not plausible');
+      if (!r.targets_real_cognitive_error) issues.push('does not target real cognitive error');
+      if (r.too_obvious) issues.push('too obvious');
+      if (r.too_tricky_or_unfair) issues.push('too tricky or unfair');
+      if (!r.temptation_explains_the_pull) issues.push('temptation does not explain the pull');
+      if ((r.plausibility_score||0) < 4) issues.push('plausibility ' + r.plausibility_score + '/5');
+      return { issues: issues, scores: 'plausibility ' + r.plausibility_score + '/5' };
+    }, spotCheck);
+}
+
+// ── SCENARIO REALISM CHECKER ──────────────────────────────────────────────────
+async function runRealismChecker(spotCheck) {
+  var SYSTEM = 'You are a clinical realism evaluator assessing whether psychiatric visit notes in a training simulator read like real PMHNP documentation. You return only valid JSON.';
+
+  var makePrompt = function(mode, id, note) {
+    return 'Evaluate whether this clinical note from a billing training simulator reads like something a real PMHNP would actually write in private practice.\n\nMODE: ' + mode + '\nID: ' + id + '\nNOTE:\n' + note + '\n\nReturn ONLY valid JSON:\n{\n  "reads_like_real_practice": true/false,\n  "phrasing_is_natural": true/false,\n  "clinical_presentation_is_realistic": true/false,\n  "feels_textbook_or_constructed": true/false,\n  "realism_score": 1-5,\n  "issues": []\n}\n\nDefinitions:\n- reads_like_real_practice: Would this note appear in an actual PMHNP chart?\n- phrasing_is_natural: Does the language sound like a real clinician wrote it, not a training exercise?\n- clinical_presentation_is_realistic: Is the patient scenario plausible and not exaggerated for teaching purposes?\n- feels_textbook_or_constructed: Does the note feel artificial or overly perfect?\n- issues: Only list things that would undermine credibility with a practicing clinician.\n\nReturn ONLY the JSON. No explanation, no markdown.';
+  };
+
+  var samples = [];
+  var bsPool = typeof BS_SEED_POOL !== 'undefined' ? BS_SEED_POOL : [];
+  var indices = spotCheck ? [0, 3, 9, 19] : [0, 1, 2, 3, 4, 7, 9, 11, 15, 19, 22, 27, 32];
+  indices.forEach(function(i) {
+    var seed = bsPool[i];
+    if (!seed) return;
+    var note = seed.noteVariants ? seed.noteVariants[0] : (seed.note || '');
+    if (!note && seed.mdm) note = 'MDM seed — note generated procedurally';
+    if (!note) return;
+    samples.push({ mode: 'Billing Sim', id: seed.scenarioId, content: note });
+  });
+
+  if (typeof U2_CASES !== 'undefined') {
+    U2_CASES.forEach(function(c, i) {
+      if (c.caseText) samples.push({ mode: 'Unit 2 Case', id: 'U2-' + c.id, content: c.caseText });
+    });
+  }
+
+  await runGenericEval(samples, SYSTEM, function(mode, id, content) { return makePrompt(mode, id, content); },
+    'realism-eval-summary', 'realism-eval-results',
+    function(r) {
+      var issues = r.issues || [];
+      if (!r.reads_like_real_practice) issues.push('does not read like real practice');
+      if (!r.phrasing_is_natural) issues.push('phrasing unnatural');
+      if (!r.clinical_presentation_is_realistic) issues.push('presentation unrealistic');
+      if (r.feels_textbook_or_constructed) issues.push('feels textbook/constructed');
+      if ((r.realism_score||0) < 4) issues.push('realism ' + r.realism_score + '/5');
+      return { issues: issues, scores: 'realism ' + r.realism_score + '/5' };
+    }, spotCheck);
+}
+
+// ── OUTCOME INTEGRITY CHECKER ─────────────────────────────────────────────────
+async function runOutcomeIntegrityChecker(spotCheck) {
+  var SYSTEM = 'You are a clinical billing auditor evaluating whether a stated optimal billing code is actually defensible given the visit note. You return only valid JSON.';
+
+  var makePrompt = function(mode, id, content) {
+    var parts = content.split('||');
+    var note = parts[0], optimalCode = parts[1], optimalAddon = parts[2];
+    return 'Given this psychiatric visit note, evaluate whether the stated optimal billing code is defensible.\n\nNOTE:\n' + note + '\n\nSTATED OPTIMAL CODE: ' + optimalCode + (optimalAddon ? ' + ' + optimalAddon : '') + '\n\nReturn ONLY valid JSON:\n{\n  "code_is_defensible": true/false,\n  "note_supports_stated_mdm_level": true/false,\n  "addon_documentation_adequate": true/false,\n  "would_survive_audit": true/false,\n  "defensibility_score": 1-5,\n  "issues": []\n}\n\nEvaluate at the level of a real payer audit. Issues should only be substantive documentation gaps that would actually cause recoupment, not stylistic preferences.\n\nReturn ONLY the JSON. No explanation, no markdown.';
+  };
+
+  var samples = [];
+  var bsPool = typeof BS_SEED_POOL !== 'undefined' ? BS_SEED_POOL : [];
+  var indices = spotCheck ? [0, 3, 7, 15] : [0, 1, 2, 3, 4, 7, 9, 11, 15, 19];
+  indices.forEach(function(i) {
+    var seed = bsPool[i];
+    if (!seed || !seed.groundTruth) return;
+    var note = seed.note || (seed.mdm ? JSON.stringify(seed.mdm) : '');
+    if (!note) return;
+    var gt = seed.groundTruth;
+    samples.push({ mode: 'Billing Sim', id: seed.scenarioId,
+      content: note + '||' + gt.optimalEM + '||' + (gt.optimalAddon || '') });
+  });
+
+  await runGenericEval(samples, SYSTEM, makePrompt, 'outcome-eval-summary', 'outcome-eval-results',
+    function(r) {
+      var issues = r.issues || [];
+      if (!r.code_is_defensible) issues.push('code not defensible');
+      if (!r.note_supports_stated_mdm_level) issues.push('note does not support MDM level');
+      if (r.addon_documentation_adequate === false) issues.push('add-on documentation inadequate');
+      if (!r.would_survive_audit) issues.push('would not survive audit');
+      if ((r.defensibility_score||0) < 4) issues.push('defensibility ' + r.defensibility_score + '/5');
+      return { issues: issues, scores: 'defensibility ' + r.defensibility_score + '/5' };
+    }, spotCheck);
+}
+
+// ── CROSS-MODULE CONSISTENCY CHECKER ─────────────────────────────────────────
+async function runConsistencyChecker() {
+  var summaryEl = document.getElementById('consistency-eval-summary');
+  var resultsEl = document.getElementById('consistency-eval-results');
+  if (!summaryEl || !resultsEl) return;
+  summaryEl.style.display = 'none';
+  resultsEl.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px 0">Building consistency pairs\u2026</div>';
+
+  var SYSTEM = 'You are a clinical education consistency reviewer. You check whether two pieces of teaching content from the same training program contradict each other on any clinical or billing concept. You return only valid JSON.';
+
+  var pairs = [
+    { id: 'Time-based billing rule',
+      a: { mode: 'Billing Sim', content: 'When psychotherapy add-on (90833/90836) is billed, E/M must be selected by MDM. Time-based E/M selection is not available when an add-on is billed on the same date.' },
+      b: { mode: 'MDM Sim MS-003', content: 'Total time would support 99215. But psychotherapy (90833) is billed. CPT is explicit: when a psychotherapy add-on is billed, E/M must be selected by MDM. Time may not be used.' } },
+    { id: 'PHQ-9 as data',
+      a: { mode: 'Billing Sim BS-PHQ9', content: 'A PHQ-9 score alone — documented without interpretation or clinical action — supports 96127 only if interpreted and linked to a clinical decision. Score alone is data collection, not data analysis.' },
+      b: { mode: 'MDM Sim MS-005', content: 'A PHQ-9 score in the note is data collection, not data analysis. To count toward the Data domain, the result must be interpreted and linked to a clinical decision.' } },
+    { id: 'Psychotherapy documentation standard',
+      a: { mode: 'Billing Sim', content: 'CPT requires a distinct section with a named modality, specific intervention, and documented patient response. Good clinical conversation does not meet that bar on its own.' },
+      b: { mode: 'Guided Learning U1', content: 'Defensible psychotherapy documentation requires: modality named, specific intervention technique, documented patient response, time stated. Supportive conversation without these elements does not support 90833.' } },
+    { id: 'New vs established patient',
+      a: { mode: 'Billing Sim BS-007', content: 'New patient codes (99202-99205) apply when no professional services from the same provider or same specialty/subspecialty in the same group practice within the past 3 years.' },
+      b: { mode: 'Denial Drill 3', content: 'New patient = no professional services from the same provider or another provider of the exact same specialty and subspecialty in the same group practice within 3 years.' } },
+    { id: 'Stable does not mean low complexity',
+      a: { mode: 'MDM Sim MS-004', content: 'MDM measures the work done today, not the reputation of the diagnosis. Stable monitoring with no changes is moderate MDM, not high.' },
+      b: { mode: 'Billing Sim BS-009', content: 'Stable does not mean low complexity. Two chronic conditions on prescription medication with active monitoring is moderate MDM. Stability is a treatment outcome, not a reason to downcode.' } }
+  ];
+
+  var passed = 0, failed = 0;
+  var htmlRows = '';
+
+  for (var i = 0; i < pairs.length; i++) {
+    var pair = pairs[i];
+    resultsEl.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px 0">Checking pair ' + (i+1) + ' of ' + pairs.length + ': ' + pair.id + '\u2026</div>';
+
+    var prompt = 'Check whether these two pieces of teaching content from the same training program contradict each other.\n\nCONCEPT BEING CHECKED: ' + pair.id + '\n\nSOURCE A (' + pair.a.mode + '):\n' + pair.a.content + '\n\nSOURCE B (' + pair.b.mode + '):\n' + pair.b.content + '\n\nReturn ONLY valid JSON:\n{\n  "consistent": true/false,\n  "contradiction_detected": true/false,\n  "contradiction_description": "",\n  "severity": "none" or "minor" or "major"\n}\n\nA minor contradiction is a difference in emphasis or framing. A major contradiction is a direct factual conflict that would confuse a learner. Return ONLY the JSON.';
+
+    try {
+      var response = await fetch('/.netlify/functions/anthropic-proxy', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ system: SYSTEM, messages: [{ role: 'user', content: prompt }] })
+      });
+      var data = await response.json();
+      var raw = (data.content||[]).map(function(c){ return c.text||''; }).join('');
+      var clean = raw.replace(/```json|```/g,'').trim();
+      var s = clean.indexOf('{'), e = clean.lastIndexOf('}');
+      if (s!==-1 && e!==-1) clean = clean.slice(s, e+1);
+      var result = JSON.parse(clean);
+
+      var status = result.contradiction_detected && result.severity === 'major' ? 'fail' :
+                   result.contradiction_detected ? 'warn' : 'pass';
+      if (status === 'pass') passed++; else if (status === 'fail') failed++;
+
+      var bg = status === 'pass' ? 'var(--surface)' : status === 'fail' ? '#FDECEA' : '#FEF0E3';
+      var col = status === 'pass' ? 'var(--text2)' : status === 'fail' ? 'var(--red)' : '#C4711A';
+      var icon = status === 'pass' ? '\u2713' : status === 'fail' ? '\u2717' : '\u26A0';
+      htmlRows += '<div style="background:'+bg+';border:1px solid var(--border);border-radius:4px;padding:8px 12px;font-size:12px;margin-bottom:4px">' +
+        '<strong style="color:'+col+'">' + icon + ' ' + pair.id + '</strong>' +
+        (result.contradiction_description ? '<div style="color:'+col+';margin-top:4px;font-size:11px">' + result.contradiction_description + ' (severity: ' + result.severity + ')</div>' : '') +
+      '</div>';
+    } catch(err) {
+      failed++;
+      htmlRows += '<div style="background:#FDECEA;border:1px solid var(--red);border-radius:4px;padding:8px 12px;font-size:12px;margin-bottom:4px"><strong style="color:var(--red)">\u2717 ' + pair.id + ' \u2014 error: ' + err.message + '</strong></div>';
+    }
+  }
+
+  summaryEl.style.display = 'block';
+  var warned = pairs.length - passed - failed;
+  var sc = failed > 0 ? 'var(--red)' : warned > 0 ? '#C4711A' : 'var(--green)';
+  summaryEl.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);border-left:4px solid '+sc+';border-radius:6px;padding:12px 16px;font-size:13px"><strong style="color:'+sc+'">' + (failed>0 ? failed+' contradictions' : warned>0 ? warned+' minor differences' : 'All consistent') + '</strong> \u00b7 ' + passed + ' consistent \u00b7 ' + warned + ' minor \u00b7 ' + failed + ' major \u00b7 ' + pairs.length + ' pairs checked</div>';
+  resultsEl.innerHTML = htmlRows;
+}
+
+// ── BEHAVIOR CHANGE EVALUATOR ─────────────────────────────────────────────────
+async function runBehaviorChangeEval(spotCheck) {
+  var SYSTEM = 'You are a clinical education evaluator assessing whether training content will change how a PMHNP actually documents or bills after seeing it. You return only valid JSON.';
+
+  var makePrompt = function(mode, id, content) {
+    return 'Evaluate whether this debrief content from a clinical billing simulator is transformational (will change a clinician\'s behavior) or merely informational (explains a rule without changing practice).\n\nMODE: ' + mode + '\nID: ' + id + '\nCONTENT:\n' + content + '\n\nReturn ONLY valid JSON:\n{\n  "behavior_change_likely": true/false,\n  "gives_actionable_next_step": true/false,\n  "connects_to_real_practice_pattern": true/false,\n  "merely_states_the_rule": true/false,\n  "behavior_score": 1-5,\n  "issues": []\n}\n\nDefinitions:\n- behavior_change_likely: After reading this, would a PMHNP do something differently in their next visit or claim?\n- gives_actionable_next_step: Does the content tell the clinician what to do, not just what was wrong?\n- connects_to_real_practice_pattern: Does it link the lesson to a recurring pattern the clinician will encounter again?\n- merely_states_the_rule: Does it only explain what the rule is, without helping the clinician apply it?\n- issues: Only list things that make this content less likely to change behavior.\n\nReturn ONLY the JSON. No explanation, no markdown.';
+  };
+
+  var samples = [];
+  var bsPool = typeof BS_SEED_POOL !== 'undefined' ? BS_SEED_POOL : [];
+  var bsIdx = spotCheck ? [0, 4, 15, 27] : [0, 2, 4, 7, 9, 15, 19, 27, 32];
+  bsIdx.forEach(function(i) {
+    var seed = bsPool[i];
+    if (!seed || !seed.debrief) return;
+    var d = seed.debrief;
+    var content = (d.primaryPattern||'') + '\n' + (d.financialTeachingPoint||'') + '\n' + (d.clinicalTeachingPoint||'') + (d.temptation ? '\n' + d.temptation : '');
+    if (!content.trim()) return;
+    samples.push({ mode: 'Billing Sim', id: seed.scenarioId, content: content });
+  });
+
+  MDM_SEEDS.filter(function(s){ return !s.contrastMode; }).slice(0, spotCheck ? 2 : 5).forEach(function(s) {
+    var content = (s.whatHappened||'') + '\n' + (s.anchor||'') + (s.temptation ? '\n' + s.temptation : '');
+    samples.push({ mode: 'MDM Sim', id: s.id, content: content });
+  });
+
+  await runGenericEval(samples, SYSTEM, makePrompt, 'behavior-eval-summary', 'behavior-eval-results',
+    function(r) {
+      var issues = r.issues || [];
+      if (!r.behavior_change_likely) issues.push('behavior change unlikely');
+      if (!r.gives_actionable_next_step) issues.push('no actionable next step');
+      if (!r.connects_to_real_practice_pattern) issues.push('not connected to recurring pattern');
+      if (r.merely_states_the_rule) issues.push('merely states the rule');
+      if ((r.behavior_score||0) < 4) issues.push('behavior score ' + r.behavior_score + '/5');
+      return { issues: issues, scores: 'behavior ' + r.behavior_score + '/5' };
+    }, spotCheck);
+}
+
+// ── SHARED EVAL RUNNER ────────────────────────────────────────────────────────
+async function runGenericEval(samples, system, makePrompt, summaryId, resultsId, scoreFunc, spotCheck) {
+  var summaryEl = document.getElementById(summaryId);
+  var resultsEl = document.getElementById(resultsId);
+  if (!summaryEl || !resultsEl) return;
+  summaryEl.style.display = 'none';
+
+  if (samples.length === 0) {
+    resultsEl.innerHTML = '<div style="color:var(--red);font-size:13px">No samples found. Check that content arrays are loaded.</div>';
+    return;
+  }
+
+  var passed = 0, failed = 0, warned = 0;
+  var htmlRows = '';
+
+  for (var i = 0; i < samples.length; i++) {
+    var s = samples[i];
+    resultsEl.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px 0">Evaluating ' + (i+1) + ' of ' + samples.length + ': [' + s.mode + '] ' + s.id + '\u2026</div>';
+
+    try {
+      var response = await fetch('/.netlify/functions/anthropic-proxy', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ system: system, messages: [{ role: 'user', content: makePrompt(s.mode, s.id, s.content) }] })
+      });
+      var data = await response.json();
+      var raw = (data.content||[]).map(function(c){ return c.text||''; }).join('');
+      var clean = raw.replace(/```json|```/g,'').trim();
+      var st = clean.indexOf('{'), en = clean.lastIndexOf('}');
+      if (st!==-1 && en!==-1) clean = clean.slice(st, en+1);
+      var result = JSON.parse(clean);
+
+      var scored = scoreFunc(result);
+      var issues = scored.issues || [];
+      var status = issues.length === 0 ? 'pass' : (result.clinical_accuracy === false || result.code_is_defensible === false ? 'fail' : 'warn');
+      if (status === 'pass') passed++; else if (status === 'fail') failed++; else warned++;
+
+      var bg = status === 'pass' ? 'var(--surface)' : status === 'fail' ? '#FDECEA' : '#FEF0E3';
+      var col = status === 'pass' ? 'var(--text2)' : status === 'fail' ? 'var(--red)' : '#C4711A';
+      var icon = status === 'pass' ? '\u2713' : status === 'fail' ? '\u2717' : '\u26A0';
+      htmlRows += '<div style="background:'+bg+';border:1px solid var(--border);border-radius:4px;padding:8px 12px;font-size:12px;margin-bottom:4px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:baseline">' +
+          '<strong style="color:'+col+'">' + icon + ' [' + s.mode + '] ' + s.id + '</strong>' +
+          '<span style="color:var(--text3);font-size:11px">' + (scored.scores||'') + '</span>' +
+        '</div>' +
+        (issues.length ? '<div style="color:'+col+';margin-top:4px;font-size:11px">' + issues.join(' \u00b7 ') + '</div>' : '') +
+      '</div>';
+    } catch(err) {
+      failed++;
+      htmlRows += '<div style="background:#FDECEA;border:1px solid var(--red);border-radius:4px;padding:8px 12px;font-size:12px;margin-bottom:4px"><strong style="color:var(--red)">\u2717 [' + s.mode + '] ' + s.id + ' \u2014 error: ' + err.message + '</strong></div>';
+    }
+  }
+
+  summaryEl.style.display = 'block';
+  var total = samples.length;
+  var sc = failed > 0 ? 'var(--red)' : warned > 0 ? '#C4711A' : 'var(--green)';
+  summaryEl.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);border-left:4px solid '+sc+';border-radius:6px;padding:12px 16px;font-size:13px"><strong style="color:'+sc+'">' + (failed>0 ? failed+' failed' : warned>0 ? warned+' warnings' : 'All passed') + '</strong> \u00b7 ' + passed + ' passed \u00b7 ' + warned + ' warnings \u00b7 ' + failed + ' failed \u00b7 ' + total + ' evaluated' + (spotCheck ? ' (spot check)' : '') + '</div>';
   resultsEl.innerHTML = htmlRows;
 }
 
