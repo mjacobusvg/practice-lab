@@ -1,7 +1,6 @@
 /**
  * Netlify Function: circle-comment
- * Posts a comment to a Circle post using the member's own JWT.
- * Comment appears under the member's name and profile picture.
+ * Posts a comment to a Circle post under the member's identity.
  */
 
 const CIRCLE_DOMAIN = 'think-beyond-practice.circle.so';
@@ -31,15 +30,23 @@ exports.handler = async function(event, context) {
     return { statusCode: 400, headers, body: JSON.stringify({ success: false, message: 'Missing required fields' }) };
   }
 
+  const apiToken = process.env.CIRCLE_API_TOKEN;
+  if (!apiToken) {
+    return { statusCode: 500, headers, body: JSON.stringify({ success: false, message: 'Server configuration error' }) };
+  }
+
   try {
-    // Post comment using member's JWT — appears under their name
-    const res = await fetch(`https://${CIRCLE_DOMAIN}/api/headless/v1/posts/${postId}/comments`, {
+    const res = await fetch(`https://${CIRCLE_DOMAIN}/api/v1/comments`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${memberJwt}`,
+        'Authorization': `Bearer ${apiToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ comment: body })
+      body: JSON.stringify({
+        post_id: postId,
+        body: body,
+        user_token: memberJwt
+      })
     });
 
     console.log('Comment post status:', res.status);
