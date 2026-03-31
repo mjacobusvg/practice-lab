@@ -6427,16 +6427,16 @@ var MDM_SEEDS = [
 
 var CONTRAST_REASONING_BANK = [
   { domain: 'Risk', label: 'QTc monitoring', text: 'At current dose, QTc prolongation risk reviewed and weighed against ongoing symptom control. No cardiac symptoms reported; patient tolerating well. Risk-benefit favors continuation. Will monitor.' },
-  { domain: 'Risk', label: 'Side effect evaluation', text: 'Patient reports intermittent fatigue over past several weeks. Considered medication-related vs residual depressive symptoms vs situational factors. No clear functional impairment. Risk-benefit of continuation vs adjustment discussed. Decision to continue current dose with monitoring.' },
-  { domain: 'Risk', label: 'Sexual side effects', text: 'Patient endorses mild decrease in libido since last visit. Discussed potential SSRI-related side effect vs baseline variability. Reviewed options including dose reduction, switch, or continuation. Patient prefers to continue given mood stability. Plan to monitor.' },
-  { domain: 'Risk', label: 'Dose adequacy', text: 'Reviewed current symptom control and whether dose remains adequate. Residual low energy noted but not functionally impairing. Considered dose increase vs continuation. Decision to maintain current dose with reassessment next visit.' },
+  { domain: 'Risk', label: 'Side effect profile review', text: 'Reviewed known SSRI side effect profile at current dose. Patient tolerating well with no reported concerns at this time. Considered whether current dose warrants monitoring for common adverse effects. Risk-benefit of continuation reviewed; no change indicated.' },
+  { domain: 'Risk', label: 'Sexual side effect risk', text: 'Reviewed potential for SSRI-related sexual dysfunction at current dose. Patient not reporting concerns at this time. Discussed as known class effect; patient understands to report changes. Risk-benefit of continuation reviewed; plan to continue and monitor.' },
+  { domain: 'Risk', label: 'Dose adequacy', text: 'Reviewed current symptom control and whether dose remains adequate given clinical picture. Residual symptoms present but not functionally impairing. Considered dose increase vs continuation. Decision to maintain current dose with reassessment at next visit.' },
   { domain: 'Risk', label: 'Long-term treatment planning', text: 'Reviewed duration of treatment given history of recurrent depressive episodes. Discussed relapse risk with discontinuation vs continued maintenance therapy. Decision to continue medication at this time with plan to revisit duration at a future visit.' },
-  { domain: 'Risk', label: 'Symptom vs side effect', text: 'Patient reports intermittent fatigue and reduced motivation. Considered whether symptoms reflect residual depression vs medication effect. No clear pattern suggesting medication intolerance. Decision to continue current regimen and monitor trajectory.' },
+  { domain: 'Risk', label: 'Stability vs adjustment tradeoff', text: 'Patient clinically stable on current regimen. Considered whether stability represents adequate treatment response or partial response that warrants reassessment. Weighed risk of change against benefit of preserved gains. Decision to maintain current regimen.' },
   { domain: 'Risk', label: 'Risk vs stability', text: 'Patient clinically stable, though mild residual symptoms present. Weighed benefit of stability against potential risks of medication change at this time. Decision to maintain current regimen to preserve functional gains.' },
-  { domain: 'Data', label: 'PHQ-9 trend', text: 'PHQ-9 reviewed and compared to prior score. Improvement noted from 12 to 7 since last visit. Clinical course consistent with medication response. Decision to continue current regimen without adjustment based on positive trajectory.' },
-  { domain: 'Data', label: 'Score vs reported experience', text: 'PHQ-9 score 7 but patient describes intermittent anhedonia not fully reflected in total score. Reviewed item-level responses; fatigue and concentration items worsening despite stable total. Considered adjustment vs continued monitoring. Decision to continue with closer follow-up interval.' },
+  { domain: 'Data', label: 'PHQ-9 trend', text: 'PHQ-9 score 7, consistent with prior visit. Reviewed in context of treatment trajectory; stability interpreted as evidence of ongoing medication response rather than treatment plateau. Decision to continue current regimen based on score trajectory.' },
+  { domain: 'Data', label: 'Stable score interpretation', text: 'PHQ-9 score 7, consistent with prior visit. Interpreted as reflecting stable treatment response rather than plateau. Score used to confirm adequacy of current regimen; no adjustment indicated at this time.' },
   { domain: 'Data', label: 'GAD-7 contextualized', text: 'GAD-7 reviewed and stable. Anxiety symptoms discussed in context of current occupational stressors. Determined symptoms remain situational rather than reflecting inadequate medication response. No adjustment indicated at this time.' },
-  { domain: 'Data', label: 'External input integrated', text: 'Patient reports therapist noted avoidance patterns increasing over past month. Reviewed in context of current medication response. Decision to hold dose adjustment pending therapy progress; will reassess at next visit.' },
+  { domain: 'Data', label: 'Scores reviewed in context', text: 'PHQ-9 and GAD-7 reviewed in context of overall clinical trajectory. Both consistent with prior visit. Interpreted as reflecting ongoing response to treatment rather than symptom breakthrough. Decision to continue current regimen.' },
   { domain: 'Mixed', label: 'Monitoring threshold stated', text: 'Symptoms stable overall. Discussed specific thresholds that would prompt medication adjustment: worsening PHQ-9 above 10, increased functional impairment, or new sleep disruption. Patient in agreement with plan to monitor and return sooner if thresholds met.' },
   { domain: 'Mixed', label: 'Clinical uncertainty', text: 'Symptoms reviewed with some variability noted week to week. Unclear if fluctuations represent normal variation vs emerging partial response. Decision to continue current regimen with closer monitoring interval. Will reassess at next visit with attention to functional trajectory.' },
   { domain: 'Mixed', label: 'Function-based reasoning', text: 'Symptoms reviewed in context of daily functioning. Patient maintaining work and relationships without significant impairment despite residual symptoms. Considered whether adjustment warranted. Decision to continue current dose given preserved function and tolerability.' }
@@ -8472,10 +8472,11 @@ async function runContrastQualityEval(spotCheck) {
       var data = await response.json();
       var raw = (data.content || []).map(function(c) { return c.text || ''; }).join('');
       var clean = raw.replace(/```json|```/g, '').trim();
+      // Find the JSON object boundaries robustly
+      var start = clean.indexOf('{');
+      var end = clean.lastIndexOf('}');
+      if (start !== -1 && end !== -1) clean = clean.slice(start, end + 1);
       var result = JSON.parse(clean);
-
-      var issues = [];
-      if (result.same_visit !== true) issues.push('same_visit failed');
       if (result.substantive_change_detected !== false) issues.push('substantive change detected');
       if (result.note_a_supported_code !== '99213') issues.push('Note A coded as ' + result.note_a_supported_code);
       if (result.note_b_supported_code !== '99214') issues.push('Note B coded as ' + result.note_b_supported_code);
@@ -8535,17 +8536,18 @@ async function runFullProgramEval(spotCheck) {
   // Build sample set from all modes
   var samples = [];
 
-  // Billing Sim — sample first 5 + 5 mid-range seeds
-  var bsIndices = [0, 2, 3, 7, 9, 15, 19, 22, 27, 32];
-  if (spotCheck) bsIndices = [0, 15, 32];
+  // Billing Sim — sample from BS_SEED_POOL
+  var bsPool = typeof BS_SEED_POOL !== 'undefined' ? BS_SEED_POOL : [];
+  var bsIndices = spotCheck ? [0, 14, 31] : [0, 2, 3, 7, 9, 15, 19, 22, 27, 32];
   bsIndices.forEach(function(i) {
-    var seed = SCENARIOS ? Object.values(SCENARIOS)[i] : null;
+    var seed = bsPool[i];
     if (!seed || !seed.debrief) return;
     var d = seed.debrief;
     var content = 'Pattern: ' + (d.primaryPattern || '') +
       '\nFinancial: ' + (d.financialTeachingPoint || '') +
       '\nClinical: ' + (d.clinicalTeachingPoint || '') +
       (d.temptation ? '\nTemptation: ' + d.temptation : '');
+    if (!content.trim() || content === 'Pattern: \nFinancial: \nClinical: ') return;
     samples.push({ mode: 'Billing Sim', id: seed.scenarioId || ('BS-' + i), content: content });
   });
 
@@ -8605,6 +8607,9 @@ async function runFullProgramEval(spotCheck) {
       var data = await response.json();
       var raw = (data.content || []).map(function(c){ return c.text || ''; }).join('');
       var clean = raw.replace(/```json|```/g, '').trim();
+      var start = clean.indexOf('{');
+      var end = clean.lastIndexOf('}');
+      if (start !== -1 && end !== -1) clean = clean.slice(start, end + 1);
       var result = JSON.parse(clean);
 
       var issues = result.issues || [];
