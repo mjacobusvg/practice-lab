@@ -25,7 +25,7 @@
   style.textContent = [
     '*{box-sizing:border-box;margin:0;padding:0}',
     ':root{--text:#1A1714;--text2:#5C5650;--text3:#9C958F;--surface:#F9F7F5;--border:#E8E3DD;--blue:#1D6FA4;--blue-light:#EBF4FB;--red:#A32D2D;--red-light:#FDECEA;}',
-    'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--surface);min-height:100vh;display:flex;align-items:center;justify-content:center}',
+    'body.tbp-gate-active{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--surface)}',
     '#tbp-gate{width:100%;max-width:420px;padding:20px}',
     '#tbp-gate .gate-card{background:white;border:1px solid var(--border);border-radius:16px;padding:36px 32px;text-align:center}',
     '#tbp-gate .gate-logo{width:56px;height:56px;margin:0 auto 20px;background:#1D6FA4;border-radius:12px;display:flex;align-items:center;justify-content:center}',
@@ -77,6 +77,7 @@
   function renderGate(toolName, onVerified) {
     // Hide body content while gate is showing
     document.body.style.overflow = 'hidden';
+    document.body.classList.add('tbp-gate-active');
 
     var gate = document.createElement('div');
     gate.id = 'tbp-gate';
@@ -128,6 +129,7 @@
     function removeGate() {
       document.body.removeChild(gate);
       document.body.style.overflow = '';
+      document.body.classList.remove('tbp-gate-active');
     }
 
     function verify() {
