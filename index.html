@@ -9489,11 +9489,18 @@ async function runProgramReview() {
       body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 3000, system: MODE_SYSTEM, messages: [{ role: 'user', content: modePrompt }] })
     });
     var t1 = await r1.text();
+    // RAW RESPONSE LOGGER — always show before any parse attempt
+    var rawLogEl = document.createElement('div');
+    rawLogEl.style.cssText = 'background:#1a1917;color:#9FE1CB;font-family:monospace;font-size:11px;padding:10px 12px;border-radius:6px;margin-bottom:8px;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto';
+    rawLogEl.textContent = 'HTTP ' + r1.status + ' | call 1 raw (' + t1.length + ' chars):\n' + t1.slice(0, 1500) + (t1.length > 1500 ? '\n...[truncated]' : '');
+    resultsEl.appendChild(rawLogEl);
     if (t1.trim().startsWith('<')) throw new Error('Proxy timeout on call 1 — re-run.');
+    if (t1.trim() === '') throw new Error('Empty response body from proxy (call 1) — HTTP ' + r1.status);
     var d1 = JSON.parse(t1);
     // Check for API error response
     if (d1.error) throw new Error('API error: ' + (d1.error.message || JSON.stringify(d1.error)));
     var raw1 = (d1.content||[]).map(function(c){ return c.text||''; }).join('');
+    if (!raw1) throw new Error('d1.content empty or missing. d1 keys: ' + Object.keys(d1).join(', ') + ' | d1.type: ' + d1.type + ' | d1.stop_reason: ' + d1.stop_reason);
     var c1 = raw1.replace(/```json|```/g,'').trim();
     var s1 = c1.indexOf('{'), e1 = c1.lastIndexOf('}');
     if (s1!==-1 && e1!==-1) c1 = c1.slice(s1,e1+1);
@@ -9501,7 +9508,10 @@ async function runProgramReview() {
     try { modeResult = JSON.parse(c1); }
     catch(pe) { modeResult = JSON.parse(c1.replace(/[^\x00-\x7F]/g, '')); }
   } catch(err) {
-    resultsEl.innerHTML = '<div style="color:var(--red);font-size:13px;padding:8px 0">\u2717 Mode evaluation failed: ' + err.message + '</div>';
+    var errDiv = document.createElement('div');
+    errDiv.style.cssText = 'color:var(--red);font-size:13px;padding:8px 0';
+    errDiv.textContent = '\u2717 Mode evaluation failed: ' + err.message;
+    resultsEl.appendChild(errDiv);
     statusEl.style.display = 'none';
     return;
   }
