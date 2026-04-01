@@ -9476,7 +9476,8 @@ async function runProgramReview() {
   // Prompt 2: program-level synthesis
   var PROGRAM_SYSTEM = 'You are evaluating a clinical billing education program as a unified curriculum. You assess program architecture, coherence, and educational trajectory — not individual scenario quality. Return only valid JSON.';
 
-  var programPrompt = 'Evaluate a PMHNP billing education platform as a unified curriculum. Strategic evaluation only - no line edits.\n\nPlatform covers: Billing Simulator (E/M coding, add-ons, modifiers, 38 seeds), Denial Drills (ERA interpretation, 16 drills), MDM Sim (MDM domains, same-visit contrast), Guided Learning Unit 1 (psychotherapy documentation), Guided Learning Unit 2 (MDM vs time, passive vs active management).\n\nCore philosophy: documentation of reasoning determines billing level. Getting paid is not the same as being defensible. Every denial has a specific cause and a specific fix.\n\nReturn ONLY valid JSON. Use short strings, no apostrophes in values:\n{"program_scores":{"conceptual_coherence":5,"coverage_adequacy":5,"curriculum_progression":5,"redundancy_vs_reinforcement":5,"behavior_change_system":5,"credibility_with_clinicians":5},"strengths":["strength 1","strength 2","strength 3"],"gaps":[{"area":"area name","problem":"problem description","why_it_matters":"impact","suggestion":"fix"}],"overall":{"ready_for_members":true,"primary_risk":"short phrase","highest_leverage_improvement":"one thing"}}';
+  var programPrompt = 'Rate a PMHNP billing education platform. Respond with ONLY this JSON, integer scores 1-5, no other text, no apostrophes:\n{"program_scores":{"conceptual_coherence":5,"coverage_adequacy":5,"curriculum_progression":5,"redundancy_vs_reinforcement":5,"behavior_change_system":5,"credibility_with_clinicians":5},"strengths":["strength one","strength two","strength three"],"gaps":[{"area":"gap area","problem":"gap problem","why_it_matters":"impact","suggestion":"fix"}],"overall":{"ready_for_members":true,"primary_risk":"risk phrase","highest_leverage_improvement":"improvement phrase"}}\n\nPlatform: Billing Simulator (E/M, add-ons, modifiers), Denial Drills (ERA, denial codes), MDM Sim (domain scoring, same-visit contrast), Guided Learning (psychotherapy docs, MDM vs time). Core concept: documentation of reasoning determines billing level.';
+
 
   // Call 1: mode scores
   statusEl.textContent = 'Evaluating each mode\u2026 (call 1 of 2)';
@@ -9518,13 +9519,10 @@ async function runProgramReview() {
     var c2 = raw2.replace(/```json|```/g,'').trim();
     var s2 = c2.indexOf('{'), e2 = c2.lastIndexOf('}');
     if (s2!==-1 && e2!==-1) c2 = c2.slice(s2,e2+1);
-    // Sanitize smart quotes and apostrophes before parsing
-    c2 = c2.replace(/\u2018|\u2019/g, '').replace(/\u201C|\u201D/g, '').replace(/\u2014/g, '-');
-    try { programResult = JSON.parse(c2); }
-    catch(pe) {
-      // Strip all non-ASCII as fallback
-      programResult = JSON.parse(c2.replace(/[^\x00-\x7F]/g, '').replace(/(?<=:[ ]*"[^"]{0,500})'(?=[^"]*")/g, ''));
-    }
+    // Strip ALL problematic characters before parse
+    c2 = c2.replace(/[\u2018\u2019\u201C\u201D\u2014\u2013]/g, ' ');
+    c2 = c2.replace(/:\s*"([^"]*)"/g, function(m, v) { return ': "' + v.replace(/'/g, ' ').replace(/[^\x20-\x7E]/g, '') + '"'; });
+    programResult = JSON.parse(c2);
   } catch(err) {
     resultsEl.innerHTML = '<div style="color:var(--red);font-size:13px;padding:8px 0">\u2717 Program synthesis failed: ' + err.message + '</div>';
     statusEl.style.display = 'none';
