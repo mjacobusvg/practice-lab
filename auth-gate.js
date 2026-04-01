@@ -50,27 +50,27 @@
 
   function getSessionToken() {
     try {
-      var expiry = sessionStorage.getItem(SESSION_EXPIRY_KEY);
+      var expiry = localStorage.getItem(SESSION_EXPIRY_KEY);
       if (expiry && Date.now() < parseInt(expiry)) {
-        return sessionStorage.getItem(SESSION_KEY);
+        return localStorage.getItem(SESSION_KEY);
       }
-      sessionStorage.removeItem(SESSION_KEY);
-      sessionStorage.removeItem(SESSION_EXPIRY_KEY);
+      localStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem(SESSION_EXPIRY_KEY);
     } catch(e) {}
     return null;
   }
 
   function setSessionToken(token) {
     try {
-      sessionStorage.setItem(SESSION_KEY, token);
-      sessionStorage.setItem(SESSION_EXPIRY_KEY, (Date.now() + SESSION_DURATION_MS).toString());
+      localStorage.setItem(SESSION_KEY, token);
+      localStorage.setItem(SESSION_EXPIRY_KEY, (Date.now() + SESSION_DURATION_MS).toString());
     } catch(e) {}
   }
 
   function clearSession() {
     try {
-      sessionStorage.removeItem(SESSION_KEY);
-      sessionStorage.removeItem(SESSION_EXPIRY_KEY);
+      localStorage.removeItem(SESSION_KEY);
+      localStorage.removeItem(SESSION_EXPIRY_KEY);
     } catch(e) {}
   }
 
@@ -151,8 +151,8 @@
         if (data.verified) {
           setSessionToken(data.token || email);
           try {
-            if (data.memberToken) sessionStorage.setItem('tbp_member_jwt', data.memberToken);
-            if (data.communityMemberId) sessionStorage.setItem('tbp_member_id', String(data.communityMemberId));
+            if (data.memberToken) localStorage.setItem('tbp_member_jwt', data.memberToken);
+            if (data.communityMemberId) localStorage.setItem('tbp_member_id', String(data.communityMemberId));
           } catch(e) {}
           removeGate();
           onVerified();
