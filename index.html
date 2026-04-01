@@ -306,6 +306,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     <button id="dtab-harness" onclick="showDiagTab('harness')" style="background:none;border:none;border-bottom:2px solid transparent;color:var(--text2);font-size:13px;padding:6px 14px;cursor:pointer">Simulation harness</button>
     <button id="dtab-teaching" onclick="showDiagTab('teaching')" style="background:none;border:none;border-bottom:2px solid transparent;color:var(--text2);font-size:13px;padding:6px 14px;cursor:pointer">Teaching &amp; Psych</button>
     <button id="dtab-seeds" onclick="showDiagTab('seeds')" style="background:none;border:none;border-bottom:2px solid transparent;color:var(--text2);font-size:13px;padding:6px 14px;cursor:pointer">Seed Harness</button>
+    <button id="dtab-program" onclick="showDiagTab('program')" style="background:none;border:none;border-bottom:2px solid transparent;color:var(--text2);font-size:13px;padding:6px 14px;cursor:pointer">Program Review</button>
   </div>
   <!-- Engine integrity tab -->
   <div id="dtab-engine-body">
@@ -447,6 +448,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     </div>
     <div id="seed-harness-summary" style="display:none;margin-bottom:14px"></div>
     <div id="seed-harness-results"></div>
+  </div>
+
+  <!-- Program Review tab -->
+  <div id="dtab-program-body" style="display:none">
+    <div class="card" style="margin-bottom:14px">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Program-level evaluation (LLM)</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:8px">Evaluates each training mode independently, then synthesizes a program-level view. Scores conceptual clarity, teaching quality, behavior change potential, and credibility — both per mode and as a unified curriculum. Identifies gaps and coverage blind spots invisible to scenario-level checks.</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Two API calls. Assembles a content packet from live data. Takes ~90 seconds. Use after major content additions, before launch, or when suspecting drift — not every run.</div>
+      <button class="btn btn-green" onclick="runProgramReview()" style="font-size:13px;padding:8px 20px">&#9658; Run program evaluation</button>
+    </div>
+    <div id="program-review-status" style="display:none;font-size:13px;color:var(--text2);padding:8px 0;margin-bottom:8px"></div>
+    <div id="program-review-results"></div>
   </div>
 </div>
 </div>
@@ -9354,6 +9367,239 @@ async function runSuggestionMode(sourceId, summaryId, resultsId) {
   resultsEl.innerHTML = htmlRows;
 }
 
+// ── PROGRAM-LEVEL EVALUATOR ───────────────────────────────────────────────────
+async function runProgramReview() {
+  var statusEl = document.getElementById('program-review-status');
+  var resultsEl = document.getElementById('program-review-results');
+  if (!statusEl || !resultsEl) return;
+
+  statusEl.style.display = 'block';
+  statusEl.textContent = 'Assembling content packet\u2026';
+  resultsEl.innerHTML = '';
+
+  var PHILOSOPHY = 'Think Beyond Practice is a clinical education platform for psychiatric nurse practitioners (PMHNPs) in private practice. The core teaching philosophy: documentation of reasoning determines billing level, not the clinical outcome alone. The program teaches judgment and reasoning, not rule memorization. Clinicians should be able to defend every code they submit under audit conditions. The platform covers: billing simulator (E/M coding, psychotherapy add-ons, modifiers), denial drills (ERA interpretation, remediation), MDM Foundations (MDM vs time, domain scoring), Guided Learning (psychotherapy documentation, MDM vs time), and MS-006 contrast mode (same visit, two notes, different codes).';
+
+  // Build content packet from live seed data
+  function buildPacket() {
+    var packet = { philosophy: PHILOSOPHY, modes: {} };
+    var bsPool = typeof BS_SEED_POOL !== 'undefined' ? BS_SEED_POOL : [];
+
+    // Billing Sim — 4 seeds spanning different trap families
+    var bsSample = [0, 2, 8, 19].map(function(i){ return bsPool[i]; }).filter(Boolean);
+    packet.modes.billing_sim = bsSample.map(function(s) {
+      var d = s.debrief || {};
+      return {
+        id: s.scenarioId,
+        trapFamily: s.trapFamily,
+        teachingPattern: s.teachingPattern,
+        pattern: d.primaryPattern,
+        financial: truncate(d.financialTeachingPoint, 200),
+        clinical: truncate(d.clinicalTeachingPoint, 200),
+        temptation: truncate(d.temptation, 250)
+      };
+    });
+
+    // Denial Drills — 4 drills
+    var drillKeys = typeof DRILLS !== 'undefined' ? Object.keys(DRILLS).slice(0,4) : [];
+    packet.modes.denial_drills = drillKeys.map(function(k) {
+      var d = DRILLS[k];
+      return {
+        id: k, title: d.title, category: d.category,
+        pattern: d.debrief && d.debrief.pattern,
+        teaching: truncate(d.debrief && d.debrief.teaching, 200),
+        rule: d.debrief && d.debrief.rule
+      };
+    });
+
+    // MDM Sim — all non-contrast seeds
+    packet.modes.mdm_sim = (MDM_SEEDS||[]).filter(function(s){ return !s.contrastMode; }).map(function(s) {
+      return {
+        id: s.id, label: s.label,
+        whatHappened: truncate(s.whatHappened, 200),
+        anchor: s.anchor,
+        trapCode: s.trapCode, correctCode: s.correctCode
+      };
+    });
+
+    // MS-006 contrast mode
+    var ms006 = (MDM_SEEDS||[]).find(function(s){ return s.id === 'MS-006'; });
+    if (ms006) {
+      packet.modes.ms006_contrast = {
+        concept: 'Same visit, two notes. Note A = 99213 (passive). Note B = 99214 (documented reasoning). 14 rotating reasoning blocks across Risk, Data, Mixed domains.',
+        anchor: ms006.anchor,
+        whatHappened: ms006.whatHappened
+      };
+    }
+
+    // Guided Learning
+    packet.modes.guided_learning = {
+      unit1_focus: 'Psychotherapy documentation: modality, intervention, patient response. Stage 1: is this billable? Stage 2: identify modality and intervention. Stage 3: build the note.',
+      unit2_focus: 'MDM vs time: two pathways, psychotherapy constraint, passive vs active management, documentation as differentiator.',
+      lesson5_core: 'The visit may be identical. The clinical thinking may be identical. What differs is whether the clinician documented their reasoning. The code follows the documented work, not the work done in their head.',
+      lesson3_core: 'When psychotherapy is billed, E/M must be selected by MDM. Time cannot be used. Getting paid is not the same as being defensible.'
+    };
+
+    return packet;
+  }
+
+  var packet = buildPacket();
+  var packetJSON = JSON.stringify(packet, null, 2);
+
+  // Prompt 1: per-mode scores
+  var MODE_SYSTEM = 'You are a clinical education program evaluator for a psychiatric prescriber training platform. You assess training content across five dimensions. Return only valid JSON.';
+
+  var modePrompt = 'Evaluate this clinical billing education program for PMHNPs. Below is a structured content packet from each training mode.\n\n' + truncate(packetJSON, 3500) + '\n\nScore EACH MODE on five dimensions (1-5 each):\n- conceptual_clarity: Is the core concept clearly taught?\n- reasoning_failure: Does it explain WHY clinicians make this mistake?\n- consequence_clarity: Is the billing/audit consequence named explicitly?\n- behavior_change: Would a clinician document or bill differently after this?\n- credibility: Does this feel clinically grounded and audit-aware for experienced PMHNPs?\n\nReturn ONLY valid JSON:\n{\n  "modes": {\n    "billing_sim": {"conceptual_clarity":1-5,"reasoning_failure":1-5,"consequence_clarity":1-5,"behavior_change":1-5,"credibility":1-5,"note":"one sentence"},\n    "denial_drills": {"conceptual_clarity":1-5,"reasoning_failure":1-5,"consequence_clarity":1-5,"behavior_change":1-5,"credibility":1-5,"note":"one sentence"},\n    "mdm_sim": {"conceptual_clarity":1-5,"reasoning_failure":1-5,"consequence_clarity":1-5,"behavior_change":1-5,"credibility":1-5,"note":"one sentence"},\n    "ms006_contrast": {"conceptual_clarity":1-5,"reasoning_failure":1-5,"consequence_clarity":1-5,"behavior_change":1-5,"credibility":1-5,"note":"one sentence"},\n    "guided_learning": {"conceptual_clarity":1-5,"reasoning_failure":1-5,"consequence_clarity":1-5,"behavior_change":1-5,"credibility":1-5,"note":"one sentence"}\n  }\n}\n\nReturn ONLY the JSON. No explanation, no markdown.';
+
+  // Prompt 2: program-level synthesis
+  var PROGRAM_SYSTEM = 'You are evaluating a clinical billing education program as a unified curriculum. You assess program architecture, coherence, and educational trajectory — not individual scenario quality. Return only valid JSON.';
+
+  var programPrompt = 'Evaluate this clinical billing education program for PMHNPs as a unified curriculum. This is a STRATEGIC evaluation — do not suggest sentence-level edits. Identify system-level gaps, coverage blind spots, and curriculum coherence issues.\n\nPROGRAM PHILOSOPHY:\n' + PHILOSOPHY + '\n\nMODES COVERED:\n- Billing Simulator (38 seeds, 9 trap families, E/M + psychotherapy + modifiers)\n- Denial Drills (16 drills, ERA-first format, real payer denial codes)\n- MDM Foundations (flash cards, note translation, MS-006 same-visit contrast)\n- Guided Learning Unit 1 (psychotherapy documentation, 3 stages)\n- Guided Learning Unit 2 (MDM vs time, 8 screens, active vs passive management)\n\nKEY TEACHING ANCHORS:\n- Documentation of reasoning determines billing level, not clinical outcome\n- Getting paid is not the same as being defensible\n- Passive continuation = low risk; active management documented = moderate risk\n- Time is available when no add-on is billed; locked out when add-on is billed\n- Every denial has a specific cause and a specific fix\n\nReturn ONLY valid JSON:\n{\n  "program_scores": {\n    "conceptual_coherence": 1-5,\n    "coverage_adequacy": 1-5,\n    "curriculum_progression": 1-5,\n    "redundancy_vs_reinforcement": 1-5,\n    "behavior_change_system": 1-5,\n    "credibility_with_clinicians": 1-5\n  },\n  "strengths": ["...","...","..."],\n  "gaps": [\n    {"area":"...","problem":"...","why_it_matters":"...","suggestion":"..."}\n  ],\n  "overall": {\n    "ready_for_members": true/false,\n    "primary_risk": "short phrase",\n    "highest_leverage_improvement": "one specific thing"\n  }\n}\n\nReturn ONLY the JSON. No explanation, no markdown.';
+
+  // Call 1: mode scores
+  statusEl.textContent = 'Evaluating each mode\u2026 (call 1 of 2)';
+  var modeResult, programResult;
+
+  try {
+    var r1 = await fetch('/.netlify/functions/anthropic-proxy', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2000, system: MODE_SYSTEM, messages: [{ role: 'user', content: modePrompt }] })
+    });
+    var t1 = await r1.text();
+    if (t1.trim().startsWith('<')) throw new Error('Proxy timeout on call 1 — re-run.');
+    var d1 = JSON.parse(t1);
+    var raw1 = (d1.content||[]).map(function(c){ return c.text||''; }).join('');
+    var c1 = raw1.replace(/```json|```/g,'').trim();
+    var s1 = c1.indexOf('{'), e1 = c1.lastIndexOf('}');
+    if (s1!==-1 && e1!==-1) c1 = c1.slice(s1,e1+1);
+    modeResult = JSON.parse(c1);
+  } catch(err) {
+    resultsEl.innerHTML = '<div style="color:var(--red);font-size:13px;padding:8px 0">\u2717 Mode evaluation failed: ' + err.message + '</div>';
+    statusEl.style.display = 'none';
+    return;
+  }
+
+  // Call 2: program synthesis
+  statusEl.textContent = 'Synthesizing program-level view\u2026 (call 2 of 2)';
+
+  try {
+    var r2 = await fetch('/.netlify/functions/anthropic-proxy', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2000, system: PROGRAM_SYSTEM, messages: [{ role: 'user', content: programPrompt }] })
+    });
+    var t2 = await r2.text();
+    if (t2.trim().startsWith('<')) throw new Error('Proxy timeout on call 2 — re-run.');
+    var d2 = JSON.parse(t2);
+    var raw2 = (d2.content||[]).map(function(c){ return c.text||''; }).join('');
+    var c2 = raw2.replace(/```json|```/g,'').trim();
+    var s2 = c2.indexOf('{'), e2 = c2.lastIndexOf('}');
+    if (s2!==-1 && e2!==-1) c2 = c2.slice(s2,e2+1);
+    programResult = JSON.parse(c2);
+  } catch(err) {
+    resultsEl.innerHTML = '<div style="color:var(--red);font-size:13px;padding:8px 0">\u2717 Program synthesis failed: ' + err.message + '</div>';
+    statusEl.style.display = 'none';
+    return;
+  }
+
+  statusEl.style.display = 'none';
+
+  // Render results
+  var html = '';
+  var DIMS = ['conceptual_clarity','reasoning_failure','consequence_clarity','behavior_change','credibility'];
+  var DIM_LABELS = ['Concept clarity','Reasoning failure','Consequence','Behavior change','Credibility'];
+  var MODE_LABELS = {
+    billing_sim: 'Billing Simulator',
+    denial_drills: 'Denial Drills',
+    mdm_sim: 'MDM Sim',
+    ms006_contrast: 'MS-006 Contrast',
+    guided_learning: 'Guided Learning'
+  };
+
+  // Mode scores table
+  html += '<div class="card" style="margin-bottom:16px">';
+  html += '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:12px">Mode scores</div>';
+  html += '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+  html += '<tr style="border-bottom:2px solid var(--border)"><th style="text-align:left;padding:4px 8px;color:var(--text3);font-weight:600">Mode</th>';
+  DIM_LABELS.forEach(function(d){ html += '<th style="text-align:center;padding:4px 8px;color:var(--text3);font-weight:600;white-space:nowrap">'+d+'</th>'; });
+  html += '<th style="text-align:left;padding:4px 8px;color:var(--text3);font-weight:600">Note</th></tr>';
+
+  var modes = modeResult.modes || {};
+  Object.keys(MODE_LABELS).forEach(function(key) {
+    var m = modes[key] || {};
+    var rowColor = 'var(--surface)';
+    var scores = DIMS.map(function(d){ return m[d] || 0; });
+    var minScore = Math.min.apply(null, scores);
+    if (minScore <= 3) rowColor = '#FEF0E3';
+    html += '<tr style="border-bottom:1px solid var(--border);background:'+rowColor+'">';
+    html += '<td style="padding:5px 8px;font-weight:600;color:var(--text)">'+MODE_LABELS[key]+'</td>';
+    DIMS.forEach(function(d) {
+      var sc = m[d] || '?';
+      var scColor = sc >= 5 ? 'var(--green)' : sc >= 4 ? 'var(--text)' : sc >= 3 ? '#C4711A' : 'var(--red)';
+      html += '<td style="text-align:center;padding:5px 8px;color:'+scColor+';font-weight:700">'+sc+'</td>';
+    });
+    html += '<td style="padding:5px 8px;color:var(--text2);font-size:11px">'+(m.note||'')+'</td>';
+    html += '</tr>';
+  });
+  html += '</table></div></div>';
+
+  // Program scores
+  var ps = programResult.program_scores || {};
+  var overall = programResult.overall || {};
+  var readyColor = overall.ready_for_members ? 'var(--green)' : 'var(--red)';
+  var readyLabel = overall.ready_for_members ? '\u2713 Ready for members' : '\u2717 Not yet ready';
+
+  html += '<div class="card" style="margin-bottom:16px">';
+  html += '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:12px">Program-level scores</div>';
+  html += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px">';
+  var PROG_DIMS = {
+    conceptual_coherence: 'Conceptual coherence',
+    coverage_adequacy: 'Coverage adequacy',
+    curriculum_progression: 'Curriculum progression',
+    redundancy_vs_reinforcement: 'Reinforcement quality',
+    behavior_change_system: 'System behavior change',
+    credibility_with_clinicians: 'Credibility'
+  };
+  Object.keys(PROG_DIMS).forEach(function(k) {
+    var sc = ps[k] || '?';
+    var scColor = sc >= 5 ? 'var(--green)' : sc >= 4 ? 'var(--text)' : sc >= 3 ? '#C4711A' : 'var(--red)';
+    html += '<div style="background:var(--surface2);border-radius:6px;padding:8px 14px;text-align:center;min-width:120px">' +
+      '<div style="font-size:22px;font-weight:700;color:'+scColor+'">'+sc+'</div>' +
+      '<div style="font-size:11px;color:var(--text2);margin-top:2px">'+PROG_DIMS[k]+'</div>' +
+      '</div>';
+  });
+  html += '</div>';
+  html += '<div style="font-size:13px;font-weight:700;color:'+readyColor+';margin-bottom:6px">'+readyLabel+'</div>';
+  if (overall.primary_risk) html += '<div style="font-size:12px;color:var(--text2);margin-bottom:4px"><strong>Primary risk:</strong> '+overall.primary_risk+'</div>';
+  if (overall.highest_leverage_improvement) html += '<div style="font-size:12px;color:var(--text2)"><strong>Highest leverage improvement:</strong> '+overall.highest_leverage_improvement+'</div>';
+  html += '</div>';
+
+  // Strengths
+  if (programResult.strengths && programResult.strengths.length) {
+    html += '<div class="card" style="margin-bottom:16px">';
+    html += '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px">Strengths</div>';
+    programResult.strengths.forEach(function(s) {
+      html += '<div style="font-size:12px;color:var(--text2);padding:4px 0;border-bottom:1px solid var(--border)">\u2713 '+s+'</div>';
+    });
+    html += '</div>';
+  }
+
+  // Gaps
+  if (programResult.gaps && programResult.gaps.length) {
+    html += '<div class="card" style="margin-bottom:16px">';
+    html += '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px">Gaps &amp; improvement areas</div>';
+    programResult.gaps.forEach(function(g) {
+      html += '<div style="background:var(--surface2);border-left:3px solid var(--amber,#C4711A);border-radius:0 6px 6px 0;padding:10px 14px;margin-bottom:8px;font-size:12px">' +
+        '<div style="font-weight:700;color:var(--text);margin-bottom:4px">'+g.area+'</div>' +
+        '<div style="color:var(--text2);margin-bottom:4px">'+g.problem+'</div>' +
+        '<div style="color:var(--text3);font-size:11px;margin-bottom:4px"><em>Why it matters:</em> '+g.why_it_matters+'</div>' +
+        (g.suggestion ? '<div style="color:var(--blue);font-size:11px"><em>Suggestion:</em> '+g.suggestion+'</div>' : '') +
+        '</div>';
+    });
+    html += '</div>';
+  }
+
+  resultsEl.innerHTML = html;
+}
+
 // ── TEACHING & PSYCH DIAGNOSTICS HARNESS ─────────────────────────────────────
 function runTeachingDiag() {
   var results = [];
@@ -10341,7 +10587,9 @@ function showDiagTab(tab) {
   document.getElementById('dtab-harness-body').style.display = tab === 'harness' ? 'block' : 'none';
   document.getElementById('dtab-teaching-body').style.display = tab === 'teaching' ? 'block' : 'none';
   document.getElementById('dtab-seeds-body').style.display = tab === 'seeds' ? 'block' : 'none';
-  var tabs = ['engine','accuracy','harness','teaching','seeds'];
+  var programEl = document.getElementById('dtab-program-body');
+  if (programEl) programEl.style.display = tab === 'program' ? 'block' : 'none';
+  var tabs = ['engine','accuracy','harness','teaching','seeds','program'];
   for (var i=0; i<tabs.length; i++) {
     var btn = document.getElementById('dtab-'+tabs[i]);
     if (!btn) continue;
