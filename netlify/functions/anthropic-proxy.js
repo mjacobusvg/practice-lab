@@ -64,3 +64,12 @@ exports.handler = async function(event, context) {
           catch(e) { reject(new Error('Invalid JSON from Anthropic (status ' + res.statusCode + '): ' + data)); }
         });
       });
+      req.on('error', (e) => { reject(e); });
+      req.write(requestBody);
+      req.end();
+    });
+    return { statusCode: 200, headers, body: JSON.stringify(result) };
+  } catch(err) {
+    return { statusCode: 500, headers, body: JSON.stringify({ error: err.message }) };
+  }
+};
