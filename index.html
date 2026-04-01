@@ -3904,7 +3904,7 @@ function evalClaim(em, mod1, addon, mod2, charge1, charge2, addon3, mod3, charge
   var out={type:'clean',lines:[],totalBilled:0,totalAllowed:0,totalPaid:0,copay:copay,denial:null,auditRisk:null,responses:[],debrief:{}};
   if(isNewPt){
     out.type='denial';
-    out.denial={code:'CO-18',title:'Denial - CO-18',sub:'New patient code billed for established patient.',mono:'SVC: '+em+'\nADJ: CO-18 -- Patient record shows prior service from same provider or same specialty/subspecialty in same group within 3 years.'};
+    out.denial={code:'CO-18',title:'Denial - CO-18',sub:'New patient code billed for established patient.',mono:'SVC: '+em+'\nADJ: CO-18 -- Patient record shows prior service from same provider or another provider of the exact same specialty and subspecialty in the same group practice within 3 years.'};
     out.responses=[{text:'Submit corrected claim with the appropriate established patient code (99211-99215).',correct:true,feedback:'Correct. Recode to 99211-99215 and resubmit.'},{text:'Appeal with visit complexity documentation.',correct:false,feedback:'Incorrect. CO-18 is a patient status error — not a complexity issue. Appeals on CO-18 do not succeed unless you have evidence the patient status determination was wrong.',secondDenial:{text:'Appeal denied. The payer confirmed the patient has a prior service on record with the same specialty within 3 years. CO-18 stands. The correct action is a corrected claim with 99211-99215 — not an appeal.',fix:'Submit a corrected claim with the appropriate established patient code. Appeals do not fix patient status mismatches.'}},{text:'Write off the claim.',correct:false,feedback:'Incorrect. This is correctable with a corrected claim.',secondDenial:{text:'Claim written off. You lost the full amount of this visit. CO-18 is always correctable — submit a corrected claim with 99211-99215 and resubmit within the timely filing window.',fix:'A CO-18 is never a write-off situation unless the timely filing window has passed. Always correct and resubmit.'}}];
     out.debrief.pattern='Established patient dressed as new.';
     out.debrief.coding='New patient codes require no professional services from the same provider or another provider of the exact same specialty and subspecialty in the same group practice within 3 years. Recode to 99211-99215.';
@@ -8724,63 +8724,113 @@ async function runTrapValidator(spotCheck) {
   summaryEl.style.display = 'none';
   resultsEl.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px 0">Building trap sample set\u2026</div>';
 
-  var SYSTEM = 'You are a clinical education evaluator assessing whether wrong-answer traps in a billing simulator are pedagogically effective. You return only valid JSON.';
+  var SYSTEM = 'You are a clinical education evaluator assessing whether wrong-answer traps in a billing simulator are pedagogically effective for PMHNPs. Return only valid JSON.';
 
-  var makePrompt = function(mode, id, correctAnswer, trapAnswer, temptation, feedback) {
-    return 'Evaluate this wrong-answer trap from a clinical billing simulator for PMHNPs.\n\nMODE: ' + mode + '\nID: ' + id + '\nCORRECT ANSWER: ' + correctAnswer + '\nTRAP (wrong answer): ' + trapAnswer + '\nTEMPTATION EXPLANATION: ' + (temptation || 'none provided') + '\nFEEDBACK ON WRONG ANSWER: ' + (feedback || 'none provided') + '\n\nReturn ONLY valid JSON:\n{\n  "trap_is_plausible": true/false,\n  "targets_real_cognitive_error": true/false,\n  "too_obvious": true/false,\n  "too_tricky_or_unfair": true/false,\n  "temptation_explains_the_pull": true/false,\n  "plausibility_score": 1-5,\n  "issues": []\n}\n\nDefinitions:\n- trap_is_plausible: Would a practicing PMHNP genuinely consider this wrong answer?\n- targets_real_cognitive_error: Does the trap exploit a common real-world billing mistake, not just a logical error?\n- too_obvious: Is the wrong answer clearly wrong to anyone with basic billing knowledge?\n- too_tricky_or_unfair: Does the trap require obscure knowledge that most PMHNPs would not have?\n- temptation_explains_the_pull: Does the temptation text explain WHY the wrong answer feels right, not just that it is wrong?\n- issues: Only list substantive problems that would reduce learning effectiveness.\n\nReturn ONLY the JSON. No explanation, no markdown.';
+  var makePrompt = function(mode, id, correct, trap, temptation, feedback) {
+    return 'Evaluate this wrong-answer trap from a clinical billing simulator for PMHNPs.\n\nMODE: ' + mode + '\nID: ' + id + '\nCORRECT ANSWER: ' + correct + '\nTRAP (wrong answer): ' + trap + '\nTEMPTATION EXPLANATION: ' + (temptation || 'none provided') + '\nFEEDBACK ON WRONG ANSWER: ' + (feedback || 'none provided') + '\n\nReturn ONLY valid JSON:\n{\n  "trap_is_plausible": true/false,\n  "targets_real_cognitive_error": true/false,\n  "too_obvious": true/false,\n  "too_tricky_or_unfair": true/false,\n  "temptation_explains_the_pull": true/false,\n  "plausibility_score": 1-5,\n  "issues": []\n}\n\nDefinitions:\n- trap_is_plausible: Would a practicing PMHNP genuinely consider this wrong answer before learning about it?\n- targets_real_cognitive_error: Does the trap exploit a common real-world billing mistake, not just a logical error?\n- too_obvious: Is the wrong answer clearly wrong to anyone with basic billing knowledge?\n- too_tricky_or_unfair: Does the trap require obscure knowledge most PMHNPs would not have?\n- temptation_explains_the_pull: Does the temptation text explain WHY the wrong answer feels right, not just that it is wrong?\n- issues: Only list substantive problems that reduce learning effectiveness. Empty array if none.\n\nReturn ONLY the JSON. No explanation, no markdown.';
   };
 
   var samples = [];
   var bsPool = typeof BS_SEED_POOL !== 'undefined' ? BS_SEED_POOL : [];
-  var bsIndices = spotCheck ? [0, 3, 8, 15] : [0, 1, 2, 3, 4, 7, 9, 11, 15, 19, 22, 27];
+  var bsIndices = spotCheck ? [0, 3, 8, 15] : [0, 1, 2, 3, 4, 7, 9, 15, 19, 22, 27, 32];
   bsIndices.forEach(function(i) {
     var seed = bsPool[i];
-    if (!seed || !seed.debrief || !seed.debrief.temptation) return;
+    if (!seed || !seed.debrief || !seed.debrief.temptation || !seed.groundTruth) return;
     var d = seed.debrief;
+    var gt = seed.groundTruth;
+    var correctDesc = 'Bill ' + gt.optimalEM + (gt.optimalAddon ? ' + ' + gt.optimalAddon : '') + ' by ' + gt.optimalRoute.toUpperCase();
+    var trapDesc = 'Trap type: ' + seed.trapFamily + '. ' + (d.primaryPattern || '');
     samples.push({ mode: 'Billing Sim', id: seed.scenarioId,
-      correct: d.primaryPattern || 'correct claim', trap: 'common wrong answer (' + seed.trapFamily + ')',
-      temptation: d.temptation, feedback: d.financialTeachingPoint });
+      correct: correctDesc, trap: trapDesc, temptation: d.temptation, feedback: d.financialTeachingPoint });
   });
 
   var drillKeys = typeof DRILLS !== 'undefined' ? Object.keys(DRILLS) : [];
-  var drillSample = spotCheck ? drillKeys.slice(0,2) : drillKeys.slice(0,5);
-  drillSample.forEach(function(k) {
+  (spotCheck ? drillKeys.slice(0,2) : drillKeys.slice(0,5)).forEach(function(k) {
     var d = DRILLS[k];
     if (!d || !d.responses) return;
     var wrong = d.responses.filter(function(r){ return !r.correct; });
-    if (!wrong.length) return;
     var correct = d.responses.filter(function(r){ return r.correct; });
-    samples.push({ mode: 'Denial Drill', id: 'Drill-' + k,
-      correct: correct[0] ? correct[0].text : 'correct response',
-      trap: wrong[0].text, temptation: null, feedback: wrong[0].feedback });
+    if (!wrong.length || !correct.length) return;
+    samples.push({ mode: 'Denial Drill', id: 'Drill ' + d.title,
+      correct: correct[0].text, trap: wrong[0].text,
+      temptation: null, feedback: wrong[0].feedback });
   });
 
-  MDM_SEEDS.filter(function(s){ return !s.contrastMode && s.temptation; }).forEach(function(s) {
+  MDM_SEEDS.filter(function(s){ return !s.contrastMode && s.temptation; }).slice(0, spotCheck ? 2 : 5).forEach(function(s) {
     samples.push({ mode: 'MDM Sim', id: s.id,
-      correct: s.correctCode + ' by ' + s.correctBasis,
+      correct: s.correctCode + ' by ' + s.correctBasis + ' — ' + (s.label||''),
       trap: s.trapCode + ' by ' + s.trapBasis,
       temptation: s.temptation, feedback: s.whatHappened });
   });
 
-  await runGenericEval(samples, SYSTEM, makePrompt, 'trap-eval-summary', 'trap-eval-results',
-    function(r) {
+  var passed = 0, failed = 0, warned = 0;
+  var htmlRows = '';
+  for (var i = 0; i < samples.length; i++) {
+    var s = samples[i];
+    resultsEl.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px 0">Evaluating trap ' + (i+1) + ' of ' + samples.length + ': [' + s.mode + '] ' + s.id + '\u2026</div>';
+    try {
+      var resp = await fetch('/.netlify/functions/anthropic-proxy', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ system: SYSTEM, messages: [{ role:'user', content: makePrompt(s.mode, s.id, s.correct, s.trap, s.temptation, s.feedback) }] }) });
+      var data = await resp.json();
+      var raw = (data.content||[]).map(function(c){ return c.text||''; }).join('');
+      var clean = raw.replace(/```json|```/g,'').trim();
+      var st = clean.indexOf('{'), en = clean.lastIndexOf('}');
+      if (st!==-1 && en!==-1) clean = clean.slice(st,en+1);
+      var r = JSON.parse(clean);
       var issues = r.issues || [];
       if (!r.trap_is_plausible) issues.push('trap not plausible');
       if (!r.targets_real_cognitive_error) issues.push('does not target real cognitive error');
       if (r.too_obvious) issues.push('too obvious');
       if (r.too_tricky_or_unfair) issues.push('too tricky or unfair');
-      if (!r.temptation_explains_the_pull) issues.push('temptation does not explain the pull');
+      if (!r.temptation_explains_the_pull && s.temptation) issues.push('temptation does not explain the pull');
       if ((r.plausibility_score||0) < 4) issues.push('plausibility ' + r.plausibility_score + '/5');
-      return { issues: issues, scores: 'plausibility ' + r.plausibility_score + '/5' };
-    }, spotCheck);
+      var status = issues.length === 0 ? 'pass' : 'warn';
+      if (status === 'pass') passed++; else warned++;
+      var bg = status === 'pass' ? 'var(--surface)' : '#FEF0E3';
+      var col = status === 'pass' ? 'var(--text2)' : '#C4711A';
+      var icon = status === 'pass' ? '\u2713' : '\u26A0';
+      htmlRows += '<div style="background:'+bg+';border:1px solid var(--border);border-radius:4px;padding:8px 12px;font-size:12px;margin-bottom:4px"><div style="display:flex;justify-content:space-between"><strong style="color:'+col+'">' + icon + ' [' + s.mode + '] ' + s.id + '</strong><span style="color:var(--text3);font-size:11px">plausibility ' + r.plausibility_score + '/5</span></div>' + (issues.length ? '<div style="color:'+col+';margin-top:4px;font-size:11px">'+issues.join(' \u00b7 ')+'</div>' : '') + '</div>';
+    } catch(err) {
+      failed++;
+      htmlRows += '<div style="background:#FDECEA;border:1px solid var(--red);border-radius:4px;padding:8px 12px;font-size:12px;margin-bottom:4px"><strong style="color:var(--red)">\u2717 ['+s.mode+'] '+s.id+' \u2014 error: '+err.message+'</strong></div>';
+    }
+  }
+  summaryEl.style.display = 'block';
+  var sc = failed > 0 ? 'var(--red)' : warned > 0 ? '#C4711A' : 'var(--green)';
+  summaryEl.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);border-left:4px solid '+sc+';border-radius:6px;padding:12px 16px;font-size:13px"><strong style="color:'+sc+'">' + (failed>0?failed+' errors':warned>0?warned+' warnings':'All passed') + '</strong> \u00b7 ' + passed + ' passed \u00b7 ' + warned + ' warnings \u00b7 ' + failed + ' errors \u00b7 ' + samples.length + ' evaluated' + (spotCheck?' (spot check)':'') + '</div>';
+  resultsEl.innerHTML = htmlRows;
 }
 
 // ── SCENARIO REALISM CHECKER ──────────────────────────────────────────────────
 async function runRealismChecker(spotCheck) {
-  var SYSTEM = 'You are a clinical realism evaluator assessing whether psychiatric visit notes in a training simulator read like real PMHNP documentation. You return only valid JSON.';
+  var summaryEl = document.getElementById('realism-eval-summary');
+  var resultsEl = document.getElementById('realism-eval-results');
+  if (!summaryEl || !resultsEl) return;
+  summaryEl.style.display = 'none';
+  resultsEl.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px 0">Building realism sample set\u2026</div>';
 
-  var makePrompt = function(mode, id, note) {
-    return 'Evaluate whether this clinical note from a billing training simulator reads like something a real PMHNP would actually write in private practice.\n\nMODE: ' + mode + '\nID: ' + id + '\nNOTE:\n' + note + '\n\nReturn ONLY valid JSON:\n{\n  "reads_like_real_practice": true/false,\n  "phrasing_is_natural": true/false,\n  "clinical_presentation_is_realistic": true/false,\n  "feels_textbook_or_constructed": true/false,\n  "realism_score": 1-5,\n  "issues": []\n}\n\nDefinitions:\n- reads_like_real_practice: Would this note appear in an actual PMHNP chart?\n- phrasing_is_natural: Does the language sound like a real clinician wrote it, not a training exercise?\n- clinical_presentation_is_realistic: Is the patient scenario plausible and not exaggerated for teaching purposes?\n- feels_textbook_or_constructed: Does the note feel artificial or overly perfect?\n- issues: Only list things that would undermine credibility with a practicing clinician.\n\nReturn ONLY the JSON. No explanation, no markdown.';
+  var SYSTEM = 'You are a clinical realism evaluator assessing whether psychiatric visit scenarios in a training simulator are realistic for PMHNP private practice. Return only valid JSON.';
+
+  // Build a readable scenario description from seed fields since notes are generated at runtime
+  function buildScenarioDesc(seed) {
+    var c = seed.clinical || {};
+    var p = seed.psychotherapy || {};
+    var m = seed.mdm || {};
+    var t = seed.time || {};
+    var parts = [];
+    parts.push('Patient: ' + (seed.patient ? seed.patient.status + ', age ' + seed.patient.age + ', ' + seed.patient.setting : 'established'));
+    if (c.primaryDx) parts.push('Diagnoses: ' + c.primaryDx.label + (c.secondaryDx ? ', ' + c.secondaryDx.label : ''));
+    if (c.symptomThemes && c.symptomThemes.length) parts.push('Symptoms: ' + c.symptomThemes.slice(0,2).join('; '));
+    if (c.medications && c.medications.length) parts.push('Medications: ' + c.medications.slice(0,2).join(', '));
+    if (c.medChanges !== undefined) parts.push('Med change: ' + c.medChanges);
+    if (p.performed) parts.push('Psychotherapy: ' + p.modality + ' (' + p.minutes + ' min) — ' + (p.intervention||'') + '. Response: ' + (p.patientResponse||''));
+    if (t.totalMinutes) parts.push('Total time: ' + t.totalMinutes + ' min');
+    parts.push('MDM: ' + (m.overallLevel||'') + ' (problems: ' + (m.problems||'') + ', data: ' + (m.data||'') + ', risk: ' + (m.risk||'') + ')');
+    return parts.join('\n');
+  }
+
+  var makePrompt = function(mode, id, scenario) {
+    return 'Evaluate whether this clinical scenario from a billing training simulator is realistic for PMHNP private practice.\n\nID: ' + id + '\nSCENARIO:\n' + scenario + '\n\nReturn ONLY valid JSON:\n{\n  "reads_like_real_practice": true/false,\n  "clinical_presentation_is_realistic": true/false,\n  "symptom_complexity_is_plausible": true/false,\n  "feels_constructed_for_teaching": true/false,\n  "realism_score": 1-5,\n  "issues": []\n}\n\nThis is a scenario seed, not a full note — evaluate whether the clinical picture is realistic, not whether it has proper note formatting. issues should only list things that would make a PMHNP say "this would never happen in my practice."\n\nReturn ONLY the JSON. No explanation, no markdown.';
   };
 
   var samples = [];
@@ -8788,40 +8838,67 @@ async function runRealismChecker(spotCheck) {
   var indices = spotCheck ? [0, 3, 9, 19] : [0, 1, 2, 3, 4, 7, 9, 11, 15, 19, 22, 27, 32];
   indices.forEach(function(i) {
     var seed = bsPool[i];
-    if (!seed) return;
-    var note = seed.noteVariants ? seed.noteVariants[0] : (seed.note || '');
-    if (!note && seed.mdm) note = 'MDM seed — note generated procedurally';
-    if (!note) return;
-    samples.push({ mode: 'Billing Sim', id: seed.scenarioId, content: note });
+    if (!seed || !seed.clinical) return;
+    samples.push({ mode: 'Billing Sim', id: seed.scenarioId, content: buildScenarioDesc(seed) });
   });
 
   if (typeof U2_CASES !== 'undefined') {
-    U2_CASES.forEach(function(c, i) {
+    U2_CASES.slice(0, spotCheck ? 1 : 3).forEach(function(c) {
       if (c.caseText) samples.push({ mode: 'Unit 2 Case', id: 'U2-' + c.id, content: c.caseText });
     });
   }
 
-  await runGenericEval(samples, SYSTEM, function(mode, id, content) { return makePrompt(mode, id, content); },
-    'realism-eval-summary', 'realism-eval-results',
-    function(r) {
+  var passed = 0, failed = 0, warned = 0;
+  var htmlRows = '';
+  for (var i = 0; i < samples.length; i++) {
+    var s = samples[i];
+    resultsEl.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px 0">Checking realism ' + (i+1) + ' of ' + samples.length + ': ' + s.id + '\u2026</div>';
+    try {
+      var resp = await fetch('/.netlify/functions/anthropic-proxy', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ system: SYSTEM, messages: [{ role:'user', content: makePrompt(s.mode, s.id, s.content) }] }) });
+      var data = await resp.json();
+      var raw = (data.content||[]).map(function(c){ return c.text||''; }).join('');
+      var clean = raw.replace(/```json|```/g,'').trim();
+      var st = clean.indexOf('{'), en = clean.lastIndexOf('}');
+      if (st!==-1 && en!==-1) clean = clean.slice(st,en+1);
+      var r = JSON.parse(clean);
       var issues = r.issues || [];
       if (!r.reads_like_real_practice) issues.push('does not read like real practice');
-      if (!r.phrasing_is_natural) issues.push('phrasing unnatural');
       if (!r.clinical_presentation_is_realistic) issues.push('presentation unrealistic');
-      if (r.feels_textbook_or_constructed) issues.push('feels textbook/constructed');
+      if (!r.symptom_complexity_is_plausible) issues.push('symptom complexity implausible');
+      if (r.feels_constructed_for_teaching) issues.push('feels constructed for teaching');
       if ((r.realism_score||0) < 4) issues.push('realism ' + r.realism_score + '/5');
-      return { issues: issues, scores: 'realism ' + r.realism_score + '/5' };
-    }, spotCheck);
+      var status = issues.length === 0 ? 'pass' : (r.realism_score < 3 ? 'fail' : 'warn');
+      if (status === 'pass') passed++; else if (status === 'fail') failed++; else warned++;
+      var bg = status === 'pass' ? 'var(--surface)' : status === 'fail' ? '#FDECEA' : '#FEF0E3';
+      var col = status === 'pass' ? 'var(--text2)' : status === 'fail' ? 'var(--red)' : '#C4711A';
+      var icon = status === 'pass' ? '\u2713' : status === 'fail' ? '\u2717' : '\u26A0';
+      htmlRows += '<div style="background:'+bg+';border:1px solid var(--border);border-radius:4px;padding:8px 12px;font-size:12px;margin-bottom:4px"><div style="display:flex;justify-content:space-between"><strong style="color:'+col+'">' + icon + ' [' + s.mode + '] ' + s.id + '</strong><span style="color:var(--text3);font-size:11px">realism ' + r.realism_score + '/5</span></div>' + (issues.length ? '<div style="color:'+col+';margin-top:4px;font-size:11px">'+issues.join(' \u00b7 ')+'</div>' : '') + '</div>';
+    } catch(err) {
+      failed++;
+      htmlRows += '<div style="background:#FDECEA;border:1px solid var(--red);border-radius:4px;padding:8px 12px;font-size:12px;margin-bottom:4px"><strong style="color:var(--red)">\u2717 '+s.id+' \u2014 error: '+err.message+'</strong></div>';
+    }
+  }
+  summaryEl.style.display = 'block';
+  var sc = failed > 0 ? 'var(--red)' : warned > 0 ? '#C4711A' : 'var(--green)';
+  summaryEl.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);border-left:4px solid '+sc+';border-radius:6px;padding:12px 16px;font-size:13px"><strong style="color:'+sc+'">' + (failed>0?failed+' failed':warned>0?warned+' warnings':'All passed') + '</strong> \u00b7 ' + passed + ' passed \u00b7 ' + warned + ' warnings \u00b7 ' + failed + ' failed \u00b7 ' + samples.length + ' evaluated' + (spotCheck?' (spot check)':'') + '</div>';
+  resultsEl.innerHTML = htmlRows;
 }
 
 // ── OUTCOME INTEGRITY CHECKER ─────────────────────────────────────────────────
 async function runOutcomeIntegrityChecker(spotCheck) {
-  var SYSTEM = 'You are a clinical billing auditor evaluating whether a stated optimal billing code is actually defensible given the visit note. You return only valid JSON.';
+  var summaryEl = document.getElementById('outcome-eval-summary');
+  var resultsEl = document.getElementById('outcome-eval-results');
+  if (!summaryEl || !resultsEl) return;
+  summaryEl.style.display = 'none';
+  resultsEl.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px 0">Building outcome integrity sample set\u2026</div>';
+
+  var SYSTEM = 'You are a clinical billing reviewer evaluating whether a stated optimal billing code is consistent with the documented clinical scenario. You return only valid JSON.';
 
   var makePrompt = function(mode, id, content) {
     var parts = content.split('||');
-    var note = parts[0], optimalCode = parts[1], optimalAddon = parts[2];
-    return 'Given this psychiatric visit note, evaluate whether the stated optimal billing code is defensible.\n\nNOTE:\n' + note + '\n\nSTATED OPTIMAL CODE: ' + optimalCode + (optimalAddon ? ' + ' + optimalAddon : '') + '\n\nReturn ONLY valid JSON:\n{\n  "code_is_defensible": true/false,\n  "note_supports_stated_mdm_level": true/false,\n  "addon_documentation_adequate": true/false,\n  "would_survive_audit": true/false,\n  "defensibility_score": 1-5,\n  "issues": []\n}\n\nEvaluate at the level of a real payer audit. Issues should only be substantive documentation gaps that would actually cause recoupment, not stylistic preferences.\n\nReturn ONLY the JSON. No explanation, no markdown.';
+    var scenario = parts[0], optimalCode = parts[1], optimalAddon = parts[2], mdmLevel = parts[3];
+    return 'Given this psychiatric visit scenario, evaluate whether the stated optimal billing code is consistent with the documented clinical picture.\n\nCLINICAL SCENARIO:\n' + scenario + '\n\nSTATED OPTIMAL CODE: ' + optimalCode + (optimalAddon ? ' + ' + optimalAddon : '') + '\nSTATED MDM LEVEL: ' + mdmLevel + '\n\nIMPORTANT CONTEXT: In CPT 2021 E/M guidelines for established patients:\n- 99213 = Low MDM (1 stable chronic condition, low risk)\n- 99214 = Moderate MDM (2+ chronic conditions OR moderate risk OR moderate data)\n- 99215 = High MDM (high risk or extensive data)\nModerate MDM requires 2 of 3 domains at moderate. 99214 does NOT require high MDM.\n\nReturn ONLY valid JSON:\n{\n  "code_is_consistent": true/false,\n  "mdm_level_matches_scenario": true/false,\n  "addon_appropriate_if_present": true/false,\n  "consistency_score": 1-5,\n  "issues": []\n}\n\nEvaluate only whether the code matches what the scenario describes. Issues should only be genuine mismatches, not documentation style preferences.\n\nReturn ONLY the JSON. No explanation, no markdown.';
   };
 
   var samples = [];
@@ -8829,24 +8906,52 @@ async function runOutcomeIntegrityChecker(spotCheck) {
   var indices = spotCheck ? [0, 3, 7, 15] : [0, 1, 2, 3, 4, 7, 9, 11, 15, 19];
   indices.forEach(function(i) {
     var seed = bsPool[i];
-    if (!seed || !seed.groundTruth) return;
-    var note = seed.note || (seed.mdm ? JSON.stringify(seed.mdm) : '');
-    if (!note) return;
-    var gt = seed.groundTruth;
+    if (!seed || !seed.groundTruth || !seed.clinical || !seed.mdm) return;
+    var c = seed.clinical, p = seed.psychotherapy || {}, m = seed.mdm, gt = seed.groundTruth;
+    var scenario = 'Patient: ' + (seed.patient ? seed.patient.status + ', ' + seed.patient.setting : '') +
+      '\nDiagnoses: ' + (c.primaryDx ? c.primaryDx.label : '') + (c.secondaryDx ? ', ' + c.secondaryDx.label : '') +
+      '\nMedications: ' + (c.medications ? c.medications.join(', ') : 'none listed') +
+      '\nMed change: ' + (c.medChanges ? 'yes' : 'no') + ', Prescription drug management: ' + (c.prescriptionDrugManagement ? 'yes' : 'no') +
+      (p.performed ? '\nPsychotherapy: ' + p.modality + ' (' + p.minutes + ' min), code: ' + (p.codeSupported||'none') : '\nNo psychotherapy') +
+      '\nMDM: problems=' + m.problems + ', data=' + m.data + ', risk=' + m.risk + ', overall=' + m.overallLevel;
     samples.push({ mode: 'Billing Sim', id: seed.scenarioId,
-      content: note + '||' + gt.optimalEM + '||' + (gt.optimalAddon || '') });
+      content: scenario + '||' + gt.optimalEM + '||' + (gt.optimalAddon||'') + '||' + m.overallLevel });
   });
 
-  await runGenericEval(samples, SYSTEM, makePrompt, 'outcome-eval-summary', 'outcome-eval-results',
-    function(r) {
+  var passed = 0, failed = 0, warned = 0;
+  var htmlRows = '';
+  for (var i = 0; i < samples.length; i++) {
+    var s = samples[i];
+    resultsEl.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px 0">Checking outcome ' + (i+1) + ' of ' + samples.length + ': ' + s.id + '\u2026</div>';
+    try {
+      var resp = await fetch('/.netlify/functions/anthropic-proxy', { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ system: SYSTEM, messages: [{ role:'user', content: makePrompt(s.mode, s.id, s.content) }] }) });
+      var data = await resp.json();
+      var raw = (data.content||[]).map(function(c){ return c.text||''; }).join('');
+      var clean = raw.replace(/```json|```/g,'').trim();
+      var st = clean.indexOf('{'), en = clean.lastIndexOf('}');
+      if (st!==-1 && en!==-1) clean = clean.slice(st,en+1);
+      var r = JSON.parse(clean);
       var issues = r.issues || [];
-      if (!r.code_is_defensible) issues.push('code not defensible');
-      if (!r.note_supports_stated_mdm_level) issues.push('note does not support MDM level');
-      if (r.addon_documentation_adequate === false) issues.push('add-on documentation inadequate');
-      if (!r.would_survive_audit) issues.push('would not survive audit');
-      if ((r.defensibility_score||0) < 4) issues.push('defensibility ' + r.defensibility_score + '/5');
-      return { issues: issues, scores: 'defensibility ' + r.defensibility_score + '/5' };
-    }, spotCheck);
+      if (!r.code_is_consistent) issues.push('code inconsistent with scenario');
+      if (!r.mdm_level_matches_scenario) issues.push('MDM level mismatch');
+      if (r.addon_appropriate_if_present === false) issues.push('add-on not appropriate');
+      if ((r.consistency_score||0) < 4) issues.push('consistency ' + r.consistency_score + '/5');
+      var status = issues.length === 0 ? 'pass' : (r.consistency_score < 3 ? 'fail' : 'warn');
+      if (status === 'pass') passed++; else if (status === 'fail') failed++; else warned++;
+      var bg = status === 'pass' ? 'var(--surface)' : status === 'fail' ? '#FDECEA' : '#FEF0E3';
+      var col = status === 'pass' ? 'var(--text2)' : status === 'fail' ? 'var(--red)' : '#C4711A';
+      var icon = status === 'pass' ? '\u2713' : status === 'fail' ? '\u2717' : '\u26A0';
+      htmlRows += '<div style="background:'+bg+';border:1px solid var(--border);border-radius:4px;padding:8px 12px;font-size:12px;margin-bottom:4px"><div style="display:flex;justify-content:space-between"><strong style="color:'+col+'">' + icon + ' [' + s.mode + '] ' + s.id + '</strong><span style="color:var(--text3);font-size:11px">consistency ' + r.consistency_score + '/5</span></div>' + (issues.length ? '<div style="color:'+col+';margin-top:4px;font-size:11px">'+issues.join(' \u00b7 ')+'</div>' : '') + '</div>';
+    } catch(err) {
+      failed++;
+      htmlRows += '<div style="background:#FDECEA;border:1px solid var(--red);border-radius:4px;padding:8px 12px;font-size:12px;margin-bottom:4px"><strong style="color:var(--red)">\u2717 '+s.id+' \u2014 error: '+err.message+'</strong></div>';
+    }
+  }
+  summaryEl.style.display = 'block';
+  var sc = failed > 0 ? 'var(--red)' : warned > 0 ? '#C4711A' : 'var(--green)';
+  summaryEl.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);border-left:4px solid '+sc+';border-radius:6px;padding:12px 16px;font-size:13px"><strong style="color:'+sc+'">' + (failed>0?failed+' failed':warned>0?warned+' warnings':'All passed') + '</strong> \u00b7 ' + passed + ' passed \u00b7 ' + warned + ' warnings \u00b7 ' + failed + ' failed \u00b7 ' + samples.length + ' evaluated' + (spotCheck?' (spot check)':'') + '</div>';
+  resultsEl.innerHTML = htmlRows;
 }
 
 // ── CROSS-MODULE CONSISTENCY CHECKER ─────────────────────────────────────────
@@ -8870,7 +8975,7 @@ async function runConsistencyChecker() {
       a: { mode: 'Billing Sim', content: 'CPT requires a distinct section with a named modality, specific intervention, and documented patient response. Good clinical conversation does not meet that bar on its own.' },
       b: { mode: 'Guided Learning U1', content: 'Defensible psychotherapy documentation requires: modality named, specific intervention technique, documented patient response, time stated. Supportive conversation without these elements does not support 90833.' } },
     { id: 'New vs established patient',
-      a: { mode: 'Billing Sim BS-007', content: 'New patient codes (99202-99205) apply when no professional services from the same provider or same specialty/subspecialty in the same group practice within the past 3 years.' },
+      a: { mode: 'Billing Sim BS-007', content: 'New patient codes (99202-99205) apply when no professional services from the same provider or another provider of the exact same specialty and subspecialty in the same group practice within the past 3 years.' },
       b: { mode: 'Denial Drill 3', content: 'New patient = no professional services from the same provider or another provider of the exact same specialty and subspecialty in the same group practice within 3 years.' } },
     { id: 'Stable does not mean low complexity',
       a: { mode: 'MDM Sim MS-004', content: 'MDM measures the work done today, not the reputation of the diagnosis. Stable monitoring with no changes is moderate MDM, not high.' },
@@ -8927,7 +9032,7 @@ async function runBehaviorChangeEval(spotCheck) {
   var SYSTEM = 'You are a clinical education evaluator assessing whether training content will change how a PMHNP actually documents or bills after seeing it. You return only valid JSON.';
 
   var makePrompt = function(mode, id, content) {
-    return 'Evaluate whether this debrief content from a clinical billing simulator is transformational (will change a clinician\'s behavior) or merely informational (explains a rule without changing practice).\n\nMODE: ' + mode + '\nID: ' + id + '\nCONTENT:\n' + content + '\n\nReturn ONLY valid JSON:\n{\n  "behavior_change_likely": true/false,\n  "gives_actionable_next_step": true/false,\n  "connects_to_real_practice_pattern": true/false,\n  "merely_states_the_rule": true/false,\n  "behavior_score": 1-5,\n  "issues": []\n}\n\nDefinitions:\n- behavior_change_likely: After reading this, would a PMHNP do something differently in their next visit or claim?\n- gives_actionable_next_step: Does the content tell the clinician what to do, not just what was wrong?\n- connects_to_real_practice_pattern: Does it link the lesson to a recurring pattern the clinician will encounter again?\n- merely_states_the_rule: Does it only explain what the rule is, without helping the clinician apply it?\n- issues: Only list things that make this content less likely to change behavior.\n\nReturn ONLY the JSON. No explanation, no markdown.';
+    return 'Evaluate whether this debrief content from a clinical billing simulator for PMHNPs will change how a clinician documents or bills after seeing it.\n\nMODE: ' + mode + '\nID: ' + id + '\nCONTENT:\n' + content + '\n\nReturn ONLY valid JSON:\n{\n  "behavior_change_likely": true/false,\n  "gives_actionable_next_step": true/false,\n  "connects_to_real_practice_pattern": true/false,\n  "merely_states_the_rule": true/false,\n  "behavior_score": 1-5,\n  "issues": []\n}\n\nDefinitions:\n- behavior_change_likely: After reading this, would a PMHNP do something differently at their next visit or on their next claim submission?\n- gives_actionable_next_step: Does the content give the clinician a concrete action or principle to apply? A clear rule or anchor statement counts -- no checklist required.\n- connects_to_real_practice_pattern: Does it link the lesson to something that will recur in their practice?\n- merely_states_the_rule: True only if the content ONLY defines the rule with no application or consequence.\n- issues: Only list things that would genuinely prevent behavior change -- factual vagueness, no consequence named, no clinical anchor. Do NOT flag missing checklists, missing templates, or missing statistics.\n\nReturn ONLY the JSON. No explanation, no markdown.';
   };
 
   var samples = [];
