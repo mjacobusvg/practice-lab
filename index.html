@@ -358,6 +358,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     </div>
     <div id="contrast-eval-summary" style="display:none;margin-bottom:14px"></div>
     <div id="contrast-eval-results"></div>
+    <div id="contrast-suggest-area" style="display:none;margin-top:10px">
+      <button class="btn" onclick="runSuggestionMode('contrast','contrast-suggest-summary','contrast-suggest-results')" style="font-size:13px;padding:8px 20px">&#9998; Get suggestions for flagged items</button>
+      <div id="contrast-suggest-summary" style="display:none;margin-top:10px"></div>
+      <div id="contrast-suggest-results"></div>
+    </div>
 
     <div class="card" style="margin-top:20px;margin-bottom:14px">
       <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Full-program teaching quality evaluator (LLM)</div>
@@ -378,6 +383,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     </div>
     <div id="trap-eval-summary" style="display:none;margin-bottom:14px"></div>
     <div id="trap-eval-results"></div>
+    <div id="trap-suggest-area" style="display:none;margin-top:10px">
+      <button class="btn" onclick="runSuggestionMode('trap','trap-suggest-summary','trap-suggest-results')" style="font-size:13px;padding:8px 20px">&#9998; Get suggestions for flagged items</button>
+      <div id="trap-suggest-summary" style="display:none;margin-top:10px"></div>
+      <div id="trap-suggest-results"></div>
+    </div>
 
     <div class="card" style="margin-top:20px;margin-bottom:14px">
       <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Scenario realism checker (LLM)</div>
@@ -8552,6 +8562,13 @@ async function runContrastQualityEval(spotCheck) {
       var status = issues.length === 0 ? 'pass' : 'fail';
       if (status === 'pass') passed++; else failed++;
 
+      // Store flagged items for suggestion mode
+      if (status === 'fail') {
+        issues.forEach(function(issue) {
+          _evalFlaggedItems.push({ source: 'contrast', mode: 'MS-006 Contrast', id: entry.label, issueType: 'contrast', problem: issue, content: 'Note A: ' + noteA + '\n\nNote B: ' + noteB });
+        });
+      }
+
       var bg = status === 'pass' ? 'var(--surface)' : '#FDECEA';
       var icon = status === 'pass' ? '\u2713' : '\u2717';
       var col = status === 'pass' ? 'var(--text2)' : 'var(--red)';
@@ -8578,6 +8595,9 @@ async function runContrastQualityEval(spotCheck) {
     ' \u00b7 ' + passed + ' passed \u00b7 ' + failed + ' failed \u00b7 ' + bank.length + ' evaluated' +
     (spotCheck ? ' (spot check \u2014 3 entries)' : '') + '</div>';
   resultsEl.innerHTML = htmlRows;
+  // Show suggestion button if any failures
+  var suggestArea = document.getElementById('contrast-suggest-area');
+  if (suggestArea) suggestArea.style.display = failed > 0 ? 'block' : 'none';
 }
 
 // ── FULL PROGRAM TEACHING QUALITY EVALUATOR ──────────────────────────────────
@@ -8788,6 +8808,13 @@ async function runTrapValidator(spotCheck) {
       if ((r.plausibility_score||0) < 4) issues.push('plausibility ' + r.plausibility_score + '/5');
       var status = issues.length === 0 ? 'pass' : 'warn';
       if (status === 'pass') passed++; else warned++;
+
+      // Store flagged items for suggestion mode
+      if (status === 'warn') {
+        issues.forEach(function(issue) {
+          _evalFlaggedItems.push({ source: 'trap', mode: s.mode, id: s.id, issueType: 'trap', problem: issue, content: 'Correct: ' + s.correct + '\nTrap: ' + s.trap + (s.temptation ? '\nTemptation: ' + s.temptation : '') + (s.feedback ? '\nFeedback: ' + s.feedback : '') });
+        });
+      }
       var bg = status === 'pass' ? 'var(--surface)' : '#FEF0E3';
       var col = status === 'pass' ? 'var(--text2)' : '#C4711A';
       var icon = status === 'pass' ? '\u2713' : '\u26A0';
@@ -8801,6 +8828,9 @@ async function runTrapValidator(spotCheck) {
   var sc = failed > 0 ? 'var(--red)' : warned > 0 ? '#C4711A' : 'var(--green)';
   summaryEl.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);border-left:4px solid '+sc+';border-radius:6px;padding:12px 16px;font-size:13px"><strong style="color:'+sc+'">' + (failed>0?failed+' errors':warned>0?warned+' warnings':'All passed') + '</strong> \u00b7 ' + passed + ' passed \u00b7 ' + warned + ' warnings \u00b7 ' + failed + ' errors \u00b7 ' + samples.length + ' evaluated' + (spotCheck?' (spot check)':'') + '</div>';
   resultsEl.innerHTML = htmlRows;
+  // Show suggestion button if any warnings
+  var suggestArea = document.getElementById('trap-suggest-area');
+  if (suggestArea) suggestArea.style.display = warned > 0 ? 'block' : 'none';
 }
 
 // ── SCENARIO REALISM CHECKER ──────────────────────────────────────────────────
@@ -8938,10 +8968,11 @@ async function runOutcomeIntegrityChecker(spotCheck) {
       var st = clean.indexOf('{'), en = clean.lastIndexOf('}');
       if (st!==-1 && en!==-1) clean = clean.slice(st,en+1);
       var r = JSON.parse(clean);
+      var hasAddon = s.content.split('||')[2] && s.content.split('||')[2].trim().length > 0;
       var issues = r.issues || [];
       if (!r.code_is_consistent) issues.push('code inconsistent with scenario');
       if (!r.mdm_level_matches_scenario) issues.push('MDM level mismatch');
-      if (r.addon_appropriate_if_present === false) issues.push('add-on not appropriate');
+      if (hasAddon && r.addon_appropriate_if_present === false) issues.push('add-on not appropriate');
       if ((r.consistency_score||0) < 4) issues.push('consistency ' + r.consistency_score + '/5');
       var status = issues.length === 0 ? 'pass' : (r.consistency_score < 3 ? 'fail' : 'warn');
       if (status === 'pass') passed++; else if (status === 'fail') failed++; else warned++;
@@ -9126,6 +9157,58 @@ async function runGenericEval(samples, system, makePrompt, summaryId, resultsId,
   var total = samples.length;
   var sc = failed > 0 ? 'var(--red)' : warned > 0 ? '#C4711A' : 'var(--green)';
   summaryEl.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);border-left:4px solid '+sc+';border-radius:6px;padding:12px 16px;font-size:13px"><strong style="color:'+sc+'">' + (failed>0 ? failed+' failed' : warned>0 ? warned+' warnings' : 'All passed') + '</strong> \u00b7 ' + passed + ' passed \u00b7 ' + warned + ' warnings \u00b7 ' + failed + ' failed \u00b7 ' + total + ' evaluated' + (spotCheck ? ' (spot check)' : '') + '</div>';
+  resultsEl.innerHTML = htmlRows;
+}
+
+// ── SUGGESTION MODE ───────────────────────────────────────────────────────────
+var _evalFlaggedItems = []; // populated by evaluators that support suggestion mode
+
+var SUGGESTION_SYSTEM = 'You are evaluating clinical billing training content for a psychiatric practice simulator. Your role is to detect issues and provide minimal, targeted fixes. Do not rewrite entire scenarios. Do not introduce new clinical information. Preserve the original teaching goal. Each suggestion must be a single actionable change. Return only valid JSON.';
+
+function makeSuggestionPrompt(mode, id, issueType, problem, content) {
+  return 'A quality evaluator flagged the following issue in a clinical billing simulator.\n\nMODE: ' + mode + '\nID: ' + id + '\nISSUE TYPE: ' + issueType + '\nPROBLEM: ' + problem + '\n\nCONTENT:\n' + content + '\n\nProvide a minimal, targeted fix. Constraints:\n- Single actionable change only\n- Do not rewrite the full scenario\n- Do not introduce new clinical information\n- Preserve the teaching goal\n- For contrast pairs: never add new symptoms, new reports, or new findings to Note B\n\nReturn ONLY valid JSON:\n{\n  "why_it_matters": "one sentence on teaching impact",\n  "suggestion": "one specific actionable change",\n  "example_fix": "concrete example text that could replace or be added to the content"\n}\n\nReturn ONLY the JSON. No explanation, no markdown.';
+}
+
+async function runSuggestionMode(sourceId, summaryId, resultsId) {
+  var items = _evalFlaggedItems.filter(function(f) { return f.source === sourceId; });
+  if (!items.length) {
+    alert('No flagged items from this evaluator. Run the evaluator first.');
+    return;
+  }
+  var summaryEl = document.getElementById(summaryId);
+  var resultsEl = document.getElementById(resultsId);
+  if (!summaryEl || !resultsEl) return;
+  summaryEl.style.display = 'none';
+  resultsEl.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px 0">Generating suggestions for ' + items.length + ' flagged item(s)\u2026</div>';
+
+  var htmlRows = '';
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+    resultsEl.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px 0">Analyzing ' + (i+1) + ' of ' + items.length + ': ' + item.id + '\u2026</div>';
+    try {
+      var response = await fetch('/.netlify/functions/anthropic-proxy', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ system: SUGGESTION_SYSTEM, messages: [{ role: 'user', content: makeSuggestionPrompt(item.mode, item.id, item.issueType, item.problem, item.content) }] })
+      });
+      var data = await response.json();
+      var raw = (data.content||[]).map(function(c){ return c.text||''; }).join('');
+      var clean = raw.replace(/```json|```/g,'').trim();
+      var s = clean.indexOf('{'), e = clean.lastIndexOf('}');
+      if (s!==-1 && e!==-1) clean = clean.slice(s,e+1);
+      var r = JSON.parse(clean);
+      htmlRows += '<div style="background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--blue);border-radius:0 6px 6px 0;padding:10px 14px;font-size:12px;margin-bottom:8px">' +
+        '<div style="font-weight:700;color:var(--text);margin-bottom:4px">[' + item.mode + '] ' + item.id + '</div>' +
+        '<div style="color:var(--text3);margin-bottom:6px;font-size:11px">' + item.problem + '</div>' +
+        '<div style="color:var(--text2);margin-bottom:4px"><strong>Why it matters:</strong> ' + (r.why_it_matters||'') + '</div>' +
+        '<div style="color:var(--text2);margin-bottom:4px"><strong>Suggestion:</strong> ' + (r.suggestion||'') + '</div>' +
+        (r.example_fix ? '<div style="background:var(--surface);border-radius:4px;padding:6px 10px;font-family:monospace;font-size:11px;color:var(--text);margin-top:6px">' + r.example_fix + '</div>' : '') +
+        '</div>';
+    } catch(err) {
+      htmlRows += '<div style="background:#FDECEA;border:1px solid var(--red);border-radius:4px;padding:8px 12px;font-size:12px;margin-bottom:4px"><strong style="color:var(--red)">\u2717 ' + item.id + ' \u2014 error: ' + err.message + '</strong></div>';
+    }
+  }
+  summaryEl.style.display = 'block';
+  summaryEl.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--blue);border-radius:6px;padding:12px 16px;font-size:13px"><strong style="color:var(--blue)">' + items.length + ' suggestion(s) generated</strong></div>';
   resultsEl.innerHTML = htmlRows;
 }
 
