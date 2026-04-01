@@ -8752,7 +8752,7 @@ async function runTrapValidator(spotCheck) {
 
   var makePrompt = function(mode, id, correct, trap, temptation, feedback) {
     var p = 'Evaluate this wrong-answer trap from a clinical billing simulator for PMHNPs.\n\nMODE: ' + mode + '\nID: ' + id + '\nCORRECT ANSWER: ' + correct + '\nTRAP (wrong answer): ' + trap + '\nTEMPTATION EXPLANATION: ' + (temptation || 'none provided') + '\nFEEDBACK ON WRONG ANSWER: ' + (feedback || 'none provided') + '\n\nReturn ONLY valid JSON:\n{\n  "trap_is_plausible": true/false,\n  "targets_real_cognitive_error": true/false,\n  "too_obvious": true/false,\n  "too_tricky_or_unfair": true/false,\n  "temptation_explains_the_pull": true/false,\n  "plausibility_score": 1-5,\n  "issues": []\n}\n\nDefinitions:\n- trap_is_plausible: Would a PMHNP genuinely consider this wrong answer?\n- targets_real_cognitive_error: Does it exploit a real-world billing mistake?\n- too_obvious: Clearly wrong to anyone with basic billing knowledge?\n- too_tricky_or_unfair: Requires obscure knowledge?\n- temptation_explains_the_pull: Does it explain WHY the wrong answer feels right?\n- issues: Only substantive problems. Empty array if none.\n\nReturn ONLY the JSON. No explanation, no markdown.';
-    return p.length > 2600 ? p.slice(0, 2600) : p;
+    return p.length > 3000 ? p.slice(0, 3000) : p;
   };
 
   var samples = [];
@@ -8763,10 +8763,16 @@ async function runTrapValidator(spotCheck) {
     if (!seed || !seed.debrief || !seed.debrief.temptation || !seed.groundTruth) return;
     var d = seed.debrief;
     var gt = seed.groundTruth;
-    var correctDesc = 'Bill ' + gt.optimalEM + (gt.optimalAddon ? ' + ' + gt.optimalAddon : '') + ' by ' + gt.optimalRoute.toUpperCase();
-    var trapDesc = 'Trap type: ' + seed.trapFamily + '. ' + (d.primaryPattern || '');
+    var t = seed.time || {};
+    var m = seed.mdm || {};
+    var correctDesc = 'Bill ' + gt.optimalEM + (gt.optimalAddon ? ' + ' + gt.optimalAddon : '') + ' by ' + gt.optimalRoute.toUpperCase() +
+      (t.totalMinutes ? '. Total documented time: ' + t.totalMinutes + ' min' : '') +
+      (m.overallLevel ? '. MDM level: ' + m.overallLevel : '');
+    var trapDesc = 'Trap type: ' + seed.trapFamily + '. ' + (d.primaryPattern || '') +
+      (gt.trapBasis ? ' Wrong basis: ' + gt.trapBasis : '') +
+      (gt.trapCode ? ', wrong code: ' + gt.trapCode : '');
     samples.push({ mode: 'Billing Sim', id: seed.scenarioId,
-      correct: correctDesc, trap: trapDesc, temptation: truncate(d.temptation, 400), feedback: truncate(d.financialTeachingPoint, 300) });
+      correct: correctDesc, trap: trapDesc, temptation: truncate(d.temptation, 600), feedback: truncate(d.financialTeachingPoint, 250) });
   });
 
   var drillKeys = typeof DRILLS !== 'undefined' ? Object.keys(DRILLS) : [];
