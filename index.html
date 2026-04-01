@@ -341,6 +341,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
   </div>
   <!-- Teaching & Psych diagnostics tab -->
   <div id="dtab-teaching-body" style="display:none">
+
+    <!-- Triage dashboard — must stay at top -->
+    <div class="card" style="margin-bottom:20px;border-left:4px solid var(--blue)">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Quality triage dashboard</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Aggregates issues across all evaluators into a prioritized action queue. Run any evaluators first, then refresh this dashboard to see what needs attention.</div>
+      <button class="btn btn-primary" onclick="runTriageDashboard()" style="font-size:13px;padding:8px 20px">&#9658; Refresh triage dashboard</button>
+    </div>
+    <div id="triage-dashboard" style="margin-bottom:20px"></div>
+
     <div class="card" style="margin-bottom:14px">
       <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Structural checks</div>
       <div style="font-size:13px;color:var(--text2);margin-bottom:12px">Validates every Stage 1, 2, and 3 scenario: index bounds, acceptableChoices alignment, grading logic, seed pool integrity, Unit 1 and Unit 2 screen flow, phrasing bank consistency, and MS-006 contrast mode wiring.</div>
@@ -4989,7 +4998,7 @@ var DRILLS = [
   {id:4,title:'Established patient dressed as new.',category:'patient_status',difficulty:'beginner',
    claim:{dos:'03/20/2026',claimNum:'CLM-20260320-104',memberId:'PRE-389201746',npi:'1234567890',pos:'10',patient:'R. Alvarez, est. 2 yrs',payer:'Premera Blue Cross',lines:[{code:'99204',mod:'95',charges:'$250.00',dx1:'F31.81',dx2:''}],totalBilled:'$250.00'},
    era:{paid:'$0.00',denial:{code:'CO-18',title:'Denial - CO-18',sub:'New patient code billed for established patient. No service within past 3 years required for new patient code.',mono:'SVC: 99204-95\nADJ: CO-18 -- New patient code billed for established patient. Payer records show prior service from same specialty within 3 years.'},lines:[{code:'99204',mod:'95',charges:'$250.00',allowed:'$0.00',paid:'$0.00',status:'denied',denialCode:'CO-18'}]},
-   responses:[{text:'Submit corrected claim with the appropriate established patient code (99211-99215).',correct:true,feedback:'Correct. CO-18 is a patient status error. Recode to 99211-99215 and resubmit.'},{text:'Appeal with documentation of visit complexity.',correct:false,feedback:'Incorrect. CO-18 is not about visit complexity -- it is about patient status. The fix is a corrected claim with the right code.'},{text:'Write off the claim.',correct:false,feedback:'Incorrect. This is correctable.'}],
+   responses:[{text:'Submit corrected claim with the appropriate established patient code (99211-99215).',correct:true,feedback:'Correct. CO-18 is a patient status error. Recode to 99211-99215 and resubmit.'},{text:'Appeal with documentation of visit complexity.',correct:false,temptation:'The core error is assuming that same organization equals established billing relationship. When a patient comes in having seen someone else in the same practice or building, it feels like there should be a prior relationship — especially if the records are in the same system. But billing status is determined by specialty and group practice, not location or shared records. The appeal feels right because the visit was genuinely complex — but complexity is irrelevant when the denial is about patient status.',feedback:'Incorrect. CO-18 is not about visit complexity — it is about patient status. Appealing with complexity documentation will not reverse this denial. The fix is a corrected claim with the right code.'},{text:'Write off the claim.',correct:false,feedback:'Incorrect. This is correctable.'}],
    debrief:{pattern:'Established patient dressed as new.',teaching:'New patient codes (99202-99205) require no professional services from the same provider or another provider of the exact same specialty and subspecialty in the same group practice within the past 3 years. A patient seen by another PMHNP in your group within 3 years is established. A patient seen by a therapist or family medicine physician in the same building is still a new patient to you, because the specialty differs. CO-18 fires when the payer\'s records show a prior encounter that meets this threshold.\n\nWhy this happens: Clinicians frequently conflate "same building" or "same organization" with "same group practice for billing purposes." Working in the same suite as a therapist does not make their patients established to you -- specialty must match. A patient who saw a psychiatrist at a previous employer within 3 years is established only if that psychiatrist was in the same group practice as you. The rule is specialty-and-group, not location.',rule:'New patient = no professional services from the same provider or another provider of the exact same specialty and subspecialty in the same group practice within 3 years. Established patient = any such prior service within 3 years. When in doubt, use established patient codes.'},pathway:'claim',action:{wrongPaths:{rep:'CO-18 is a coding error on your end. Angela cannot override a patient status mismatch. Resubmit with the correct code.',post:'Nothing to post -- the claim was denied.',writeoff:'This is correctable. Recode to the appropriate established patient code.'},fixLabel:'Recode to established patient E/M',fixLines:[{idx:0,field:'code',from:'99204',to:'99214',hint:'Patient is established -- use 99211-99215'}],successEra:{paid:'$43.00',note:'Corrected claim accepted with 99214. Established patient code processed correctly.'}}},
   {id:5,title:'90833 bundled with E/M -- CO-97',category:'bundling',difficulty:'intermediate',
    claim:{dos:'03/22/2026',claimNum:'CLM-20260322-105',memberId:'UHC-774920183',npi:'1234567890',pos:'10',patient:'D. Park, est.',payer:'United Healthcare',lines:[{code:'99214',mod:'95',charges:'$200.00',dx1:'F31.81',dx2:'F40.10'},{code:'90833',mod:'95',charges:'$150.00',dx1:'F31.81',dx2:'F40.10'}],totalBilled:'$350.00'},
@@ -8709,6 +8718,9 @@ async function runFullProgramEval(spotCheck) {
       var status = issues.length === 0 ? 'pass' : (result.clinical_accuracy === false ? 'fail' : 'warn');
       if (status === 'pass') passed++;
       else if (status === 'fail') failed++;
+      else warned++;
+      // Push non-passing items to triage registry
+      if (status !== 'pass') issues.forEach(function(iss) { registerTriageItem('teaching', s.mode, s.id, 'teaching', iss, s.content); });
 
       var bg = status === 'pass' ? 'var(--surface)' : status === 'fail' ? '#FDECEA' : '#FEF0E3';
       var col = status === 'pass' ? 'var(--text2)' : status === 'fail' ? 'var(--red)' : '#C4711A';
@@ -8804,7 +8816,9 @@ async function runTrapValidator(spotCheck) {
     try {
       var resp = await fetch('/.netlify/functions/anthropic-proxy', { method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1500, system: SYSTEM, messages: [{ role:'user', content: makePrompt(s.mode, s.id, s.correct, s.trap, s.temptation, s.feedback) }] }) });
-      var data = await resp.json();
+      var respText = await resp.text();
+      if (respText.trim().startsWith('<')) throw new Error('Proxy returned HTML — likely a timeout. Try re-running.');
+      var data = JSON.parse(respText);
       var raw = (data.content||[]).map(function(c){ return c.text||''; }).join('');
       var clean = raw.replace(/```json|```/g,'').trim();
       var st = clean.indexOf('{'), en = clean.lastIndexOf('}');
@@ -8899,7 +8913,9 @@ async function runRealismChecker(spotCheck) {
     try {
       var resp = await fetch('/.netlify/functions/anthropic-proxy', { method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1500, system: SYSTEM, messages: [{ role:'user', content: makePrompt(s.mode, s.id, s.content) }] }) });
-      var data = await resp.json();
+      var respText2 = await resp.text();
+      if (respText2.trim().startsWith('<')) throw new Error('Proxy returned HTML — timeout. Re-run.');
+      var data = JSON.parse(respText2);
       var raw = (data.content||[]).map(function(c){ return c.text||''; }).join('');
       var clean = raw.replace(/```json|```/g,'').trim();
       var st = clean.indexOf('{'), en = clean.lastIndexOf('}');
@@ -8914,6 +8930,8 @@ async function runRealismChecker(spotCheck) {
       var severity = r.severity || (r.realism_score >= 4 ? 'acceptable_variation' : r.realism_score >= 3 ? 'review_suggested' : 'teaching_risk');
       var status = severity === 'teaching_risk' ? 'fail' : severity === 'review_suggested' ? 'warn' : 'pass';
       if (status === 'pass') passed++; else if (status === 'fail') failed++; else warned++;
+      // Push non-passing items to triage registry
+      if (status !== 'pass') issues.forEach(function(iss) { registerTriageItem('realism', s.mode, s.id, 'realism', iss, s.content); });
       var bg = status === 'pass' ? 'var(--surface)' : status === 'fail' ? '#FDECEA' : '#FEF0E3';
       var col = status === 'pass' ? 'var(--text2)' : status === 'fail' ? 'var(--red)' : '#C4711A';
       var icon = status === 'pass' ? '\u2713' : status === 'fail' ? '\u2717' : '\u26A0';
@@ -8973,7 +8991,9 @@ async function runOutcomeIntegrityChecker(spotCheck) {
     try {
       var resp = await fetch('/.netlify/functions/anthropic-proxy', { method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1500, system: SYSTEM, messages: [{ role:'user', content: makePrompt(s.mode, s.id, s.content) }] }) });
-      var data = await resp.json();
+      var respText2 = await resp.text();
+      if (respText2.trim().startsWith('<')) throw new Error('Proxy returned HTML — timeout. Re-run.');
+      var data = JSON.parse(respText2);
       var raw = (data.content||[]).map(function(c){ return c.text||''; }).join('');
       var clean = raw.replace(/```json|```/g,'').trim();
       var st = clean.indexOf('{'), en = clean.lastIndexOf('}');
@@ -8987,6 +9007,8 @@ async function runOutcomeIntegrityChecker(spotCheck) {
       if ((r.consistency_score||0) < 4) issues.push('consistency ' + r.consistency_score + '/5');
       var status = issues.length === 0 ? 'pass' : (r.consistency_score < 3 ? 'fail' : 'warn');
       if (status === 'pass') passed++; else if (status === 'fail') failed++; else warned++;
+      // Push non-passing items to triage registry
+      if (status !== 'pass') issues.forEach(function(iss) { registerTriageItem('outcome', s.mode, s.id, 'outcome', iss, s.content); });
       var bg = status === 'pass' ? 'var(--surface)' : status === 'fail' ? '#FDECEA' : '#FEF0E3';
       var col = status === 'pass' ? 'var(--text2)' : status === 'fail' ? 'var(--red)' : '#C4711A';
       var icon = status === 'pass' ? '\u2713' : status === 'fail' ? '\u2717' : '\u26A0';
@@ -9173,6 +9195,108 @@ async function runGenericEval(samples, system, makePrompt, summaryId, resultsId,
 
 // ── SUGGESTION MODE ───────────────────────────────────────────────────────────
 var _evalFlaggedItems = []; // populated by evaluators that support suggestion mode
+var _triageRegistry = []; // {source, mode, id, issueType, problem, severity, content}
+
+// Severity classification — maps issue patterns to HIGH/MODERATE/LOW
+function classifyIssueSeverity(issueType, problem) {
+  var p = (problem || '').toLowerCase();
+  // HIGH — must fix
+  if (issueType === 'contrast' && (p.includes('same_visit') || p.includes('substantive change') || p.includes('new clinical'))) return 'HIGH';
+  if (issueType === 'outcome' && (p.includes('code inconsistent') || p.includes('mdm level mismatch') || p.includes('would not survive audit'))) return 'HIGH';
+  if (p.includes('clinical accuracy concern') || p.includes('factual error') || p.includes('teaching_risk')) return 'HIGH';
+  if (p.includes('too tricky or unfair') || p.includes('trap not plausible')) return 'HIGH';
+  // MODERATE — review
+  if (p.includes('reasoning failure not addressed') || p.includes('consequence unclear')) return 'MODERATE';
+  if (p.includes('temptation does not explain') || p.includes('does not target real cognitive')) return 'MODERATE';
+  if (p.includes('review_suggested') || p.includes('review suggested')) return 'MODERATE';
+  if (p.includes('behavior change unlikely') || p.includes('no actionable next step')) return 'MODERATE';
+  if (p.includes('realism') && p.includes('/5')) return 'MODERATE';
+  // LOW — informational
+  return 'LOW';
+}
+
+function registerTriageItem(source, mode, id, issueType, problem, content) {
+  var severity = classifyIssueSeverity(issueType, problem);
+  _triageRegistry.push({ source: source, mode: mode, id: id, issueType: issueType, problem: problem, severity: severity, content: content });
+}
+
+function runTriageDashboard() {
+  var el = document.getElementById('triage-dashboard');
+  if (!el) return;
+
+  if (_triageRegistry.length === 0 && _evalFlaggedItems.length === 0) {
+    el.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px 0">No issues recorded yet. Run one or more evaluators first.</div>';
+    return;
+  }
+
+  // Merge _evalFlaggedItems into registry if not already there
+  _evalFlaggedItems.forEach(function(item) {
+    var exists = _triageRegistry.some(function(r) { return r.source === item.source && r.id === item.id && r.problem === item.problem; });
+    if (!exists) registerTriageItem(item.source, item.mode, item.id, item.issueType, item.problem, item.content);
+  });
+
+  var high = _triageRegistry.filter(function(r){ return r.severity === 'HIGH'; });
+  var moderate = _triageRegistry.filter(function(r){ return r.severity === 'MODERATE'; });
+  var low = _triageRegistry.filter(function(r){ return r.severity === 'LOW'; });
+
+  // Recurring issues — count by problem pattern
+  var patternCounts = {};
+  _triageRegistry.forEach(function(r) {
+    var key = r.problem.slice(0, 60);
+    patternCounts[key] = (patternCounts[key] || 0) + 1;
+  });
+  var recurring = Object.keys(patternCounts).filter(function(k){ return patternCounts[k] > 1; })
+    .sort(function(a,b){ return patternCounts[b] - patternCounts[a]; }).slice(0, 5);
+
+  var html = '';
+
+  // Action queue
+  var actionColor = high.length > 0 ? 'var(--red)' : moderate.length > 0 ? '#C4711A' : 'var(--green)';
+  html += '<div style="background:var(--surface);border:1px solid var(--border);border-left:4px solid '+actionColor+';border-radius:6px;padding:12px 16px;margin-bottom:14px;font-size:13px">' +
+    '<div style="font-weight:700;color:'+actionColor+';margin-bottom:8px">Action queue &nbsp; ' +
+    (high.length > 0 ? '<span style="background:var(--red);color:#fff;font-size:11px;padding:2px 7px;border-radius:10px;margin-right:4px">'+high.length+' must fix</span>' : '') +
+    (moderate.length > 0 ? '<span style="background:#C4711A;color:#fff;font-size:11px;padding:2px 7px;border-radius:10px;margin-right:4px">'+moderate.length+' review</span>' : '') +
+    (low.length > 0 ? '<span style="background:var(--text3);color:#fff;font-size:11px;padding:2px 7px;border-radius:10px">'+low.length+' low</span>' : '') +
+    '</div>';
+
+  if (high.length > 0) {
+    html += '<div style="font-size:11px;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px">Must fix</div>';
+    high.forEach(function(r) {
+      html += '<div style="background:#FDECEA;border-radius:4px;padding:5px 10px;font-size:12px;margin-bottom:3px"><strong>['+r.source+'] '+r.id+'</strong> &mdash; '+r.problem+'</div>';
+    });
+  }
+  if (moderate.length > 0) {
+    html += '<div style="font-size:11px;font-weight:700;color:#C4711A;text-transform:uppercase;letter-spacing:0.05em;margin:8px 0 4px">Review</div>';
+    moderate.forEach(function(r) {
+      html += '<div style="background:#FEF0E3;border-radius:4px;padding:5px 10px;font-size:12px;margin-bottom:3px">['+r.source+'] '+r.id+' &mdash; '+r.problem+'</div>';
+    });
+  }
+  if (low.length > 0) {
+    html += '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin:8px 0 4px">Low / informational</div>';
+    low.forEach(function(r) {
+      html += '<div style="background:var(--surface2);border-radius:4px;padding:5px 10px;font-size:12px;margin-bottom:3px;color:var(--text2)">['+r.source+'] '+r.id+' &mdash; '+r.problem+'</div>';
+    });
+  }
+  html += '</div>';
+
+  // Recurring issues dashboard
+  if (recurring.length > 0) {
+    html += '<div style="background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--blue);border-radius:6px;padding:12px 16px;font-size:13px">' +
+      '<div style="font-weight:700;color:var(--text);margin-bottom:8px">Top recurring issues <span style="font-size:11px;font-weight:400;color:var(--text2)">&mdash; fix these in the generator, not just the content</span></div>';
+    recurring.forEach(function(k, idx) {
+      html += '<div style="display:flex;justify-content:space-between;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px">' +
+        '<span style="color:var(--text)">' + (idx+1) + '. ' + k + (k.length === 60 ? '...' : '') + '</span>' +
+        '<span style="color:var(--text3);font-size:11px;white-space:nowrap;margin-left:12px">' + patternCounts[k] + 'x</span>' +
+        '</div>';
+    });
+    html += '<div style="font-size:11px;color:var(--text3);margin-top:8px">Patterns appearing in 2+ items suggest a systemic issue in how content is generated, not just individual scenario problems.</div>';
+    html += '</div>';
+  }
+
+  el.innerHTML = html;
+}
+
+
 
 // Truncate content to avoid response truncation -- keep prompts lean
 function truncate(str, maxLen) {
