@@ -578,6 +578,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
         <option value="BS-TIME-ADDON-CHAIN-TX-036">Time + add-on &mdash; better docs, same rule</option>
         <option value="BS-PSYCH-BURIED-TX-037">Therapy in note &mdash; not identifiable as psychotherapy</option>
         <option value="BS-TIME-INFLATE-TX-038">Visit length inflation &mdash; 45 min billed as 99215</option>
+        <option value="BS-HYBRID-SI-TX-039">Hybrid visit &mdash; severe MDD + SI + CBT safety planning</option>
+        <option value="BS-HYBRID-SUD-TX-040">Hybrid visit &mdash; MDD + AUD + MI, time route blocked</option>
+        <option value="BS-HYBRID-CRISIS-TX-041">Hybrid visit &mdash; PTSD crisis, add-on not billable</option>
       </optgroup>
       <optgroup label="─── Multi-provider coordination ──────────────">
         <option value="BS-TWO-PROVIDERS-TX-032">Same-day PMHNP + therapist &mdash; payer conflict</option>
@@ -2608,6 +2611,96 @@ var BS_SEED_POOL = [
     mdm: { overallLevel:'moderate', problems:'moderate', data:'low', risk:'moderate' },
     groundTruth: { optimalEM:'99214', optimalAddon:'', optimalModifier:'95', optimalRoute:'mdm', alternativeValidRoute: { route:'time', emCode:'99214', addon: null, allowed: true, requiresDocumentation: 'Total time must be documented' }, claimOutcomeType:'clean' },
     debrief: { primaryPattern:'Stable patient, inflated code.', financialTeachingPoint:'45 minutes supports 99214 — not 99215. Time-based billing also requires that the provider explicitly document total time and state time as the basis for code selection. A 45-minute visit billed as 99215 is wrong in both directions: the time does not meet the threshold, and without documented basis the time route is not available regardless. The recoupment exposure is roughly $45-55 per affected visit. At 30 visits per week with visit-length inflation on 15% of claims, that is $10,530-12,870 per year in claims that paid at 99215 and will be pulled back to 99214 on audit. MDM and time both support 99214 here. Either route leads to the same answer.', clinicalTeachingPoint:'Visit length is not the same as MDM complexity, and neither is a substitute for the other. A stable bipolar II patient on lamotrigine who discusses life stressors for 45 minutes has a moderate MDM visit (two chronic conditions, medication monitoring) and a 45-minute time visit. Both support 99214. The duration of a conversation does not create high MDM — it creates a longer moderate visit. The code follows the work, not the clock.' }
+  },
+  {
+    scenarioId: 'BS-HYBRID-SI-TX-039',
+    teachingPattern: 'hybrid_si_mdm_addon',
+    trapFamily: 'undercode',
+    patient: { status:'established', age:34, sex:'female', setting:'telehealth', pos:'10', payer:'premera', copay:35 },
+    clinical: {
+      primaryDx: { code:'F32.2', label:'Major depressive disorder, severe without psychotic features' },
+      secondaryDx: { code:'F41.1', label:'Generalized anxiety disorder' },
+      symptomThemes: ['passive suicidal ideation without plan or intent', 'worsening depressive symptoms over two weeks', 'poor sleep and appetite decline', 'high level of distress at session outset'],
+      functionalImpact: ['unable to attend work this week', 'social withdrawal', 'stopped exercising'],
+      medications: ['sertraline 150mg daily', 'trazodone 50mg QHS'],
+      medChanges: true, prescriptionDrugManagement: true,
+      riskContext: { suicidality:'passive ideation without plan', hospitalizationRisk:'moderate', safetyPlanning: true }
+    },
+    psychotherapy: {
+      performed: true, minutes: 22, codeSupported: '90833',
+      modality: 'CBT', focus: 'safety planning and cognitive restructuring for hopelessness',
+      intervention: 'Completed collaborative safety plan including warning signs, coping strategies, and emergency contacts. Applied cognitive restructuring to challenge hopelessness cognitions.',
+      patientResponse: 'Identified three personal reasons for safety, engaged actively with safety plan, agreed to remove access to means and contact crisis line if ideation intensifies.'
+    },
+    time: { totalMinutes: 52, psychotherapyIncluded: true, timeBasedEMCandidate: '99215', timeRouteAllowedIfAddonBilled: false },
+    mdm: { overallLevel:'high', problems:'high', data:'moderate', risk:'high' },
+    groundTruth: { optimalEM:'99215', optimalAddon:'90833', optimalModifier:'95', optimalRoute:'mdm', alternativeValidRoute: null, claimOutcomeType:'clean' },
+    debrief: {
+      primaryPattern: 'High-complexity hybrid visit. Both streams must be documented.',
+      financialTeachingPoint: 'This visit supports 99215 by MDM — severe MDD with passive SI and functional collapse is high-complexity Problems; safety planning and medication adjustment under elevated risk is high Risk. Psychotherapy is separately documented with modality, intervention, and patient response, supporting 90833. The correct claim is 99215 + 90833 by MDM. Undercoding to 99214 + 90833 costs $45-55 per visit. At 30 visits/week with 15% being high-complexity hybrid visits, defaulting to 99214 costs $10,530-12,870 per year on visits where the note fully justified the higher code.',
+      clinicalTeachingPoint: 'The hybrid visit — medication management and structured psychotherapy in the same encounter — requires two parallel documentation streams to be defensible. The E/M section must show MDM complexity: what problems were addressed, what data was reviewed, what risk was managed, what decision was made. The psychotherapy section must show a distinct service: modality, specific intervention, patient response, time. Each section stands alone on audit. A strong psychotherapy note does not rescue a thin E/M section, and vice versa.',
+      temptation: 'The visit felt dominated by the SI and the safety planning work. That emotional weight can make the medication management feel secondary — and the coder defaults to 99214 because the visit felt like therapy, not a complex medical visit. But SI with functional decline and a medication adjustment is unambiguously high MDM. The clinical weight of what happened in the room should be reflected in both streams of the note.'
+    }
+  },
+  {
+    scenarioId: 'BS-HYBRID-SUD-TX-040',
+    teachingPattern: 'hybrid_sud_mi_mdm',
+    trapFamily: 'time_with_addon',
+    patient: { status:'established', age:41, sex:'male', setting:'telehealth', pos:'10', payer:'united', copay:40 },
+    clinical: {
+      primaryDx: { code:'F33.1', label:'Major depressive disorder, moderate' },
+      secondaryDx: { code:'F10.20', label:'Alcohol use disorder, moderate' },
+      symptomThemes: ['mood destabilization linked to alcohol use escalation', 'ambivalence about reducing drinking', 'naltrexone side effect review and tolerability discussion', 'medication adjustment considered and deferred'],
+      functionalImpact: ['missing work due to hangovers', 'relationship conflict', 'increased depressive symptoms on heavy drinking days'],
+      medications: ['naltrexone 50mg daily', 'escitalopram 20mg daily'],
+      medChanges: false, prescriptionDrugManagement: true,
+      riskContext: { suicidality:'denied', hospitalizationRisk:'low' }
+    },
+    psychotherapy: {
+      performed: true, minutes: 20, codeSupported: '90833',
+      modality: 'MI', focus: 'alcohol use ambivalence and its connection to mood',
+      intervention: 'Applied decisional balance to explore pros and cons of continued drinking in context of mood destabilization. Elicited change talk about the connection between alcohol use and depressive episodes.',
+      patientResponse: 'Articulated specific ways drinking worsens his depression the following day. Identified reducing drinking as personally meaningful and agreed to track daily drinks before next visit.'
+    },
+    time: { totalMinutes: 46, psychotherapyIncluded: true, timeBasedEMCandidate: '99215', timeRouteAllowedIfAddonBilled: false },
+    mdm: { overallLevel:'moderate', problems:'moderate', data:'moderate', risk:'moderate' },
+    groundTruth: { optimalEM:'99214', optimalAddon:'90833', optimalModifier:'95', optimalRoute:'mdm', alternativeValidRoute: null, claimOutcomeType:'clean' },
+    debrief: {
+      primaryPattern: 'Hybrid visit — MI for SUD + medication management. Both billable. Time route blocked.',
+      financialTeachingPoint: 'This visit supports 99214 by MDM and 90833 for the MI session. Total time is 46 minutes, which would support 99215 by time — but psychotherapy is billed, so time is locked out. The E/M must be selected by MDM only, which supports 99214. Billing 99215 + 90833 because 46 minutes feels like enough creates direct audit exposure: the time route is unavailable once the add-on appears on the claim. At 30 visits/week with this error on 20% of hybrid add-on claims, that is $7,020-8,580 per year in recoupment exposure on visits that paid and will not survive audit.',
+      clinicalTeachingPoint: 'Substance use disorder and depression in the same visit create a hybrid documentation challenge. The E/M section must address both conditions: what was reviewed, what the medication status is, what clinical decisions were made. The MI section must be clearly separated: modality, specific technique, patient response, time. Neither section can bleed into the other. If the MI work is embedded in the assessment narrative without a distinct section, the add-on fails. If the E/M section is just a medication list without documented clinical reasoning, MDM stays low regardless of how complex the patient is.',
+      temptation: '46 minutes is a real number and it points at 99215. The MI session was thorough and the documentation was strong. That combination makes 99215 + 90833 feel justified. But the moment 90833 is on the claim, the 46 minutes are already captured by the add-on. Using them again for the E/M level is double-counting. MDM is the only available lane, and it lands at 99214.'
+    }
+  },
+  {
+    scenarioId: 'BS-HYBRID-CRISIS-TX-041',
+    teachingPattern: 'hybrid_crisis_thin_em',
+    trapFamily: 'therapy_not_billable',
+    patient: { status:'established', age:27, sex:'female', setting:'telehealth', pos:'10', payer:'premera', copay:35 },
+    clinical: {
+      primaryDx: { code:'F43.10', label:'PTSD' },
+      secondaryDx: { code:'F33.1', label:'Major depressive disorder, moderate' },
+      symptomThemes: ['acute trauma response following interpersonal violence disclosure', 'hyperarousal and dissociative symptoms during session', 'prazosin continued for nightmares', 'sertraline continued without changes'],
+      functionalImpact: ['unable to sleep', 'avoidance of home', 'missed work for three days'],
+      medications: ['sertraline 100mg daily', 'prazosin 2mg QHS'],
+      medChanges: false, prescriptionDrugManagement: true,
+      riskContext: { suicidality:'passive ideation', hospitalizationRisk:'moderate', safetyPlanning: true }
+    },
+    psychotherapy: {
+      performed: true, minutes: 25, codeSupported: null,
+      modality: 'Trauma-Focused', focus: 'acute trauma stabilization and grounding',
+      intervention: 'Provided grounding and stabilization support during acute distress. Used containment and present-moment anchoring throughout session.',
+      patientResponse: 'Remained dysregulated for most of session. Able to partially engage with grounding by session end. Safety plan reviewed and updated.'
+    },
+    time: { totalMinutes: 48, psychotherapyIncluded: true, timeBasedEMCandidate: '99215', timeRouteAllowedIfAddonBilled: false },
+    mdm: { overallLevel:'high', problems:'high', data:'low', risk:'high' },
+    groundTruth: { optimalEM:'99215', optimalAddon:'', optimalModifier:'95', optimalRoute:'mdm', alternativeValidRoute: null, claimOutcomeType:'audit' },
+    debrief: {
+      primaryPattern: 'High-complexity crisis visit. Psychotherapy not separately billable. E/M must carry the full clinical weight.',
+      financialTeachingPoint: 'This visit supports 99215 by MDM — acute PTSD decompensation with passive SI, safety planning, and moderate hospitalization risk is high-complexity Problems and high Risk. The psychotherapy work happened but is not separately billable as 90833: the intervention was stabilization and grounding during acute crisis, not a structured therapeutic modality with documented patient response demonstrating skill acquisition or behavioral change. Billing 90833 creates audit exposure at $65 per claim. At 30 visits/week with crisis-adjacent add-on billing on 10% of claims, that is $10,140 per year in recoupment on add-ons the note cannot defend.',
+      clinicalTeachingPoint: 'Crisis stabilization and structured psychotherapy are clinically different services and they are billed differently. A session dominated by acute dysregulation, containment, and safety planning is not a 90833-eligible psychotherapy session — even if it took 25 minutes and required significant clinical skill. 90833 requires a distinct section with a named modality, a specific evidence-based intervention, and documented patient response demonstrating engagement with the technique. Grounding during acute crisis does not meet that standard. The clinical weight of this visit belongs in the E/M section: acute PTSD decompensation, passive SI, safety plan updated, moderate hospitalization risk reviewed and managed. That is high MDM and it supports 99215 on its own.',
+      temptation: '25 minutes of active therapeutic work happened. The session was emotionally demanding and the clinician did real clinical work. That makes 90833 feel earned. But the add-on standard asks a specific question: is there a distinct therapeutic modality, a specific intervention technique, and a documented patient response? A session defined by acute dysregulation and crisis management does not produce those documentation elements — the patient was not stable enough to engage in structured skill-building. Billing 90833 here is overcoding the therapeutic work, not accurately capturing it.'
+    }
   }
 ];
 
@@ -12028,6 +12121,9 @@ function u2S5Answer(choice) {
 
     '<div style="padding:8px 12px;background:var(--surface);border-radius:6px;font-size:12px;color:var(--text2);font-style:italic">' +
     'None of these required the medication to change. None required the patient to be unstable. What they required was writing down the reasoning that was already happening in the room. If it happened but wasn\u2019t written, it doesn\u2019t exist for billing purposes. At 30 visits/week with passive documentation on 30% of visits, the difference between 99213 and 99214 represents $28,080-37,440 per year in revenue the note could have justified.' +
+    '</div>' +
+    '<div style="margin-top:10px;padding:10px 14px;background:var(--amber-light,#FFF3E0);border:1px solid var(--amber-mid,#FFB74D);border-radius:6px;font-size:12px;color:var(--amber,#C4711A);line-height:1.7">' +
+    '<strong>Audit and revenue consequence:</strong> A note that records outcome without reasoning bills at 99213. The identical visit with documented reasoning bills at 99214. The difference is $30-40 per visit. Multiplied across a full panel, passive documentation is the single most common source of systematic underbilling in outpatient psychiatry \u2014 and the easiest to fix.' +
     '</div>' +
     '</div>';
 
