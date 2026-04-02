@@ -437,6 +437,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
     </div>
     <div id="behavior-eval-summary" style="display:none;margin-bottom:14px"></div>
     <div id="behavior-eval-results"></div>
+
+    <div class="card" style="margin-top:20px;margin-bottom:14px;border-left:4px solid var(--amber,#C4711A)">
+      <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px">Guided Learning gap analysis (LLM)</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:8px">Targets the two dimensions where Guided Learning consistently scores below 4: <strong>Reasoning failure</strong> (does the feedback explain <em>why</em> clinicians make this mistake?) and <strong>Consequence</strong> (does it name the financial or audit outcome?). Returns specific rewrite suggestions per screen — not just a score.</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Evaluates all three units. Each item gets a diagnosis and a concrete suggestion. Takes ~60 seconds.</div>
+      <button class="btn btn-green" onclick="runGLGapAnalysis()" style="font-size:13px;padding:8px 20px">&#9658; Run gap analysis</button>
+      <button class="btn" onclick="runGLGapAnalysis(true)" style="font-size:13px;padding:8px 20px;margin-left:8px">Spot-check 4 items</button>
+    </div>
+    <div id="gl-gap-summary" style="display:none;margin-bottom:14px"></div>
+    <div id="gl-gap-results"></div>
   </div>
 
   <!-- Seed Harness tab -->
@@ -10138,7 +10148,7 @@ async function runProgramReview() {
     var ms6 = (typeof MDM_SEEDS !== 'undefined' ? MDM_SEEDS : []).find(function(s){return s.id==='MS-006';}) || {};
     lines.push('MS-006 CONTRAST: Same visit, two notes. Note A=99213 passive, Note B=99214 with documented reasoning. 14 rotating reasoning blocks. ' + truncate(ms6.anchor||'',100));
     // Guided Learning
-    lines.push('GUIDED LEARNING: Unit 1=psychotherapy documentation (modality, intervention, response, 3 stages). Unit 2=MDM vs time (8 screens, active vs passive management, lesson: code follows documented work not undocumented thinking).');
+    lines.push('GUIDED LEARNING: Unit 1=psychotherapy documentation (modality, intervention, response, 3 stages). Unit 2=MDM vs time (8 screens, active vs passive management, lesson: code follows documented work not undocumented thinking). Unit 3=The Billing Cycle (15 action-based screens across 4 phases: fee schedule setup, eligibility and patient communication, coding bridge to simulator, submission and ERA interpretation). Unit 3 teaches fee compression consequences, eligibility as estimate not guarantee, covered vs paid distinction, compliance boundary on coding requests, CO-4 modifier correction, silent undercoding with no denial signal, and $0 payment as deductible not error. All interactions are decision-based with immediate consequence feedback.');
     return lines.join('\n\n');
   }
 
@@ -10148,7 +10158,7 @@ async function runProgramReview() {
   // Prompt 2: program-level synthesis
   var PROGRAM_SYSTEM = 'You are evaluating a clinical billing education program as a unified curriculum. You assess program architecture, coherence, and educational trajectory — not individual scenario quality. Return only valid JSON.';
 
-  var programPrompt = 'Rate a PMHNP billing education platform. Respond with ONLY this JSON, integer scores 1-5, no other text, no apostrophes:\n{"program_scores":{"conceptual_coherence":5,"coverage_adequacy":5,"curriculum_progression":5,"redundancy_vs_reinforcement":5,"behavior_change_system":5,"credibility_with_clinicians":5},"strengths":["strength one","strength two","strength three"],"gaps":[{"area":"gap area","problem":"gap problem","why_it_matters":"impact","suggestion":"fix"}],"overall":{"ready_for_members":true,"primary_risk":"risk phrase","highest_leverage_improvement":"improvement phrase"}}\n\nPlatform: Billing Simulator (E/M, add-ons, modifiers), Denial Drills (ERA, denial codes), MDM Sim (domain scoring, same-visit contrast), Guided Learning (psychotherapy docs, MDM vs time). Core concept: documentation of reasoning determines billing level.';
+  var programPrompt = 'Rate a PMHNP billing education platform. Respond with ONLY this JSON, integer scores 1-5, no other text, no apostrophes:\n{"program_scores":{"conceptual_coherence":5,"coverage_adequacy":5,"curriculum_progression":5,"redundancy_vs_reinforcement":5,"behavior_change_system":5,"credibility_with_clinicians":5},"strengths":["strength one","strength two","strength three"],"gaps":[{"area":"gap area","problem":"gap problem","why_it_matters":"impact","suggestion":"fix"}],"overall":{"ready_for_members":true,"primary_risk":"risk phrase","highest_leverage_improvement":"improvement phrase"}}\n\nPlatform: Billing Simulator (E/M, add-ons, modifiers), Denial Drills (ERA, denial codes), MDM Sim (domain scoring, same-visit contrast), Guided Learning Units 1-3 (psychotherapy docs, MDM vs time, full billing cycle front-to-back). Unit 3 covers fee schedule setup, eligibility communication, covered vs paid, compliance boundaries, CO-4 correction, silent undercoding, and ERA interpretation. Core concept: documentation of reasoning determines billing level. Every mode uses action-based decisions with immediate consequence feedback.';
 
 
   // Call 1: mode scores
@@ -11035,6 +11045,144 @@ function u3InitWrapup() {
   });
 }
 
+
+// ── GUIDED LEARNING GAP ANALYSIS ─────────────────────────────────────────────
+async function runGLGapAnalysis(spotCheck) {
+  var summaryEl = document.getElementById('gl-gap-summary');
+  var resultsEl = document.getElementById('gl-gap-results');
+  if (!summaryEl || !resultsEl) return;
+  summaryEl.style.display = 'none';
+  resultsEl.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px 0">Building sample set...</div>';
+
+  var SYSTEM = 'You are a clinical education quality reviewer. Your job is to identify specific gaps in feedback text from a PMHNP billing education platform. You return only valid JSON.';
+
+  var makePrompt = function(unit, screenId, content) {
+    return 'Evaluate this feedback text from a PMHNP billing education platform (Guided Learning ' + unit + ', screen ' + screenId + ').\n\nFEEDBACK TEXT:\n' + content + '\n\nEvaluate specifically on two dimensions:\n1. REASONING FAILURE: Does the feedback explain WHY a PMHNP would make this mistake? (the cognitive pull, the false assumption, the habit that creates the error)\n2. CONSEQUENCE: Does the feedback name a specific financial or audit consequence if the clinician does not change behavior?\n\nReturn ONLY valid JSON:\n{\n  "reasoning_failure_score": 1-5,\n  "reasoning_failure_missing": "what specific cognitive explanation is absent, or null if adequate",\n  "consequence_score": 1-5,\n  "consequence_missing": "what specific financial or audit consequence is absent, or null if adequate",\n  "rewrite_suggestion": "one concrete sentence or phrase to add that would fix the lowest-scoring dimension"\n}\n\nScoring:\n- 5: explicitly names why clinicians make this error / names a specific dollar amount or audit risk\n- 4: implies the reason or consequence but does not state it directly\n- 3: vague or generic — says something went wrong but not why or what it costs\n- 1-2: completely absent\n\nReturn ONLY the JSON. No explanation, no markdown.';
+  };
+
+  // Build all Guided Learning feedback samples
+  var allSamples = [];
+
+  // Unit 1 feedback samples (teach-s screens)
+  var u1Items = [
+    { id: 'S1-wrong-answer', unit: 'Unit 1',
+      content: 'This note documents supportive conversation but the psychotherapy section is missing three required elements: the specific modality used, a documented intervention or technique, and the patient\'s response. Without these, the note describes a visit, not a billable therapy session. Documentation of what was discussed is not the same as documentation of what was done therapeutically.' },
+    { id: 'S4-borderline', unit: 'Unit 1',
+      content: 'This note is borderline. It names the modality and describes some intervention, but the patient response is too vague to clearly demonstrate that distinct therapeutic work occurred. "Patient appeared receptive" does not show what changed. A defensible therapy note shows the patient did something — verbalized, identified, practiced, committed — not just that they were present and cooperative.' },
+    { id: 'S6-time-missing', unit: 'Unit 1',
+      content: 'Time was not documented. Psychotherapy add-on codes require documented time to be defensible. Without it, the code cannot be supported under audit even if the therapy occurred and was otherwise well-documented. The note does the clinical work but fails the billing requirement.' }
+  ];
+
+  // Unit 2 feedback samples
+  var u2Items = [
+    { id: 'U2-S3-wrong', unit: 'Unit 2',
+      content: 'When psychotherapy is billed, E/M must be justified by MDM alone — time cannot be used. MDM supports 99214, not 99215. The claim would likely pay but fails under audit. Getting paid is not the same as being defensible.' },
+    { id: 'U2-S5-levelup', unit: 'Unit 2',
+      content: 'Same visit, same decision, different documentation. Note A: "Medications continued without change." Note B: Documents QTc risk review, risk-benefit weighing, decision to continue with monitoring. Same outcome. Risk = moderate in Note B because active management was documented. The code follows the documented work, not the work done in the clinician\'s head.' },
+    { id: 'U2-S7-time-trap', unit: 'Unit 2',
+      content: 'Total time is documented but psychotherapy add-on is also billed. When 90833 is on the claim, E/M selection must be based on MDM — not time. The time documentation is accurate but it cannot drive the E/M level when an add-on is present. Both are true simultaneously: the time was real, and it cannot be used for E/M selection.' }
+  ];
+
+  // Unit 3 feedback samples — pull from U3_DATA
+  var u3Items = [];
+  var u3Keys = ['p1s1','p1s2','p1s3','p2s1','p2s2','p2s3','p2s4','p2s5','p2s6','p4s1','p4s2','p4s3','p4s4'];
+  if (typeof U3_DATA !== 'undefined') {
+    u3Keys.forEach(function(key) {
+      var d = U3_DATA[key];
+      if (!d || !d.feedback) return;
+      var correctFb = d.feedback[d.correct];
+      if (!correctFb) return;
+      // Strip HTML tags for the prompt
+      var text = correctFb.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+      if (text.length > 60) {
+        u3Items.push({ id: key, unit: 'Unit 3', content: text });
+      }
+    });
+  }
+
+  allSamples = allSamples.concat(u1Items).concat(u2Items).concat(u3Items);
+
+  if (spotCheck) {
+    allSamples = allSamples.sort(function(){ return Math.random()-0.5; }).slice(0,4);
+  }
+
+  if (allSamples.length === 0) {
+    resultsEl.innerHTML = '<div style="color:var(--red);font-size:13px">No samples found. Check that U3_DATA is loaded.</div>';
+    return;
+  }
+
+  var needs_work = 0, adequate = 0;
+  var htmlRows = '';
+
+  for (var i = 0; i < allSamples.length; i++) {
+    var s = allSamples[i];
+    resultsEl.innerHTML = '<div style="font-size:13px;color:var(--text2);padding:8px 0">Analyzing ' + (i+1) + ' of ' + allSamples.length + ': [' + s.unit + '] ' + s.id + '\u2026</div>';
+
+    try {
+      var response = await fetch('/.netlify/functions/anthropic-proxy', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 600,
+          system: SYSTEM,
+          messages: [{ role: 'user', content: makePrompt(s.unit, s.id, s.content) }]
+        })
+      });
+      var data = await response.json();
+      var raw = (data.content||[]).map(function(c){ return c.text||''; }).join('');
+      var clean = raw.replace(/```json|```/g,'').trim();
+      var st = clean.indexOf('{'), en = clean.lastIndexOf('}');
+      if (st !== -1 && en !== -1) clean = clean.slice(st, en+1);
+      var r = JSON.parse(clean);
+
+      var rfScore = r.reasoning_failure_score || 0;
+      var cScore = r.consequence_score || 0;
+      var lowestScore = Math.min(rfScore, cScore);
+      var isWeak = lowestScore < 4;
+      if (isWeak) needs_work++; else adequate++;
+
+      var rfColor = rfScore >= 4 ? 'var(--green)' : rfScore === 3 ? 'var(--amber,#C4711A)' : 'var(--red)';
+      var cColor = cScore >= 4 ? 'var(--green)' : cScore === 3 ? 'var(--amber,#C4711A)' : 'var(--red)';
+
+      htmlRows += '<div style="border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:10px;background:' + (isWeak ? 'var(--surface)' : 'white') + '">';
+      htmlRows += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">';
+      htmlRows += '<span style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase">' + s.unit + '</span>';
+      htmlRows += '<span style="font-size:12px;font-weight:600;color:var(--text)">' + s.id + '</span>';
+      htmlRows += '<span style="margin-left:auto;font-size:12px;color:' + rfColor + '">Reasoning ' + rfScore + '/5</span>';
+      htmlRows += '<span style="font-size:12px;color:' + cColor + '">Consequence ' + cScore + '/5</span>';
+      htmlRows += '</div>';
+
+      if (r.reasoning_failure_missing) {
+        htmlRows += '<div style="font-size:12px;color:var(--text2);margin-bottom:6px"><strong style="color:var(--amber,#C4711A)">Reasoning gap:</strong> ' + r.reasoning_failure_missing + '</div>';
+      }
+      if (r.consequence_missing) {
+        htmlRows += '<div style="font-size:12px;color:var(--text2);margin-bottom:6px"><strong style="color:var(--red)">Consequence gap:</strong> ' + r.consequence_missing + '</div>';
+      }
+      if (r.rewrite_suggestion && isWeak) {
+        htmlRows += '<div style="font-size:12px;background:var(--blue-light);border:1px solid var(--blue-mid,#85B7EB);border-radius:6px;padding:8px 10px;color:var(--blue);margin-top:6px"><strong>Suggestion:</strong> ' + r.rewrite_suggestion + '</div>';
+      }
+      if (!isWeak) {
+        htmlRows += '<div style="font-size:12px;color:var(--green)">Both dimensions adequate.</div>';
+      }
+      htmlRows += '</div>';
+
+    } catch(e) {
+      needs_work++;
+      htmlRows += '<div style="border:1px solid var(--red);border-radius:8px;padding:10px;margin-bottom:8px;font-size:12px;color:var(--red)">[' + s.unit + '] ' + s.id + ' — error: ' + e.message + '</div>';
+    }
+  }
+
+  // Summary bar
+  var total = needs_work + adequate;
+  summaryEl.style.display = 'block';
+  summaryEl.innerHTML = '<div style="display:flex;gap:16px;font-size:13px;padding:8px 0">'
+    + '<span style="color:' + (needs_work === 0 ? 'var(--green)' : 'var(--amber,#C4711A)') + ';font-weight:700">'
+    + (needs_work === 0 ? 'All adequate' : needs_work + ' need work') + '</span>'
+    + '<span style="color:var(--text3)">' + adequate + ' adequate &middot; ' + total + ' evaluated</span>'
+    + '</div>';
+
+  resultsEl.innerHTML = htmlRows;
+}
 
 // ── END FEEDBACK ────────────────────────────────────────────────────────────</script>
 </div><!-- end tbp-app -->
