@@ -2,21 +2,20 @@
 // Updates the "What's Coming Up" section of the Circle roadmap post (post ID 23961715)
 
 const POST_ID = 23961715;
-const COMMUNITY_ID = 'thinkbeyondpractice'; // used in API calls
 
 exports.handler = async function(event, context) {
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
-  let body;
+  let reqBody;
   try {
-    body = JSON.parse(event.body);
+    reqBody = JSON.parse(event.body);
   } catch(e) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Invalid JSON' }) };
   }
 
-  const { newBlock } = body;
+  const { newBlock } = reqBody;
   if (!newBlock) {
     return { statusCode: 400, body: JSON.stringify({ error: 'newBlock is required' }) };
   }
@@ -27,7 +26,7 @@ exports.handler = async function(event, context) {
   }
 
   try {
-    // Step 1: Fetch the current post body
+    // Step 1: Fetch the current post
     const getResp = await fetch(`https://app.circle.so/api/v1/posts/${POST_ID}`, {
       method: 'GET',
       headers: {
@@ -42,10 +41,39 @@ exports.handler = async function(event, context) {
     }
 
     const postData = await getResp.json();
-    const currentBody = postData.body || postData.body_plain || '';
 
-    // Step 2: Replace the "Here's what's coming up" block
-    // The block starts at "🔥 Here's what's coming up:" and ends before "🎓" or the next emoji section
+    // Log what fields Circle returns so we can diagnose
+    const bodyKeys = Object.keys(postData);
+    console.log('Post data keys:', JSON.stringify(bodyKeys));
+    console.log('body type:', typeof postData.body);
+    console.log('body_plain type:', typeof postData.body_plain);
+
+    // Extract plain text body - try multiple fields
+    let currentBody = '';
+    if (typeof postData.body === 'string') {
+      currentBody = postData.body;
+    } else if (typeof postData.body_plain === 'string') {
+      currentBody = postData.body_plain;
+    } else if (postData.body && typeof postData.body === 'object') {
+      currentBody = extractTextFromTiptap(postData.body);
+    }
+
+    console.log('currentBody length:', currentBody.length);
+    console.log('currentBody preview:', currentBody.substring(0, 300));
+
+    if (!currentBody) {
+      return {
+        statusCode: 500,
+        body: JSON.stringify({
+          error: 'Could not extract post body',
+          availableKeys: bodyKeys,
+          bodyType: typeof postData.body,
+          bodySample: JSON.stringify(postData.body).substring(0, 300)
+        })
+      };
+    }
+
+    // Step 2: Replace the coming up block
     const updatedBody = replaceComingUpBlock(currentBody, newBlock);
 
     // Step 3: Update the post
@@ -58,9 +86,12 @@ exports.handler = async function(event, context) {
       body: JSON.stringify({ body: updatedBody })
     });
 
+    const updateText = await updateResp.text();
+    console.log('Update response status:', updateResp.status);
+    console.log('Update response preview:', updateText.substring(0, 500));
+
     if (!updateResp.ok) {
-      const errText = await updateResp.text();
-      return { statusCode: 500, body: JSON.stringify({ error: 'Failed to update post', detail: errText }) };
+      return { statusCode: 500, body: JSON.stringify({ error: 'Failed to update post', detail: updateText }) };
     }
 
     return {
@@ -69,24 +100,56 @@ exports.handler = async function(event, context) {
     };
 
   } catch(e) {
+    console.log('Caught error:', e.message);
     return { statusCode: 500, body: JSON.stringify({ error: e.message }) };
   }
 };
 
+function extractTextFromTiptap(node) {
+  if (!node) return '';
+  if (typeof node === 'string') return node;
+  if (node.type === 'text') return node.text || '';
+  if (node.content && Array.isArray(node.content)) {
+    return node.content.map(extractTextFromTiptap).join('\n');
+  }
+  return '';
+}
+
 function replaceComingUpBlock(body, newBlock) {
-  // Find the section starting with the fire emoji header
-  // and replace through the next major emoji section header
-  const startMarkers = ['🔥 Here\'s what\'s coming up:', '🔥 Here\'s what\'s coming up:'];
-  const endMarkers = ['🎓', '🗂️', '📂', '💼', '⚙️', '🤔', '🧠', '🛠', '💬 Your Turn'];
+  if (typeof body !== 'string') return newBlock;
+
+  // Try multiple variations of the start marker
+  const startMarkers = [
+    '\uD83D\uDD25 Here\u2019s what\u2019s coming up:',
+    '\uD83D\uDD25 Here\'s what\'s coming up:',
+    'Here\u2019s what\u2019s coming up:',
+    'Here\'s what\'s coming up:'
+  ];
+
+  const endMarkers = [
+    '\uD83C\uDF93',  // 🎓
+    '\uD83D\uDDC2',  // 🗂
+    '\uD83D\uDCC2',  // 📂
+    '\uD83D\uDCBC',  // 💼
+    '\u2696',        // ⚖
+    '\u2699',        // ⚙
+    '\uD83E\uDD14',  // 🤔
+    '\uD83E\uDDE0',  // 🧠
+    '\uD83D\uDEE0',  // 🛠
+    '\uD83D\uDCAC Your Turn'
+  ];
 
   let startIdx = -1;
   for (const marker of startMarkers) {
     startIdx = body.indexOf(marker);
-    if (startIdx !== -1) break;
+    if (startIdx !== -1) {
+      console.log('Found start marker at index:', startIdx);
+      break;
+    }
   }
 
   if (startIdx === -1) {
-    // Can't find the section, append the new block after "Think Beyond Practice includes..."
+    console.log('No start marker found, appending');
     return body + '\n\n' + newBlock;
   }
 
