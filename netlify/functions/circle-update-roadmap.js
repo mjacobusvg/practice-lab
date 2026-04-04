@@ -65,8 +65,14 @@ exports.handler = async function(event, context) {
       currentBody = postData.body_plain;
     } else if (postData.body && typeof postData.body === 'object') {
       console.log('body object sample:', JSON.stringify(postData.body).substring(0, 800));
-      currentBody = extractTextFromTiptap(postData.body);
-      console.log('tiptap result length:', currentBody.length);
+      // Circle returns body as {id, name, body: '<html string>'}
+      if (typeof postData.body.body === 'string') {
+        currentBody = postData.body.body;
+        console.log('Using postData.body.body HTML string');
+      } else {
+        currentBody = extractTextFromTiptap(postData.body);
+      }
+      console.log('extracted length:', currentBody.length);
     }
 
     console.log('currentBody length:', currentBody.length);
@@ -95,7 +101,7 @@ exports.handler = async function(event, context) {
         'Authorization': `Token ${token}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ body: updatedBody })
+      body: JSON.stringify({ body: { body: updatedBody } })
     });
 
     const updateText = await updateResp.text();
