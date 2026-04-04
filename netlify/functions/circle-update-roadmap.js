@@ -101,7 +101,7 @@ exports.handler = async function(event, context) {
         'Authorization': `Token ${token}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ body: { body: updatedBody } })
+      body: JSON.stringify({ post: { body: updatedBody } })
     });
 
     const updateText = await updateResp.text();
