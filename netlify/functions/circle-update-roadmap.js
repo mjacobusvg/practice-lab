@@ -64,7 +64,9 @@ exports.handler = async function(event, context) {
     } else if (typeof postData.body_plain === 'string') {
       currentBody = postData.body_plain;
     } else if (postData.body && typeof postData.body === 'object') {
+      console.log('body object sample:', JSON.stringify(postData.body).substring(0, 800));
       currentBody = extractTextFromTiptap(postData.body);
+      console.log('tiptap result length:', currentBody.length);
     }
 
     console.log('currentBody length:', currentBody.length);
