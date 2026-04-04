@@ -3,26 +3,35 @@
 
 const POST_ID = 23961715;
 
+const CORS_HEADERS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS'
+};
+
 exports.handler = async function(event, context) {
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers: CORS_HEADERS, body: '' };
+  }
   if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: JSON.stringify({ error: 'Method not allowed' }) };
+    return { statusCode: 405, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
   let reqBody;
   try {
     reqBody = JSON.parse(event.body);
   } catch(e) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'Invalid JSON' }) };
+    return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Invalid JSON' }) };
   }
 
   const { newBlock } = reqBody;
   if (!newBlock) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'newBlock is required' }) };
+    return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: 'newBlock is required' }) };
   }
 
   const token = process.env.CIRCLE_API_TOKEN;
   if (!token) {
-    return { statusCode: 500, body: JSON.stringify({ error: 'CIRCLE_API_TOKEN not set' }) };
+    return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ error: 'CIRCLE_API_TOKEN not set' }) };
   }
 
   try {
@@ -37,7 +46,7 @@ exports.handler = async function(event, context) {
 
     if (!getResp.ok) {
       const errText = await getResp.text();
-      return { statusCode: 500, body: JSON.stringify({ error: 'Failed to fetch post', detail: errText }) };
+      return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Failed to fetch post', detail: errText }) };
     }
 
     const postData = await getResp.json();
@@ -64,6 +73,7 @@ exports.handler = async function(event, context) {
     if (!currentBody) {
       return {
         statusCode: 500,
+        headers: CORS_HEADERS,
         body: JSON.stringify({
           error: 'Could not extract post body',
           availableKeys: bodyKeys,
@@ -91,17 +101,18 @@ exports.handler = async function(event, context) {
     console.log('Update response preview:', updateText.substring(0, 500));
 
     if (!updateResp.ok) {
-      return { statusCode: 500, body: JSON.stringify({ error: 'Failed to update post', detail: updateText }) };
+      return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ error: 'Failed to update post', detail: updateText }) };
     }
 
     return {
       statusCode: 200,
+      headers: CORS_HEADERS,
       body: JSON.stringify({ success: true, message: 'Roadmap post updated successfully' })
     };
 
   } catch(e) {
     console.log('Caught error:', e.message);
-    return { statusCode: 500, body: JSON.stringify({ error: e.message }) };
+    return { statusCode: 500, headers: CORS_HEADERS, body: JSON.stringify({ error: e.message }) };
   }
 };
 
