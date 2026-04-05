@@ -176,8 +176,8 @@ function buildContext(chunks) {
       parts.push(
         '[SOURCE ' + (i+1) + '] Space: ' + c.space_name + '\n' +
         'Post: ' + c._parent.title + '\n' +
-        'Post content: ' + (c._parent.body || '').substring(0, 500) + '\n' +
-        'Comment by ' + (c.author || 'Member') + ': ' + (c.body || '').substring(0, 800) + '\n' +
+        'Post content: ' + (c._parent.body || '') + '\n' +
+        'Comment by ' + (c.author || 'Member') + ': ' + (c.body || '') + '\n' +
         'URL: ' + (c.url || c._parent.url || '')
       );
     } else {
@@ -185,7 +185,7 @@ function buildContext(chunks) {
         '[SOURCE ' + (i+1) + '] Space: ' + c.space_name + '\n' +
         'Post: ' + c.title + '\n' +
         'Author: ' + (c.author || 'Michael Van Gelder') + '\n' +
-        'Content: ' + (c.body || '').substring(0, 1000) + '\n' +
+        'Content: ' + (c.body || '') + '\n' +
         'URL: ' + (c.url || '')
       );
     }
@@ -228,7 +228,7 @@ Use the exact post title as the key in source_descriptions. Only include sources
     },
     body: JSON.stringify({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 1000,
+      max_tokens: 2000,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }]
     })
