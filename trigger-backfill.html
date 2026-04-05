@@ -21,50 +21,50 @@
   <p>This will pull all posts and comments from Circle and load them into Supabase. It runs in the background and may take 5-10 minutes. Check Netlify function logs for progress.</p>
 
   <input type="password" id="secret" placeholder="Enter your BACKFILL_SECRET value" />
-  <button id="btn" onclick="trigger()">Start Backfill</button>
+  <button id="btn" onclick="trigger(false)">Start Full Backfill</button>
+  <button id="btn-comments" onclick="trigger(true)" style="margin-top:8px;background:#2d7a4f">Comments Only (skip posts)</button>
   <div class="status" id="status"></div>
 
   <script>
-    async function trigger() {
+    async function trigger(commentsOnly) {
       var secret = document.getElementById('secret').value.trim();
       if (!secret) { alert('Enter your backfill secret first.'); return; }
 
       var btn = document.getElementById('btn');
+      var btnC = document.getElementById('btn-comments');
       var status = document.getElementById('status');
 
       btn.disabled = true;
-      btn.textContent = 'Starting...';
+      btnC.disabled = true;
       status.className = 'status running';
-      status.textContent = 'Backfill started. Running in background — this may take 5-10 minutes. Check Netlify function logs for circle-backfill-background to watch progress.';
+      status.textContent = (commentsOnly ? 'Comments-only' : 'Full') + ' backfill started. Running in background — check Netlify function logs for circle-backfill-background to watch progress.';
 
       try {
         var resp = await fetch('https://thinkbeyondpractice.com/.netlify/functions/circle-backfill-background', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ secret: secret })
+          body: JSON.stringify({ secret: secret, comments_only: commentsOnly })
         });
 
         if (resp.status === 202) {
           status.className = 'status success';
-          status.textContent = 'Backfill is running in the background. Check Netlify logs for circle-backfill-background to see progress. You will see POST OK lines as each post gets embedded.';
-          btn.textContent = 'Started';
+          status.textContent = 'Backfill is running. Check Netlify logs for circle-backfill-background to see progress.';
+          btn.textContent = commentsOnly ? 'Full Backfill' : 'Started';
+          btnC.textContent = commentsOnly ? 'Started' : 'Comments Only';
         } else if (resp.status === 401) {
           status.className = 'status error';
-          status.textContent = 'Wrong secret. Check your BACKFILL_SECRET in Netlify env vars.';
-          btn.disabled = false;
-          btn.textContent = 'Start Backfill';
+          status.textContent = 'Wrong secret.';
+          btn.disabled = false; btnC.disabled = false;
         } else {
           var data = await resp.json();
           status.className = 'status error';
           status.textContent = 'Error: ' + (data.error || resp.status);
-          btn.disabled = false;
-          btn.textContent = 'Start Backfill';
+          btn.disabled = false; btnC.disabled = false;
         }
       } catch(e) {
         status.className = 'status error';
         status.textContent = 'Network error: ' + e.message;
-        btn.disabled = false;
-        btn.textContent = 'Start Backfill';
+        btn.disabled = false; btnC.disabled = false;
       }
     }
   </script>
