@@ -212,9 +212,8 @@ async function getPostComments(token, postId) {
   var comments = [];
   var page = 1;
   while (true) {
-    // Try the nested endpoint format first
-    var resp = await fetch('https://app.circle.so/api/v1/posts/' + postId + '/comments?page=' + page + '&per_page=50', {
-      headers: { 'Authorization': 'Token ' + token, 'Content-Type': 'application/json' }
+    var resp = await fetch('https://app.circle.so/api/admin/v2/comments?post_id=' + postId + '&page=' + page + '&per_page=50', {
+      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' }
     });
     if (!resp.ok) {
       console.log('Comments fetch failed for post ' + postId + ': ' + resp.status);
@@ -224,7 +223,8 @@ async function getPostComments(token, postId) {
     var batch = Array.isArray(data) ? data : (data.comments || data.records || []);
     if (!batch.length) break;
     comments = comments.concat(batch);
-    if (batch.length < 50) break;
+    var hasMore = data.has_next_page !== undefined ? data.has_next_page : (batch.length === 50);
+    if (!hasMore) break;
     page++;
   }
   return comments;
