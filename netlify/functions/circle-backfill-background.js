@@ -14,20 +14,25 @@ const EXCLUDED_SPACE_SLUGS = [
 ];
 
 exports.handler = async function(event, context) {
+  const CORS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS'
+  };
   if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 200, body: '' };
+    return { statusCode: 200, headers: CORS, body: '' };
   }
   if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: JSON.stringify({ error: 'Method not allowed' }) };
+    return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
   let body;
   try { body = JSON.parse(event.body); } catch(e) {
-    return { statusCode: 400, body: JSON.stringify({ error: 'Invalid JSON' }) };
+    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Invalid JSON' }) };
   }
 
   if (body.secret !== process.env.BACKFILL_SECRET) {
-    return { statusCode: 401, body: JSON.stringify({ error: 'Unauthorized' }) };
+    return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Unauthorized' }) };
   }
 
   const circleToken = process.env.CIRCLE_API_TOKEN;
@@ -36,7 +41,7 @@ exports.handler = async function(event, context) {
   const openaiKey = process.env.OPENAI_API_KEY;
 
   if (!circleToken || !supabaseUrl || !supabaseKey || !openaiKey) {
-    return { statusCode: 500, body: JSON.stringify({ error: 'Missing env vars' }) };
+    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Missing env vars' }) };
   }
 
   // Background functions: do work directly, Netlify gives us up to 15 minutes
@@ -149,6 +154,7 @@ exports.handler = async function(event, context) {
 
   return {
     statusCode: 202,
+    headers: CORS,
     body: JSON.stringify({ message: 'Backfill started. Check function logs for progress.' })
   };
 };
