@@ -44,6 +44,7 @@ exports.handler = async function(event, context) {
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Missing env vars' }) };
   }
 
+  const commentsOnly = body.comments_only === true;
   // Background functions: do work directly, Netlify gives us up to 15 minutes
   const stats = { spaces: 0, posts: 0, comments: 0, embedded: 0, errors: [] };
 
@@ -78,27 +79,29 @@ exports.handler = async function(event, context) {
             var postBody = extractBody(fullPost);
             if (!postBody || postBody.length < 20) continue;
 
-            var postText = [fullPost.name || '', postBody].filter(Boolean).join('\n\n').trim();
-            var embedding = await getEmbedding(postText, openaiKey);
+            if (!commentsOnly) {
+              var postText = [fullPost.name || '', postBody].filter(Boolean).join('\n\n').trim();
+              var embedding = await getEmbedding(postText, openaiKey);
 
-            await upsertToSupabase(supabaseUrl, supabaseKey, {
-              id: 'post_' + post.id,
-              circle_post_id: post.id,
-              title: fullPost.name || '',
-              body: postBody.substring(0, 10000),
-              author: fullPost.user_name || 'Member',
-              space_name: space.name,
-              space_slug: space.slug,
-              url: fullPost.url || '',
-              created_at: post.created_at,
-              updated_at: post.updated_at,
-              embedding: embedding,
-              chunk_index: 0
-            });
+              await upsertToSupabase(supabaseUrl, supabaseKey, {
+                id: 'post_' + post.id,
+                circle_post_id: post.id,
+                title: fullPost.name || '',
+                body: postBody.substring(0, 10000),
+                author: fullPost.user_name || 'Member',
+                space_name: space.name,
+                space_slug: space.slug,
+                url: fullPost.url || '',
+                created_at: post.created_at,
+                updated_at: post.updated_at,
+                embedding: embedding,
+                chunk_index: 0
+              });
 
-            stats.posts++;
-            stats.embedded++;
-            console.log('  POST OK: ' + (fullPost.name || post.id));
+              stats.posts++;
+              stats.embedded++;
+              console.log('  POST OK: ' + (fullPost.name || post.id));
+            }
 
             var comments = await getPostComments(circleToken, post.id);
             for (var ci = 0; ci < comments.length; ci++) {
@@ -209,10 +212,14 @@ async function getPostComments(token, postId) {
   var comments = [];
   var page = 1;
   while (true) {
-    var resp = await fetch('https://app.circle.so/api/v1/comments?post_id=' + postId + '&page=' + page + '&per_page=50', {
+    // Try the nested endpoint format first
+    var resp = await fetch('https://app.circle.so/api/v1/posts/' + postId + '/comments?page=' + page + '&per_page=50', {
       headers: { 'Authorization': 'Token ' + token, 'Content-Type': 'application/json' }
     });
-    if (!resp.ok) break;
+    if (!resp.ok) {
+      console.log('Comments fetch failed for post ' + postId + ': ' + resp.status);
+      break;
+    }
     var data = await resp.json();
     var batch = Array.isArray(data) ? data : (data.comments || data.records || []);
     if (!batch.length) break;
