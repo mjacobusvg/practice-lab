@@ -77,15 +77,15 @@ exports.handler = async function(event, context) {
     var context = buildContext(enrichedChunks);
 
     // Step 6: Synthesize answer with Claude
-    var answer = await synthesizeAnswer(question, context, anthropicKey);
+    var result = await synthesizeAnswer(question, context, anthropicKey);
 
-    // Step 7: Build source links (deduplicated by post URL)
-    var sources = buildSources(enrichedChunks);
+    // Step 7: Build source links with descriptions
+    var sources = buildSources(enrichedChunks, result.sourceDescriptions);
 
     return {
       statusCode: 200,
       headers: CORS_HEADERS,
-      body: JSON.stringify({ answer, sources, unanswered: false })
+      body: JSON.stringify({ answer: result.answer, sources, unanswered: false })
     };
 
   } catch(e) {
@@ -198,24 +198,24 @@ function buildContext(chunks) {
 async function synthesizeAnswer(question, context, apiKey) {
   var systemPrompt = `You are Ask the Archive, a search tool for Think Beyond Practice — a professional forum for psychiatric prescribers run by Michael Van Gelder, PMHNP-BC.
 
-Your job is to assemble an answer from the provided source material by preserving the author's language as closely as possible. The posts were written by Michael Van Gelder — direct, clinically precise, short declarative sentences, no hedging, treats the reader as a peer. Your answer should sound like him because most of it should literally be his words.
+Your job has two parts. Return ONLY valid JSON, no markdown, no preamble.
 
-CORE INSTRUCTION: Do not paraphrase when you can quote or near-quote. Pull the strongest, most relevant sentences and passages directly from the source material and connect them with minimal bridging language. You are assembling, not rewriting. The more source language you preserve, the better the answer.
+PART 1 — SHORT ANSWER:
+3-5 sentences maximum. Direct answer to the question using the source language as much as possible. Lead with the core rule or what to do. End with the most common mistake or the thing people consistently miss. No hedging. No em dashes. No bold. No headers. Prose only — a short inline list is acceptable only when listing specific required components.
 
-FORMAT RULES:
-- Write in prose paragraphs. No bold text. No headers. No em dashes.
-- A short inline list is acceptable ONLY when enumerating specific required elements (e.g., the components of a psychotherapy note). Never use lists for explanation or reasoning.
-- Open with one short grounding sentence that frames this as forum-derived. Example: "Multiple threads in Billing & Documentation cover this directly." Then get straight into the answer.
-- Never start with "I" or "Based on" or "According to"
-- 200-300 words total. Tighter is better.
+PART 2 — SOURCE DESCRIPTIONS:
+For each source provided, write one sentence (15-20 words max) describing what that specific post covers that's relevant to the question. Be specific — not "covers psychotherapy documentation" but "walks through the exact note structure for 90833 add-on visits."
 
-CITATIONS: Reference sources by their actual post title inline when natural. "As How to Document 90833 puts it..." Never write [Source 1].
+Return this exact JSON structure:
+{
+  "answer": "your 3-5 sentence answer here",
+  "source_descriptions": {
+    "SOURCE_TITLE_1": "one sentence description",
+    "SOURCE_TITLE_2": "one sentence description"
+  }
+}
 
-CONTENT RULES:
-- Only use information present in the provided sources
-- If sources partially answer the question, say what the forum has and note what it hasn't covered
-- If sources are clearly off-topic, say so in one sentence and stop
-- Never fabricate clinical information`;
+Use the exact post title as the key in source_descriptions. Only include sources that are actually relevant to the question.`;
 
   var userPrompt = 'Question: ' + question + '\n\nSources:\n' + context;
 
@@ -236,14 +236,24 @@ CONTENT RULES:
 
   if (!resp.ok) throw new Error('Claude synthesis failed: ' + resp.status);
   var data = await resp.json();
-  return data.content[0].text;
+  var raw = data.content[0].text.trim();
+
+  // Parse JSON response
+  try {
+    var parsed = JSON.parse(raw);
+    return { answer: parsed.answer || raw, sourceDescriptions: parsed.source_descriptions || {} };
+  } catch(e) {
+    // Fallback if JSON parse fails
+    return { answer: raw, sourceDescriptions: {} };
+  }
 }
 
 // ── Build deduplicated source list ──────────────────────────────────────────
 
-function buildSources(chunks) {
+function buildSources(chunks, descriptions) {
   var seen = {};
   var sources = [];
+  descriptions = descriptions || {};
 
   for (var i = 0; i < chunks.length; i++) {
     var c = chunks[i];
@@ -258,7 +268,8 @@ function buildSources(chunks) {
         title: title,
         url: url,
         space: c.space_name,
-        author: c.id && c.id.startsWith('comment_') ? (c._parent && c._parent.author) : c.author
+        author: c.id && c.id.startsWith('comment_') ? (c._parent && c._parent.author) : c.author,
+        description: descriptions[title] || null
       });
     }
   }
