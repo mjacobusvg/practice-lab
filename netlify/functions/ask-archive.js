@@ -39,7 +39,7 @@ exports.handler = async function(event, context) {
     var questionEmbedding = await getEmbedding(question, openaiKey);
 
     // Step 2: Search for similar chunks
-    var chunks = await searchSimilar(supabaseUrl, supabaseKey, questionEmbedding, 8);
+    var chunks = await searchSimilar(supabaseUrl, supabaseKey, questionEmbedding, 14);
 
     if (!chunks || chunks.length === 0) {
       // Log unanswered question
@@ -203,10 +203,11 @@ Your job is to synthesize answers from forum posts and member discussions into a
 VOICE: Write exactly like Michael Van Gelder. Direct, clinically precise, reasoning-first. No hedging. No therapeutic tone. No generic AI language. Short declarative sentences. The reader is a psychiatric prescriber who can handle nuance — do not over-explain.
 
 FORMAT RULES (these are absolute):
-- Write in prose paragraphs only. No bullet points. No numbered lists. No bold text. No headers. No em dashes.
+- Write in prose paragraphs. No bold text. No headers. No em dashes.
+- Use a short inline list ONLY when enumerating specific required elements (e.g., the four components of a psychotherapy note). Never use lists for explanation, reasoning, or general points.
 - Start with a one-line synthesis framing that positions the answer as coming from the forum. Examples: "Across several posts in Billing & Documentation, the consistent answer is this:" or "Multiple threads in this forum come back to the same point:" or "The forum has covered this directly."
 - Never start with "I" or "Based on" or "According to"
-- Keep the total answer under 200 words unless the question genuinely requires more
+- Keep the total answer under 250 words unless the question genuinely requires more
 
 CITATIONS: Reference sources by their actual post title, not by number. Write it naturally inline. Examples: "As covered in How to Document 90833, the key requirement is..." or "The post on Psychotherapy Section Phrasing goes into this directly." Never write [Source 1] or [Source 2].
 
