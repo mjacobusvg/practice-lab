@@ -15,10 +15,13 @@ exports.handler = async function(event, context) {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
   if (event.httpMethod !== 'POST') return { statusCode: 405, headers, body: JSON.stringify({ message: 'Method not allowed' }) };
 
-  let email;
+  let email, spaceId;
   try {
     const body = JSON.parse(event.body || '{}');
     email = (body.email || '').trim().toLowerCase();
+    // If spaceId is passed, check that specific space (Practice Lab behavior)
+    // If not passed, verify community membership only (Ask the Archive behavior)
+    spaceId = body.spaceId || null;
   } catch(e) {
     return { statusCode: 400, headers, body: JSON.stringify({ message: 'Invalid request' }) };
   }
@@ -28,7 +31,7 @@ exports.handler = async function(event, context) {
 
   try {
     // Step 1: Use Headless Auth API to get member JWT
-    // This confirms the email belongs to a real member
+    // This confirms the email belongs to a real community member
     const authRes = await fetch(`https://${CIRCLE_DOMAIN}/api/v1/headless/auth_token`, {
       method: 'POST',
       headers: {
@@ -65,8 +68,21 @@ exports.handler = async function(event, context) {
       return { statusCode: 200, headers, body: JSON.stringify({ verified: false, message: 'Unable to verify membership. Please try again.' }) };
     }
 
-    // Step 2: Check space membership using admin API with the real member ID
-    const spaceUrl = `https://app.circle.so/api/v1/space_members?space_id=${GATED_SPACE_ID}&community_member_id=${communityMemberId}`;
+    // Step 2: If no spaceId passed, community membership confirmed above is sufficient
+    if (!spaceId) {
+      console.log('No spaceId provided — community membership verified, granting access');
+      const token = Buffer.from(email + ':' + Date.now()).toString('base64');
+      return { statusCode: 200, headers, body: JSON.stringify({
+        verified: true,
+        token,
+        memberToken,
+        communityMemberId,
+        message: 'Access verified'
+      })};
+    }
+
+    // Step 3: spaceId provided — check space membership (Practice Lab path)
+    const spaceUrl = `https://app.circle.so/api/v1/space_members?space_id=${spaceId}&community_member_id=${communityMemberId}`;
     console.log('Space check URL:', spaceUrl);
 
     const spaceRes = await fetch(spaceUrl, {
