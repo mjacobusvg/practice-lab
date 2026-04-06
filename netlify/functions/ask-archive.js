@@ -28,9 +28,21 @@ exports.handler = async function(event, context) {
 
   const question = (body.question || '').trim();
   const memberRequested = body.member_requested === true;
+  const requestTemplate = body.request_template === true;
   const conversationHistory = body.conversation_history || [];
 
   if (!question) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Question required' }) };
+
+  // ── Template request path ────────────────────────────────────────────────
+  if (requestTemplate) {
+    await logTemplateRequest(supabaseUrl, supabaseKey, question);
+    await sendTemplateRequestEmail(resendKey, question);
+    return {
+      statusCode: 200,
+      headers: CORS,
+      body: JSON.stringify({ success: true, message: 'Template request submitted.' })
+    };
+  }
 
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
@@ -98,20 +110,26 @@ exports.handler = async function(event, context) {
 Your answers must be grounded exclusively in the source content provided. Do not add general medical knowledge, generic advice, or anything not present in the sources.
 
 Format every answer in exactly this structure:
-1. What to do — one direct sentence
+1. What to do — one direct, actionable sentence that answers the question immediately. No preamble, no setup, no "it depends."
 2. Required elements — short inline list only when enumerating specific components
-3. Example — pulled directly from the language in the source posts
-4. Common mistake — one line identifying the most frequent error
-5. Go deeper in these posts — list the source titles with one-line descriptions (you will return these as structured data)
+3. Example — pulled directly from the language in the source posts. Include only when present in retrieved content — do not generate.
+4. Common mistake — one line identifying the most frequent error. Include only when present in retrieved content.
+
+Do NOT open with explanation or context. The first sentence must be the answer.
+Do NOT include a "Go deeper in these posts" line or any source references in the answer text. Sources are rendered separately by the UI.
 
 Return your response as JSON with exactly these fields:
 {
-  "answer": "the full answer text following the structure above (without the sources section — that goes in source_descriptions)",
+  "answer": "the full answer text following the structure above",
   "source_descriptions": [
-    { "index": 1, "description": "one-line description of why this post is relevant" },
-    ...
+    { "index": 1, "description": "one-line description of why this post is relevant" }
+  ],
+  "template_sources": [
+    { "index": 1, "template_description": "one-line description of what template or sample language this post contains" }
   ]
 }
+
+For template_sources: only include sources that contain an actual usable template, sample note language, macro, phrasing bank, or downloadable document. Do not include sources that merely explain or discuss a concept. If no sources contain templates, return an empty array for template_sources.
 
 Return only valid JSON. No preamble, no markdown fences.`;
 
@@ -182,12 +200,44 @@ Return only valid JSON. No preamble, no markdown fences.`;
       return true;
     });
 
+    // ── Step 9: Build template sources list ──────────────────────────────────
+    const templateSourceIndexes = new Set(
+      (parsed.template_sources || []).map(function(t) { return t.index; })
+    );
+    const templateDescMap = {};
+    (parsed.template_sources || []).forEach(function(t) {
+      templateDescMap[t.index] = t.template_description;
+    });
+
+    const templateSourcesRaw = enrichedChunks
+      .map(function(chunk, i) {
+        if (!templateSourceIndexes.has(i + 1)) return null;
+        return {
+          title: chunk.title,
+          space: chunk.space_name,
+          author: chunk.author,
+          url: chunk.url,
+          template_description: templateDescMap[i + 1] || ''
+        };
+      })
+      .filter(Boolean)
+      .filter(function(s) { return s.url; });
+
+    // Dedupe template sources by URL
+    const seenTemplates = new Set();
+    const templateSources = templateSourcesRaw.filter(function(s) {
+      if (seenTemplates.has(s.url)) return false;
+      seenTemplates.add(s.url);
+      return true;
+    });
+
     return {
       statusCode: 200,
       headers: CORS,
       body: JSON.stringify({
         answer: parsed.answer,
         sources: dedupedSources,
+        template_sources: templateSources,
         unanswered: false
       })
     };
@@ -299,5 +349,48 @@ async function sendUnansweredEmail(resendKey, question) {
     });
   } catch(e) {
     console.log('sendUnansweredEmail error:', e.message);
+  }
+}
+
+async function logTemplateRequest(supabaseUrl, supabaseKey, question) {
+  if (!supabaseUrl || !supabaseKey) return;
+  try {
+    await fetch(`${supabaseUrl}/rest/v1/unanswered_questions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({
+        question: `[TEMPLATE REQUEST] ${question}`,
+        member_requested: true,
+        created_at: new Date().toISOString()
+      })
+    });
+  } catch(e) {
+    console.log('logTemplateRequest error:', e.message);
+  }
+}
+
+async function sendTemplateRequestEmail(resendKey, question) {
+  if (!resendKey) return;
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${resendKey}`
+      },
+      body: JSON.stringify({
+        from: 'Ask the Archive <noreply@thinkbeyondpractice.com>',
+        to: ['michael@thinkbeyondpsych.com'],
+        subject: 'Ask the Archive — Template Request',
+        html: `<p>A member requested a template for:</p><blockquote>${question}</blockquote><p>Consider creating a post with a template for this topic.</p>`
+      })
+    });
+  } catch(e) {
+    console.log('sendTemplateRequestEmail error:', e.message);
   }
 }
