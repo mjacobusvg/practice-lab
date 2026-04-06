@@ -7,6 +7,8 @@
  *   <script>
  *     TBPAuth.protect({
  *       toolName: 'Practice Lab',         // Display name shown on gate screen
+ *       spaceId: 2546298,                 // Optional — pass to restrict to a specific tier/space
+ *                                         // Omit for community-wide access (any active member)
  *       onVerified: function() { ... }    // Called when member is verified — load your tool here
  *     });
  *   </script>
@@ -74,7 +76,7 @@
     } catch(e) {}
   }
 
-  function renderGate(toolName, onVerified) {
+  function renderGate(toolName, spaceId, onVerified) {
     // Hide body content while gate is showing
     document.body.style.overflow = 'hidden';
     document.body.classList.add('tbp-gate-active');
@@ -142,10 +144,14 @@
 
       setLoading(true);
 
+      // Build request body — only include spaceId if provided
+      var requestBody = { email: email };
+      if (spaceId) requestBody.spaceId = spaceId;
+
       fetch('/.netlify/functions/circle-auth', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email })
+        body: JSON.stringify(requestBody)
       })
       .then(function(res) { return res.json(); })
       .then(function(data) {
@@ -181,6 +187,7 @@
   window.TBPAuth = {
     protect: function(options) {
       var toolName = options.toolName || 'Think Beyond Practice';
+      var spaceId = options.spaceId || null;
       var onVerified = options.onVerified || function() {};
 
       // Check for valid session first
@@ -192,10 +199,10 @@
       // Wait for DOM ready
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function() {
-          renderGate(toolName, onVerified);
+          renderGate(toolName, spaceId, onVerified);
         });
       } else {
-        renderGate(toolName, onVerified);
+        renderGate(toolName, spaceId, onVerified);
       }
     },
 
