@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ask the Archive — Think Beyond Practice</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, sans-serif; max-width: 720px; margin: 60px auto; padding: 20px; background: #f9f7f5; color: #1a1714; }
+  h1 { font-size: 22px; margin-bottom: 6px; }
+  p.sub { font-size: 14px; color: #5c5650; margin-bottom: 28px; }
+  textarea { width: 100%; padding: 12px 14px; border: 1px solid #e0dbd4; border-radius: 8px; font-size: 15px; font-family: inherit; resize: vertical; min-height: 80px; }
+  button { margin-top: 10px; width: 100%; padding: 13px; background: #1d6fa4; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  button:disabled { background: #94a3b8; cursor: not-allowed; }
+  .answer-box { margin-top: 28px; display: none; }
+  .answer-box h2 { font-size: 16px; font-weight: 600; margin-bottom: 10px; }
+  .answer-text { background: white; border: 1px solid #e0dbd4; border-radius: 8px; padding: 18px; font-size: 15px; line-height: 1.65; white-space: pre-wrap; }
+  .sources { margin-top: 16px; }
+  .sources h3 { font-size: 13px; font-weight: 600; color: #5c5650; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+  .source-link { display: block; padding: 10px 14px; background: white; border: 1px solid #e0dbd4; border-radius: 6px; margin-bottom: 6px; text-decoration: none; color: #1d6fa4; font-size: 14px; }
+  .source-link:hover { background: #f0f7ff; }
+  .source-meta { font-size: 12px; color: #8a847e; margin-top: 2px; }
+  .source-desc { font-size: 13px; color: #3d3830; margin-top: 4px; font-style: italic; }
+  .unanswered { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 16px; font-size: 14px; color: #92400e; }
+  .request-btn { margin-top: 10px; background: #f5f0ea; color: #1a1714; border: 1px solid #e0dbd4; font-size: 13px; padding: 8px 14px; border-radius: 6px; cursor: pointer; width: auto; font-weight: 500; }
+  .loading { text-align: center; padding: 30px; color: #8a847e; font-size: 14px; display: none; }
+  .error { background: #fdecea; border: 1px solid #f5c6c6; border-radius: 8px; padding: 14px; color: #a32d2d; font-size: 14px; display: none; }
+</style>
+</head>
+<body>
+
+  <script src="/auth-gate.js"></script>
+  <script>
+    TBPAuth.protect({
+      toolName: 'Ask the Archive',
+      onVerified: function() {
+        initTool();
+      }
+    });
+
+    function initTool() {
+      document.getElementById('tool').style.display = 'block';
+    }
+  </script>
+
+  <div id="tool" style="display:none;">
+    <h1>Ask the Archive</h1>
+    <p class="sub">Search the Think Beyond Practice forum archive. Ask a clinical, billing, or practice question and get a synthesized answer drawn from forum posts and discussion.</p>
+
+    <textarea id="question" placeholder="Ask a clinical, billing, or practice question..."></textarea>
+    <button id="btn" onclick="ask()">Ask the Archive</button>
+
+    <div class="loading" id="loading">Searching the archive and synthesizing an answer...</div>
+    <div class="error" id="error"></div>
+
+    <div class="answer-box" id="answer-box">
+      <h2>What the Forum Consistently Shows</h2>
+      <div class="answer-text" id="answer-text"></div>
+      <div class="sources" id="sources-box">
+        <h3>Go deeper in these posts</h3>
+        <div id="sources-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    async function ask() {
+      var question = document.getElementById('question').value.trim();
+      if (!question) return;
+
+      var btn = document.getElementById('btn');
+      var loading = document.getElementById('loading');
+      var error = document.getElementById('error');
+      var answerBox = document.getElementById('answer-box');
+
+      btn.disabled = true;
+      loading.style.display = 'block';
+      error.style.display = 'none';
+      answerBox.style.display = 'none';
+
+      try {
+        var resp = await fetch('/.netlify/functions/ask-archive', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: question })
+        });
+
+        var data = await resp.json();
+        loading.style.display = 'none';
+
+        if (!resp.ok) {
+          error.textContent = 'Error: ' + (data.error || resp.status);
+          error.style.display = 'block';
+          btn.disabled = false;
+          return;
+        }
+
+        if (data.unanswered) {
+          answerBox.style.display = 'block';
+          document.getElementById('answer-text').innerHTML =
+            '<div class="unanswered">' + data.answer +
+            '<br><br><button class="request-btn" onclick="requestTopic()">Request this topic</button></div>';
+          document.getElementById('sources-box').style.display = 'none';
+        } else {
+          answerBox.style.display = 'block';
+          document.getElementById('answer-text').textContent = data.answer;
+          document.getElementById('sources-box').style.display = data.sources && data.sources.length ? 'block' : 'none';
+
+          var sourcesList = document.getElementById('sources-list');
+          sourcesList.innerHTML = '';
+          (data.sources || []).forEach(function(s) {
+            var a = document.createElement('a');
+            a.href = s.url;
+            a.target = '_blank';
+            a.className = 'source-link';
+            var descHtml = s.description ? '<div class="source-desc">' + s.description + '</div>' : '';
+            a.innerHTML = s.title + '<div class="source-meta">' + s.space + (s.author ? ' · ' + s.author : '') + '</div>' + descHtml;
+            sourcesList.appendChild(a);
+          });
+        }
+
+      } catch(e) {
+        loading.style.display = 'none';
+        error.textContent = 'Network error: ' + e.message;
+        error.style.display = 'block';
+      }
+
+      btn.disabled = false;
+    }
+
+    async function requestTopic() {
+      var question = document.getElementById('question').value.trim();
+      try {
+        await fetch('/.netlify/functions/ask-archive', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: question, member_requested: true })
+        });
+        alert('Request submitted. Michael will be notified.');
+      } catch(e) {}
+    }
+
+    document.getElementById('question').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) ask();
+    });
+  </script>
+
+</body>
+</html>
