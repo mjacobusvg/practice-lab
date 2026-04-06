@@ -124,7 +124,7 @@ Format every answer in exactly this structure:
 Keep the total answer under 200 words. If the content requires more, prioritize the most actionable elements and leave depth to the source links.
 
 Do NOT open with explanation or context. The first sentence must be the answer.
-Do NOT include a "Go deeper in these posts" line or any source references in the answer text. Sources are rendered separately by the UI.`;
+Do NOT include a "Go deeper in these posts" line or any source references in the answer text. Sources are rendered separately by the UI.
 
 Return your response as JSON with exactly these fields:
 {
