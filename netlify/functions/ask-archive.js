@@ -61,7 +61,7 @@ exports.handler = async function(event, context) {
 
     // Step 4: Check confidence - if top match is very low, treat as unanswered
     var topSimilarity = chunks[0].similarity || 0;
-    if (topSimilarity < 0.3) {
+    if (topSimilarity < 0.45) {
       await logUnanswered(supabaseUrl, supabaseKey, question, false);
       return {
         statusCode: 200,
@@ -136,7 +136,7 @@ async function searchSimilar(url, key, embedding, limit) {
     },
     body: JSON.stringify({
       query_embedding: embedding,
-      match_threshold: 0.25,
+      match_threshold: 0.45,
       match_count: limit
     })
   });
