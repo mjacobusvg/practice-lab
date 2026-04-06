@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Re-embed Post — Think Beyond Practice</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #F9F7F5;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .card {
+      background: white;
+      border: 1px solid #E8E3DD;
+      border-radius: 16px;
+      padding: 40px 36px;
+      width: 100%;
+      max-width: 480px;
+    }
+    .logo {
+      width: 48px; height: 48px;
+      background: #1D6FA4;
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 20px;
+    }
+    .logo svg { width: 24px; height: 24px; fill: white; }
+    h1 { font-size: 18px; font-weight: 700; color: #1A1714; margin-bottom: 4px; }
+    .sub { font-size: 13px; color: #5C5650; margin-bottom: 28px; line-height: 1.5; }
+    label { display: block; font-size: 11px; font-weight: 700; color: #9C958F; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    input {
+      width: 100%; border: 1.5px solid #E8E3DD; border-radius: 8px;
+      padding: 11px 13px; font-size: 14px; color: #1A1714;
+      background: white; margin-bottom: 14px; transition: border-color 0.15s;
+    }
+    input:focus { outline: none; border-color: #1D6FA4; }
+    button {
+      width: 100%; padding: 12px; background: #1D6FA4; color: white;
+      border: none; border-radius: 8px; font-size: 14px; font-weight: 600;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      gap: 8px; transition: background 0.15s;
+    }
+    button:hover { background: #185d8c; }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    .spinner {
+      width: 15px; height: 15px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white; border-radius: 50%;
+      animation: spin 0.7s linear infinite; display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .result { display: none; margin-top: 16px; padding: 14px 16px; border-radius: 8px; font-size: 13px; line-height: 1.6; }
+    .result.success { background: #EBF4FB; border: 1px solid #b3d9f2; color: #1A1714; }
+    .result.error { background: #FDECEA; border: 1px solid #f5c6c6; color: #A32D2D; }
+    .stat { font-weight: 600; }
+    .hint { font-size: 12px; color: #9C958F; margin-top: -8px; margin-bottom: 14px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <svg viewBox="0 0 20 20"><path d="M10 2L3 7v11h5v-5h4v5h5V7z"/></svg>
+    </div>
+    <h1>Re-embed a Post</h1>
+    <p class="sub">Re-indexes a single Circle post and its comments in the Ask the Archive. Use after editing a post to update its embedding.</p>
+
+    <label for="secret">Backfill Secret</label>
+    <input type="password" id="secret" placeholder="Enter secret" autocomplete="off">
+
+    <label for="postId">Circle Post ID</label>
+    <input type="number" id="postId" placeholder="e.g. 23781508">
+    <p class="hint">Get this from F12 → Console → document.querySelector('[data-post-id]')?.dataset?.postId</p>
+
+    <button id="runBtn" onclick="reembed()">
+      <div class="spinner" id="spinner"></div>
+      <span id="btnLabel">Re-embed Post</span>
+    </button>
+
+    <div class="result" id="result"></div>
+  </div>
+
+  <script>
+    async function reembed() {
+      const secret = document.getElementById('secret').value.trim();
+      const postId = parseInt(document.getElementById('postId').value.trim());
+
+      if (!secret) { showResult('error', 'Enter the backfill secret.'); return; }
+      if (!postId) { showResult('error', 'Enter a valid post ID.'); return; }
+
+      const btn = document.getElementById('runBtn');
+      const spinner = document.getElementById('spinner');
+      const btnLabel = document.getElementById('btnLabel');
+
+      btn.disabled = true;
+      spinner.style.display = 'block';
+      btnLabel.textContent = 'Re-embedding...';
+      document.getElementById('result').style.display = 'none';
+
+      try {
+        const res = await fetch('/.netlify/functions/reembed-post', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ secret, post_id: postId })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          showResult('error', data.error || 'Re-embed failed with status ' + res.status);
+        } else {
+          showResult('success',
+            `<span class="stat">Done.</span> "${data.title}" re-indexed.<br>` +
+            `Post embedded: ${data.post}<br>` +
+            `Comments embedded: ${data.comments}<br>` +
+            `Errors: ${data.errors ? data.errors.length : 0}`
+          );
+        }
+      } catch(e) {
+        showResult('error', 'Connection error: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        spinner.style.display = 'none';
+        btnLabel.textContent = 'Re-embed Post';
+      }
+    }
+
+    function showResult(type, html) {
+      const el = document.getElementById('result');
+      el.className = 'result ' + type;
+      el.innerHTML = html;
+      el.style.display = 'block';
+    }
+
+    document.getElementById('postId').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') reembed();
+    });
+  </script>
+</body>
+</html>
