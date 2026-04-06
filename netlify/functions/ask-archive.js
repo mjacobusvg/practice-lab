@@ -21,6 +21,7 @@ exports.handler = async function(event, context) {
   }
 
   var question = (body.question || '').trim();
+  var history = body.history || []; // array of {role, content} for follow-up conversations
   if (!question) {
     return { statusCode: 400, headers: CORS_HEADERS, body: JSON.stringify({ error: 'No question provided' }) };
   }
@@ -77,7 +78,7 @@ exports.handler = async function(event, context) {
     var context = buildContext(enrichedChunks);
 
     // Step 6: Synthesize answer with Claude
-    var result = await synthesizeAnswer(question, context, anthropicKey);
+    var result = await synthesizeAnswer(question, context, anthropicKey, history);
 
     // Step 7: Build source links with descriptions
     var sources = buildSources(enrichedChunks, result.sourceDescriptions);
@@ -85,7 +86,16 @@ exports.handler = async function(event, context) {
     return {
       statusCode: 200,
       headers: CORS_HEADERS,
-      body: JSON.stringify({ answer: result.answer, sources, unanswered: false })
+      body: JSON.stringify({
+        answer: result.answer,
+        sources,
+        unanswered: false,
+        // Return the exchange for client to store as history
+        history_append: [
+          { role: 'user', content: 'Question: ' + question + '\n\nSources:\n' + context },
+          { role: 'assistant', content: JSON.stringify({ answer: result.answer, source_descriptions: result.sourceDescriptions }) }
+        ]
+      })
     };
 
   } catch(e) {
@@ -195,29 +205,49 @@ function buildContext(chunks) {
 
 // ── Claude synthesis ────────────────────────────────────────────────────────
 
-async function synthesizeAnswer(question, context, apiKey) {
+async function synthesizeAnswer(question, context, apiKey, history) {
   var systemPrompt = `You are Ask the Archive, a search tool for Think Beyond Practice — a professional forum for psychiatric prescribers run by Michael Van Gelder, PMHNP-BC.
 
-Your job has two parts. Return ONLY valid JSON, no markdown, no preamble.
+Your job is to assemble a direct, decision-ready answer from the provided source material using the author's language as closely as possible. The posts were written by Michael Van Gelder — direct, clinically precise, short declarative sentences, no hedging, treats the reader as a peer.
 
-PART 1 — SHORT ANSWER:
-3-5 sentences maximum. Direct answer to the question using the source language as much as possible. Lead with the core rule or what to do. End with the most common mistake or the thing people consistently miss. No hedging. No em dashes. No bold. No headers. Prose only — a short inline list is acceptable only when listing specific required components.
+CORE INSTRUCTION: Do not paraphrase when you can quote or near-quote. Pull the strongest sentences directly from the source material. You are assembling, not rewriting.
 
-PART 2 — SOURCE DESCRIPTIONS:
-For each source provided, write one sentence (15-20 words max) describing what that specific post covers that's relevant to the question. Be specific — not "covers psychotherapy documentation" but "walks through the exact note structure for 90833 add-on visits."
+OUTPUT STRUCTURE — follow this every time:
+1. WHAT TO DO: One direct sentence stating the core action or rule.
+2. REQUIRED ELEMENTS: If the question involves required components, list them as a short inline list (the only place a list is acceptable).
+3. EXAMPLE: One concrete example showing what it looks like in practice. Format: "Example: [actual example from the source material]"
+4. COMMON MISTAKE: One sentence naming the most common error. Format: "The most common mistake: [mistake]."
 
-Return this exact JSON structure:
+FORMAT RULES:
+- No bold text. No headers. No em dashes.
+- Prose paragraphs except for the required elements list and example line.
+- Keep total response under 200 words.
+- Never start with "I" or "Based on" or "According to"
+
+CITATIONS: Reference sources by their actual post title inline when natural. Never write [Source 1].
+
+CONTENT RULES:
+- Only use information present in the provided sources
+- If sources partially answer the question, say what the forum has and note what it hasn't covered
+- If sources are clearly off-topic, say so in one sentence and stop
+- Never fabricate clinical information
+
+Return ONLY valid JSON, no markdown, no preamble:
 {
-  "answer": "your 3-5 sentence answer here",
+  "answer": "your structured answer here",
   "source_descriptions": {
-    "SOURCE_TITLE_1": "one sentence description",
-    "SOURCE_TITLE_2": "one sentence description"
+    "POST_TITLE": "one sentence description of what this post covers relevant to the question"
   }
-}
-
-Use the exact post title as the key in source_descriptions. Only include sources that are actually relevant to the question.`;
+}`;
 
   var userPrompt = 'Question: ' + question + '\n\nSources:\n' + context;
+
+  // Build messages array — include history for follow-up questions
+  var messages = [];
+  if (history && history.length > 0) {
+    messages = history.slice(-6); // keep last 3 exchanges max
+  }
+  messages.push({ role: 'user', content: userPrompt });
 
   var resp = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -230,7 +260,7 @@ Use the exact post title as the key in source_descriptions. Only include sources
       model: 'claude-sonnet-4-20250514',
       max_tokens: 2000,
       system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }]
+      messages: messages
     })
   });
 
@@ -280,6 +310,7 @@ function buildSources(chunks, descriptions) {
 // ── Log unanswered questions ────────────────────────────────────────────────
 
 async function logUnanswered(url, key, question, memberRequested) {
+  // Log to Supabase
   await fetch(url + '/rest/v1/unanswered_questions', {
     method: 'POST',
     headers: {
@@ -290,6 +321,31 @@ async function logUnanswered(url, key, question, memberRequested) {
     body: JSON.stringify({
       question: question,
       member_requested: memberRequested
+    })
+  });
+
+  // Send email notification via Resend
+  var resendKey = process.env.RESEND_API_KEY;
+  if (!resendKey) return;
+
+  var sqlQuery = 'select question, member_requested, created_at from unanswered_questions order by created_at desc;';
+
+  await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + resendKey
+    },
+    body: JSON.stringify({
+      from: 'Ask the Archive <onboarding@resend.dev>',
+      to: 'michael@thinkbeyondpsych.com',
+      subject: 'Ask the Archive: Unanswered Question',
+      html: '<p>A member asked a question the Archive could not answer:</p>' +
+            '<blockquote style="border-left:3px solid #ccc;padding-left:12px;color:#333">' + question + '</blockquote>' +
+            '<p>This has been logged to your Supabase unanswered_questions table.</p>' +
+            '<p>To see all unanswered questions, paste this into your <a href="https://supabase.com/dashboard/project/ubcrrrapedaxkguxniwv/sql">Supabase SQL Editor</a>:</p>' +
+            '<pre style="background:#f5f5f5;padding:12px;border-radius:4px;font-size:13px">' + sqlQuery + '</pre>' +
+            '<p style="color:#888;font-size:12px">Think Beyond Practice — Ask the Archive</p>'
     })
   });
 }
