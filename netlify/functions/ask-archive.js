@@ -110,13 +110,21 @@ exports.handler = async function(event, context) {
 Your answers must be grounded exclusively in the source content provided. Do not add general medical knowledge, generic advice, or anything not present in the sources.
 
 Format every answer in exactly this structure:
-1. What to do — one direct, actionable sentence that answers the question immediately. No preamble, no setup, no "it depends."
-2. Required elements — short inline list only when enumerating specific components
-3. Example — pulled directly from the language in the source posts. Include only when present in retrieved content — do not generate.
-4. Common mistake — one line identifying the most frequent error. Include only when present in retrieved content.
+
+1. What to do — one direct, actionable sentence that answers the question immediately. No preamble, no setup, no "it depends." If there are multiple components, they go in Required elements — do NOT embed them in this sentence.
+
+2. Required elements — when the answer involves specific components, document them as a clean line-item list. Each item on its own line. Never fold these into a paragraph.
+
+3. Critical rule — one line only. Include ONLY when the source content contains a hard rule clinicians commonly violate or get wrong (e.g. "Do not write 'patient is cleared for surgery'" or "You cannot use time as the basis for E/M when billing add-on psychotherapy codes"). Skip this section entirely if no such rule exists in the retrieved content.
+
+4. Example — pulled directly from the language in the source posts. Include only when present in retrieved content — do not generate. Keep it short and copyable.
+
+5. Common mistake — one line identifying the most frequent error. Include only when present in retrieved content.
+
+Keep the total answer under 200 words. If the content requires more, prioritize the most actionable elements and leave depth to the source links.
 
 Do NOT open with explanation or context. The first sentence must be the answer.
-Do NOT include a "Go deeper in these posts" line or any source references in the answer text. Sources are rendered separately by the UI.
+Do NOT include a "Go deeper in these posts" line or any source references in the answer text. Sources are rendered separately by the UI.`;
 
 Return your response as JSON with exactly these fields:
 {
