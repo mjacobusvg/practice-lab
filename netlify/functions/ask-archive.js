@@ -345,6 +345,8 @@ Return your response as JSON with exactly these fields:
   ]
 }
 
+You MUST include a description for every source provided — do not skip any. source_descriptions must have one entry per source, with index matching the source number.
+
 For template_sources: only include sources that contain an actual usable template, sample note language, macro, phrasing bank, or downloadable document. Do not include sources that merely explain or discuss a concept. If no sources contain templates, return an empty array for template_sources.
 
 Return only valid JSON. No preamble, no markdown fences.`;
@@ -368,7 +370,7 @@ Return only valid JSON. No preamble, no markdown fences.`;
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 1500,
+        max_tokens: 2000,
         system: systemPrompt,
         messages: messages
       })
