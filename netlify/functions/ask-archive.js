@@ -8,7 +8,7 @@
 // 6. Logs unanswered questions to Supabase and emails michael@thinkbeyondpsych.com
 
 const MATCH_THRESHOLD = 0.45;
-const BROWSE_THRESHOLD = 0.30;
+const BROWSE_THRESHOLD = 0.38;
 const MATCH_COUNT = 14;
 
 // Patterns that indicate a browse/meta question rather than a clinical question
@@ -116,10 +116,17 @@ exports.handler = async function(event, context) {
         };
       }
 
-      // Ask Claude to identify related topics from the retrieved content
-      const browseContext = matches.map(function(m, i) {
-        return `[${i+1}] ${m.title} (${m.space_name})`;
-      }).join('\n');
+      // Sort: full posts first, comments second
+      const sortedMatches = matches.slice().sort(function(a, b) {
+        var aIsComment = (a.id || '').startsWith('comment_') ? 1 : 0;
+        var bIsComment = (b.id || '').startsWith('comment_') ? 1 : 0;
+        return aIsComment - bIsComment;
+      });
+
+      // Ask Claude to identify related topics and generate post descriptions
+      const browseContext = sortedMatches.map(function(m, i) {
+        return `[${i+1}] Title: ${m.title}\nSpace: ${m.space_name}\nContent: ${(m.body || '').substring(0, 300)}`;
+      }).join('\n\n');
 
       const browseRes = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -130,29 +137,36 @@ exports.handler = async function(event, context) {
         },
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
-          max_tokens: 400,
+          max_tokens: 600,
           messages: [{
             role: 'user',
-            content: `Given these forum posts related to "${question}":\n\n${browseContext}\n\nReturn JSON with one field: "related_topics" — an array of 3-5 short topic strings (2-5 words each) that are adjacent or related to this topic and would make good follow-up searches. Only topics clearly supported by the post titles above. Return only valid JSON, no preamble.`
+            content: `Given these forum posts related to "${question}":\n\n${browseContext}\n\nReturn JSON with two fields:\n1. "post_descriptions": array of objects with { "index": number, "description": "one sentence, max 15 words, what this post covers" }\n2. "related_topics": array of 3-5 short topic strings (2-5 words each) that are adjacent or related and would make good follow-up searches.\n\nOnly include topics clearly supported by the content above. Return only valid JSON, no preamble.`
           }]
         })
       });
 
       let relatedTopics = [];
+      let postDescMap = {};
       if (browseRes.ok) {
         try {
           const browseData = await browseRes.json();
           const browseText = browseData.content[0].text.replace(/```json|```/g, '').trim();
           const browseParsed = JSON.parse(browseText);
           relatedTopics = browseParsed.related_topics || [];
+          (browseParsed.post_descriptions || []).forEach(function(d) {
+            const match = sortedMatches[d.index - 1];
+            if (match && match.url) {
+              postDescMap[match.url] = d.description;
+            }
+          });
         } catch(e) {
-          console.log('Browse related topics parse error:', e.message);
+          console.log('Browse parse error:', e.message);
         }
       }
 
-      // Dedupe posts by URL
+      // Dedupe posts by URL, full posts first (already sorted)
       const seenBrowse = new Set();
-      const browsePosts = matches
+      const browsePosts = sortedMatches
         .filter(function(m) { return m.url; })
         .filter(function(m) {
           if (seenBrowse.has(m.url)) return false;
@@ -160,7 +174,13 @@ exports.handler = async function(event, context) {
           return true;
         })
         .map(function(m) {
-          return { title: m.title, space: m.space_name, author: m.author, url: m.url };
+          return {
+            title: m.title,
+            space: m.space_name,
+            author: m.author,
+            url: m.url,
+            description: postDescMap[m.url] || ''
+          };
         });
 
       return {
