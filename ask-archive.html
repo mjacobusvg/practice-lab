@@ -114,7 +114,14 @@
           document.getElementById('sources-box').style.display = 'none';
           document.getElementById('templates-box').style.display = 'none';
 
+          var currentPage = data.page || 1;
+          var currentQuestion = question;
+
           var browseHtml = '<div class="browse-header">What\'s in the Archive on This Topic</div>';
+          if (data.total) {
+            browseHtml += '<div style="font-size:12px;color:#8a847e;margin-bottom:12px;">' + data.total + ' posts found</div>';
+          }
+
           if (data.posts && data.posts.length > 0) {
             data.posts.forEach(function(p) {
               var descHtml = p.description ? '<div class="source-desc">' + p.description + '</div>' : '';
@@ -126,6 +133,12 @@
             });
           } else {
             browseHtml += '<p style="font-size:14px;color:#5c5650;">No posts found on this topic yet.</p>';
+          }
+
+          if (data.has_more) {
+            browseHtml += '<button class="request-template-btn" style="margin-top:12px;width:100%;" ' +
+              'onclick="loadMorePosts(\'' + currentQuestion.replace(/'/g, "\\'") + '\',' + (currentPage + 1) + ')">' +
+              'See next 10 posts</button>';
           }
 
           if (data.related_topics && data.related_topics.length > 0) {
@@ -225,6 +238,56 @@
     function searchTopic(topic) {
       document.getElementById('question').value = 'Are there any posts on ' + topic;
       ask();
+    }
+
+    async function loadMorePosts(question, page) {
+      var answerText = document.getElementById('answer-text');
+      var btn = answerText.querySelector('button');
+      if (btn) { btn.disabled = true; btn.textContent = 'Loading...'; }
+
+      try {
+        var resp = await fetch('/.netlify/functions/ask-archive', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: question, page: page })
+        });
+        var data = await resp.json();
+        if (!data.browse || !data.posts) return;
+
+        // Remove the "See next 10" button
+        if (btn) btn.parentNode.removeChild(btn);
+
+        // Remove related topics if present before appending
+        var relatedDiv = answerText.querySelector('.related-topics');
+        if (relatedDiv) relatedDiv.parentNode.removeChild(relatedDiv);
+
+        // Append new posts
+        data.posts.forEach(function(p) {
+          var descHtml = p.description ? '<div class="source-desc">' + p.description + '</div>' : '';
+          var a = document.createElement('a');
+          a.href = p.url;
+          a.target = '_blank';
+          a.className = 'source-link';
+          a.innerHTML = p.title +
+            '<div class="source-meta">' + p.space + (p.author ? ' · ' + p.author : '') + '</div>' +
+            descHtml;
+          answerText.appendChild(a);
+        });
+
+        // Append new "See next 10" if more
+        if (data.has_more) {
+          var nextBtn = document.createElement('button');
+          nextBtn.className = 'request-template-btn';
+          nextBtn.style.marginTop = '12px';
+          nextBtn.style.width = '100%';
+          nextBtn.textContent = 'See next 10 posts';
+          nextBtn.onclick = function() { loadMorePosts(question, page + 1); };
+          answerText.appendChild(nextBtn);
+        }
+
+      } catch(e) {
+        if (btn) { btn.disabled = false; btn.textContent = 'See next 10 posts'; }
+      }
     }
 
     document.getElementById('question').addEventListener('keydown', function(e) {
