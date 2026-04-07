@@ -25,8 +25,20 @@ const META_PATTERNS = [
   /^(what|anything) (in the archive|available) (on|about) /i
 ];
 
-function isMetaQuestion(question) {
-  return META_PATTERNS.some(function(p) { return p.test(question); });
+// Extract the core topic from a meta question for better embedding
+function extractTopic(question) {
+  return question
+    .replace(/^are there (any )?posts? on /i, '')
+    .replace(/^do you have (anything|any posts?) (on|about) /i, '')
+    .replace(/^what (do you have|posts?) (on|about) /i, '')
+    .replace(/^is there anything (on|about) /i, '')
+    .replace(/^what topics? (cover|address|discuss) /i, '')
+    .replace(/^show me (posts?|anything) (on|about) /i, '')
+    .replace(/^find (posts?|anything) (on|about) /i, '')
+    .replace(/^(search|look) for (posts?|anything) (on|about) /i, '')
+    .replace(/^any posts? (on|about) /i, '')
+    .replace(/^(what|anything) (in the archive|available) (on|about) /i, '')
+    .trim();
 }
 
 exports.handler = async function(event, context) {
@@ -75,7 +87,9 @@ exports.handler = async function(event, context) {
 
   try {
     // ── Step 1: Embed the question ──────────────────────────────────────────
-    const embedding = await getEmbedding(question, openaiKey);
+    // For meta/browse questions, embed just the topic for better semantic matching
+    const embedText = isMetaQuestion(question) ? extractTopic(question) : question;
+    const embedding = await getEmbedding(embedText, openaiKey);
 
     // ── Step 2: Vector similarity search ───────────────────────────────────
     const matchRes = await fetch(`${supabaseUrl}/rest/v1/rpc/match_posts`, {
