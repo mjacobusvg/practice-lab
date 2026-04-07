@@ -329,27 +329,28 @@ Format every answer in exactly this structure:
 
 5. Common mistake — one line identifying the most frequent error. Include only when present in retrieved content.
 
-Keep the total answer under 200 words. If the content requires more, prioritize the most actionable elements and leave depth to the source links.
+Keep the answer section under 200 words. If the content requires more, prioritize the most actionable elements and leave depth to the source links.
 
 Do NOT open with explanation or context. The first sentence must be the answer.
 Do NOT include a "Go deeper in these posts" line or any source references in the answer text. Sources are rendered separately by the UI.
+
+CRITICAL: Your entire response must be valid JSON. Do not write anything outside the JSON object. Do not use markdown. Do not add explanation. Start your response with { and end with }.
 
 Return your response as JSON with exactly these fields:
 {
   "answer": "the full answer text following the structure above",
   "source_descriptions": [
-    { "index": 1, "description": "one-line description of why this post is relevant" }
+    { "index": 1, "description": "one-line max 12 words describing what this source covers" },
+    { "index": 2, "description": "one-line max 12 words describing what this source covers" }
   ],
   "template_sources": [
-    { "index": 1, "template_description": "one-line description of what template or sample language this post contains" }
+    { "index": 1, "template_description": "one-line description of what template this source contains" }
   ]
 }
 
-You MUST include a description for every source provided — do not skip any. source_descriptions must have one entry per source, with index matching the source number.
-
-For template_sources: only include sources that contain an actual usable template, sample note language, macro, phrasing bank, or downloadable document. Do not include sources that merely explain or discuss a concept. If no sources contain templates, return an empty array for template_sources.
-
-Return only valid JSON. No preamble, no markdown fences.`;
+Include one entry in source_descriptions for every source provided. Keep each description to 12 words or fewer to stay within token limits.
+For template_sources: only include sources with actual usable templates, sample language, macros, or downloadable documents. Return empty array if none.
+Return ONLY the JSON object. Nothing before or after it.
 
     const userMessage = `Forum sources:\n\n${contextBlocks}\n\n---\n\nQuestion: ${question}`;
 
@@ -370,7 +371,7 @@ Return only valid JSON. No preamble, no markdown fences.`;
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
+        max_tokens: 2500,
         system: systemPrompt,
         messages: messages
       })
