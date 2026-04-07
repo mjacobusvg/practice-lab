@@ -350,7 +350,7 @@ Return your response as JSON with exactly these fields:
 
 Include one entry in source_descriptions for every source provided. Keep each description to 12 words or fewer to stay within token limits.
 For template_sources: only include sources with actual usable templates, sample language, macros, or downloadable documents. Return empty array if none.
-Return ONLY the JSON object. Nothing before or after it.
+Return ONLY the JSON object. Nothing before or after it.`;
 
     const userMessage = `Forum sources:\n\n${contextBlocks}\n\n---\n\nQuestion: ${question}`;
 
