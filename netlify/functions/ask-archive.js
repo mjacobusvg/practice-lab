@@ -90,34 +90,67 @@ exports.handler = async function(event, context) {
   }
 
   try {
-    // ── Step 1: Embed the question ──────────────────────────────────────────
-    // For meta/browse questions, embed just the topic for better semantic matching
-    const embedText = isMetaQuestion(question) ? extractTopic(question) : question;
-    const embedding = await getEmbedding(embedText, openaiKey);
-
-    // ── Step 2: Vector similarity search ───────────────────────────────────
-    const matchRes = await fetch(`${supabaseUrl}/rest/v1/rpc/match_posts`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': supabaseKey,
-        'Authorization': `Bearer ${supabaseKey}`
-      },
-      body: JSON.stringify({
-        query_embedding: embedding,
-        match_threshold: isMetaQuestion(question) ? BROWSE_THRESHOLD : MATCH_THRESHOLD,
-        match_count: isMetaQuestion(question) ? 20 : MATCH_COUNT
-      })
-    });
-
-    if (!matchRes.ok) {
-      const err = await matchRes.text();
-      console.log('match_posts error:', err.substring(0, 200));
-      return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Search failed' }) };
+    // ── Step 1: Embed the question (skip for meta/browse questions) ──────────
+    let embedding = null;
+    if (!isMetaQuestion(question)) {
+      embedding = await getEmbedding(question, openaiKey);
     }
 
-    const matches = await matchRes.json();
-    console.log('Matches found:', matches.length);
+    // ── Step 2: Vector similarity search or full-text search ───────────────
+    let matches;
+
+    if (isMetaQuestion(question)) {
+      // Full-text keyword search for browse/meta questions
+      const topic = extractTopic(question);
+      const ftsQuery = topic.trim().split(/\s+/).join(' & ');
+      console.log('FTS query:', ftsQuery);
+
+      const ftsRes = await fetch(
+        `${supabaseUrl}/rest/v1/posts?select=id,title,body,space_name,space_slug,author,url,circle_post_id&` +
+        `fts=to_tsvector('english',coalesce(title,'')%20||%20' '%20||%20coalesce(body,''))` +
+        `@@ to_tsquery('english','${encodeURIComponent(ftsQuery)}')` +
+        `&order=id.asc&limit=30`,
+        {
+          headers: {
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${supabaseKey}`
+          }
+        }
+      );
+
+      if (!ftsRes.ok) {
+        const err = await ftsRes.text();
+        console.log('FTS error:', err.substring(0, 200));
+        matches = [];
+      } else {
+        matches = await ftsRes.json();
+        console.log('FTS matches:', matches.length);
+      }
+    } else {
+      // Vector similarity search for clinical questions
+      const matchRes = await fetch(`${supabaseUrl}/rest/v1/rpc/match_posts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`
+        },
+        body: JSON.stringify({
+          query_embedding: embedding,
+          match_threshold: MATCH_THRESHOLD,
+          match_count: MATCH_COUNT
+        })
+      });
+
+      if (!matchRes.ok) {
+        const err = await matchRes.text();
+        console.log('match_posts error:', err.substring(0, 200));
+        return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Search failed' }) };
+      }
+
+      matches = await matchRes.json();
+      console.log('Vector matches:', matches.length);
+    }
 
     // ── Step 3: Handle meta/browse questions ────────────────────────────────
     if (isMetaQuestion(question)) {
