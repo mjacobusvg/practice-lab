@@ -8,7 +8,26 @@
 // 6. Logs unanswered questions to Supabase and emails michael@thinkbeyondpsych.com
 
 const MATCH_THRESHOLD = 0.45;
+const BROWSE_THRESHOLD = 0.30;
 const MATCH_COUNT = 14;
+
+// Patterns that indicate a browse/meta question rather than a clinical question
+const META_PATTERNS = [
+  /^are there (any )?posts? on /i,
+  /^do you have (anything|any posts?) (on|about) /i,
+  /^what (do you have|posts?) (on|about) /i,
+  /^is there anything (on|about) /i,
+  /^what topics? (cover|cover|address|discuss) /i,
+  /^show me (posts?|anything) (on|about) /i,
+  /^find (posts?|anything) (on|about) /i,
+  /^(search|look) for (posts?|anything) (on|about) /i,
+  /^any posts? (on|about) /i,
+  /^(what|anything) (in the archive|available) (on|about) /i
+];
+
+function isMetaQuestion(question) {
+  return META_PATTERNS.some(function(p) { return p.test(question); });
+}
 
 exports.handler = async function(event, context) {
   const CORS = {
@@ -68,7 +87,7 @@ exports.handler = async function(event, context) {
       },
       body: JSON.stringify({
         query_embedding: embedding,
-        match_threshold: MATCH_THRESHOLD,
+        match_threshold: isMetaQuestion(question) ? BROWSE_THRESHOLD : MATCH_THRESHOLD,
         match_count: MATCH_COUNT
       })
     });
@@ -82,7 +101,81 @@ exports.handler = async function(event, context) {
     const matches = await matchRes.json();
     console.log('Matches found:', matches.length);
 
-    // ── Step 3: Handle unanswered ───────────────────────────────────────────
+    // ── Step 3: Handle meta/browse questions ────────────────────────────────
+    if (isMetaQuestion(question)) {
+      if (!matches || matches.length === 0) {
+        return {
+          statusCode: 200,
+          headers: CORS,
+          body: JSON.stringify({
+            browse: true,
+            topic: question,
+            posts: [],
+            related_topics: []
+          })
+        };
+      }
+
+      // Ask Claude to identify related topics from the retrieved content
+      const browseContext = matches.map(function(m, i) {
+        return `[${i+1}] ${m.title} (${m.space_name})`;
+      }).join('\n');
+
+      const browseRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': anthropicKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 400,
+          messages: [{
+            role: 'user',
+            content: `Given these forum posts related to "${question}":\n\n${browseContext}\n\nReturn JSON with one field: "related_topics" — an array of 3-5 short topic strings (2-5 words each) that are adjacent or related to this topic and would make good follow-up searches. Only topics clearly supported by the post titles above. Return only valid JSON, no preamble.`
+          }]
+        })
+      });
+
+      let relatedTopics = [];
+      if (browseRes.ok) {
+        try {
+          const browseData = await browseRes.json();
+          const browseText = browseData.content[0].text.replace(/```json|```/g, '').trim();
+          const browseParsed = JSON.parse(browseText);
+          relatedTopics = browseParsed.related_topics || [];
+        } catch(e) {
+          console.log('Browse related topics parse error:', e.message);
+        }
+      }
+
+      // Dedupe posts by URL
+      const seenBrowse = new Set();
+      const browsePosts = matches
+        .filter(function(m) { return m.url; })
+        .filter(function(m) {
+          if (seenBrowse.has(m.url)) return false;
+          seenBrowse.add(m.url);
+          return true;
+        })
+        .map(function(m) {
+          return { title: m.title, space: m.space_name, author: m.author, url: m.url };
+        });
+
+      return {
+        statusCode: 200,
+        headers: CORS,
+        body: JSON.stringify({
+          browse: true,
+          topic: question,
+          posts: browsePosts,
+          related_topics: relatedTopics
+        })
+      };
+    }
+
+    // ── Step 4: Handle unanswered ───────────────────────────────────────────
     if (!matches || matches.length === 0) {
       await logUnanswered(supabaseUrl, supabaseKey, question, memberRequested);
       await sendUnansweredEmail(resendKey, question);
