@@ -106,7 +106,7 @@ exports.handler = async function(event, context) {
       body: JSON.stringify({
         query_embedding: embedding,
         match_threshold: isMetaQuestion(question) ? BROWSE_THRESHOLD : MATCH_THRESHOLD,
-        match_count: MATCH_COUNT
+        match_count: isMetaQuestion(question) ? 20 : MATCH_COUNT
       })
     });
 
@@ -184,6 +184,7 @@ exports.handler = async function(event, context) {
 
       // Dedupe posts by URL, full posts first (already sorted)
       const seenBrowse = new Set();
+      const seenTitles = new Set();
       const browsePosts = sortedMatches
         .filter(function(m) { return m.url; })
         .filter(function(m) {
@@ -197,9 +198,24 @@ exports.handler = async function(event, context) {
             space: m.space_name,
             author: m.author,
             url: m.url,
-            description: postDescMap[m.url] || ''
+            description: postDescMap[m.url] || '',
+            isComment: (m.id || '').startsWith('comment_')
           };
-        });
+        })
+        .filter(function(m) {
+          // If this is a comment, check if its parent post title is already in results
+          if (m.isComment && m.title.startsWith('Comment on: ')) {
+            const parentTitle = m.title.replace(/^Comment on:\s*/i, '').trim();
+            if (seenTitles.has(parentTitle)) return false;
+          }
+          if (!m.isComment) seenTitles.add(m.title);
+          return true;
+        })
+        .map(function(m) {
+          // Clean up the isComment flag before returning
+          return { title: m.title, space: m.space, author: m.author, url: m.url, description: m.description };
+        })
+        .slice(0, 10);
 
       return {
         statusCode: 200,
