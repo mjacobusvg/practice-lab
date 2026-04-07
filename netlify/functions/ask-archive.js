@@ -41,6 +41,10 @@ function extractTopic(question) {
     .trim();
 }
 
+function isMetaQuestion(question) {
+  return META_PATTERNS.some(function(p) { return p.test(question); });
+}
+
 exports.handler = async function(event, context) {
   const CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -64,6 +68,16 @@ exports.handler = async function(event, context) {
 
   if (!question) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Question required' }) };
 
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+  const openaiKey = process.env.OPENAI_API_KEY;
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const resendKey = process.env.RESEND_API_KEY;
+
+  if (!supabaseUrl || !supabaseKey || !openaiKey || !anthropicKey) {
+    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Missing env vars' }) };
+  }
+
   // ── Template request path ────────────────────────────────────────────────
   if (requestTemplate) {
     await logTemplateRequest(supabaseUrl, supabaseKey, question);
@@ -73,16 +87,6 @@ exports.handler = async function(event, context) {
       headers: CORS,
       body: JSON.stringify({ success: true, message: 'Template request submitted.' })
     };
-  }
-
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
-  const openaiKey = process.env.OPENAI_API_KEY;
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  const resendKey = process.env.RESEND_API_KEY;
-
-  if (!supabaseUrl || !supabaseKey || !openaiKey || !anthropicKey) {
-    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Missing env vars' }) };
   }
 
   try {
