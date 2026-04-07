@@ -408,13 +408,14 @@ Return only valid JSON. No preamble, no markdown fences.`;
       };
     }).filter(function(s) { return s.url; });
 
-    // Dedupe by URL
-    const seen = new Set();
-    const dedupedSources = sources.filter(function(s) {
-      if (seen.has(s.url)) return false;
-      seen.add(s.url);
-      return true;
+    // Dedupe by URL — prefer entry with description over entry without
+    const urlMap = {};
+    sources.forEach(function(s) {
+      if (!urlMap[s.url] || (!urlMap[s.url].description && s.description)) {
+        urlMap[s.url] = s;
+      }
     });
+    const dedupedSources = Object.values(urlMap);
 
     // ── Step 9: Build template sources list ──────────────────────────────────
     const templateSourceIndexes = new Set(
