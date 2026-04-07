@@ -153,7 +153,24 @@ exports.handler = async function(event, context) {
 
     // ── Step 3: Handle meta/browse questions ────────────────────────────────
     if (isMetaQuestion(question)) {
-      if (!matches || matches.length === 0) {
+
+      // Filter out housekeeping/announcement spaces that aren't content posts
+      const EXCLUDED_BROWSE_SPACES = [
+        'start here',
+        'forum updates',
+        'forum updates & announcements',
+        'welcome',
+        'announcements'
+      ];
+
+      const filteredMatches = (matches || []).filter(function(m) {
+        const spaceLower = (m.space_name || '').toLowerCase();
+        return !EXCLUDED_BROWSE_SPACES.some(function(ex) {
+          return spaceLower.includes(ex);
+        });
+      });
+
+      if (filteredMatches.length === 0) {
         return {
           statusCode: 200,
           headers: CORS,
@@ -161,20 +178,54 @@ exports.handler = async function(event, context) {
             browse: true,
             topic: question,
             posts: [],
+            total: 0,
             related_topics: []
           })
         };
       }
 
       // Sort: full posts first, comments second
-      const sortedMatches = matches.slice().sort(function(a, b) {
+      const sortedMatches = filteredMatches.slice().sort(function(a, b) {
         var aIsComment = (a.id || '').startsWith('comment_') ? 1 : 0;
         var bIsComment = (b.id || '').startsWith('comment_') ? 1 : 0;
         return aIsComment - bIsComment;
       });
 
-      // Ask Claude to identify related topics and generate post descriptions
-      const browseContext = sortedMatches.map(function(m, i) {
+      // Dedupe by URL and filter redundant comments first
+      const seenBrowse = new Set();
+      const seenTitles = new Set();
+
+      // First pass: collect full post titles
+      sortedMatches.forEach(function(m) {
+        if (!(m.id || '').startsWith('comment_') && m.url) {
+          seenTitles.add((m.title || '').trim());
+        }
+      });
+
+      const dedupedMatches = sortedMatches
+        .filter(function(m) { return m.url; })
+        .filter(function(m) {
+          if (seenBrowse.has(m.url)) return false;
+          seenBrowse.add(m.url);
+          return true;
+        })
+        .filter(function(m) {
+          // Filter out comments whose parent post is already in results
+          if ((m.id || '').startsWith('comment_') && (m.title || '').startsWith('Comment on: ')) {
+            const parentTitle = m.title.replace(/^Comment on:\s*/i, '').trim();
+            if (seenTitles.has(parentTitle)) return false;
+          }
+          return true;
+        });
+
+      const totalPosts = dedupedMatches.length;
+      const page = parseInt(body.page || 1);
+      const pageSize = 10;
+      const start = (page - 1) * pageSize;
+      const pagePosts = dedupedMatches.slice(start, start + pageSize);
+
+      // Ask Claude to generate descriptions and related topics for this page
+      const browseContext = pagePosts.map(function(m, i) {
         return `[${i+1}] Title: ${m.title}\nSpace: ${m.space_name}\nContent: ${(m.body || '').substring(0, 300)}`;
       }).join('\n\n');
 
@@ -187,10 +238,10 @@ exports.handler = async function(event, context) {
         },
         body: JSON.stringify({
           model: 'claude-sonnet-4-20250514',
-          max_tokens: 600,
+          max_tokens: 700,
           messages: [{
             role: 'user',
-            content: `Given these forum posts related to "${question}":\n\n${browseContext}\n\nReturn JSON with two fields:\n1. "post_descriptions": array of objects with { "index": number, "description": "one sentence, max 15 words, what this post covers" }\n2. "related_topics": array of 3-5 short topic strings (2-5 words each) that are adjacent or related and would make good follow-up searches.\n\nOnly include topics clearly supported by the content above. Return only valid JSON, no preamble.`
+            content: `Given these forum posts related to "${extractTopic(question)}":\n\n${browseContext}\n\nReturn JSON with two fields:\n1. "post_descriptions": array of { "index": number, "description": "one sentence max 15 words describing what this post covers" }\n2. "related_topics": array of 3-5 short topic strings (2-5 words each) that are adjacent or related and would make good follow-up searches. Only include on page 1.\n\nReturn only valid JSON, no preamble.`
           }]
         })
       });
@@ -202,9 +253,9 @@ exports.handler = async function(event, context) {
           const browseData = await browseRes.json();
           const browseText = browseData.content[0].text.replace(/```json|```/g, '').trim();
           const browseParsed = JSON.parse(browseText);
-          relatedTopics = browseParsed.related_topics || [];
+          if (page === 1) relatedTopics = browseParsed.related_topics || [];
           (browseParsed.post_descriptions || []).forEach(function(d) {
-            const match = sortedMatches[d.index - 1];
+            const match = pagePosts[d.index - 1];
             if (match && match.url) {
               postDescMap[match.url] = d.description;
             }
@@ -214,40 +265,15 @@ exports.handler = async function(event, context) {
         }
       }
 
-      // Dedupe posts by URL, full posts first (already sorted)
-      const seenBrowse = new Set();
-      const seenTitles = new Set();
-      const browsePosts = sortedMatches
-        .filter(function(m) { return m.url; })
-        .filter(function(m) {
-          if (seenBrowse.has(m.url)) return false;
-          seenBrowse.add(m.url);
-          return true;
-        })
-        .map(function(m) {
-          return {
-            title: m.title,
-            space: m.space_name,
-            author: m.author,
-            url: m.url,
-            description: postDescMap[m.url] || '',
-            isComment: (m.id || '').startsWith('comment_')
-          };
-        })
-        .filter(function(m) {
-          // If this is a comment, check if its parent post title is already in results
-          if (m.isComment && m.title.startsWith('Comment on: ')) {
-            const parentTitle = m.title.replace(/^Comment on:\s*/i, '').trim();
-            if (seenTitles.has(parentTitle)) return false;
-          }
-          if (!m.isComment) seenTitles.add(m.title);
-          return true;
-        })
-        .map(function(m) {
-          // Clean up the isComment flag before returning
-          return { title: m.title, space: m.space, author: m.author, url: m.url, description: m.description };
-        })
-        .slice(0, 10);
+      const browsePosts = pagePosts.map(function(m) {
+        return {
+          title: m.title,
+          space: m.space_name,
+          author: m.author,
+          url: m.url,
+          description: postDescMap[m.url] || ''
+        };
+      });
 
       return {
         statusCode: 200,
@@ -256,6 +282,9 @@ exports.handler = async function(event, context) {
           browse: true,
           topic: question,
           posts: browsePosts,
+          total: totalPosts,
+          page: page,
+          has_more: (start + pageSize) < totalPosts,
           related_topics: relatedTopics
         })
       };
