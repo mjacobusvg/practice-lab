@@ -102,21 +102,20 @@ exports.handler = async function(event, context) {
     if (isMetaQuestion(question)) {
       // Full-text keyword search for browse/meta questions
       const topic = extractTopic(question);
-      const ftsQuery = topic.trim().split(/\s+/).join(' & ');
-      console.log('FTS query:', ftsQuery);
+      console.log('FTS topic:', topic);
 
-      const ftsRes = await fetch(
-        `${supabaseUrl}/rest/v1/posts?select=id,title,body,space_name,space_slug,author,url,circle_post_id&` +
-        `fts=to_tsvector('english',coalesce(title,'')%20||%20' '%20||%20coalesce(body,''))` +
-        `@@ to_tsquery('english','${encodeURIComponent(ftsQuery)}')` +
-        `&order=id.asc&limit=30`,
-        {
-          headers: {
-            'apikey': supabaseKey,
-            'Authorization': `Bearer ${supabaseKey}`
-          }
-        }
-      );
+      const ftsRes = await fetch(`${supabaseUrl}/rest/v1/rpc/search_posts_fts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`
+        },
+        body: JSON.stringify({
+          search_query: topic,
+          match_count: 20
+        })
+      });
 
       if (!ftsRes.ok) {
         const err = await ftsRes.text();
