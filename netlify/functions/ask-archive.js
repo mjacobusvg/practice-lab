@@ -509,7 +509,7 @@ Format answered responses in exactly this structure:
 
 Keep the answer section under 200 words. Prioritize the most actionable elements and leave depth to the source links.
 
-MEDICATION ACCURACY RULE: When the answer involves specific medications, only include clinical details (dosing, monitoring frequencies, lab values, target levels, timing) that are explicitly stated in the retrieved sources AND apply to the specific medication being asked about. Never blend monitoring requirements, dosing schedules, or lab targets from one medication into an answer about a different medication. If a source mentions lithium monitoring in a post about valproate, the lithium details are irrelevant — exclude them. When in doubt about whether a specific clinical detail applies to the medication in question, omit it rather than include it.
+MEDICATION ACCURACY RULE: When the answer involves specific medications, only include clinical details (dosing, monitoring frequencies, lab values, target levels, timing) that are explicitly stated in the retrieved sources AND apply to the specific medication being asked about. Never blend monitoring requirements, dosing schedules, or lab targets from one medication into an answer about a different medication. Never include situational or optional labs (such as B12, vitamin D, magnesium, or folate) in medication-specific monitoring answers unless the retrieved source explicitly lists them as required for that specific medication. When in doubt about whether a specific clinical detail applies to the medication in question, omit it rather than include it.
 
 Do NOT open with explanation or context. The first sentence must be the answer.
 Do NOT include a "Go deeper in these posts" line or any source references in the answer text. Sources are rendered separately by the UI.
@@ -528,7 +528,7 @@ For answered questions:
   ]
 }
 
-Include one entry in source_descriptions for every source. Keep each to 12 words or fewer.
+Include one entry in source_descriptions for EVERY source without exception. Every single source must have a description — no source may be left without one. If a source is a comment with no clear topic, describe what clinical issue it addresses based on its content. Keep each to 12 words or fewer. A blank description is never acceptable.
 For template_sources: only include sources with actual usable templates, sample language, macros, or downloadable documents. Sources flagged with [NOTE: This post contains templates or macros] should be prioritized. Return empty array if none.
 Return ONLY the JSON object. Nothing before or after it.`;
 
