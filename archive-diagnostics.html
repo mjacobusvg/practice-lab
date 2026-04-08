@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Archive Diagnostics — Think Beyond Practice</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f9f7f5; color: #1a1714; min-height: 100vh; padding: 40px 20px; }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .sub { font-size: 14px; color: #5c5650; margin-bottom: 32px; line-height: 1.5; }
+  .card { background: white; border: 1px solid #e0dbd4; border-radius: 12px; padding: 24px; margin-bottom: 20px; }
+  label { display: block; font-size: 11px; font-weight: 700; color: #9c958f; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+  input[type="password"] { width: 100%; border: 1.5px solid #e0dbd4; border-radius: 8px; padding: 11px 13px; font-size: 14px; color: #1a1714; background: white; margin-bottom: 16px; }
+  input[type="password"]:focus { outline: none; border-color: #1d6fa4; }
+  input[type="number"] { width: 120px; border: 1.5px solid #e0dbd4; border-radius: 8px; padding: 11px 13px; font-size: 14px; color: #1a1714; background: white; margin-bottom: 16px; }
+  .run-btn { width: 100%; padding: 13px; background: #1d6fa4; color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: background 0.15s; }
+  .run-btn:hover { background: #185d8c; }
+  .run-btn:disabled { background: #94a3b8; cursor: not-allowed; }
+  .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .progress-section { display: none; margin-top: 24px; }
+  .progress-bar-wrap { background: #e0dbd4; border-radius: 20px; height: 8px; margin-bottom: 10px; overflow: hidden; }
+  .progress-bar { background: #1d6fa4; height: 100%; border-radius: 20px; transition: width 0.3s; width: 0%; }
+  .progress-label { font-size: 13px; color: #5c5650; margin-bottom: 6px; }
+  .current-q { font-size: 12px; color: #9c958f; font-style: italic; min-height: 18px; }
+  .report { display: none; margin-top: 24px; }
+  .summary-bar { display: flex; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; }
+  .stat { background: white; border: 1px solid #e0dbd4; border-radius: 8px; padding: 14px 20px; flex: 1; min-width: 120px; text-align: center; }
+  .stat-num { font-size: 28px; font-weight: 700; line-height: 1; margin-bottom: 4px; }
+  .stat-label { font-size: 12px; color: #5c5650; }
+  .stat.pass .stat-num { color: #166534; }
+  .stat.warn .stat-num { color: #92400e; }
+  .stat.fail .stat-num { color: #a32d2d; }
+  .stat.total .stat-num { color: #1d6fa4; }
+  .result-item { background: white; border: 1px solid #e0dbd4; border-radius: 8px; margin-bottom: 12px; overflow: hidden; }
+  .result-header { padding: 14px 16px; display: flex; align-items: flex-start; gap: 12px; cursor: pointer; }
+  .result-header:hover { background: #fafaf9; }
+  .status-badge { flex-shrink: 0; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; margin-top: 1px; }
+  .status-badge.pass { background: #dcfce7; color: #166534; }
+  .status-badge.warn { background: #fef3c7; color: #92400e; }
+  .status-badge.fail { background: #fdecea; color: #a32d2d; }
+  .result-q { font-size: 14px; font-weight: 600; color: #1a1714; flex: 1; line-height: 1.4; }
+  .result-score { flex-shrink: 0; font-size: 12px; color: #9c958f; margin-top: 3px; }
+  .result-body { display: none; padding: 0 16px 16px; border-top: 1px solid #e0dbd4; }
+  .result-body.open { display: block; }
+  .eval-note { font-size: 13px; color: #5c5650; margin-top: 12px; padding: 10px 12px; background: #f9f7f5; border-radius: 6px; line-height: 1.5; }
+  .eval-note.warn { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+  .eval-note.fail { background: #fdecea; border: 1px solid #f5c6c6; color: #a32d2d; }
+  .answer-preview { font-size: 13px; color: #3d3830; margin-top: 12px; line-height: 1.6; white-space: pre-wrap; border-left: 3px solid #e0dbd4; padding-left: 12px; }
+  .sources-count { font-size: 12px; color: #9c958f; margin-top: 8px; }
+  .filter-bar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+  .filter-btn { padding: 6px 14px; border: 1.5px solid #e0dbd4; border-radius: 20px; font-size: 13px; font-weight: 600; cursor: pointer; background: white; color: #5c5650; transition: all 0.15s; }
+  .filter-btn.active { background: #1d6fa4; border-color: #1d6fa4; color: white; }
+  .download-btn { padding: 10px 20px; background: #f5f0ea; color: #1a1714; border: 1px solid #e0dbd4; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; margin-bottom: 20px; }
+  .download-btn:hover { background: #ede6dc; }
+  .category-tag { display: inline-block; font-size: 11px; padding: 2px 8px; background: #ebf4fb; color: #1d6fa4; border-radius: 10px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Archive Diagnostics</h1>
+  <p class="sub">Automatically generates clinical questions, runs them through Ask the Archive, and evaluates the quality of each response. Use before high-stakes demos or after major content updates.</p>
+
+  <div class="card">
+    <label>Backfill Secret</label>
+    <input type="password" id="secret" placeholder="Enter secret" autocomplete="off">
+
+    <label>Number of questions</label>
+    <input type="number" id="qcount" value="30" min="5" max="50">
+
+    <button class="run-btn" id="runBtn" onclick="runDiagnostics()">
+      <div class="spinner" id="spinner"></div>
+      <span id="btnLabel">Generate Questions &amp; Run Diagnostics</span>
+    </button>
+  </div>
+
+  <div class="progress-section" id="progressSection">
+    <div class="card">
+      <div class="progress-label" id="progressLabel">Generating questions...</div>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar" id="progressBar"></div>
+      </div>
+      <div class="current-q" id="currentQ"></div>
+    </div>
+  </div>
+
+  <div class="report" id="report">
+    <div class="summary-bar" id="summaryBar"></div>
+    <button class="download-btn" onclick="downloadReport()">Download Report (CSV)</button>
+    <div class="filter-bar">
+      <button class="filter-btn active" onclick="filterResults('all', this)">All</button>
+      <button class="filter-btn" onclick="filterResults('pass', this)">Pass</button>
+      <button class="filter-btn" onclick="filterResults('warn', this)">Needs Review</button>
+      <button class="filter-btn" onclick="filterResults('fail', this)">Fail</button>
+    </div>
+    <div id="resultsList"></div>
+  </div>
+</div>
+
+<script>
+  var allResults = [];
+
+  var CATEGORIES = [
+    'Billing & CPT codes',
+    'MDM documentation',
+    'Psychotherapy billing (90833/90836/90838)',
+    'Denial management',
+    'E/M coding (99213/99214/99215)',
+    'Practice management',
+    'Pharmacology',
+    'Clinical documentation',
+    'Legal & compliance',
+    'Credentialing',
+    'MDM complexity levels',
+    'Prior authorization',
+    'Insurance & payers',
+    'Audit defense',
+    'Time-based billing'
+  ];
+
+  async function generateQuestions(count, anthropicKey) {
+    var resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': anthropicKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2000,
+        messages: [{
+          role: 'user',
+          content: `Generate ${count} diverse, realistic clinical questions that a psychiatric prescriber (PMHNP) would ask in a professional forum about billing, documentation, clinical practice, pharmacology, practice management, legal issues, and coding.
+
+Make them varied in difficulty and phrasing — some short, some detailed, some phrased as a confused beginner, some as an experienced clinician. Cover these categories proportionally: billing/CPT codes, MDM documentation, psychotherapy billing, denial management, E/M coding, practice management, pharmacology, clinical documentation, legal/compliance, credentialing, time-based billing.
+
+Return ONLY a JSON array of objects with fields: "question" (string) and "category" (string). No preamble. Example:
+[{"question": "How do I bill 90833?", "category": "Psychotherapy billing (90833/90836/90838)"}]`
+        }]
+      })
+    });
+
+    if (!resp.ok) throw new Error('Failed to generate questions');
+    var data = await resp.json();
+    var text = data.content[0].text.replace(/```json|```/g, '').trim();
+    return JSON.parse(text);
+  }
+
+  async function evaluateAnswer(question, result, anthropicKey) {
+    if (result.unanswered) {
+      return { score: 'warn', note: 'No archive content found for this question. Consider adding a post on this topic.' };
+    }
+
+    var answerText = result.answer || '';
+    var sourceCount = (result.sources || []).length;
+    var hasTemplate = result.template_sources && result.template_sources.length > 0;
+
+    var evalResp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': anthropicKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 300,
+        messages: [{
+          role: 'user',
+          content: `Evaluate this answer to a psychiatric prescriber's question.
+
+Question: ${question}
+
+Answer: ${answerText}
+
+Sources retrieved: ${sourceCount}
+
+Evaluate:
+1. Does the answer directly address the question? (yes/partial/no)
+2. Is the answer clinically accurate and complete for a PMHNP context?
+3. Are there obvious critical pieces missing?
+4. Is the answer actionable?
+
+Return JSON: {"score": "pass"|"warn"|"fail", "note": "one sentence explaining the rating"}
+
+pass = direct, accurate, complete answer
+warn = mostly good but missing something important or slightly off
+fail = wrong, incomplete to the point of being unhelpful, or dangerously misleading`
+        }]
+      })
+    });
+
+    if (!evalResp.ok) return { score: 'warn', note: 'Could not evaluate this answer.' };
+    var evalData = await evalResp.json();
+    var evalText = evalData.content[0].text.replace(/```json|```/g, '').trim();
+    var parsed = JSON.parse(evalText);
+    return parsed;
+  }
+
+  async function runDiagnostics() {
+    var secret = document.getElementById('secret').value.trim();
+    var qcount = parseInt(document.getElementById('qcount').value) || 30;
+
+    if (!secret) { alert('Enter the backfill secret.'); return; }
+
+    var btn = document.getElementById('runBtn');
+    var spinner = document.getElementById('spinner');
+    var btnLabel = document.getElementById('btnLabel');
+    var progressSection = document.getElementById('progressSection');
+    var report = document.getElementById('report');
+
+    btn.disabled = true;
+    spinner.style.display = 'block';
+    btnLabel.textContent = 'Running...';
+    progressSection.style.display = 'block';
+    report.style.display = 'none';
+    allResults = [];
+
+    try {
+      // Step 1: Get Anthropic key via a test call to anthropic-proxy
+      setProgress(0, qcount + 1, 'Generating ' + qcount + ' test questions...');
+
+      // Generate questions using the anthropic proxy
+      var genResp = await fetch('/.netlify/functions/anthropic-proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 2000,
+          messages: [{
+            role: 'user',
+            content: `Generate ${qcount} diverse, realistic clinical questions that a psychiatric prescriber (PMHNP) would ask in a professional forum about billing, documentation, clinical practice, pharmacology, practice management, legal issues, and coding.
+
+Make them varied in difficulty and phrasing — some short, some detailed, some phrased as a confused beginner, some as an experienced clinician. Cover these categories: billing/CPT codes, MDM documentation, psychotherapy billing (90833), denial management, E/M coding (99213/99214/99215), practice management, pharmacology, clinical documentation, legal/compliance, credentialing, time-based billing.
+
+Return ONLY a JSON array of objects: [{"question": "...", "category": "..."}]. No preamble, no explanation.`
+          }]
+        })
+      });
+
+      if (!genResp.ok) throw new Error('Failed to generate questions: ' + genResp.status);
+      var genData = await genResp.json();
+      var genText = genData.content[0].text.replace(/```json|```/g, '').trim();
+      var questions = JSON.parse(genText);
+
+      if (!Array.isArray(questions) || questions.length === 0) throw new Error('No questions generated');
+
+      // Step 2: Run each question through ask-archive
+      for (var i = 0; i < questions.length; i++) {
+        var q = questions[i];
+        setProgress(i + 1, questions.length + questions.length, 'Running: ' + q.question.substring(0, 80) + '...');
+        document.getElementById('currentQ').textContent = '(' + (i+1) + '/' + questions.length + ') ' + q.category;
+
+        var result = null;
+        try {
+          var archiveResp = await fetch('/.netlify/functions/ask-archive', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question: q.question })
+          });
+          result = await archiveResp.json();
+        } catch(e) {
+          result = { error: e.message };
+        }
+
+        allResults.push({ question: q.question, category: q.category, result: result, evaluation: null });
+
+        // Small delay to avoid rate limiting
+        await sleep(300);
+      }
+
+      // Step 3: Evaluate each answer
+      for (var j = 0; j < allResults.length; j++) {
+        var r = allResults[j];
+        setProgress(questions.length + j + 1, questions.length * 2, 'Evaluating: ' + r.question.substring(0, 60) + '...');
+        document.getElementById('currentQ').textContent = 'Evaluating (' + (j+1) + '/' + allResults.length + ')';
+
+        try {
+          var evalResp = await fetch('/.netlify/functions/anthropic-proxy', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              model: 'claude-sonnet-4-20250514',
+              max_tokens: 200,
+              messages: [{
+                role: 'user',
+                content: `Evaluate this answer to a psychiatric prescriber's question.
+
+Question: ${r.question}
+
+Answer: ${r.result.answer || '[No answer returned]'}
+
+Sources retrieved: ${(r.result.sources || []).length}
+Unanswered: ${r.result.unanswered ? 'yes' : 'no'}
+
+Evaluate whether the answer directly and accurately addresses the question for a psychiatric prescriber (PMHNP). Consider: Is it clinically accurate? Is anything critical missing? Is it actionable?
+
+Return JSON only: {"score": "pass"|"warn"|"fail", "note": "one sentence"}`
+              }]
+            })
+          });
+
+          if (evalResp.ok) {
+            var evalData = await evalResp.json();
+            var evalText = evalData.content[0].text.replace(/```json|```/g, '').trim();
+            r.evaluation = JSON.parse(evalText);
+          }
+        } catch(e) {
+          r.evaluation = { score: r.result.unanswered ? 'warn' : 'pass', note: 'Could not evaluate.' };
+        }
+
+        await sleep(200);
+      }
+
+      renderReport();
+
+    } catch(err) {
+      alert('Diagnostics failed: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      spinner.style.display = 'none';
+      btnLabel.textContent = 'Generate Questions & Run Diagnostics';
+      progressSection.style.display = 'none';
+    }
+  }
+
+  function setProgress(current, total, label) {
+    document.getElementById('progressLabel').textContent = label;
+    document.getElementById('progressBar').style.width = Math.round((current / total) * 100) + '%';
+  }
+
+  function renderReport() {
+    var report = document.getElementById('report');
+    var summaryBar = document.getElementById('summaryBar');
+    var resultsList = document.getElementById('resultsList');
+
+    var pass = allResults.filter(function(r) { return r.evaluation && r.evaluation.score === 'pass'; }).length;
+    var warn = allResults.filter(function(r) { return r.evaluation && r.evaluation.score === 'warn'; }).length;
+    var fail = allResults.filter(function(r) { return r.evaluation && r.evaluation.score === 'fail'; }).length;
+    var total = allResults.length;
+
+    summaryBar.innerHTML =
+      '<div class="stat total"><div class="stat-num">' + total + '</div><div class="stat-label">Total</div></div>' +
+      '<div class="stat pass"><div class="stat-num">' + pass + '</div><div class="stat-label">Pass</div></div>' +
+      '<div class="stat warn"><div class="stat-num">' + warn + '</div><div class="stat-label">Needs Review</div></div>' +
+      '<div class="stat fail"><div class="stat-num">' + fail + '</div><div class="stat-label">Fail</div></div>';
+
+    renderResultsList('all');
+    report.style.display = 'block';
+    report.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function renderResultsList(filter) {
+    var resultsList = document.getElementById('resultsList');
+    resultsList.innerHTML = '';
+
+    var filtered = filter === 'all' ? allResults : allResults.filter(function(r) {
+      return r.evaluation && r.evaluation.score === filter;
+    });
+
+    // Sort: fail first, then warn, then pass
+    filtered = filtered.slice().sort(function(a, b) {
+      var order = { fail: 0, warn: 1, pass: 2 };
+      var aScore = a.evaluation ? order[a.evaluation.score] : 1;
+      var bScore = b.evaluation ? order[b.evaluation.score] : 1;
+      return aScore - bScore;
+    });
+
+    filtered.forEach(function(r, i) {
+      var score = r.evaluation ? r.evaluation.score : 'warn';
+      var note = r.evaluation ? r.evaluation.note : '';
+      var icon = score === 'pass' ? '✓' : score === 'warn' ? '!' : '✗';
+      var sourceCount = (r.result && r.result.sources) ? r.result.sources.length : 0;
+      var answerPreview = (r.result && r.result.answer) ? r.result.answer.substring(0, 300) + (r.result.answer.length > 300 ? '...' : '') : '[No answer]';
+
+      var item = document.createElement('div');
+      item.className = 'result-item';
+      item.dataset.score = score;
+      item.innerHTML =
+        '<div class="result-header" onclick="toggleResult(this)">' +
+          '<div class="status-badge ' + score + '">' + icon + '</div>' +
+          '<div style="flex:1;">' +
+            '<div class="result-q">' + escapeHtml(r.question) + '</div>' +
+            '<span class="category-tag">' + escapeHtml(r.category || '') + '</span>' +
+          '</div>' +
+          '<div class="result-score">' + sourceCount + ' sources</div>' +
+        '</div>' +
+        '<div class="result-body">' +
+          '<div class="eval-note ' + (score !== 'pass' ? score : '') + '">' + escapeHtml(note) + '</div>' +
+          '<div class="answer-preview">' + escapeHtml(answerPreview) + '</div>' +
+          '<div class="sources-count">' + sourceCount + ' sources retrieved' + (r.result && r.result.template_sources && r.result.template_sources.length ? ' · ' + r.result.template_sources.length + ' templates' : '') + '</div>' +
+        '</div>';
+      resultsList.appendChild(item);
+    });
+
+    if (filtered.length === 0) {
+      resultsList.innerHTML = '<div style="padding:20px;text-align:center;color:#9c958f;font-size:14px;">No results in this category.</div>';
+    }
+  }
+
+  function toggleResult(header) {
+    var body = header.nextElementSibling;
+    body.classList.toggle('open');
+  }
+
+  function filterResults(filter, btn) {
+    document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    renderResultsList(filter);
+  }
+
+  function downloadReport() {
+    var rows = [['Question', 'Category', 'Score', 'Note', 'Sources', 'Has Templates', 'Unanswered']];
+    allResults.forEach(function(r) {
+      rows.push([
+        '"' + (r.question || '').replace(/"/g, '""') + '"',
+        '"' + (r.category || '') + '"',
+        r.evaluation ? r.evaluation.score : 'unknown',
+        '"' + (r.evaluation ? r.evaluation.note.replace(/"/g, '""') : '') + '"',
+        (r.result && r.result.sources) ? r.result.sources.length : 0,
+        (r.result && r.result.template_sources && r.result.template_sources.length > 0) ? 'yes' : 'no',
+        (r.result && r.result.unanswered) ? 'yes' : 'no'
+      ]);
+    });
+    var csv = rows.map(function(r) { return r.join(','); }).join('\n');
+    var blob = new Blob([csv], { type: 'text/csv' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'archive-diagnostics-' + new Date().toISOString().split('T')[0] + '.csv';
+    a.click();
+  }
+
+  function escapeHtml(str) {
+    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function sleep(ms) { return new Promise(function(res) { setTimeout(res, ms); }); }
+</script>
+</body>
+</html>
