@@ -51,14 +51,9 @@ exports.handler = async function(event, context) {
     url:        (body.url        || '').trim()
   };
 
-  const response = {
-    statusCode: 202,
-    headers: CORS,
-    body: JSON.stringify({ message: `Ingestion started for "${doc.title}". Check function logs for progress.` })
-  };
-
-  (async () => {
-    try {
+  // For background functions, do the work synchronously before returning
+  // The async IIFE pattern doesn't keep background functions alive
+  try {
       console.log(`[ingest-cms-doc-upload-background] Starting: ${doc.title} (id: ${doc.id})`);
       console.log(`[ingest-cms-doc-upload-background] PDF base64 length: ${pdf.length}`);
 
@@ -133,12 +128,20 @@ exports.handler = async function(event, context) {
 
       console.log(`[ingest-cms-doc-upload-background] COMPLETE: "${doc.title}" — ${chunks.length} chunk(s) upserted.`);
 
-    } catch(e) {
-      console.error(`[ingest-cms-doc-upload-background] ERROR: ${e.message}`);
-    }
-  })();
+    return {
+      statusCode: 200,
+      headers: CORS,
+      body: JSON.stringify({ message: `Complete: ${chunks.length} chunk(s) upserted for "${doc.title}"` })
+    };
 
-  return response;
+  } catch(e) {
+    console.error(`[ingest-cms-doc-upload-background] ERROR: ${e.message}`);
+    return {
+      statusCode: 500,
+      headers: CORS,
+      body: JSON.stringify({ error: e.message })
+    };
+  }
 };
 
 function chunkText(text, maxChars) {
