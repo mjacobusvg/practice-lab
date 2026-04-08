@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ingest CMS Documents — Think Beyond Practice</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #F9F7F5; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .card { background: white; border: 1px solid #E8E3DD; border-radius: 16px; padding: 40px 36px; width: 100%; max-width: 480px; }
+    .logo { width: 48px; height: 48px; background: #1D6FA4; border-radius: 10px; display: flex; align-items: center; justify-content: center; margin-bottom: 20px; }
+    .logo svg { width: 24px; height: 24px; fill: white; }
+    h1 { font-size: 18px; font-weight: 700; color: #1A1714; margin-bottom: 4px; }
+    .sub { font-size: 13px; color: #5C5650; margin-bottom: 24px; line-height: 1.5; }
+    .doc-list { background: #f9f7f5; border: 1px solid #e0dbd4; border-radius: 8px; padding: 14px; margin-bottom: 20px; }
+    .doc-item { font-size: 12px; color: #5c5650; padding: 4px 0; border-bottom: 1px solid #e8e3dd; }
+    .doc-item:last-child { border-bottom: none; }
+    label { display: block; font-size: 11px; font-weight: 700; color: #9C958F; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    input { width: 100%; border: 1.5px solid #E8E3DD; border-radius: 8px; padding: 11px 13px; font-size: 14px; color: #1A1714; background: white; margin-bottom: 14px; }
+    input:focus { outline: none; border-color: #1D6FA4; }
+    button { width: 100%; padding: 12px; background: #1D6FA4; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; }
+    button:hover { background: #185d8c; }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    .spinner { width: 15px; height: 15px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .result { display: none; margin-top: 16px; padding: 14px 16px; border-radius: 8px; font-size: 13px; line-height: 1.6; }
+    .result.success { background: #EBF4FB; border: 1px solid #b3d9f2; color: #1A1714; }
+    .result.error { background: #FDECEA; border: 1px solid #f5c6c6; color: #A32D2D; }
+    .warn { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #92400e; margin-bottom: 16px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="logo">
+      <svg viewBox="0 0 20 20"><path d="M10 2L3 7v11h5v-5h4v5h5V7z"/></svg>
+    </div>
+    <h1>Ingest CMS Documents</h1>
+    <p class="sub">Fetches and indexes CMS public domain documents into the Ask the Archive knowledge base. Run once — re-running will update existing records.</p>
+
+    <div class="doc-list">
+      <div class="doc-item">📄 MLN E&M Services Guide (mln006764)</div>
+      <div class="doc-item">📄 PFS Payment for O/O E&M Visits Fact Sheet</div>
+      <div class="doc-item">📄 Prolonged Services G2212 vs 99417 (r10505cp)</div>
+    </div>
+
+    <div class="warn">⚠️ This function takes 2-3 minutes to complete. Do not close the page.</div>
+
+    <label for="secret">Backfill Secret</label>
+    <input type="password" id="secret" placeholder="Enter secret" autocomplete="off">
+
+    <button id="runBtn" onclick="runIngest()">
+      <div class="spinner" id="spinner"></div>
+      <span id="btnLabel">Ingest CMS Documents</span>
+    </button>
+
+    <div class="result" id="result"></div>
+  </div>
+
+  <script>
+    async function runIngest() {
+      const secret = document.getElementById('secret').value.trim();
+      if (!secret) { showResult('error', 'Enter the backfill secret.'); return; }
+
+      const btn = document.getElementById('runBtn');
+      const spinner = document.getElementById('spinner');
+      const btnLabel = document.getElementById('btnLabel');
+
+      btn.disabled = true;
+      spinner.style.display = 'block';
+      btnLabel.textContent = 'Ingesting... (2-3 min)';
+      document.getElementById('result').style.display = 'none';
+
+      try {
+        const res = await fetch('/.netlify/functions/ingest-cms-docs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ secret })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          showResult('error', data.error || 'Ingestion failed with status ' + res.status);
+        } else {
+          showResult('success',
+            '<strong>Complete.</strong><br>' +
+            'Documents ingested: ' + data.ingested + '<br>' +
+            'Errors: ' + (data.errors ? data.errors.length : 0) +
+            (data.errors && data.errors.length ? '<br><small>' + data.errors.join('<br>') + '</small>' : '')
+          );
+        }
+      } catch(e) {
+        showResult('error', 'Connection error: ' + e.message);
+      } finally {
+        btn.disabled = false;
+        spinner.style.display = 'none';
+        btnLabel.textContent = 'Ingest CMS Documents';
+      }
+    }
+
+    function showResult(type, html) {
+      const el = document.getElementById('result');
+      el.className = 'result ' + type;
+      el.innerHTML = html;
+      el.style.display = 'block';
+    }
+  </script>
+</body>
+</html>
