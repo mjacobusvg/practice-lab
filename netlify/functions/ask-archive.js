@@ -408,12 +408,8 @@ Return only a JSON array of 3 strings. No preamble, no explanation. Example form
 
 FIRST: Assess whether the retrieved sources actually address the question asked.
 
-If the sources do NOT address the question, determine which applies:
-- "unanswered": The question is within the scope of psychiatric prescriber practice — anything a PMHNP might encounter including clinical care, billing, documentation, legal, practice management, medications, therapy techniques, patient communication, ESA/service animals, or any related topic — but the archive doesn't have content on it yet.
-- "out_of_scope": The question has nothing to do with psychiatric prescriber practice (cooking, sports, unrelated hobbies, general life questions unrelated to clinical work).
-
-If unanswered: return { "status": "unanswered" }
-If out_of_scope: return { "status": "out_of_scope" }
+If the sources do NOT address the question — for any reason — return:
+{ "status": "unanswered" }
 
 If the sources DO address the question, return status "answered" with the full structured response.
 
@@ -505,17 +501,6 @@ Return ONLY the JSON object. Nothing before or after it.`;
         body: JSON.stringify({
           unanswered: true,
           answer: "The archive doesn't have content on this topic yet. It's been logged and Michael will be notified."
-        })
-      };
-    }
-
-    if (parsed.status === 'out_of_scope') {
-      return {
-        statusCode: 200,
-        headers: CORS,
-        body: JSON.stringify({
-          out_of_scope: true,
-          answer: "This question is outside the scope of Think Beyond Practice, which focuses on psychiatric prescriber practice, billing, documentation, and clinical care."
         })
       };
     }
