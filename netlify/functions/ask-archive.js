@@ -201,6 +201,44 @@ Return only a JSON array of 3 strings. No preamble, no explanation. Example form
         .slice(0, MATCH_COUNT);
 
       console.log('Expanded search matches:', matches.length, 'from', queryVariants.length, 'variants');
+
+      // ── Parallel template search ─────────────────────────────────────────
+      // Always search for template/macro posts related to the topic so they
+      // appear in context even if their vector score didn't rank them highly
+      const templateSearchRes = await fetch(`${supabaseUrl}/rest/v1/rpc/search_posts_fts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`
+        },
+        body: JSON.stringify({
+          search_query: queryVariants[0].replace(/^(what|how|when|why|can|is|are|do|does)\s+/i, '').substring(0, 60),
+          match_count: 8
+        })
+      });
+
+      if (templateSearchRes.ok) {
+        const templateMatches = await templateSearchRes.json();
+        const TEMPLATE_KEYWORDS = ['template', 'macro', 'phrasing', 'dotphrase', 'snippet', 'language', 'documentation'];
+        const templatePosts = templateMatches.filter(function(m) {
+          const titleLower = (m.title || '').toLowerCase();
+          return TEMPLATE_KEYWORDS.some(function(kw) { return titleLower.includes(kw); });
+        });
+
+        // Add template posts to matches if not already present
+        const existingIds = new Set(matches.map(function(m) { return m.id; }));
+        templatePosts.forEach(function(tp) {
+          if (!existingIds.has(tp.id)) {
+            tp._isTemplateCandidate = true;
+            matches.push(tp);
+          }
+        });
+
+        console.log('Template candidates added:', templatePosts.filter(function(tp) {
+          return !existingIds.has(tp.id);
+        }).length);
+      }
     }
 
     // ── Step 2: Handle meta/browse questions ────────────────────────────────
@@ -361,47 +399,57 @@ Return only a JSON array of 3 strings. No preamble, no explanation. Example form
 
     // ── Step 5: Build context for Claude ────────────────────────────────────
     const contextBlocks = enrichedChunks.map(function(chunk, i) {
-      return `[Source ${i + 1}]\nTitle: ${chunk.title}\nSpace: ${chunk.space_name}\nAuthor: ${chunk.author}\nURL: ${chunk.url}\n\n${chunk.body}`;
+      const templateFlag = chunk._isTemplateCandidate ? '\n[NOTE: This post contains templates or macros]' : '';
+      return `[Source ${i + 1}]\nTitle: ${chunk.title}\nSpace: ${chunk.space_name}\nAuthor: ${chunk.author}\nURL: ${chunk.url}${templateFlag}\n\n${chunk.body}`;
     }).join('\n\n---\n\n');
 
     // ── Step 6: Build messages for Claude ───────────────────────────────────
     const systemPrompt = `You are Ask the Archive, a tool that answers clinical, billing, and practice management questions for psychiatric prescribers using content from the Think Beyond Practice forum written by Michael Van Gelder, PMHNP-BC.
 
-Your answers must be grounded exclusively in the source content provided. Do not add general medical knowledge, generic advice, or anything not present in the sources.
+FIRST: Assess whether the retrieved sources actually address the question asked.
 
-Format every answer in exactly this structure:
+If the sources do NOT address the question, determine which applies:
+- "unanswered": The question is within the scope of psychiatric prescriber practice — anything a PMHNP might encounter including clinical care, billing, documentation, legal, practice management, medications, therapy techniques, patient communication, ESA/service animals, or any related topic — but the archive doesn't have content on it yet.
+- "out_of_scope": The question has nothing to do with psychiatric prescriber practice (cooking, sports, unrelated hobbies, general life questions unrelated to clinical work).
+
+If unanswered: return { "status": "unanswered" }
+If out_of_scope: return { "status": "out_of_scope" }
+
+If the sources DO address the question, return status "answered" with the full structured response.
+
+Format answered responses in exactly this structure:
 
 1. What to do — one direct, actionable sentence that answers the question immediately. No preamble, no setup, no "it depends." If there are multiple components, they go in Required elements — do NOT embed them in this sentence.
 
 2. Required elements — when the answer involves specific components, document them as a clean line-item list. Each item on its own line. Never fold these into a paragraph.
 
-3. Critical rule — one line only. Include ONLY when the source content contains a hard rule clinicians commonly violate or get wrong (e.g. "Do not write 'patient is cleared for surgery'" or "You cannot use time as the basis for E/M when billing add-on psychotherapy codes"). Skip this section entirely if no such rule exists in the retrieved content.
+3. Critical rule — one line only. Include ONLY when the source content contains a hard rule clinicians commonly violate or get wrong. Skip entirely if no such rule exists in the retrieved content.
 
-4. Example — pulled directly from the language in the source posts. Include only when present in retrieved content — do not generate. Keep it to 2-3 lines maximum — just the core snippet, not the full note.
+4. Example — pulled directly from the language in the source posts. Include only when present in retrieved content — do not generate. Keep it to 2-3 lines maximum.
 
 5. Common mistake — one line identifying the most frequent error. Include only when present in retrieved content.
 
-Keep the answer section under 200 words. If the content requires more, prioritize the most actionable elements and leave depth to the source links.
+Keep the answer section under 200 words. Prioritize the most actionable elements and leave depth to the source links.
 
 Do NOT open with explanation or context. The first sentence must be the answer.
 Do NOT include a "Go deeper in these posts" line or any source references in the answer text. Sources are rendered separately by the UI.
 
-CRITICAL: Your entire response must be valid JSON. Do not write anything outside the JSON object. Do not use markdown. Do not add explanation. Start your response with { and end with }.
+CRITICAL: Your entire response must be valid JSON. Start with { and end with }. Nothing outside the JSON object.
 
-Return your response as JSON with exactly these fields:
+For answered questions:
 {
+  "status": "answered",
   "answer": "the full answer text following the structure above",
   "source_descriptions": [
-    { "index": 1, "description": "one-line max 12 words describing what this source covers" },
-    { "index": 2, "description": "one-line max 12 words describing what this source covers" }
+    { "index": 1, "description": "one-line max 12 words describing what this source covers" }
   ],
   "template_sources": [
     { "index": 1, "template_description": "one-line description of what template this source contains" }
   ]
 }
 
-Include one entry in source_descriptions for every source provided. Keep each description to 12 words or fewer to stay within token limits.
-For template_sources: only include sources with actual usable templates, sample language, macros, or downloadable documents. Return empty array if none.
+Include one entry in source_descriptions for every source. Keep each to 12 words or fewer.
+For template_sources: only include sources with actual usable templates, sample language, macros, or downloadable documents. Sources flagged with [NOTE: This post contains templates or macros] should be prioritized. Return empty array if none.
 Return ONLY the JSON object. Nothing before or after it.`;
 
     const userMessage = `Forum sources:\n\n${contextBlocks}\n\n---\n\nQuestion: ${question}`;
@@ -445,6 +493,31 @@ Return ONLY the JSON object. Nothing before or after it.`;
     } catch(e) {
       console.log('JSON parse error:', e.message, 'Raw:', rawText.substring(0, 300));
       return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Response parse failed' }) };
+    }
+
+    // ── Handle three response states ─────────────────────────────────────────
+    if (parsed.status === 'unanswered') {
+      await logUnanswered(supabaseUrl, supabaseKey, question, memberRequested);
+      await sendUnansweredEmail(resendKey, question);
+      return {
+        statusCode: 200,
+        headers: CORS,
+        body: JSON.stringify({
+          unanswered: true,
+          answer: "The archive doesn't have content on this topic yet. It's been logged and Michael will be notified."
+        })
+      };
+    }
+
+    if (parsed.status === 'out_of_scope') {
+      return {
+        statusCode: 200,
+        headers: CORS,
+        body: JSON.stringify({
+          out_of_scope: true,
+          answer: "This question is outside the scope of Think Beyond Practice, which focuses on psychiatric prescriber practice, billing, documentation, and clinical care."
+        })
+      };
     }
 
     // ── Step 8: Build source list with descriptions ──────────────────────────
