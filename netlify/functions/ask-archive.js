@@ -90,17 +90,11 @@ exports.handler = async function(event, context) {
   }
 
   try {
-    // ── Step 1: Embed the question (skip for meta/browse questions) ──────────
-    let embedding = null;
-    if (!isMetaQuestion(question)) {
-      embedding = await getEmbedding(question, openaiKey);
-    }
-
-    // ── Step 2: Vector similarity search or full-text search ───────────────
+    // ── Step 1: Query expansion + embedding (skip for meta/browse questions) ──
     let matches;
 
     if (isMetaQuestion(question)) {
-      // Full-text keyword search for browse/meta questions
+      // ── Full-text keyword search for browse/meta questions ─────────────────
       const topic = extractTopic(question);
       console.log('FTS topic:', topic);
 
@@ -125,33 +119,91 @@ exports.handler = async function(event, context) {
         matches = await ftsRes.json();
         console.log('FTS matches:', matches.length);
       }
+
     } else {
-      // Vector similarity search for clinical questions
-      const matchRes = await fetch(`${supabaseUrl}/rest/v1/rpc/match_posts`, {
+      // ── Query expansion for clinical questions ─────────────────────────────
+      // Generate 3 semantic variants of the question so we catch content that
+      // uses different terminology than the member's phrasing
+      const expansionRes = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`
+          'x-api-key': anthropicKey,
+          'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          query_embedding: embedding,
-          match_threshold: MATCH_THRESHOLD,
-          match_count: MATCH_COUNT
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 200,
+          messages: [{
+            role: 'user',
+            content: `You are helping search a psychiatric prescriber forum. Given this question: "${question}"
+
+Generate 3 alternative phrasings that capture the same clinical concept but use different terminology an expert might use when writing about this topic. Think about how the answer would be written, not how the question is asked.
+
+Return only a JSON array of 3 strings. No preamble, no explanation. Example format: ["phrase 1", "phrase 2", "phrase 3"]`
+          }]
         })
       });
 
-      if (!matchRes.ok) {
-        const err = await matchRes.text();
-        console.log('match_posts error:', err.substring(0, 200));
-        return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Search failed' }) };
+      let queryVariants = [question];
+      if (expansionRes.ok) {
+        try {
+          const expansionData = await expansionRes.json();
+          const expansionText = expansionData.content[0].text.replace(/```json|```/g, '').trim();
+          const variants = JSON.parse(expansionText);
+          if (Array.isArray(variants)) {
+            queryVariants = [question, ...variants].slice(0, 4);
+          }
+        } catch(e) {
+          console.log('Query expansion parse error:', e.message);
+        }
       }
 
-      matches = await matchRes.json();
-      console.log('Vector matches:', matches.length);
+      console.log('Query variants:', queryVariants);
+
+      // Embed all variants in parallel
+      const embeddings = await Promise.all(
+        queryVariants.map(function(q) { return getEmbedding(q, openaiKey); })
+      );
+
+      // Run vector search for each embedding in parallel
+      const searchResults = await Promise.all(
+        embeddings.map(function(emb) {
+          return fetch(`${supabaseUrl}/rest/v1/rpc/match_posts`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': supabaseKey,
+              'Authorization': `Bearer ${supabaseKey}`
+            },
+            body: JSON.stringify({
+              query_embedding: emb,
+              match_threshold: MATCH_THRESHOLD,
+              match_count: MATCH_COUNT
+            })
+          }).then(function(r) { return r.ok ? r.json() : []; });
+        })
+      );
+
+      // Merge results — dedupe by id, keep highest similarity score per record
+      const mergedMap = {};
+      searchResults.forEach(function(resultSet) {
+        (resultSet || []).forEach(function(record) {
+          if (!mergedMap[record.id] || (record.similarity > mergedMap[record.id].similarity)) {
+            mergedMap[record.id] = record;
+          }
+        });
+      });
+
+      // Sort by similarity descending, take top MATCH_COUNT
+      matches = Object.values(mergedMap)
+        .sort(function(a, b) { return (b.similarity || 0) - (a.similarity || 0); })
+        .slice(0, MATCH_COUNT);
+
+      console.log('Expanded search matches:', matches.length, 'from', queryVariants.length, 'variants');
     }
 
-    // ── Step 3: Handle meta/browse questions ────────────────────────────────
+    // ── Step 2: Handle meta/browse questions ────────────────────────────────
     if (isMetaQuestion(question)) {
 
       // Filter out housekeeping/announcement spaces that aren't content posts
@@ -325,7 +377,7 @@ Format every answer in exactly this structure:
 
 3. Critical rule — one line only. Include ONLY when the source content contains a hard rule clinicians commonly violate or get wrong (e.g. "Do not write 'patient is cleared for surgery'" or "You cannot use time as the basis for E/M when billing add-on psychotherapy codes"). Skip this section entirely if no such rule exists in the retrieved content.
 
-4. Example — pulled directly from the language in the source posts. Include only when present in retrieved content — do not generate. Keep it short and copyable.
+4. Example — pulled directly from the language in the source posts. Include only when present in retrieved content — do not generate. Keep it to 2-3 lines maximum — just the core snippet, not the full note.
 
 5. Common mistake — one line identifying the most frequent error. Include only when present in retrieved content.
 
