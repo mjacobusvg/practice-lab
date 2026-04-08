@@ -9,7 +9,7 @@
 
 const MATCH_THRESHOLD = 0.45;
 const BROWSE_THRESHOLD = 0.38;
-const MATCH_COUNT = 14;
+const MATCH_COUNT = 20;
 
 // Patterns that indicate a browse/meta question rather than a clinical question
 const META_PATTERNS = [
@@ -139,6 +139,8 @@ exports.handler = async function(event, context) {
             content: `You are helping search a psychiatric prescriber forum. Given this question: "${question}"
 
 Generate 3 alternative phrasings that capture the same clinical concept but use different terminology an expert might use when writing about this topic. Think about how the answer would be written, not how the question is asked.
+
+Important: For any billing or E/M coding question, always include one variant covering time-based billing and one covering MDM-based billing, since both are valid paths.
 
 Return only a JSON array of 3 strings. No preamble, no explanation. Example format: ["phrase 1", "phrase 2", "phrase 3"]`
           }]
@@ -396,6 +398,102 @@ Return only a JSON array of 3 strings. No preamble, no explanation. Example form
 
     // ── Step 4: Enrich comment chunks with parent post context ──────────────
     const enrichedChunks = await enrichCommentChunks(matches, supabaseUrl, supabaseKey);
+
+    // ── Step 4b: Gap detection — identify what's missing and fill it ─────────
+    // Ask Claude to look at retrieved titles and identify critical topic gaps
+    const retrievedTitles = enrichedChunks.map(function(c) { return c.title; }).join('\n');
+
+    const gapRes = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': anthropicKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 150,
+        messages: [{
+          role: 'user',
+          content: `A member asked: "${question}"
+
+These posts were retrieved to answer it:
+${retrievedTitles}
+
+Identify up to 2 critical topic angles that are likely needed for a complete answer but appear MISSING from the retrieved posts. For each gap, write a short search phrase (3-6 words) that would find the missing content.
+
+Return only a JSON array of search phrases, or empty array if nothing is missing. Example: ["time-based billing E/M", "modifier 25 rules"]`
+        }]
+      })
+    });
+
+    if (gapRes.ok) {
+      try {
+        const gapData = await gapRes.json();
+        const gapText = gapData.content[0].text.replace(/```json|```/g, '').trim();
+        const gapPhrases = JSON.parse(gapText);
+
+        if (Array.isArray(gapPhrases) && gapPhrases.length > 0) {
+          console.log('Gap phrases identified:', gapPhrases);
+
+          // Run gap-filling searches in parallel
+          const gapResults = await Promise.all(
+            gapPhrases.map(function(phrase) {
+              return fetch(`${supabaseUrl}/rest/v1/rpc/match_posts`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'apikey': supabaseKey,
+                  'Authorization': `Bearer ${supabaseKey}`
+                },
+                body: JSON.stringify({
+                  query_embedding: null, // will be replaced below
+                  match_threshold: MATCH_THRESHOLD,
+                  match_count: 5
+                })
+              }).then(function() { return phrase; }); // placeholder — embed below
+            })
+          );
+
+          // Embed gap phrases and search
+          const existingIds = new Set(enrichedChunks.map(function(c) { return c.id; }));
+
+          for (const phrase of gapPhrases) {
+            try {
+              const gapEmbedding = await getEmbedding(phrase, openaiKey);
+              const gapSearchRes = await fetch(`${supabaseUrl}/rest/v1/rpc/match_posts`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'apikey': supabaseKey,
+                  'Authorization': `Bearer ${supabaseKey}`
+                },
+                body: JSON.stringify({
+                  query_embedding: gapEmbedding,
+                  match_threshold: MATCH_THRESHOLD,
+                  match_count: 5
+                })
+              });
+
+              if (gapSearchRes.ok) {
+                const gapMatches = await gapSearchRes.json();
+                gapMatches.forEach(function(m) {
+                  if (!existingIds.has(m.id) && m.url) {
+                    existingIds.add(m.id);
+                    enrichedChunks.push(m);
+                    console.log('Gap filled:', m.title);
+                  }
+                });
+              }
+            } catch(ge) {
+              console.log('Gap search error:', ge.message);
+            }
+          }
+        }
+      } catch(ge) {
+        console.log('Gap detection parse error:', ge.message);
+      }
+    }
 
     // ── Step 5: Build context for Claude ────────────────────────────────────
     const contextBlocks = enrichedChunks.map(function(chunk, i) {
