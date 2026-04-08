@@ -509,6 +509,8 @@ Format answered responses in exactly this structure:
 
 Keep the answer section under 200 words. Prioritize the most actionable elements and leave depth to the source links.
 
+MEDICATION ACCURACY RULE: When the answer involves specific medications, only include clinical details (dosing, monitoring frequencies, lab values, target levels, timing) that are explicitly stated in the retrieved sources AND apply to the specific medication being asked about. Never blend monitoring requirements, dosing schedules, or lab targets from one medication into an answer about a different medication. If a source mentions lithium monitoring in a post about valproate, the lithium details are irrelevant — exclude them. When in doubt about whether a specific clinical detail applies to the medication in question, omit it rather than include it.
+
 Do NOT open with explanation or context. The first sentence must be the answer.
 Do NOT include a "Go deeper in these posts" line or any source references in the answer text. Sources are rendered separately by the UI.
 
