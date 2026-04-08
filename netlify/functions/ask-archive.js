@@ -528,7 +528,7 @@ For answered questions:
   ]
 }
 
-Include one entry in source_descriptions for EVERY source without exception. Every single source must have a description — no source may be left without one. If a source is a comment with no clear topic, describe what clinical issue it addresses based on its content. Keep each to 12 words or fewer. A blank description is never acceptable.
+Include one entry in source_descriptions for EVERY source without exception. Count your sources first, then ensure your source_descriptions array has exactly that same number of entries. Every single source must have a description — no source may be left without one. If a source is a comment with no clear topic, describe what clinical issue it addresses based on its content. Keep each to 12 words or fewer. Missing even one description is a failure.
 For template_sources: only include sources with actual usable templates, sample language, macros, or downloadable documents. Sources flagged with [NOTE: This post contains templates or macros] should be prioritized. Return empty array if none.
 Return ONLY the JSON object. Nothing before or after it.`;
 
