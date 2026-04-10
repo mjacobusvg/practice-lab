@@ -255,15 +255,11 @@ For answered questions:
 {
   "status": "answered",
   "answer": "the full answer text following the structure above",
-  "source_descriptions": [
-    { "index": 1, "description": "one-line max 12 words describing what this source covers" }
-  ],
   "template_sources": [
     { "index": 1, "template_description": "one-line description of what template this source contains" }
   ]
 }
 
-Count your sources first. source_descriptions must have one entry per source — no exceptions. If a source is a bare comment, describe the clinical issue it addresses. Missing any description is a failure.
 For template_sources: only include sources with actual usable templates, sample language, macros, or downloadable documents. Return empty array if none.
 Return ONLY the JSON object. Nothing before or after it.`;
 
@@ -272,7 +268,7 @@ Return ONLY the JSON object. Nothing before or after it.`;
     const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 3500, system: systemPrompt, messages: messages })
+      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2000, system: systemPrompt, messages: messages })
     });
 
     if (!claudeRes.ok) throw new Error('Claude synthesis failed');
@@ -289,8 +285,29 @@ Return ONLY the JSON object. Nothing before or after it.`;
       return { statusCode: 200, body: '' };
     }
 
-    const sourceDescMap = {};
-    (parsed.source_descriptions || []).forEach(function(s) { sourceDescMap[s.index] = s.description; });
+    // ── Separate call for source descriptions ────────────────────────────────
+    const sourceListText = enrichedChunks.map(function(chunk, i) {
+      return `[${i+1}] Title: ${chunk.title} | Space: ${chunk.space_name} | Body excerpt: ${(chunk.body||'').substring(0, 150)}`;
+    }).join('\n');
+
+    const descRes = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: `For each of these ${enrichedChunks.length} forum sources, write a description of max 10 words describing what clinical issue it covers. Return ONLY a JSON array like: [{"index":1,"description":"..."},{"index":2,"description":"..."}]. Every source must have an entry — no exceptions.\n\n${sourceListText}` }]
+      })
+    });
+
+    let sourceDescMap = {};
+    if (descRes.ok) {
+      try {
+        const descData = await descRes.json();
+        const descParsed = JSON.parse(descData.content[0].text.replace(/```json|```/g, '').trim());
+        descParsed.forEach(function(s) { sourceDescMap[s.index] = s.description; });
+      } catch(e) { console.log('Description parse error:', e.message); }
+    }
 
     const sources = enrichedChunks.map(function(chunk, i) {
       return { title: chunk.title, space: chunk.space_name, author: chunk.author, url: chunk.url, description: sourceDescMap[i+1] || '' };
