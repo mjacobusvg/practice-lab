@@ -2,7 +2,7 @@
 // Background function — full RAG pipeline, saves result to Supabase jobs table
 // Called by ask-archive.js dispatcher, result retrieved by ask-archive-poll.js
 
-const MATCH_THRESHOLD = 0.45;
+const MATCH_THRESHOLD = 0.40;
 const MATCH_COUNT = 12;
 
 const META_PATTERNS = [
