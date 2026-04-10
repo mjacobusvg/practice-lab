@@ -9,7 +9,7 @@
 
 const MATCH_THRESHOLD = 0.45;
 const BROWSE_THRESHOLD = 0.38;
-const MATCH_COUNT = 20;
+const MATCH_COUNT = 12;
 
 // Patterns that indicate a browse/meta question rather than a clinical question
 const META_PATTERNS = [
@@ -551,7 +551,7 @@ Return ONLY the JSON object. Nothing before or after it.`;
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 2500,
+        max_tokens: 3500,
         system: systemPrompt,
         messages: messages
       })
