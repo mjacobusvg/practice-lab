@@ -45,7 +45,7 @@ exports.handler = async function(event, context) {
   const resendKey = process.env.RESEND_API_KEY;
 
   async function saveResult(result) {
-    await fetch(`${supabaseUrl}/rest/v1/archive_jobs`, {
+    const saveRes = await fetch(`${supabaseUrl}/rest/v1/archive_jobs`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -60,6 +60,12 @@ exports.handler = async function(event, context) {
         created_at: new Date().toISOString()
       })
     });
+    if (!saveRes.ok) {
+      const errText = await saveRes.text();
+      console.error('saveResult FAILED:', saveRes.status, errText.substring(0, 200));
+    } else {
+      console.log('saveResult OK for job:', job_id);
+    }
   }
 
   try {
