@@ -117,6 +117,7 @@ exports.handler = async function(event, context) {
       matches = Object.values(mergedMap).sort(function(a, b) { return (b.similarity||0)-(a.similarity||0); }).slice(0, MATCH_COUNT);
 
       console.log('Expanded search matches:', matches.length);
+      console.log('Starting template search...');
 
       // Template search
       const templateSearchRes = await fetch(`${supabaseUrl}/rest/v1/rpc/search_posts_fts`, {
@@ -161,7 +162,9 @@ exports.handler = async function(event, context) {
     }
 
     // Enrich
+    console.log('Starting enrichment for', matches.length, 'matches...');
     const enrichedChunks = await enrichCommentChunksParallel(matches, supabaseUrl, supabaseKey);
+    console.log('Enrichment complete:', enrichedChunks.length, 'chunks');
 
     // Gap detection
     try {
@@ -203,6 +206,8 @@ exports.handler = async function(event, context) {
         }
       }
     } catch(ge) { console.log('Gap detection skipped:', ge.message); }
+
+    console.log('Starting Claude synthesis with', enrichedChunks.length, 'chunks...');
 
     // Build context
     const contextBlocks = enrichedChunks.map(function(chunk, i) {
@@ -265,6 +270,8 @@ Return ONLY the JSON object. Nothing before or after it.`;
     });
 
     if (!claudeRes.ok) throw new Error('Claude synthesis failed');
+
+    console.log('Claude synthesis complete, saving result...');
 
     const claudeData = await claudeRes.json();
     const parsed = JSON.parse(claudeData.content[0].text.replace(/```json|```/g, '').trim());
