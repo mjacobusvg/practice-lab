@@ -118,10 +118,12 @@
           return;
         }
 
-        // Step 2: Poll for result — 1.5s initial delay, then 1s interval, 90 attempts max (~91.5s total)
+        // Step 2: Poll for result — 2s initial delay, then 1s interval, 90 attempts max
+        // If complete result comes back but has no answer and no unanswered flag, keep polling —
+        // this handles the case where the background function saved a partial or empty result
         var data = null;
         var attempts = 0;
-        await new Promise(function(r) { setTimeout(r, 1500); });
+        await new Promise(function(r) { setTimeout(r, 2000); });
         while (attempts < 90) {
           await new Promise(function(r) { setTimeout(r, 1000); });
           attempts++;
@@ -131,13 +133,21 @@
             body: JSON.stringify({ job_id: job_id })
           });
           var pollData = await pollResp.json();
-          if (pollData.status === 'complete') { data = pollData.result; break; }
+          if (pollData.status === 'complete') {
+            var candidate = pollData.result;
+            // Only accept if it has actual content — answer, browse, or explicit unanswered flag
+            if (candidate && (candidate.answer || candidate.browse || candidate.unanswered === true || candidate.error)) {
+              data = candidate;
+              break;
+            }
+            // Otherwise result is malformed — keep polling
+          }
         }
 
         loading.style.display = 'none';
 
         if (!data) {
-          error.textContent = 'The archive is taking longer than expected. Please try again.';
+          error.textContent = 'The archive took too long to respond. This is usually a temporary issue — please try your question again.';
           error.style.display = 'block';
           btn.disabled = false;
           return;
