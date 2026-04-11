@@ -21,7 +21,7 @@
   .filter-btn { padding: 6px 14px; border: 1px solid #e0dbd4; border-radius: 20px; background: white; font-size: 13px; cursor: pointer; }
   .filter-btn.active { background: #1d6fa4; color: white; border-color: #1d6fa4; }
   .search-input { padding: 7px 12px; border: 1px solid #e0dbd4; border-radius: 20px; font-size: 13px; font-family: inherit; width: 220px; }
-  .question-card { background: white; border: 1px solid #e0dbd4; border-radius: 8px; padding: 14px 16px; margin-bottom: 8px; }
+  .question-card { background: white; border: 1px solid #e0dbd4; border-radius: 8px; padding: 14px 16px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 12px; }
   .question-text { font-size: 14px; color: #1a1714; margin-bottom: 6px; }
   .question-meta { font-size: 12px; color: #8a847e; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
   .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
@@ -31,6 +31,12 @@
   .empty { text-align: center; padding: 40px; color: #8a847e; font-size: 14px; }
   .dashboard { display: none; }
   .loading-msg { color: #5c5650; font-size: 14px; margin-top: 12px; display: none; }
+  .question-card { display: flex; align-items: flex-start; gap: 12px; }
+  .question-card .card-body { flex: 1; }
+  .delete-btn { background: none; border: none; color: #c4b5a5; font-size: 16px; cursor: pointer; padding: 2px 4px; border-radius: 4px; flex-shrink: 0; line-height: 1; }
+  .delete-btn:hover { color: #dc2626; background: #fee2e2; }
+  .delete-all-btn { padding: 6px 14px; border: 1px solid #fca5a5; border-radius: 20px; background: white; color: #dc2626; font-size: 13px; cursor: pointer; }
+  .delete-all-btn:hover { background: #fee2e2; }
 </style>
 </head>
 <body>
@@ -53,6 +59,7 @@
     <button class="filter-btn" id="filter-requested" onclick="setFilter('requested')">Member Requested</button>
     <button class="filter-btn" id="filter-template" onclick="setFilter('template')">Template Requests</button>
     <input type="text" class="search-input" id="search-input" placeholder="Search questions..." oninput="renderList()" />
+    <button class="delete-all-btn" onclick="deleteAll()">Delete All Visible</button>
   </div>
 
   <div id="questions-list"></div>
@@ -179,14 +186,85 @@
       if (q.count > 1) badges += '<span class="badge count-badge">Asked ' + q.count + 'x</span>';
       if (q.member_requested) badges += '<span class="badge badge-requested">Member requested</span>';
       if (q.is_template) badges += '<span class="badge badge-template">Template request</span>';
-      return '<div class="question-card">' +
-        '<div class="question-text">' + escHtml(q.question) + '</div>' +
-        '<div class="question-meta">' +
-          (date ? '<span>' + date + '</span>' : '') +
-          badges +
+      var qKey = escHtml(q.question);
+      return '<div class="question-card" data-key="' + qKey + '">' +
+        '<div class="card-body">' +
+          '<div class="question-text">' + escHtml(q.question) + '</div>' +
+          '<div class="question-meta">' +
+            (date ? '<span>' + date + '</span>' : '') +
+            badges +
+          '</div>' +
         '</div>' +
+        '<button class="delete-btn" onclick="deleteQuestion(this, ' + JSON.stringify(q.question) + ')" title="Delete">✕</button>' +
       '</div>';
     }).join('');
+  }
+
+  async function deleteQuestion(btn, question) {
+    var secret = document.getElementById('secret').value.trim();
+    var card = btn.closest('.question-card');
+    btn.disabled = true;
+    btn.textContent = '...';
+    try {
+      var resp = await fetch('/.netlify/functions/ask-archive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete_unanswered', secret: secret, question: question })
+      });
+      var data = await resp.json();
+      if (data.success) {
+        // Remove from allQuestions
+        var lower = question.toLowerCase().trim();
+        allQuestions = allQuestions.filter(function(q) { return q.question.toLowerCase().trim() !== lower; });
+        card.remove();
+        renderStats();
+      } else {
+        btn.disabled = false;
+        btn.textContent = '✕';
+      }
+    } catch(e) {
+      btn.disabled = false;
+      btn.textContent = '✕';
+    }
+  }
+
+  async function deleteAll() {
+    var secret = document.getElementById('secret').value.trim();
+    var search = document.getElementById('search-input').value.toLowerCase();
+
+    // Determine which questions are currently visible
+    var visible = allQuestions.filter(function(q) {
+      if (currentFilter === 'requested' && (!q.member_requested || q.question.startsWith('[TEMPLATE'))) return false;
+      if (currentFilter === 'template' && !q.question.startsWith('[TEMPLATE')) return false;
+      if (search && !q.question.toLowerCase().includes(search)) return false;
+      return true;
+    });
+
+    var count = visible.length;
+    if (count === 0) return;
+    if (!confirm('Delete all ' + count + ' visible questions? This cannot be undone.')) return;
+
+    var btn = document.querySelector('.delete-all-btn');
+    btn.disabled = true;
+    btn.textContent = 'Deleting...';
+
+    try {
+      var resp = await fetch('/.netlify/functions/ask-archive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete_unanswered_bulk', secret: secret, questions: visible.map(function(q) { return q.question; }) })
+      });
+      var data = await resp.json();
+      if (data.success) {
+        var visibleLower = new Set(visible.map(function(q) { return q.question.toLowerCase().trim(); }));
+        allQuestions = allQuestions.filter(function(q) { return !visibleLower.has(q.question.toLowerCase().trim()); });
+        renderStats();
+        renderList();
+      }
+    } catch(e) {}
+
+    btn.disabled = false;
+    btn.textContent = 'Delete All Visible';
   }
 
   function escHtml(s) {
