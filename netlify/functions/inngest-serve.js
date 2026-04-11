@@ -1,7 +1,10 @@
 // netlify/functions/inngest-serve.js
-// Inngest serve endpoint  registers functions with Inngest and handles invocations.
-// This replaces ask-archive-background.js as the pipeline worker.
-// Inngest handles retries, logging, and reliable execution.
+// Inngest serve endpoint using the official Inngest SDK.
+// Registers the Ask the Archive pipeline function with Inngest.
+// Inngest handles reliable invocation, retries, and logging.
+
+const { Inngest } = require('inngest');
+const { serve } = require('inngest/lambda');
 
 const MATCH_THRESHOLD = 0.35;
 const MATCH_COUNT = 20;
@@ -33,42 +36,129 @@ function isMetaQuestion(q) {
 }
 
 
+const META_PATTERNS = [
+  /^are there (any )?posts? on /i,
+  /^do you have (anything|any posts?) (on|about) /i,
+  /^what (do you have|posts?) (on|about) /i,
+  /^is there anything (on|about) /i,
+  /^show me (posts?|anything) (on|about) /i,
+  /^find (posts?|anything) (on|about) /i,
+  /^any posts? (on|about) /i,
+];
+
+function extractTopic(q) {
+  return q
+    .replace(/^are there (any )?posts? on /i, '')
+    .replace(/^do you have (anything|any posts?) (on|about) /i, '')
+    .replace(/^what (do you have|posts?) (on|about) /i, '')
+    .replace(/^is there anything (on|about) /i, '')
+    .replace(/^show me (posts?|anything) (on|about) /i, '')
+    .replace(/^find (posts?|anything) (on|about) /i, '')
+    .replace(/^any posts? (on|about) /i, '')
+    .trim();
+}
+
+function isMetaQuestion(q) {
+  return META_PATTERNS.some(function(p) { return p.test(q); });
+}
 
 
-// Called by Inngest when the ask-archive/question.submitted event fires.
-// Runs the full RAG pipeline and saves result to Supabase archive_jobs table.
+async function getEmbedding(text, apiKey) {
+  const resp = await fetch('https://api.openai.com/v1/embeddings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({ model: 'text-embedding-3-small', input: text.substring(0, 8000), dimensions: 1536 })
+  });
+  if (!resp.ok) throw new Error('OpenAI embedding failed');
+  const data = await resp.json();
+  return data.data[0].embedding;
+}
 
-async function runPipeline(data) {
-  const { job_id, question, member_requested, conversation_history } = data;
-  const conversationHistory = conversation_history || [];
-
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
-  const openaiKey = process.env.OPENAI_API_KEY;
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  const resendKey = process.env.RESEND_API_KEY;
-
-  async function saveResult(result) {
-    const saveRes = await fetch(`${supabaseUrl}/rest/v1/archive_jobs?job_id=eq.${job_id}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'apikey': supabaseKey,
-        'Authorization': `Bearer ${supabaseKey}`,
-        'Prefer': 'return=minimal'
-      },
-      body: JSON.stringify({
-        status: 'complete',
-        result: JSON.stringify(result)
-      })
-    });
-    if (!saveRes.ok) {
-      const errText = await saveRes.text();
-      console.error('saveResult FAILED:', saveRes.status, errText.substring(0, 200));
-    } else {
-      console.log('saveResult OK for job:', job_id);
+async function enrichCommentChunksParallel(matches, supabaseUrl, supabaseKey) {
+  return Promise.all(matches.map(async function(chunk) {
+    if (chunk.id && chunk.id.startsWith('comment_') && chunk.circle_post_id) {
+      try {
+        const parentRes = await fetch(
+          `${supabaseUrl}/rest/v1/posts?id=eq.post_${chunk.circle_post_id}&select=title,body,url,space_name,author&limit=1`,
+          { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
+        );
+        if (parentRes.ok) {
+          const parentData = await parentRes.json();
+          if (parentData.length > 0) {
+            const parent = parentData[0];
+            return { ...chunk, title: chunk.title||parent.title, url: chunk.url||parent.url, space_name: chunk.space_name||parent.space_name, author: chunk.author||parent.author, body: `[From post: ${parent.title}]\n\n${chunk.body}` };
+          }
+        }
+      } catch(e) {}
     }
-  }
+    return chunk;
+  }));
+}
+
+async function logUnanswered(supabaseUrl, supabaseKey, question, memberRequested) {
+  try {
+    await fetch(`${supabaseUrl}/rest/v1/unanswered_questions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Prefer': 'return=minimal' },
+      body: JSON.stringify({ question, member_requested: memberRequested, created_at: new Date().toISOString() })
+    });
+  } catch(e) {}
+}
+
+async function sendUnansweredEmail(resendKey, question) {
+  if (!resendKey) return;
+  try {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${resendKey}` },
+      body: JSON.stringify({ from: 'Ask the Archive <noreply@thinkbeyondpractice.com>', to: ['michael@thinkbeyondpsych.com'], subject: 'Ask the Archive — Unanswered Question', html: `<p>A member asked a question the archive couldn't answer:</p><blockquote>${question}</blockquote>` })
+    });
+  } catch(e) {}
+}
+
+
+// Initialize Inngest client
+const inngest = new Inngest({ id: 'think-beyond-practice' });
+
+// Pipeline function — triggered by ask-archive/question.submitted event
+const askArchivePipeline = inngest.createFunction(
+  {
+    id: 'ask-archive-pipeline',
+    name: 'Ask the Archive Pipeline',
+    retries: 2,
+  },
+  { event: 'ask-archive/question.submitted' },
+  async function({ event, step }) {
+    const { job_id, question, member_requested, conversation_history } = event.data;
+    const conversationHistory = conversation_history || [];
+
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+    const openaiKey = process.env.OPENAI_API_KEY;
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    const resendKey = process.env.RESEND_API_KEY;
+
+    async function saveResult(result) {
+      const saveRes = await fetch(`${supabaseUrl}/rest/v1/archive_jobs?job_id=eq.${job_id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({
+          status: 'complete',
+          result: JSON.stringify(result)
+        })
+      });
+      if (!saveRes.ok) {
+        const errText = await saveRes.text();
+        console.error('saveResult FAILED:', saveRes.status, errText.substring(0, 200));
+      } else {
+        console.log('saveResult OK for job:', job_id);
+      }
+    }
 
   try {
     let matches;
@@ -128,7 +218,7 @@ async function runPipeline(data) {
       matches = await runSearch(queryVariants);
       console.log('Expanded search matches:', matches.length);
 
-      // Retry once if zero results  catches cold-start embedding failures
+      // Retry once if zero results — catches cold-start embedding failures
       if (matches.length === 0) {
         console.log('Zero matches on first attempt, retrying search...');
         await new Promise(function(r) { setTimeout(r, 500); });
@@ -171,7 +261,7 @@ async function runPipeline(data) {
       return { statusCode: 200, body: '' };
     }
 
-    // Unanswered  no matches
+    // Unanswered — no matches
     if (!matches || matches.length === 0) {
       await logUnanswered(supabaseUrl, supabaseKey, question, member_requested);
       await sendUnansweredEmail(resendKey, question);
@@ -196,7 +286,7 @@ async function runPipeline(data) {
 
 FIRST: Assess whether the retrieved sources contain ANY relevant information about the question asked.
 
-Only return { "status": "unanswered" } if the sources contain ZERO information relevant to the question  meaning the topic is completely absent from the archive. If the sources contain partial, adjacent, or related information, answer using what is available.
+Only return { "status": "unanswered" } if the sources contain ZERO information relevant to the question — meaning the topic is completely absent from the archive. If the sources contain partial, adjacent, or related information, answer using what is available.
 
 Do NOT return unanswered just because the sources don't perfectly answer the question. Use what is there and answer as specifically as the sources allow.
 
@@ -204,15 +294,15 @@ If the sources DO address the question (even partially), return status "answered
 
 Format answered responses in exactly this structure:
 
-1. What to do  one direct, actionable sentence that answers the question immediately. No preamble, no setup, no "it depends." If there are multiple components, they go in Required elements  do NOT embed them in this sentence.
+1. What to do — one direct, actionable sentence that answers the question immediately. No preamble, no setup, no "it depends." If there are multiple components, they go in Required elements — do NOT embed them in this sentence.
 
-2. Required elements  when the answer involves specific components, document them as a clean line-item list. Each item on its own line. Never fold these into a paragraph.
+2. Required elements — when the answer involves specific components, document them as a clean line-item list. Each item on its own line. Never fold these into a paragraph.
 
-3. Critical rule  one line only. Include ONLY when the source content contains a hard rule clinicians commonly violate or get wrong. Skip entirely if no such rule exists in the retrieved content.
+3. Critical rule — one line only. Include ONLY when the source content contains a hard rule clinicians commonly violate or get wrong. Skip entirely if no such rule exists in the retrieved content.
 
-4. Example  pulled directly from the language in the source posts. Include only when present in retrieved content  do not generate. Keep it to 2-3 lines maximum.
+4. Example — pulled directly from the language in the source posts. Include only when present in retrieved content — do not generate. Keep it to 2-3 lines maximum.
 
-5. Common mistake  one line identifying the most frequent error. Include only when present in retrieved content.
+5. Common mistake — one line identifying the most frequent error. Include only when present in retrieved content.
 
 Keep the answer section under 200 words. Prioritize the most actionable elements and leave depth to the source links.
 
@@ -235,7 +325,7 @@ For answered questions:
   ]
 }
 
-For source_descriptions: every source must have an entry  no exceptions. Max 10 words each.
+For source_descriptions: every source must have an entry — no exceptions. Max 10 words each.
 For template_sources: only include sources with actual usable templates, sample language, macros, or downloadable documents. Return empty array if none.
 Return ONLY the JSON object. Nothing before or after it.`;
 
@@ -303,128 +393,13 @@ Return ONLY the JSON object. Nothing before or after it.`;
     await saveResult({ error: err.message });
     return { statusCode: 200, body: '' };
   }
-}
-
-
-// Handles GET (function discovery) and POST (function invocation) from Inngest.
-
-const FUNCTION_ID = 'ask-archive-pipeline';
-const EVENT_TRIGGER = 'ask-archive/question.submitted';
-
-exports.handler = async function(event, context) {
-  const signingKey = process.env.INNGEST_SIGNING_KEY;
-
-  // GET  return function definitions so Inngest knows what functions exist here
-  if (event.httpMethod === 'GET') {
-    const appUrl = (process.env.URL || 'https://thinkbeyondpractice.com') + '/.netlify/functions/inngest-serve';
-    return {
-      statusCode: 200,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        functions: [{
-          id: FUNCTION_ID,
-          name: 'Ask the Archive Pipeline',
-          triggers: [{ event: EVENT_TRIGGER }],
-          steps: {
-            step: {
-              id: 'step',
-              name: 'Run RAG pipeline',
-              runtime: { url: appUrl + '?fnId=' + FUNCTION_ID + '&stepId=step' }
-            }
-          }
-        }],
-        url: appUrl
-      })
-    };
   }
+);
 
-  // POST  Inngest is invoking a function
-  if (event.httpMethod === 'POST') {
-    let body;
-    try { body = JSON.parse(event.body || '{}'); } catch(e) {
-      return { statusCode: 400, body: JSON.stringify({ error: 'Invalid JSON' }) };
-    }
+// Serve handler — Inngest calls this to register and invoke functions
+const serveHandler = serve({
+  client: inngest,
+  functions: [askArchivePipeline],
+});
 
-    // Extract event data  Inngest wraps it in an events array
-    const inngestEvent = (body.events && body.events[0]) || body.event || body;
-    const data = inngestEvent.data || inngestEvent;
-
-    if (!data.job_id || !data.question) {
-      return { statusCode: 400, body: JSON.stringify({ error: 'Missing job_id or question' }) };
-    }
-
-    console.log('Inngest invocation received for job:', data.job_id);
-
-    try {
-      await runPipeline(data);
-      return {
-        statusCode: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'completed' })
-      };
-    } catch(err) {
-      console.error('Pipeline error:', err.message);
-      // Return 500 so Inngest knows to retry
-      return {
-        statusCode: 500,
-        body: JSON.stringify({ error: err.message })
-      };
-    }
-  }
-
-  return { statusCode: 405, body: 'Method not allowed' };
-};
-
-
-async function getEmbedding(text, apiKey) {
-  const resp = await fetch('https://api.openai.com/v1/embeddings', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: 'text-embedding-3-small', input: text.substring(0, 8000), dimensions: 1536 })
-  });
-  if (!resp.ok) throw new Error('OpenAI embedding failed');
-  const data = await resp.json();
-  return data.data[0].embedding;
-}
-
-async function enrichCommentChunksParallel(matches, supabaseUrl, supabaseKey) {
-  return Promise.all(matches.map(async function(chunk) {
-    if (chunk.id && chunk.id.startsWith('comment_') && chunk.circle_post_id) {
-      try {
-        const parentRes = await fetch(
-          `${supabaseUrl}/rest/v1/posts?id=eq.post_${chunk.circle_post_id}&select=title,body,url,space_name,author&limit=1`,
-          { headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` } }
-        );
-        if (parentRes.ok) {
-          const parentData = await parentRes.json();
-          if (parentData.length > 0) {
-            const parent = parentData[0];
-            return { ...chunk, title: chunk.title||parent.title, url: chunk.url||parent.url, space_name: chunk.space_name||parent.space_name, author: chunk.author||parent.author, body: `[From post: ${parent.title}]\n\n${chunk.body}` };
-          }
-        }
-      } catch(e) {}
-    }
-    return chunk;
-  }));
-}
-
-async function logUnanswered(supabaseUrl, supabaseKey, question, memberRequested) {
-  try {
-    await fetch(`${supabaseUrl}/rest/v1/unanswered_questions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Prefer': 'return=minimal' },
-      body: JSON.stringify({ question, member_requested: memberRequested, created_at: new Date().toISOString() })
-    });
-  } catch(e) {}
-}
-
-async function sendUnansweredEmail(resendKey, question) {
-  if (!resendKey) return;
-  try {
-    await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${resendKey}` },
-      body: JSON.stringify({ from: 'Ask the Archive <noreply@thinkbeyondpractice.com>', to: ['michael@thinkbeyondpsych.com'], subject: 'Ask the Archive  Unanswered Question', html: `<p>A member asked a question the archive couldn't answer:</p><blockquote>${question}</blockquote>` })
-    });
-  } catch(e) {}
-}
+exports.handler = serveHandler;
