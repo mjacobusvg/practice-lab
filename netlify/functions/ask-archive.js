@@ -19,6 +19,10 @@ exports.handler = async function(event, context) {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Invalid JSON' }) };
   }
 
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+  const resendKey = process.env.RESEND_API_KEY;
+
   // Handle unanswered questions dashboard request
   if (body.action === 'get_unanswered') {
     if (body.secret !== process.env.BACKFILL_SECRET) {
@@ -49,10 +53,6 @@ exports.handler = async function(event, context) {
 
   const question = (body.question || '').trim();
   if (!question) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Question required' }) };
-
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
-  const resendKey = process.env.RESEND_API_KEY;
 
   // Handle template request inline — fast, no background needed
   if (body.request_template === true) {
