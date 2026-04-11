@@ -44,7 +44,26 @@ exports.handler = async function(event, context) {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   const resendKey = process.env.RESEND_API_KEY;
 
-  // PATCH the existing job row — dispatcher already created it with status 'pending'
+  // Step 1: upsert job row immediately so the poll can find it
+  // Frontend generates job_id and calls this function directly — no dispatcher in the path
+  async function createJob() {
+    await fetch(`${supabaseUrl}/rest/v1/archive_jobs?on_conflict=job_id`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify({
+        job_id: job_id,
+        status: 'pending',
+        created_at: new Date().toISOString()
+      })
+    });
+  }
+
+  // Step 2: PATCH the existing row with the final result
   async function saveResult(result) {
     const saveRes = await fetch(`${supabaseUrl}/rest/v1/archive_jobs?job_id=eq.${job_id}`, {
       method: 'PATCH',
@@ -68,6 +87,7 @@ exports.handler = async function(event, context) {
   }
 
   try {
+    await createJob();
     let matches;
 
     if (isMetaQuestion(question)) {
