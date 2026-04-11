@@ -45,6 +45,34 @@ exports.handler = async function(event, context) {
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ success: true, message: 'Template request submitted.' }) };
   }
 
+  // Handle unanswered questions dashboard request
+  if (body.action === 'get_unanswered') {
+    if (body.secret !== process.env.BACKFILL_SECRET) {
+      return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'Invalid secret' }) };
+    }
+    try {
+      const res = await fetch(`${supabaseUrl}/rest/v1/unanswered_questions?select=question,member_requested,created_at&order=created_at.desc&limit=500`, {
+        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+      });
+      const questions = await res.json();
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ questions }) };
+    } catch(e) {
+      return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: e.message }) };
+    }
+  }
+
+  // Handle feedback submission
+  if (body.action === 'feedback') {
+    try {
+      await fetch(`${supabaseUrl}/rest/v1/archive_feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ job_id: body.job_id || null, question: body.question || '', rating: body.rating || 0, created_at: new Date().toISOString() })
+      });
+    } catch(e) {}
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ success: true }) };
+  }
+
   // Generate a unique job ID
   const job_id = 'job_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
 
