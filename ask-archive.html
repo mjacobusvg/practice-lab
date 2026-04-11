@@ -100,19 +100,27 @@
       document.getElementById('sources-box').style.display = 'none';
 
       try {
-        // Step 1: Generate job_id client-side and call background function directly
-        // Background function creates its own job row on entry — no dispatcher needed
-        var job_id = 'job_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
-
+        // Step 1: Call trigger — it creates the job row, sends event to Inngest, returns job_id
         var startResp = await fetch('/.netlify/functions/ask-archive-trigger', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ job_id: job_id, question: question })
+          body: JSON.stringify({ question: question })
         });
 
         if (!startResp.ok) {
           loading.style.display = 'none';
           error.textContent = 'Error starting query: ' + startResp.status;
+          error.style.display = 'block';
+          btn.disabled = false;
+          return;
+        }
+
+        var triggerData = await startResp.json();
+        var job_id = triggerData.job_id;
+
+        if (!job_id) {
+          loading.style.display = 'none';
+          error.textContent = 'Error: could not start query.';
           error.style.display = 'block';
           btn.disabled = false;
           return;
