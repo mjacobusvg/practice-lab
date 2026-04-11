@@ -3,7 +3,7 @@
 // Called by ask-archive.js dispatcher, result retrieved by ask-archive-poll.js
 
 const MATCH_THRESHOLD = 0.35;
-const MATCH_COUNT = 12;
+const MATCH_COUNT = 20;
 
 const META_PATTERNS = [
   /^are there (any )?posts? on /i,
