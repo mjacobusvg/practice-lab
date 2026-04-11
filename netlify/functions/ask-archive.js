@@ -19,32 +19,6 @@ exports.handler = async function(event, context) {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Invalid JSON' }) };
   }
 
-  const question = (body.question || '').trim();
-  if (!question) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Question required' }) };
-
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
-  const resendKey = process.env.RESEND_API_KEY;
-
-  // Handle template request inline — fast, no background needed
-  if (body.request_template === true) {
-    try {
-      await fetch(`${supabaseUrl}/rest/v1/unanswered_questions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Prefer': 'return=minimal' },
-        body: JSON.stringify({ question: `[TEMPLATE REQUEST] ${question}`, member_requested: true, created_at: new Date().toISOString() })
-      });
-      if (resendKey) {
-        await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${resendKey}` },
-          body: JSON.stringify({ from: 'Ask the Archive <noreply@thinkbeyondpractice.com>', to: ['michael@thinkbeyondpsych.com'], subject: 'Ask the Archive — Template Request', html: `<p>A member requested a template for:</p><blockquote>${question}</blockquote>` })
-        });
-      }
-    } catch(e) {}
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ success: true, message: 'Template request submitted.' }) };
-  }
-
   // Handle unanswered questions dashboard request
   if (body.action === 'get_unanswered') {
     if (body.secret !== process.env.BACKFILL_SECRET) {
@@ -71,6 +45,32 @@ exports.handler = async function(event, context) {
       });
     } catch(e) {}
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ success: true }) };
+  }
+
+  const question = (body.question || '').trim();
+  if (!question) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Question required' }) };
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
+  const resendKey = process.env.RESEND_API_KEY;
+
+  // Handle template request inline — fast, no background needed
+  if (body.request_template === true) {
+    try {
+      await fetch(`${supabaseUrl}/rest/v1/unanswered_questions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ question: `[TEMPLATE REQUEST] ${question}`, member_requested: true, created_at: new Date().toISOString() })
+      });
+      if (resendKey) {
+        await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${resendKey}` },
+          body: JSON.stringify({ from: 'Ask the Archive <noreply@thinkbeyondpractice.com>', to: ['michael@thinkbeyondpsych.com'], subject: 'Ask the Archive — Template Request', html: `<p>A member requested a template for:</p><blockquote>${question}</blockquote>` })
+        });
+      }
+    } catch(e) {}
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ success: true, message: 'Template request submitted.' }) };
   }
 
   // Generate a unique job ID
