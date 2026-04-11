@@ -122,26 +122,36 @@ exports.handler = async function(event, context) {
 
       console.log('Query variants:', queryVariants);
 
-      const embeddings = await Promise.all(queryVariants.map(function(q) { return getEmbedding(q, openaiKey); }));
-
-      const searchResults = await Promise.all(embeddings.map(function(emb) {
-        return fetch(`${supabaseUrl}/rest/v1/rpc/match_posts`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
-          body: JSON.stringify({ query_embedding: emb, match_threshold: MATCH_THRESHOLD, match_count: MATCH_COUNT })
-        }).then(function(r) { return r.ok ? r.json() : []; });
-      }));
-
-      const mergedMap = {};
-      searchResults.forEach(function(resultSet) {
-        (resultSet || []).forEach(function(record) {
-          if (!mergedMap[record.id] || record.similarity > mergedMap[record.id].similarity) mergedMap[record.id] = record;
+      // Run embeddings + search with up to 2 retries if zero results come back
+      // Handles OpenAI API intermittency on cold starts
+      async function runSearch(variants) {
+        const embeddings = await Promise.all(variants.map(function(q) { return getEmbedding(q, openaiKey); }));
+        const searchResults = await Promise.all(embeddings.map(function(emb) {
+          return fetch(`${supabaseUrl}/rest/v1/rpc/match_posts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
+            body: JSON.stringify({ query_embedding: emb, match_threshold: MATCH_THRESHOLD, match_count: MATCH_COUNT })
+          }).then(function(r) { return r.ok ? r.json() : []; });
+        }));
+        const map = {};
+        searchResults.forEach(function(resultSet) {
+          (resultSet || []).forEach(function(record) {
+            if (!map[record.id] || record.similarity > map[record.id].similarity) map[record.id] = record;
+          });
         });
-      });
+        return Object.values(map).sort(function(a, b) { return (b.similarity||0)-(a.similarity||0); }).slice(0, MATCH_COUNT);
+      }
 
-      matches = Object.values(mergedMap).sort(function(a, b) { return (b.similarity||0)-(a.similarity||0); }).slice(0, MATCH_COUNT);
-
+      matches = await runSearch(queryVariants);
       console.log('Expanded search matches:', matches.length);
+
+      // Retry once if zero results — catches cold-start embedding failures
+      if (matches.length === 0) {
+        console.log('Zero matches on first attempt, retrying search...');
+        await new Promise(function(r) { setTimeout(r, 500); });
+        matches = await runSearch(queryVariants);
+        console.log('Retry search matches:', matches.length);
+      }
       console.log('Starting template search...');
 
       // Template search
