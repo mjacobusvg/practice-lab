@@ -33,33 +33,8 @@ function isMetaQuestion(q) {
 }
 
 
-const META_PATTERNS = [
-  /^are there (any )?posts? on /i,
-  /^do you have (anything|any posts?) (on|about) /i,
-  /^what (do you have|posts?) (on|about) /i,
-  /^is there anything (on|about) /i,
-  /^show me (posts?|anything) (on|about) /i,
-  /^find (posts?|anything) (on|about) /i,
-  /^any posts? (on|about) /i,
-];
-
-function extractTopic(q) {
-  return q
-    .replace(/^are there (any )?posts? on /i, '')
-    .replace(/^do you have (anything|any posts?) (on|about) /i, '')
-    .replace(/^what (do you have|posts?) (on|about) /i, '')
-    .replace(/^is there anything (on|about) /i, '')
-    .replace(/^show me (posts?|anything) (on|about) /i, '')
-    .replace(/^find (posts?|anything) (on|about) /i, '')
-    .replace(/^any posts? (on|about) /i, '')
-    .trim();
-}
-
-function isMetaQuestion(q) {
-  return META_PATTERNS.some(function(p) { return p.test(q); });
-}
-
-// ── Pipeline function ──────────────────────────────────────────────────────────
+// ── Pipeline function
+──────────────────────────────────────────────────────────
 // Called by Inngest when the ask-archive/question.submitted event fires.
 // Runs the full RAG pipeline and saves result to Supabase archive_jobs table.
 
