@@ -105,7 +105,7 @@ exports.handler = async function(event, context) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-haiku-4-5-20251001',
           max_tokens: 200,
           messages: [{ role: 'user', content: `You are helping search a psychiatric prescriber forum. Given this question: "${question}"\n\nGenerate 3 alternative phrasings that capture the same clinical concept but use different terminology an expert might use when writing about this topic. Think about how the answer would be written, not how the question is asked.\n\nImportant: For any billing or E/M coding question, always include one variant covering time-based billing and one covering MDM-based billing.\n\nReturn only a JSON array of 3 strings. No preamble, no explanation.` }]
         })
@@ -199,7 +199,7 @@ exports.handler = async function(event, context) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
           body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
+            model: 'claude-haiku-4-5-20251001',
             max_tokens: 100,
             messages: [{ role: 'user', content: `A member asked: "${question}"\n\nRetrieved posts:\n${retrievedTitles}\n\nList up to 2 critical topic angles MISSING from these posts needed for a complete answer. Return ONLY a JSON array of short search phrases (3-5 words each), or [] if nothing is missing. No explanation.` }]
           })
@@ -313,7 +313,7 @@ Return ONLY the JSON object. Nothing before or after it.`;
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 1000,
         messages: [{ role: 'user', content: `For each of these ${enrichedChunks.length} forum sources, write a description of max 10 words describing what clinical issue it covers. Return ONLY a JSON array like: [{"index":1,"description":"..."},{"index":2,"description":"..."}]. Every source must have an entry — no exceptions.\n\n${sourceListText}` }]
       })
