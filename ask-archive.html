@@ -40,6 +40,19 @@
   .topic-chip:hover { background: #dbeeff; }
   .loading { text-align: center; padding: 30px; color: #8a847e; font-size: 14px; display: none; }
   .disclaimer { margin-top: 12px; padding: 10px 14px; background: #f5f0ea; border-radius: 6px; font-size: 12px; color: #6b6560; line-height: 1.5; }
+  .feedback-row { display: flex; align-items: center; gap: 10px; margin-top: 16px; }
+  .feedback-label { font-size: 13px; color: #5c5650; }
+  .feedback-btn { background: white; border: 1px solid #e0dbd4; border-radius: 6px; padding: 6px 12px; font-size: 18px; cursor: pointer; transition: background 0.15s; }
+  .feedback-btn:hover { background: #f0f7ff; }
+  .feedback-btn.active-up { background: #d1fae5; border-color: #6ee7b7; }
+  .feedback-btn.active-down { background: #fee2e2; border-color: #fca5a5; }
+  .feedback-thanks { font-size: 13px; color: #5c5650; display: none; }
+  .followup-section { margin-top: 20px; border-top: 1px solid #e0dbd4; padding-top: 16px; }
+  .followup-section h3 { font-size: 13px; font-weight: 600; color: #5c5650; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+  .followup-row { display: flex; gap: 8px; align-items: flex-end; }
+  .followup-row textarea { flex: 1; padding: 10px 12px; border: 1px solid #e0dbd4; border-radius: 8px; font-size: 14px; font-family: inherit; resize: vertical; min-height: 60px; }
+  .followup-row button { padding: 10px 16px; background: #1d6fa4; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .followup-row button:disabled { background: #94a3b8; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -67,6 +80,19 @@
         <h3>Templates in the Archive</h3>
         <div id="templates-list"></div>
       </div>
+      <div class="feedback-row" id="feedback-row" style="display:none;">
+        <span class="feedback-label">Was this helpful?</span>
+        <button class="feedback-btn" id="thumb-up" onclick="submitFeedback(1)" title="Yes">👍</button>
+        <button class="feedback-btn" id="thumb-down" onclick="submitFeedback(-1)" title="No">👎</button>
+        <span class="feedback-thanks" id="feedback-thanks">Thanks for the feedback.</span>
+      </div>
+      <div class="followup-section" id="followup-section" style="display:none;">
+        <h3>Ask a follow-up</h3>
+        <div class="followup-row">
+          <textarea id="followup-question" placeholder="Ask a follow-up question..."></textarea>
+          <button id="followup-btn" onclick="askFollowUp()">Ask</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -82,6 +108,10 @@
   </script>
 
   <script>
+    var conversationHistory = [];
+    var currentJobId = null;
+    var currentQuestion = '';
+
     async function ask() {
       var question = document.getElementById('question').value.trim();
       if (!question) return;
@@ -98,13 +128,20 @@
       answerBox.style.display = 'none';
       document.getElementById('templates-box').style.display = 'none';
       document.getElementById('sources-box').style.display = 'none';
+      document.getElementById('feedback-row').style.display = 'none';
+      document.getElementById('followup-section').style.display = 'none';
+      document.getElementById('feedback-thanks').style.display = 'none';
+      document.getElementById('thumb-up').className = 'feedback-btn';
+      document.getElementById('thumb-down').className = 'feedback-btn';
+      conversationHistory = [];
+      currentJobId = null;
 
       try {
         // Step 1: Call trigger — it creates the job row, sends event to Inngest, returns job_id
         var startResp = await fetch('/.netlify/functions/ask-archive-trigger', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question: question })
+          body: JSON.stringify({ question: question, conversation_history: conversationHistory })
         });
 
         if (!startResp.ok) {
@@ -117,6 +154,8 @@
 
         var triggerData = await startResp.json();
         var job_id = triggerData.job_id;
+        currentJobId = job_id;
+        currentQuestion = question;
 
         if (!job_id) {
           loading.style.display = 'none';
@@ -221,6 +260,10 @@
           answerBox.style.display = 'block';
           document.getElementById('answer-text').textContent = data.answer;
           document.getElementById('sources-box').style.display = data.sources && data.sources.length ? 'block' : 'none';
+          document.getElementById('feedback-row').style.display = 'flex';
+          document.getElementById('followup-section').style.display = 'block';
+          conversationHistory.push({ role: 'user', content: question });
+          conversationHistory.push({ role: 'assistant', content: data.answer });
 
           var sourcesList = document.getElementById('sources-list');
           sourcesList.innerHTML = '';
@@ -293,6 +336,36 @@
       } catch(e) {
         if (btn) { btn.disabled = false; btn.textContent = 'Request a Template'; }
       }
+    }
+
+    async function submitFeedback(rating) {
+      var upBtn = document.getElementById('thumb-up');
+      var downBtn = document.getElementById('thumb-down');
+      upBtn.disabled = true;
+      downBtn.disabled = true;
+      upBtn.className = rating === 1 ? 'feedback-btn active-up' : 'feedback-btn';
+      downBtn.className = rating === -1 ? 'feedback-btn active-down' : 'feedback-btn';
+      document.getElementById('feedback-thanks').style.display = 'inline';
+      try {
+        await fetch('/.netlify/functions/ask-archive', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'feedback', job_id: currentJobId, question: currentQuestion, rating: rating })
+        });
+      } catch(e) {}
+    }
+
+    async function askFollowUp() {
+      var fq = document.getElementById('followup-question').value.trim();
+      if (!fq) return;
+      var fbtn = document.getElementById('followup-btn');
+      fbtn.disabled = true;
+      document.getElementById('question').value = fq;
+      document.getElementById('followup-question').value = '';
+      document.getElementById('followup-section').style.display = 'none';
+      document.getElementById('feedback-row').style.display = 'none';
+      await ask();
+      fbtn.disabled = false;
     }
 
     function searchTopic(topic) {
