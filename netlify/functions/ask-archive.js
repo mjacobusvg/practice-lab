@@ -39,6 +39,41 @@ exports.handler = async function(event, context) {
     }
   }
 
+  // Handle delete single unanswered question
+  if (body.action === 'delete_unanswered') {
+    if (body.secret !== process.env.BACKFILL_SECRET) {
+      return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'Invalid secret' }) };
+    }
+    try {
+      await fetch(`${supabaseUrl}/rest/v1/unanswered_questions?question=eq.${encodeURIComponent(body.question)}`, {
+        method: 'DELETE',
+        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+      });
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ success: true }) };
+    } catch(e) {
+      return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: e.message }) };
+    }
+  }
+
+  // Handle bulk delete unanswered questions
+  if (body.action === 'delete_unanswered_bulk') {
+    if (body.secret !== process.env.BACKFILL_SECRET) {
+      return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'Invalid secret' }) };
+    }
+    try {
+      const questions = body.questions || [];
+      await Promise.all(questions.map(function(q) {
+        return fetch(`${supabaseUrl}/rest/v1/unanswered_questions?question=eq.${encodeURIComponent(q)}`, {
+          method: 'DELETE',
+          headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+        });
+      }));
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ success: true }) };
+    } catch(e) {
+      return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: e.message }) };
+    }
+  }
+
   // Handle feedback submission
   if (body.action === 'feedback') {
     try {
