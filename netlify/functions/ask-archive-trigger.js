@@ -64,9 +64,9 @@ exports.handler = async function(event, context) {
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Failed to create job' }) };
   }
 
-  // Send event to Inngest via SDK
+  // Send event to Inngest via SDK — dynamic import required since inngest is ESM
   try {
-    const { Inngest } = require('inngest');
+    const { Inngest } = await import('inngest');
     const inngest = new Inngest({ id: 'think-beyond-practice' });
     await inngest.send({
       name: 'ask-archive/question.submitted',
