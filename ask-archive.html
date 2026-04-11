@@ -100,27 +100,19 @@
       document.getElementById('sources-box').style.display = 'none';
 
       try {
-        // Step 1: Call dispatcher — it creates the job row and fires the background function
-        var dispatchResp = await fetch('/.netlify/functions/ask-archive', {
+        // Step 1: Generate job_id client-side and call background function directly
+        // Background function creates its own job row on entry — no dispatcher needed
+        var job_id = 'job_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+
+        var startResp = await fetch('/.netlify/functions/ask-archive-background', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question: question })
+          body: JSON.stringify({ job_id: job_id, question: question })
         });
 
-        if (!dispatchResp.ok) {
+        if (!startResp.ok) {
           loading.style.display = 'none';
-          error.textContent = 'Error starting query: ' + dispatchResp.status;
-          error.style.display = 'block';
-          btn.disabled = false;
-          return;
-        }
-
-        var dispatchData = await dispatchResp.json();
-        var job_id = dispatchData.job_id;
-
-        if (!job_id) {
-          loading.style.display = 'none';
-          error.textContent = 'Error: dispatcher did not return a job ID.';
+          error.textContent = 'Error starting query: ' + startResp.status;
           error.style.display = 'block';
           btn.disabled = false;
           return;
