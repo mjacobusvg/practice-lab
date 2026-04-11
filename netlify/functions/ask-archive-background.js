@@ -44,20 +44,19 @@ exports.handler = async function(event, context) {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   const resendKey = process.env.RESEND_API_KEY;
 
+  // PATCH the existing job row — dispatcher already created it with status 'pending'
   async function saveResult(result) {
-    const saveRes = await fetch(`${supabaseUrl}/rest/v1/archive_jobs`, {
-      method: 'POST',
+    const saveRes = await fetch(`${supabaseUrl}/rest/v1/archive_jobs?job_id=eq.${job_id}`, {
+      method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
         'apikey': supabaseKey,
         'Authorization': `Bearer ${supabaseKey}`,
-        'Prefer': 'resolution=merge-duplicates'
+        'Prefer': 'return=minimal'
       },
       body: JSON.stringify({
-        job_id: job_id,
         status: 'complete',
-        result: JSON.stringify(result),
-        created_at: new Date().toISOString()
+        result: JSON.stringify(result)
       })
     });
     if (!saveRes.ok) {
@@ -159,7 +158,7 @@ exports.handler = async function(event, context) {
       return { statusCode: 200, body: '' };
     }
 
-    // Unanswered
+    // Unanswered — no matches
     if (!matches || matches.length === 0) {
       await logUnanswered(supabaseUrl, supabaseKey, question, member_requested);
       await sendUnansweredEmail(resendKey, question);
