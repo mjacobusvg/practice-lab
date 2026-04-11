@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Unanswered Questions — Think Beyond Practice</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background: #f9f7f5; color: #1a1714; }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  p.sub { font-size: 13px; color: #5c5650; margin-bottom: 24px; }
+  .auth-row { display: flex; gap: 8px; margin-bottom: 24px; }
+  .auth-row input { flex: 1; padding: 10px 12px; border: 1px solid #e0dbd4; border-radius: 8px; font-size: 14px; font-family: inherit; }
+  .auth-row button { padding: 10px 16px; background: #1d6fa4; color: white; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .auth-row button:disabled { background: #94a3b8; cursor: not-allowed; }
+  .error { color: #dc2626; font-size: 13px; margin-bottom: 12px; display: none; }
+  .stats-row { display: flex; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+  .stat-box { background: white; border: 1px solid #e0dbd4; border-radius: 8px; padding: 14px 18px; min-width: 140px; }
+  .stat-box .num { font-size: 24px; font-weight: 700; color: #1d6fa4; }
+  .stat-box .label { font-size: 12px; color: #5c5650; margin-top: 2px; }
+  .filters { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; align-items: center; }
+  .filter-btn { padding: 6px 14px; border: 1px solid #e0dbd4; border-radius: 20px; background: white; font-size: 13px; cursor: pointer; }
+  .filter-btn.active { background: #1d6fa4; color: white; border-color: #1d6fa4; }
+  .search-input { padding: 7px 12px; border: 1px solid #e0dbd4; border-radius: 20px; font-size: 13px; font-family: inherit; width: 220px; }
+  .question-card { background: white; border: 1px solid #e0dbd4; border-radius: 8px; padding: 14px 16px; margin-bottom: 8px; }
+  .question-text { font-size: 14px; color: #1a1714; margin-bottom: 6px; }
+  .question-meta { font-size: 12px; color: #8a847e; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge-requested { background: #fef3c7; color: #92400e; }
+  .badge-template { background: #ede9fe; color: #5b21b6; }
+  .count-badge { background: #dbeafe; color: #1e40af; }
+  .empty { text-align: center; padding: 40px; color: #8a847e; font-size: 14px; }
+  .dashboard { display: none; }
+  .loading-msg { color: #5c5650; font-size: 14px; margin-top: 12px; display: none; }
+</style>
+</head>
+<body>
+
+<h1>Unanswered Questions</h1>
+<p class="sub">Questions Ask the Archive couldn't answer. Use this to identify content gaps.</p>
+
+<div class="auth-row">
+  <input type="password" id="secret" placeholder="Backfill secret..." onkeydown="if(event.key==='Enter') load()" />
+  <button id="load-btn" onclick="load()">Load</button>
+</div>
+<div class="error" id="error"></div>
+<div class="loading-msg" id="loading-msg">Loading...</div>
+
+<div class="dashboard" id="dashboard">
+  <div class="stats-row" id="stats-row"></div>
+
+  <div class="filters">
+    <button class="filter-btn active" id="filter-all" onclick="setFilter('all')">All</button>
+    <button class="filter-btn" id="filter-requested" onclick="setFilter('requested')">Member Requested</button>
+    <button class="filter-btn" id="filter-template" onclick="setFilter('template')">Template Requests</button>
+    <input type="text" class="search-input" id="search-input" placeholder="Search questions..." oninput="renderList()" />
+  </div>
+
+  <div id="questions-list"></div>
+</div>
+
+<script>
+  var allQuestions = [];
+  var currentFilter = 'all';
+
+  async function load() {
+    var secret = document.getElementById('secret').value.trim();
+    if (!secret) return;
+    var btn = document.getElementById('load-btn');
+    var err = document.getElementById('error');
+    var msg = document.getElementById('loading-msg');
+    btn.disabled = true;
+    err.style.display = 'none';
+    msg.style.display = 'block';
+
+    try {
+      var supabaseUrl = null;
+      var supabaseKey = null;
+
+      // Fetch via a lightweight proxy — use ask-archive-poll as a proxy vehicle
+      // Actually hit a dedicated endpoint
+      var resp = await fetch('/.netlify/functions/ask-archive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'get_unanswered', secret: secret })
+      });
+
+      if (!resp.ok) {
+        err.textContent = 'Error: ' + resp.status + ' — check your secret.';
+        err.style.display = 'block';
+        btn.disabled = false;
+        msg.style.display = 'none';
+        return;
+      }
+
+      var data = await resp.json();
+      if (data.error) {
+        err.textContent = data.error;
+        err.style.display = 'block';
+        btn.disabled = false;
+        msg.style.display = 'none';
+        return;
+      }
+
+      allQuestions = data.questions || [];
+      msg.style.display = 'none';
+      document.getElementById('dashboard').style.display = 'block';
+      renderStats();
+      renderList();
+
+    } catch(e) {
+      err.textContent = 'Network error: ' + e.message;
+      err.style.display = 'block';
+      msg.style.display = 'none';
+    }
+
+    btn.disabled = false;
+  }
+
+  function setFilter(f) {
+    currentFilter = f;
+    document.querySelectorAll('.filter-btn').forEach(function(b) { b.classList.remove('active'); });
+    document.getElementById('filter-' + f).classList.add('active');
+    renderList();
+  }
+
+  function renderStats() {
+    var total = allQuestions.length;
+    var requested = allQuestions.filter(function(q) { return q.member_requested && !q.question.startsWith('[TEMPLATE'); }).length;
+    var templates = allQuestions.filter(function(q) { return q.question.startsWith('[TEMPLATE'); }).length;
+
+    // Deduplicate to find unique questions
+    var normalized = {};
+    allQuestions.forEach(function(q) {
+      var key = q.question.toLowerCase().trim();
+      normalized[key] = (normalized[key] || 0) + 1;
+    });
+    var unique = Object.keys(normalized).length;
+    var repeated = Object.values(normalized).filter(function(c) { return c > 1; }).length;
+
+    document.getElementById('stats-row').innerHTML =
+      stat(total, 'Total Questions') +
+      stat(unique, 'Unique Questions') +
+      stat(repeated, 'Asked Multiple Times') +
+      stat(requested, 'Member Requested') +
+      stat(templates, 'Template Requests');
+  }
+
+  function stat(num, label) {
+    return '<div class="stat-box"><div class="num">' + num + '</div><div class="label">' + label + '</div></div>';
+  }
+
+  function renderList() {
+    var search = document.getElementById('search-input').value.toLowerCase();
+    var filtered = allQuestions.filter(function(q) {
+      if (currentFilter === 'requested' && (!q.member_requested || q.question.startsWith('[TEMPLATE'))) return false;
+      if (currentFilter === 'template' && !q.question.startsWith('[TEMPLATE')) return false;
+      if (search && !q.question.toLowerCase().includes(search)) return false;
+      return true;
+    });
+
+    // Deduplicate and count
+    var map = {};
+    filtered.forEach(function(q) {
+      var key = q.question.toLowerCase().trim();
+      if (!map[key]) {
+        map[key] = { question: q.question, count: 0, latest: q.created_at, member_requested: false, is_template: q.question.startsWith('[TEMPLATE') };
+      }
+      map[key].count++;
+      if (q.member_requested) map[key].member_requested = true;
+      if (q.created_at > map[key].latest) map[key].latest = q.created_at;
+    });
+
+    var deduped = Object.values(map).sort(function(a, b) {
+      if (b.count !== a.count) return b.count - a.count;
+      return b.latest.localeCompare(a.latest);
+    });
+
+    var list = document.getElementById('questions-list');
+    if (deduped.length === 0) {
+      list.innerHTML = '<div class="empty">No questions found.</div>';
+      return;
+    }
+
+    list.innerHTML = deduped.map(function(q) {
+      var date = q.latest ? new Date(q.latest).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+      var badges = '';
+      if (q.count > 1) badges += '<span class="badge count-badge">Asked ' + q.count + 'x</span>';
+      if (q.member_requested) badges += '<span class="badge badge-requested">Member requested</span>';
+      if (q.is_template) badges += '<span class="badge badge-template">Template request</span>';
+      return '<div class="question-card">' +
+        '<div class="question-text">' + escHtml(q.question) + '</div>' +
+        '<div class="question-meta">' +
+          (date ? '<span>' + date + '</span>' : '') +
+          badges +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+
+</body>
+</html>
