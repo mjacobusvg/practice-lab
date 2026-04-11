@@ -93,31 +93,44 @@
 
       btn.disabled = true;
       loading.style.display = 'block';
+      error.textContent = '';
       error.style.display = 'none';
       answerBox.style.display = 'none';
       document.getElementById('templates-box').style.display = 'none';
       document.getElementById('sources-box').style.display = 'none';
 
       try {
-        var job_id = 'job_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
-
-        var resp = await fetch('/.netlify/functions/ask-archive-background', {
+        // Step 1: Call dispatcher — it creates the job row and fires the background function
+        var dispatchResp = await fetch('/.netlify/functions/ask-archive', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ job_id: job_id, question: question })
+          body: JSON.stringify({ question: question })
         });
 
-        if (!resp.ok) {
+        if (!dispatchResp.ok) {
           loading.style.display = 'none';
-          error.textContent = 'Error starting query: ' + resp.status;
+          error.textContent = 'Error starting query: ' + dispatchResp.status;
           error.style.display = 'block';
           btn.disabled = false;
           return;
         }
+
+        var dispatchData = await dispatchResp.json();
+        var job_id = dispatchData.job_id;
+
+        if (!job_id) {
+          loading.style.display = 'none';
+          error.textContent = 'Error: dispatcher did not return a job ID.';
+          error.style.display = 'block';
+          btn.disabled = false;
+          return;
+        }
+
+        // Step 2: Poll for result — 3s initial delay, then 1s interval, 90 attempts max (~93s total)
         var data = null;
         var attempts = 0;
         await new Promise(function(r) { setTimeout(r, 3000); });
-        while (attempts < 45) {
+        while (attempts < 90) {
           await new Promise(function(r) { setTimeout(r, 1000); });
           attempts++;
           var pollResp = await fetch('/.netlify/functions/ask-archive-poll', {
@@ -145,13 +158,6 @@
           return;
         }
 
-        if (!resp.ok) {
-          error.textContent = 'Error: ' + (data.error || resp.status);
-          error.style.display = 'block';
-          btn.disabled = false;
-          return;
-        }
-
         if (data.browse) {
           answerBox.style.display = 'block';
           document.getElementById('sources-box').style.display = 'none';
@@ -160,7 +166,7 @@
           var currentPage = data.page || 1;
           var currentQuestion = question;
 
-          var browseHtml = '<div class="browse-header">What\'s in the Archive on This Topic</div>';
+          var browseHtml = '<div class="browse-header">What's in the Archive on This Topic</div>';
           if (data.total) {
             browseHtml += '<div style="font-size:12px;color:#8a847e;margin-bottom:12px;">' + data.total + ' posts found</div>';
           }
