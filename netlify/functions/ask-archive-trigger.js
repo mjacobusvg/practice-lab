@@ -64,26 +64,19 @@ exports.handler = async function(event, context) {
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Failed to create job' }) };
   }
 
-  // Send event to Inngest
+  // Send event to Inngest via SDK
   try {
-    const inngestRes = await fetch('https://inn.gs/e/' + inngestEventKey, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: 'ask-archive/question.submitted',
-        data: {
-          job_id,
-          question,
-          member_requested: body.member_requested || false,
-          conversation_history: body.conversation_history || []
-        }
-      })
+    const { Inngest } = require('inngest');
+    const inngest = new Inngest({ id: 'think-beyond-practice' });
+    await inngest.send({
+      name: 'ask-archive/question.submitted',
+      data: {
+        job_id,
+        question,
+        member_requested: body.member_requested || false,
+        conversation_history: body.conversation_history || []
+      }
     });
-    if (!inngestRes.ok) {
-      const errText = await inngestRes.text();
-      console.error('Inngest event failed:', inngestRes.status, errText.substring(0, 200));
-      return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Failed to queue job' }) };
-    }
   } catch(e) {
     console.error('Inngest trigger error:', e.message);
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Failed to queue job' }) };
