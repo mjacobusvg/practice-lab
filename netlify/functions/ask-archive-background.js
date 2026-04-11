@@ -186,30 +186,30 @@ exports.handler = async function(event, context) {
       return { statusCode: 200, body: '' };
     }
 
-    // Enrich + gap detection in parallel — gap uses post titles which are available
-    // immediately from matches, so it doesn't need to wait for enrichment to finish
-    console.log('Starting enrichment and gap detection in parallel for', matches.length, 'matches...');
-    const retrievedTitles = matches.map(function(c) { return c.title; }).join('\n');
-
-    const [enrichedChunks, gapPhrasesRaw] = await Promise.all([
-      enrichCommentChunksParallel(matches, supabaseUrl, supabaseKey),
-      fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 100,
-          messages: [{ role: 'user', content: `A member asked: "${question}"\n\nRetrieved posts:\n${retrievedTitles}\n\nList up to 2 critical topic angles MISSING from these posts needed for a complete answer. Return ONLY a JSON array of short search phrases (3-5 words each), or [] if nothing is missing. No explanation.` }]
-        })
-      }).then(function(r) { return r.ok ? r.json() : null; }).catch(function() { return null; })
-    ]);
-
+    // Enrich
+    console.log('Starting enrichment for', matches.length, 'matches...');
+    const enrichedChunks = await enrichCommentChunksParallel(matches, supabaseUrl, supabaseKey);
     console.log('Enrichment complete:', enrichedChunks.length, 'chunks');
 
-    // Apply gap results if any arrived in time
+    // Gap detection
     try {
-      if (gapPhrasesRaw) {
-        const gapPhrases = JSON.parse(gapPhrasesRaw.content[0].text.replace(/```json|```/g, '').trim());
+      const retrievedTitles = enrichedChunks.map(function(c) { return c.title; }).join('\n');
+      const gapRes = await Promise.race([
+        fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 100,
+            messages: [{ role: 'user', content: `A member asked: "${question}"\n\nRetrieved posts:\n${retrievedTitles}\n\nList up to 2 critical topic angles MISSING from these posts needed for a complete answer. Return ONLY a JSON array of short search phrases (3-5 words each), or [] if nothing is missing. No explanation.` }]
+          })
+        }),
+        new Promise(function(_, reject) { setTimeout(function() { reject(new Error('gap timeout')); }, 3000); })
+      ]);
+
+      if (gapRes.ok) {
+        const gapData = await gapRes.json();
+        const gapPhrases = JSON.parse(gapData.content[0].text.replace(/```json|```/g, '').trim());
         if (Array.isArray(gapPhrases) && gapPhrases.length > 0) {
           const existingIds = new Set(enrichedChunks.map(function(c) { return c.id; }));
           const gapSearches = await Promise.all(gapPhrases.map(async function(phrase) {
@@ -292,26 +292,9 @@ Return ONLY the JSON object. Nothing before or after it.`;
 
     if (!claudeRes.ok) throw new Error('Claude synthesis failed');
 
-    // ── Run source descriptions in parallel with parsing synthesis result ────
-    const sourceListText = enrichedChunks.map(function(chunk, i) {
-      return `[${i+1}] Title: ${chunk.title} | Space: ${chunk.space_name} | Body excerpt: ${(chunk.body||'').substring(0, 150)}`;
-    }).join('\n');
-
-    const [claudeData, descRes] = await Promise.all([
-      claudeRes.json(),
-      fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 1000,
-          messages: [{ role: 'user', content: `For each of these ${enrichedChunks.length} forum sources, write a description of max 10 words describing what clinical issue it covers. Return ONLY a JSON array like: [{"index":1,"description":"..."},{"index":2,"description":"..."}]. Every source must have an entry — no exceptions.\n\n${sourceListText}` }]
-        })
-      })
-    ]);
-
     console.log('Claude synthesis complete, saving result...');
 
+    const claudeData = await claudeRes.json();
     const parsed = JSON.parse(claudeData.content[0].text.replace(/```json|```/g, '').trim());
 
     if (parsed.status === 'unanswered') {
@@ -320,6 +303,21 @@ Return ONLY the JSON object. Nothing before or after it.`;
       await saveResult({ unanswered: true, answer: "The archive doesn't have content on this topic yet. It's been logged and Michael will be notified." });
       return { statusCode: 200, body: '' };
     }
+
+    // ── Separate call for source descriptions ────────────────────────────────
+    const sourceListText = enrichedChunks.map(function(chunk, i) {
+      return `[${i+1}] Title: ${chunk.title} | Space: ${chunk.space_name} | Body excerpt: ${(chunk.body||'').substring(0, 150)}`;
+    }).join('\n');
+
+    const descRes = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: `For each of these ${enrichedChunks.length} forum sources, write a description of max 10 words describing what clinical issue it covers. Return ONLY a JSON array like: [{"index":1,"description":"..."},{"index":2,"description":"..."}]. Every source must have an entry — no exceptions.\n\n${sourceListText}` }]
+      })
+    });
 
     let sourceDescMap = {};
     if (descRes.ok) {
