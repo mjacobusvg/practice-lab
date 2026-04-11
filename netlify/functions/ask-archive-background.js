@@ -191,47 +191,6 @@ exports.handler = async function(event, context) {
     const enrichedChunks = await enrichCommentChunksParallel(matches, supabaseUrl, supabaseKey);
     console.log('Enrichment complete:', enrichedChunks.length, 'chunks');
 
-    // Gap detection
-    try {
-      const retrievedTitles = enrichedChunks.map(function(c) { return c.title; }).join('\n');
-      const gapRes = await Promise.race([
-        fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
-          body: JSON.stringify({
-            model: 'claude-haiku-4-5-20251001',
-            max_tokens: 100,
-            messages: [{ role: 'user', content: `A member asked: "${question}"\n\nRetrieved posts:\n${retrievedTitles}\n\nList up to 2 critical topic angles MISSING from these posts needed for a complete answer. Return ONLY a JSON array of short search phrases (3-5 words each), or [] if nothing is missing. No explanation.` }]
-          })
-        }),
-        new Promise(function(_, reject) { setTimeout(function() { reject(new Error('gap timeout')); }, 3000); })
-      ]);
-
-      if (gapRes.ok) {
-        const gapData = await gapRes.json();
-        const gapPhrases = JSON.parse(gapData.content[0].text.replace(/```json|```/g, '').trim());
-        if (Array.isArray(gapPhrases) && gapPhrases.length > 0) {
-          const existingIds = new Set(enrichedChunks.map(function(c) { return c.id; }));
-          const gapSearches = await Promise.all(gapPhrases.map(async function(phrase) {
-            try {
-              const emb = await getEmbedding(phrase, openaiKey);
-              const r = await fetch(`${supabaseUrl}/rest/v1/rpc/match_posts`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
-                body: JSON.stringify({ query_embedding: emb, match_threshold: MATCH_THRESHOLD, match_count: 4 })
-              });
-              return r.ok ? await r.json() : [];
-            } catch(e) { return []; }
-          }));
-          gapSearches.forEach(function(results) {
-            results.forEach(function(m) {
-              if (!existingIds.has(m.id) && m.url) { existingIds.add(m.id); enrichedChunks.push(m); }
-            });
-          });
-        }
-      }
-    } catch(ge) { console.log('Gap detection skipped:', ge.message); }
-
     console.log('Starting Claude synthesis with', enrichedChunks.length, 'chunks...');
 
     // Build context
@@ -274,11 +233,15 @@ For answered questions:
 {
   "status": "answered",
   "answer": "the full answer text following the structure above",
+  "source_descriptions": [
+    { "index": 1, "description": "max 10 words describing what clinical issue this source covers" }
+  ],
   "template_sources": [
     { "index": 1, "template_description": "one-line description of what template this source contains" }
   ]
 }
 
+For source_descriptions: every source must have an entry — no exceptions. Max 10 words each.
 For template_sources: only include sources with actual usable templates, sample language, macros, or downloadable documents. Return empty array if none.
 Return ONLY the JSON object. Nothing before or after it.`;
 
@@ -304,29 +267,11 @@ Return ONLY the JSON object. Nothing before or after it.`;
       return { statusCode: 200, body: '' };
     }
 
-    // ── Separate call for source descriptions ────────────────────────────────
-    const sourceListText = enrichedChunks.map(function(chunk, i) {
-      return `[${i+1}] Title: ${chunk.title} | Space: ${chunk.space_name} | Body excerpt: ${(chunk.body||'').substring(0, 150)}`;
-    }).join('\n');
-
-    const descRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1000,
-        messages: [{ role: 'user', content: `For each of these ${enrichedChunks.length} forum sources, write a description of max 10 words describing what clinical issue it covers. Return ONLY a JSON array like: [{"index":1,"description":"..."},{"index":2,"description":"..."}]. Every source must have an entry — no exceptions.\n\n${sourceListText}` }]
-      })
-    });
-
+    // Source descriptions now come from the synthesis response
     let sourceDescMap = {};
-    if (descRes.ok) {
-      try {
-        const descData = await descRes.json();
-        const descParsed = JSON.parse(descData.content[0].text.replace(/```json|```/g, '').trim());
-        descParsed.forEach(function(s) { sourceDescMap[s.index] = s.description; });
-      } catch(e) { console.log('Description parse error:', e.message); }
-    }
+    try {
+      (parsed.source_descriptions || []).forEach(function(s) { sourceDescMap[s.index] = s.description; });
+    } catch(e) { console.log('Source description parse error:', e.message); }
 
     const sources = enrichedChunks.map(function(chunk, i) {
       return { title: chunk.title, space: chunk.space_name, author: chunk.author, url: chunk.url, description: sourceDescMap[i+1] || '' };
