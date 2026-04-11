@@ -1,5 +1,5 @@
 // netlify/functions/inngest-serve.js
-// Inngest serve endpoint — registers functions with Inngest and handles invocations.
+// Inngest serve endpoint  registers functions with Inngest and handles invocations.
 // This replaces ask-archive-background.js as the pipeline worker.
 // Inngest handles retries, logging, and reliable execution.
 
@@ -33,8 +33,8 @@ function isMetaQuestion(q) {
 }
 
 
-// ── Pipeline function
-──────────────────────────────────────────────────────────
+
+
 // Called by Inngest when the ask-archive/question.submitted event fires.
 // Runs the full RAG pipeline and saves result to Supabase archive_jobs table.
 
@@ -128,7 +128,7 @@ async function runPipeline(data) {
       matches = await runSearch(queryVariants);
       console.log('Expanded search matches:', matches.length);
 
-      // Retry once if zero results — catches cold-start embedding failures
+      // Retry once if zero results  catches cold-start embedding failures
       if (matches.length === 0) {
         console.log('Zero matches on first attempt, retrying search...');
         await new Promise(function(r) { setTimeout(r, 500); });
@@ -171,7 +171,7 @@ async function runPipeline(data) {
       return { statusCode: 200, body: '' };
     }
 
-    // Unanswered — no matches
+    // Unanswered  no matches
     if (!matches || matches.length === 0) {
       await logUnanswered(supabaseUrl, supabaseKey, question, member_requested);
       await sendUnansweredEmail(resendKey, question);
@@ -196,7 +196,7 @@ async function runPipeline(data) {
 
 FIRST: Assess whether the retrieved sources contain ANY relevant information about the question asked.
 
-Only return { "status": "unanswered" } if the sources contain ZERO information relevant to the question — meaning the topic is completely absent from the archive. If the sources contain partial, adjacent, or related information, answer using what is available.
+Only return { "status": "unanswered" } if the sources contain ZERO information relevant to the question  meaning the topic is completely absent from the archive. If the sources contain partial, adjacent, or related information, answer using what is available.
 
 Do NOT return unanswered just because the sources don't perfectly answer the question. Use what is there and answer as specifically as the sources allow.
 
@@ -204,15 +204,15 @@ If the sources DO address the question (even partially), return status "answered
 
 Format answered responses in exactly this structure:
 
-1. What to do — one direct, actionable sentence that answers the question immediately. No preamble, no setup, no "it depends." If there are multiple components, they go in Required elements — do NOT embed them in this sentence.
+1. What to do  one direct, actionable sentence that answers the question immediately. No preamble, no setup, no "it depends." If there are multiple components, they go in Required elements  do NOT embed them in this sentence.
 
-2. Required elements — when the answer involves specific components, document them as a clean line-item list. Each item on its own line. Never fold these into a paragraph.
+2. Required elements  when the answer involves specific components, document them as a clean line-item list. Each item on its own line. Never fold these into a paragraph.
 
-3. Critical rule — one line only. Include ONLY when the source content contains a hard rule clinicians commonly violate or get wrong. Skip entirely if no such rule exists in the retrieved content.
+3. Critical rule  one line only. Include ONLY when the source content contains a hard rule clinicians commonly violate or get wrong. Skip entirely if no such rule exists in the retrieved content.
 
-4. Example — pulled directly from the language in the source posts. Include only when present in retrieved content — do not generate. Keep it to 2-3 lines maximum.
+4. Example  pulled directly from the language in the source posts. Include only when present in retrieved content  do not generate. Keep it to 2-3 lines maximum.
 
-5. Common mistake — one line identifying the most frequent error. Include only when present in retrieved content.
+5. Common mistake  one line identifying the most frequent error. Include only when present in retrieved content.
 
 Keep the answer section under 200 words. Prioritize the most actionable elements and leave depth to the source links.
 
@@ -235,7 +235,7 @@ For answered questions:
   ]
 }
 
-For source_descriptions: every source must have an entry — no exceptions. Max 10 words each.
+For source_descriptions: every source must have an entry  no exceptions. Max 10 words each.
 For template_sources: only include sources with actual usable templates, sample language, macros, or downloadable documents. Return empty array if none.
 Return ONLY the JSON object. Nothing before or after it.`;
 
@@ -305,7 +305,7 @@ Return ONLY the JSON object. Nothing before or after it.`;
   }
 }
 
-// ── Inngest serve handler ──────────────────────────────────────────────────────
+
 // Handles GET (function discovery) and POST (function invocation) from Inngest.
 
 const FUNCTION_ID = 'ask-archive-pipeline';
@@ -314,7 +314,7 @@ const EVENT_TRIGGER = 'ask-archive/question.submitted';
 exports.handler = async function(event, context) {
   const signingKey = process.env.INNGEST_SIGNING_KEY;
 
-  // GET — return function definitions so Inngest knows what functions exist here
+  // GET  return function definitions so Inngest knows what functions exist here
   if (event.httpMethod === 'GET') {
     const appUrl = (process.env.URL || 'https://thinkbeyondpractice.com') + '/.netlify/functions/inngest-serve';
     return {
@@ -338,14 +338,14 @@ exports.handler = async function(event, context) {
     };
   }
 
-  // POST — Inngest is invoking a function
+  // POST  Inngest is invoking a function
   if (event.httpMethod === 'POST') {
     let body;
     try { body = JSON.parse(event.body || '{}'); } catch(e) {
       return { statusCode: 400, body: JSON.stringify({ error: 'Invalid JSON' }) };
     }
 
-    // Extract event data — Inngest wraps it in an events array
+    // Extract event data  Inngest wraps it in an events array
     const inngestEvent = (body.events && body.events[0]) || body.event || body;
     const data = inngestEvent.data || inngestEvent;
 
@@ -424,7 +424,7 @@ async function sendUnansweredEmail(resendKey, question) {
     await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${resendKey}` },
-      body: JSON.stringify({ from: 'Ask the Archive <noreply@thinkbeyondpractice.com>', to: ['michael@thinkbeyondpsych.com'], subject: 'Ask the Archive — Unanswered Question', html: `<p>A member asked a question the archive couldn't answer:</p><blockquote>${question}</blockquote>` })
+      body: JSON.stringify({ from: 'Ask the Archive <noreply@thinkbeyondpractice.com>', to: ['michael@thinkbeyondpsych.com'], subject: 'Ask the Archive  Unanswered Question', html: `<p>A member asked a question the archive couldn't answer:</p><blockquote>${question}</blockquote>` })
     });
   } catch(e) {}
 }
