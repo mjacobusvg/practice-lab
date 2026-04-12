@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Think Beyond — Admin Dashboard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0f0f11;
+    --surface: #18181c;
+    --border: #2a2a30;
+    --text: #e8e6e3;
+    --muted: #6b6870;
+    --accent: #4d8ab5;
+    --accent-dim: #1d3447;
+    --green: #34d399;
+    --green-dim: #0d2e22;
+    --amber: #fbbf24;
+    --amber-dim: #2d1f05;
+    --red: #f87171;
+    --red-dim: #2d0f0f;
+    --purple: #a78bfa;
+    --purple-dim: #1e1535;
+  }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 32px 24px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  .header { margin-bottom: 32px; }
+  .header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    color: var(--text);
+  }
+  .header p { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+  .auth-row { display: flex; gap: 8px; margin-bottom: 28px; }
+  .auth-row input {
+    flex: 1;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: 'DM Mono', monospace;
+    color: var(--text);
+    outline: none;
+  }
+  .auth-row input:focus { border-color: var(--accent); }
+  .auth-row button {
+    padding: 10px 20px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .auth-row button:hover { opacity: 0.85; }
+  .auth-row button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .error { color: var(--red); font-size: 13px; margin-bottom: 16px; display: none; }
+  .loading-msg { color: var(--muted); font-size: 13px; margin-bottom: 16px; display: none; }
+
+  .dashboard { display: none; }
+
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 12px;
+    margin-top: 28px;
+  }
+  .section-label:first-of-type { margin-top: 0; }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .stat-card .num {
+    font-size: 28px;
+    font-weight: 600;
+    font-family: 'DM Mono', monospace;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .stat-card .label { font-size: 12px; color: var(--muted); }
+  .stat-card.accent .num { color: var(--accent); }
+  .stat-card.green .num { color: var(--green); }
+  .stat-card.amber .num { color: var(--amber); }
+  .stat-card.red .num { color: var(--red); }
+  .stat-card.purple .num { color: var(--purple); }
+
+  .chart-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 10px;
+  }
+  .chart-title { font-size: 13px; font-weight: 500; color: var(--muted); margin-bottom: 16px; }
+
+  .bar-chart { display: flex; align-items: flex-end; gap: 4px; height: 80px; }
+  .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .bar {
+    width: 100%;
+    border-radius: 3px 3px 0 0;
+    min-height: 2px;
+    transition: opacity 0.15s;
+  }
+  .bar:hover { opacity: 0.7; }
+  .bar-label { font-size: 9px; color: var(--muted); font-family: 'DM Mono', monospace; white-space: nowrap; transform: rotate(-45deg); transform-origin: top right; }
+
+  .mode-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 8px;
+  }
+  .mode-row {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .mode-name { font-size: 13px; color: var(--text); }
+  .mode-count {
+    font-size: 16px;
+    font-weight: 600;
+    font-family: 'DM Mono', monospace;
+    color: var(--purple);
+  }
+
+  .feedback-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .feedback-bar-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    flex: 1;
+  }
+  .feedback-bar-label { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+  .feedback-bar-track { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+  .feedback-bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s ease; }
+  .feedback-pct { font-size: 20px; font-weight: 600; font-family: 'DM Mono', monospace; margin-top: 6px; }
+
+  .divider { height: 1px; background: var(--border); margin: 24px 0; }
+
+  .last-updated { font-size: 11px; color: var(--muted); text-align: right; margin-top: 24px; font-family: 'DM Mono', monospace; }
+
+  .refresh-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 12px;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    float: right;
+    margin-top: -4px;
+  }
+  .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Think Beyond — Admin</h1>
+  <p>Usage and activity across all tools</p>
+</div>
+
+<div class="auth-row">
+  <input type="password" id="secret" placeholder="Enter backfill secret..." onkeydown="if(event.key==='Enter') load()" />
+  <button id="load-btn" onclick="load()">Load</button>
+</div>
+<div class="error" id="error"></div>
+<div class="loading-msg" id="loading-msg">Loading dashboard data...</div>
+
+<div class="dashboard" id="dashboard">
+  <button class="refresh-btn" onclick="load()">↻ Refresh</button>
+
+  <div class="section-label">Ask the Archive</div>
+  <div class="stats-grid" id="archive-stats"></div>
+
+  <div class="feedback-row" id="feedback-row"></div>
+
+  <div class="chart-card">
+    <div class="chart-title">Questions asked — last 14 days</div>
+    <div class="bar-chart" id="archive-chart"></div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="section-label">Practice Lab</div>
+  <div class="stats-grid" id="pl-stats"></div>
+
+  <div class="chart-card">
+    <div class="chart-title">Interactions — last 14 days</div>
+    <div class="bar-chart" id="pl-chart"></div>
+  </div>
+
+  <div class="section-label" style="margin-top:20px;">Practice Lab — by mode</div>
+  <div class="mode-grid" id="pl-modes"></div>
+
+  <div class="last-updated" id="last-updated"></div>
+</div>
+
+<script>
+  async function load() {
+    var secret = document.getElementById('secret').value.trim();
+    if (!secret) return;
+    var btn = document.getElementById('load-btn');
+    var err = document.getElementById('error');
+    var msg = document.getElementById('loading-msg');
+    btn.disabled = true;
+    err.style.display = 'none';
+    msg.style.display = 'block';
+
+    try {
+      var resp = await fetch('/.netlify/functions/admin-dashboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secret: secret })
+      });
+      var data = await resp.json();
+      if (!resp.ok || data.error) {
+        err.textContent = 'Error ' + resp.status + ': ' + (data.error || resp.statusText);
+        err.style.display = 'block';
+        msg.style.display = 'none';
+        btn.disabled = false;
+        return;
+      }
+
+      msg.style.display = 'none';
+      document.getElementById('dashboard').style.display = 'block';
+      renderDashboard(data);
+
+    } catch(e) {
+      err.textContent = 'Network error: ' + e.message;
+      err.style.display = 'block';
+      msg.style.display = 'none';
+    }
+    btn.disabled = false;
+  }
+
+  function renderDashboard(data) {
+    var a = data.archive;
+    var pl = data.practiceLab;
+
+    // Archive stats
+    document.getElementById('archive-stats').innerHTML =
+      statCard(a.total, 'Total Questions', 'accent') +
+      statCard(a.thisWeek, 'This Week', 'green') +
+      statCard(a.today, 'Today', 'green') +
+      statCard(a.unansweredTotal, 'Unanswered (all time)', 'amber') +
+      statCard(a.unansweredThisWeek, 'Unanswered This Week', 'amber');
+
+    // Feedback
+    var total = a.thumbsUp + a.thumbsDown;
+    var upPct = total > 0 ? Math.round(a.thumbsUp / total * 100) : 0;
+    var downPct = total > 0 ? Math.round(a.thumbsDown / total * 100) : 0;
+    document.getElementById('feedback-row').innerHTML =
+      feedbackBar('👍 Helpful', a.thumbsUp, upPct, '#34d399', '#0d2e22') +
+      feedbackBar('👎 Not Helpful', a.thumbsDown, downPct, '#f87171', '#2d0f0f') +
+      '<div style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;min-width:120px;text-align:center;"><div style="font-size:11px;color:var(--muted);margin-bottom:4px;">Total Ratings</div><div style="font-size:24px;font-weight:600;font-family:DM Mono,monospace;color:var(--text);">' + total + '</div></div>';
+
+    // Archive chart
+    renderBarChart('archive-chart', a.daily, '#4d8ab5');
+
+    // Practice Lab stats
+    document.getElementById('pl-stats').innerHTML =
+      statCard(pl.total, 'Total Interactions', 'purple') +
+      statCard(pl.thisWeek, 'This Week', 'green') +
+      statCard(pl.today, 'Today', 'green');
+
+    // PL chart
+    renderBarChart('pl-chart', pl.daily, '#a78bfa');
+
+    // PL by mode
+    var modes = Object.entries(pl.byMode).sort(function(a, b) { return b[1] - a[1]; });
+    if (modes.length === 0) {
+      document.getElementById('pl-modes').innerHTML = '<div style="color:var(--muted);font-size:13px;padding:12px;">No Practice Lab data yet — usage logging will start once the updated proxy is deployed.</div>';
+    } else {
+      document.getElementById('pl-modes').innerHTML = modes.map(function(m) {
+        return '<div class="mode-row"><span class="mode-name">' + m[0] + '</span><span class="mode-count">' + m[1] + '</span></div>';
+      }).join('');
+    }
+
+    document.getElementById('last-updated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+  }
+
+  function statCard(num, label, cls) {
+    return '<div class="stat-card ' + cls + '"><div class="num">' + (num || 0) + '</div><div class="label">' + label + '</div></div>';
+  }
+
+  function feedbackBar(label, count, pct, color, bg) {
+    return '<div class="feedback-bar-wrap">' +
+      '<div class="feedback-bar-label">' + label + '</div>' +
+      '<div class="feedback-bar-track"><div class="feedback-bar-fill" style="width:' + pct + '%;background:' + color + ';"></div></div>' +
+      '<div class="feedback-pct" style="color:' + color + ';">' + pct + '%</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin-top:2px;">' + count + ' ratings</div>' +
+    '</div>';
+  }
+
+  function renderBarChart(id, daily, color) {
+    if (!daily || daily.length === 0) return;
+    var max = Math.max.apply(null, daily.map(function(d) { return d[1]; })) || 1;
+    var html = daily.map(function(d) {
+      var h = Math.max(2, Math.round(d[1] / max * 72));
+      var label = d[0].substring(5); // MM-DD
+      return '<div class="bar-col">' +
+        '<div class="bar" style="height:' + h + 'px;background:' + color + ';opacity:' + (0.4 + d[1]/max*0.6) + ';" title="' + d[0] + ': ' + d[1] + '"></div>' +
+        '<div class="bar-label">' + label + '</div>' +
+      '</div>';
+    }).join('');
+    document.getElementById(id).innerHTML = html;
+  }
+</script>
+
+</body>
+</html>
