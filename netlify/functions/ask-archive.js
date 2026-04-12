@@ -55,6 +55,58 @@ exports.handler = async function(event, context) {
     }
   }
 
+  // Handle template file upload
+  if (body.action === 'upload_template_file') {
+    if (body.secret !== process.env.BACKFILL_SECRET) {
+      return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'Invalid secret' }) };
+    }
+    try {
+      const { id, filename, contentType, data } = body;
+      const fileBuffer = Buffer.from(data, 'base64');
+      const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const storagePath = `templates/${id}_${safeName}`;
+
+      // Upload to Supabase Storage bucket 'templates'
+      const uploadRes = await fetch(
+        `${supabaseUrl}/storage/v1/object/templates/${storagePath}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': contentType,
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${supabaseKey}`,
+            'x-upsert': 'true'
+          },
+          body: fileBuffer
+        }
+      );
+
+      if (!uploadRes.ok) {
+        const errText = await uploadRes.text();
+        return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Storage upload failed: ' + errText.substring(0, 200) }) };
+      }
+
+      // Public URL for the file
+      const file_url = `${supabaseUrl}/storage/v1/object/public/templates/${storagePath}`;
+
+      // Update templates table with file_url
+      await fetch(`${supabaseUrl}/rest/v1/templates?id=eq.${id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({ file_url })
+      });
+
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ success: true, file_url }) };
+    } catch(e) {
+      return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: e.message }) };
+    }
+  }
+
   // Handle template update
   if (body.action === 'update_template') {
     if (body.secret !== process.env.BACKFILL_SECRET) {
