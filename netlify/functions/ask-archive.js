@@ -39,6 +39,44 @@ exports.handler = async function(event, context) {
     }
   }
 
+  // Handle template list
+  if (body.action === 'list_templates') {
+    if (body.secret !== process.env.BACKFILL_SECRET) {
+      return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'Invalid secret' }) };
+    }
+    try {
+      const res = await fetch(`${supabaseUrl}/rest/v1/templates?select=*&order=approved.desc,type.asc,title.asc&limit=500`, {
+        headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
+      });
+      const templates = await res.json();
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ templates }) };
+    } catch(e) {
+      return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: e.message }) };
+    }
+  }
+
+  // Handle template update
+  if (body.action === 'update_template') {
+    if (body.secret !== process.env.BACKFILL_SECRET) {
+      return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'Invalid secret' }) };
+    }
+    try {
+      await fetch(`${supabaseUrl}/rest/v1/templates?id=eq.${body.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify(body.update)
+      });
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ success: true }) };
+    } catch(e) {
+      return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: e.message }) };
+    }
+  }
+
   // Handle delete single unanswered question
   if (body.action === 'delete_unanswered') {
     if (body.secret !== process.env.BACKFILL_SECRET) {
