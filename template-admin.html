@@ -59,6 +59,14 @@
   .badge-approved { background: #d1fae5; color: #065f46; }
 
   .empty { text-align: center; padding: 40px; color: #8a847e; font-size: 14px; }
+  .file-upload-row { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  .file-input { font-size: 12px; color: #5c5650; flex: 1; }
+  .upload-btn { padding: 5px 12px; background: white; border: 1px solid #e0dbd4; border-radius: 6px; font-size: 12px; cursor: pointer; color: #1d6fa4; font-weight: 500; white-space: nowrap; }
+  .upload-btn:hover { background: #f0f7ff; }
+  .upload-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .file-status { font-size: 12px; color: #059669; display: none; }
+  .file-link { font-size: 12px; color: #1d6fa4; text-decoration: none; }
+  .file-link:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
@@ -226,6 +234,14 @@
             ? '<button class="reject-btn" onclick="reject(' + t.id + ')">Reject</button>'
             : '') +
         '</div>' +
+        '<div class="file-upload-row">' +
+          (t.file_url
+            ? '<span style="font-size:12px;color:#5c5650;">File: </span><a class="file-link" href="' + escHtml(t.file_url) + '" target="_blank">Uploaded ✓</a>' +
+              '<label class="upload-btn" style="margin-left:8px;">Replace <input type="file" style="display:none" accept=".pdf,.doc,.docx,.txt" onchange="uploadFile(' + t.id + ', this)"></label>'
+            : '<span style="font-size:12px;color:#8a847e;">No file uploaded</span>' +
+              '<label class="upload-btn">Upload File <input type="file" style="display:none" accept=".pdf,.doc,.docx,.txt" onchange="uploadFile(' + t.id + ', this)"></label>') +
+          '<span class="file-status" id="file-status-' + t.id + '">Uploading...</span>' +
+        '</div>' +
       '</div>';
     }).join('');
   }
@@ -280,6 +296,56 @@
 
     renderStats();
     renderList();
+  }
+
+  async function uploadFile(id, input) {
+    var file = input.files[0];
+    if (!file) return;
+
+    var status = document.getElementById('file-status-' + id);
+    status.textContent = 'Uploading...';
+    status.style.display = 'inline';
+    input.disabled = true;
+
+    try {
+      // Read file as base64
+      var base64 = await new Promise(function(resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function(e) { resolve(e.target.result.split(',')[1]); };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      var resp = await fetch('/.netlify/functions/ask-archive', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'upload_template_file',
+          secret: currentSecret,
+          id: id,
+          filename: file.name,
+          contentType: file.type || 'application/octet-stream',
+          data: base64
+        })
+      });
+
+      var data = await resp.json();
+      if (data.error) {
+        status.textContent = 'Upload failed: ' + data.error;
+        status.style.color = '#dc2626';
+      } else {
+        status.textContent = 'Uploaded ✓';
+        status.style.color = '#059669';
+        // Update local record
+        var t = allTemplates.find(function(t) { return t.id === id; });
+        if (t) t.file_url = data.file_url;
+        setTimeout(function() { renderList(); }, 1000);
+      }
+    } catch(e) {
+      status.textContent = 'Error: ' + e.message;
+      status.style.color = '#dc2626';
+    }
+    input.disabled = false;
   }
 
   function showError(msg) {
