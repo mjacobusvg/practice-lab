@@ -25,6 +25,8 @@
     --red-dim: #2d0f0f;
     --purple: #a78bfa;
     --purple-dim: #1e1535;
+    --teal: #2aabb8;
+    --teal-dim: #0f3c42;
   }
 
   body {
@@ -116,6 +118,7 @@
   .stat-card.amber .num { color: var(--amber); }
   .stat-card.red .num { color: var(--red); }
   .stat-card.purple .num { color: var(--purple); }
+  .stat-card.teal .num { color: var(--teal); }
 
   .chart-card {
     background: var(--surface);
@@ -193,6 +196,92 @@
     margin-top: -4px;
   }
   .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── REFERRAL TABLE ── */
+  .ref-table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0;
+    overflow-x: auto;
+    margin-top: 12px;
+  }
+  .ref-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .ref-table th {
+    text-align: left;
+    padding: 12px 14px;
+    color: var(--muted);
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0,0,0,0.15);
+  }
+  .ref-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  .ref-table tr:last-child td { border-bottom: none; }
+  .ref-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .ref-date { font-family: 'DM Mono', monospace; color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .ref-email { font-family: 'DM Mono', monospace; color: var(--text); font-size: 12px; }
+  .ref-referrer { color: var(--text); font-weight: 500; }
+  .ref-notes { color: var(--muted); font-size: 12px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .ref-select {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 5px 8px;
+    font-size: 12px;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    outline: none;
+  }
+  .ref-select:focus { border-color: var(--accent); }
+  .ref-select.status-active { border-color: var(--green); color: var(--green); }
+  .ref-select.status-refunded { border-color: var(--red); color: var(--red); }
+  .ref-select.status-pending { border-color: var(--amber); color: var(--amber); }
+  .ref-select.payout-paid { border-color: var(--teal); color: var(--teal); }
+  .ref-select.payout-na { border-color: var(--muted); color: var(--muted); }
+
+  .ref-delete-btn {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 14px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: color 0.15s;
+  }
+  .ref-delete-btn:hover { color: var(--red); }
+
+  .ref-empty {
+    padding: 32px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+  }
+
+  .ref-saving {
+    color: var(--amber);
+    font-size: 10px;
+    font-family: 'DM Mono', monospace;
+  }
+  .ref-saved {
+    color: var(--green);
+    font-size: 10px;
+    font-family: 'DM Mono', monospace;
+  }
 </style>
 </head>
 <body>
@@ -235,13 +324,22 @@
   <div class="section-label" style="margin-top:20px;">Practice Lab — by mode</div>
   <div class="mode-grid" id="pl-modes"></div>
 
+  <div class="divider"></div>
+
+  <div class="section-label">Referrals</div>
+  <div class="stats-grid" id="ref-stats"></div>
+  <div class="ref-table-wrap" id="ref-table-wrap"></div>
+
   <div class="last-updated" id="last-updated"></div>
 </div>
 
 <script>
+  var currentSecret = '';
+
   async function load() {
     var secret = document.getElementById('secret').value.trim();
     if (!secret) return;
+    currentSecret = secret;
     var btn = document.getElementById('load-btn');
     var err = document.getElementById('error');
     var msg = document.getElementById('loading-msg');
@@ -279,6 +377,7 @@
   function renderDashboard(data) {
     var a = data.archive;
     var pl = data.practiceLab;
+    var ref = data.referrals;
 
     // Archive stats
     document.getElementById('archive-stats').innerHTML =
@@ -319,7 +418,136 @@
       }).join('');
     }
 
+    // Referral stats
+    renderReferrals(ref);
+
     document.getElementById('last-updated').textContent = 'Last updated: ' + new Date().toLocaleTimeString();
+  }
+
+  function renderReferrals(ref) {
+    document.getElementById('ref-stats').innerHTML =
+      statCard(ref.total, 'Total Submissions', 'accent') +
+      statCard(ref.pending, 'Pending Day 16', 'amber') +
+      statCard(ref.active, 'Active / Owed', 'green') +
+      statCard(ref.paid, 'Paid Out', 'teal') +
+      statCard(ref.refunded, 'Refunded', 'red') +
+      statCard('$' + ref.owed, 'Owed ($' + ref.payoutRate + '/ea)', 'amber') +
+      statCard('$' + ref.paidTotal, 'Paid Total', 'teal');
+
+    var wrap = document.getElementById('ref-table-wrap');
+    if (!ref.rows || ref.rows.length === 0) {
+      wrap.innerHTML = '<div class="ref-empty">No referral submissions yet.</div>';
+      return;
+    }
+
+    var rowsHtml = ref.rows.map(function(r) {
+      var date = new Date(r.created_at).toISOString().split('T')[0];
+      var notes = r.notes ? escapeHtml(r.notes) : '—';
+      return '<tr data-id="' + r.id + '">' +
+        '<td class="ref-date">' + date + '</td>' +
+        '<td class="ref-referrer">' + escapeHtml(r.referrer_name) + '</td>' +
+        '<td class="ref-email">' + escapeHtml(r.new_member_email) + '</td>' +
+        '<td>' + dayStatusSelect(r.id, r.day_16_status) + '</td>' +
+        '<td>' + payoutStatusSelect(r.id, r.payout_status) + '</td>' +
+        '<td class="ref-notes" title="' + notes + '">' + notes + '</td>' +
+        '<td><span class="ref-status-indicator" id="status-' + r.id + '"></span></td>' +
+        '<td><button class="ref-delete-btn" onclick="deleteReferral(\'' + r.id + '\')" title="Delete">✕</button></td>' +
+      '</tr>';
+    }).join('');
+
+    wrap.innerHTML =
+      '<table class="ref-table">' +
+        '<thead><tr>' +
+          '<th>Date</th>' +
+          '<th>Referrer</th>' +
+          '<th>New Member</th>' +
+          '<th>Day 16 Status</th>' +
+          '<th>Payout</th>' +
+          '<th>Notes</th>' +
+          '<th></th>' +
+          '<th></th>' +
+        '</tr></thead>' +
+        '<tbody>' + rowsHtml + '</tbody>' +
+      '</table>';
+  }
+
+  function dayStatusSelect(id, current) {
+    var cls = 'ref-select status-' + current;
+    return '<select class="' + cls + '" onchange="updateReferral(\'' + id + '\', \'day_16_status\', this.value, this)">' +
+      '<option value="pending"' + (current === 'pending' ? ' selected' : '') + '>pending</option>' +
+      '<option value="active"' + (current === 'active' ? ' selected' : '') + '>active</option>' +
+      '<option value="refunded"' + (current === 'refunded' ? ' selected' : '') + '>refunded</option>' +
+    '</select>';
+  }
+
+  function payoutStatusSelect(id, current) {
+    var cls = 'ref-select payout-' + (current === 'n/a' ? 'na' : current);
+    return '<select class="' + cls + '" onchange="updateReferral(\'' + id + '\', \'payout_status\', this.value, this)">' +
+      '<option value="pending"' + (current === 'pending' ? ' selected' : '') + '>pending</option>' +
+      '<option value="paid"' + (current === 'paid' ? ' selected' : '') + '>paid</option>' +
+      '<option value="n/a"' + (current === 'n/a' ? ' selected' : '') + '>n/a</option>' +
+    '</select>';
+  }
+
+  async function updateReferral(id, field, value, selectEl) {
+    var indicator = document.getElementById('status-' + id);
+    if (indicator) { indicator.className = 'ref-saving'; indicator.textContent = 'saving...'; }
+
+    // Update select class for color
+    selectEl.className = 'ref-select ' + (field === 'day_16_status' ? 'status-' : 'payout-') + (value === 'n/a' ? 'na' : value);
+
+    try {
+      var payload = { secret: currentSecret, action: 'update_referral', id: id };
+      payload[field] = value;
+
+      var resp = await fetch('/.netlify/functions/admin-dashboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      var data = await resp.json();
+      if (!resp.ok || data.error) {
+        if (indicator) { indicator.className = ''; indicator.textContent = 'error'; indicator.style.color = '#f87171'; }
+        alert('Update failed: ' + (data.error || resp.statusText));
+        return;
+      }
+      if (indicator) {
+        indicator.className = 'ref-saved';
+        indicator.textContent = '✓';
+        setTimeout(function() { indicator.textContent = ''; }, 1500);
+      }
+      // Reload stats to reflect change
+      setTimeout(function() { load(); }, 400);
+    } catch(e) {
+      if (indicator) { indicator.className = ''; indicator.textContent = 'error'; indicator.style.color = '#f87171'; }
+      alert('Network error: ' + e.message);
+    }
+  }
+
+  async function deleteReferral(id) {
+    if (!confirm('Delete this referral submission? This cannot be undone.')) return;
+    try {
+      var resp = await fetch('/.netlify/functions/admin-dashboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secret: currentSecret, action: 'delete_referral', id: id })
+      });
+      var data = await resp.json();
+      if (!resp.ok || data.error) {
+        alert('Delete failed: ' + (data.error || resp.statusText));
+        return;
+      }
+      load();
+    } catch(e) {
+      alert('Network error: ' + e.message);
+    }
+  }
+
+  function escapeHtml(str) {
+    if (str == null) return '';
+    return String(str).replace(/[&<>"']/g, function(c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
   }
 
   function statCard(num, label, cls) {
@@ -340,7 +568,7 @@
     var max = Math.max.apply(null, daily.map(function(d) { return d[1]; })) || 1;
     var html = daily.map(function(d) {
       var h = Math.max(2, Math.round(d[1] / max * 72));
-      var label = d[0].substring(5); // MM-DD
+      var label = d[0].substring(5);
       return '<div class="bar-col">' +
         '<div class="bar" style="height:' + h + 'px;background:' + color + ';opacity:' + (0.4 + d[1]/max*0.6) + ';" title="' + d[0] + ': ' + d[1] + '"></div>' +
         '<div class="bar-label">' + label + '</div>' +
