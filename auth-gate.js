@@ -26,27 +26,29 @@
   var style = document.createElement('style');
   style.textContent = [
     '*{box-sizing:border-box;margin:0;padding:0}',
-    ':root{--text:#1A1714;--text2:#5C5650;--text3:#9C958F;--surface:#F9F7F5;--border:#E8E3DD;--blue:#1D6FA4;--blue-light:#EBF4FB;--red:#A32D2D;--red-light:#FDECEA;}',
-    'body.tbp-gate-active{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--surface)}',
-    '#tbp-gate{width:100%;max-width:420px;padding:20px}',
-    '#tbp-gate .gate-card{background:white;border:1px solid var(--border);border-radius:16px;padding:36px 32px;text-align:center}',
-    '#tbp-gate .gate-logo{width:56px;height:56px;margin:0 auto 20px;background:#1D6FA4;border-radius:12px;display:flex;align-items:center;justify-content:center}',
-    '#tbp-gate .gate-logo svg{width:28px;height:28px;fill:white}',
-    '#tbp-gate h1{font-size:20px;font-weight:700;color:var(--text);margin-bottom:6px}',
-    '#tbp-gate .gate-sub{font-size:13px;color:var(--text2);margin-bottom:28px;line-height:1.5}',
-    '#tbp-gate .gate-label{font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;text-align:left;margin-bottom:6px}',
-    '#tbp-gate .gate-input{width:100%;border:1.5px solid var(--border);border-radius:8px;padding:12px 14px;font-size:14px;color:var(--text);background:white;transition:border-color 0.15s;margin-bottom:12px}',
-    '#tbp-gate .gate-input:focus{outline:none;border-color:var(--blue)}',
-    '#tbp-gate .gate-input.error{border-color:var(--red);background:var(--red-light)}',
-    '#tbp-gate .gate-btn{width:100%;padding:13px;background:var(--blue);color:white;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s;display:flex;align-items:center;justify-content:center;gap:8px}',
-    '#tbp-gate .gate-btn:hover{background:#185d8c}',
-    '#tbp-gate .gate-btn:disabled{background:#94a3b8;cursor:not-allowed}',
-    '#tbp-gate .gate-spinner{width:16px;height:16px;border:2px solid rgba(255,255,255,0.3);border-top-color:white;border-radius:50%;animation:tbp-spin 0.7s linear infinite;display:none}',
+    ':root{--tbp-navy:#0b1120;--tbp-navy-mid:#111c30;--tbp-navy-light:#1a2d47;--tbp-teal:#2aabb8;--tbp-teal-hover:#33c8d6;--tbp-cream:#e8e2d6;--tbp-cream-dim:#b0aa9e;--tbp-white:#f5f4f2;--tbp-rule:rgba(42,171,184,0.2);--tbp-error-bg:rgba(163,45,45,0.18);--tbp-error-text:#f87171;--tbp-error-border:rgba(248,113,113,0.3);}',
+    'body.tbp-gate-active{display:flex;align-items:center;justify-content:center;min-height:100vh;background:var(--tbp-navy);}',
+    '#tbp-gate{width:100%;max-width:420px;padding:20px;}',
+    '#tbp-gate .gate-card{background:var(--tbp-navy-mid);border:1px solid var(--tbp-rule);border-top:2px solid var(--tbp-teal);border-radius:8px;padding:40px 36px;text-align:center;font-family:-apple-system,"DM Sans",sans-serif;}',
+    '#tbp-gate .gate-logo{width:52px;height:52px;margin:0 auto 22px;background:rgba(42,171,184,0.15);border:1px solid var(--tbp-rule);border-radius:10px;display:flex;align-items:center;justify-content:center;}',
+    '#tbp-gate .gate-logo svg{width:26px;height:26px;fill:var(--tbp-teal);}',
+    '#tbp-gate .gate-wordmark{font-size:11px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:var(--tbp-teal);margin-bottom:10px;}',
+    '#tbp-gate h1{font-size:20px;font-weight:700;color:var(--tbp-white);margin-bottom:6px;letter-spacing:0.01em;}',
+    '#tbp-gate .gate-sub{font-size:13px;color:var(--tbp-cream-dim);margin-bottom:28px;line-height:1.6;}',
+    '#tbp-gate .gate-label{font-size:10px;font-weight:700;color:var(--tbp-teal);text-transform:uppercase;letter-spacing:0.12em;text-align:left;margin-bottom:7px;}',
+    '#tbp-gate .gate-input{width:100%;border:1px solid var(--tbp-rule);border-radius:6px;padding:12px 14px;font-size:14px;color:var(--tbp-cream);background:var(--tbp-navy);transition:border-color 0.15s;margin-bottom:12px;font-family:inherit;}',
+    '#tbp-gate .gate-input::placeholder{color:var(--tbp-cream-dim);opacity:0.6;}',
+    '#tbp-gate .gate-input:focus{outline:none;border-color:var(--tbp-teal);}',
+    '#tbp-gate .gate-input.error{border-color:var(--tbp-error-text);background:rgba(163,45,45,0.1);}',
+    '#tbp-gate .gate-btn{width:100%;padding:13px;background:var(--tbp-teal);color:var(--tbp-navy);border:none;border-radius:6px;font-size:14px;font-weight:700;font-family:inherit;cursor:pointer;transition:background 0.15s;display:flex;align-items:center;justify-content:center;gap:8px;letter-spacing:0.01em;}',
+    '#tbp-gate .gate-btn:hover{background:var(--tbp-teal-hover);}',
+    '#tbp-gate .gate-btn:disabled{background:var(--tbp-navy-light);color:var(--tbp-cream-dim);cursor:not-allowed;}',
+    '#tbp-gate .gate-spinner{width:16px;height:16px;border:2px solid rgba(11,17,32,0.3);border-top-color:var(--tbp-navy);border-radius:50%;animation:tbp-spin 0.7s linear infinite;display:none;}',
     '@keyframes tbp-spin{to{transform:rotate(360deg)}}',
-    '#tbp-gate .gate-error{display:none;margin-top:12px;padding:10px 14px;background:var(--red-light);border:1px solid #f5c6c6;border-radius:8px;font-size:13px;color:var(--red);text-align:left;line-height:1.5}',
-    '#tbp-gate .gate-footer{margin-top:20px;font-size:12px;color:var(--text3)}',
-    '#tbp-gate .gate-footer a{color:var(--blue);text-decoration:none}',
-    '#tbp-gate .gate-footer a:hover{text-decoration:underline}'
+    '#tbp-gate .gate-error{display:none;margin-top:12px;padding:10px 14px;background:var(--tbp-error-bg);border:1px solid var(--tbp-error-border);border-radius:6px;font-size:13px;color:var(--tbp-error-text);text-align:left;line-height:1.5;}',
+    '#tbp-gate .gate-footer{margin-top:22px;font-size:12px;color:var(--tbp-cream-dim);}',
+    '#tbp-gate .gate-footer a{color:var(--tbp-teal);text-decoration:none;}',
+    '#tbp-gate .gate-footer a:hover{text-decoration:underline;}'
   ].join('');
   document.head.appendChild(style);
 
@@ -77,7 +79,6 @@
   }
 
   function renderGate(toolName, spaceId, onVerified) {
-    // Hide body content while gate is showing
     document.body.style.overflow = 'hidden';
     document.body.classList.add('tbp-gate-active');
 
@@ -88,8 +89,9 @@
         '<div class="gate-logo">',
           '<svg viewBox="0 0 20 20"><path d="M10 2L3 7v11h5v-5h4v5h5V7z"/></svg>',
         '</div>',
+        '<div class="gate-wordmark">Think Beyond Practice</div>',
         '<h1>', toolName, '</h1>',
-        '<p class="gate-sub">Think Beyond Practice member access.<br>Enter your Circle email to continue.</p>',
+        '<p class="gate-sub">Member access only.<br>Enter your Circle email to continue.</p>',
         '<div class="gate-label">Your email</div>',
         '<input class="gate-input" id="tbp-email" type="email" placeholder="you@example.com" autocomplete="email">',
         '<button class="gate-btn" id="tbp-submit">',
@@ -144,7 +146,6 @@
 
       setLoading(true);
 
-      // Build request body — only include spaceId if provided
       var requestBody = { email: email };
       if (spaceId) requestBody.spaceId = spaceId;
 
@@ -190,13 +191,11 @@
       var spaceId = options.spaceId || null;
       var onVerified = options.onVerified || function() {};
 
-      // Check for valid session first
       if (getSessionToken()) {
         onVerified();
         return;
       }
 
-      // Wait for DOM ready
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function() {
           renderGate(toolName, spaceId, onVerified);
