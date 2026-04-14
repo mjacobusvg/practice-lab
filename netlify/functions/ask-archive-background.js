@@ -31,6 +31,80 @@ function isMetaQuestion(q) {
   return META_PATTERNS.some(function(p) { return p.test(q); });
 }
 
+// ── HYBRID MERGE ──────────────────────────────────────────────────────────────
+// Combines vector similarity results with full-text search results.
+// Scoring:
+//   vector score: raw cosine similarity (0-1) from match_posts
+//   fts score: position-based (1st result = 1.0, 2nd = 0.95, etc.)
+//   title boost: +0.15 if any query keyword appears in the post title
+//
+// Final score = (vector_score * 0.65) + (fts_score * 0.35) + title_boost
+//
+// This means a long authoritative post that ranks 1st in FTS but scores 0.38
+// in vector search will outscore a short comment chunk scoring 0.55 in vector
+// but absent from FTS. It also means pure vector matches with no FTS presence
+// are not penalized heavily -- the FTS term is additive, not a gate.
+
+function hybridMerge(vectorResults, ftsResults, queryKeywords) {
+  const scores = {};
+  const records = {};
+
+  // Index vector results
+  (vectorResults || []).forEach(function(r) {
+    scores[r.id] = { vector: r.similarity || 0, fts: 0 };
+    records[r.id] = r;
+  });
+
+  // Index FTS results with position-based score
+  (ftsResults || []).forEach(function(r, idx) {
+    var ftsScore = Math.max(0, 1.0 - (idx * 0.05)); // 1.0, 0.95, 0.90 ... floor at 0
+    if (scores[r.id]) {
+      scores[r.id].fts = ftsScore;
+    } else {
+      scores[r.id] = { vector: 0, fts: ftsScore };
+      records[r.id] = r;
+    }
+  });
+
+  // Compute final scores with title boost
+  var keywords = (queryKeywords || []).map(function(k) { return k.toLowerCase(); });
+  var results = Object.keys(scores).map(function(id) {
+    var s = scores[id];
+    var r = records[id];
+    var titleBoost = 0;
+    if (r.title && keywords.length > 0) {
+      var titleLower = r.title.toLowerCase();
+      var matchCount = keywords.filter(function(k) { return k.length > 3 && titleLower.includes(k); }).length;
+      if (matchCount > 0) titleBoost = Math.min(0.15, matchCount * 0.05);
+    }
+    r._hybridScore = (s.vector * 0.65) + (s.fts * 0.35) + titleBoost;
+    r._vectorScore = s.vector;
+    r._ftsScore = s.fts;
+    return r;
+  });
+
+  results.sort(function(a, b) { return (b._hybridScore || 0) - (a._hybridScore || 0); });
+  return results.slice(0, MATCH_COUNT);
+}
+
+// Extract meaningful keywords from a question for title boosting
+function extractKeywords(question) {
+  var stopwords = new Set(['what','how','when','why','can','is','are','do','does','the','a','an','in','on','at','to','for','of','and','or','but','with','my','i','it','this','that','if','be','been','was','were','will','would','should','could','have','has','had']);
+  return question.toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(function(w) { return w.length > 3 && !stopwords.has(w); });
+}
+
+// Build FTS search string from keywords (Postgres websearch_to_tsquery format)
+// Uses OR logic so partial matches surface -- title boost handles ranking
+function buildFtsQuery(question) {
+  var keywords = extractKeywords(question);
+  if (keywords.length === 0) return question.substring(0, 60);
+  // Take top 6 keywords joined with OR for broad recall
+  return keywords.slice(0, 6).join(' OR ');
+}
+
 exports.handler = async function(event, context) {
   let body;
   try { body = JSON.parse(event.body || '{}'); } catch(e) { return { statusCode: 400, body: '' }; }
@@ -44,8 +118,6 @@ exports.handler = async function(event, context) {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   const resendKey = process.env.RESEND_API_KEY;
 
-  // Step 1: upsert job row immediately so the poll can find it
-  // Frontend generates job_id and calls this function directly — no dispatcher in the path
   async function createJob() {
     await fetch(`${supabaseUrl}/rest/v1/archive_jobs?on_conflict=job_id`, {
       method: 'POST',
@@ -63,7 +135,6 @@ exports.handler = async function(event, context) {
     });
   }
 
-  // Step 2: PATCH the existing row with the final result
   async function saveResult(result) {
     const saveRes = await fetch(`${supabaseUrl}/rest/v1/archive_jobs?job_id=eq.${job_id}`, {
       method: 'PATCH',
@@ -122,39 +193,64 @@ exports.handler = async function(event, context) {
 
       console.log('Query variants:', queryVariants);
 
-      // Run embeddings + search with up to 2 retries if zero results come back
-      // Handles OpenAI API intermittency on cold starts
+      // Run vector search + FTS in parallel, then hybrid merge
       async function runSearch(variants) {
         const embeddings = await Promise.all(variants.map(function(q) { return getEmbedding(q, openaiKey); }));
-        const searchResults = await Promise.all(embeddings.map(function(emb) {
+
+        // Vector search across all variants
+        const vectorSearchPromises = embeddings.map(function(emb) {
           return fetch(`${supabaseUrl}/rest/v1/rpc/match_posts`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
             body: JSON.stringify({ query_embedding: emb, match_threshold: MATCH_THRESHOLD, match_count: MATCH_COUNT })
           }).then(function(r) { return r.ok ? r.json() : []; });
-        }));
-        const map = {};
-        searchResults.forEach(function(resultSet) {
+        });
+
+        // FTS search runs in parallel with vector search -- no added latency
+        const ftsQuery = buildFtsQuery(question);
+        const ftsSearchPromise = fetch(`${supabaseUrl}/rest/v1/rpc/search_posts_fts`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
+          body: JSON.stringify({ search_query: ftsQuery, match_count: 20 })
+        }).then(function(r) { return r.ok ? r.json() : []; }).catch(function() { return []; });
+
+        const [vectorResultSets, ftsResults] = await Promise.all([
+          Promise.all(vectorSearchPromises),
+          ftsSearchPromise
+        ]);
+
+        // Deduplicate vector results keeping highest similarity per id
+        const vectorMap = {};
+        vectorResultSets.forEach(function(resultSet) {
           (resultSet || []).forEach(function(record) {
-            if (!map[record.id] || record.similarity > map[record.id].similarity) map[record.id] = record;
+            if (!vectorMap[record.id] || record.similarity > vectorMap[record.id].similarity) {
+              vectorMap[record.id] = record;
+            }
           });
         });
-        return Object.values(map).sort(function(a, b) { return (b.similarity||0)-(a.similarity||0); }).slice(0, MATCH_COUNT);
+        const vectorResults = Object.values(vectorMap);
+
+        console.log('Vector results:', vectorResults.length, '| FTS results:', (ftsResults||[]).length);
+
+        // Hybrid merge with title boost
+        const keywords = extractKeywords(question);
+        return hybridMerge(vectorResults, ftsResults, keywords);
       }
 
       matches = await runSearch(queryVariants);
-      console.log('Expanded search matches:', matches.length);
+      console.log('Hybrid search matches:', matches.length);
 
-      // Retry once if zero results — catches cold-start embedding failures
+      // Retry once if zero results -- catches cold-start embedding failures
       if (matches.length === 0) {
         console.log('Zero matches on first attempt, retrying search...');
         await new Promise(function(r) { setTimeout(r, 500); });
         matches = await runSearch(queryVariants);
         console.log('Retry search matches:', matches.length);
       }
+
       console.log('Starting template search...');
 
-      // Template search
+      // Template search (unchanged)
       const templateSearchRes = await fetch(`${supabaseUrl}/rest/v1/rpc/search_posts_fts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` },
@@ -173,7 +269,7 @@ exports.handler = async function(event, context) {
       }
     }
 
-    // Handle meta/browse
+    // Handle meta/browse (unchanged)
     if (isMetaQuestion(question)) {
       const EXCLUDED = ['start here','forum updates','forum updates & announcements','welcome','announcements'];
       const filtered = (matches||[]).filter(function(m) {
@@ -188,7 +284,7 @@ exports.handler = async function(event, context) {
       return { statusCode: 200, body: '' };
     }
 
-    // Unanswered — no matches
+    // Unanswered -- no matches
     if (!matches || matches.length === 0) {
       await logUnanswered(supabaseUrl, supabaseKey, question, member_requested);
       await sendUnansweredEmail(resendKey, question);
@@ -278,7 +374,6 @@ Return ONLY the JSON object. Nothing before or after it.`;
       return { statusCode: 200, body: '' };
     }
 
-    // Source descriptions now come from the synthesis response
     let sourceDescMap = {};
     try {
       (parsed.source_descriptions || []).forEach(function(s) { sourceDescMap[s.index] = s.description; });
