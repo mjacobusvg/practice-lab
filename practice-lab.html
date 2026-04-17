@@ -2632,8 +2632,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-heig
     <div id="gbt-m6-reflect" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;max-width:500px;margin-bottom:14px">
       <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:8px">Based on this ERA, what would you do differently before Maya's next visit?</div>
       <div style="display:flex;flex-direction:column;gap:6px">
-        <button class="resp-btn" onclick="gbtEraReflect('estimate',this)" style="text-align:left;font-size:12px;padding:8px 12px;border:1px solid var(--border2);border-radius:6px;background:var(--surface);cursor:pointer">Give Maya an accurate deductible estimate and collect upfront</button>
-        <button class="resp-btn" onclick="gbtEraReflect('nothing',this)" style="text-align:left;font-size:12px;padding:8px 12px;border:1px solid var(--border2);border-radius:6px;background:var(--surface);cursor:pointer">Nothing — the ERA came back correctly</button>
+        <button class="resp-btn" onclick="gbtEraReflect('nothing',this)" style="text-align:left;font-size:12px;padding:8px 12px;border:1px solid var(--border2);border-radius:6px;background:var(--surface);cursor:pointer">Nothing — this is a normal deductible scenario and the workflow was appropriate</button>
+        <button class="resp-btn" onclick="gbtEraReflect('estimate',this)" style="text-align:left;font-size:12px;padding:8px 12px;border:1px solid var(--border2);border-radius:6px;background:var(--surface);cursor:pointer">Ensure Maya knows final cost depends on adjudication before the next visit</button>
         <button class="resp-btn" onclick="gbtEraReflect('coding',this)" style="text-align:left;font-size:12px;padding:8px 12px;border:1px solid var(--border2);border-radius:6px;background:var(--surface);cursor:pointer">Change the coding to avoid deductible exposure</button>
       </div>
       <div id="gbt-reflect-msg" style="font-size:12px;margin-top:8px;line-height:1.6;min-height:16px"></div>
@@ -13884,25 +13884,24 @@ function gbtEraReflect(answer, btn) {
   var opts = document.querySelectorAll('#gbt-m6-reflect .resp-btn');
   opts.forEach(function(b) { b.style.background='var(--surface)'; b.style.borderColor='var(--border2)'; b.style.color='var(--text)'; });
   var msg = document.getElementById('gbt-reflect-msg');
-  var nxt = document.getElementById('gbt-m6s1-next');
-  if (answer === 'estimate') {
+  if (answer === 'nothing') {
     btn.style.background='#E8F9F1'; btn.style.borderColor='var(--green)'; btn.style.color='var(--green)';
-    msg.innerHTML = '<span style="color:var(--green)">&#10003; Correct. The ERA told you what you should have known before the visit. Use eligibility data to build an accurate estimate and collect the expected amount upfront. That is what Step 4 was for.</span>';
-  } else if (answer === 'nothing') {
+    msg.innerHTML = '<span style="color:var(--green)">&#10003; Correct. Nothing needs to change. This is a normal deductible scenario — insurance paid $0 and applied the allowed amount to the deductible exactly as designed. You cannot guarantee exact patient responsibility in advance. Eligibility checks provide estimates, not promises. Bill based on the ERA, communicate that costs may vary, and move on.</span>';
+  } else if (answer === 'estimate') {
     btn.style.background='var(--surface)'; btn.style.borderColor='var(--amber,#C4711A)'; btn.style.color='var(--amber,#C4711A)';
-    msg.innerHTML = '<span style="color:var(--amber,#C4711A)">The ERA came back correctly — but you collected $0 at the visit when you could have collected upfront. The claim workflow was correct. The front desk workflow was not. Next visit: use eligibility data to set and collect an accurate estimate.</span>';
+    msg.innerHTML = '<span style="color:var(--amber,#C4711A)">The ERA came back correctly — this is a normal outcome, not a workflow failure. You cannot guarantee an exact estimate. The correct workflow is to verify benefits, communicate that final costs depend on adjudication, and bill based on the ERA. Collecting upfront is a practice policy choice, not a requirement.</span>';
   } else {
     btn.style.background='#FDECEA'; btn.style.borderColor='var(--red)'; btn.style.color='var(--red)';
-    msg.innerHTML = '<span style="color:var(--red)">&#10007; You cannot code around a deductible. The deductible applies regardless of code. Changing the code does not change what the patient owes — it changes what you get paid. Never adjust coding to change patient financial responsibility.</span>';
+    msg.innerHTML = '<span style="color:var(--red)">&#10007; You cannot code around a deductible. The deductible applies regardless of which codes you bill. Changing coding to shift patient responsibility is not appropriate.</span>';
   }
+  msg.setAttribute('data-answered', '1');
+  // If posting already completed, show next now
   var posted = document.getElementById('gbt-post-summary');
+  var nxt = document.getElementById('gbt-m6s1-next');
   if (posted && posted.innerHTML.indexOf('posted correctly') !== -1) {
-    // Posting already done -- show next
     if (nxt) nxt.style.display = 'block';
   }
-  // else: gbtPostCheck will show next when posting completes
 }
-
 function gbtExplainERA(key) {
   var ids = ['co45','pr1','zero'];
   ids.forEach(function(k) {
@@ -13989,7 +13988,18 @@ function gbtPostCheck(attempt) {
       patientMsg.innerHTML = '<span style="color:var(--green)">✓ Correct. Bill Maya for $' + expectedPatient.toFixed(2) + ' — the sum of the two allowed amounts.</span>';
       document.getElementById('post-patient').style.borderColor = 'var(--green)';
     } else {
-      patientMsg.innerHTML = '<span style="color:var(--red)">The patient owes the sum of the allowed amounts for both lines ($' + gbtAllowables['99214'] + ' + $' + gbtAllowables['90833'] + ' = $' + expectedPatient + '), since her deductible hasn\'t been met.</span>';
+      var enteredPt = patient || 0;
+      if (Math.abs(enteredPt - (gbtState.claimFields.charge1||200)) < 2 || Math.abs(enteredPt - 200) < 2) {
+        patientMsg.innerHTML = '<span style="color:var(--red)">&#10007; Patient responsibility is based on the allowed amount, not what you billed. Your fee does not control what the patient owes.</span>';
+      } else if (Math.abs(enteredPt - gbtAllowables['99214']) < 1) {
+        patientMsg.innerHTML = '<span style="color:var(--red)">&#10007; That is line 1 only. Both lines apply to the deductible. Add line 1 and line 2 allowed amounts.</span>';
+      } else if (Math.abs(enteredPt - gbtAllowables['90833']) < 1) {
+        patientMsg.innerHTML = '<span style="color:var(--red)">&#10007; That is line 2 only. Both lines apply to the deductible. Add line 1 and line 2 allowed amounts.</span>';
+      } else if (attempt >= 2) {
+        patientMsg.innerHTML = '<span style="color:var(--amber,#C4711A)">&#9888; Patient responsibility = sum of all PR-1 amounts. Line 1: $' + gbtAllowables['99214'] + '. Line 2: $' + gbtAllowables['90833'] + '. Total: $' + expectedPatient + '.</span>';
+      } else {
+        patientMsg.innerHTML = '<span style="color:var(--red)">&#10007; Check the ERA. Patient responsibility is the sum of all PR-1 amounts across every line.</span>';
+      }
       document.getElementById('post-patient').style.borderColor = 'var(--red)';
       allOk = false;
     }
@@ -14000,12 +14010,12 @@ function gbtPostCheck(attempt) {
     // Show reflect if not yet answered, else show next directly
     var reflectBlock = document.getElementById('gbt-m6-reflect');
     var reflectMsg = document.getElementById('gbt-reflect-msg');
-    if (reflectMsg && reflectMsg.innerHTML) {
-      // Reflect already answered -- show next button directly
+    var reflectAnswered = reflectMsg && reflectMsg.getAttribute('data-answered') === '1';
+    if (reflectAnswered) {
       if (nxt) nxt.style.display = 'block';
     } else {
-      // Show reflect block first
       if (reflectBlock) reflectBlock.style.display = 'block';
+      if (!reflectBlock && nxt) nxt.style.display = 'block'; // safety fallback
     }
   } else {
     summary.textContent = '';
