@@ -1629,9 +1629,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-heig
       <button class="btn" onclick="goLanding()" style="font-size:12px;padding:6px 14px">&larr; Exit</button>
     </div>
   </div>
+  <!-- Step navigator -->
+  <div style="display:flex;gap:6px;flex-wrap:wrap;max-width:720px;margin-bottom:12px;align-items:center">
+    <button onclick="gbtJumpTo(1)" id="gbt-step-btn-1" style="font-size:11px;padding:4px 10px;border-radius:20px;border:1px solid var(--border2);background:var(--surface);cursor:pointer;color:var(--text2);white-space:nowrap">1 · Setup</button>
+    <button onclick="gbtJumpTo(2)" id="gbt-step-btn-2" style="font-size:11px;padding:4px 10px;border-radius:20px;border:1px solid var(--border2);background:var(--surface);cursor:pointer;color:var(--text2);white-space:nowrap">2 · Fee Schedule</button>
+    <button onclick="gbtJumpTo(3)" id="gbt-step-btn-3" style="font-size:11px;padding:4px 10px;border-radius:20px;border:1px solid var(--border2);background:var(--surface);cursor:pointer;color:var(--text2);white-space:nowrap">3 · Credentialing</button>
+    <button onclick="gbtJumpTo(4)" id="gbt-step-btn-4" style="font-size:11px;padding:4px 10px;border-radius:20px;border:1px solid var(--border2);background:var(--surface);cursor:pointer;color:var(--text2);white-space:nowrap">4 · Eligibility</button>
+    <button onclick="gbtJumpTo(5)" id="gbt-step-btn-5" style="font-size:11px;padding:4px 10px;border-radius:20px;border:1px solid var(--border2);background:var(--surface);cursor:pointer;color:var(--text2);white-space:nowrap">5 · Build Claim</button>
+    <button onclick="gbtJumpTo(6)" id="gbt-step-btn-6" style="font-size:11px;padding:4px 10px;border-radius:20px;border:1px solid var(--border2);background:var(--surface);cursor:pointer;color:var(--text2);white-space:nowrap">6 · ERA</button>
+    <button onclick="gbtJumpTo(7)" id="gbt-step-btn-7" style="font-size:11px;padding:4px 10px;border-radius:20px;border:1px solid var(--border2);background:var(--surface);cursor:pointer;color:var(--text2);white-space:nowrap">7 · Patient Billing</button>
+  </div>
   <!-- Progress bar -->
-  <div style="height:4px;background:var(--border);border-radius:2px;max-width:680px;margin-bottom:28px">
-    <div id="gbt-progress" style="height:4px;background:var(--teal);border-radius:2px;transition:width 0.4s;width:0%"></div>
+  <div style="height:3px;background:var(--border);border-radius:2px;max-width:720px;margin-bottom:24px">
+    <div id="gbt-progress" style="height:3px;background:var(--teal);border-radius:2px;transition:width 0.4s;width:0%"></div>
   </div>
 
   <!-- ── MODULE SELECT ── -->
@@ -2374,13 +2384,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-heig
     <div style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:6px">Fill the CMS-1500.</div>
     <div style="font-size:12px;color:var(--text2);margin-bottom:16px">Each field is explained when active. Fill in the highlighted field, then advance.</div>
 
-    <!-- Visit details reference panel -->
-    <div style="background:#E6F7F5;border:1px solid var(--teal);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text);margin-bottom:14px;line-height:1.8;max-width:620px">
+    <!-- Visit details reference panel — populated dynamically from SETUP -->
+    <div style="background:#E6F7F5;border:1px solid var(--teal);border-radius:8px;padding:10px 14px;font-size:12px;color:var(--text);margin-bottom:14px;line-height:1.8;max-width:620px" id="gbt-m5-ref-panel">
       <div style="font-size:10px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Visit details — reference while you fill</div>
       <strong>Patient:</strong> Maya Chen, 32F, established &nbsp;|&nbsp; <strong>Payer:</strong> Premera BCBS<br>
       <strong>Diagnoses:</strong> F33.11 (MDD recurrent moderate) &nbsp;|&nbsp; F41.1 (GAD)<br>
       <strong>Visit:</strong> Telehealth, patient home (POS 10) &nbsp;|&nbsp; 99214 + 90833, modifier 95 on both lines<br>
-      <strong>NPI:</strong> From your practice setup &nbsp;|&nbsp; <strong>DOS:</strong> Today's date
+      <strong>NPI:</strong> <span id="gbt-ref-npi">--</span> &nbsp;|&nbsp; <strong>DOS:</strong> Today's date<br>
+      <strong>Billed rate 99214:</strong> <span id="gbt-ref-rate-99214">--</span> &nbsp;|&nbsp; <strong>Billed rate 90833:</strong> <span id="gbt-ref-rate-90833">--</span>
+      <div id="gbt-ref-setup-warning" style="display:none;margin-top:6px;color:var(--amber);font-size:11px">&#9888; You skipped Practice Setup. Go back to Step 1 to enter your NPI and fee schedule — you will need them to complete this form.</div>
     </div>
 
     <!-- Claim form -->
@@ -13016,6 +13028,19 @@ function gbtShowOnly(id) {
   var wrap = document.querySelector('#screen-gbt .wrap');
   if (wrap) wrap.scrollTop = 0;
   window.scrollTo(0,0);
+  // Highlight active step button
+  var stepMap = {'gbt-m1':1,'gbt-m2':2,'gbt-m3':3,'gbt-m4':4,'gbt-m5':5,'gbt-m6':6,'gbt-m7':7};
+  var activeStep = 0;
+  for (var prefix in stepMap) { if (id.indexOf(prefix) === 0) { activeStep = stepMap[prefix]; break; } }
+  for (var s = 1; s <= 7; s++) {
+    var btn = document.getElementById('gbt-step-btn-' + s);
+    if (btn) {
+      btn.style.background = (s === activeStep) ? 'var(--teal)' : 'var(--surface)';
+      btn.style.color = (s === activeStep) ? '#fff' : 'var(--text2)';
+      btn.style.borderColor = (s === activeStep) ? 'var(--teal)' : 'var(--border2)';
+      btn.style.fontWeight = (s === activeStep) ? '700' : 'normal';
+    }
+  }
 }
 
 
@@ -13046,11 +13071,26 @@ function gbtGo(id) {
   if (backBtn) backBtn.style.display = gbtHistory.length > 0 ? 'inline-block' : 'none';
   // Pre-populate ERA with claim data when entering module 6
   if (id === 'gbt-m6s1') { gbtPopulateERA(); }
+  if (id === 'gbt-m5s2') { gbtPopulateClaimRef(); }
   // Pre-populate statement when entering module 7
   if (id === 'gbt-m7s1') { gbtPopulateStatement(); }
   // Populate validation screen with entered data
   if (id === 'gbt-m1-validate') { gbtInitValidate(); }
   gbtShowOnly(id);
+}
+
+function gbtJumpTo(step) {
+  var stepEntryPoints = {
+    1: 'gbt-m1-intro',
+    2: 'gbt-m2s1',
+    3: 'gbt-m3s1',
+    4: 'gbt-m4s1',
+    5: 'gbt-m5s1',
+    6: 'gbt-m6s1',
+    7: 'gbt-m7s1'
+  };
+  var target = stepEntryPoints[step];
+  if (target) gbtGo(target);
 }
 
 function gbtGoBack() {
@@ -13441,6 +13481,18 @@ function gbtBox24dFocus() {
 function gbtBox24dBlur() {
   if (_gbt24dTimer) clearTimeout(_gbt24dTimer);
   _gbt24dTimer = setTimeout(function() { _gbt24dTimer = null; gbtClaimCheck(); }, 600);
+}
+
+function gbtPopulateClaimRef() {
+  var npiEl = document.getElementById('gbt-ref-npi');
+  var r99214El = document.getElementById('gbt-ref-rate-99214');
+  var r90833El = document.getElementById('gbt-ref-rate-90833');
+  var warnEl = document.getElementById('gbt-ref-setup-warning');
+  var hasSetup = SETUP.npi && SETUP.npi !== '1234567890' && SETUP.name;
+  if (npiEl) npiEl.textContent = SETUP.npi || 'Not entered';
+  if (r99214El) r99214El.textContent = (SETUP.fees && SETUP.fees['99214']) ? '$' + SETUP.fees['99214'] : 'Not entered';
+  if (r90833El) r90833El.textContent = (SETUP.fees && SETUP.fees['90833']) ? '$' + SETUP.fees['90833'] : 'Not entered';
+  if (warnEl) warnEl.style.display = (!SETUP.npi || !SETUP.fees || !SETUP.fees['99214']) ? 'block' : 'none';
 }
 
 function gbtClaimCheck() {
