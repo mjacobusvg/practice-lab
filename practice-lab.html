@@ -4835,6 +4835,7 @@ function launchSim() {
   set2('cc-dos', scen.dos||'--');
   set2('cc-provider', SETUP.name||'M. Van Gelder, PMHNP-BC');
   set2('cc-npi', SETUP.npi||'1234567890');
+  set2('ben-npi-display', SETUP.npi||'1234567890');
   set2('cc-payer', scen.payerName||'--');
   set2('cc-patient', scen.patient||'--');
   var ccPos=document.getElementById('cc-pos');
@@ -4958,6 +4959,11 @@ function goTab(id) {
   var abtn=document.getElementById('tab-'+id); if(abtn)abtn.classList.add('active');
   showOnly(id);
   window.scrollTo(0,0);
+  // Reset Angela on every tab switch so her context stays relevant to the current screen
+  repReady = false;
+  repMsgs = [];
+  var chatBody = document.getElementById('chat-body');
+  if(chatBody) chatBody.innerHTML = '';
 }
 function proceedBenefits() { doneTab('chart'); unlockTab('benefits'); goTab('benefits'); }
 function proceedCoding()   { doneTab('benefits'); unlockTab('coding'); goTab('coding'); }
@@ -6223,7 +6229,15 @@ function openRep() {
     } else {
       denialCtx=' Claim paid $'+eraResult.totalPaid.toFixed(2)+'. No denial on file.';
     }
-    var ctx='Claim '+(s.claimNum||'CLM-unknown')+', member '+(s.memberId||'unknown')+', DOS '+(s.dos||'unknown')+', payer '+s.payerName+', NPI '+(SETUP.npi||'1234567890')+'. Submitted: '+(submittedCodes.code1||'')+(submittedCodes.code2?' and '+submittedCodes.code2:'')+'.'+denialCtx;
+    // Build full scenario context -- Angela knows patient, plan, benefits, AND claim details
+    var benefitsCtx = '';
+    if(s) {
+      benefitsCtx = ' PATIENT/PLAN: Patient ' + (s.patient||'unknown') + ', member ID ' + (s.memberId||'unknown') + ', plan ' + (s.payerName||'unknown') + '.';
+      if(s.copay) benefitsCtx += ' Patient copay: $' + s.copay + ' per visit.';
+      if(s.oop) benefitsCtx += ' OOP max: $' + s.oop + (s.oopMet ? ' (met: $' + s.oopMet + ')' : '') + '.';
+      if(s.pos) benefitsCtx += ' Place of service: POS ' + s.pos + (s.pos==='10' ? ' (telehealth, patient home)' : ' (office)') + '.';
+    }
+    var ctx='Claim '+(s.claimNum||'CLM-unknown')+', member '+(s.memberId||'unknown')+', DOS '+(s.dos||'unknown')+', payer '+s.payerName+', NPI '+(SETUP.npi||'1234567890')+'. Submitted: '+(submittedCodes.code1||'')+(submittedCodes.code2?' and '+submittedCodes.code2:'')+'.'+benefitsCtx+denialCtx;
     repMsgs=[{role:'system',content:'You are Angela, a provider services rep at Premera Blue Cross provider services line. Use plain conversational language -- no markdown, no asterisks, no bold, no bullets. You are a real insurance rep doing your job.\n\nBEHAVIOR: Answer direct questions accurately and honestly. If a provider asks what modifier is required for telehealth, tell them. If they ask why a claim denied, explain the denial code. You do not volunteer the answer unprompted -- you respond to what they ask. You do not lead them or hint at what they should do. But when they ask a direct question, you give a real answer, because that is what a real rep does.\n\nYou require NPI and member ID before pulling up THIS specific claim\'s details. General billing questions (denial codes, modifier rules, timely filing, coverage policies) can be answered without verification.\n\nGENERAL KNOWLEDGE (answer without verification):\nCO CODES: CO-4 modifier issue; CO-16 claim lacks info or NPI not enrolled; CO-18 patient status mismatch (new vs established); CO-22 COB issue; CO-24 HMO; CO-45 contractual write-off (billed exceeds contracted rate); CO-50 not medically necessary; CO-97 bundled/inclusive; CO-109 not covered; CO-197 auth required; CO-29 timely filing; CO-B14 duplicate claim; CO-184 taxonomy mismatch.\nPR CODES (patient responsibility): PR-1 = deductible; PR-2 = coinsurance; PR-3 = copay (collect at time of service); PR-96 = non-covered benefit.\nTELEHEALTH: POS 10 = patient home telehealth. Modifier 95 = synchronous audio and video telehealth, required on EVERY CPT line independently -- the modifier on the E/M does not carry to the add-on. Modifier 93 = audio-only. GT = Medicare/some MA plans.\nADD-ON CODES: 90833/90836/90838 must be billed with an E/M. Each line adjudicated independently.\nAPPEALS: Standard commercial appeal window 30-180 days from denial date. Corrected claims typically within 90 days of denial. CO-29 timely filing appeals require clearinghouse proof of submission date.\n\nCURRENT CLAIM CONTEXT (only reveal after NPI + member ID verified): '+ctx+'\n\nRules: Under 100 words per response. Stay in character as a real rep. Accurate answers only.'}];
     setTimeout(function(){ addBubble('rep','Angela','Thank you for calling Premera Blue Cross provider services, this is Angela. Can I get your NPI and the member ID you are calling about?'); }, 120);
   }
