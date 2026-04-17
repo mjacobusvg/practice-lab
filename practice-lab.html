@@ -6266,11 +6266,17 @@ function openRep() {
     if(!claimSubmitted) {
       var benefitsInfo = '';
       if(s) {
+        var _pb = PAYER_BENEFITS[s.payer] || PAYER_BENEFITS['default'];
         benefitsInfo = 'Member: ' + (s.patient||'unknown') + ', member ID ' + (s.memberId||'unknown') + ', plan ' + (s.payerName||'unknown') + '.';
-        if(s.copay) benefitsInfo += ' Copay: $' + s.copay + ' per visit.';
-        if(s.pos) benefitsInfo += ' POS: ' + s.pos + (s.pos==='10' ? ' (telehealth)' : ' (office)') + '.';
+        benefitsInfo += ' Copay: $' + (s.copay||'--') + ' per visit.';
+        benefitsInfo += ' Individual deductible: ' + _pb.deductible + ' (' + (_pb.deductibleSub||'status unknown') + ').';
+        benefitsInfo += ' OOP max: ' + _pb.oop + ' (' + (_pb.oopSub||'status unknown') + ').';
+        benefitsInfo += ' Coinsurance: ' + _pb.coins + ' after deductible.';
+        benefitsInfo += ' Telehealth parity: ' + _pb.thParity + '.';
+        benefitsInfo += ' Auth required: ' + _pb.auth + '.';
+        benefitsInfo += ' POS: ' + (s.pos||'10') + (s.pos==='10' ? ' (telehealth)' : ' (office)') + '.';
       }
-      repMsgs=[{role:'system',content:'You are Angela, a provider services rep at ' + (s ? s.payerName : 'Premera Blue Cross') + '. You are answering a pre-visit eligibility and benefits call. No claim has been submitted yet. Your job: answer questions about member eligibility, benefits, copays, deductibles, prior auth requirements, covered services, and general billing rules. You do NOT have any claim to look up because none has been billed yet. Do not say you can pull up claim details -- there are no claim details. After the provider gives you NPI and member ID, you can confirm member benefits. Use plain conversational language -- no markdown, no bullets. MEMBER INFO (available after NPI + member ID verified): ' + benefitsInfo + ' General knowledge you can answer without verification: modifier rules, denial code meanings, telehealth POS requirements, timely filing windows, auth requirements. Under 100 words per response. Stay in character as a real rep.'}];
+      repMsgs=[{role:'system',content:'You are Angela, a provider services rep at ' + (s ? s.payerName : 'Premera Blue Cross') + '. You are answering a pre-visit eligibility and benefits call. No claim has been submitted yet. Your job: answer questions about member eligibility, benefits, copays, deductibles, prior auth requirements, covered services, and general billing rules. You do NOT have any claim to look up because none has been billed yet. Do not say you can pull up claim details -- there are no claim details. After the provider gives you NPI and member ID, confirm their identity and then answer their questions using the full member benefits on file. You have complete access to this member benefits -- copay, deductible status, OOP max, coinsurance, auth requirements, and coverage details. Answer benefit questions directly and accurately. Use plain conversational language -- no markdown, no bullets. MEMBER BENEFITS ON FILE (reveal after NPI + member ID verified): ' + benefitsInfo + ' General knowledge: modifier rules, denial codes, telehealth POS, timely filing, auth requirements. Under 100 words per response. Stay in character as a real rep.'}];
       setTimeout(function(){ addBubble('rep','Angela','Thank you for calling ' + (s ? s.payerName : 'Premera Blue Cross') + ' provider services, this is Angela. Can I get your NPI and the member ID you are calling about?'); }, 120);
       return;
     }
