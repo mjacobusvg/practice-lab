@@ -2610,21 +2610,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-heig
 
     <!-- Posting screen -->
     <div style="background:var(--surface2);border-left:3px solid var(--teal);border-radius:0 6px 6px 0;padding:8px 12px;font-size:12px;color:var(--text2);margin-bottom:12px;max-width:500px;line-height:1.6">Post exactly what the ERA says — even if it feels wrong. Do not reinterpret or adjust amounts. The ERA is the payer's official record.</div>
-    <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:10px">Now post the ERA. Enter the correct amounts.</div>
+    <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px">Now post the ERA.</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.6">Enter the totals exactly as shown on the ERA. Three fields. No hints.</div>
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;max-width:500px;margin-bottom:16px">
       <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:12px">Payment Posting — Maya Chen</div>
       <div style="display:flex;flex-direction:column;gap:10px">
         <div><div style="font-size:12px;color:var(--text2);margin-bottom:4px">Insurance payment received $</div>
-          <input id="post-ins-paid" type="number" placeholder="0.00" oninput="gbtPostCheck()" style="width:100px;border:1px solid var(--border2);border-radius:6px;padding:7px 10px;font-size:13px;outline:none">
+          <input id="post-ins-paid" type="number" placeholder="0.00" style="width:100px;border:1px solid var(--border2);border-radius:6px;padding:7px 10px;font-size:13px;outline:none">
           <div id="post-ins-msg" style="font-size:11px;margin-top:4px;min-height:14px"></div></div>
-        <div><div style="font-size:12px;color:var(--text2);margin-bottom:4px">CO-45 write-off (line 1 + line 2) $</div>
-          <input id="post-co45" type="number" placeholder="0.00" oninput="gbtPostCheck()" style="width:100px;border:1px solid var(--border2);border-radius:6px;padding:7px 10px;font-size:13px;outline:none">
+        <div><div style="font-size:12px;color:var(--text2);margin-bottom:4px">CO-45 write-off $</div>
+          <input id="post-co45" type="number" placeholder="0.00" style="width:100px;border:1px solid var(--border2);border-radius:6px;padding:7px 10px;font-size:13px;outline:none">
           <div id="post-co45-msg" style="font-size:11px;margin-top:4px;min-height:14px"></div></div>
-        <div><div style="font-size:12px;color:var(--text2);margin-bottom:4px">Patient responsibility (amount to bill Maya) $</div>
-          <input id="post-patient" type="number" placeholder="0.00" oninput="gbtPostCheck()" style="width:100px;border:1px solid var(--border2);border-radius:6px;padding:7px 10px;font-size:13px;outline:none">
+        <div><div style="font-size:12px;color:var(--text2);margin-bottom:4px">Patient responsibility $</div>
+          <input id="post-patient" type="number" placeholder="0.00" style="width:100px;border:1px solid var(--border2);border-radius:6px;padding:7px 10px;font-size:13px;outline:none">
           <div id="post-patient-msg" style="font-size:11px;margin-top:4px;min-height:14px"></div></div>
       </div>
     </div>
+    <button class="btn btn-primary" onclick="gbtPostSubmit()" style="font-size:13px;padding:9px 20px;margin-bottom:12px">Check posting &rarr;</button>
     <div id="gbt-post-summary" style="font-size:13px;min-height:20px;margin-bottom:12px;line-height:1.6"></div>
     <!-- Reflection: what would you do differently -->
     <div id="gbt-m6-reflect" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 14px;max-width:500px;margin-bottom:14px">
@@ -13923,7 +13925,15 @@ function gbtExplainERA(key) {
 }
 
 // ── MODULE 6: PAYMENT POSTING ─────────────────────────────
-function gbtPostCheck() {
+var _gbtPostAttempts = 0;
+
+function gbtPostSubmit() {
+  _gbtPostAttempts++;
+  gbtPostCheck(_gbtPostAttempts);
+}
+
+function gbtPostCheck(attempt) {
+  attempt = attempt || 1;
   var nxt = document.getElementById('gbt-m6-reflect');
   var summary = document.getElementById('gbt-post-summary');
   var insPaid = parseFloat(document.getElementById('post-ins-paid').value)||null;
@@ -13952,7 +13962,18 @@ function gbtPostCheck() {
       co45Msg.innerHTML = '<span style="color:var(--green)">✓ Correct CO-45 write-off amount.</span>';
       document.getElementById('post-co45').style.borderColor = 'var(--green)';
     } else {
-      co45Msg.innerHTML = '<span style="color:var(--red)">Check: CO-45 = billed charge minus allowable, for each line. Line 1: $' + (gbtState.claimFields.charge1||200) + ' - $' + gbtAllowables['99214'] + '. Line 2: $' + (gbtState.claimFields.charge2||120) + ' - $' + gbtAllowables['90833'] + '.</span>';
+      var enteredCo45 = co45 || 0;
+      var singleLine1 = Math.round((gbtState.claimFields.charge1||200) - gbtAllowables['99214']);
+      var singleLine2 = Math.round((gbtState.claimFields.charge2||120) - gbtAllowables['90833']);
+      if (Math.abs(enteredCo45 - singleLine1) < 1) {
+        co45Msg.innerHTML = '<span style="color:var(--red)">&#10007; That is line 1 only. Each CPT code generates its own CO-45. Add both lines together.</span>';
+      } else if (Math.abs(enteredCo45 - singleLine2) < 1) {
+        co45Msg.innerHTML = '<span style="color:var(--red)">&#10007; That is line 2 only. Each CPT code generates its own CO-45. Add both lines together.</span>';
+      } else if (attempt >= 2) {
+        co45Msg.innerHTML = '<span style="color:var(--amber,#C4711A)">&#9888; CO-45 = billed minus allowed, per line, then summed. Line 1: $' + (gbtState.claimFields.charge1||200) + ' − $' + gbtAllowables['99214'] + ' = $' + singleLine1 + '. Line 2: $' + (gbtState.claimFields.charge2||120) + ' − $' + gbtAllowables['90833'] + ' = $' + singleLine2 + '. Total: $' + expectedCo45 + '.</span>';
+      } else {
+        co45Msg.innerHTML = '<span style="color:var(--red)">&#10007; Check your math. CO-45 applies to every line independently.</span>';
+      }
       document.getElementById('post-co45').style.borderColor = 'var(--red)';
       allOk = false;
     }
