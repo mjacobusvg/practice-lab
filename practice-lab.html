@@ -6214,11 +6214,24 @@ function openRep() {
   document.getElementById('rep-modal').classList.add('open');
   if(!repReady){
     repReady=true;
+    var claimSubmitted = eraResult && eraResult.type;
+
+    // PRE-CLAIM: Benefits or Coding tab -- Angela is a general eligibility rep, no claim exists
+    if(!claimSubmitted) {
+      var benefitsInfo = '';
+      if(s) {
+        benefitsInfo = 'Member: ' + (s.patient||'unknown') + ', member ID ' + (s.memberId||'unknown') + ', plan ' + (s.payerName||'unknown') + '.';
+        if(s.copay) benefitsInfo += ' Copay: $' + s.copay + ' per visit.';
+        if(s.pos) benefitsInfo += ' POS: ' + s.pos + (s.pos==='10' ? ' (telehealth)' : ' (office)') + '.';
+      }
+      repMsgs=[{role:'system',content:'You are Angela, a provider services rep at ' + (s ? s.payerName : 'Premera Blue Cross') + '. You are answering a pre-visit eligibility and benefits call. No claim has been submitted yet. Your job: answer questions about member eligibility, benefits, copays, deductibles, prior auth requirements, covered services, and general billing rules. You do NOT have any claim to look up because none has been billed yet. Do not say you can pull up claim details -- there are no claim details. After the provider gives you NPI and member ID, you can confirm member benefits. Use plain conversational language -- no markdown, no bullets. MEMBER INFO (available after NPI + member ID verified): ' + benefitsInfo + ' General knowledge you can answer without verification: modifier rules, denial code meanings, telehealth POS requirements, timely filing windows, auth requirements. Under 100 words per response. Stay in character as a real rep.'}];
+      setTimeout(function(){ addBubble('rep','Angela','Thank you for calling ' + (s ? s.payerName : 'Premera Blue Cross') + ' provider services, this is Angela. Can I get your NPI and the member ID you are calling about?'); }, 120);
+      return;
+    }
+
+    // POST-CLAIM: ERA tab -- Angela has full claim context
     var denialCtx='';
-    // If ERA hasn't run yet (Benefits or Coding tab), give Angela general context
-    if(!eraResult || !eraResult.type) {
-      denialCtx=' No claim has been submitted yet. The provider is reviewing patient benefits and eligibility before the visit. Answer general questions about benefits, eligibility, copays, deductibles, prior auth, and coverage. Do not reference any specific claim.';
-    } else if(eraResult.type==='denial'&&eraResult.denial){
+    if(eraResult.type==='denial'&&eraResult.denial){
       var d=eraResult.denial;
       var resolutions={
         'CO-18':'The provider billed a new patient code (99202-99205) but the patient is established -- seen within 3 years by the same provider or another provider of the exact same specialty and subspecialty in the same group. The correct fix is to resubmit with an established patient code (99211-99215). This is not a coverage issue.',
@@ -11781,7 +11794,7 @@ async function runGLGapAnalysis(spotCheck) {
   (function() {
     function launchApp() {
       document.getElementById('tbp-app').style.display = 'block';
-      goLanding();
+      setTimeout(function() { goLanding(); }, 0);
     }
     if (typeof TBPAuth !== 'undefined') {
       TBPAuth.protect({ toolName: 'Practice Lab', onVerified: launchApp });
