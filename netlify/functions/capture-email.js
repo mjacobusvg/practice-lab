@@ -72,8 +72,8 @@ exports.handler = async (event, context) => {
 
     // Initialize Supabase client
     const supabase = createClient(
-      'https://ubcrrrapedaxkguxniwv.supabase.co',
-      'eyJ1c2VySWQiOiJiNDBmOTQ2ZC0yM2QyLTRhZTktOTY0NS1kZDk0YzU3NzgzNTQiLCJyb2xlIjoic2VydmljZV9yb2xlIiwiaWF0IjoxNzEzNDkwODYxLCJleHAiOjIwMjkwNjY4NjF9.q49Eu6A3W8vBhvYl2M0m6QVIaYZLZOLKQ8c6n-zJ5l4'
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_KEY
     );
 
     // Check if email already exists
@@ -104,7 +104,7 @@ exports.handler = async (event, context) => {
         const circleResponse = await fetch('https://app.circle.so/api/v1/community_members', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer sBobzqKomMkNGqoPKcvmrV5wvzDRL9xa`,
+            'Authorization': `Bearer ${process.env.CIRCLE_API_TOKEN}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
