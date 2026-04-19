@@ -102,18 +102,18 @@ exports.handler = async (event, context) => {
       // Add to Circle via Admin API
       try {
         console.log('Attempting Circle API call...');
-        const circleResponse = await fetch('https://app.circle.so/api/headless/v1/community_members', {
+        const circleResponse = await fetch('https://app.circle.so/api/v1/community_members', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${process.env.CIRCLE_HEADLESS_TOKEN}`,
+            'Authorization': `Bearer ${process.env.CIRCLE_API_TOKEN}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
             email: email.toLowerCase(),
             first_name: name || '',
             community_id: 337609,
-            skip_invitation: false,
-            send_email_confirmation: true
+            skip_invitation: true,
+            send_email_confirmation: false
           })
         });
 
