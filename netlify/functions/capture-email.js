@@ -101,6 +101,7 @@ exports.handler = async (event, context) => {
 
       // Add to Circle via Admin API
       try {
+        console.log('Attempting Circle API call...');
         const circleResponse = await fetch('https://app.circle.so/api/v1/community_members', {
           method: 'POST',
           headers: {
@@ -115,8 +116,14 @@ exports.handler = async (event, context) => {
           })
         });
 
+        console.log('Circle API status:', circleResponse.status);
+        const responseText = await circleResponse.text();
+        console.log('Circle API response:', responseText);
+        
         if (!circleResponse.ok) {
-          console.error('Circle API error:', await circleResponse.text());
+          console.error('Circle API error - Status:', circleResponse.status, 'Response:', responseText);
+        } else {
+          console.log('Circle API success!');
         }
       } catch (circleError) {
         console.error('Circle API request failed:', circleError);
