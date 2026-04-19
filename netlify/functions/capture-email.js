@@ -105,7 +105,7 @@ exports.handler = async (event, context) => {
         const circleResponse = await fetch('https://app.circle.so/api/v1/community_members', {
           method: 'POST',
           headers: {
-            'Authorization': `Token ${process.env.CIRCLE_API_TOKEN}`,
+            'Authorization': `Token VNpKR2mr2AMqvrCEvoK9Kewr4FE12GaA`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
