@@ -100,12 +100,14 @@ exports.handler = async (event, context) => {
       }
     }
 
-    // Always redirect to the public Ask the Archive (whether new or existing email)
+    // Always return success (whether new or existing email)
+    // The client-side JS handles the redirect to ask-archive-public
     return {
-      statusCode: 302,
+      statusCode: 200,
       headers: {
-        'Location': 'https://thinkbeyondpractice.com/ask-archive-public'
-      }
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ success: true })
     };
 
   } catch (error) {
