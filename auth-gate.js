@@ -160,6 +160,7 @@
         if (data.verified) {
           setSessionToken(data.token || email);
           try {
+            localStorage.setItem('tbp_verified_email', email);
             if (data.memberToken) localStorage.setItem('tbp_member_jwt', data.memberToken);
             if (data.communityMemberId) localStorage.setItem('tbp_member_id', String(data.communityMemberId));
           } catch(e) {}
@@ -181,7 +182,15 @@
       if (e.key === 'Enter') verify();
     });
     submitBtn.addEventListener('click', verify);
-    setTimeout(function() { emailInput.focus(); }, 100);
+    setTimeout(function() {
+      var storedEmail = '';
+      try { storedEmail = localStorage.getItem('tbp_verified_email') || ''; } catch(e) {}
+      if (storedEmail) {
+        emailInput.value = storedEmail;
+      } else {
+        emailInput.focus();
+      }
+    }, 100);
   }
 
   // Public API
@@ -191,7 +200,9 @@
       var spaceId = options.spaceId || null;
       var onVerified = options.onVerified || function() {};
 
-      if (getSessionToken()) {
+      // If spaceId is required, always verify against the API to check tier access.
+      // Only skip verification for community-wide access (no spaceId).
+      if (!spaceId && getSessionToken()) {
         onVerified();
         return;
       }
