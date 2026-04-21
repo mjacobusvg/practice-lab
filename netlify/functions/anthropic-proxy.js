@@ -72,12 +72,16 @@ exports.handler = async function(event, context) {
       }).catch(function(e) { console.log('Usage log error:', e.message); });
     }
 
-    const requestBody = JSON.stringify({
+    const requestPayload = {
       model: body.model || 'claude-haiku-4-5-20251001',
       max_tokens: body.max_tokens || 1000,
       system: systemPrompt,
       messages: messages
-    });
+    };
+    if (body.tools && Array.isArray(body.tools)) {
+      requestPayload.tools = body.tools;
+    }
+    const requestBody = JSON.stringify(requestPayload);
 
     const result = await new Promise((resolve, reject) => {
       const options = {
