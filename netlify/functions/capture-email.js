@@ -133,7 +133,7 @@ exports.handler = async (event, context) => {
     return {
       statusCode: 302,
       headers: {
-        'Location': 'https://thinkbeyondpractice.com/ask-archive-public'
+        'Location': '/ask-archive-public.html'
       }
     };
 
