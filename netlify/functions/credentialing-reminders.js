@@ -20,6 +20,7 @@ const REMINDER_CONFIGS = [
           <p style="margin:0">Can you check where it is in the process and whether anything is needed from me to move it forward?"</p>
         </div>
         <p><strong>Key question to ask:</strong> "Is there anything currently missing or pending on my file that I can provide?"</p>
+        <p style="margin-top:20px"><a href="https://lab.thinkbeyondpractice.com/credentialing-hub" style="display:inline-block;background:#2aabb8;color:#0b1120;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px">View in your Credentialing Hub &rarr;</a></p>
         <p style="color:#888;font-size:12px;margin-top:24px">Think Beyond Practice — Credentialing Hub</p>
       </div>
     </div>`
@@ -42,6 +43,7 @@ const REMINDER_CONFIGS = [
         </div>
         <p><strong>Key question:</strong> "Is this currently in Primary Source Verification, or has it moved to the Credentialing Committee?"</p>
         <p><strong>If resistance:</strong> "I understand timelines vary. I just want to make sure nothing is missing or holding it up unnecessarily."</p>
+        <p style="margin-top:20px"><a href="https://lab.thinkbeyondpractice.com/credentialing-hub" style="display:inline-block;background:#fbbf24;color:#0b1120;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px">View in your Credentialing Hub &rarr;</a></p>
         <p style="color:#888;font-size:12px;margin-top:24px">Think Beyond Practice — Credentialing Hub</p>
       </div>
     </div>`
@@ -63,6 +65,7 @@ const REMINDER_CONFIGS = [
           <p style="margin:0">I am currently unable to bill for your members that I am treating, which is creating a continuity of care issue. I need to know the specific effective date listed in your system, even if the approval letter has not been mailed yet."</p>
         </div>
         <p><strong>Close:</strong> "Is there an email address where I can send a formal inquiry to the Provider Relations Manager for this region?"</p>
+        <p style="margin-top:20px"><a href="https://lab.thinkbeyondpractice.com/credentialing-hub" style="display:inline-block;background:#f87171;color:#fff;padding:10px 24px;border-radius:6px;text-decoration:none;font-weight:700;font-size:14px">View in your Credentialing Hub &rarr;</a></p>
         <p style="color:#888;font-size:12px;margin-top:24px">Think Beyond Practice — Credentialing Hub</p>
       </div>
     </div>`
