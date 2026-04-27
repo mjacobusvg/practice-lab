@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Practice Manager | Think Beyond Practice</title>
+<meta name="description" content="Operational tools for running your practice. Compliance, finances, documentation, tracking — all in one place.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --navy: #0b1120;
+  --navy-mid: #111c30;
+  --navy-light: #1a2d47;
+  --navy-card: #152238;
+  --teal: #2aabb8;
+  --teal-dim: #1d7d88;
+  --teal-glow: rgba(42,171,184,0.12);
+  --cream: #e8e2d6;
+  --cream-dim: #b0aa9e;
+  --white: #f5f4f2;
+  --green: #34d399;
+  --amber: #fbbf24;
+  --red: #f87171;
+  --purple: #a78bfa;
+  --blue: #60a5fa;
+  --rule: rgba(42,171,184,0.15);
+  --radius: 10px;
+  --font-display: 'DM Serif Display', serif;
+  --font-body: 'Plus Jakarta Sans', sans-serif;
+}
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--navy);
+  color: var(--cream);
+  font-family: var(--font-body);
+  min-height: 100vh;
+  line-height: 1.6;
+}
+
+/* ── Layout ── */
+.pm-container { max-width:1100px; margin:0 auto; padding:32px 20px 80px; }
+
+.pm-header { text-align:center; margin-bottom:48px; }
+.pm-header h1 { font-family:var(--font-display); font-size:2.2rem; color:var(--white); margin-bottom:8px; }
+.pm-header h1 span { color:var(--teal); }
+.pm-header p { color:var(--cream-dim); font-size:0.92rem; max-width:620px; margin:0 auto; }
+
+/* ── Back button (when inside a tool) ── */
+.back-btn {
+  display:inline-flex; align-items:center; gap:6px; background:none; border:none;
+  color:var(--teal); font-family:var(--font-body); font-size:0.88rem; font-weight:600;
+  cursor:pointer; padding:8px 0; margin-bottom:24px; transition:opacity 0.2s;
+}
+.back-btn:hover { opacity:0.7; }
+
+/* ── Vault Status Bar ── */
+.vault-bar {
+  background:var(--navy-mid); border:1px solid var(--rule); border-radius:var(--radius);
+  padding:14px 24px; margin-bottom:36px; display:flex; align-items:center;
+  justify-content:space-between; flex-wrap:wrap; gap:12px;
+}
+.vault-bar-left { display:flex; align-items:center; gap:12px; }
+.vault-bar-left .vault-icon { font-size:1.3rem; }
+.vault-bar-left .vault-text { font-size:0.85rem; color:var(--cream-dim); }
+.vault-bar-left .vault-text strong { color:var(--white); }
+.vault-bar-right a {
+  color:var(--teal); font-size:0.82rem; font-weight:600; text-decoration:none;
+  border-bottom:1px dashed var(--teal); transition:opacity 0.2s;
+}
+.vault-bar-right a:hover { opacity:0.7; }
+
+/* ── Category Section ── */
+.category { margin-bottom:40px; }
+.category-header {
+  display:flex; align-items:center; gap:10px; margin-bottom:20px;
+  padding-bottom:12px; border-bottom:1px solid var(--rule);
+}
+.category-icon { font-size:1.4rem; }
+.category-title { font-family:var(--font-display); font-size:1.3rem; color:var(--white); }
+.category-count {
+  font-size:0.72rem; font-weight:700; color:var(--teal); background:var(--teal-glow);
+  padding:2px 10px; border-radius:10px; margin-left:auto;
+}
+
+/* ── Tool Cards Grid ── */
+.tool-grid {
+  display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));
+  gap:16px;
+}
+
+.tool-card {
+  background:var(--navy-card); border:1px solid var(--rule); border-radius:var(--radius);
+  padding:24px; transition:all 0.25s; cursor:pointer; position:relative; overflow:hidden;
+}
+.tool-card:hover { border-color:var(--teal); transform:translateY(-2px); box-shadow:0 8px 24px rgba(0,0,0,0.3); }
+.tool-card.disabled { opacity:0.5; cursor:default; pointer-events:none; }
+
+.tool-card-icon { font-size:1.8rem; margin-bottom:12px; }
+.tool-card h3 { font-family:var(--font-display); font-size:1.05rem; color:var(--white); margin-bottom:8px; }
+.tool-card p { font-size:0.82rem; color:var(--cream-dim); line-height:1.6; }
+
+.tool-status {
+  display:inline-block; font-size:0.68rem; font-weight:700; text-transform:uppercase;
+  letter-spacing:0.5px; padding:3px 10px; border-radius:4px; margin-top:12px;
+}
+.status-live { background:rgba(52,211,153,0.15); color:var(--green); }
+.status-soon { background:rgba(251,191,36,0.1); color:var(--amber); }
+.status-planned { background:rgba(167,139,250,0.1); color:var(--purple); }
+
+.tool-card .accent-bar {
+  position:absolute; top:0; left:0; right:0; height:3px;
+}
+
+/* ── Tool View Container ── */
+#tool-view { display:none; }
+#tool-view.active { display:block; }
+#dashboard.hidden { display:none; }
+
+/* ── Responsive ── */
+@media (max-width:640px) {
+  .pm-header h1 { font-size:1.6rem; }
+  .tool-grid { grid-template-columns:1fr; }
+  .vault-bar { flex-direction:column; align-items:flex-start; }
+}
+</style>
+</head>
+<body>
+
+<div class="pm-container">
+  <div class="pm-header">
+    <h1>Practice <span>Manager</span></h1>
+    <p>Operational tools for running your practice. Compliance, finances, documentation, tracking. The CE course is the textbook. The Practice Lab is the classroom. This is where you do the work.</p>
+  </div>
+
+  <div class="vault-bar">
+    <div class="vault-bar-left">
+      <span class="vault-icon">&#x1F510;</span>
+      <span class="vault-text" id="vault-status">Loading profile...</span>
+    </div>
+    <div class="vault-bar-right">
+      <a href="/credentialing-hub?tab=vault">Edit Vault Profile &rarr;</a>
+    </div>
+  </div>
+
+  <!-- DASHBOARD -->
+  <div id="dashboard">
+
+    <!-- COMPLIANCE & LEGAL -->
+    <div class="category">
+      <div class="category-header">
+        <span class="category-icon">&#x1F6E1;</span>
+        <span class="category-title">Compliance & Legal</span>
+        <span class="category-count">4 tools</span>
+      </div>
+      <div class="tool-grid">
+        <div class="tool-card" onclick="openTool('hipaa')">
+          <div class="accent-bar" style="background:linear-gradient(90deg,var(--green),var(--teal))"></div>
+          <div class="tool-card-icon">&#x1F4CB;</div>
+          <h3>HIPAA Compliance Binder</h3>
+          <p>Answer guided questions about your practice. Auto-generate all six HIPAA compliance documents — policies, risk analysis, breach plan, BAA tracking, workforce docs — customized to your actual workflow.</p>
+          <span class="tool-status status-soon">Coming Soon</span>
+        </div>
+        <div class="tool-card" onclick="openTool('crossstate')">
+          <div class="accent-bar" style="background:linear-gradient(90deg,var(--teal),var(--blue))"></div>
+          <div class="tool-card-icon">&#x1F5FA;</div>
+          <h3>Cross-State Compliance</h3>
+          <p>State-by-state telehealth, prescribing, and practice authority reference. Licensing, parity laws, consent, controlled substances, privacy laws, taxes, and compacts — searchable by state.</p>
+          <span class="tool-status status-soon">Coming Soon</span>
+        </div>
+        <div class="tool-card" onclick="openTool('liability')">
+          <div class="accent-bar" style="background:linear-gradient(90deg,var(--amber),var(--red))"></div>
+          <div class="tool-card-icon">&#x1F50D;</div>
+          <h3>Liability Exposure Audit</h3>
+          <p>Self-assessment of common compliance gaps — consent forms, BAAs, PDMP use, termination policies, note defensibility. Scored report with action items linked to CE courses and Practice Lab modes.</p>
+          <span class="tool-status status-planned">Planned</span>
+        </div>
+        <div class="tool-card" onclick="openTool('cpa')">
+          <div class="accent-bar" style="background:linear-gradient(90deg,var(--purple),var(--teal))"></div>
+          <div class="tool-card-icon">&#x1F91D;</div>
+          <h3>CPA Builder</h3>
+          <p>For states requiring collaborative practice agreements. Select your state, enter collaborator info, generate a compliant CPA template with negotiation guidance and red flags.</p>
+          <span class="tool-status status-planned">Planned</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- MONEY & BUSINESS -->
+    <div class="category">
+      <div class="category-header">
+        <span class="category-icon">&#x1F4B0;</span>
+        <span class="category-title">Money & Business</span>
+        <span class="category-count">4 tools</span>
+      </div>
+      <div class="tool-grid">
+        <div class="tool-card" onclick="openTool('contract')">
+          <div class="accent-bar" style="background:linear-gradient(90deg,var(--green),var(--amber))"></div>
+          <div class="tool-card-icon">&#x1F4C8;</div>
+          <h3>Payer Contract Analyzer</h3>
+          <p>Paste your fee schedule. See which payers pay below Medicare, which codes are underpaying the most, and generate a renegotiation letter with your specific rate comparisons.</p>
+          <span class="tool-status status-soon">Coming Soon</span>
+        </div>
+        <div class="tool-card" onclick="openTool('servicemix')">
+          <div class="accent-bar" style="background:linear-gradient(90deg,var(--teal),var(--green))"></div>
+          <div class="tool-card-icon">&#x1F9EE;</div>
+          <h3>Service Mix Calculator</h3>
+          <p>Input clinical hours, overhead, no-show rate, and payer mix. See your take-home. Adjust sliders to model changes — what if you add private pay? Drop a payer? Add 90833 to eligible visits?</p>
+          <span class="tool-status status-planned">Planned</span>
+        </div>
+        <div class="tool-card" onclick="openTool('droppayer')">
+          <div class="accent-bar" style="background:linear-gradient(90deg,var(--amber),var(--red))"></div>
+          <div class="tool-card-icon">&#x2702;</div>
+          <h3>Drop Payer Calculator</h3>
+          <p>Model dropping a specific payer. See patient loss, revenue gap, private pay conversion needed, waitlist fill rate, and estimated recovery timeline. Hard numbers, not feelings.</p>
+          <span class="tool-status status-planned">Planned</span>
+        </div>
+        <div class="tool-card" onclick="openTool('oon')">
+          <div class="accent-bar" style="background:linear-gradient(90deg,var(--blue),var(--purple))"></div>
+          <div class="tool-card-icon">&#x1F4B3;</div>
+          <h3>Out-of-Network Decision Tool</h3>
+          <p>Model three scenarios: stay in-network, go hybrid, or go fully out-of-network. Revenue projections, patient retention estimates, and a superbill template auto-filled from your Vault.</p>
+          <span class="tool-status status-planned">Planned</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- DOCUMENTS & PROTECTION -->
+    <div class="category">
+      <div class="category-header">
+        <span class="category-icon">&#x1F4DD;</span>
+        <span class="category-title">Documents & Protection</span>
+        <span class="category-count">4 tools</span>
+      </div>
+      <div class="tool-grid">
+        <div class="tool-card" onclick="openTool('letters')">
+          <div class="accent-bar" style="background:linear-gradient(90deg,var(--teal),var(--green))"></div>
+          <div class="tool-card-icon">&#x1F4DC;</div>
+          <h3>Letter Generator</h3>
+          <p>Prior authorization letters, medical necessity documentation, ESA letters, clinical letters of support. Enter the clinical details, the tool generates the professional document auto-filled from your Vault profile.</p>
+          <span class="tool-status status-soon">Coming Soon</span>
+        </div>
+        <div class="tool-card" onclick="openTool('incident')">
+          <div class="accent-bar" style="background:linear-gradient(90deg,var(--red),var(--amber))"></div>
+          <div class="tool-card-icon">&#x1F6A8;</div>
+          <h3>Incident Documentation</h3>
+          <p>When something goes wrong — complaint, adverse event, boundary violation, threatening patient — guided prompts generate a formatted incident report with guidance on who to notify and when.</p>
+          <span class="tool-status status-soon">Coming Soon</span>
+        </div>
+        <div class="tool-card" onclick="openTool('termination')">
+          <div class="accent-bar" style="background:linear-gradient(90deg,var(--amber),var(--teal))"></div>
+          <div class="tool-card-icon">&#x1F4E8;</div>
+          <h3>Termination Letter Generator</h3>
+          <p>State-specific abandonment rules, required notice periods, emergency refill requirements. Generates a compliant termination letter with documentation guidance to protect against board complaints.</p>
+          <span class="tool-status status-soon">Coming Soon</span>
+        </div>
+        <div class="tool-card" onclick="openTool('malpractice')">
+          <div class="accent-bar" style="background:linear-gradient(90deg,var(--red),var(--purple))"></div>
+          <div class="tool-card-icon">&#x1F6E1;</div>
+          <h3>Malpractice Claim Kit</h3>
+          <p>Break glass in case of emergency. First 24 hours guide, what to gather, what your carrier will ask for, what NOT to do. Secure notes area for attorney-privileged recollection.</p>
+          <span class="tool-status status-planned">Planned</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- TRACKING -->
+    <div class="category">
+      <div class="category-header">
+        <span class="category-icon">&#x1F4CA;</span>
+        <span class="category-title">Tracking</span>
+        <span class="category-count">2 tools</span>
+      </div>
+      <div class="tool-grid">
+        <div class="tool-card" onclick="openTool('cetracker')">
+          <div class="accent-bar" style="background:linear-gradient(90deg,var(--teal),var(--green))"></div>
+          <div class="tool-card-icon">&#x1F393;</div>
+          <h3>CE Tracker</h3>
+          <p>State-specific CE requirements auto-generated from your license. Track completed hours, mandatory topics satisfied, and days until renewal. Surfaces matching Think Beyond Education courses for unmet requirements.</p>
+          <span class="tool-status status-soon">Coming Soon</span>
+        </div>
+        <div class="tool-card" onclick="openTool('supervision')">
+          <div class="accent-bar" style="background:linear-gradient(90deg,var(--purple),var(--blue))"></div>
+          <div class="tool-card-icon">&#x1F465;</div>
+          <h3>Supervision Tracker</h3>
+          <p>Log supervised hours toward independent practice. Direct vs. indirect tracking, dual-auth verification with supervisor, state-specific requirements, projected completion date.</p>
+          <span class="tool-status status-planned">Planned</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CAREER & MOBILITY -->
+    <div class="category">
+      <div class="category-header">
+        <span class="category-icon">&#x1F680;</span>
+        <span class="category-title">Career & Mobility</span>
+        <span class="category-count">2 tools</span>
+      </div>
+      <div class="tool-grid">
+        <div class="tool-card" onclick="openTool('benchmarker')">
+          <div class="accent-bar" style="background:linear-gradient(90deg,var(--blue),var(--teal))"></div>
+          <div class="tool-card-icon">&#x1F4BC;</div>
+          <h3>Contract Benchmarker</h3>
+          <p>For employed clinicians. Upload your contract or offer letter. System identifies non-compete terms, tail coverage, CME allowance, and benchmarks against market rates for your region and specialty.</p>
+          <span class="tool-status status-planned">Planned</span>
+        </div>
+        <div class="tool-card" onclick="openTool('multistate')">
+          <div class="accent-bar" style="background:linear-gradient(90deg,var(--green),var(--blue))"></div>
+          <div class="tool-card-icon">&#x1F30E;</div>
+          <h3>Multi-State License Optimizer</h3>
+          <p>Planning to expand via telehealth? See highest-ROI states for your next license based on cost, board speed, FPA status, payer landscape, compacts, and tax implications.</p>
+          <span class="tool-status status-planned">Planned</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- TEMPLATES -->
+    <div class="category">
+      <div class="category-header">
+        <span class="category-icon">&#x1F4C1;</span>
+        <span class="category-title">Templates</span>
+        <span class="category-count">1 tool</span>
+      </div>
+      <div class="tool-grid">
+        <div class="tool-card" onclick="openTool('templates')">
+          <div class="accent-bar" style="background:linear-gradient(90deg,var(--teal),var(--amber))"></div>
+          <div class="tool-card-icon">&#x1F4C4;</div>
+          <h3>Template Hub</h3>
+          <p>Every template across the ecosystem in one searchable library. Billing, documentation, clinical, compliance, practice setup, patient-facing. Browse by category or search by keyword. When Ask the Archive references a template, it links here.</p>
+          <span class="tool-status status-soon">Coming Soon</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- TOOL VIEW (tools render here when opened) -->
+  <div id="tool-view"></div>
+
+</div>
+
+<script>
+// ── SHARED VAULT (reads from same localStorage as Credentialing Hub) ──
+var VAULT_KEY = 'credentialing-hub-profile';
+var profile = {};
+
+function loadVault() {
+  try {
+    var raw = localStorage.getItem(VAULT_KEY);
+    if (raw) profile = JSON.parse(raw);
+  } catch(e) { profile = {}; }
+  updateVaultStatus();
+}
+
+function updateVaultStatus() {
+  var el = document.getElementById('vault-status');
+  if (profile.legalName) {
+    el.innerHTML = '<strong>' + escapeHtml(profile.legalName) + '</strong> &nbsp;|&nbsp; NPI: ' + (profile.npi1 || 'Not set') + ' &nbsp;|&nbsp; ' + (profile.licenseState || 'No state set');
+  } else {
+    el.innerHTML = 'No profile found. <a href="/credentialing-hub?tab=vault" style="color:var(--teal)">Set up your Vault &rarr;</a>';
+  }
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── NAVIGATION ──
+function openTool(toolId) {
+  var card = event.currentTarget;
+  if (card.classList.contains('disabled')) return;
+
+  var dashboard = document.getElementById('dashboard');
+  var toolView = document.getElementById('tool-view');
+
+  // Check if tool has content built
+  var content = getToolContent(toolId);
+  if (!content) return;
+
+  dashboard.classList.add('hidden');
+  toolView.innerHTML = content;
+  toolView.classList.add('active');
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+function backToDashboard() {
+  var dashboard = document.getElementById('dashboard');
+  var toolView = document.getElementById('tool-view');
+  toolView.classList.remove('active');
+  toolView.innerHTML = '';
+  dashboard.classList.remove('hidden');
+  window.scrollTo({top:0, behavior:'smooth'});
+}
+
+// ── TOOL CONTENT ──
+function getToolContent(toolId) {
+  var tools = {
+    'hipaa': buildComingSoon('HIPAA Compliance Binder', '&#x1F4CB;', 'Answer guided questions about your practice and auto-generate all six HIPAA compliance documents customized to your actual workflow. Privacy & Security Policies, Security Risk Analysis, Breach Response Plan, BAA Tracking, Workforce Documentation — all populated from your answers in 20 minutes instead of 20 hours.', ['Guided intake pulls from your Vault profile', 'Auto-generates six documents from your answers', 'Customized to your actual systems and workflow', 'Annual review reminders via email', 'Documents stored and accessible anytime']),
+    'crossstate': buildComingSoon('Cross-State Compliance Reference', '&#x1F5FA;', 'Interactive, searchable version of the Cross-State Telehealth & Prescribing Cheat Sheet. Select any state and see the full compliance picture: licensing, practice authority, parity laws, consent requirements, controlled substance rules, privacy laws, tax implications, and compact membership.', ['All 50 states + DC covered', 'Licensing and practice authority type', 'Controlled substance registration and PDMP requirements', 'State-specific privacy laws (MHMD, CCPA, etc.)', 'Tax implications for out-of-state telehealth', 'Compact membership (NLC, APRN, PSYPACT)', 'Connected to Credentialing Hub and CE Tracker']),
+    'liability': buildComingSoon('Liability Exposure Audit', '&#x1F50D;', 'Walk through common compliance gaps and get a scored report with prioritized action items. Each gap links to the CE course, Practice Lab mode, or Manager tool that addresses it.', ['Consent form compliance check', 'BAA coverage assessment', 'PDMP compliance verification', 'Documentation defensibility scoring', 'Connects to Practice Lab and CE courses']),
+    'cpa': buildComingSoon('Collaborative Practice Agreement Builder', '&#x1F91D;', 'For clinicians in restricted-practice states. Select your state, enter your collaborator info, and generate a compliant CPA template with negotiation guidance.', ['State-specific CPA requirements', 'Auto-filled from Vault and Cross-State data', 'Chart review frequency guidance', 'Scope and prescriptive authority terms', 'Negotiation tips and red flags']),
+    'contract': buildComingSoon('Payer Contract Analyzer', '&#x1F4C8;', 'Paste your fee schedule. See which payers are paying below Medicare for every common outpatient psychiatric code. Generate a renegotiation letter with your specific rate comparisons and revenue impact data.', ['Compare rates against Medicare benchmarks', 'Flag underpaying codes and payers', 'Calculate monthly revenue impact', 'Generate renegotiation letter template', 'Connects to Service Mix Calculator']),
+    'servicemix': buildComingSoon('Service Mix Calculator', '&#x1F9EE;', 'Model your practice finances with adjustable sliders. See how changes to payer mix, clinical hours, no-show rates, and add-on billing affect your take-home pay.', ['Input clinical hours, overhead, payer mix', 'Real-time take-home projections', 'Model payer rate changes', 'Model adding 90833 to eligible visits', 'Also available as a Practice Lab sim']),
+    'droppayer': buildComingSoon('Drop Payer Calculator', '&#x2702;', 'Model the financial impact of dropping a specific payer. See patient loss, revenue gap, private pay conversion needed, waitlist dynamics, and estimated recovery timeline.', ['Per-payer patient and revenue impact', 'Private pay replacement modeling', 'Waitlist conversion rate input', 'Recovery timeline projection', 'Hard numbers, not feelings']),
+    'oon': buildComingSoon('Out-of-Network Decision Tool', '&#x1F4B3;', 'Model three scenarios: stay fully in-network, go hybrid, or go fully out-of-network. 12-month revenue projections, patient retention estimates, and a superbill template auto-filled from your Vault.', ['Three-scenario financial modeling', 'Monthly income projections over 12 months', 'Patient retention estimates', 'Break-even timeline', 'Superbill generator from Vault data']),
+    'incident': buildComingSoon('Incident Documentation Engine', '&#x1F6A8;', 'Select incident type, follow guided prompts, generate a formatted incident report. Includes guidance on who to notify, when to call your malpractice carrier, and what NOT to do.', ['Patient complaint, board complaint, adverse event', 'Boundary violation, threatening patient', 'Medication error, HIPAA breach', 'Formatted report generation', 'Notification and escalation guidance']),
+    'termination': buildComingSoon('Termination Letter Generator', '&#x1F4E8;', 'State-specific patient termination workflow. Surfaces abandonment rules, required notice periods, and emergency refill requirements. Generates a compliant letter with documentation guidance.', ['State-specific abandonment rules', 'Required notice period by state', 'Emergency refill requirements', 'Compliant letter generation', 'Board complaint protection guidance']),
+    'malpractice': buildComingSoon('Malpractice Claim Preparation Kit', '&#x1F6E1;', 'Break glass in case of emergency. Step-by-step guide for the first 24 hours, documentation checklist, carrier notification process, and what to expect.', ['First 24 hours action guide', 'Documentation gathering checklist', 'Carrier and attorney notification steps', 'Timeline of what to expect', 'Secure notes area for attorney use']),
+    'cetracker': buildComingSoon('CE Tracker', '&#x1F393;', 'State-specific CE requirements auto-generated from your license type. Track completed hours and mandatory topics. Automated renewal reminders. Surfaces matching Think Beyond Education courses for unmet requirements.', ['Auto-detect requirements from your state and license', 'Track hours completed vs. required', 'Mandatory topic satisfaction tracking', 'Renewal deadline reminders (6mo, 3mo, 1mo)', 'Pipeline to Think Beyond Education courses']),
+    'supervision': buildComingSoon('Supervision Tracker', '&#x1F465;', 'For associate-level clinicians tracking hours toward independent practice. Log sessions, get supervisor verification, track against state-specific requirements in real time.', ['Direct vs. indirect hours logging', 'Dual-auth supervisor verification', 'State-specific requirement tracking', 'Projected completion date', 'Application readiness alerts']),
+    'benchmarker': buildComingSoon('Contract Value Benchmarker', '&#x1F4BC;', 'For employed clinicians evaluating offers or renegotiating contracts. Identify key terms, benchmark against market rates, and flag unfavorable clauses.', ['Non-compete analysis', 'Tail coverage identification', 'CME allowance benchmarking', 'Compensation market comparison', 'Negotiation leverage points']),
+    'multistate': buildComingSoon('Multi-State License Optimizer', '&#x1F30E;', 'Planning telehealth expansion? See highest-ROI states for your next license based on cost, board speed, practice authority, payer landscape, compacts, and tax implications.', ['License cost and processing time', 'FPA vs. restricted practice status', 'Payer landscape and reimbursement rates', 'Compact membership benefits', 'Tax and privacy law implications']),
+    'letters': buildComingSoon('Letter Generator', '&#x1F4DC;', 'Generate professional clinical letters pre-filled from your Vault profile. Enter the patient-specific clinical details, select the letter type, and download a formatted document ready to send.', ['Prior authorization letters', 'Medical necessity documentation', 'ESA letters and clinical letters of support', 'Auto-filled provider info from Vault', 'Professional formatting ready to submit']),
+    'templates': buildComingSoon('Template Hub', '&#x1F4C4;', 'Every template across the Think Beyond ecosystem in one searchable library. When Ask the Archive references a template, it links directly here. Members browse and download freely. Non-members can purchase individual templates or bundles.', ['Search by keyword or browse by category', 'Categories: billing, documentation, clinical, compliance, practice setup, patient-facing', 'Connected to Ask the Archive responses', 'New templates added as tools and content ship', 'Individual purchase available for non-members'])
+  };
+
+  return tools[toolId] || null;
+}
+
+function buildComingSoon(title, icon, description, features) {
+  var html = '<button class="back-btn" onclick="backToDashboard()">&larr; Back to Dashboard</button>';
+  html += '<div style="text-align:center;padding:40px 20px">';
+  html += '<div style="font-size:3rem;margin-bottom:16px;opacity:0.7">' + icon + '</div>';
+  html += '<h2 style="font-family:var(--font-display);font-size:1.8rem;color:var(--white);margin-bottom:12px">' + title + '</h2>';
+  html += '<p style="color:var(--cream-dim);max-width:600px;margin:0 auto 32px;font-size:0.92rem;line-height:1.7">' + description + '</p>';
+
+  if (features && features.length > 0) {
+    html += '<div style="text-align:left;max-width:500px;margin:0 auto;background:var(--navy-card);border:1px solid var(--rule);border-radius:var(--radius);padding:24px 32px">';
+    html += '<h4 style="font-family:var(--font-display);color:var(--teal);margin-bottom:16px;font-size:0.95rem">What this tool will include</h4>';
+    features.forEach(function(f) {
+      html += '<p style="font-size:0.85rem;color:var(--cream-dim);padding:6px 0;border-bottom:1px solid rgba(42,171,184,0.06)"><span style="color:var(--teal);margin-right:8px">&#x2192;</span>' + f + '</p>';
+    });
+    html += '</div>';
+  }
+
+  html += '<p style="margin-top:32px;font-size:0.82rem;color:var(--cream-dim);font-style:italic">This tool is in development. It will share data with your Vault profile and connect to other Practice Manager tools.</p>';
+  html += '</div>';
+  return html;
+}
+
+// ── URL PARAM SUPPORT ──
+function checkUrlParams() {
+  var params = new URLSearchParams(window.location.search);
+  var tool = params.get('tool');
+  if (tool) {
+    var content = getToolContent(tool);
+    if (content) {
+      document.getElementById('dashboard').classList.add('hidden');
+      var toolView = document.getElementById('tool-view');
+      toolView.innerHTML = content;
+      toolView.classList.add('active');
+    }
+  }
+}
+
+// ── INIT ──
+loadVault();
+checkUrlParams();
+</script>
+</body>
+</html>
