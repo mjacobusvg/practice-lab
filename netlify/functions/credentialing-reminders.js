@@ -122,7 +122,7 @@ exports.handler = async (event) => {
               'Authorization': 'Bearer ' + RESEND_KEY
             },
             body: JSON.stringify({
-              from: 'Credentialing Hub <onboarding@resend.dev>',
+              from: 'Credentialing Hub <reminders@thinkbeyondpractice.com>',
               to: entry.email,
               subject: subject,
               html: emailBody
