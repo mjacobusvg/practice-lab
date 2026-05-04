@@ -401,6 +401,90 @@
     display: none;
   }
 
+  .followup-badge {
+    display: inline-block;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--teal);
+    background: var(--teal-glow);
+    border: 1px solid var(--rule);
+    border-radius: 4px;
+    padding: 3px 8px;
+    margin-left: 10px;
+    vertical-align: middle;
+    position: relative;
+    top: -1px;
+  }
+
+  .conversation-thread {
+    margin-top: 32px;
+  }
+
+  .prior-turn {
+    padding-bottom: 24px;
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--rule);
+    opacity: 0.75;
+    transition: opacity 0.2s;
+  }
+
+  .prior-turn:hover {
+    opacity: 1;
+  }
+
+  .prior-turn h2 {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1rem;
+    color: var(--white);
+    margin-bottom: 10px;
+    letter-spacing: 0.01em;
+  }
+
+  .prior-turn .answer-text {
+    background: var(--navy-mid);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 20px 22px;
+    font-size: 0.93rem;
+    line-height: 1.75;
+    color: var(--cream);
+  }
+
+  .prior-turn .answer-text p { margin-bottom: 12px; }
+  .prior-turn .answer-text p:last-of-type { margin-bottom: 0; }
+
+  .followup-question-bubble {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--teal);
+    background: var(--teal-glow);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+  }
+
+  .followup-question-bubble .bubble-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--cream-dim);
+    margin-bottom: 4px;
+  }
+
+  .prior-turn-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--cream-dim);
+    margin-bottom: 8px;
+  }
+
   .followup-section {
     margin-top: 22px;
     border-top: 1px solid var(--rule);
@@ -464,6 +548,8 @@
 
   <div class="loading" id="loading">Searching the archive and synthesizing an answer...</div>
   <div class="error" id="error"></div>
+
+  <div class="conversation-thread" id="conversation-thread" style="display:none;"></div>
 
   <div class="answer-box" id="answer-box">
     <h2>What the Forum Consistently Shows</h2>
@@ -535,7 +621,6 @@
     loading.style.display = 'block';
     error.textContent = '';
     error.style.display = 'none';
-    answerBox.style.display = 'none';
     document.getElementById('templates-box').style.display = 'none';
     document.getElementById('sources-box').style.display = 'none';
     document.getElementById('feedback-row').style.display = 'none';
@@ -543,11 +628,63 @@
     document.getElementById('feedback-thanks').style.display = 'none';
     document.getElementById('thumb-up').className = 'feedback-btn';
     document.getElementById('thumb-down').className = 'feedback-btn';
-    console.log('[ATA Debug] isFollowUp:', isFollowUp, '| conversationHistory length:', conversationHistory.length);
+    var thisIsFollowUp = isFollowUp;
+    var thread = document.getElementById('conversation-thread');
+
+    if (thisIsFollowUp && answerBox.style.display !== 'none') {
+      // Snapshot the current answer into the thread
+      var snapshot = document.createElement('div');
+      snapshot.className = 'prior-turn';
+
+      // Clone the heading
+      var priorHeading = answerBox.querySelector('h2').cloneNode(true);
+      snapshot.appendChild(priorHeading);
+
+      // Clone the answer text
+      var priorAnswer = document.getElementById('answer-text').cloneNode(true);
+      priorAnswer.removeAttribute('id');
+
+      // Clone sources if visible
+      var priorSources = null;
+      var sourcesBox = document.getElementById('sources-box');
+      if (sourcesBox.style.display !== 'none') {
+        priorSources = sourcesBox.cloneNode(true);
+        priorSources.removeAttribute('id');
+        priorSources.querySelectorAll('[id]').forEach(function(el) { el.removeAttribute('id'); });
+      }
+
+      // Clone templates if visible
+      var priorTemplates = null;
+      var templatesBox = document.getElementById('templates-box');
+      if (templatesBox.style.display !== 'none') {
+        priorTemplates = templatesBox.cloneNode(true);
+        priorTemplates.removeAttribute('id');
+        priorTemplates.querySelectorAll('[id]').forEach(function(el) { el.removeAttribute('id'); });
+      }
+
+      snapshot.appendChild(priorAnswer);
+      if (priorSources) snapshot.appendChild(priorSources);
+      if (priorTemplates) snapshot.appendChild(priorTemplates);
+
+      // Add the follow-up question bubble
+      var bubble = document.createElement('div');
+      bubble.className = 'followup-question-bubble';
+      bubble.innerHTML = '<div class="bubble-label">Follow-up question</div>' + question.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+      thread.appendChild(snapshot);
+      thread.appendChild(bubble);
+      thread.style.display = 'block';
+    } else {
+      // Fresh question: clear the thread
+      thread.innerHTML = '';
+      thread.style.display = 'none';
+    }
+
+    answerBox.style.display = 'none';
     if (!isFollowUp) conversationHistory = [];
     isFollowUp = false;
     currentJobId = null;
-    console.log('[ATA Debug] After reset — sending history length:', conversationHistory.length, '| history:', JSON.stringify(conversationHistory));
+    loading.textContent = thisIsFollowUp ? 'Following up with context from your last question...' : 'Searching the archive and synthesizing an answer...';
 
     try {
       var startResp = await fetch('/.netlify/functions/ask-archive-trigger', {
@@ -665,6 +802,12 @@
         document.getElementById('templates-box').style.display = 'none';
       } else {
         answerBox.style.display = 'block';
+        var headingEl = answerBox.querySelector('h2');
+        if (thisIsFollowUp) {
+          headingEl.innerHTML = 'What the Forum Consistently Shows<span class="followup-badge">Follow-up</span>';
+        } else {
+          headingEl.innerHTML = 'What the Forum Consistently Shows';
+        }
         document.getElementById('answer-text').innerHTML = renderMarkdown(data.answer);
         document.getElementById('sources-box').style.display = data.sources && data.sources.length ? 'block' : 'none';
         document.getElementById('feedback-row').style.display = 'flex';
@@ -767,7 +910,6 @@
     var fbtn = document.getElementById('followup-btn');
     fbtn.disabled = true;
     isFollowUp = true;
-    console.log('[ATA Debug] askFollowUp fired — isFollowUp set to true, history length:', conversationHistory.length);
     document.getElementById('question').value = fq;
     document.getElementById('followup-question').value = '';
     document.getElementById('followup-section').style.display = 'none';
