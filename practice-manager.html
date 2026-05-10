@@ -216,6 +216,36 @@ body {
 .drag-handle:active { cursor:grabbing; }
 .drag-handle svg { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:2; }
 
+/* ── My Tools Shelf ── */
+.shelf { margin-bottom:32px; }
+.shelf-header {
+  display:flex; align-items:center; gap:10px; margin-bottom:16px;
+  padding-bottom:10px; border-bottom:1px solid var(--teal);
+}
+.shelf-icon { font-size:1.2rem; }
+.shelf-title { font-family:var(--font-display); font-size:1.15rem; color:var(--teal); }
+.shelf-count {
+  font-size:0.7rem; font-weight:700; color:var(--teal); background:var(--teal-glow);
+  padding:2px 10px; border-radius:10px;
+}
+.shelf-hint { font-size:0.76rem; color:var(--cream-dim); font-style:italic; margin-left:auto; }
+.shelf-dropzone {
+  border:2px dashed var(--rule); border-radius:var(--radius); padding:28px 20px;
+  text-align:center; color:var(--cream-dim); font-size:0.82rem; transition:all 0.2s;
+  min-height:80px; display:flex; align-items:center; justify-content:center; gap:8px;
+}
+.shelf-dropzone.drag-hover { border-color:var(--teal); background:var(--teal-glow); color:var(--white); }
+.shelf-dropzone svg { width:18px; height:18px; stroke:currentColor; fill:none; stroke-width:2; flex-shrink:0; }
+.shelf-remove {
+  position:absolute; top:6px; right:6px; width:22px; height:22px;
+  border-radius:50%; border:none; background:rgba(248,113,113,0.15);
+  color:var(--red); font-size:14px; cursor:pointer; display:flex;
+  align-items:center; justify-content:center; opacity:0; transition:opacity 0.15s;
+  line-height:1; padding:0; z-index:2;
+}
+.tool-card:hover .shelf-remove, .tool-list-item:hover .shelf-remove { opacity:1; }
+.shelf-remove:hover { background:rgba(248,113,113,0.3); }
+
 /* ── Tool View Container ── */
 #tool-view { display:none; }
 #tool-view.active { display:block; }
@@ -408,6 +438,19 @@ function setViewMode(mode) {
   localStorage.setItem(VIEW_KEY, mode);
 }
 
+// ── Shelf persistence ──
+var SHELF_KEY = 'pm-shelf';
+function getShelf(section) { try { var r = localStorage.getItem(SHELF_KEY); var a = r ? JSON.parse(r) : {}; return a[section] || []; } catch(e) { return []; } }
+function saveShelf(section, ids) { try { var r = localStorage.getItem(SHELF_KEY); var a = r ? JSON.parse(r) : {}; a[section] = ids; localStorage.setItem(SHELF_KEY, JSON.stringify(a)); } catch(e) {} }
+function addToShelf(section, id) { var ids = getShelf(section); if (ids.indexOf(id) === -1) { ids.push(id); saveShelf(section, ids); } }
+function removeFromShelf(section, id) { saveShelf(section, getShelf(section).filter(function(x) { return x !== id; })); }
+function removeShelfTool(toolId) {
+  if (!currentSection) return;
+  removeFromShelf(currentSection, toolId);
+  document.getElementById('section-view').innerHTML = buildSectionView(currentSection);
+  initDragAndDrop();
+}
+
 // ══════════════════════════════════════════════
 // SEARCH
 // ══════════════════════════════════════════════
@@ -532,6 +575,30 @@ function buildSectionView(section) {
   html += '<button onclick="toggleView(\'list\')" class="' + (viewMode === 'list' ? 'active' : '') + '" title="List view"><svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>';
   html += '</div></div>';
 
+  // ── My Tools Shelf ──
+  var shelfIds = getShelf(section);
+  html += '<div class="shelf"><div class="shelf-header"><span class="shelf-icon">\u2B50</span><span class="shelf-title">My Tools</span>';
+  if (shelfIds.length > 0) {
+    html += '<span class="shelf-count">' + shelfIds.length + '</span>';
+    html += '<span class="shelf-hint">drag to reorder \u00B7 \u00D7 to remove</span>';
+  } else {
+    html += '<span class="shelf-hint">drag any tool here for quick access</span>';
+  }
+  html += '</div>';
+  if (shelfIds.length > 0) {
+    var shelfTag = viewMode === 'grid' ? 'tool-grid' : 'tool-list';
+    html += '<div class="' + shelfTag + '" data-section="' + section + '" data-category="__shelf__" id="shelf-container">';
+    shelfIds.forEach(function(id) {
+      var t = TOOLS.find(function(x) { return x.id === id; });
+      if (!t) return;
+      if (viewMode === 'grid') { html += buildCardHtml(t, true); } else { html += buildListItemHtml(t, true); }
+    });
+    html += '</div>';
+  } else {
+    html += '<div class="shelf-dropzone" id="shelf-dropzone"><svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Drag tools here to build your quick-access shelf</div>';
+  }
+  html += '</div>';
+
   // Get unique categories in this section, preserving order
   var cats = [];
   var seen = {};
@@ -571,11 +638,12 @@ function buildSectionView(section) {
   return html;
 }
 
-function buildCardHtml(t) {
+function buildCardHtml(t, isShelf) {
   var statusClass = t.status === 'live' ? 'status-live' : (t.status === 'soon' ? 'status-soon' : 'status-planned');
   var statusLabel = t.status === 'live' ? 'Live' : (t.status === 'soon' ? 'Coming Soon' : 'Planned');
   var html = '<div class="tool-card" draggable="true" data-tool-id="' + t.id + '" onclick="openTool(\'' + t.id + '\')">';
   html += '<div class="accent-bar" style="background:linear-gradient(90deg,' + t.accent + ')"></div>';
+  if (isShelf) { html += '<button class="shelf-remove" onclick="event.stopPropagation();removeShelfTool(\'' + t.id + '\')" title="Remove from My Tools">&times;</button>'; }
   html += '<div class="tool-card-top">';
   html += '<div class="tool-card-icon">' + t.icon + '</div>';
   html += '<div class="drag-handle" title="Drag to reorder"><svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg></div>';
@@ -587,10 +655,11 @@ function buildCardHtml(t) {
   return html;
 }
 
-function buildListItemHtml(t) {
+function buildListItemHtml(t, isShelf) {
   var statusClass = t.status === 'live' ? 'status-live' : (t.status === 'soon' ? 'status-soon' : 'status-planned');
   var statusLabel = t.status === 'live' ? 'Live' : (t.status === 'soon' ? 'Coming Soon' : 'Planned');
   var html = '<div class="tool-list-item" draggable="true" data-tool-id="' + t.id + '" onclick="openTool(\'' + t.id + '\')">';
+  if (isShelf) { html += '<button class="shelf-remove" onclick="event.stopPropagation();removeShelfTool(\'' + t.id + '\')" title="Remove from My Tools">&times;</button>'; }
   html += '<div class="drag-handle" title="Drag to reorder"><svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg></div>';
   html += '<span class="tli-icon">' + t.icon + '</span>';
   html += '<span class="tli-name">' + esc(t.name) + '</span>';
@@ -645,6 +714,12 @@ function toggleView(mode) {
 // ══════════════════════════════════════════════
 var draggedEl = null;
 var draggedId = null;
+var dragSourceContainer = null;
+
+function reRender() {
+  document.getElementById('section-view').innerHTML = buildSectionView(currentSection);
+  initDragAndDrop();
+}
 
 function initDragAndDrop() {
   var containers = document.querySelectorAll('.tool-grid, .tool-list');
@@ -655,6 +730,7 @@ function initDragAndDrop() {
       item.addEventListener('dragstart', function(e) {
         draggedEl = this;
         draggedId = this.getAttribute('data-tool-id');
+        dragSourceContainer = this.parentNode;
         this.classList.add('dragging');
         e.dataTransfer.effectAllowed = 'move';
         e.dataTransfer.setData('text/plain', draggedId);
@@ -663,60 +739,79 @@ function initDragAndDrop() {
       item.addEventListener('dragend', function() {
         this.classList.remove('dragging');
         document.querySelectorAll('.drag-over').forEach(function(el) { el.classList.remove('drag-over'); });
-        draggedEl = null;
-        draggedId = null;
+        var dz = document.getElementById('shelf-dropzone');
+        if (dz) dz.classList.remove('drag-hover');
+        draggedEl = null; draggedId = null; dragSourceContainer = null;
       });
 
       item.addEventListener('dragover', function(e) {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
-        if (this !== draggedEl && this.parentNode === draggedEl.parentNode) {
+        if (this === draggedEl) return;
+        var targetCat = this.parentNode.getAttribute('data-category');
+        var sourceCat = dragSourceContainer ? dragSourceContainer.getAttribute('data-category') : null;
+        // Allow within same container OR into/within shelf
+        if (this.parentNode === dragSourceContainer || targetCat === '__shelf__' || sourceCat === '__shelf__') {
           this.classList.add('drag-over');
         }
       });
 
-      item.addEventListener('dragleave', function() {
-        this.classList.remove('drag-over');
-      });
+      item.addEventListener('dragleave', function() { this.classList.remove('drag-over'); });
 
       item.addEventListener('drop', function(e) {
-        e.preventDefault();
+        e.preventDefault(); e.stopPropagation();
         this.classList.remove('drag-over');
-        if (!draggedEl || this === draggedEl) return;
-        if (this.parentNode !== draggedEl.parentNode) return;
+        if (!draggedEl || this === draggedEl || !currentSection) return;
 
-        var container = this.parentNode;
-        var allItems = Array.from(container.querySelectorAll('[draggable="true"]'));
-        var fromIdx = allItems.indexOf(draggedEl);
-        var toIdx = allItems.indexOf(this);
+        var targetCat = this.parentNode.getAttribute('data-category');
+        var sourceCat = dragSourceContainer ? dragSourceContainer.getAttribute('data-category') : null;
 
-        if (fromIdx < toIdx) {
-          container.insertBefore(draggedEl, this.nextSibling);
-        } else {
-          container.insertBefore(draggedEl, this);
+        // Dropping into shelf from a category
+        if (targetCat === '__shelf__' && sourceCat !== '__shelf__') {
+          addToShelf(currentSection, draggedId);
+          reRender(); return;
         }
 
-        // Save new order
-        var section = container.getAttribute('data-section');
-        var category = container.getAttribute('data-category');
-        var newOrder = Array.from(container.querySelectorAll('[draggable="true"]')).map(function(el) {
-          return el.getAttribute('data-tool-id');
-        });
-        saveOrder(section, category, newOrder);
+        // Reordering within shelf
+        if (targetCat === '__shelf__' && sourceCat === '__shelf__') {
+          var ids = getShelf(currentSection);
+          var fi = ids.indexOf(draggedId), ti = ids.indexOf(this.getAttribute('data-tool-id'));
+          if (fi !== -1 && ti !== -1) { ids.splice(fi, 1); ids.splice(ti, 0, draggedId); saveShelf(currentSection, ids); }
+          reRender(); return;
+        }
+
+        // Reordering within same category (original behavior)
+        if (this.parentNode === dragSourceContainer) {
+          var allItems = Array.from(this.parentNode.querySelectorAll('[draggable="true"]'));
+          var fromIdx = allItems.indexOf(draggedEl), toIdx = allItems.indexOf(this);
+          if (fromIdx < toIdx) { this.parentNode.insertBefore(draggedEl, this.nextSibling); }
+          else { this.parentNode.insertBefore(draggedEl, this); }
+          var section = this.parentNode.getAttribute('data-section');
+          var category = this.parentNode.getAttribute('data-category');
+          var newOrder = Array.from(this.parentNode.querySelectorAll('[draggable="true"]')).map(function(el) { return el.getAttribute('data-tool-id'); });
+          saveOrder(section, category, newOrder);
+        }
       });
     });
 
-    // Handle drag handles specifically to prevent card click
     container.querySelectorAll('.drag-handle').forEach(function(handle) {
-      handle.addEventListener('mousedown', function(e) {
-        e.stopPropagation();
-      });
-      handle.addEventListener('click', function(e) {
-        e.stopPropagation();
-        e.preventDefault();
-      });
+      handle.addEventListener('mousedown', function(e) { e.stopPropagation(); });
+      handle.addEventListener('click', function(e) { e.stopPropagation(); e.preventDefault(); });
     });
   });
+
+  // Empty shelf dropzone
+  var dz = document.getElementById('shelf-dropzone');
+  if (dz) {
+    dz.addEventListener('dragover', function(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; this.classList.add('drag-hover'); });
+    dz.addEventListener('dragleave', function() { this.classList.remove('drag-hover'); });
+    dz.addEventListener('drop', function(e) {
+      e.preventDefault(); this.classList.remove('drag-hover');
+      if (!draggedId || !currentSection) return;
+      addToShelf(currentSection, draggedId);
+      reRender();
+    });
+  }
 }
 
 // ══════════════════════════════════════════════
