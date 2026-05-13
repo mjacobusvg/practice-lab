@@ -253,6 +253,7 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
       <button class="btn btn-primary" id="analyze-btn" onclick="analyzeInteractions()" disabled>Analyze Interactions</button>
       <button class="btn btn-secondary" onclick="resetAll()">Clear All</button>
     </div>
+    <div id="analyze-hint" style="margin-top:8px;font-size:.78rem;color:var(--cream-dim);font-style:italic">Add at least two medications to start the analysis.</div>
   </div>
 
   <!-- ═══ RESULTS ═══ -->
@@ -1108,7 +1109,9 @@ var MEDICATIONS = {
   eps_prolactin_risk: "mild",
   cns_depressant_burden: "none",
   special_flags: ["akathisia_risk", "dual_2D6_3A4_substrate", "reduce_dose_strong_2D6_inhibitors", "reduce_dose_strong_3A4_inhibitors", "increase_dose_strong_3A4_inducers"]
-}, {
+},
+
+"cariprazine": {
   brand: "Vraylar",
   class: "Second-Generation Antipsychotic (partial D2/D3 agonist)",
   serotonergic: "none",
@@ -3584,7 +3587,7 @@ function parseBulkMeds() {
   document.getElementById('bulk-results').innerHTML = html;
 
   renderSelectedMeds();
-  document.getElementById('analyze-btn').disabled = selectedMeds.length < 2;
+  updateAnalyzeState();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -3671,14 +3674,20 @@ function addMed(key) {
   searchInput.value = '';
   acList.classList.remove('active');
   renderSelectedMeds();
-  document.getElementById('analyze-btn').disabled = selectedMeds.length < 2;
+  updateAnalyzeState();
   searchInput.focus();
 }
 
 function removeMed(key) {
   selectedMeds = selectedMeds.filter(function(k) { return k !== key; });
   renderSelectedMeds();
-  document.getElementById('analyze-btn').disabled = selectedMeds.length < 2;
+  updateAnalyzeState();
+}
+
+function updateAnalyzeState() {
+  var ready = selectedMeds.length >= 2;
+  document.getElementById('analyze-btn').disabled = !ready;
+  document.getElementById('analyze-hint').style.display = ready ? 'none' : 'block';
 }
 
 function renderSelectedMeds() {
@@ -4645,6 +4654,12 @@ function renderResults(interactions) {
     html += renderBeersAlert();
   }
 
+  if (interactions.length > 1) {
+    html += '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">';
+    html += '<button class="btn btn-secondary" style="padding:6px 14px;font-size:.78rem" id="expand-all-btn" onclick="toggleExpandAll()">Expand All</button>';
+    html += '</div>';
+  }
+
   interactions.forEach(function(ix, idx) {
     var rl = RISK_LEVELS[ix.risk];
     var catLabel = CATEGORIES[ix.category] || ix.category;
@@ -4709,14 +4724,32 @@ function renderResults(interactions) {
 
 function toggleCard(header) {
   var isOpen = header.classList.contains('open');
-  // Close all
-  document.querySelectorAll('.ic-header').forEach(function(h) { h.classList.remove('open'); });
-  document.querySelectorAll('.ic-body').forEach(function(b) { b.classList.remove('open'); });
-  // Open this one if it wasn't open
-  if (!isOpen) {
+  var idx = header.id.replace('ic-h-', '');
+  var body = document.getElementById('ic-b-' + idx);
+  if (isOpen) {
+    header.classList.remove('open');
+    body.classList.remove('open');
+  } else {
     header.classList.add('open');
-    var idx = header.id.replace('ic-h-', '');
-    document.getElementById('ic-b-' + idx).classList.add('open');
+    body.classList.add('open');
+  }
+}
+
+var allExpanded = false;
+function toggleExpandAll() {
+  var btn = document.getElementById('expand-all-btn');
+  var headers = document.querySelectorAll('.ic-header');
+  var bodies = document.querySelectorAll('.ic-body');
+  if (!allExpanded) {
+    headers.forEach(function(h) { h.classList.add('open'); });
+    bodies.forEach(function(b) { b.classList.add('open'); });
+    btn.textContent = 'Collapse All';
+    allExpanded = true;
+  } else {
+    headers.forEach(function(h) { h.classList.remove('open'); });
+    bodies.forEach(function(b) { b.classList.remove('open'); });
+    btn.textContent = 'Expand All';
+    allExpanded = false;
   }
 }
 
@@ -4802,6 +4835,7 @@ function resetAll() {
   document.getElementById('results').classList.remove('active');
   document.getElementById('results').innerHTML = '';
   document.getElementById('analyze-btn').disabled = true;
+  document.getElementById('analyze-hint').style.display = 'block';
   document.getElementById('bulk-textarea').value = '';
   document.getElementById('bulk-results').innerHTML = '';
   // Reset to search mode
