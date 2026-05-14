@@ -5468,9 +5468,19 @@ function removeMed(key) {
 }
 
 function updateAnalyzeState() {
-  var ready = selectedMeds.length >= 2;
+  var hasContext = activeContexts.length > 0 || activeSubstances.length > 0;
+  var ready = selectedMeds.length >= 2 || (selectedMeds.length >= 1 && hasContext);
   document.getElementById('analyze-btn').disabled = !ready;
-  document.getElementById('analyze-hint').style.display = ready ? 'none' : 'block';
+  var hint = document.getElementById('analyze-hint');
+  if (ready) {
+    hint.style.display = 'none';
+  } else if (selectedMeds.length === 1) {
+    hint.style.display = 'block';
+    hint.textContent = 'Add another medication or select a patient context to analyze.';
+  } else {
+    hint.style.display = 'block';
+    hint.textContent = 'Add at least one medication to start the analysis.';
+  }
 }
 
 function renderSelectedMeds() {
@@ -5531,6 +5541,7 @@ function updateActiveContexts() {
   document.querySelectorAll('.ctx-toggle.active').forEach(function(t) {
     activeContexts.push(t.getAttribute('data-ctx'));
   });
+  updateAnalyzeState();
 }
 
 function updateActiveSubstances() {
@@ -5538,6 +5549,7 @@ function updateActiveSubstances() {
   document.querySelectorAll('.sub-toggle.active').forEach(function(t) {
     activeSubstances.push(t.getAttribute('data-sub'));
   });
+  updateAnalyzeState();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -5841,10 +5853,10 @@ var RULE_FAMILIES = [
       significance = "Both medications have some serotonergic activity, but the overlap at this level is rarely clinically meaningful in outpatient psychiatric practice. Serotonin syndrome from two mildly serotonergic agents at standard doses is exceedingly rare. Most interaction databases flag this because both medications technically affect serotonin, not because the combination is dangerous.";
     } else if (sum <= 4) {
       risk = 1;
-      significance = "This is a common psychiatric combination. Serotonergic overlap exists, but clinically significant serotonin syndrome at standard outpatient doses is rare. This combination is used safely millions of times daily in psychiatric practice. The flag exists because both agents affect serotonin, not because the combination is inherently dangerous. Higher concern would apply if doses are unusually high, a third serotonergic agent is added, or the patient has other risk factors.";
+      significance = "This is a common psychiatric combination. Serotonergic overlap exists, but clinically significant serotonin syndrome at standard outpatient doses is rare. This combination is used safely millions of times daily in psychiatric practice. The flag exists because both agents affect serotonin, not because the combination is inherently dangerous. Higher concern applies with MAOIs, overdose, rapid titration, medically unstable patients, or complex serotonergic polypharmacy (multiple high-potency serotonergic agents).";
     } else {
       risk = 2;
-      significance = "Both medications have strong serotonergic activity. While serotonin syndrome remains uncommon at standard doses, the cumulative serotonergic load warrants awareness. Most prescribers proceed with this combination routinely but remain alert during initiation, dose increases, or addition of a third serotonergic agent.";
+      significance = "Both medications have strong serotonergic activity. While serotonin syndrome remains uncommon at standard doses, the cumulative serotonergic load warrants awareness. Most prescribers proceed with this combination routinely but remain alert during initiation, dose increases, or if additional serotonergic agents are part of the regimen. Clinically meaningful serotonin syndrome risk rises more substantially with MAOIs, high-dose polyserotonergic regimens, or medically compromised patients.";
     }
 
     return {
@@ -5855,8 +5867,8 @@ var RULE_FAMILIES = [
       significance: significance,
       actions: sum <= 4
         ? "No specific action required beyond standard care. Be aware of serotonin syndrome symptoms (clonus, agitation, diaphoresis, hyperthermia, tremor) particularly during initiation or dose changes. These symptoms are worth knowing but are unlikely to occur with this combination at standard doses."
-        : "Consider educating the patient on serotonin syndrome symptoms (clonus, agitation, diaphoresis, hyperthermia) particularly during initiation, dose increases, or if a third serotonergic agent is added. No routine labs or ECG needed for serotonergic overlap alone.",
-      contextMods: ["substance_use", "high_doses", "third_serotonergic_agent", "renal_impairment_affecting_clearance"],
+        : "Consider educating the patient on serotonin syndrome symptoms (clonus, agitation, diaphoresis, hyperthermia) particularly during initiation, dose increases, or in the context of complex serotonergic polypharmacy. No routine labs or ECG needed for serotonergic overlap alone.",
+      contextMods: ["substance_use", "high_doses", "complex_serotonergic_polypharmacy", "MAOIs_linezolid_methylene_blue", "renal_impairment_affecting_clearance"],
       documentation: "Concurrent serotonergic agents (" + formatName(a) + " and " + formatName(b) + ") reviewed. Serotonergic overlap assessed as " + RISK_LEVELS[risk].label.toLowerCase() + " at current doses in current clinical context. " + (sum <= 4 ? "No additional monitoring indicated." : "Patient counseled on serotonin syndrome awareness. Will monitor during titration.")
     };
   }
@@ -6370,7 +6382,8 @@ var RULE_FAMILIES = [
 // ANALYSIS ENGINE
 // ══════════════════════════════════════════════════════════════
 function analyzeInteractions() {
-  if (selectedMeds.length < 2) return;
+  var hasContext = activeContexts.length > 0 || activeSubstances.length > 0;
+  if (selectedMeds.length < 1 || (selectedMeds.length < 2 && !hasContext)) return;
 
   var interactions = [];
 
@@ -6436,8 +6449,29 @@ function analyzeInteractions() {
   // Generate standalone substance-risk alerts
   interactions = interactions.concat(generateSubstanceAlerts());
 
-  // Re-sort after adding substance alerts
-  interactions.sort(function(x, y) { return y.risk - x.risk; });
+  // Re-sort: primary by risk level, secondary by clinical danger priority
+  // Respiratory depression, hard stops, life-threatening risks sort above CYP nuances at same risk
+  var dangerPriority = function(ix) {
+    var t = (ix.title || '').toLowerCase();
+    if (t.indexOf('respiratory') > -1) return 10;
+    if (t.indexOf('hard stop') > -1 || t.indexOf('contraindicated') > -1) return 9;
+    if (t.indexOf('lithium level') > -1) return 8;
+    if (t.indexOf('qtc') > -1 || t.indexOf('qt ') > -1) return 7;
+    if (t.indexOf('cns depression') > -1 || t.indexOf('sedation') > -1) return 6;
+    if (t.indexOf('fall risk') > -1) return 5;
+    if (t.indexOf('seizure') > -1) return 5;
+    if (t.indexOf('bleeding') > -1) return 5;
+    if (t.indexOf('eps') > -1) return 4;
+    if (t.indexOf('serotonergic') > -1) return 3;
+    if (t.indexOf('anticholinergic') > -1) return 3;
+    if (t.indexOf('metabolic') > -1) return 2;
+    if (t.indexOf('cyp') > -1) return 1;
+    return 0;
+  };
+  interactions.sort(function(x, y) {
+    if (y.risk !== x.risk) return y.risk - x.risk;
+    return dangerPriority(y) - dangerPriority(x);
+  });
 
   renderResults(interactions);
 }
