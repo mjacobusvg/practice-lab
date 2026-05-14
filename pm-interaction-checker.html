@@ -5355,7 +5355,6 @@ function parseBulkMeds() {
         // Deduplicate: only add once per med key
         if (!matchedKeys[k]) {
           matchedKeys[k] = true;
-          if (selectedMeds.indexOf(k) === -1) { selectedMeds.push(k); }
           matched.push({ line: line.replace(/\(Edited by.*$/i, '').trim(), key: k, name: formatName(k) + ' (' + m.brand + ')' });
         }
         break;
@@ -5367,22 +5366,86 @@ function parseBulkMeds() {
     }
   });
 
-  // Show results
+  // Store for confirmation step (do NOT auto-add to selectedMeds)
+  window._pendingMatched = matched;
+  unmatchedMeds = unmatched.slice();
+
+  // Show confirmation UI
   var html = '';
   if (matched.length > 0) {
-    html += '<div class="bulk-matched" style="margin-bottom:8px"><strong>' + matched.length + ' matched:</strong> ';
-    html += matched.map(function(m) { return esc(m.name); }).join(', ');
-    html += '</div>';
+    html += '<div style="margin-bottom:12px"><div style="font-weight:600;color:var(--green);font-size:.85rem;margin-bottom:8px">' + matched.length + ' medications recognized. Select which to analyze:</div>';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+    matched.forEach(function(m, idx) {
+      html += '<span class="med-chip" id="pending-chip-' + idx + '" data-key="' + m.key + '" style="cursor:pointer;border-color:var(--green);background:rgba(52,211,153,0.1)" onclick="togglePendingChip(this,' + idx + ')">' + esc(m.name) + '</span>';
+    });
+    html += '</div></div>';
   }
   if (unmatched.length > 0) {
-    html += '<div class="bulk-unmatched"><strong>' + unmatched.length + ' not recognized by this tool and not analyzed:</strong> ';
+    html += '<div class="bulk-unmatched" style="margin-bottom:12px"><strong>' + unmatched.length + ' not recognized by this tool and will not be analyzed:</strong> ';
     html += unmatched.map(function(u) { return esc(u); }).join(', ');
-    html += '<br><span style="font-size:.75rem;color:var(--cream-dim)">Medications not recognized by this tool were not analyzed. The analysis covers matched medications only.</span>';
+    html += '</div>';
+  }
+  if (matched.length > 0) {
+    html += '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">';
+    html += '<button class="btn btn-primary" style="padding:8px 18px;font-size:.85rem" onclick="confirmBulkSelection()">Confirm Selection &amp; Analyze</button>';
+    html += '<button class="btn btn-secondary" style="padding:8px 14px;font-size:.82rem" onclick="selectAllPending()">Select All</button>';
+    html += '<button class="btn btn-secondary" style="padding:8px 14px;font-size:.82rem" onclick="deselectAllPending()">Deselect All</button>';
     html += '</div>';
   }
   document.getElementById('bulk-results').innerHTML = html;
-  unmatchedMeds = unmatched.slice(); // store globally for results display
+}
 
+var _pendingDeselected = {};
+
+function togglePendingChip(el, idx) {
+  if (_pendingDeselected[idx]) {
+    delete _pendingDeselected[idx];
+    el.style.borderColor = 'var(--green)';
+    el.style.background = 'rgba(52,211,153,0.1)';
+    el.style.opacity = '1';
+    el.style.textDecoration = 'none';
+  } else {
+    _pendingDeselected[idx] = true;
+    el.style.borderColor = 'var(--rule)';
+    el.style.background = 'var(--navy-mid)';
+    el.style.opacity = '0.5';
+    el.style.textDecoration = 'line-through';
+  }
+}
+
+function selectAllPending() {
+  _pendingDeselected = {};
+  var chips = document.querySelectorAll('[id^="pending-chip-"]');
+  chips.forEach(function(el) {
+    el.style.borderColor = 'var(--green)';
+    el.style.background = 'rgba(52,211,153,0.1)';
+    el.style.opacity = '1';
+    el.style.textDecoration = 'none';
+  });
+}
+
+function deselectAllPending() {
+  if (!window._pendingMatched) return;
+  window._pendingMatched.forEach(function(m, idx) { _pendingDeselected[idx] = true; });
+  var chips = document.querySelectorAll('[id^="pending-chip-"]');
+  chips.forEach(function(el) {
+    el.style.borderColor = 'var(--rule)';
+    el.style.background = 'var(--navy-mid)';
+    el.style.opacity = '0.5';
+    el.style.textDecoration = 'line-through';
+  });
+}
+
+function confirmBulkSelection() {
+  if (!window._pendingMatched) return;
+  window._pendingMatched.forEach(function(m, idx) {
+    if (!_pendingDeselected[idx]) {
+      if (selectedMeds.indexOf(m.key) === -1) { selectedMeds.push(m.key); }
+    }
+  });
+  _pendingDeselected = {};
+  window._pendingMatched = null;
+  document.getElementById('bulk-results').innerHTML = '<div style="color:var(--green);font-size:.82rem">Selection confirmed. ' + selectedMeds.length + ' medication' + (selectedMeds.length !== 1 ? 's' : '') + ' ready for analysis.</div>';
   renderSelectedMeds();
   updateAnalyzeState();
 }
@@ -7636,10 +7699,16 @@ function runDiagnostics() {
     // Reset state
     selectedMeds = [];
     unmatchedMeds = [];
+    _pendingDeselected = {};
+    window._pendingMatched = null;
     document.getElementById('bulk-textarea').value = input;
     parseBulkMeds();
+    // Confirm all pending (simulates clicking "Confirm Selection")
+    confirmBulkSelection();
     var result = { matched: selectedMeds.slice(), unmatched: unmatchedMeds.slice() };
     selectedMeds = []; unmatchedMeds = [];
+    _pendingDeselected = {};
+    window._pendingMatched = null;
     document.getElementById('bulk-textarea').value = '';
     document.getElementById('bulk-results').innerHTML = '';
     return result;
