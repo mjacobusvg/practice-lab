@@ -5214,6 +5214,7 @@ var selectedMeds = [];
 var activeContexts = [];
 var activeSubstances = [];
 var unmatchedMeds = [];
+var lastInteractions = [];
 
 // ══════════════════════════════════════════════════════════════
 // INPUT MODE TOGGLE
@@ -6688,6 +6689,7 @@ function renderBeersAlert() {
 // RENDER RESULTS
 // ══════════════════════════════════════════════════════════════
 function renderResults(interactions) {
+  lastInteractions = interactions;
   var el = document.getElementById('results');
 
   if (interactions.length === 0) {
@@ -6796,7 +6798,10 @@ function renderResults(interactions) {
   });
 
   html += '<div class="ai-section" id="ai-section"><h3>Patient-Friendly Summary</h3>';
-  html += '<div class="ai-output" id="ai-output" style="color:var(--cream-dim);font-size:.84rem">Patient explanation generation requires API configuration. The interaction analysis above is complete and clinician-ready. Copy chart documentation blurbs from individual interaction cards above.</div></div>';
+  html += '<div class="ai-output" id="ai-output" style="font-size:.84rem">';
+  html += '<p style="color:var(--cream-dim);margin-bottom:12px">Generate a plain-language explanation of these interactions for the patient. The explanation matches the tone to the risk level: low-risk findings are reassuring, high-risk findings are clear and direct.</p>';
+  html += '<button class="btn btn-secondary" id="gen-patient-btn" onclick="generatePatientExplanation(lastInteractions)" style="margin-bottom:8px">Generate Patient Explanation</button>';
+  html += '</div></div>';
 
   el.innerHTML = html;
   el.classList.add('active');
@@ -6851,10 +6856,64 @@ function copyBlurb(btn) {
 // ══════════════════════════════════════════════════════════════
 // ══════════════════════════════════════════════════════════════
 // AI PATIENT EXPLANATION
-// Disabled until API proxy (Netlify function) is configured.
-// The interaction analysis and chart documentation above are
-// complete without this feature.
+// Calls /.netlify/functions/anthropic-proxy (API key stays server-side)
 // ══════════════════════════════════════════════════════════════
+function generatePatientExplanation(interactions) {
+  if (!interactions || interactions.length === 0) return;
+
+  var btn = document.getElementById('gen-patient-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating...'; }
+  document.getElementById('ai-output').innerHTML = '<span class="ai-loading">Generating patient explanation<span class="loading-dots"><span>.</span><span>.</span><span>.</span></span></span>';
+
+  var medNames = selectedMeds.map(function(k) { return formatName(k) + ' (' + MEDICATIONS[k].brand + ')'; }).join(', ');
+
+  var interactionSummary = interactions.map(function(ix) {
+    return RISK_LEVELS[ix.risk].label + ': ' + ix.title + ' | ' + ix.significance;
+  }).join('\n\n');
+
+  var systemPrompt = 'You are helping a psychiatric prescriber explain medication interactions to a patient in plain, non-alarming language. The clinician has already assessed the clinical significance. Your job is to translate the clinical assessment into language a patient can understand without unnecessary anxiety.\n\nRules:\n- Use simple, clear language a high school graduate would understand\n- Do NOT use medical jargon unless immediately explained\n- Do NOT be alarmist. If the clinical assessment says the risk is low or usually manageable, your language should reflect that\n- Do NOT minimize genuinely important risks. If the assessment says to avoid something, say so clearly\n- Frame monitoring as routine good care, not as evidence of danger\n- Use "your prescriber" not "your doctor" (many patients see NPs or PAs)\n- Do not use em dashes or double hyphens\n- Keep it under 300 words total\n- End with: "If you have questions or concerns about your medications, talk to your prescriber."';
+
+  var userPrompt = 'The patient is taking: ' + medNames + '\n\nThe clinician\'s interaction assessment found:\n\n' + interactionSummary + '\n\nWrite a patient-friendly explanation of these interactions. Match your tone to the risk level. Low-risk findings should be reassuring. High-risk findings should be clear and direct without being scary.';
+
+  fetch('/.netlify/functions/anthropic-proxy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1000,
+      system: systemPrompt,
+      messages: [
+        { role: 'user', content: userPrompt }
+      ]
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    var text = '';
+    if (data.content) {
+      data.content.forEach(function(c) { if (c.type === 'text') text += c.text; });
+    }
+    var el = document.getElementById('ai-output');
+    if (text) {
+      el.innerHTML = '<div style="position:relative"><div style="white-space:pre-wrap">' + esc(text) + '</div><button class="copy-btn" onclick="copyBlurb(this)">Copy</button></div>';
+      var btn = document.getElementById('gen-patient-btn');
+      if (btn) { btn.textContent = 'Regenerate'; btn.disabled = false; }
+    } else if (data.error) {
+      el.innerHTML = '<span style="color:var(--cream-dim)">Patient explanation unavailable: ' + esc(data.error) + '</span>';
+      var btn2 = document.getElementById('gen-patient-btn');
+      if (btn2) { btn2.textContent = 'Try Again'; btn2.disabled = false; }
+    } else {
+      el.innerHTML = '<span style="color:var(--cream-dim)">Patient explanation unavailable. The interaction analysis above is complete.</span>';
+      var btn3 = document.getElementById('gen-patient-btn');
+      if (btn3) { btn3.textContent = 'Try Again'; btn3.disabled = false; }
+    }
+  })
+  .catch(function(err) {
+    document.getElementById('ai-output').innerHTML = '<span style="color:var(--cream-dim)">Patient explanation unavailable. The interaction analysis above is complete.</span>';
+    var btn = document.getElementById('gen-patient-btn');
+    if (btn) { btn.textContent = 'Try Again'; btn.disabled = false; }
+  });
+}
 
 // ══════════════════════════════════════════════════════════════
 // UTILITIES
