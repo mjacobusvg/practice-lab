@@ -125,8 +125,8 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
 @keyframes blink{0%,80%,100%{opacity:0}40%{opacity:1}}
 
 /* ── Substance Sub-Panel ── */
-.substance-sub{display:none;margin-top:8px;padding:12px 16px;background:var(--navy);border:1px solid rgba(251,191,36,0.2);border-radius:8px;grid-column:1/-1}
-.substance-sub.active{display:block}
+.substance-sub,.pgx-sub{display:none;margin-top:8px;padding:12px 16px;background:var(--navy);border:1px solid rgba(251,191,36,0.2);border-radius:8px;grid-column:1/-1}
+.substance-sub.active,.pgx-sub.active{display:block}
 .substance-sub h5{font-size:.75rem;font-weight:600;color:var(--amber);margin-bottom:8px;text-transform:uppercase;letter-spacing:.3px}
 .substance-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
 .sub-toggle{display:flex;align-items:center;gap:6px;padding:6px 10px;background:var(--navy-mid);border:1px solid var(--rule);border-radius:5px;cursor:pointer;font-size:.78rem;color:var(--cream-dim);transition:all .15s;user-select:none}
@@ -247,6 +247,18 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
         </div>
         <label class="ctx-toggle" data-ctx="bipolar"><input type="checkbox"> Bipolar spectrum</label>
         <label class="ctx-toggle" data-ctx="fall_risk_pt"><input type="checkbox"> Fall risk</label>
+        <label class="ctx-toggle" data-ctx="pgx"><input type="checkbox"> Known pharmacogenomic variant</label>
+        <div class="pgx-sub" id="pgx-sub">
+          <h5>Known metabolizer status (select all that apply)</h5>
+          <div class="substance-grid">
+            <label class="sub-toggle" data-pgx="poor_2D6"><input type="checkbox"> Poor metabolizer CYP2D6</label>
+            <label class="sub-toggle" data-pgx="poor_2C19"><input type="checkbox"> Poor metabolizer CYP2C19</label>
+            <label class="sub-toggle" data-pgx="ultra_2D6"><input type="checkbox"> Ultra-rapid metabolizer CYP2D6</label>
+            <label class="sub-toggle" data-pgx="ultra_2C19"><input type="checkbox"> Ultra-rapid metabolizer CYP2C19</label>
+            <label class="sub-toggle" data-pgx="poor_2C9"><input type="checkbox"> Poor metabolizer CYP2C9</label>
+            <label class="sub-toggle" data-pgx="poor_1A2"><input type="checkbox"> Poor metabolizer CYP1A2</label>
+          </div>
+        </div>
         <label class="ctx-toggle" data-ctx="non_psych_meds"><input type="checkbox"> Additional non-psych medications not listed</label>
         <div class="ctx-note">Risk is derived from the medications you enter. These context factors refine the interpretation.</div>
       </div>
@@ -5213,6 +5225,7 @@ var BEERS_DATA = {
 var selectedMeds = [];
 var activeContexts = [];
 var activeSubstances = [];
+var activePGx = [];
 var unmatchedMeds = [];
 var lastInteractions = [];
 
@@ -5469,7 +5482,7 @@ function removeMed(key) {
 }
 
 function updateAnalyzeState() {
-  var hasContext = activeContexts.length > 0 || activeSubstances.length > 0;
+  var hasContext = activeContexts.length > 0 || activeSubstances.length > 0 || activePGx.length > 0;
   var ready = selectedMeds.length >= 2 || (selectedMeds.length >= 1 && hasContext);
   document.getElementById('analyze-btn').disabled = !ready;
   var hint = document.getElementById('analyze-hint');
@@ -5513,12 +5526,26 @@ document.querySelectorAll('.ctx-toggle').forEach(function(toggle) {
         subPanel.classList.add('active');
       } else {
         subPanel.classList.remove('active');
-        // Clear substance selections when unchecking parent
-        document.querySelectorAll('.sub-toggle').forEach(function(st) {
+        document.querySelectorAll('.sub-toggle[data-sub]').forEach(function(st) {
           st.classList.remove('active');
           st.querySelector('input').checked = false;
         });
         activeSubstances = [];
+      }
+    }
+
+    // Handle PGx sub-panel
+    if (this.getAttribute('data-ctx') === 'pgx') {
+      var pgxPanel = document.getElementById('pgx-sub');
+      if (cb.checked) {
+        pgxPanel.classList.add('active');
+      } else {
+        pgxPanel.classList.remove('active');
+        document.querySelectorAll('.sub-toggle[data-pgx]').forEach(function(st) {
+          st.classList.remove('active');
+          st.querySelector('input').checked = false;
+        });
+        activePGx = [];
       }
     }
 
@@ -5527,13 +5554,24 @@ document.querySelectorAll('.ctx-toggle').forEach(function(toggle) {
 });
 
 // Substance sub-toggles
-document.querySelectorAll('.sub-toggle').forEach(function(toggle) {
+document.querySelectorAll('.sub-toggle[data-sub]').forEach(function(toggle) {
   toggle.addEventListener('click', function(e) {
     e.stopPropagation();
     var cb = this.querySelector('input');
     cb.checked = !cb.checked;
     this.classList.toggle('active', cb.checked);
     updateActiveSubstances();
+  });
+});
+
+// PGx sub-toggles
+document.querySelectorAll('.sub-toggle[data-pgx]').forEach(function(toggle) {
+  toggle.addEventListener('click', function(e) {
+    e.stopPropagation();
+    var cb = this.querySelector('input');
+    cb.checked = !cb.checked;
+    this.classList.toggle('active', cb.checked);
+    updateActivePGx();
   });
 });
 
@@ -5547,8 +5585,16 @@ function updateActiveContexts() {
 
 function updateActiveSubstances() {
   activeSubstances = [];
-  document.querySelectorAll('.sub-toggle.active').forEach(function(t) {
+  document.querySelectorAll('.sub-toggle[data-sub].active').forEach(function(t) {
     activeSubstances.push(t.getAttribute('data-sub'));
+  });
+  updateAnalyzeState();
+}
+
+function updateActivePGx() {
+  activePGx = [];
+  document.querySelectorAll('.sub-toggle[data-pgx].active').forEach(function(t) {
+    activePGx.push(t.getAttribute('data-pgx'));
   });
   updateAnalyzeState();
 }
@@ -6383,7 +6429,7 @@ var RULE_FAMILIES = [
 // ANALYSIS ENGINE
 // ══════════════════════════════════════════════════════════════
 function analyzeInteractions() {
-  var hasContext = activeContexts.length > 0 || activeSubstances.length > 0;
+  var hasContext = activeContexts.length > 0 || activeSubstances.length > 0 || activePGx.length > 0;
   if (selectedMeds.length < 1 || (selectedMeds.length < 2 && !hasContext)) return;
 
   var interactions = [];
@@ -6549,6 +6595,65 @@ function generateSubstanceAlerts() {
     }
   });
 
+  // ── Pharmacogenomic alerts ──
+  if (activePGx.length > 0) {
+    var pgxMap = {
+      poor_2D6: { pathway: "2D6", type: "poor", effect: "inhibitor", desc: "Poor CYP2D6 metabolizer status means this patient metabolizes CYP2D6 substrates as if they were taking a strong CYP2D6 inhibitor. Drug levels of CYP2D6 substrates will be higher than expected at standard doses." },
+      poor_2C19: { pathway: "2C19", type: "poor", effect: "inhibitor", desc: "Poor CYP2C19 metabolizer status means CYP2C19 substrates accumulate. Dose reduction may be needed for primary CYP2C19 substrates." },
+      poor_2C9: { pathway: "2C9", type: "poor", effect: "inhibitor", desc: "Poor CYP2C9 metabolizer status reduces metabolism of CYP2C9 substrates, potentially raising levels and increasing side effects." },
+      poor_1A2: { pathway: "1A2", type: "poor", effect: "inhibitor", desc: "Poor CYP1A2 metabolizer status means CYP1A2 substrates (clozapine, olanzapine, duloxetine) accumulate more than expected." },
+      ultra_2D6: { pathway: "2D6", type: "ultra", effect: "inducer", desc: "Ultra-rapid CYP2D6 metabolizer status means this patient clears CYP2D6 substrates faster than expected. Standard doses may be ineffective. Prodrugs metabolized by CYP2D6 (codeine, tramadol) may produce toxic levels of active metabolite." },
+      ultra_2C19: { pathway: "2C19", type: "ultra", effect: "inducer", desc: "Ultra-rapid CYP2C19 metabolizer status means CYP2C19 substrates are cleared faster. Standard doses may be subtherapeutic." }
+    };
+
+    selectedMeds.forEach(function(k) {
+      var med = MEDICATIONS[k];
+      activePGx.forEach(function(pgx) {
+        var info = pgxMap[pgx];
+        if (!info) return;
+        var pathway = info.pathway;
+        var subVal = med.cyp_substrate[pathway];
+        if (!subVal || subVal === false) return;
+
+        var risk = subVal === "primary" ? 4 : 3;
+        var isProdrug = med.special_flags && med.special_flags.some(function(f) { return f.indexOf("prodrug") > -1; }) && pathway === "2D6";
+
+        if (info.type === "poor") {
+          alerts.push({
+            risk: risk,
+            category: "patient_risk",
+            title: info.type.charAt(0).toUpperCase() + info.type.slice(1) + " CYP" + pathway + " Metabolizer + " + formatName(k),
+            rationale: info.desc,
+            significance: formatName(k) + " is metabolized via CYP" + pathway + " (" + subVal + " pathway). In a poor metabolizer, " + formatName(k) + " levels will be higher than expected at standard doses, increasing side effect risk." + (isProdrug ? " Note: " + formatName(k) + " is a prodrug requiring CYP" + pathway + " for activation. A poor metabolizer may have reduced efficacy." : ""),
+            actions: "Consider starting at a lower dose than standard. Monitor more closely for side effects. " + (med.requires_level_monitoring ? "Check " + formatName(k) + " level to guide dosing. " : "") + "If pharmacogenomic testing is available, confirm metabolizer status. Document the phenotype and dosing rationale.",
+            contextMods: ["dose_dependent", "confirm_with_testing_if_available"],
+            documentation: "Patient has known poor CYP" + pathway + " metabolizer status. " + formatName(k) + " is a CYP" + pathway + " " + subVal + " substrate. Dose adjusted for pharmacogenomic phenotype: [specify]. Monitoring plan: [specify].",
+            medA: k, medB: "pgx_" + pgx
+          });
+        } else if (info.type === "ultra") {
+          var prodNote = "";
+          if (isProdrug) {
+            prodNote = " CRITICAL: " + formatName(k) + " is a prodrug activated by CYP" + pathway + ". Ultra-rapid metabolism may produce dangerously high levels of the active metabolite.";
+            risk = 5;
+          }
+          alerts.push({
+            risk: risk,
+            category: "patient_risk",
+            title: "Ultra-Rapid CYP" + pathway + " Metabolizer + " + formatName(k),
+            rationale: info.desc,
+            significance: formatName(k) + " is metabolized via CYP" + pathway + " (" + subVal + " pathway). In an ultra-rapid metabolizer, " + formatName(k) + " may be cleared faster than expected, potentially reducing efficacy at standard doses." + prodNote,
+            actions: isProdrug
+              ? "Avoid " + formatName(k) + " in ultra-rapid CYP" + pathway + " metabolizers due to risk of excessive active metabolite production. Use alternative agents that do not require CYP" + pathway + " activation."
+              : "Consider that standard doses may be subtherapeutic. If the patient is not responding as expected, the pharmacogenomic phenotype may explain it. Consider dose increase with monitoring or alternative agent not dependent on CYP" + pathway + ".",
+            contextMods: ["prodrug_activation_risk", "confirm_with_testing_if_available"],
+            documentation: "Patient has known ultra-rapid CYP" + pathway + " metabolizer status. " + formatName(k) + " is a CYP" + pathway + " " + subVal + " substrate. " + (isProdrug ? "Prodrug avoided due to excessive metabolite risk. " : "Dose/response monitored for subtherapeutic levels. ") + "Plan: [specify].",
+            medA: k, medB: "pgx_" + pgx
+          });
+        }
+      });
+    });
+  }
+
   return alerts;
 }
 
@@ -6664,25 +6769,118 @@ function renderBeersAlert() {
     html += '</div>';
   });
 
-  // Chart documentation template for Beers
+  // Chart documentation - clinically useful, not placeholder
   var avoidMeds = beersFindings.filter(function(f) { return f.data.category === 'avoid'; });
   var cautionMeds = beersFindings.filter(function(f) { return f.data.category !== 'avoid'; });
-  var docText = 'Geriatric medication review performed. Patient is ' + (activeContexts.indexOf('elderly') > -1 ? '65+ years old' : 'older adult') + '.\n';
-  if (avoidMeds.length > 0) {
-    docText += 'Beers-listed medications (potentially inappropriate): ' + avoidMeds.map(function(f) { return formatName(f.key); }).join(', ') + '.\n';
-    docText += 'Clinical rationale for continuation: [document specific rationale for each].\n';
-  }
-  if (cautionMeds.length > 0) {
-    docText += 'Beers-listed medications (use with caution): ' + cautionMeds.map(function(f) { return formatName(f.key); }).join(', ') + '.\n';
-    docText += 'Monitoring plan: [document specific monitoring].\n';
-  }
-  docText += 'Alternatives considered: [document what was considered and why current regimen was maintained].\n';
-  docText += 'Patient/family informed of risks associated with current medications.';
+  var docText = 'Geriatric medication review performed. Patient is ' + (activeContexts.indexOf('elderly') > -1 ? '65+ years old' : 'older adult') + '.\n\n';
 
-  html += '<div class="beers-doc">' + esc(docText) + '<button class="copy-btn" onclick="copyBlurb(this)">Copy</button></div>';
+  beersFindings.forEach(function(f) {
+    var name = formatName(f.key);
+    var cat = f.data.category === 'avoid' ? 'potentially inappropriate' : 'use with caution';
+    docText += name + ' reviewed (' + cat + ' per 2023 AGS Beers Criteria).\n';
+    docText += 'Concern: ' + f.data.rationale.split('.')[0] + '.\n';
+
+    // Generate specific alternatives based on the medication
+    var alts = [];
+    if (f.key === 'diphenhydramine' || f.key === 'doxylamine') {
+      alts = ['melatonin for insomnia', 'trazodone low dose for insomnia', 'CBT-I referral', 'cetirizine or loratadine for allergies'];
+    } else if (f.key === 'hydroxyzine') {
+      alts = ['buspirone for anxiety', 'SSRI/SNRI for anxiety', 'cetirizine for allergies', 'gabapentin for anxiety if appropriate'];
+    } else if (f.key === 'alprazolam' || f.key === 'lorazepam' || f.key === 'clonazepam' || f.key === 'diazepam') {
+      alts = ['SSRI/SNRI for anxiety', 'buspirone for anxiety', 'gabapentin if appropriate', 'CBT referral', 'gradual taper if discontinuing'];
+    } else if (f.key === 'amitriptyline') {
+      alts = ['nortriptyline (less anticholinergic TCA)', 'duloxetine or venlafaxine for pain/depression', 'gabapentin/pregabalin for neuropathic pain'];
+    } else if (f.key === 'paroxetine') {
+      alts = ['sertraline', 'escitalopram', 'citalopram (with QT monitoring)'];
+    } else if (f.key === 'cyclobenzaprine') {
+      alts = ['physical therapy', 'topical agents', 'tizanidine with caution', 'non-pharmacologic approaches'];
+    } else if (f.key === 'carisoprodol') {
+      alts = ['physical therapy', 'topical agents', 'baclofen with caution', 'non-pharmacologic approaches'];
+    } else if (f.key === 'metoclopramide') {
+      alts = ['ondansetron for nausea (with QT awareness)', 'non-pharmacologic approaches', 'if gastroparesis, limit to shortest duration'];
+    } else if (f.key === 'promethazine' || f.key === 'prochlorperazine') {
+      alts = ['ondansetron for nausea (with QT awareness)', 'non-pharmacologic approaches'];
+    } else if (f.key === 'benztropine' || f.key === 'trihexyphenidyl') {
+      alts = ['reduce dose of offending antipsychotic', 'switch to lower-EPS antipsychotic', 'amantadine with caution'];
+    } else if (f.key === 'haloperidol' || f.key === 'chlorpromazine' || f.key === 'fluphenazine' || f.key === 'thiothixene') {
+      alts = ['second-generation antipsychotic with lower EPS risk', 'dose reduction if clinically appropriate'];
+    } else if (f.key === 'phenytoin') {
+      alts = ['levetiracetam', 'lamotrigine', 'consult neurology for transition'];
+    } else if (f.key === 'phenobarbital') {
+      alts = ['levetiracetam', 'lamotrigine', 'consult neurology for transition', 'do not abruptly discontinue'];
+    }
+
+    if (alts.length > 0) {
+      docText += 'Alternatives considered: ' + alts.join(', ') + '.\n';
+    }
+
+    docText += 'Plan: ' + f.data.recommendation.split('.')[0] + '.\n';
+    if (f.data.exceptions && f.data.exceptions !== 'None.' && f.data.exceptions.indexOf('None') !== 0) {
+      docText += 'Note: ' + f.data.exceptions.split('.')[0] + '.\n';
+    }
+    docText += '\n';
+  });
+
+  docText += 'Patient/family informed of risks associated with current medications and alternatives discussed.';
+
+  // Build interactive decision section instead of static blurb
+  html += '<div style="margin-top:14px;padding:16px 18px;background:var(--navy);border:1px solid var(--rule);border-radius:8px">';
+  html += '<div style="font-size:.82rem;font-weight:600;color:var(--teal);margin-bottom:10px;text-transform:uppercase;letter-spacing:.3px">Clinical Decision</div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">';
+  html += '<button class="btn btn-secondary" style="padding:8px 16px;font-size:.82rem" onclick="showBeersDecision(\'discontinue\')">Plan to Discontinue / Switch</button>';
+  html += '<button class="btn btn-secondary" style="padding:8px 16px;font-size:.82rem" onclick="showBeersDecision(\'continue\')">Continue with Documented Rationale</button>';
+  html += '</div>';
+  html += '<div id="beers-decision-output" style="display:none"></div>';
+  html += '</div>';
+
+  // Store data for decision function as globals
+  window._beersDocBase = docText;
+  window._beersFindings = beersFindings.map(function(f) {
+    return { key: f.key, category: f.data.category, recommendation: f.data.recommendation };
+  });
 
   html += '</div>';
   return html;
+}
+
+function showBeersDecision(decision) {
+  var el = document.getElementById('beers-decision-output');
+  var doc = '';
+
+  if (decision === 'discontinue') {
+    doc = window._beersDocBase + '\n\n';
+    doc += 'DECISION: Plan to discontinue/switch Beers-listed medication(s).\n';
+    window._beersFindings.forEach(function(f) {
+      var name = f.key.replace(/_/g, ' ');
+      name = name.charAt(0).toUpperCase() + name.slice(1);
+      doc += name + ': ' + f.recommendation.split('.')[0] + '. ';
+      doc += 'Transition plan: [specify timeline, taper if applicable, replacement agent]. ';
+    });
+    doc += '\nPatient counseled on rationale for change and transition plan.';
+  } else {
+    doc = window._beersDocBase + '\n\n';
+    doc += 'DECISION: Continue Beers-listed medication(s) with documented clinical rationale.\n\n';
+    doc += 'Select applicable rationale(s):\n';
+
+    var reasons = [
+      'Patient has been stable on this medication for an extended period and switching risks destabilization',
+      'Previous trials of safer alternatives were ineffective or not tolerated',
+      'The clinical benefit in this specific patient outweighs the general population risk',
+      'The medication is being used at the lowest effective dose',
+      'The medication is being used short-term for a specific indication',
+      'Non-pharmacologic alternatives have been tried and were insufficient',
+      'Patient is fully informed of risks and prefers to continue current regimen',
+      'Monitoring plan is in place to mitigate identified risks'
+    ];
+
+    doc += reasons.map(function(r) { return '[ ] ' + r; }).join('\n');
+    doc += '\n\nAdditional clinical context: [specify patient-specific factors supporting continuation].\n';
+    doc += 'Monitoring plan: [specify what will be monitored and at what interval].\n';
+    doc += 'Reassessment date: [specify when this decision will be revisited].';
+  }
+
+  el.innerHTML = '<div class="ic-doc-blurb" style="white-space:pre-wrap">' + esc(doc) + '<button class="copy-btn" onclick="copyBlurb(this)">Copy</button></div>';
+  el.style.display = 'block';
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -6693,15 +6891,28 @@ function renderResults(interactions) {
   var el = document.getElementById('results');
 
   if (interactions.length === 0) {
-    var noHtml = '<div class="no-interactions"><h3>No Supported Interactions Identified Among Analyzed Medications</h3><p>No rule-family matches or curated overrides were triggered for this combination. This does not mean no interactions exist, only that none reached the threshold for clinical interpretation among the medications this tool analyzed.</p>';
-    if (unmatchedMeds.length > 0) {
-      noHtml += '<div style="margin-top:16px;padding:14px 18px;background:var(--navy-mid);border:1px solid rgba(251,191,36,0.3);border-radius:8px;text-align:left"><div style="color:var(--amber);font-weight:600;font-size:.85rem;margin-bottom:6px">&#9888; ' + unmatchedMeds.length + ' medication' + (unmatchedMeds.length !== 1 ? 's were' : ' was') + ' not recognized and not analyzed:</div><div style="color:var(--cream);font-size:.82rem">' + unmatchedMeds.map(function(u) { return esc(u); }).join(', ') + '</div><div style="color:var(--cream-dim);font-size:.75rem;margin-top:6px">Interactions involving unrecognized medications may exist but are outside this tool\'s scope.</div></div>';
-    }
-    noHtml += '</div>';
-    // Beers check even when no pairwise interactions
+    var hasBeersFindings = false;
     if (activeContexts.indexOf('elderly') > -1) {
-      var beersHtml = renderBeersAlert();
-      if (beersHtml) noHtml += beersHtml;
+      for (var bi = 0; bi < selectedMeds.length; bi++) {
+        if (BEERS_DATA && BEERS_DATA[selectedMeds[bi]]) { hasBeersFindings = true; break; }
+      }
+    }
+
+    var noHtml = '';
+    if (hasBeersFindings && selectedMeds.length === 1) {
+      // Single med + elderly: don't show "no interactions" header, just show Beers
+      noHtml += renderBeersAlert();
+    } else {
+      noHtml += '<div class="no-interactions"><h3>No Supported Interactions Identified Among Analyzed Medications</h3><p>No rule-family matches or curated overrides were triggered for this combination. This does not mean no interactions exist, only that none reached the threshold for clinical interpretation among the medications this tool analyzed.</p>';
+      if (unmatchedMeds.length > 0) {
+        noHtml += '<div style="margin-top:16px;padding:14px 18px;background:var(--navy-mid);border:1px solid rgba(251,191,36,0.3);border-radius:8px;text-align:left"><div style="color:var(--amber);font-weight:600;font-size:.85rem;margin-bottom:6px">&#9888; ' + unmatchedMeds.length + ' medication' + (unmatchedMeds.length !== 1 ? 's were' : ' was') + ' not recognized and not analyzed:</div><div style="color:var(--cream);font-size:.82rem">' + unmatchedMeds.map(function(u) { return esc(u); }).join(', ') + '</div><div style="color:var(--cream-dim);font-size:.75rem;margin-top:6px">Interactions involving unrecognized medications may exist but are outside this tool\'s scope.</div><button class="btn btn-secondary" style="margin-top:10px;padding:6px 14px;font-size:.75rem" onclick="suggestMeds()">Suggest adding these medications</button></div>';
+      }
+      noHtml += '</div>';
+      // Beers check even when no pairwise interactions
+      if (activeContexts.indexOf('elderly') > -1) {
+        var beersHtml = renderBeersAlert();
+        if (beersHtml) noHtml += beersHtml;
+      }
     }
     el.innerHTML = noHtml;
     el.classList.add('active');
@@ -6738,6 +6949,7 @@ function renderResults(interactions) {
     html += '<div style="color:var(--amber);font-weight:600;font-size:.85rem;margin-bottom:6px">&#9888; ' + unmatchedMeds.length + ' medication' + (unmatchedMeds.length !== 1 ? 's were' : ' was') + ' not recognized and not analyzed:</div>';
     html += '<div style="color:var(--cream);font-size:.82rem">' + unmatchedMeds.map(function(u) { return esc(u); }).join(', ') + '</div>';
     html += '<div style="color:var(--cream-dim);font-size:.75rem;margin-top:6px">Interactions involving unrecognized medications may exist but are outside this tool\'s scope. Use clinical judgment and additional references for those agents.</div>';
+    html += '<button class="btn btn-secondary" style="margin-top:10px;padding:6px 14px;font-size:.75rem" onclick="suggestMeds()">Suggest adding these medications</button>';
     html += '</div>';
   }
 
@@ -6918,6 +7130,40 @@ function generatePatientExplanation(interactions) {
 // ══════════════════════════════════════════════════════════════
 // UTILITIES
 // ══════════════════════════════════════════════════════════════
+function suggestMeds() {
+  if (unmatchedMeds.length === 0) return;
+  var medList = unmatchedMeds.join(', ');
+  var btn = event.target;
+
+  // Try logging to suggestion endpoint
+  fetch('/.netlify/functions/med-suggestion', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ medications: medList, timestamp: new Date().toISOString() })
+  }).then(function(r) {
+    if (r.ok) {
+      btn.textContent = 'Suggestion sent. Thank you!';
+      btn.disabled = true;
+      btn.style.borderColor = 'var(--green)';
+      btn.style.color = 'var(--green)';
+    } else {
+      // Fallback: copy to clipboard
+      navigator.clipboard.writeText('Medication suggestion for Interaction Interpreter:\n' + medList);
+      btn.textContent = 'Copied to clipboard (send to support)';
+      btn.disabled = true;
+      btn.style.borderColor = 'var(--teal)';
+      btn.style.color = 'var(--teal)';
+    }
+  }).catch(function() {
+    // Fallback: copy to clipboard
+    navigator.clipboard.writeText('Medication suggestion for Interaction Interpreter:\n' + medList);
+    btn.textContent = 'Copied to clipboard (send to support)';
+    btn.disabled = true;
+    btn.style.borderColor = 'var(--teal)';
+    btn.style.color = 'var(--teal)';
+  });
+}
+
 function formatName(key) {
   var n = key.replace(/_/g, ' ');
   return n.charAt(0).toUpperCase() + n.slice(1);
@@ -6934,6 +7180,7 @@ function resetAll() {
   selectedMeds = [];
   activeContexts = [];
   activeSubstances = [];
+  activePGx = [];
   unmatchedMeds = [];
   renderSelectedMeds();
   document.querySelectorAll('.ctx-toggle').forEach(function(t) {
@@ -6945,6 +7192,7 @@ function resetAll() {
     t.querySelector('input').checked = false;
   });
   document.getElementById('substance-sub').classList.remove('active');
+  document.getElementById('pgx-sub').classList.remove('active');
   document.getElementById('results').classList.remove('active');
   document.getElementById('results').innerHTML = '';
   document.getElementById('analyze-btn').disabled = true;
