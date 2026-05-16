@@ -143,6 +143,29 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
       </div>
     </div>
 
+    <div id="time-inputs" style="display:none;margin-top:16px;padding:16px;background:var(--navy-mid);border:1px solid var(--rule);border-radius:8px">
+      <div style="font-size:.82rem;color:var(--teal);font-weight:600;margin-bottom:12px;text-transform:uppercase;letter-spacing:.3px">Time Documentation (for time-based coding)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+        <div>
+          <label style="font-size:.78rem;color:var(--cream-dim);display:block;margin-bottom:4px">Face-to-face (min)</label>
+          <input type="number" id="time-f2f" class="note-textarea" style="min-height:auto;padding:8px 12px;font-size:.88rem" placeholder="e.g., 65">
+        </div>
+        <div>
+          <label style="font-size:.78rem;color:var(--cream-dim);display:block;margin-bottom:4px">Pre-visit prep (min)</label>
+          <input type="number" id="time-prep" class="note-textarea" style="min-height:auto;padding:8px 12px;font-size:.88rem" placeholder="e.g., 15">
+        </div>
+        <div>
+          <label style="font-size:.78rem;color:var(--cream-dim);display:block;margin-bottom:4px">Post-visit charting (min)</label>
+          <input type="number" id="time-chart" class="note-textarea" style="min-height:auto;padding:8px 12px;font-size:.88rem" placeholder="e.g., 15">
+        </div>
+      </div>
+      <div style="font-size:.75rem;color:var(--cream-dim);margin-top:8px">Total time includes face-to-face, pre-visit review/prep, and same-day post-visit documentation. Time does not need to be continuous.</div>
+    </div>
+
+    <div style="margin-top:12px">
+      <label class="visit-opt" data-val="telehealth" onclick="this.classList.toggle('active');this.querySelector('input').checked=!this.querySelector('input').checked" style="display:inline-flex;width:auto"><input type="checkbox" id="telehealth-check"> Telehealth visit (Modifier 95)</label>
+    </div>
+
     <div class="btn-group">
       <button class="btn btn-primary" id="code-btn" onclick="startCoding()">Analyze Note for Coding</button>
       <button class="btn btn-secondary" onclick="clearAll()">Clear</button>
@@ -191,9 +214,10 @@ var preflightAnswers = {};
 var noteText = '';
 
 function selectVisitType(el) {
-  document.querySelectorAll('.visit-opt').forEach(function(o) { o.classList.remove('active'); });
+  document.querySelectorAll('.visit-opt[data-val="established"],.visit-opt[data-val="new"]').forEach(function(o) { o.classList.remove('active'); });
   el.classList.add('active');
   visitType = el.getAttribute('data-val');
+  document.getElementById('time-inputs').style.display = visitType === 'new' ? 'block' : 'none';
 }
 
 // ── PROMPTS ──
@@ -229,9 +253,11 @@ var MDM_EVAL_PROMPT = `You are an expert psychiatric E/M coder evaluating Medica
 
 Read this chart note. Evaluate all three MDM axes: Problems, Data, and Risk.
 
-You already know the MDM framework. Apply it. Do not undercode.
+You already know the MDM framework. Apply it accurately. Do not undercode, but do not overcode either. Code what this visit actually is, not what the patient's lifetime acuity suggests.
 
-For Risk specifically, answer this question: "If any clinical decision documented in this note turned out to be wrong, what is the worst plausible outcome for the patient?" That determines the risk level. This applies to decisions to prescribe, decisions NOT to prescribe, decisions about level of care, safety assessments, and any other clinical judgment documented in the note. The act of deciding is what carries risk, not just the act of prescribing.
+For Problems: The question is about what is happening at THIS visit, not the patient's full diagnostic history. Multiple chronic conditions being managed without acute change is moderate. Severe exacerbation means the condition is acutely destabilizing the patient right now: they are actively losing the ability to function, they are in crisis, their safety is in question, or they require an immediate change in management to prevent serious deterioration. Work stress, ongoing symptoms at baseline, or having a complex history does not make Problems high. A patient who is stressed but functioning, working, maintaining relationships, and not in acute danger has moderate problem complexity regardless of how many diagnoses they carry.
+
+For Risk: "If any clinical decision documented in this note turned out to be wrong, what is the worst plausible outcome for the patient?" That determines the risk level. This applies to decisions to prescribe, decisions NOT to prescribe, decisions about level of care, safety assessments, and any other clinical judgment documented in the note.
 
 Psychiatric visits are systematically undercoded on the Risk axis because coders miss that outpatient crisis management, medication safety decisions, and declined escalations of care are themselves high-risk clinical judgments. Do not make that mistake.
 
@@ -260,9 +286,9 @@ var REVIEW_PROMPT = `You are a senior psychiatric coding expert. You receive the
 
 Do NOT simply review whether the initial evaluation "looks reasonable." Re-read the chart note yourself and form your own independent assessment of each axis. Then compare your assessment to the initial evaluation. If they differ, yours takes priority.
 
-For each axis, reason from the clinical content. Do not default to conservative coding.
+For each axis, reason from the clinical content. Do not default to conservative coding, but do not inflate either. Code what this visit actually is.
 
-For Problems: Ask yourself, "Is any condition in this note actively threatening the patient's safety, life, or ability to function?" If yes, that is a severe exacerbation, which is high complexity. Do not flatten acute clinical crises into "mild exacerbation" just because the conditions are chronic.
+For Problems: Ask yourself, "Is any condition in this note acutely destabilizing the patient right now?" Severe exacerbation means the patient is actively losing function, is in crisis, has safety at stake, or requires immediate management changes to prevent serious deterioration. It does NOT mean: the patient has multiple diagnoses, the patient has a complex history, the patient is stressed, the patient has ongoing baseline symptoms, or the patient has personality pathology that complicates care. A patient who is working, maintaining relationships, attending appointments, and managing daily life has moderate problem complexity even if they carry five diagnoses and have a trauma history. Having a complex history does not make every visit high complexity. Do not correct Problems to high unless the patient is genuinely destabilizing at this visit.
 
 For Data: Re-count the data categories yourself. Do not accept the initial evaluation's count without verifying.
 
@@ -475,6 +501,52 @@ function updateProgress(step, label) {
 // RENDER RESULTS
 // ══════════════════════════════════════════════════════════════
 
+function calculateTimeCode() {
+  var f2f = parseInt(document.getElementById('time-f2f').value) || 0;
+  var prep = parseInt(document.getElementById('time-prep').value) || 0;
+  var chart = parseInt(document.getElementById('time-chart').value) || 0;
+  var total = f2f + prep + chart;
+
+  if (total === 0) return null;
+
+  var result = { total: total, f2f: f2f, prep: prep, chart: chart };
+
+  if (visitType === 'new') {
+    if (total < 15) { result.code = '99202'; result.desc = 'New patient, 15-29 min'; result.note = 'Total time is below the 99202 threshold (15 min). Verify time documentation.'; }
+    else if (total <= 29) { result.code = '99202'; result.desc = 'New patient, 15-29 min'; }
+    else if (total <= 44) { result.code = '99203'; result.desc = 'New patient, 30-44 min'; }
+    else if (total <= 59) { result.code = '99204'; result.desc = 'New patient, 45-59 min'; }
+    else if (total <= 74) { result.code = '99205'; result.desc = 'New patient, 60-74 min'; }
+    else {
+      result.code = '99205';
+      result.desc = 'New patient, 60-74 min base';
+      // 99417: each additional 15-min increment beyond 74 min
+      // 75-89 = 1x, 90-104 = 2x, 105-119 = 3x, etc.
+      var extraMin = total - 74;
+      result.prolonged = Math.ceil(extraMin / 15);
+      result.prolongedCode = '99417';
+      result.prolongedDesc = 'Prolonged services, each additional 15 min';
+    }
+  } else {
+    // Established patient time-based (less commonly used but supported)
+    if (total < 10) { result.code = '99212'; result.desc = 'Established patient, 10-19 min'; result.note = 'Total time is below the 99212 threshold.'; }
+    else if (total <= 19) { result.code = '99212'; result.desc = 'Established patient, 10-19 min'; }
+    else if (total <= 29) { result.code = '99213'; result.desc = 'Established patient, 20-29 min'; }
+    else if (total <= 39) { result.code = '99214'; result.desc = 'Established patient, 30-39 min'; }
+    else if (total <= 54) { result.code = '99215'; result.desc = 'Established patient, 40-54 min'; }
+    else {
+      result.code = '99215';
+      result.desc = 'Established patient, 40-54 min base';
+      var extraMin2 = total - 54;
+      result.prolonged = Math.ceil(extraMin2 / 15);
+      result.prolongedCode = '99417';
+      result.prolongedDesc = 'Prolonged services, each additional 15 min';
+    }
+  }
+
+  return result;
+}
+
 function renderResults(mdm, review) {
   var el = document.getElementById('results');
   var html = '';
@@ -486,21 +558,78 @@ function renderResults(mdm, review) {
     return;
   }
 
-  // Code recommendation
-  html += '<div class="code-card">';
+  var isTelehealth = document.getElementById('telehealth-check') && document.getElementById('telehealth-check').checked;
+  var timeResult = (visitType === 'new') ? calculateTimeCode() : null;
+  var hasTherapyAddon = review.addon_code && review.addon_code !== 'none';
+
+  // ── TIME-BASED CODE (primary for new patients when no therapy add-on) ──
+  if (visitType === 'new' && timeResult && timeResult.total > 0) {
+    var timeBlocked = hasTherapyAddon;
+
+    html += '<div class="code-card" style="' + (timeBlocked ? 'opacity:.5;border-color:var(--red)' : 'border-color:var(--green)') + '">';
+    html += '<div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:' + (timeBlocked ? 'var(--red)' : 'var(--green)') + ';margin-bottom:8px">' + (timeBlocked ? 'TIME-BASED CODING (BLOCKED)' : 'RECOMMENDED: TIME-BASED CODING') + '</div>';
+
+    if (timeBlocked) {
+      html += '<div style="font-size:.82rem;color:var(--red);margin-bottom:12px">Time-based E/M coding is not permitted when psychotherapy add-on codes (90833/90836/90838) are billed. Use MDM-based coding below instead. (CPT 2025, p. 766)</div>';
+    }
+
+    html += '<h2>' + esc(timeResult.code) + '</h2>';
+    html += '<div class="code-name">' + esc(timeResult.desc) + '</div>';
+    html += '<div style="font-size:.82rem;color:var(--cream-dim);margin-top:4px">Total time: ' + timeResult.total + ' min (face-to-face: ' + timeResult.f2f + ', prep: ' + timeResult.prep + ', charting: ' + timeResult.chart + ')</div>';
+
+    html += '<div class="code-addons">';
+    if (timeResult.prolonged) {
+      html += '<span class="code-addon">' + esc(timeResult.prolongedCode) + ' x' + timeResult.prolonged + '</span>';
+    }
+    if (isTelehealth) {
+      html += '<span class="code-addon">Modifier 95</span>';
+    }
+    html += '</div>';
+
+    if (!timeBlocked && timeResult.prolonged) {
+      html += '<div style="font-size:.78rem;color:var(--cream-dim);margin-top:8px">99417 is billed for each additional 15-minute increment beyond the base code threshold. You do not need a full 15-minute block to bill the next unit.</div>';
+    }
+
+    if (!timeBlocked) {
+      // Time-based attestation
+      var timeAttest = 'Visit coded based on total time of ' + timeResult.total + ' minutes (' + timeResult.f2f + ' min face-to-face, ' + timeResult.prep + ' min pre-visit preparation, ' + timeResult.chart + ' min same-day documentation). ' + timeResult.code + ' selected per time-based E/M coding guidelines.';
+      if (timeResult.prolonged) {
+        timeAttest += ' ' + timeResult.prolongedCode + ' x' + timeResult.prolonged + ' for prolonged services (' + (timeResult.total - 74) + ' minutes beyond base threshold).';
+      }
+      if (isTelehealth) timeAttest += ' Modifier 95 applied for telehealth service.';
+      html += '<div class="doc-blurb" style="margin-top:12px">' + esc(timeAttest) + '<button class="copy-btn" onclick="copyBlurb(this)">Copy</button></div>';
+    }
+
+    html += '</div>';
+
+    if (timeResult.note) {
+      html += '<div style="background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.2);border-radius:var(--radius);padding:12px 16px;margin-bottom:16px;font-size:.82rem;color:var(--amber)">' + esc(timeResult.note) + '</div>';
+    }
+  }
+
+  // ── MDM-BASED CODE ──
+  html += '<div class="code-card" style="' + (visitType === 'new' && timeResult && !hasTherapyAddon ? 'border-color:var(--rule)' : '') + '">';
+  if (visitType === 'new' && timeResult && timeResult.total > 0 && !hasTherapyAddon) {
+    html += '<div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--cream-dim);margin-bottom:8px">ALTERNATIVE: MDM-BASED CODING</div>';
+  } else if (visitType === 'new' && hasTherapyAddon) {
+    html += '<div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--teal);margin-bottom:8px">MDM-BASED CODING (REQUIRED WITH PSYCHOTHERAPY ADD-ON)</div>';
+  }
   html += '<h2>' + esc(review.em_code) + '</h2>';
   html += '<div class="code-name">' + esc(review.em_description) + '</div>';
   if (review.two_of_three) {
     html += '<div style="font-size:.78rem;color:var(--cream-dim);margin-top:4px">2-of-3 rule: ' + esc(review.two_of_three) + '</div>';
   }
   html += '<div class="code-addons">';
-  if (review.addon_code && review.addon_code !== 'none') {
+  if (hasTherapyAddon) {
     html += '<span class="code-addon">' + esc(review.addon_code) + (review.addon_time ? ' (' + esc(review.addon_time) + ')' : '') + '</span>';
   }
   if (review.modifiers && review.modifiers.length > 0) {
     review.modifiers.forEach(function(m) {
       html += '<span class="code-addon">Modifier ' + esc(String(m)) + '</span>';
     });
+  }
+  if (isTelehealth && !(review.modifiers && review.modifiers.indexOf(95) > -1 || review.modifiers && review.modifiers.indexOf('95') > -1)) {
+    html += '<span class="code-addon">Modifier 95</span>';
   }
   html += '</div></div>';
 
@@ -657,6 +786,12 @@ function clearAll() {
   document.getElementById('input-area').style.display = 'block';
   document.getElementById('code-btn').disabled = false;
   document.getElementById('code-btn').textContent = 'Analyze Note for Coding';
+  document.getElementById('time-inputs').style.display = 'none';
+  document.getElementById('time-f2f').value = '';
+  document.getElementById('time-prep').value = '';
+  document.getElementById('time-chart').value = '';
+  var thCheck = document.getElementById('telehealth-check');
+  if (thCheck) { thCheck.checked = false; thCheck.closest('.visit-opt').classList.remove('active'); }
   preflightAnswers = {};
   noteText = '';
 }
