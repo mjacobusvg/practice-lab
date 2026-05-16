@@ -205,7 +205,7 @@ exports.handler = async function(event, context) {
         await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${resendKey}` },
-          body: JSON.stringify({ from: 'Ask the Archive <noreply@thinkbeyondpractice.com>', to: ['michael@thinkbeyondpsych.com'], subject: 'Ask the Archive — Template Request', html: `<p>A member requested a template for:</p><blockquote>${question}</blockquote>` })
+          body: JSON.stringify({ from: 'Ask the Archive <noreply@thinkbeyondpractice.com>', to: ['michael@thinkbeyondpractice.com'], subject: 'Ask the Archive — Template Request', html: `<p>A member requested a template for:</p><blockquote>${question}</blockquote>` })
         });
       }
     } catch(e) {}
@@ -224,7 +224,7 @@ exports.handler = async function(event, context) {
         await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${resendKey}` },
-          body: JSON.stringify({ from: 'Ask the Archive <noreply@thinkbeyondpractice.com>', to: ['michael@thinkbeyondpsych.com'], subject: 'Ask the Archive — Topic Request', html: `<p>A member requested this topic:</p><blockquote>${question}</blockquote>` })
+          body: JSON.stringify({ from: 'Ask the Archive <noreply@thinkbeyondpractice.com>', to: ['michael@thinkbeyondpractice.com'], subject: 'Ask the Archive — Topic Request', html: `<p>A member requested this topic:</p><blockquote>${question}</blockquote>` })
         });
       }
     } catch(e) {}
