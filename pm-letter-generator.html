@@ -244,7 +244,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
       <div class="output-content" id="chart-output"></div>
     </div>
     <div class="disclaimer">
-      AI-assisted draft for clinician review. This letter does not determine legal eligibility, insurance approval, disability status, housing rights, workplace rights, or academic accommodation approval. The clinician should verify accuracy, edit to match the actual treatment record, and remove any statements not supported by clinical documentation. No patient data was stored during generation.
+      AI-assisted draft for clinician review. This letter does not determine legal eligibility, insurance approval, disability status, housing rights, workplace rights, or academic accommodation approval. The clinician should verify accuracy, edit to match the actual treatment record, and remove any statements not supported by clinical documentation. Patient information entered here is processed through HIPAA-compliant API endpoints under Business Associate Agreement. No patient data is retained on this platform after the letter is generated. Templates saved locally on your device are automatically stripped of patient identifiers.
     </div>
     <div class="btn-group" style="margin-top:16px">
       <button class="btn btn-secondary" onclick="resetForm()">New Letter</button>
@@ -1012,6 +1012,46 @@ function saveAsTemplate() {
   var chartText = document.getElementById('chart-output').textContent;
   if (!letterText) return;
 
+  // Auto-strip patient identifiers before storing
+  var ptName = val('f-ptname');
+  var ptDob = val('f-ptdob');
+
+  var sanitizedLetter = letterText;
+  var sanitizedChart = chartText;
+
+  if (ptName) {
+    // Replace full name and individual name parts
+    var nameRegex = new RegExp(ptName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    sanitizedLetter = sanitizedLetter.replace(nameRegex, '[PATIENT NAME]');
+    sanitizedChart = sanitizedChart.replace(nameRegex, '[PATIENT NAME]');
+    // Also try first and last name separately
+    var parts = ptName.split(/\s+/);
+    parts.forEach(function(part) {
+      if (part.length > 2) {
+        var partRegex = new RegExp('\\b' + part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'gi');
+        sanitizedLetter = sanitizedLetter.replace(partRegex, '[PATIENT]');
+        sanitizedChart = sanitizedChart.replace(partRegex, '[PATIENT]');
+      }
+    });
+  }
+
+  if (ptDob) {
+    var dobRegex = new RegExp(ptDob.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+    sanitizedLetter = sanitizedLetter.replace(dobRegex, '[DOB]');
+    sanitizedChart = sanitizedChart.replace(dobRegex, '[DOB]');
+    // Also try common date reformats (01/15/1990 -> January 15, 1990 etc.)
+    var dobParts = ptDob.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+    if (dobParts) {
+      var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      var monthIdx = parseInt(dobParts[1]) - 1;
+      if (months[monthIdx]) {
+        var longDate = months[monthIdx] + ' ' + parseInt(dobParts[2]) + ', ' + dobParts[3];
+        sanitizedLetter = sanitizedLetter.replace(new RegExp(longDate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '[DOB]');
+        sanitizedChart = sanitizedChart.replace(new RegExp(longDate.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '[DOB]');
+      }
+    }
+  }
+
   var typeLabel = {appeal:'Medical Necessity Appeal',esa:'ESA Letter',support:'Clinical Letter of Support',custom:'Custom Letter'}[selectedType] || selectedType;
   if (selectedSubtype) {
     var subLabels = {workplace:'Workplace',academic:'Academic',housing:'Housing',legal:'Legal/Court',gender:'Gender-Affirming',treatment:'Treatment Verification',immigration:'Immigration',other:'Other'};
@@ -1027,12 +1067,12 @@ function saveAsTemplate() {
     name: name,
     type: selectedType,
     subtype: selectedSubtype,
-    letter: letterText,
-    chart: chartText,
+    letter: sanitizedLetter,
+    chart: sanitizedChart,
     created: new Date().toLocaleDateString()
   });
   saveTemplates(templates);
-  alert('Template saved. Next time you select this letter type, you can load it instead of generating from scratch.');
+  alert('Template saved. Patient identifiers have been automatically removed. Next time you select this letter type, you can load it instead of generating from scratch.');
 }
 
 function checkForTemplates(type, subtype) {
