@@ -123,7 +123,7 @@ exports.handler = async function(event) {
       return {
         statusCode: 500,
         headers: headers,
-        body: JSON.stringify({ error: 'Fax send failed: ' + (sendResult.Message || 'Unknown error') })
+        body: JSON.stringify({ error: 'Fax send failed: ' + (sendResult.Message || 'Unknown error'), status: sendRes.status, fullResponse: sendResult })
       };
     }
 
