@@ -156,6 +156,40 @@
       transform: translateY(-1px);
     }
 
+    .card-button-upgrade {
+      background: transparent;
+      color: var(--teal);
+      font-weight: 600;
+      font-size: 0.9rem;
+      padding: 12px 24px;
+      border-radius: 4px;
+      text-decoration: none;
+      display: inline-block;
+      transition: all 0.2s;
+      letter-spacing: 0.01em;
+      border: 1px solid var(--teal);
+    }
+
+    .card-button-upgrade:hover {
+      background: var(--teal-glow);
+      transform: translateY(-1px);
+    }
+
+    .platform-card.locked {
+      opacity: 0.85;
+    }
+
+    .card-tier-note {
+      display: none;
+      font-size: 0.78rem;
+      color: var(--cream-dim);
+      margin-top: 10px;
+    }
+
+    .platform-card.locked .card-tier-note {
+      display: block;
+    }
+
     .back-link {
       position: absolute;
       top: 40px;
@@ -202,11 +236,12 @@
     </a>
 
     <!-- Practice Lab Card -->
-    <a href="/practice-lab" class="platform-card">
+    <a href="/practice-lab" class="platform-card" data-tier="full" id="card-practice-lab">
       <div class="card-icon">🧪</div>
       <h3 class="card-title">Practice Lab</h3>
       <p class="card-desc">Simulation-based learning for billing, documentation, and clinical decisions.</p>
       <div class="card-button">Launch Lab</div>
+      <p class="card-tier-note">Included with Full Access membership.</p>
     </a>
 
     <!-- Ask the Archive Card -->
@@ -218,15 +253,16 @@
     </a>
 
     <!-- Credentialing Hub Card -->
-    <a href="/credentialing-hub" class="platform-card">
+    <a href="/credentialing-hub" class="platform-card" data-tier="full" id="card-credentialing-hub">
       <div class="card-icon">🔐</div>
       <h3 class="card-title">Credentialing Hub</h3>
       <p class="card-desc">Enter your info once, copy it everywhere, track every payer application until approved.</p>
       <div class="card-button">Open Hub</div>
+      <p class="card-tier-note">Included with Full Access membership.</p>
     </a>
 
     <!-- Practice Manager Card -->
-    <a href="/practice-manager" class="platform-card" style="opacity:0.7;pointer-events:none">
+    <a href="/practice-manager" class="platform-card" data-tier="full" id="card-practice-manager" style="opacity:0.7;pointer-events:none">
       <div class="card-icon">🛠️</div>
       <h3 class="card-title">Practice Manager</h3>
       <p class="card-desc">Compliance, finances, documents, tracking — operational tools for running your practice.</p>
@@ -238,12 +274,54 @@
 
 <script src="/auth-gate.js"></script>
 <script>
+  var UPGRADE_URL = 'https://community.thinkbeyondpractice.com/account/billing?tab=subscriptions';
+
+  function lockFullTierCards() {
+    var cards = document.querySelectorAll('[data-tier="full"]');
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+      // Skip cards that are already disabled (Coming Soon)
+      if (card.style.pointerEvents === 'none') continue;
+
+      card.classList.add('locked');
+      card.href = UPGRADE_URL;
+      card.target = '_blank';
+      var btn = card.querySelector('.card-button');
+      if (btn) {
+        btn.className = 'card-button-upgrade';
+        btn.textContent = 'Upgrade Plan';
+      }
+    }
+  }
+
   TBPAuth.protect({
     toolName: 'Members Area',
     spaceId: 2152658,
     onVerified: function() {
       document.getElementById('members-content').style.display = 'block';
       document.getElementById('back-link').style.display = 'block';
+
+      // Now check if this member has Full tier access
+      var email = '';
+      try { email = localStorage.getItem('tbp_verified_email') || ''; } catch(e) {}
+      if (!email) return;
+
+      fetch('/.netlify/functions/circle-auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, spaceId: 2546298 })
+      })
+      .then(function(res) { return res.json(); })
+      .then(function(data) {
+        if (!data.verified) {
+          lockFullTierCards();
+        }
+      })
+      .catch(function() {
+        // If the tier check fails, default to showing everything
+        // (better to let them click through and hit the tool's own auth gate
+        // than to lock them out due to a network error)
+      });
     }
   });
 </script>
