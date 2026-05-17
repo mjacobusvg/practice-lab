@@ -87,75 +87,7 @@ exports.handler = async function(event) {
     // Convert HTML to base64
     var base64Doc = Buffer.from(htmlContent).toString('base64');
 
-    // Step 1: Upload document for conversion
-    var uploadRes = await fetch('https://api.notifyre.com/fax/send/conversion', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-token': apiKey
-      },
-      body: JSON.stringify({
-        Base64Str: base64Doc,
-        ContentType: 'text/html'
-      })
-    });
-
-    var uploadResult = await uploadRes.json();
-
-    if (!uploadRes.ok || !uploadResult.Success) {
-      return {
-        statusCode: 500,
-        headers: headers,
-        body: JSON.stringify({ error: 'Document upload failed: ' + (uploadResult.Message || 'Unknown error') })
-      };
-    }
-
-    var fileName = uploadResult.Payload && uploadResult.Payload.FileName;
-    if (!fileName) {
-      return {
-        statusCode: 500,
-        headers: headers,
-        body: JSON.stringify({ error: 'No filename returned from document upload' })
-      };
-    }
-
-    // Step 2: Poll for document conversion status
-    var maxAttempts = 15;
-    var attempt = 0;
-    var docReady = false;
-
-    while (attempt < maxAttempts) {
-      await new Promise(function(resolve) { setTimeout(resolve, 2000); });
-      attempt++;
-
-      var statusRes = await fetch('https://api.notifyre.com/fax/send/conversion/' + fileName, {
-        method: 'GET',
-        headers: { 'x-api-token': apiKey }
-      });
-
-      var statusResult = await statusRes.json();
-
-      if (statusResult.Payload && statusResult.Payload.Status === 'successful') {
-        docReady = true;
-        break;
-      } else if (statusResult.Payload && statusResult.Payload.Status === 'failed') {
-        return {
-          statusCode: 500,
-          headers: headers,
-          body: JSON.stringify({ error: 'Document conversion failed' })
-        };
-      }
-    }
-
-    if (!docReady) {
-      return {
-        statusCode: 500,
-        headers: headers,
-        body: JSON.stringify({ error: 'Document conversion timed out' })
-      };
-    }
-
-    // Step 3: Send the fax
+    // Send the fax directly (document included inline as base64)
     var faxPayload = {
       Faxes: {
         Recipients: [
