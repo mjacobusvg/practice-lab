@@ -266,7 +266,8 @@ async function sendFax() {
         fromName: fromName,
         fromPractice: fromPractice,
         subject: subject,
-        tool: _sendConfig.tool || 'Practice Manager'
+        tool: _sendConfig.tool || 'Practice Manager',
+        clinicianEmail: vault.email || _sendConfig.replyTo || ''
       })
     });
 
@@ -274,7 +275,7 @@ async function sendFax() {
 
     if (data.success) {
       status.className = 'send-status success';
-      status.textContent = data.message || 'Fax queued for delivery.';
+      status.textContent = (data.message || 'Fax queued for delivery.') + ' You will be emailed if delivery fails.';
       btn.textContent = 'Sent';
       setTimeout(function() { closeSendModal(); }, 3000);
     } else {
