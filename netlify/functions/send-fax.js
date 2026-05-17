@@ -165,7 +165,7 @@ exports.handler = async function(event) {
       faxes: {
         recipients: [
           {
-            type: 'faxNumber',
+            type: 'fax_number',
             value: cleanNumber
           }
         ],
