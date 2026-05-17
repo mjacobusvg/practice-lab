@@ -87,24 +87,92 @@ exports.handler = async function(event) {
     // Convert HTML to base64
     var base64Doc = Buffer.from(htmlContent).toString('base64');
 
-    // Send the fax directly (document included inline as base64)
+    // Step 1: Upload document for conversion
+    var uploadRes = await fetch('https://api.notifyre.com/fax/send/conversion', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-token': apiKey
+      },
+      body: JSON.stringify({
+        base64Str: base64Doc,
+        contentType: 'text/html'
+      })
+    });
+
+    var uploadResult = await uploadRes.json();
+
+    if (!uploadRes.ok || !(uploadResult.success || uploadResult.Success)) {
+      return {
+        statusCode: 500,
+        headers: headers,
+        body: JSON.stringify({ error: 'Document upload failed', status: uploadRes.status, fullResponse: uploadResult })
+      };
+    }
+
+    var uploadPayload = uploadResult.payload || uploadResult.Payload || {};
+    var fileID = uploadPayload.fileID || uploadPayload.id || uploadPayload.FileID;
+    var fileName = uploadPayload.fileName || uploadPayload.FileName;
+    if (!fileID && !fileName) {
+      return {
+        statusCode: 500,
+        headers: headers,
+        body: JSON.stringify({ error: 'No file ID returned from upload', fullResponse: uploadResult })
+      };
+    }
+
+    // Step 2: Poll for document conversion status
+    var maxAttempts = 15;
+    var attempt = 0;
+    var docId = null;
+    var pollKey = fileName || fileID;
+
+    while (attempt < maxAttempts) {
+      await new Promise(function(resolve) { setTimeout(resolve, 2000); });
+      attempt++;
+
+      var statusRes = await fetch('https://api.notifyre.com/fax/send/conversion/' + pollKey, {
+        method: 'GET',
+        headers: { 'x-api-token': apiKey }
+      });
+
+      var statusResult = await statusRes.json();
+      var sp = statusResult.payload || statusResult.Payload || {};
+      var docStatus = (sp.status || sp.Status || '').toLowerCase();
+
+      if (docStatus === 'successful' || docStatus === 'completed') {
+        docId = sp.id || sp.ID || fileID;
+        break;
+      } else if (docStatus === 'failed') {
+        return {
+          statusCode: 500,
+          headers: headers,
+          body: JSON.stringify({ error: 'Document conversion failed', fullResponse: statusResult })
+        };
+      }
+    }
+
+    if (!docId) {
+      return {
+        statusCode: 500,
+        headers: headers,
+        body: JSON.stringify({ error: 'Document conversion timed out after ' + attempt + ' attempts' })
+      };
+    }
+
+    // Step 3: Send the fax
     var faxPayload = {
-      Faxes: {
-        Recipients: [
+      faxes: {
+        recipients: [
           {
-            Type: 'FaxNumber',
-            Value: cleanNumber
+            type: 'faxNumber',
+            value: cleanNumber
           }
         ],
-        Documents: [
-          {
-            Base64Str: base64Doc,
-            ContentType: 'text/html'
-          }
-        ],
-        ClientReference: tool + ' - ' + subject + (clinicianEmail ? ' | ' + clinicianEmail : ''),
-        IsHighQuality: true,
-        Header: fromPractice || 'Think Beyond Practice'
+        files: [docId],
+        clientReference: tool + ' - ' + subject + (clinicianEmail ? ' | ' + clinicianEmail : ''),
+        isHighQuality: true,
+        header: fromPractice || 'Think Beyond Practice'
       }
     };
 
@@ -119,11 +187,11 @@ exports.handler = async function(event) {
 
     var sendResult = await sendRes.json();
 
-    if (!sendRes.ok || !sendResult.Success) {
+    if (!sendRes.ok || !(sendResult.success || sendResult.Success)) {
       return {
         statusCode: 500,
         headers: headers,
-        body: JSON.stringify({ error: 'Fax send failed: ' + (sendResult.Message || 'Unknown error'), status: sendRes.status, fullResponse: sendResult })
+        body: JSON.stringify({ error: 'Fax send failed', status: sendRes.status, fullResponse: sendResult })
       };
     }
 
@@ -153,7 +221,7 @@ exports.handler = async function(event) {
       headers: headers,
       body: JSON.stringify({
         success: true,
-        faxId: sendResult.Payload ? sendResult.Payload.FaxID : null,
+        faxId: (sendResult.payload || sendResult.Payload || {}).faxID || (sendResult.payload || sendResult.Payload || {}).FaxID || null,
         message: 'Fax queued for delivery to ' + cleanNumber
       })
     };
