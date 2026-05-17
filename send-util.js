@@ -104,17 +104,21 @@ function openSendModal(config) {
   html += '<div class="send-disclaimer">This email is sent from ' + escHtml(vault.practiceName || 'your practice') + ' through a HIPAA-compliant email service. The recipient should be informed that this communication contains health-related information. By sending, you confirm the recipient has consented to receive this information via email.</div>';
   html += '</div>';
 
-  // Fax cover sheet panel
+  // Fax panel
   html += '<div id="send-panel-fax" style="display:none">';
   html += '<div class="send-field"><label>Recipient Name / Office</label><input type="text" id="fax-to-name" placeholder="Dr. Smith / ABC Clinic"></div>';
   html += '<div class="send-field"><label>Fax Number</label><input type="text" id="fax-number" placeholder="(509) 555-1234"></div>';
-  html += '<div class="send-field"><label>Number of Pages (including cover)</label><input type="number" id="fax-pages" value="2"></div>';
-  html += '<div class="send-field"><label>Notes</label><textarea id="fax-notes" placeholder="Please see attached document regarding your patient..."></textarea></div>';
+  html += '<div class="send-field"><label>Subject / Reference</label><input type="text" id="fax-subject" value="' + escAttr(config.subject || 'Clinical Document') + '"></div>';
+  html += '<div class="send-field"><label>Notes (included on fax)</label><textarea id="fax-notes" placeholder="Please see attached document regarding your patient..."></textarea></div>';
+  html += '<div style="font-size:.78rem;color:var(--cream-dim);margin-bottom:10px;font-weight:600">Document preview:</div>';
+  html += '<div class="send-preview">' + escHtml(config.content || '') + '</div>';
   html += '<div class="send-actions">';
   html += '<button class="send-btn send-btn-secondary" onclick="closeSendModal()">Cancel</button>';
-  html += '<button class="send-btn send-btn-primary" onclick="generateFaxCover()">Generate Fax Cover Sheet</button>';
+  html += '<button class="send-btn send-btn-secondary" onclick="generateFaxCover()">Print Cover Sheet Only</button>';
+  html += '<button class="send-btn send-btn-primary" id="send-fax-btn" onclick="sendFax()">Send Fax</button>';
   html += '</div>';
   html += '<div class="send-status" id="fax-status"></div>';
+  html += '<div class="send-disclaimer">Fax is sent digitally via HIPAA-compliant service. A HIPAA confidentiality notice is automatically included. Standard fax charges apply ($0.03/page).</div>';
   html += '</div>';
 
   html += '</div>';
@@ -219,10 +223,79 @@ async function sendEmail() {
 }
 
 /* ── Fax Cover Sheet ── */
+/* ── Fax Send ── */
+async function sendFax() {
+  var toName = document.getElementById('fax-to-name').value.trim();
+  var faxNum = document.getElementById('fax-number').value.trim();
+  var subject = document.getElementById('fax-subject').value.trim();
+  var notes = document.getElementById('fax-notes').value.trim();
+  var status = document.getElementById('fax-status');
+  var btn = document.getElementById('send-fax-btn');
+
+  if (!faxNum) {
+    status.className = 'send-status error';
+    status.textContent = 'Please enter a fax number.';
+    return;
+  }
+
+  // Get provider info from vault
+  var vault = {};
+  try { vault = JSON.parse(localStorage.getItem('credentialing-hub-profile') || '{}'); } catch(e) {}
+
+  var fromName = vault.legalName || '';
+  var fromPractice = vault.practiceName || '';
+
+  // Build fax content: notes + document content
+  var faxContent = '';
+  if (notes) faxContent += notes + '\n\n---\n\n';
+  faxContent += _sendConfig.content;
+
+  btn.disabled = true;
+  btn.textContent = 'Sending...';
+  status.className = 'send-status sending';
+  status.textContent = 'Preparing and sending fax. This may take up to 30 seconds...';
+
+  try {
+    var resp = await fetch('/.netlify/functions/send-fax', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: faxNum,
+        content: faxContent,
+        toName: toName,
+        fromName: fromName,
+        fromPractice: fromPractice,
+        subject: subject,
+        tool: _sendConfig.tool || 'Practice Manager'
+      })
+    });
+
+    var data = await resp.json();
+
+    if (data.success) {
+      status.className = 'send-status success';
+      status.textContent = data.message || 'Fax queued for delivery.';
+      btn.textContent = 'Sent';
+      setTimeout(function() { closeSendModal(); }, 3000);
+    } else {
+      status.className = 'send-status error';
+      status.textContent = 'Fax failed: ' + (data.error || 'Unknown error');
+      btn.disabled = false;
+      btn.textContent = 'Retry';
+    }
+  } catch(err) {
+    status.className = 'send-status error';
+    status.textContent = 'Network error. Check your connection and try again.';
+    btn.disabled = false;
+    btn.textContent = 'Retry';
+  }
+}
+
+/* ── Fax Cover Sheet (print only) ── */
 function generateFaxCover() {
   var toName = document.getElementById('fax-to-name').value.trim();
   var faxNum = document.getElementById('fax-number').value.trim();
-  var pages = document.getElementById('fax-pages').value || '2';
+  var pages = 'See attached';
   var notes = document.getElementById('fax-notes').value.trim();
   var status = document.getElementById('fax-status');
 
