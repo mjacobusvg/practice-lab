@@ -116,6 +116,18 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
   .mdm-row{grid-template-columns:1fr;gap:6px}
   .visit-options{flex-direction:column}
 }
+/* ── Follow-up Chat ── */
+.chat-input-row{display:flex;gap:10px;margin-top:12px}
+.chat-input{flex:1;padding:10px 14px;border-radius:8px;border:1px solid var(--rule);background:var(--navy-mid);color:var(--white);font-family:var(--font-body);font-size:.85rem}
+.chat-input:focus{outline:none;border-color:var(--teal);box-shadow:0 0 0 3px var(--teal-glow)}
+.chat-input::placeholder{color:var(--cream-dim)}
+.chat-send-btn{padding:10px 20px;font-size:.82rem;white-space:nowrap}
+.chat-msg{padding:10px 14px;border-radius:8px;margin-bottom:10px;font-size:.84rem;line-height:1.55}
+.chat-msg-user{background:var(--teal-glow);border:1px solid var(--rule);color:var(--white)}
+.chat-msg-assistant{background:var(--navy-mid);border:1px solid var(--rule);color:var(--cream)}
+.chat-msg-scope{background:rgba(248,113,113,0.06);border:1px solid rgba(248,113,113,0.15);color:var(--cream-dim);font-size:.8rem}
+.chat-loading{color:var(--teal);font-size:.8rem;padding:8px 0}
+
 </style>
 </head>
 <body>
@@ -195,6 +207,19 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
   <!-- ═══ RESULTS ═══ -->
   <div id="results"></div>
 
+  <!-- ═══ FOLLOW-UP CHAT ═══ -->
+  <div id="followup-chat" style="display:none">
+    <div class="section-card">
+      <h3>Ask About This Analysis</h3>
+      <div style="font-size:.8rem;color:var(--cream-dim);margin-bottom:14px">Ask why an axis was rated a certain way, what documentation would change the code, or how the 2-of-3 rule applied. This chat only answers questions about the coding analysis above.</div>
+      <div id="chat-messages"></div>
+      <div class="chat-input-row">
+        <input type="text" id="chat-input" class="chat-input" placeholder="e.g. Why was Risk rated high?" onkeydown="if(event.key==='Enter')sendFollowUp()">
+        <button class="btn btn-primary chat-send-btn" onclick="sendFollowUp()">Ask</button>
+      </div>
+    </div>
+  </div>
+
   <div class="disclaimer">
     AI-assisted coding evaluation. Clinician reviews, owns, and is responsible for all coding decisions. No patient data is stored. This tool supplements, not replaces, professional coding judgment and CPT guidelines.
   </div>
@@ -212,6 +237,9 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
 var visitType = 'established';
 var preflightAnswers = {};
 var noteText = '';
+var lastMDM = null;
+var lastReview = null;
+var followUpMessages = [];
 
 function selectVisitType(el) {
   document.querySelectorAll('.visit-opt[data-val="established"],.visit-opt[data-val="new"]').forEach(function(o) { o.classList.remove('active'); });
@@ -488,9 +516,13 @@ async function runCodingPasses() {
 
     // Done
     updateProgress(3, 'Complete.');
+    lastMDM = mdm;
+    lastReview = review;
+    followUpMessages = [];
     setTimeout(function() {
       document.getElementById('progress-section').classList.remove('active');
       renderResults(mdm, review);
+      document.getElementById('followup-chat').style.display = 'block';
     }, 400);
 
   } catch(e) {
@@ -818,6 +850,93 @@ function copyBlurb(btn) {
   });
 }
 
+var FOLLOWUP_PROMPT = `You are a psychiatric E/M coding expert answering questions about a specific chart coding analysis you just produced. You have the original chart note and the full MDM analysis results in context.
+
+YOUR SCOPE (strictly enforced):
+- Explain WHY any axis (Problems, Data, Risk) was rated at a specific level
+- Explain how the 2-of-3 rule determined the final E/M code
+- Explain what documentation elements would raise or lower a specific axis (e.g. "To support high Risk, your note would need to document X"). This is coding guidance, not note writing. You may describe what needs to be present but you do not write it for them.
+- Explain the adversarial review corrections and why they were made
+- Explain psychotherapy add-on code selection and modifier application
+- Answer questions about CPT 2025 rules as they apply to THIS note
+- Clarify audit defensibility concerns or documentation gaps
+
+YOU MUST REFUSE (politely, in one sentence):
+- Requests to write, rewrite, edit, or generate actual chart note text, even a single section
+- Requests to generate notes, letters, prior auths, or any clinical document
+- Requests to provide clinical advice, diagnosis, or treatment recommendations
+- Requests unrelated to the coding analysis (general questions, other tasks)
+- Requests to re-analyze a different note (tell them to use the main tool)
+
+The distinction: "What would I need to document to support a higher code?" is IN scope. "Write me a risk paragraph that supports 99215" is OUT of scope.
+
+Keep answers focused and concise. Reference specific content from the note and analysis when explaining. Use plain language, not jargon walls.`;
+
+async function sendFollowUp() {
+  var input = document.getElementById('chat-input');
+  var msgBox = document.getElementById('chat-messages');
+  var question = input.value.trim();
+  if (!question || !lastMDM || !lastReview) return;
+
+  input.value = '';
+  input.disabled = true;
+
+  // Show user message
+  msgBox.innerHTML += '<div class="chat-msg chat-msg-user">' + esc(question) + '</div>';
+  msgBox.innerHTML += '<div class="chat-loading" id="chat-loading">Thinking...</div>';
+  msgBox.scrollTop = msgBox.scrollHeight;
+
+  // Build context: note + analysis + conversation history
+  var context = 'ORIGINAL CHART NOTE:\n' + noteText + '\n\nMDM ANALYSIS (Pass 1):\n' + JSON.stringify(lastMDM, null, 2) + '\n\nADVERSARIAL REVIEW (Pass 2):\n' + JSON.stringify(lastReview, null, 2);
+
+  // Build messages array with history
+  var messages = [{ role: 'user', content: context + '\n\n---\n\nThe clinician has a question about this analysis.' }];
+  messages.push({ role: 'assistant', content: 'I have the full chart note and coding analysis in context. What would you like to know?' });
+
+  followUpMessages.forEach(function(m) {
+    messages.push(m);
+  });
+  messages.push({ role: 'user', content: question });
+
+  try {
+    var response = await fetch('/.netlify/functions/anthropic-proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1500,
+        system: FOLLOWUP_PROMPT,
+        messages: messages
+      })
+    });
+    var data = await response.json();
+    if (data.error) throw new Error(data.error);
+
+    var answer = '';
+    if (data.content) {
+      data.content.forEach(function(c) { if (c.type === 'text') answer += c.text; });
+    }
+
+    // Store in history
+    followUpMessages.push({ role: 'user', content: question });
+    followUpMessages.push({ role: 'assistant', content: answer });
+
+    // Remove loading, show answer
+    var loader = document.getElementById('chat-loading');
+    if (loader) loader.remove();
+    msgBox.innerHTML += '<div class="chat-msg chat-msg-assistant">' + esc(answer) + '</div>';
+
+  } catch(e) {
+    var loader = document.getElementById('chat-loading');
+    if (loader) loader.remove();
+    msgBox.innerHTML += '<div class="chat-msg chat-msg-scope">Error: ' + esc(e.message) + '</div>';
+  }
+
+  input.disabled = false;
+  input.focus();
+  msgBox.scrollTop = msgBox.scrollHeight;
+}
+
 function clearAll() {
   document.getElementById('note-input').value = '';
   document.getElementById('results').classList.remove('active');
@@ -835,6 +954,11 @@ function clearAll() {
   if (thCheck) { thCheck.checked = false; thCheck.closest('.visit-opt').classList.remove('active'); }
   preflightAnswers = {};
   noteText = '';
+  lastMDM = null;
+  lastReview = null;
+  followUpMessages = [];
+  document.getElementById('followup-chat').style.display = 'none';
+  document.getElementById('chat-messages').innerHTML = '';
 }
 </script>
 </body>
