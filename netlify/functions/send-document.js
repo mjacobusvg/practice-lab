@@ -1,9 +1,9 @@
 // netlify/functions/send-document.js
 // Shared send utility for all Practice Manager tools.
-// Sends documents via Resend (same service as Credentialing Hub).
+// Sends documents via Resend API using raw fetch (no npm dependencies).
 //
-// Environment variables (already configured for credentialing-concierge):
-//   RESEND_API_KEY - Resend API key (shared with credentialing hub)
+// Environment variables:
+//   RESEND_API_KEY - Resend API key
 //   SUPABASE_URL - for usage logging (optional)
 //   SUPABASE_SERVICE_KEY - for usage logging (optional)
 //
@@ -15,10 +15,8 @@
 //   replyTo: (optional) clinician's email for reply-to header
 //   tool: which tool sent this (for logging)
 
-const { Resend } = require('resend');
-
-const FROM_ADDRESS = 'support@thinkbeyondpractice.com';
-const FROM_NAME = 'Think Beyond Practice';
+var FROM_ADDRESS = 'support@thinkbeyondpractice.com';
+var FROM_NAME = 'Think Beyond Practice';
 
 exports.handler = async function(event) {
   var headers = {
@@ -44,8 +42,6 @@ exports.handler = async function(event) {
     };
   }
 
-  var resend = new Resend(apiKey);
-
   try {
     var payload = JSON.parse(event.body);
     var to = payload.to;
@@ -63,7 +59,6 @@ exports.handler = async function(event) {
       };
     }
 
-    // Basic email validation
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
       return {
         statusCode: 400,
@@ -72,25 +67,34 @@ exports.handler = async function(event) {
       };
     }
 
-    // Build Resend payload
+    // Build Resend API payload
     var emailPayload = {
       from: FROM_NAME + ' <' + FROM_ADDRESS + '>',
-      to: to,
+      to: [to],
       subject: subject
     };
 
     if (textBody) emailPayload.text = textBody;
     if (htmlBody) emailPayload.html = htmlBody;
-    if (replyTo) emailPayload.replyTo = replyTo;
+    if (replyTo) emailPayload.reply_to = replyTo;
 
-    // Send via Resend
-    var result = await resend.emails.send(emailPayload);
+    // Send via Resend REST API (no npm package needed)
+    var res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + apiKey
+      },
+      body: JSON.stringify(emailPayload)
+    });
 
-    if (result.error) {
+    var result = await res.json();
+
+    if (!res.ok) {
       return {
         statusCode: 500,
         headers: headers,
-        body: JSON.stringify({ error: result.error.message || 'Resend API error' })
+        body: JSON.stringify({ error: (result.message || result.error || 'Resend API error') })
       };
     }
 
@@ -118,7 +122,7 @@ exports.handler = async function(event) {
     return {
       statusCode: 200,
       headers: headers,
-      body: JSON.stringify({ success: true, messageId: result.data ? result.data.id : null })
+      body: JSON.stringify({ success: true, messageId: result.id || null })
     };
 
   } catch (err) {
