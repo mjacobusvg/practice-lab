@@ -666,7 +666,14 @@ function renderResults(mdm, review) {
     }
 
     html += '<div class="mdm-row"><div class="mdm-axis">' + ax.name;
-    if (correction) html += ' <span style="color:var(--amber);font-size:.7rem">&#9888; corrected</span>';
+    if (correction) {
+      var wasActuallyChanged = correction.from !== correction.to;
+      if (wasActuallyChanged) {
+        html += ' <span style="color:var(--amber);font-size:.7rem">&#9888; corrected</span>';
+      } else {
+        html += ' <span style="color:var(--green);font-size:.7rem">&#10003; confirmed</span>';
+      }
+    }
     html += '</div><div class="mdm-level level-' + level + '">' + esc(level) + '</div>';
     html += '<div class="mdm-evidence">' + esc(correction ? correction.reason : (orig.reasoning || '')) + '</div>';
     html += '</div>';
@@ -680,19 +687,34 @@ function renderResults(mdm, review) {
     html += '</div>';
   }
 
-  // Corrections summary
+  // Corrections and confirmations
   if (review.corrections && review.corrections.length > 0) {
-    html += '<div style="margin-top:12px;padding:10px 14px;background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.2);border-radius:6px">';
-    html += '<div style="font-size:.75rem;font-weight:600;color:var(--green);margin-bottom:4px">ADVERSARIAL REVIEW CORRECTIONS</div>';
-    review.corrections.forEach(function(c) {
-      html += '<div style="font-size:.82rem;color:var(--cream);padding:2px 0"><strong>' + esc(c.axis) + ':</strong> ' + esc(c.from) + ' &rarr; ' + esc(c.to) + '</div>';
-      var origReasoning = mdm && mdm[c.axis] && mdm[c.axis].reasoning ? mdm[c.axis].reasoning : '';
-      if (origReasoning) {
-        html += '<div style="font-size:.78rem;color:var(--cream-dim);margin-left:12px;margin-bottom:4px"><strong>Initial assessment (' + esc(c.from) + '):</strong> ' + esc(origReasoning) + '</div>';
-      }
-      html += '<div style="font-size:.78rem;color:var(--cream-dim);margin-left:12px;margin-bottom:4px"><strong>Corrected (' + esc(c.to) + '):</strong> ' + esc(c.reason) + '</div>';
-    });
-    html += '</div>';
+    var actualCorrections = review.corrections.filter(function(c) { return c.from !== c.to; });
+    var confirmations = review.corrections.filter(function(c) { return c.from === c.to; });
+
+    if (actualCorrections.length > 0) {
+      html += '<div style="margin-top:12px;padding:10px 14px;background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.2);border-radius:6px">';
+      html += '<div style="font-size:.75rem;font-weight:600;color:var(--green);margin-bottom:4px">ADVERSARIAL REVIEW CORRECTIONS</div>';
+      actualCorrections.forEach(function(c) {
+        html += '<div style="font-size:.82rem;color:var(--cream);padding:2px 0"><strong>' + esc(c.axis) + ':</strong> ' + esc(c.from) + ' &rarr; ' + esc(c.to) + '</div>';
+        var origReasoning = mdm && mdm[c.axis] && mdm[c.axis].reasoning ? mdm[c.axis].reasoning : '';
+        if (origReasoning) {
+          html += '<div style="font-size:.78rem;color:var(--cream-dim);margin-left:12px;margin-bottom:4px"><strong>Initial assessment (' + esc(c.from) + '):</strong> ' + esc(origReasoning) + '</div>';
+        }
+        html += '<div style="font-size:.78rem;color:var(--cream-dim);margin-left:12px;margin-bottom:4px"><strong>Corrected (' + esc(c.to) + '):</strong> ' + esc(c.reason) + '</div>';
+      });
+      html += '</div>';
+    }
+
+    if (confirmations.length > 0) {
+      html += '<div style="margin-top:12px;padding:10px 14px;background:rgba(42,171,184,0.06);border:1px solid rgba(42,171,184,0.15);border-radius:6px">';
+      html += '<div style="font-size:.75rem;font-weight:600;color:var(--teal);margin-bottom:4px">ADVERSARIAL REVIEW CONFIRMATIONS</div>';
+      confirmations.forEach(function(c) {
+        html += '<div style="font-size:.82rem;color:var(--cream);padding:2px 0"><strong>' + esc(c.axis) + ':</strong> ' + esc(c.from) + ' confirmed</div>';
+        html += '<div style="font-size:.78rem;color:var(--cream-dim);margin-left:12px;margin-bottom:4px">' + esc(c.reason) + '</div>';
+      });
+      html += '</div>';
+    }
   }
 
   html += '</div>';
