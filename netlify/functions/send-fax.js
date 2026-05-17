@@ -47,6 +47,7 @@ exports.handler = async function(event) {
     var fromPractice = payload.fromPractice || '';
     var subject = payload.subject || '';
     var tool = payload.tool || 'Practice Manager';
+    var clinicianEmail = payload.clinicianEmail || '';
 
     if (!to || !content) {
       return {
@@ -169,7 +170,7 @@ exports.handler = async function(event) {
             ContentType: 'text/html'
           }
         ],
-        ClientReference: tool + ' - ' + subject,
+        ClientReference: tool + ' - ' + subject + (clinicianEmail ? ' | ' + clinicianEmail : ''),
         IsHighQuality: true,
         Header: fromPractice || 'Think Beyond Practice'
       }
