@@ -1073,6 +1073,66 @@ function saveToVault() {
   .catch(function() {});
 }
 
+function writeTrackingItems() {
+  // Write HIPAA-related items to Compliance Tracker via localStorage pending queue
+  // The tracker picks these up on next load
+  var d = wizardData;
+  var pending = [];
+
+  // Annual review
+  if (d.reviewDate) {
+    pending.push({ category: 'hipaa', title: 'HIPAA Annual Policy Review', dueDate: d.reviewDate, source: 'hipaa_hub', notes: 'Review and update all compliance documents. Regenerate from HIPAA Hub.' });
+  }
+
+  // Missing BAAs
+  if (d.vendors && d.baas) {
+    d.baas.forEach(function(baa, i) {
+      if (baa.status === 'no' && d.vendors[i]) {
+        pending.push({ category: 'hipaa', title: 'Missing BAA: ' + d.vendors[i].name, dueDate: '', source: 'hipaa_hub', notes: d.vendors[i].service + '. Obtain signed BAA or stop sharing PHI with this vendor.' });
+      }
+      if (baa.status === 'pending' && d.vendors[i]) {
+        var followUp = new Date(); followUp.setDate(followUp.getDate() + 30);
+        pending.push({ category: 'hipaa', title: 'BAA Pending: ' + d.vendors[i].name, dueDate: followUp.toISOString().split('T')[0], source: 'hipaa_hub', notes: d.vendors[i].service + '. Follow up if not received.' });
+      }
+    });
+  }
+
+  // Unencrypted devices
+  if (d.devices) {
+    d.devices.forEach(function(dev) {
+      if (dev.encryption === 'not-enabled') {
+        var urgent = new Date(); urgent.setDate(urgent.getDate() + 7);
+        pending.push({ category: 'hipaa', title: 'Encrypt Device: ' + (dev.type || 'Unknown device'), dueDate: urgent.toISOString().split('T')[0], source: 'hipaa_hub', notes: 'Enable full-disk encryption immediately. An unencrypted device is almost always a reportable breach if lost.' });
+      }
+    });
+  }
+
+  // Consumer AI tool discontinuation
+  var consumerAI = ['chatgpt', 'claude', 'gemini', 'otter', 'other-consumer'];
+  if (consumerAI.indexOf(d.aiTools) !== -1) {
+    var aiDate = new Date(); aiDate.setDate(aiDate.getDate() + 7);
+    pending.push({ category: 'hipaa', title: 'Transition Off Consumer AI Tool', dueDate: aiDate.toISOString().split('T')[0], source: 'hipaa_hub', notes: 'Consumer AI tools are not HIPAA-compliant. Switch to Suki, Nuance DAX, Abridge, DeepScribe, or Freed.' });
+  }
+
+  // Workforce training gaps
+  if (d.workforce) {
+    d.workforce.forEach(function(w) {
+      if (w.training === 'no' && w.name) {
+        var trainDate = new Date(); trainDate.setDate(trainDate.getDate() + 14);
+        pending.push({ category: 'hipaa', title: 'HIPAA Training: ' + w.name, dueDate: trainDate.toISOString().split('T')[0], source: 'hipaa_hub', notes: 'Complete HIPAA training and document using Training Documentation Form.' });
+      }
+      if (w.agreement === 'no' && w.name) {
+        var agreeDate = new Date(); agreeDate.setDate(agreeDate.getDate() + 7);
+        pending.push({ category: 'hipaa', title: 'Confidentiality Agreement: ' + w.name, dueDate: agreeDate.toISOString().split('T')[0], source: 'hipaa_hub', notes: 'Have workforce member sign the Confidentiality Agreement before continuing PHI access.' });
+      }
+    });
+  }
+
+  if (pending.length > 0) {
+    try { localStorage.setItem('compliance_tracker_pending', JSON.stringify(pending)); } catch(e) {}
+  }
+}
+
 // ── CONDITIONAL FIELD VISIBILITY ──
 function updateStaffCountVisibility() {
   var type = getVal('f-practice-type');
@@ -1637,6 +1697,9 @@ function generateDocuments() {
 
   // Write practice info back to shared Vault for other tools
   saveToVault();
+
+  // Write tracking items to Compliance Tracker
+  writeTrackingItems();
 
   setTimeout(function() {
     try {
