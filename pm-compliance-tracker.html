@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Compliance Tracker | Practice Manager</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="/auth-gate.js"></script>
+<style>
+:root{--navy:#0b1120;--navy-mid:#111c30;--navy-light:#1a2d47;--navy-card:#152238;--teal:#2aabb8;--teal-dim:#1d7d88;--teal-glow:rgba(42,171,184,0.12);--cream:#e8e2d6;--cream-dim:#b0aa9e;--white:#f5f4f2;--green:#34d399;--amber:#fbbf24;--red:#f87171;--purple:#a78bfa;--blue:#60a5fa;--rule:rgba(42,171,184,0.15);--radius:10px;--font-display:'DM Serif Display',serif;--font-body:'Plus Jakarta Sans',sans-serif}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-height:100vh;line-height:1.6}
+.container{max-width:900px;margin:0 auto;padding:32px 20px 80px}
+.back-link{display:inline-flex;align-items:center;gap:6px;color:var(--teal);font-size:.84rem;font-weight:600;text-decoration:none;margin-bottom:20px}
+.back-link:hover{opacity:.7}
+.tool-header{text-align:center;margin-bottom:28px}
+.tool-header h1{font-family:var(--font-display);font-size:2rem;color:var(--white);margin-bottom:6px}
+.tool-header h1 span{color:var(--teal)}
+.tool-header p{color:var(--cream-dim);font-size:.88rem;max-width:600px;margin:0 auto}
+
+/* Summary cards */
+.summary-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px}
+.summary-card{background:var(--navy-mid);border:1px solid var(--rule);border-radius:var(--radius);padding:16px 18px;text-align:center}
+.summary-card .sc-num{font-family:var(--font-display);font-size:1.8rem;margin-bottom:2px}
+.summary-card .sc-label{font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--cream-dim)}
+.sc-green .sc-num{color:var(--green)}.sc-amber .sc-num{color:var(--amber)}.sc-red .sc-num{color:var(--red)}.sc-total .sc-num{color:var(--white)}
+
+/* Filter bar */
+.filter-bar{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;align-items:center}
+.filter-pill{padding:7px 16px;border-radius:20px;font-size:.78rem;font-weight:600;font-family:var(--font-body);cursor:pointer;border:1px solid var(--rule);background:transparent;color:var(--cream-dim);transition:all 0.15s}
+.filter-pill:hover{border-color:var(--teal);color:var(--cream)}
+.filter-pill.active{background:var(--teal);color:var(--navy);border-color:var(--teal)}
+.filter-spacer{flex:1}
+.filter-bar .search-input{padding:7px 14px;border:1px solid var(--rule);border-radius:20px;background:var(--navy);color:var(--cream);font-size:.82rem;font-family:var(--font-body);width:200px}
+.filter-bar .search-input:focus{outline:none;border-color:var(--teal)}
+
+/* Tracking items */
+.track-list{display:flex;flex-direction:column;gap:8px}
+.track-item{display:grid;grid-template-columns:8px 1fr auto;gap:14px;align-items:center;padding:14px 18px;background:var(--navy-mid);border:1px solid var(--rule);border-radius:8px;transition:border-color 0.15s}
+.track-item:hover{border-color:rgba(42,171,184,0.3)}
+.track-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.track-dot.green{background:var(--green)}.track-dot.amber{background:var(--amber)}.track-dot.red{background:var(--red)}.track-dot.gray{background:var(--cream-dim)}
+.track-info{min-width:0}
+.track-title{font-size:.88rem;font-weight:600;color:var(--white);margin-bottom:2px}
+.track-meta{font-size:.76rem;color:var(--cream-dim);display:flex;gap:12px;flex-wrap:wrap}
+.track-actions{display:flex;gap:6px;flex-shrink:0}
+.track-btn{padding:6px 12px;border-radius:4px;font-size:.72rem;font-weight:600;font-family:var(--font-body);cursor:pointer;border:none;transition:all 0.15s}
+.track-btn-complete{background:rgba(52,211,153,0.15);color:var(--green)}
+.track-btn-complete:hover{background:rgba(52,211,153,0.25)}
+.track-btn-snooze{background:rgba(251,191,36,0.15);color:var(--amber)}
+.track-btn-snooze:hover{background:rgba(251,191,36,0.25)}
+.track-btn-edit{background:rgba(42,171,184,0.15);color:var(--teal)}
+.track-btn-edit:hover{background:rgba(42,171,184,0.25)}
+.track-btn-delete{background:rgba(248,113,113,0.1);color:var(--red);opacity:.6}
+.track-btn-delete:hover{opacity:1}
+
+/* Category badges */
+.cat-badge{display:inline-block;padding:2px 8px;border-radius:3px;font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+.cat-hipaa{background:rgba(167,139,250,0.15);color:var(--purple)}
+.cat-license{background:rgba(42,171,184,0.15);color:var(--teal)}
+.cat-insurance{background:rgba(96,165,250,0.15);color:var(--blue)}
+.cat-credentialing{background:rgba(251,191,36,0.15);color:var(--amber)}
+.cat-ce{background:rgba(52,211,153,0.15);color:var(--green)}
+.cat-business{background:rgba(228,228,228,0.15);color:var(--cream-dim)}
+.cat-custom{background:rgba(42,171,184,0.08);color:var(--teal-dim)}
+
+/* Add item modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(11,17,32,0.85);z-index:200;align-items:center;justify-content:center}
+.modal-overlay.active{display:flex}
+.modal{background:var(--navy-mid);border:1px solid var(--rule);border-radius:var(--radius);padding:28px;width:90%;max-width:500px;max-height:90vh;overflow-y:auto}
+.modal h3{font-family:var(--font-display);color:var(--white);font-size:1.2rem;margin-bottom:16px}
+.modal .field-group{margin-bottom:16px}
+.modal .field-label{font-size:.76rem;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px;display:block}
+.modal .field-input,.modal .field-select{width:100%;border:1px solid var(--rule);border-radius:6px;padding:10px 12px;font-size:.86rem;color:var(--cream);background:var(--navy);font-family:var(--font-body)}
+.modal .field-input:focus,.modal .field-select:focus{outline:none;border-color:var(--teal)}
+.modal .field-select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%232aabb8' d='M6 8L1 3h10z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;padding-right:32px}
+.modal-btns{display:flex;gap:10px;margin-top:20px}
+.btn-primary{padding:11px 24px;background:var(--teal);color:var(--navy);border:none;border-radius:6px;font-size:.88rem;font-weight:700;font-family:var(--font-body);cursor:pointer}
+.btn-primary:hover{background:#33c8d6}
+.btn-secondary{padding:11px 24px;background:transparent;color:var(--teal);border:1px solid var(--teal);border-radius:6px;font-size:.88rem;font-weight:600;font-family:var(--font-body);cursor:pointer}
+.btn-secondary:hover{background:rgba(42,171,184,0.1)}
+.btn-add{padding:10px 18px;background:rgba(42,171,184,0.1);color:var(--teal);border:1px dashed var(--teal);border-radius:6px;font-size:.82rem;font-weight:600;font-family:var(--font-body);cursor:pointer;width:100%;margin-top:12px}
+.btn-add:hover{background:rgba(42,171,184,0.2)}
+
+/* Empty state */
+.empty-state{text-align:center;padding:48px 20px;color:var(--cream-dim)}
+.empty-state .es-icon{font-size:2.5rem;opacity:.4;margin-bottom:12px}
+.empty-state p{font-size:.88rem;max-width:400px;margin:0 auto 16px}
+
+/* Toast */
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:6px;font-size:.84rem;font-family:var(--font-body);z-index:300;opacity:0;transition:opacity 0.3s;pointer-events:none}
+.toast.show{opacity:1}
+.toast.success{background:rgba(52,211,153,0.15);border:1px solid rgba(52,211,153,0.4);color:var(--green)}
+.toast.error{background:rgba(248,113,113,0.15);border:1px solid rgba(248,113,113,0.4);color:var(--red)}
+
+/* Notification toggle */
+.notif-bar{display:flex;align-items:center;justify-content:space-between;padding:12px 18px;background:var(--navy-mid);border:1px solid var(--rule);border-radius:var(--radius);margin-bottom:20px;font-size:.82rem}
+.notif-bar .notif-label{color:var(--cream-dim)}
+.notif-toggle{position:relative;width:40px;height:22px;cursor:pointer}
+.notif-toggle input{display:none}
+.notif-toggle .slider{position:absolute;inset:0;background:var(--navy-light);border-radius:11px;transition:background 0.2s}
+.notif-toggle .slider::after{content:'';position:absolute;width:16px;height:16px;background:var(--cream-dim);border-radius:50%;top:3px;left:3px;transition:transform 0.2s}
+.notif-toggle input:checked+.slider{background:var(--teal)}
+.notif-toggle input:checked+.slider::after{transform:translateX(18px);background:var(--white)}
+
+/* Scope disclaimer */
+.scope-disclaimer{background:rgba(42,171,184,0.06);border:1px solid var(--rule);border-radius:var(--radius);padding:12px 18px;margin-bottom:20px;font-size:.74rem;color:var(--cream-dim);line-height:1.6}
+
+@media(max-width:640px){
+  .summary-row{grid-template-columns:1fr 1fr}
+  .track-item{grid-template-columns:8px 1fr;gap:10px}
+  .track-actions{grid-column:1/-1;justify-content:flex-end;margin-top:6px}
+  .filter-bar .search-input{width:100%}
+}
+</style>
+</head>
+<body>
+<div class="container" id="app-root" style="display:none">
+<a href="/practice-manager" class="back-link">&larr; Back to Practice Manager</a>
+<div class="tool-header">
+  <h1>Compliance <span>Tracker</span></h1>
+  <p>Everything with a deadline in one place. Licenses, BAAs, HIPAA reviews, insurance, CE hours, credentialing. Items are added automatically as you use tools, or add your own.</p>
+</div>
+
+<div class="scope-disclaimer">
+  This tracker monitors compliance deadlines and sends optional email reminders. It does not constitute legal advice or guarantee regulatory compliance. The clinician is responsible for verifying all dates and maintaining current documentation.
+</div>
+
+<!-- Summary cards -->
+<div class="summary-row" id="summary-row">
+  <div class="summary-card sc-red"><div class="sc-num" id="sum-overdue">0</div><div class="sc-label">Overdue</div></div>
+  <div class="summary-card sc-amber"><div class="sc-num" id="sum-upcoming">0</div><div class="sc-label">Due Soon</div></div>
+  <div class="summary-card sc-green"><div class="sc-num" id="sum-current">0</div><div class="sc-label">Current</div></div>
+  <div class="summary-card sc-total"><div class="sc-num" id="sum-total">0</div><div class="sc-label">Total Items</div></div>
+</div>
+
+<!-- Notification toggle -->
+<div class="notif-bar">
+  <span class="notif-label">Email reminders at 90, 60, 30, 14, 7, and 1 day before deadlines</span>
+  <label class="notif-toggle">
+    <input type="checkbox" id="notif-toggle" checked onchange="toggleNotifications()">
+    <span class="slider"></span>
+  </label>
+</div>
+
+<!-- Filter bar -->
+<div class="filter-bar">
+  <button class="filter-pill active" data-filter="all" onclick="setFilter('all',this)">All</button>
+  <button class="filter-pill" data-filter="overdue" onclick="setFilter('overdue',this)">Overdue</button>
+  <button class="filter-pill" data-filter="upcoming" onclick="setFilter('upcoming',this)">Due Soon</button>
+  <button class="filter-pill" data-filter="current" onclick="setFilter('current',this)">Current</button>
+  <span class="filter-spacer"></span>
+  <input class="search-input" type="text" placeholder="Search items..." id="search-input" oninput="renderItems()">
+</div>
+
+<!-- Item list -->
+<div class="track-list" id="track-list"></div>
+
+<!-- Add item button -->
+<button class="btn-add" onclick="openModal()">+ Add Tracking Item</button>
+
+</div><!-- end container -->
+
+<!-- Add/Edit Modal -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <h3 id="modal-title">Add Tracking Item</h3>
+    <div class="field-group">
+      <label class="field-label">Category</label>
+      <select class="field-select" id="m-category">
+        <option value="">Select category</option>
+        <option value="hipaa">HIPAA Compliance</option>
+        <option value="license">License & DEA</option>
+        <option value="insurance">Insurance & Malpractice</option>
+        <option value="credentialing">Credentialing</option>
+        <option value="ce">Continuing Education</option>
+        <option value="business">Business & Admin</option>
+        <option value="custom">Other</option>
+      </select>
+    </div>
+    <div class="field-group">
+      <label class="field-label">Title</label>
+      <input class="field-input" id="m-title" placeholder="e.g., State license renewal, Tebra BAA verification">
+    </div>
+    <div class="field-group">
+      <label class="field-label">Due Date</label>
+      <input class="field-input" type="date" id="m-due">
+    </div>
+    <div class="field-group">
+      <label class="field-label">Status</label>
+      <select class="field-select" id="m-status">
+        <option value="active">Active (tracking)</option>
+        <option value="pending">Pending (waiting on someone else)</option>
+        <option value="complete">Complete</option>
+      </select>
+    </div>
+    <div class="field-group">
+      <label class="field-label">Notes (optional)</label>
+      <input class="field-input" id="m-notes" placeholder="e.g., Stored in Google Drive HIPAA folder">
+    </div>
+    <div class="field-group">
+      <label class="field-label">Source</label>
+      <select class="field-select" id="m-source">
+        <option value="manual">Added manually</option>
+        <option value="hipaa_hub">HIPAA Compliance Hub</option>
+        <option value="credentialing_hub">Credentialing Hub</option>
+        <option value="vault">Vault profile</option>
+        <option value="ce_tracker">CE Tracker</option>
+      </select>
+    </div>
+    <div class="modal-btns">
+      <button class="btn-primary" id="modal-save-btn" onclick="saveItem()">Add Item</button>
+      <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+// ══════════════════════════════════════════════
+// COMPLIANCE TRACKER
+// ══════════════════════════════════════════════
+
+var userEmail = '';
+var trackerData = { items: [], notifications: true, _sentReminders: [] };
+var currentFilter = 'all';
+var editingId = null;
+
+// ── AUTH ──
+TBPAuth.protect({
+  toolName: 'Compliance Tracker',
+  onVerified: function() {
+    document.getElementById('app-root').style.display = 'block';
+    try { userEmail = localStorage.getItem('tbp_verified_email') || ''; } catch(e) {}
+    loadTrackerData();
+  }
+});
+
+// ── DATA LAYER ──
+function loadTrackerData() {
+  // localStorage first
+  try {
+    var raw = localStorage.getItem('compliance_tracker');
+    if (raw) {
+      trackerData = JSON.parse(raw);
+      renderAll();
+    }
+  } catch(e) {}
+
+  // Supabase authoritative
+  if (!userEmail) return;
+  fetch('/.netlify/functions/user-tool-data', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: userEmail, toolId: 'compliance_tracker', action: 'load' })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.found && data.data) {
+      trackerData = data.data;
+      if (!trackerData.items) trackerData.items = [];
+      cache();
+      renderAll();
+    } else {
+      // First load: seed from Vault and other tool data
+      seedFromExistingSources();
+    }
+  })
+  .catch(function() {});
+}
+
+function saveTrackerData() {
+  cache();
+  if (!userEmail) return;
+  fetch('/.netlify/functions/user-tool-data', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: userEmail, toolId: 'compliance_tracker', action: 'save', data: trackerData })
+  }).catch(function() {});
+}
+
+function cache() {
+  try { localStorage.setItem('compliance_tracker', JSON.stringify(trackerData)); } catch(e) {}
+}
+
+// ── SEED FROM EXISTING SOURCES ──
+function seedFromExistingSources() {
+  if (!userEmail) { renderAll(); return; }
+
+  var promises = [
+    // Load Vault profile
+    fetch('/.netlify/functions/user-tool-data', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: userEmail, toolId: 'vault_profile', action: 'load' })
+    }).then(function(r) { return r.json(); }).catch(function() { return { found: false }; }),
+
+    // Load HIPAA binder data
+    fetch('/.netlify/functions/user-tool-data', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: userEmail, toolId: 'hipaa_binder', action: 'load' })
+    }).then(function(r) { return r.json(); }).catch(function() { return { found: false }; })
+  ];
+
+  Promise.all(promises).then(function(results) {
+    var vault = results[0].found ? results[0].data : null;
+    var hipaa = results[1].found ? results[1].data : null;
+
+    // Seed from Vault
+    if (vault) {
+      if (vault.licenseExp) addSeedItem('license', 'State License Renewal', vault.licenseExp, 'vault', vault.licenseState ? vault.licenseState + ' license #' + (vault.licenseNum || '') : '');
+      if (vault.deaExp) addSeedItem('license', 'DEA Registration Renewal', vault.deaExp, 'vault', 'DEA #' + (vault.dea || ''));
+      if (vault.boardCertExp) addSeedItem('license', 'Board Certification Renewal', vault.boardCertExp, 'vault', vault.boardCertEntity || '');
+      if (vault.malEnd) addSeedItem('insurance', 'Malpractice Policy Renewal', vault.malEnd, 'vault', vault.malCarrier || vault.malpracticeCarrier || '');
+      if (vault.caqhId) {
+        // CAQH re-attestation every 120 days, estimate next one
+        var caqhNext = new Date();
+        caqhNext.setDate(caqhNext.getDate() + 120);
+        addSeedItem('credentialing', 'CAQH Re-attestation', caqhNext.toISOString().split('T')[0], 'vault', 'CAQH ID: ' + vault.caqhId + '. Re-attest every 120 days.');
+      }
+    }
+
+    // Seed from HIPAA Hub
+    if (hipaa) {
+      if (hipaa.reviewDate) addSeedItem('hipaa', 'HIPAA Annual Policy Review', hipaa.reviewDate, 'hipaa_hub', 'Review and update all compliance documents');
+      // BAAs marked as missing
+      if (hipaa.vendors && hipaa.baas) {
+        hipaa.baas.forEach(function(baa, i) {
+          if (baa.status === 'no' && hipaa.vendors[i]) {
+            addSeedItem('hipaa', 'Missing BAA: ' + hipaa.vendors[i].name, '', 'hipaa_hub', hipaa.vendors[i].service + '. Obtain signed BAA or discontinue PHI sharing.');
+          }
+          if (baa.status === 'pending' && hipaa.vendors[i]) {
+            var pendingDate = new Date();
+            pendingDate.setDate(pendingDate.getDate() + 30);
+            addSeedItem('hipaa', 'BAA Pending: ' + hipaa.vendors[i].name, pendingDate.toISOString().split('T')[0], 'hipaa_hub', hipaa.vendors[i].service + '. Follow up if not received.');
+          }
+        });
+      }
+    }
+
+    if (trackerData.items.length > 0) {
+      saveTrackerData();
+      showToast(trackerData.items.length + ' items imported from your existing data.', 'success');
+    }
+    renderAll();
+  });
+}
+
+function addSeedItem(category, title, dueDate, source, notes) {
+  // Don't add duplicates
+  var exists = trackerData.items.some(function(item) {
+    return item.title === title && item.category === category;
+  });
+  if (exists) return;
+  trackerData.items.push({
+    id: generateId(),
+    category: category,
+    title: title,
+    dueDate: dueDate || '',
+    status: dueDate ? 'active' : 'pending',
+    notes: notes || '',
+    source: source || 'manual',
+    createdAt: new Date().toISOString()
+  });
+}
+
+// ── PUBLIC API: Other tools call this to add tracking items ──
+// Usage from any tool: window.addComplianceItem({ category, title, dueDate, source, notes })
+window.addComplianceItem = function(item) {
+  // This is called cross-tab via localStorage event or directly within PM
+  try {
+    var raw = localStorage.getItem('compliance_tracker_pending');
+    var pending = raw ? JSON.parse(raw) : [];
+    pending.push(item);
+    localStorage.setItem('compliance_tracker_pending', JSON.stringify(pending));
+  } catch(e) {}
+};
+
+function processPendingItems() {
+  try {
+    var raw = localStorage.getItem('compliance_tracker_pending');
+    if (!raw) return;
+    var pending = JSON.parse(raw);
+    if (!pending || pending.length === 0) return;
+    pending.forEach(function(item) {
+      addSeedItem(item.category || 'custom', item.title, item.dueDate || '', item.source || 'manual', item.notes || '');
+    });
+    localStorage.removeItem('compliance_tracker_pending');
+    if (pending.length > 0) { saveTrackerData(); renderAll(); }
+  } catch(e) {}
+}
+
+// ── RENDERING ──
+function renderAll() {
+  processPendingItems();
+  renderSummary();
+  renderItems();
+  var toggle = document.getElementById('notif-toggle');
+  if (toggle) toggle.checked = trackerData.notifications !== false;
+}
+
+function renderSummary() {
+  var today = new Date(); today.setHours(0,0,0,0);
+  var overdue = 0, upcoming = 0, current = 0, total = 0;
+
+  trackerData.items.forEach(function(item) {
+    if (item.status === 'complete' || item.status === 'dismissed') return;
+    total++;
+    if (!item.dueDate) { current++; return; }
+    var due = new Date(item.dueDate); due.setHours(0,0,0,0);
+    var daysUntil = Math.round((due - today) / 86400000);
+    if (daysUntil < 0) overdue++;
+    else if (daysUntil <= 30) upcoming++;
+    else current++;
+  });
+
+  document.getElementById('sum-overdue').textContent = overdue;
+  document.getElementById('sum-upcoming').textContent = upcoming;
+  document.getElementById('sum-current').textContent = current;
+  document.getElementById('sum-total').textContent = total;
+}
+
+function renderItems() {
+  var list = document.getElementById('track-list');
+  var searchTerm = (document.getElementById('search-input').value || '').toLowerCase();
+  var today = new Date(); today.setHours(0,0,0,0);
+
+  // Sort: overdue first, then by due date ascending, no-date items last
+  var items = trackerData.items.filter(function(item) {
+    if (item.status === 'dismissed') return false;
+    if (searchTerm && item.title.toLowerCase().indexOf(searchTerm) === -1 && item.category.toLowerCase().indexOf(searchTerm) === -1) return false;
+
+    if (currentFilter === 'all') return item.status !== 'complete';
+    if (currentFilter === 'complete') return item.status === 'complete';
+
+    if (!item.dueDate && currentFilter !== 'current') return false;
+    if (item.status === 'complete') return false;
+
+    var due = item.dueDate ? new Date(item.dueDate) : null;
+    if (due) due.setHours(0,0,0,0);
+    var daysUntil = due ? Math.round((due - today) / 86400000) : 999;
+
+    if (currentFilter === 'overdue') return daysUntil < 0;
+    if (currentFilter === 'upcoming') return daysUntil >= 0 && daysUntil <= 30;
+    if (currentFilter === 'current') return daysUntil > 30 || !item.dueDate;
+    return true;
+  });
+
+  items.sort(function(a, b) {
+    if (!a.dueDate && !b.dueDate) return 0;
+    if (!a.dueDate) return 1;
+    if (!b.dueDate) return -1;
+    return new Date(a.dueDate) - new Date(b.dueDate);
+  });
+
+  if (items.length === 0) {
+    list.innerHTML = '<div class="empty-state"><div class="es-icon">&#x1F4CB;</div><p>' +
+      (trackerData.items.length === 0 ? 'No items yet. Use the HIPAA Hub, Credentialing Hub, or add items manually to start tracking your compliance deadlines.' : 'No items match this filter.') +
+      '</p></div>';
+    return;
+  }
+
+  list.innerHTML = '';
+  items.forEach(function(item) {
+    var due = item.dueDate ? new Date(item.dueDate) : null;
+    if (due) due.setHours(0,0,0,0);
+    var daysUntil = due ? Math.round((due - today) / 86400000) : null;
+
+    var dotClass = 'gray';
+    var dateStr = 'No due date';
+    if (item.status === 'complete') { dotClass = 'green'; dateStr = 'Completed'; }
+    else if (daysUntil !== null) {
+      if (daysUntil < 0) { dotClass = 'red'; dateStr = Math.abs(daysUntil) + ' day' + (Math.abs(daysUntil) > 1 ? 's' : '') + ' overdue'; }
+      else if (daysUntil === 0) { dotClass = 'red'; dateStr = 'Due today'; }
+      else if (daysUntil <= 30) { dotClass = 'amber'; dateStr = 'Due in ' + daysUntil + ' day' + (daysUntil > 1 ? 's' : ''); }
+      else { dotClass = 'green'; dateStr = 'Due ' + due.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }); }
+    }
+
+    var catNames = { hipaa:'HIPAA', license:'License', insurance:'Insurance', credentialing:'Credentialing', ce:'CE', business:'Business', custom:'Other' };
+    var div = document.createElement('div');
+    div.className = 'track-item';
+    div.innerHTML = '<div class="track-dot ' + dotClass + '"></div>' +
+      '<div class="track-info">' +
+        '<div class="track-title">' + escHtml(item.title) + '</div>' +
+        '<div class="track-meta">' +
+          '<span class="cat-badge cat-' + item.category + '">' + (catNames[item.category] || item.category) + '</span>' +
+          '<span>' + dateStr + '</span>' +
+          (item.notes ? '<span>' + escHtml(item.notes.substring(0, 60)) + (item.notes.length > 60 ? '...' : '') + '</span>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="track-actions">' +
+        (item.status !== 'complete' ? '<button class="track-btn track-btn-complete" onclick="completeItem(\'' + item.id + '\')" title="Mark complete">Done</button>' : '') +
+        (item.status !== 'complete' && daysUntil !== null && daysUntil <= 30 ? '<button class="track-btn track-btn-snooze" onclick="snoozeItem(\'' + item.id + '\')" title="Snooze 30 days">Snooze</button>' : '') +
+        '<button class="track-btn track-btn-edit" onclick="editItem(\'' + item.id + '\')" title="Edit">Edit</button>' +
+        '<button class="track-btn track-btn-delete" onclick="deleteItem(\'' + item.id + '\')" title="Delete">&times;</button>' +
+      '</div>';
+    list.appendChild(div);
+  });
+}
+
+function setFilter(filter, btn) {
+  currentFilter = filter;
+  document.querySelectorAll('.filter-pill').forEach(function(p) { p.classList.remove('active'); });
+  if (btn) btn.classList.add('active');
+  renderItems();
+}
+
+// ── CRUD ──
+function openModal(item) {
+  editingId = item ? item.id : null;
+  document.getElementById('modal-title').textContent = item ? 'Edit Tracking Item' : 'Add Tracking Item';
+  document.getElementById('modal-save-btn').textContent = item ? 'Save Changes' : 'Add Item';
+  document.getElementById('m-category').value = item ? item.category : '';
+  document.getElementById('m-title').value = item ? item.title : '';
+  document.getElementById('m-due').value = item ? item.dueDate : '';
+  document.getElementById('m-status').value = item ? item.status : 'active';
+  document.getElementById('m-notes').value = item ? item.notes : '';
+  document.getElementById('m-source').value = item ? item.source : 'manual';
+  document.getElementById('modal-overlay').classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('modal-overlay').classList.remove('active');
+  editingId = null;
+}
+
+function saveItem() {
+  var cat = document.getElementById('m-category').value;
+  var title = document.getElementById('m-title').value.trim();
+  if (!cat || !title) { showToast('Category and title are required.', 'error'); return; }
+
+  var itemData = {
+    category: cat,
+    title: title,
+    dueDate: document.getElementById('m-due').value,
+    status: document.getElementById('m-status').value,
+    notes: document.getElementById('m-notes').value.trim(),
+    source: document.getElementById('m-source').value
+  };
+
+  if (editingId) {
+    var idx = trackerData.items.findIndex(function(i) { return i.id === editingId; });
+    if (idx !== -1) {
+      trackerData.items[idx] = Object.assign(trackerData.items[idx], itemData);
+    }
+    showToast('Item updated.', 'success');
+  } else {
+    itemData.id = generateId();
+    itemData.createdAt = new Date().toISOString();
+    trackerData.items.push(itemData);
+    showToast('Item added.', 'success');
+  }
+
+  saveTrackerData();
+  renderAll();
+  closeModal();
+}
+
+function completeItem(id) {
+  var item = trackerData.items.find(function(i) { return i.id === id; });
+  if (item) {
+    item.status = 'complete';
+    item.completedAt = new Date().toISOString();
+    saveTrackerData();
+    renderAll();
+    showToast('Marked as complete.', 'success');
+  }
+}
+
+function snoozeItem(id) {
+  var item = trackerData.items.find(function(i) { return i.id === id; });
+  if (item && item.dueDate) {
+    var newDate = new Date(item.dueDate);
+    newDate.setDate(newDate.getDate() + 30);
+    item.dueDate = newDate.toISOString().split('T')[0];
+    item.notes = (item.notes ? item.notes + '. ' : '') + 'Snoozed 30 days on ' + new Date().toLocaleDateString('en-US', {month:'short',day:'numeric'});
+    saveTrackerData();
+    renderAll();
+    showToast('Snoozed 30 days.', 'success');
+  }
+}
+
+function editItem(id) {
+  var item = trackerData.items.find(function(i) { return i.id === id; });
+  if (item) openModal(item);
+}
+
+function deleteItem(id) {
+  if (!confirm('Remove this tracking item?')) return;
+  trackerData.items = trackerData.items.filter(function(i) { return i.id !== id; });
+  saveTrackerData();
+  renderAll();
+  showToast('Item removed.', 'success');
+}
+
+function toggleNotifications() {
+  trackerData.notifications = document.getElementById('notif-toggle').checked;
+  saveTrackerData();
+  showToast(trackerData.notifications ? 'Email reminders enabled.' : 'Email reminders disabled.', 'success');
+}
+
+// ── HELPERS ──
+function generateId() { return 'trk_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 6); }
+function escHtml(s) { if (!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function showToast(msg, type) {
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show ' + (type || '');
+  setTimeout(function() { el.className = 'toast'; }, 4000);
+}
+
+// Close modal on overlay click
+document.getElementById('modal-overlay').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+</script>
+</body>
+</html>
