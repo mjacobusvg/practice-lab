@@ -181,9 +181,32 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
 }
 </style>
 <script src="/send-util.js" defer></script>
+<script src="/auth-gate.js"></script>
 </head>
 <body>
-<div class="container">
+<div class="container" id="app-root" style="display:none">
+<script>
+var _icUserEmail = '';
+var _icVault = {};
+TBPAuth.protect({
+  toolName: 'Interaction Interpreter',
+  onVerified: function() {
+    document.getElementById('app-root').style.display = 'block';
+    try { _icUserEmail = localStorage.getItem('tbp_verified_email') || ''; } catch(e) {}
+    // Load Vault from Supabase for send modal
+    if (_icUserEmail) {
+      fetch('/.netlify/functions/user-tool-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: _icUserEmail, toolId: 'vault_profile', action: 'load' })
+      })
+      .then(function(r) { return r.json(); })
+      .then(function(data) { if (data.found && data.data) _icVault = data.data; })
+      .catch(function() {});
+    }
+  }
+});
+</script>
 
   <div class="tool-header">
     <a href="/practice-manager" class="back-link">&larr; Hub</a>
@@ -7846,8 +7869,9 @@ function runDiagnostics() {
 
 function sendPatientSummary() {
   if (!window._lastPatientSummary) return;
-  var vault = {};
-  try { vault = JSON.parse(localStorage.getItem('credentialing-hub-profile') || '{}'); } catch(e) {}
+  var vault = _icVault || {};
+  // Fallback to localStorage if Supabase hasn't loaded yet
+  if (!vault.practiceName) { try { vault = JSON.parse(localStorage.getItem('credentialing-hub-profile') || '{}'); } catch(e) {} }
 
   if (typeof openSendModal === 'function') {
     openSendModal({
@@ -7868,5 +7892,6 @@ function sendPatientSummary() {
 // Init
 renderSelectedMeds();
 </script>
+</div><!-- end app-root -->
 </body>
 </html>
