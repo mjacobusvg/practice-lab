@@ -63,8 +63,16 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
 .cat-insurance{background:rgba(96,165,250,0.15);color:var(--blue)}
 .cat-credentialing{background:rgba(251,191,36,0.15);color:var(--amber)}
 .cat-ce{background:rgba(52,211,153,0.15);color:var(--green)}
+.cat-tax{background:rgba(248,113,113,0.15);color:var(--red)}
+.cat-entity{background:rgba(228,228,228,0.15);color:var(--cream-dim)}
+.cat-payroll{background:rgba(251,191,36,0.12);color:var(--amber)}
+.cat-local{background:rgba(167,139,250,0.1);color:var(--purple)}
 .cat-business{background:rgba(228,228,228,0.15);color:var(--cream-dim)}
 .cat-custom{background:rgba(42,171,184,0.08);color:var(--teal-dim)}
+.conf-badge{display:inline-block;padding:2px 7px;border-radius:3px;font-size:.66rem;font-weight:600;letter-spacing:.03em}
+.conf-confirmed{background:rgba(52,211,153,0.1);color:var(--green)}
+.conf-conditional{background:rgba(251,191,36,0.1);color:var(--amber)}
+.conf-manual{background:rgba(228,228,228,0.1);color:var(--cream-dim)}
 
 /* Add item modal */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(11,17,32,0.85);z-index:200;align-items:center;justify-content:center}
@@ -161,6 +169,20 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
 <!-- Add item button -->
 <button class="btn-add" onclick="openModal()">+ Add Tracking Item</button>
 
+<!-- Feedback bar -->
+<div style="margin-top:32px;padding:18px 20px;background:var(--navy-mid);border:1px solid var(--rule);border-radius:var(--radius);font-size:.82rem;color:var(--cream-dim);line-height:1.7">
+  <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+    <div style="flex:1;min-width:200px">
+      <strong style="color:var(--white)">Something missing? Something wrong?</strong><br>
+      If there is a filing obligation, deadline, or recurring task the tracker should be monitoring for your practice, let us know. If a due date or rule is inaccurate for your state, report it and we will correct it.
+    </div>
+    <div style="display:flex;gap:8px;flex-shrink:0;align-items:center">
+      <button class="btn-secondary" style="font-size:.78rem;padding:8px 14px" onclick="openFeedback('request')">Request Tracking Item</button>
+      <button class="btn-secondary" style="font-size:.78rem;padding:8px 14px" onclick="openFeedback('error')">Report an Error</button>
+    </div>
+  </div>
+</div>
+
 </div><!-- end container -->
 
 <!-- Add/Edit Modal -->
@@ -176,6 +198,10 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
         <option value="insurance">Insurance & Malpractice</option>
         <option value="credentialing">Credentialing</option>
         <option value="ce">Continuing Education</option>
+        <option value="tax">Tax Filing</option>
+        <option value="entity">Business Entity</option>
+        <option value="payroll">Payroll</option>
+        <option value="local">Local / City</option>
         <option value="business">Business & Admin</option>
         <option value="custom">Other</option>
       </select>
@@ -290,13 +316,11 @@ function seedFromExistingSources() {
   if (!userEmail) { renderAll(); return; }
 
   var promises = [
-    // Load Vault profile
     fetch('/.netlify/functions/user-tool-data', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: userEmail, toolId: 'vault_profile', action: 'load' })
     }).then(function(r) { return r.json(); }).catch(function() { return { found: false }; }),
 
-    // Load HIPAA binder data
     fetch('/.netlify/functions/user-tool-data', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: userEmail, toolId: 'hipaa_binder', action: 'load' })
@@ -307,37 +331,42 @@ function seedFromExistingSources() {
     var vault = results[0].found ? results[0].data : null;
     var hipaa = results[1].found ? results[1].data : null;
 
-    // Seed from Vault
+    // ── VAULT SEEDING ──
     if (vault) {
       if (vault.licenseExp) addSeedItem('license', 'State License Renewal', vault.licenseExp, 'vault', vault.licenseState ? vault.licenseState + ' license #' + (vault.licenseNum || '') : '');
       if (vault.deaExp) addSeedItem('license', 'DEA Registration Renewal', vault.deaExp, 'vault', 'DEA #' + (vault.dea || ''));
       if (vault.boardCertExp) addSeedItem('license', 'Board Certification Renewal', vault.boardCertExp, 'vault', vault.boardCertEntity || '');
       if (vault.malEnd) addSeedItem('insurance', 'Malpractice Policy Renewal', vault.malEnd, 'vault', vault.malCarrier || vault.malpracticeCarrier || '');
       if (vault.caqhId) {
-        // CAQH re-attestation every 120 days, estimate next one
         var caqhNext = new Date();
         caqhNext.setDate(caqhNext.getDate() + 120);
         addSeedItem('credentialing', 'CAQH Re-attestation', caqhNext.toISOString().split('T')[0], 'vault', 'CAQH ID: ' + vault.caqhId + '. Re-attest every 120 days.');
       }
     }
 
-    // Seed from HIPAA Hub
+    // ── HIPAA HUB SEEDING ──
     if (hipaa) {
       if (hipaa.reviewDate) addSeedItem('hipaa', 'HIPAA Annual Policy Review', hipaa.reviewDate, 'hipaa_hub', 'Review and update all compliance documents');
-      // BAAs marked as missing
       if (hipaa.vendors && hipaa.baas) {
         hipaa.baas.forEach(function(baa, i) {
           if (baa.status === 'no' && hipaa.vendors[i]) {
             addSeedItem('hipaa', 'Missing BAA: ' + hipaa.vendors[i].name, '', 'hipaa_hub', hipaa.vendors[i].service + '. Obtain signed BAA or discontinue PHI sharing.');
           }
           if (baa.status === 'pending' && hipaa.vendors[i]) {
-            var pendingDate = new Date();
-            pendingDate.setDate(pendingDate.getDate() + 30);
+            var pendingDate = new Date(); pendingDate.setDate(pendingDate.getDate() + 30);
             addSeedItem('hipaa', 'BAA Pending: ' + hipaa.vendors[i].name, pendingDate.toISOString().split('T')[0], 'hipaa_hub', hipaa.vendors[i].service + '. Follow up if not received.');
           }
         });
       }
     }
+
+    // ── UNIVERSAL FEDERAL ITEMS ──
+    seedFederalItems(vault);
+
+    // ── STATE-SPECIFIC ITEMS ──
+    var practiceState = vault ? (vault.licenseState || '') : '';
+    var entityType = vault ? (vault.bizStructure || '') : '';
+    if (practiceState) seedStateItems(practiceState, entityType, vault);
 
     if (trackerData.items.length > 0) {
       saveTrackerData();
@@ -347,8 +376,1433 @@ function seedFromExistingSources() {
   });
 }
 
-function addSeedItem(category, title, dueDate, source, notes) {
-  // Don't add duplicates
+// ── UNIVERSAL FEDERAL ITEMS ──
+function seedFederalItems(vault) {
+  var year = new Date().getFullYear();
+  var nextYear = year + 1;
+  var today = new Date(); today.setHours(0,0,0,0);
+
+  // Federal estimated taxes: CONDITIONAL (some have W-2 withholding, CPA-managed, S-corp payroll withholding)
+  var qDates = [
+    { q: 'Q1', date: year + '-04-15' },
+    { q: 'Q2', date: year + '-06-15' },
+    { q: 'Q3', date: year + '-09-15' },
+    { q: 'Q4', date: nextYear + '-01-15' }
+  ];
+  qDates.forEach(function(qd) {
+    var due = new Date(qd.date);
+    if (due >= today) {
+      addSeedItem('tax', 'Federal Estimated Tax ' + qd.q + ' ' + year, qd.date, 'auto_federal',
+        'REVIEW: May apply if you have self-employment, business, investment, or other income without sufficient withholding. IRS Form 1040-ES. Confirm with CPA.', 'conditional');
+    }
+  });
+
+  // Annual federal return reminder
+  var filingDeadline = nextYear + '-04-15';
+  addSeedItem('tax', 'Federal Tax Return Due (' + year + ')', filingDeadline, 'auto_federal',
+    'Confirm exact deadline and extension options with your CPA. Entity type affects due date and form.', 'conditional');
+
+  // Form 941 payroll: only if we know they have employees
+  var practiceType = vault ? (vault.practiceType || '') : '';
+  if (practiceType === 'solo-staff' || practiceType === 'group-small' || practiceType === 'group-large') {
+    var q941Dates = [
+      { q: 'Q1', date: year + '-04-30' },
+      { q: 'Q2', date: year + '-07-31' },
+      { q: 'Q3', date: year + '-10-31' },
+      { q: 'Q4', date: nextYear + '-01-31' }
+    ];
+    q941Dates.forEach(function(qd) {
+      var due = new Date(qd.date);
+      if (due >= today) {
+        addSeedItem('payroll', 'Federal Form 941 Payroll Tax ' + qd.q + ' ' + year, qd.date, 'auto_federal',
+          'REVIEW: Applies to employers with payroll. Confirm payroll processor handles filing or if you file directly.', 'conditional');
+      }
+    });
+  }
+}
+
+// ── STATE-SPECIFIC RULE ENGINE ──
+// Confidence tiers:
+//   'confirmed'    = auto-seed, broadly applies to businesses in this state
+//   'conditional'  = auto-seed as review item, may not apply, user should verify
+//   'user_confirms'= do not seed unless user explicitly confirms it applies
+//
+// appliesIf: optional function(vault) that must return true for the rule to seed.
+// If absent, rule seeds for all practices in that state.
+
+var STATE_RULES = {
+  // ── WASHINGTON ──
+  WA: [
+    {
+      category: 'tax',
+      title: 'Washington B&O / Combined Excise Tax',
+      confidence: 'conditional',
+      notes: 'Washington B&O is a gross receipts tax (not income tax). Filing frequency (monthly, quarterly, or annual) is assigned by WA DOR and may change. Monthly: due 25th of following month. Quarterly: due end of month after quarter. Annual: generally due April 15. Confirm your assigned frequency in My DOR.',
+      source: 'auto_state',
+      userPrompt: 'What filing frequency did WA DOR assign you?'
+    },
+    {
+      category: 'entity',
+      title: 'WA Secretary of State Annual Report',
+      confidence: 'confirmed',
+      notes: 'Due annually by the last day of the month in which the business was formed or registered. Can generally be filed up to 180 days early. File at sos.wa.gov.',
+      source: 'auto_state',
+      needsFormationMonth: true
+    },
+    {
+      category: 'local',
+      title: 'Review: Local/City B&O Tax Obligation',
+      confidence: 'conditional',
+      notes: 'Some Washington cities impose separate local B&O tax not administered by WA DOR. Seattle, Tacoma, Bellevue, and others have separate filings. Seattle B&O is separate from state B&O and must be filed separately. Check your city for requirements.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── OREGON ──
+  OR: [
+    {
+      category: 'entity',
+      title: 'OR Secretary of State Annual Report / Renewal',
+      confidence: 'confirmed',
+      notes: 'Due on the anniversary date of original filing. Most entities renew annually; assumed business names renew every two years. Oregon typically sends notice about 45 days before due date. File at sos.oregon.gov.',
+      source: 'auto_state',
+      needsFormationMonth: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: Oregon Corporate Activity Tax (CAT)',
+      confidence: 'conditional',
+      notes: 'Oregon CAT is an annual tax on Oregon commercial activity, not a sales or income tax. May apply based on gross receipts threshold. Estimated payments are generally quarterly (April 30, July 31, October 31, January 31) when expecting to owe $5,000+. Confirm applicability and threshold with CPA or Oregon DOR.',
+      source: 'auto_state'
+    },
+    {
+      category: 'tax',
+      title: 'Review: Oregon Corporate Excise/Income Tax',
+      confidence: 'conditional',
+      notes: 'Applies to C-corps, S-corps, or LLCs taxed as corporations in Oregon. Estimated payments due last day of 4th, 7th, and 10th months of tax year, and first month after year-end. Confirm with CPA whether your entity type triggers this obligation.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('corp') !== -1 || e.indexOf('s-corp') !== -1; }
+    }
+  ],
+
+  // ── CALIFORNIA ──
+  CA: [
+    {
+      category: 'tax',
+      title: 'California LLC Annual Tax ($800)',
+      confidence: 'conditional',
+      notes: 'Due 15th day of 4th month after beginning of taxable year (April 15 for calendar-year LLCs). Applies to LLCs and PLLCs registered in California. Does not apply to sole proprietorships or corporations. Confirm entity type and tax year with CPA.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('llc') !== -1 || e.indexOf('pllc') !== -1; }
+    },
+    {
+      category: 'tax',
+      title: 'Review: California LLC Gross Receipts Fee',
+      confidence: 'conditional',
+      notes: 'California LLCs with total California income over $250,000 may owe an additional fee. Estimated fee due by 15th day of 6th month of taxable year (June 15 for calendar-year). FTB Form 3536. Confirm threshold and applicability with CPA.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('llc') !== -1 || e.indexOf('pllc') !== -1; }
+    },
+    {
+      category: 'entity',
+      title: 'CA Statement of Information',
+      confidence: 'conditional',
+      notes: 'Corporations file annually; LLCs file biennially (every 2 years). Due within 90 days of initial registration and on schedule thereafter. CA SOS sends reminders approximately 3 months before due date. File at bizfileonline.sos.ca.gov. Confirm your entity type and filing cycle.',
+      source: 'auto_state'
+    },
+    {
+      category: 'tax',
+      title: 'Review: California Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'California uses an uneven schedule that differs from federal: 30% April 15, 40% June 15, 0% September 15, 30% January 15. Confirm whether CA estimated payments apply to your situation with CPA.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── ARIZONA ──
+  AZ: [
+    {
+      category: 'entity',
+      title: 'Arizona Corporation Annual Report',
+      confidence: 'conditional',
+      notes: 'Arizona LLCs do not file annual reports. Only corporations (including professional corporations) must file by their designated ACC due date each year. Confirm your due date in your Arizona Corporation Commission entity record.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('corp') !== -1; },
+      needsUserDate: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: Arizona Transaction Privilege Tax (TPT)',
+      confidence: 'conditional',
+      notes: 'Arizona TPT may apply depending on business activity, locality, and tax classification. Confirm whether the practice has a TPT license or filing requirement through AZTaxes before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── TEXAS ──
+  TX: [
+    {
+      category: 'tax',
+      title: 'Texas Franchise Tax Report / PIR or OIR',
+      confidence: 'confirmed',
+      notes: 'Texas annual franchise tax reports are due May 15. Even entities below the no-tax-due threshold may still need to file a Public Information Report (PIR) or Ownership Information Report (OIR). Confirm requirements in Texas Comptroller Webfile.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      defaultDueMonth: 5,
+      defaultDueDay: 15
+    }
+  ],
+
+  // ── FLORIDA ──
+  FL: [
+    {
+      category: 'entity',
+      title: 'Florida Annual Report',
+      confidence: 'confirmed',
+      notes: 'Florida annual reports are due each year between January 1 and May 1 for corporations, LLCs, limited partnerships, and LLLPs. File through Sunbiz.org to avoid late fees.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      defaultDueMonth: 5,
+      defaultDueDay: 1
+    },
+    {
+      category: 'tax',
+      title: 'Review: Florida Sales and Use Tax',
+      confidence: 'conditional',
+      notes: 'Most clinical services will not create a routine sales tax filing obligation, but sales of taxable products or other business activities may. Confirm whether the practice is registered for Florida sales and use tax before adding recurring due dates.',
+      source: 'auto_state'
+    },
+    {
+      category: 'tax',
+      title: 'Review: Florida Corporate Income/Franchise Tax',
+      confidence: 'conditional',
+      notes: 'Florida corporate income/franchise tax applies based on entity and tax classification. Confirm return and estimated payment due dates with CPA or Florida DOR.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('c-corp') !== -1 || e.indexOf('c corp') !== -1 || (e.indexOf('corp') !== -1 && e.indexOf('s-corp') === -1 && e.indexOf('s corp') === -1); }
+    },
+    {
+      category: 'payroll',
+      title: 'Florida Reemployment Tax Quarterly Report',
+      confidence: 'conditional',
+      notes: 'Florida employers report wages each calendar quarter for reemployment tax (RT-6). Confirm whether your payroll processor files on your behalf. Due dates: April 30, July 31, October 31, January 31.',
+      source: 'auto_state',
+      appliesIf: function(v) { var pt = (v.practiceType||''); return pt === 'solo-staff' || pt === 'group-small' || pt === 'group-large'; }
+    }
+  ],
+
+  // ── NEW YORK ──
+  NY: [
+    {
+      category: 'entity',
+      title: 'New York Biennial Statement',
+      confidence: 'confirmed',
+      notes: 'New York corporations and LLCs file a Biennial Statement every two years. The filing period is the calendar month in which the original Certificate of Incorporation, Articles of Organization, or Application for Authority was filed. Enter formation/authorization month to track accurately.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      needsFormationMonth: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: New York Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'New York estimated tax payments may apply if you have income without sufficient withholding or are subject to MCTMT. Calendar-year estimated payments generally follow April 15, June 15, September 15, and January 15. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    },
+    {
+      category: 'tax',
+      title: 'Review: New York LLC / Partnership Filing Fee',
+      confidence: 'conditional',
+      notes: 'New York LLCs, LLPs, and partnerships may owe a filing fee due by the 15th day of the third month after the close of the tax year. Confirm applicability and amount with CPA or NY Tax Department.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('llc') !== -1 || e.indexOf('pllc') !== -1 || e.indexOf('partner') !== -1; }
+    },
+    {
+      category: 'local',
+      title: 'Review: NYC Local Business Tax',
+      confidence: 'conditional',
+      notes: 'NYC may impose separate business tax obligations depending on entity type, activity, and location. NYC Business Corporation Tax has separate due-date rules for corporate taxpayers. Confirm whether NYC business tax filings apply before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── NEW JERSEY ──
+  NJ: [
+    {
+      category: 'entity',
+      title: 'New Jersey Annual Report',
+      confidence: 'confirmed',
+      notes: 'New Jersey annual reports are due every year on the last day of the month in which the business formation was completed. Enter formation month to track accurately.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      needsFormationMonth: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: New Jersey Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'New Jersey estimated tax payments may apply if state tax is not sufficiently withheld. Due dates generally follow April 15, June 15, September 15, and January 15 (next business day if weekend/holiday). Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── COLORADO ──
+  CO: [
+    {
+      category: 'entity',
+      title: 'Colorado Periodic Report',
+      confidence: 'confirmed',
+      notes: 'Colorado Periodic Report is due in the entity-specific periodic report month. It can be filed two months before or two months after that month without penalty. Confirm the periodic report month in your Colorado SOS entity record.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      needsUserDate: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: Colorado Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Colorado estimated tax payments may apply if income tax is not sufficiently withheld. Due dates generally follow April 15, June 15, September 15, and January 15 (next business day if weekend/holiday). Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    },
+    {
+      category: 'tax',
+      title: 'Review: Colorado Business Income Estimated Payments',
+      confidence: 'conditional',
+      notes: 'Colorado business income estimated payments depend on entity/tax classification and tax year. Due the 15th day of the 4th, 6th, 9th, and 12th month of the tax year (with weekend/holiday adjustment). Confirm applicability with CPA before adding recurring due dates.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('corp') !== -1; }
+    }
+  ],
+
+  // ── ILLINOIS ──
+  IL: [
+    {
+      category: 'entity',
+      title: 'Illinois Annual Report',
+      confidence: 'confirmed',
+      notes: 'Illinois corporations and LLCs file annual reports with the Secretary of State. Due date is generally before the first day of the entity anniversary month (i.e., by the last day of the prior month). Confirm the exact due date in the Illinois SOS entity record.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      needsFormationMonth: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: Illinois Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Illinois estimated tax payments may apply if state tax is not sufficiently withheld. Payments may be made in four equal or annualized installments. If a due date falls on a weekend or holiday, payment is due the next business day. Confirm whether estimated payments apply and whether they are handled by CPA or payroll withholding.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── GEORGIA ──
+  GA: [
+    {
+      category: 'entity',
+      title: 'Georgia Annual Registration',
+      confidence: 'confirmed',
+      notes: 'Georgia entities file annual registration each year by April 1 and may file as early as January 1. Georgia allows multi-year registration, so confirm whether the current year is already covered.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      defaultDueMonth: 4,
+      defaultDueDay: 1
+    },
+    {
+      category: 'tax',
+      title: 'Review: Georgia Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Georgia estimated tax payments may apply if income tax is not sufficiently withheld. Quarterly installments are generally due April 15, June 15, September 15, and January 15. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── NORTH CAROLINA ──
+  NC: [
+    {
+      category: 'entity',
+      title: 'North Carolina LLC Annual Report',
+      confidence: 'confirmed',
+      notes: 'North Carolina LLCs generally file annual reports by April 15 each year. Confirm the exact requirement in the NC Secretary of State entity record.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('llc') !== -1 || e.indexOf('pllc') !== -1; },
+      defaultDueMonth: 4,
+      defaultDueDay: 15
+    },
+    {
+      category: 'entity',
+      title: 'North Carolina Corporation Annual Report',
+      confidence: 'confirmed',
+      notes: 'North Carolina corporations file annual reports by the 15th day of the fourth month following the close of the fiscal year. Calendar-year corporations are generally due April 15. Confirm fiscal year end and exact due date in NC SOS entity record.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('corp') !== -1 && e.indexOf('llc') === -1 && e.indexOf('pllc') === -1; },
+      defaultDueMonth: 4,
+      defaultDueDay: 15
+    },
+    {
+      category: 'tax',
+      title: 'Review: North Carolina Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'North Carolina estimated tax payments may apply if state tax is not sufficiently withheld. Calendar-year taxpayers generally follow April 15, June 15, September 15, and January 15 timing. Confirm with CPA or NCDOR before adding recurring due dates.',
+      source: 'auto_state'
+    },
+    {
+      category: 'tax',
+      title: 'Review: North Carolina Sales and Use Tax',
+      confidence: 'conditional',
+      notes: 'Clinical services generally should not be assumed to create a sales/use tax filing obligation. Quarterly filers file by the last day of January, April, July, and October. If the practice sells taxable goods or is registered for sales/use tax, confirm assigned filing frequency with NCDOR before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── PENNSYLVANIA ──
+  PA: [
+    {
+      category: 'entity',
+      title: 'Pennsylvania Corporation Annual Report',
+      confidence: 'confirmed',
+      notes: 'Pennsylvania corporations file annual reports by June 30 each year.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('corp') !== -1 && e.indexOf('llc') === -1 && e.indexOf('pllc') === -1; },
+      defaultDueMonth: 6,
+      defaultDueDay: 30
+    },
+    {
+      category: 'entity',
+      title: 'Pennsylvania LLC Annual Report',
+      confidence: 'confirmed',
+      notes: 'Pennsylvania LLCs file annual reports by September 30 each year.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('llc') !== -1 || e.indexOf('pllc') !== -1; },
+      defaultDueMonth: 9,
+      defaultDueDay: 30
+    },
+    {
+      category: 'entity',
+      title: 'Pennsylvania Annual Report (Other Entity)',
+      confidence: 'conditional',
+      notes: 'Pennsylvania annual reports for other domestic filing entities or foreign filing associations are due by December 31. Confirm entity type in PA Department of State records.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1 && e.indexOf('llc') === -1 && e.indexOf('pllc') === -1 && e.indexOf('corp') === -1; },
+      defaultDueMonth: 12,
+      defaultDueDay: 31
+    },
+    {
+      category: 'tax',
+      title: 'Review: Pennsylvania Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Pennsylvania estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── VIRGINIA ──
+  VA: [
+    {
+      category: 'entity',
+      title: 'Virginia LLC Annual Registration Fee',
+      confidence: 'confirmed',
+      notes: 'Virginia LLCs pay an annual registration fee by the last day of the month in which the LLC was formed or registered. This is a registration fee, not a formal annual report. Confirm formation/registration month in SCC records.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('llc') !== -1 || e.indexOf('pllc') !== -1; },
+      needsFormationMonth: true
+    },
+    {
+      category: 'entity',
+      title: 'Virginia Corporation Annual Report / Registration Fee',
+      confidence: 'confirmed',
+      notes: 'Virginia corporations file annual reports and pay annual registration fees by the last day of the incorporation/registration month. Confirm exact fee schedule and due date in SCC records.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('corp') !== -1 && e.indexOf('llc') === -1 && e.indexOf('pllc') === -1; },
+      needsFormationMonth: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: Virginia Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Virginia estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── MASSACHUSETTS ──
+  MA: [
+    {
+      category: 'entity',
+      title: 'Massachusetts LLC Annual Report',
+      confidence: 'confirmed',
+      notes: 'Massachusetts LLCs file an annual report on or before the anniversary date of the original certificate of organization. Filing fee is $500. Confirm anniversary date in MA Corporations Division records.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('llc') !== -1 || e.indexOf('pllc') !== -1; },
+      needsFormationMonth: true
+    },
+    {
+      category: 'entity',
+      title: 'Massachusetts Corporation Annual Report',
+      confidence: 'confirmed',
+      notes: 'Massachusetts corporations file annual reports with the Corporations Division. Due dates depend on corporation type and fiscal year. Confirm exact deadline in MA Corporations Division records.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('corp') !== -1 && e.indexOf('llc') === -1 && e.indexOf('pllc') === -1; },
+      needsUserDate: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: Massachusetts Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Massachusetts estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── MICHIGAN ──
+  MI: [
+    {
+      category: 'entity',
+      title: 'Michigan LLC Annual Statement',
+      confidence: 'confirmed',
+      notes: 'Michigan LLCs file an Annual Statement by February 15 each year. If formed or qualified after September 30, the LLC is not required to file on the February 15 immediately following formation.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('llc') !== -1 || e.indexOf('pllc') !== -1; },
+      defaultDueMonth: 2,
+      defaultDueDay: 15
+    },
+    {
+      category: 'entity',
+      title: 'Michigan Corporation Annual Report',
+      confidence: 'confirmed',
+      notes: 'Michigan profit corporations and professional corporations file annual reports by May 15 each year after incorporation or qualification.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('corp') !== -1 && e.indexOf('llc') === -1 && e.indexOf('pllc') === -1; },
+      defaultDueMonth: 5,
+      defaultDueDay: 15
+    },
+    {
+      category: 'tax',
+      title: 'Review: Michigan Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Michigan estimated tax payments may apply if state tax is not sufficiently withheld. Confirm applicability and dates with CPA or Michigan Treasury before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── MARYLAND ──
+  MD: [
+    {
+      category: 'entity',
+      title: 'Maryland Annual Report / Personal Property Return',
+      confidence: 'confirmed',
+      notes: 'Maryland businesses generally file the Annual Report by April 15 each year to maintain good standing. First filing is due the year after formation, even if the business had no revenue or activity.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      defaultDueMonth: 4,
+      defaultDueDay: 15
+    },
+    {
+      category: 'tax',
+      title: 'Review: Maryland Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Maryland estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── TENNESSEE ──
+  TN: [
+    {
+      category: 'entity',
+      title: 'Tennessee Annual Report',
+      confidence: 'confirmed',
+      notes: 'Tennessee annual reports are due by the 1st day of the 4th month following fiscal year-end. For calendar-year entities, this is April 1. Confirm fiscal year-end in the Tennessee SOS entity record.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      defaultDueMonth: 4,
+      defaultDueDay: 1
+    },
+    {
+      category: 'tax',
+      title: 'Review: Tennessee Franchise and Excise Tax',
+      confidence: 'conditional',
+      notes: 'Tennessee franchise and excise tax obligations depend on entity type, tax classification, and activity. Confirm with CPA or Tennessee Department of Revenue before adding recurring due dates.',
+      source: 'auto_state'
+    },
+    {
+      category: 'tax',
+      title: 'Review: Tennessee Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Tennessee does not have broad wage income tax, but business/franchise/excise obligations may create estimated payment requirements depending on entity and tax classification. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── OHIO ──
+  OH: [
+    {
+      category: 'entity',
+      title: 'Ohio Entity Maintenance Review',
+      confidence: 'conditional',
+      notes: 'Ohio standard LLCs and corporations generally do not file a routine annual report. Confirm statutory agent information remains current and verify any trade name, professional association, LLP, nonprofit, or specialty filing obligations.',
+      source: 'auto_state'
+    },
+    {
+      category: 'entity',
+      title: 'Ohio LLP Biennial Report',
+      confidence: 'confirmed',
+      notes: 'Ohio limited liability partnerships file a biennial report between April 1 and July 1 in odd-numbered years after filing the statement of qualification or foreign authorization. Confirm the filing window in Ohio Business Central.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('llp') !== -1 && e.indexOf('pllc') === -1; }
+    },
+    {
+      category: 'tax',
+      title: 'Review: Ohio Commercial Activity Tax (CAT)',
+      confidence: 'conditional',
+      notes: 'Ohio CAT may apply based on Ohio taxable gross receipts threshold. Confirm whether the practice is registered for CAT and whether annual or quarterly filing/payment obligations apply before adding recurring due dates.',
+      source: 'auto_state'
+    },
+    {
+      category: 'tax',
+      title: 'Review: Ohio Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Ohio estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── MINNESOTA ──
+  MN: [
+    {
+      category: 'entity',
+      title: 'Minnesota Annual Renewal',
+      confidence: 'confirmed',
+      notes: 'Minnesota business renewals are due by December 31. The renewal can generally be filed any time during the calendar year it is due. Confirm renewal status in the Minnesota Secretary of State record.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      defaultDueMonth: 12,
+      defaultDueDay: 31
+    },
+    {
+      category: 'tax',
+      title: 'Review: Minnesota Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Minnesota estimated tax payments may apply if state tax is not sufficiently withheld. Calendar-year taxpayers generally follow April 15, June 15, September 15, and January 15 timing. Confirm with CPA or Minnesota Revenue before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── WISCONSIN ──
+  WI: [
+    {
+      category: 'entity',
+      title: 'Wisconsin Annual Report',
+      confidence: 'confirmed',
+      notes: 'Wisconsin annual report due date depends on domestic vs foreign entity status. Domestic entities (corporations, nonstock corporations, LLCs) file by the end of the calendar-year quarter of their formation/organization anniversary: March 31, June 30, September 30, or December 31. Foreign entities generally file by March 31. Confirm entity status and due date in Wisconsin DFI records.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      needsFormationMonth: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: Wisconsin Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Wisconsin estimated tax payments may apply if state tax is not sufficiently withheld, generally when expected Wisconsin balance due is $500 or more. Due dates generally follow April 15, June 15, September 15, and January 15. Confirm with CPA or Wisconsin DOR before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── INDIANA ──
+  IN: [
+    {
+      category: 'entity',
+      title: 'Indiana Business Entity Report',
+      confidence: 'confirmed',
+      notes: 'Indiana business entity reports are due every two years during the anniversary month of formation or registration. The first report is due two years after formation. Confirm exact due date in INBiz.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      needsFormationMonth: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: Indiana Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Indiana estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── MISSOURI ──
+  MO: [
+    {
+      category: 'entity',
+      title: 'Missouri LLC Entity Maintenance Review',
+      confidence: 'conditional',
+      notes: 'Missouri LLCs generally do not file a Secretary of State annual report. Confirm registered agent and business information remain current, and track tax, payroll, and local obligations separately.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('llc') !== -1 || e.indexOf('pllc') !== -1; }
+    },
+    {
+      category: 'entity',
+      title: 'Missouri Corporation Registration Report',
+      confidence: 'confirmed',
+      notes: 'Missouri corporations must file a registration report. Eligible corporations may file annually or biennially. Failure to file can result in administrative dissolution or revocation. Confirm reporting cycle and exact due date in Missouri SOS records.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('corp') !== -1 && e.indexOf('llc') === -1 && e.indexOf('pllc') === -1; },
+      needsFormationMonth: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: Missouri Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Missouri estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── SOUTH CAROLINA ──
+  SC: [
+    {
+      category: 'entity',
+      title: 'South Carolina LLC Entity Maintenance Review',
+      confidence: 'conditional',
+      notes: 'South Carolina LLCs generally do not file a standard Secretary of State annual report unless taxed as a corporation. Confirm registered agent and entity information remain current and track DOR, tax, payroll, and local obligations separately.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('llc') !== -1 || e.indexOf('pllc') !== -1; }
+    },
+    {
+      category: 'tax',
+      title: 'Review: South Carolina Corporate Return / Annual Report',
+      confidence: 'conditional',
+      notes: 'South Carolina corporate taxable entities generally file annually by the 15th day of the fourth month after the close of the taxable year. Confirm whether the annual report is included with the applicable DOR corporate return and verify entity tax classification with CPA.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('corp') !== -1 || e.indexOf('s-corp') !== -1 || e.indexOf('s corp') !== -1 || e.indexOf('c-corp') !== -1 || e.indexOf('c corp') !== -1; }
+    },
+    {
+      category: 'entity',
+      title: 'Review: South Carolina Initial Annual Report (CL-1)',
+      confidence: 'conditional',
+      notes: 'South Carolina may require an Initial Annual Report of Corporations (CL-1) and a one-time $25 corporate license fee within 60 days of doing business or using capital in the state. Confirm whether this has already been completed.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('corp') !== -1; }
+    },
+    {
+      category: 'tax',
+      title: 'Review: South Carolina Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'South Carolina estimated tax payments may apply depending on individual income, withholding, entity type, and corporate tax classification. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── KENTUCKY ──
+  KY: [
+    {
+      category: 'entity',
+      title: 'Kentucky Annual Report',
+      confidence: 'confirmed',
+      notes: 'Kentucky entities file annual reports with the Secretary of State by June 30 each year. Reports may be filed between January 1 and June 30. First annual report is due the year after formation/registration.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      defaultDueMonth: 6,
+      defaultDueDay: 30
+    },
+    {
+      category: 'tax',
+      title: 'Review: Kentucky Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Kentucky estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── CONNECTICUT ──
+  CT: [
+    {
+      category: 'entity',
+      title: 'Connecticut LLC Annual Report',
+      confidence: 'confirmed',
+      notes: 'Connecticut LLC annual reports are due by March 31. Connecticut sends reminders about one month before the report is due. Confirm exact status in Business.CT.gov.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('llc') !== -1 || e.indexOf('pllc') !== -1; },
+      defaultDueMonth: 3,
+      defaultDueDay: 31
+    },
+    {
+      category: 'entity',
+      title: 'Connecticut Annual Report',
+      confidence: 'confirmed',
+      notes: 'Connecticut corporations, LLPs, and LPs file annual reports on the anniversary date of formation. Confirm exact due date in Business.CT.gov.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1 && e.indexOf('llc') === -1 && e.indexOf('pllc') === -1; },
+      needsFormationMonth: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: Connecticut Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Connecticut estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── NEVADA ──
+  NV: [
+    {
+      category: 'entity',
+      title: 'Nevada Annual List + State Business License Renewal',
+      confidence: 'confirmed',
+      notes: 'Nevada Title 7 entities generally file an Annual List and renew the State Business License each year. The renewal is due by the last day of the anniversary month in which the license/entity was originally filed. Confirm exact due date in Nevada SilverFlume/SOS records.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      needsFormationMonth: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: Nevada Business Tax / Payroll Obligations',
+      confidence: 'conditional',
+      notes: 'Nevada has no state individual income tax, but business, payroll, commerce tax, or industry-specific obligations may apply depending on revenue, employees, and business structure. Confirm with CPA or Nevada tax authority before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── ALABAMA ──
+  AL: [
+    {
+      category: 'tax',
+      title: 'Alabama Business Privilege Tax Return (LLC / Pass-Through)',
+      confidence: 'confirmed',
+      notes: 'Alabama limited liability entities file the Business Privilege Tax Return annually. Calendar-year limited liability entities are generally due March 15. Confirm entity tax classification and due date with Alabama DOR or CPA.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('llc') !== -1 || e.indexOf('pllc') !== -1; },
+      defaultDueMonth: 3,
+      defaultDueDay: 15
+    },
+    {
+      category: 'tax',
+      title: 'Alabama Corporation Business Privilege Tax Return',
+      confidence: 'confirmed',
+      notes: 'Alabama C-corporation Business Privilege Tax Returns are generally due April 15 for calendar-year C-corps, with special timing for certain fiscal years. Confirm exact entity classification and fiscal year with CPA.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('corp') !== -1 && e.indexOf('llc') === -1 && e.indexOf('pllc') === -1; },
+      defaultDueMonth: 4,
+      defaultDueDay: 15
+    },
+    {
+      category: 'tax',
+      title: 'Review: Alabama Initial Business Privilege Tax Return (BPT-IN)',
+      confidence: 'conditional',
+      notes: 'Alabama Form BPT-IN is generally due within two and one-half months after the entity incorporates, organizes, qualifies, or starts doing business in Alabama. Confirm whether this initial filing has already been completed.',
+      source: 'auto_state'
+    },
+    {
+      category: 'tax',
+      title: 'Review: Alabama Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Alabama estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── LOUISIANA ──
+  LA: [
+    {
+      category: 'entity',
+      title: 'Louisiana Annual Report',
+      confidence: 'confirmed',
+      notes: 'Louisiana entities file annual reports through the Secretary of State. The report can generally be filed within 30 days of the renewal date. Confirm exact renewal date and renewal ID from the Louisiana SOS notice or entity record.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      needsUserDate: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: Louisiana Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Louisiana estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    },
+    {
+      category: 'tax',
+      title: 'Review: Louisiana Sales/Use Tax',
+      confidence: 'conditional',
+      notes: 'Clinical services should not be assumed to create a sales/use tax filing obligation. If the practice sells taxable products or is registered for sales/use tax, confirm filing frequency and due dates before adding recurring reminders.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── OKLAHOMA ──
+  OK: [
+    {
+      category: 'entity',
+      title: 'Oklahoma LLC Annual Certificate',
+      confidence: 'confirmed',
+      notes: 'Oklahoma LLCs file an Annual Certificate each year by the anniversary of formation/registration. The Secretary of State generally sends notice at least 60 days before the anniversary date. Confirm the date in the Oklahoma SOS record.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('llc') !== -1 || e.indexOf('pllc') !== -1; },
+      needsFormationMonth: true
+    },
+    {
+      category: 'entity',
+      title: 'Review: Oklahoma Corporation Annual Certificate / Franchise Tax',
+      confidence: 'conditional',
+      notes: 'Oklahoma corporation annual certificate and franchise tax obligations can depend on authorized capital and entity specifics. Confirm annual certificate and franchise tax obligations in Oklahoma SOS and Tax Commission records before adding fixed due dates.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('corp') !== -1 && e.indexOf('llc') === -1 && e.indexOf('pllc') === -1; }
+    },
+    {
+      category: 'tax',
+      title: 'Review: Oklahoma Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Oklahoma estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── IOWA ──
+  IA: [
+    {
+      category: 'entity',
+      title: 'Iowa Biennial Report',
+      confidence: 'confirmed',
+      notes: 'Iowa businesses file biennial reports every two years between January 1 and April 1. If not filed by August after delinquency notice, the business may be dissolved or revoked. Confirm the entity reporting year/cycle in Fast Track Filing.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      defaultDueMonth: 4,
+      defaultDueDay: 1
+    },
+    {
+      category: 'tax',
+      title: 'Review: Iowa Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Iowa estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── UTAH ──
+  UT: [
+    {
+      category: 'entity',
+      title: 'Utah Annual Report / Renewal',
+      confidence: 'confirmed',
+      notes: 'Utah business renewals are tied to the entity anniversary date. Confirm the exact renewal date in Utah Business Registration System.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      needsFormationMonth: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: Utah Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Utah estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── NEW MEXICO ──
+  NM: [
+    {
+      category: 'entity',
+      title: 'New Mexico LLC Entity Maintenance Review',
+      confidence: 'conditional',
+      notes: 'New Mexico LLCs generally do not file an annual or biennial Secretary of State report. Confirm registered agent and entity information remain current and track tax, payroll, and local obligations separately.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('llc') !== -1 || e.indexOf('pllc') !== -1; }
+    },
+    {
+      category: 'entity',
+      title: 'New Mexico Corporation Biennial Report',
+      confidence: 'confirmed',
+      notes: 'New Mexico corporations generally file biennial reports by the 15th day of the 4th month after fiscal year-end. Confirm fiscal year and reporting cycle in the New Mexico SOS online filing portal.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('corp') !== -1 && e.indexOf('llc') === -1 && e.indexOf('pllc') === -1; },
+      needsUserDate: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: New Mexico Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'New Mexico estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    },
+    {
+      category: 'tax',
+      title: 'Review: New Mexico Gross Receipts Tax',
+      confidence: 'conditional',
+      notes: 'New Mexico gross receipts tax may apply depending on receipts, payer type, deductions/exemptions, and business activity. Healthcare receipts may involve specific exemptions. Confirm applicability with CPA or New Mexico Taxation and Revenue before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── MISSISSIPPI ──
+  MS: [
+    {
+      category: 'entity',
+      title: 'Mississippi Annual Report',
+      confidence: 'confirmed',
+      notes: 'Mississippi business corporations and LLCs file annual reports by April 15 each year. Reports may generally be filed beginning January 1.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      defaultDueMonth: 4,
+      defaultDueDay: 15
+    },
+    {
+      category: 'tax',
+      title: 'Review: Mississippi Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Mississippi estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── ARKANSAS ──
+  AR: [
+    {
+      category: 'tax',
+      title: 'Arkansas Annual Franchise Tax Report',
+      confidence: 'confirmed',
+      notes: 'Arkansas corporations and LLCs/PLLCs file an annual franchise tax report by May 1 each year for companies in existence during the prior year.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('llc') !== -1 || e.indexOf('pllc') !== -1 || e.indexOf('corp') !== -1; },
+      defaultDueMonth: 5,
+      defaultDueDay: 1
+    },
+    {
+      category: 'tax',
+      title: 'Review: Arkansas Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Arkansas estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── KANSAS ──
+  KS: [
+    {
+      category: 'entity',
+      title: 'Kansas Biennial Information Report',
+      confidence: 'confirmed',
+      notes: 'Kansas businesses file Information Reports every two years (changed from annual starting January 1, 2024). Businesses formed in even years file in even years; odd years in odd years. For calendar-year entities, the filing window is generally January 1 through April 15 after year-end. Confirm tax closing month and reporting cycle in Kansas SOS records.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      defaultDueMonth: 4,
+      defaultDueDay: 15
+    },
+    {
+      category: 'tax',
+      title: 'Review: Kansas Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Kansas estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── IDAHO ──
+  ID: [
+    {
+      category: 'entity',
+      title: 'Idaho Annual Report',
+      confidence: 'confirmed',
+      notes: 'Idaho entities file annual reports through SOSbiz. Confirm the exact due date in the Idaho SOSbiz entity record before relying on automated reminders.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      needsUserDate: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: Idaho Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Idaho estimated tax payments may apply if state tax is not sufficiently withheld. Idaho lists estimated income tax payment dates as April 15, June 15, September 15, and January 15. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── NEBRASKA ──
+  NE: [
+    {
+      category: 'entity',
+      title: 'Nebraska Corporation Biennial Occupation Tax Report',
+      confidence: 'confirmed',
+      notes: 'Nebraska domestic and foreign business corporations and professional corporations file biennial occupation tax reports in even-numbered years by March 1, delinquent April 15.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('corp') !== -1 && e.indexOf('llc') === -1 && e.indexOf('pllc') === -1; },
+      defaultDueMonth: 3,
+      defaultDueDay: 1
+    },
+    {
+      category: 'entity',
+      title: 'Nebraska LLC Biennial Report',
+      confidence: 'confirmed',
+      notes: 'Nebraska domestic and foreign LLCs and PLLCs file biennial reports in odd-numbered years by April 1, delinquent June 16.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('llc') !== -1 || e.indexOf('pllc') !== -1; },
+      defaultDueMonth: 4,
+      defaultDueDay: 1
+    },
+    {
+      category: 'tax',
+      title: 'Review: Nebraska Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Nebraska estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── HAWAII ──
+  HI: [
+    {
+      category: 'entity',
+      title: 'Hawaii Annual Business Report',
+      confidence: 'confirmed',
+      notes: 'Hawaii annual business reports are due during the quarter tied to the entity registration date. Q1 reports due March 31, Q2 June 30, Q3 September 30, Q4 December 31. Confirm registration date in Hawaii Business Express.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      needsFormationMonth: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: Hawaii Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Hawaii estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA or Hawaii DOTAX before adding recurring due dates.',
+      source: 'auto_state'
+    },
+    {
+      category: 'tax',
+      title: 'Review: Hawaii General Excise Tax (GET)',
+      confidence: 'conditional',
+      notes: 'Hawaii General Excise Tax may apply depending on business activity, payer/source of receipts, and registration status. Healthcare receipts may involve specific treatment. Confirm GET applicability and filing frequency with CPA or Hawaii DOTAX before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── MONTANA ──
+  MT: [
+    {
+      category: 'entity',
+      title: 'Montana Annual Report',
+      confidence: 'confirmed',
+      notes: 'Montana businesses file annual reports with the Secretary of State by April 15 each year. Confirm entity status in the Montana SOS business portal.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      defaultDueMonth: 4,
+      defaultDueDay: 15
+    },
+    {
+      category: 'tax',
+      title: 'Review: Montana Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Montana estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── DELAWARE ──
+  DE: [
+    {
+      category: 'tax',
+      title: 'Delaware Corporation Annual Report + Franchise Tax',
+      confidence: 'confirmed',
+      notes: 'Delaware domestic corporations file the Annual Report and pay Franchise Tax by March 1 each year. Confirm franchise tax amount and filing status with Delaware Division of Corporations.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('corp') !== -1 && e.indexOf('llc') === -1 && e.indexOf('pllc') === -1; },
+      defaultDueMonth: 3,
+      defaultDueDay: 1
+    },
+    {
+      category: 'tax',
+      title: 'Delaware LLC / LP / GP Annual Tax',
+      confidence: 'confirmed',
+      notes: 'Delaware LLCs, LPs, and GPs pay annual tax by June 1 each year for the prior year. Delaware LLCs do not file a corporation-style annual report.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('llc') !== -1 || e.indexOf('pllc') !== -1 || e.indexOf('partner') !== -1; },
+      defaultDueMonth: 6,
+      defaultDueDay: 1
+    },
+    {
+      category: 'tax',
+      title: 'Review: Delaware Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Delaware estimated tax payments may apply depending on residency, Delaware-source income, withholding, and entity/tax classification. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── RHODE ISLAND ──
+  RI: [
+    {
+      category: 'entity',
+      title: 'Rhode Island Annual Report',
+      confidence: 'confirmed',
+      notes: 'Rhode Island LLCs, corporations, partnerships, and benefit corporations file annual reports starting the calendar year after registration. Reports are generally due May 1. Confirm exact status in the Rhode Island Secretary of State record.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      defaultDueMonth: 5,
+      defaultDueDay: 1
+    },
+    {
+      category: 'tax',
+      title: 'Review: Rhode Island Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Rhode Island estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── MAINE ──
+  ME: [
+    {
+      category: 'entity',
+      title: 'Maine Annual Report',
+      confidence: 'confirmed',
+      notes: 'Maine entities file an annual report each year to maintain good standing. The legal filing deadline is June 1. First report is due the year after formation/qualification, between January 1 and June 1.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      defaultDueMonth: 6,
+      defaultDueDay: 1
+    },
+    {
+      category: 'tax',
+      title: 'Review: Maine Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Maine estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── NEW HAMPSHIRE ──
+  NH: [
+    {
+      category: 'entity',
+      title: 'New Hampshire Annual Report',
+      confidence: 'confirmed',
+      notes: 'New Hampshire annual reports are due April 1 each year. A late fee is assessed after April 1. Confirm filing status in the NH Secretary of State business portal.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      defaultDueMonth: 4,
+      defaultDueDay: 1
+    },
+    {
+      category: 'tax',
+      title: 'Review: New Hampshire Business Tax Obligations',
+      confidence: 'conditional',
+      notes: 'New Hampshire does not have a broad wage income tax, but Business Profits Tax, Business Enterprise Tax, or other obligations may apply depending on entity type, revenue, and activity. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── VERMONT ──
+  VT: [
+    {
+      category: 'entity',
+      title: 'Vermont LLC / PLC Annual Report',
+      confidence: 'confirmed',
+      notes: 'Vermont LLCs and PLCs generally file annual reports within three months after fiscal year-end. For calendar-year entities, this is commonly March 31. Confirm fiscal year and due date in Vermont SOS records.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('llc') !== -1 || e.indexOf('pllc') !== -1; },
+      defaultDueMonth: 3,
+      defaultDueDay: 31
+    },
+    {
+      category: 'entity',
+      title: 'Vermont Corporation Annual Report',
+      confidence: 'confirmed',
+      notes: 'Vermont corporations and professional corporations generally file annual reports within two and a half months after fiscal year-end. For calendar-year entities, this is commonly March 15. Confirm fiscal year and due date in Vermont SOS records.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('corp') !== -1 && e.indexOf('llc') === -1 && e.indexOf('pllc') === -1; },
+      defaultDueMonth: 3,
+      defaultDueDay: 15
+    },
+    {
+      category: 'tax',
+      title: 'Review: Vermont Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'Vermont estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── WEST VIRGINIA ──
+  WV: [
+    {
+      category: 'entity',
+      title: 'West Virginia Annual Report',
+      confidence: 'confirmed',
+      notes: 'West Virginia businesses registered with the Secretary of State file an annual report each year between January 1 and June 30. Failure to file by June 30 may result in penalties, administrative dissolution, or revocation.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      defaultDueMonth: 6,
+      defaultDueDay: 30
+    },
+    {
+      category: 'tax',
+      title: 'Review: West Virginia Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'West Virginia estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── ALASKA ──
+  AK: [
+    {
+      category: 'entity',
+      title: 'Alaska Biennial Report',
+      confidence: 'confirmed',
+      notes: 'Alaska biennial reports are due every two years. Even-year entities file in even years, odd-year entities file in odd years. Many business entities are due January 2, with late fees after February 1, but some entity types use a July 2 due date. Confirm exact due date and reporting cycle in Alaska Division of Corporations records.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      defaultDueMonth: 1,
+      defaultDueDay: 2
+    },
+    {
+      category: 'tax',
+      title: 'Review: Alaska Business Tax / Local Obligations',
+      confidence: 'conditional',
+      notes: 'Alaska does not have a broad state individual income tax, but local business licensing, industry-specific taxes, payroll, or municipal obligations may apply. Confirm with CPA or local authority before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── SOUTH DAKOTA ──
+  SD: [
+    {
+      category: 'entity',
+      title: 'South Dakota Annual Report',
+      confidence: 'confirmed',
+      notes: 'South Dakota annual reports are due each year on the 1st day of the business filing anniversary month. Reports may be filed starting two months before the due date. Confirm anniversary month in South Dakota SOS records.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      needsFormationMonth: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: South Dakota Business Tax / Local Obligations',
+      confidence: 'conditional',
+      notes: 'South Dakota does not have a broad state individual income tax, but business licensing, payroll, sales/use tax, or local obligations may apply depending on business activity. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── WYOMING ──
+  WY: [
+    {
+      category: 'entity',
+      title: 'Wyoming Annual Report / License Tax',
+      confidence: 'confirmed',
+      notes: 'Wyoming corporations, LLCs, LPs, RLLPs, and similar entities file an Annual Report and pay the associated license tax or filing fee each year. For most entities, the report is due on the first day of the anniversary month of formation. Confirm the anniversary month in Wyoming SOS records.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      needsFormationMonth: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: Wyoming Business Tax / Local Obligations',
+      confidence: 'conditional',
+      notes: 'Wyoming does not have a broad state individual income tax, but annual report/license tax, payroll, local licensing, or other business obligations may apply. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── NORTH DAKOTA ──
+  ND: [
+    {
+      category: 'entity',
+      title: 'North Dakota LLC / PLLC Annual Report',
+      confidence: 'confirmed',
+      notes: 'North Dakota LLCs and professional LLCs file annual reports by November 15 each year. Confirm status in the North Dakota FirstStop portal.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('llc') !== -1 || e.indexOf('pllc') !== -1; },
+      defaultDueMonth: 11,
+      defaultDueDay: 15
+    },
+    {
+      category: 'entity',
+      title: 'North Dakota Corporation Annual Report',
+      confidence: 'confirmed',
+      notes: 'North Dakota domestic business and professional corporations file annual reports by August 1 each year. Foreign corporations file by May 15. Confirm entity type and domestic/foreign status in the North Dakota FirstStop portal.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('corp') !== -1 && e.indexOf('llc') === -1 && e.indexOf('pllc') === -1; },
+      defaultDueMonth: 8,
+      defaultDueDay: 1
+    },
+    {
+      category: 'tax',
+      title: 'Review: North Dakota Estimated Tax Payments',
+      confidence: 'conditional',
+      notes: 'North Dakota estimated tax payments may apply if state tax is not sufficiently withheld. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ],
+
+  // ── DISTRICT OF COLUMBIA ──
+  DC: [
+    {
+      category: 'entity',
+      title: 'DC Biennial Report',
+      confidence: 'confirmed',
+      notes: 'DC business entities file a BRA-25 Biennial Report. The first report is due April 1 in the calendar year after registration; after that, it is due April 1 every two years. Confirm cycle in DC DLCP/CorpOnline records.',
+      source: 'auto_state',
+      appliesIf: function(v) { var e = (v.bizStructure||'').toLowerCase(); return e.indexOf('sole prop') === -1; },
+      defaultDueMonth: 4,
+      defaultDueDay: 1
+    },
+    {
+      category: 'entity',
+      title: 'Review: DC Basic Business License Renewal',
+      confidence: 'conditional',
+      notes: 'DC Basic Business License renewal depends on the license expiration date and license category. DC allows renewal up to 90 days before expiration and sends reminders at 90, 60, 30, and 7 days before expiration. Add the expiration date if the practice holds a DC BBL.',
+      source: 'auto_state',
+      needsUserDate: true
+    },
+    {
+      category: 'tax',
+      title: 'Review: DC Business Tax Obligations',
+      confidence: 'conditional',
+      notes: 'DC business tax obligations may include franchise tax, unincorporated business tax, withholding, or other filings depending on entity structure, DC-source income, payroll, and business activity. Confirm with CPA before adding recurring due dates.',
+      source: 'auto_state'
+    }
+  ]
+
+  // All 50 states + DC covered
+};
+
+function seedStateItems(state, entityType, vault) {
+  var rules = STATE_RULES[state];
+  if (!rules) return;
+
+  var year = new Date().getFullYear();
+
+  rules.forEach(function(rule) {
+    if (rule.confidence === 'user_confirms') return;
+
+    // Check appliesIf filter
+    if (rule.appliesIf && vault && !rule.appliesIf(vault)) return;
+
+    var title = rule.title;
+    var notes = rule.notes;
+    var dueDate = '';
+
+    // Calculate due date if fixed month/day is known
+    if (rule.defaultDueMonth && rule.defaultDueDay) {
+      var fixedDate = new Date(year, rule.defaultDueMonth - 1, rule.defaultDueDay);
+      var today = new Date(); today.setHours(0,0,0,0);
+      // If this year's date has passed, seed next year
+      if (fixedDate < today) fixedDate = new Date(year + 1, rule.defaultDueMonth - 1, rule.defaultDueDay);
+      dueDate = fixedDate.toISOString().split('T')[0];
+    }
+
+    // For entity items needing formation month, prompt for it
+    if (rule.needsFormationMonth) {
+      notes = notes + ' Set the due date based on your formation/registration anniversary month.';
+    }
+    if (rule.needsUserDate) {
+      notes = notes + ' Set the due date after confirming with the relevant state agency.';
+    }
+
+    // For conditional items, prefix notes
+    if (rule.confidence === 'conditional') {
+      notes = 'REVIEW: This may apply to your practice. ' + notes;
+    }
+
+    addSeedItem(rule.category, title, dueDate, rule.source, notes, rule.confidence);
+  });
+}
+
+function addSeedItem(category, title, dueDate, source, notes, confidence) {
   var exists = trackerData.items.some(function(item) {
     return item.title === title && item.category === category;
   });
@@ -361,7 +1815,8 @@ function addSeedItem(category, title, dueDate, source, notes) {
     status: dueDate ? 'active' : 'pending',
     notes: notes || '',
     source: source || 'manual',
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    confidence: confidence || 'confirmed'
   });
 }
 
@@ -477,7 +1932,7 @@ function renderItems() {
       else { dotClass = 'green'; dateStr = 'Due ' + due.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }); }
     }
 
-    var catNames = { hipaa:'HIPAA', license:'License', insurance:'Insurance', credentialing:'Credentialing', ce:'CE', business:'Business', custom:'Other' };
+    var catNames = { hipaa:'HIPAA', license:'License', insurance:'Insurance', credentialing:'Credentialing', ce:'CE', tax:'Tax', entity:'Entity', payroll:'Payroll', local:'Local/City', business:'Business', custom:'Other' };
     var div = document.createElement('div');
     div.className = 'track-item';
     div.innerHTML = '<div class="track-dot ' + dotClass + '"></div>' +
@@ -485,6 +1940,7 @@ function renderItems() {
         '<div class="track-title">' + escHtml(item.title) + '</div>' +
         '<div class="track-meta">' +
           '<span class="cat-badge cat-' + item.category + '">' + (catNames[item.category] || item.category) + '</span>' +
+          (item.confidence && item.confidence !== 'confirmed' ? '<span class="conf-badge conf-' + item.confidence + '">' + (item.confidence === 'conditional' ? 'Verify' : 'Manual') + '</span>' : '') +
           '<span>' + dateStr + '</span>' +
           (item.notes ? '<span>' + escHtml(item.notes.substring(0, 60)) + (item.notes.length > 60 ? '...' : '') + '</span>' : '') +
         '</div>' +
@@ -614,6 +2070,19 @@ function showToast(msg, type) {
 document.getElementById('modal-overlay').addEventListener('click', function(e) {
   if (e.target === this) closeModal();
 });
+
+// ── FEEDBACK / STATE REQUEST ──
+function openFeedback(type) {
+  var subject = type === 'request' ? 'Compliance Tracker: Tracking Item Request' : 'Compliance Tracker: Error Report';
+  var body = '';
+  if (type === 'request') {
+    body = 'I would like the Compliance Tracker to monitor:\n\nWhat needs tracking: \nCategory (tax, license, insurance, business, etc.): \nFrequency (one-time, annual, quarterly, etc.): \nDue date or deadline (if known): \nState (if state-specific): \n\nAny other details:\n';
+  } else {
+    body = 'I found an error in the Compliance Tracker:\n\nState: \nItem with error: \nWhat is wrong: \nCorrect information (with source if possible): \n';
+  }
+  var mailto = 'mailto:support@thinkbeyondpractice.com?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
+  window.open(mailto);
+}
 </script>
 </body>
 </html>
