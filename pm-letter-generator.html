@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="/auth-gate.js"></script>
 <style>
 :root{--navy:#0b1120;--navy-mid:#111c30;--navy-light:#1a2d47;--navy-card:#152238;--teal:#2aabb8;--teal-dim:#1d7d88;--teal-glow:rgba(42,171,184,0.12);--cream:#e8e2d6;--cream-dim:#b0aa9e;--white:#f5f4f2;--green:#34d399;--amber:#fbbf24;--red:#f87171;--purple:#a78bfa;--blue:#60a5fa;--rule:rgba(42,171,184,0.15);--radius:10px;--font-display:'DM Serif Display',serif;--font-body:'Plus Jakarta Sans',sans-serif}
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
@@ -125,7 +126,20 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 </style>
 </head>
 <body>
-<div class="container">
+<div class="container" id="app-root" style="display:none">
+
+  <!-- Auth -->
+  <script>
+  var _lgUserEmail = '';
+  TBPAuth.protect({
+    toolName: 'Letter Generator',
+    onVerified: function() {
+      document.getElementById('app-root').style.display = 'block';
+      try { _lgUserEmail = localStorage.getItem('tbp_verified_email') || ''; } catch(e) {}
+      loadVault();
+    }
+  });
+  </script>
 
   <!-- Header -->
   <div class="tool-header">
@@ -269,14 +283,38 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 
 <script>
 // ══════════════════════════════════════════════
-// VAULT (shared localStorage key)
+// VAULT (Supabase-backed, shared across all tools)
 // ══════════════════════════════════════════════
 var VAULT_KEY = 'credentialing-hub-profile';
 var LETTERHEAD_KEY = 'pm-letterhead';
 var profile = {};
 
 function loadVault() {
+  // Load from localStorage first (instant)
   try { var r = localStorage.getItem(VAULT_KEY); if (r) profile = JSON.parse(r); } catch(e) { profile = {}; }
+  applyVaultToUI();
+
+  // Then fetch from Supabase (authoritative)
+  if (!_lgUserEmail) return;
+  fetch('/.netlify/functions/user-tool-data', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: _lgUserEmail, toolId: 'vault_profile', action: 'load' })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.found && data.data) {
+      profile = Object.assign({}, data.data, profile.legalName ? profile : {});
+      // If Supabase has data the user doesn't have locally, use it
+      if (data.data.legalName && !profile.legalName) profile = Object.assign(profile, data.data);
+      try { localStorage.setItem(VAULT_KEY, JSON.stringify(profile)); } catch(e) {}
+      applyVaultToUI();
+    }
+  })
+  .catch(function() {});
+}
+
+function applyVaultToUI() {
   if (profile.legalName) {
     document.getElementById('vault-bar').style.display = 'flex';
     document.getElementById('vault-setup').classList.add('hidden');
@@ -317,7 +355,15 @@ function saveVault() {
   profile.fax = document.getElementById('v-fax').value.trim();
   profile.email = document.getElementById('v-email').value.trim();
   localStorage.setItem(VAULT_KEY, JSON.stringify(profile));
-  loadVault();
+  // Sync to Supabase
+  if (_lgUserEmail) {
+    fetch('/.netlify/functions/user-tool-data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: _lgUserEmail, toolId: 'vault_profile', action: 'save', data: profile })
+    }).catch(function() {});
+  }
+  applyVaultToUI();
 }
 
 function toggleVaultSetup() {
@@ -1197,9 +1243,9 @@ function stopLoadingTips() {
 }
 
 // ══════════════════════════════════════════════
-// INIT
+// INIT (loadVault called by TBPAuth.onVerified)
 // ══════════════════════════════════════════════
-loadVault();
 </script>
+</div><!-- end app-root -->
 </body>
 </html>
