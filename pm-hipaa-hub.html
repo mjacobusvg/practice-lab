@@ -104,6 +104,13 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
 @keyframes spin{to{transform:rotate(360deg)}}
 .loading-text{color:var(--cream-dim);font-size:.9rem}
 .wizard-step{display:none}.wizard-step.active{display:block}
+.field-error{border-color:var(--red) !important}
+.field-error-msg{color:var(--red);font-size:.76rem;margin-top:4px;display:none}
+.field-error-msg.show{display:block}
+.toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:6px;font-size:.84rem;font-family:var(--font-body);z-index:300;opacity:0;transition:opacity 0.3s;pointer-events:none}
+.toast.show{opacity:1}
+.toast.error{background:rgba(248,113,113,0.15);border:1px solid rgba(248,113,113,0.4);color:var(--red)}
+.toast.success{background:rgba(52,211,153,0.15);border:1px solid rgba(52,211,153,0.4);color:var(--green)}
 #completion-view{display:none}
 .inline-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 .section-divider{height:1px;background:var(--rule);margin:28px 0}
@@ -117,9 +124,13 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
   <h1>HIPAA Compliance <span>Hub</span></h1>
   <p>Build your complete HIPAA compliance documentation in one session. Answer questions about your practice, get six customized documents ready to download.</p>
 </div>
+<div style="text-align:center;margin-bottom:20px;font-size:.82rem;color:var(--cream-dim)">Most solo practices complete this in 20 to 30 minutes. Your progress saves automatically.</div>
 <div class="forum-link-bar">
   <span>&#x1F4D6;</span>
   <span>For the full breakdown: <a href="https://community.thinkbeyondpractice.com" target="_blank">The HIPAA Compliance Binder: What You Actually Need in Writing &rarr;</a></span>
+</div>
+<div style="background:var(--navy-mid);border:1px solid var(--rule);border-radius:var(--radius);padding:16px 20px;margin-bottom:16px;font-size:.84rem;color:var(--cream);line-height:1.7">
+  Most HIPAA problems in solo practice are not malicious behavior. They are undocumented workflows, consumer tools used casually, missing BAAs, or device security gaps that no one told you to write down. This tool surfaces those risks and builds the written documentation you need to demonstrate compliance.
 </div>
 <div class="scope-disclaimer">
   This tool generates organizational infrastructure for HIPAA compliance documentation using guided templates from Think Beyond Practice. It does not constitute legal advice, guarantee regulatory compliance, or replace consultation with a qualified HIPAA attorney or compliance professional. The clinician is responsible for reviewing, customizing, and maintaining all documents.
@@ -313,7 +324,7 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
     <div id="ai-risk-flag" class="risk-flag"></div>
     <div class="edu-blurb">
       <button class="edu-blurb-toggle" onclick="this.classList.toggle('open')"><span class="edu-blurb-arrow">&#x25B6;</span> Why this matters</button>
-      <div class="edu-blurb-content">Consumer AI tools like ChatGPT, Claude.ai, and Google Gemini do not offer BAAs and are not HIPAA-compliant. Pasting patient notes into these tools is a HIPAA violation. If you are currently using a consumer AI tool for clinical documentation, stop immediately. Do not go back and delete notes already created (that creates audit issues). Document the date you stopped and switch to a HIPAA-compliant alternative like Suki, Nuance DAX, or Abridge, all of which offer BAAs.</div>
+      <div class="edu-blurb-content">Consumer versions of AI tools (ChatGPT, Claude.ai, Google Gemini, Otter.ai) do not offer BAAs and are not HIPAA-compliant for processing PHI. Pasting patient notes into consumer AI tools is a HIPAA violation. Enterprise or API versions of some platforms may offer BAAs, but the standard consumer product does not. If you are currently using a consumer AI tool for clinical documentation, stop immediately. Do not go back and delete notes already created (that creates audit issues). Document the date you stopped and switch to a HIPAA-compliant alternative like Suki, Nuance DAX, Abridge, or Freed, all of which offer BAAs specifically designed for clinical documentation.</div>
     </div>
   </div>
 
@@ -483,6 +494,20 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
         <option value="not-available">Not available on my platform</option>
         <option value="disabled">Disabled</option>
       </select>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Provider Environment During Telehealth Sessions</label>
+      <div class="check-group">
+        <label class="check-item"><input type="checkbox" id="f-tele-private-room" checked><div><div class="check-item-label">Sessions conducted from a private room with a closed door</div></div></label>
+        <label class="check-item"><input type="checkbox" id="f-tele-headphones"><div><div class="check-item-label">Headphones used to prevent audio from being overheard</div></div></label>
+        <label class="check-item"><input type="checkbox" id="f-tele-smart-speakers"><div><div class="check-item-label">Smart speakers and voice assistants (Alexa, Google Home, Siri) disabled or removed from session room</div></div></label>
+        <label class="check-item"><input type="checkbox" id="f-tele-screen-privacy"><div><div class="check-item-label">Screen positioned so others cannot view session content</div></div></label>
+      </div>
+      <div class="edu-blurb">
+        <button class="edu-blurb-toggle" onclick="this.classList.toggle('open')"><span class="edu-blurb-arrow">&#x25B6;</span> Why this matters</button>
+        <div class="edu-blurb-content">Environmental privacy is one of the most commonly overlooked telehealth compliance areas. Smart speakers passively listen for wake words and can inadvertently capture session audio. Household members walking past an open door or seeing a screen create incidental disclosure risks. These are not theoretical concerns. Documenting your environmental controls demonstrates that you have considered and mitigated these risks.</div>
+      </div>
     </div>
   </div>
 
@@ -671,6 +696,7 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
 </div><!-- end container -->
 
 <div class="save-indicator" id="save-indicator"></div>
+<div class="toast" id="toast"></div>
 <div class="loading-overlay" id="loading-overlay">
   <div class="loading-spinner"></div>
   <div class="loading-text" id="loading-text">Generating documents...</div>
@@ -727,6 +753,10 @@ function updateProgressBar() {
 // ── STEP NAVIGATION ──
 function goToStep(n) {
   if (n < 1 || n > TOTAL_STEPS) return;
+
+  // Validate before moving forward (not when going back)
+  if (n > currentStep && !validateStep(currentStep)) return;
+
   collectCurrentStepData();
 
   // Handle conditional visibility
@@ -757,6 +787,51 @@ function goToStep(n) {
   updateProgressBar();
   window.scrollTo({ top: 0, behavior: 'smooth' });
   autoSave();
+}
+
+// ── STEP VALIDATION ──
+function validateStep(step) {
+  clearValidationErrors();
+  var errors = [];
+  if (step === 1) {
+    if (!getVal('f-practice-name')) errors.push('f-practice-name');
+    if (!getVal('f-provider-name')) errors.push('f-provider-name');
+    if (!getVal('f-state')) errors.push('f-state');
+  }
+  if (step === 2) {
+    if (!getVal('f-ehr')) errors.push('f-ehr');
+  }
+  if (errors.length > 0) {
+    errors.forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) el.classList.add('field-error');
+    });
+    var first = document.getElementById(errors[0]);
+    if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    showToast('Please fill in the highlighted fields before continuing.', 'error');
+    return false;
+  }
+  return true;
+}
+
+function clearValidationErrors() {
+  document.querySelectorAll('.field-error').forEach(function(el) { el.classList.remove('field-error'); });
+}
+
+// Clear error styling when user starts typing
+document.addEventListener('input', function(e) {
+  if (e.target && e.target.classList.contains('field-error')) e.target.classList.remove('field-error');
+});
+document.addEventListener('change', function(e) {
+  if (e.target && e.target.classList.contains('field-error')) e.target.classList.remove('field-error');
+});
+
+// ── TOAST NOTIFICATIONS ──
+function showToast(msg, type) {
+  var el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show ' + (type || '');
+  setTimeout(function() { el.className = 'toast'; }, 4000);
 }
 
 // ── VAULT (Supabase-backed, shared across all tools) ──
@@ -944,7 +1019,7 @@ function checkAIRisk() {
   var consumerTools = ['chatgpt', 'claude', 'gemini', 'otter', 'other-consumer'];
   if (consumerTools.indexOf(val) !== -1) {
     flag.className = 'risk-flag danger';
-    flag.innerHTML = '<span class="risk-flag-icon">&#9888;</span> <strong>Critical Risk:</strong> Consumer AI tools do not offer BAAs and are not HIPAA-compliant. If you are pasting patient notes into this tool, stop immediately. Do NOT go back and delete notes already created. Document the date you stopped and switch to a HIPAA-compliant alternative (Suki, Nuance DAX, Abridge, DeepScribe, Freed).';
+    flag.innerHTML = '<span class="risk-flag-icon">&#9888;</span> <strong>Critical Risk:</strong> Consumer versions of AI tools do not offer BAAs and are not HIPAA-compliant. Enterprise or API tiers may offer BAAs, but the standard consumer product does not. If you are pasting patient notes into a consumer AI tool, stop immediately. Do NOT delete previously created content. Document the date you stopped and switch to a HIPAA-compliant clinical documentation tool (Suki, Nuance DAX, Abridge, DeepScribe, Freed).';
   }
 }
 
@@ -1128,6 +1203,12 @@ function collectCurrentStepData() {
   wizardData.locationVerify = isChecked('f-location-verify');
   wizardData.recording = getVal('f-recording');
   wizardData.waitingRoom = getVal('f-waiting-room');
+  wizardData.teleEnv = {
+    privateRoom: isChecked('f-tele-private-room'),
+    headphones: isChecked('f-tele-headphones'),
+    smartSpeakers: isChecked('f-tele-smart-speakers'),
+    screenPrivacy: isChecked('f-tele-screen-privacy')
+  };
   wizardData.practiceEmail = getVal('f-practice-email');
   wizardData.ehrSupportPhone = getVal('f-ehr-support-phone');
   wizardData.ehrAccountId = getVal('f-ehr-account-id');
@@ -1188,11 +1269,12 @@ function collectCurrentStepData() {
 
 // ── SAVE / LOAD ──
 function autoSave() {
+  wizardData._savedAt = new Date().toISOString();
   try { sessionStorage.setItem('hipaa_hub_data', JSON.stringify(wizardData)); } catch(e) {}
 }
 
 function loadSavedProgress() {
-  // Try session storage first (current session)
+  // Try session storage first (current session, no prompt needed)
   try {
     var session = sessionStorage.getItem('hipaa_hub_data');
     if (session) {
@@ -1202,7 +1284,7 @@ function loadSavedProgress() {
     }
   } catch(e) {}
 
-  // Then try Supabase (previous session)
+  // Then try Supabase (previous session, prompt to resume)
   if (!userEmail) return;
   fetch('/.netlify/functions/user-tool-data', {
     method: 'POST',
@@ -1212,12 +1294,32 @@ function loadSavedProgress() {
   .then(function(r) { return r.json(); })
   .then(function(data) {
     if (data.found && data.data) {
-      wizardData = data.data;
-      restoreFormData();
-      showSaveIndicator('Previous session restored', 'saved');
+      // Show resume prompt
+      var resumeDate = data.data._savedAt || data.updatedAt || 'a previous session';
+      if (typeof resumeDate === 'string' && resumeDate.indexOf('T') !== -1) {
+        resumeDate = new Date(resumeDate).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+      }
+      showResumePrompt(resumeDate, function() {
+        wizardData = data.data;
+        restoreFormData();
+        showToast('Progress restored. Pick up where you left off.', 'success');
+      });
     }
   })
   .catch(function() {});
+}
+
+function showResumePrompt(dateStr, onResume) {
+  var bar = document.createElement('div');
+  bar.style.cssText = 'background:var(--navy-mid);border:1px solid rgba(52,211,153,0.3);border-radius:var(--radius);padding:16px 20px;margin-bottom:24px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px';
+  bar.innerHTML = '<span style="font-size:.86rem;color:var(--cream)">You have saved progress from <strong style="color:var(--green)">' + dateStr + '</strong>. Want to pick up where you left off?</span>' +
+    '<span style="display:flex;gap:8px">' +
+    '<button class="btn-primary" style="padding:8px 18px;font-size:.82rem" id="resume-yes">Resume</button>' +
+    '<button class="btn-secondary" style="padding:8px 18px;font-size:.82rem" id="resume-no">Start Fresh</button></span>';
+  var step1 = document.getElementById('step-1');
+  step1.insertBefore(bar, step1.querySelector('.field-group'));
+  document.getElementById('resume-yes').onclick = function() { bar.remove(); onResume(); };
+  document.getElementById('resume-no').onclick = function() { bar.remove(); };
 }
 
 function saveProgress() {
@@ -1282,6 +1384,12 @@ function restoreFormData() {
   if (d.locationVerify !== undefined) setChecked('f-location-verify', d.locationVerify);
   setVal('f-recording', d.recording);
   setVal('f-waiting-room', d.waitingRoom);
+  if (d.teleEnv) {
+    setChecked('f-tele-private-room', d.teleEnv.privateRoom);
+    setChecked('f-tele-headphones', d.teleEnv.headphones);
+    setChecked('f-tele-smart-speakers', d.teleEnv.smartSpeakers);
+    setChecked('f-tele-screen-privacy', d.teleEnv.screenPrivacy);
+  }
   setVal('f-practice-email', d.practiceEmail);
   setVal('f-ehr-support-phone', d.ehrSupportPhone);
   setVal('f-ehr-account-id', d.ehrAccountId);
@@ -1418,7 +1526,7 @@ function generateDocuments() {
       hideLoading();
     } catch(e) {
       hideLoading();
-      alert('Error generating documents: ' + e.message);
+      showToast('Error generating documents: ' + e.message, 'error');
       console.error(e);
     }
   }, 300);
@@ -1655,6 +1763,13 @@ function generatePrivacyPolicies(d) {
     if (d.locationVerify) sections.push(bullet('Patient location (city and state) confirmed and documented at start of each session'));
     sections.push(labelValue('Session Recording', d.recording === 'no-recording' ? 'Sessions are not recorded' : 'Recorded only with written patient consent, stored in encrypted EHR'));
     sections.push(labelValue('Virtual Waiting Room', d.waitingRoom === 'enabled' ? 'Enabled (patients wait until admitted)' : (d.waitingRoom === 'not-available' ? 'Not available on platform' : 'Disabled')));
+    if (d.teleEnv) {
+      sections.push(p('Provider Environment Controls:', { bold: true }));
+      if (d.teleEnv.privateRoom) sections.push(bullet('Sessions conducted from a private room with a closed door'));
+      if (d.teleEnv.headphones) sections.push(bullet('Headphones used to prevent audio from being overheard'));
+      if (d.teleEnv.smartSpeakers) sections.push(bullet('Smart speakers and voice assistants disabled or removed from session room'));
+      if (d.teleEnv.screenPrivacy) sections.push(bullet('Screen positioned so others cannot view session content'));
+    }
   }
 
   // Section 8: Workforce
@@ -2170,7 +2285,7 @@ function showCompletionView(d, docs) {
 // ═══════════════════════════════════════════════
 function downloadDoc(key, filename) {
   var doc = wizardData._generatedDocs[key];
-  if (!doc) { alert('Document not found. Please regenerate.'); return; }
+  if (!doc) { showToast('Document not found. Please regenerate.', 'error'); return; }
   D.Packer.toBlob(doc).then(function(blob) {
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -2182,7 +2297,7 @@ function downloadDoc(key, filename) {
 
 function downloadAll() {
   var docs = wizardData._generatedDocs;
-  if (!docs) { alert('Documents not found. Please regenerate.'); return; }
+  if (!docs) { showToast('Documents not found. Please regenerate.', 'error'); return; }
   showLoading('Packaging all documents...');
   var zip = new JSZip();
   var prefix = wizardData.practiceName ? wizardData.practiceName.replace(/[^a-zA-Z0-9 ]/g, '').replace(/ +/g, '-') + '-' : '';
@@ -2213,7 +2328,7 @@ function downloadAll() {
     hideLoading();
   }).catch(function(e) {
     hideLoading();
-    alert('Error creating ZIP: ' + e.message);
+    showToast('Error creating ZIP: ' + e.message, 'error');
   });
 }
 </script>
