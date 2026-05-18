@@ -759,24 +759,89 @@ function goToStep(n) {
   autoSave();
 }
 
-// ── VAULT AUTO-FILL ──
+// ── VAULT (Supabase-backed, shared across all tools) ──
+var vaultProfile = {};
+
 function loadVaultData() {
+  // Try localStorage first as instant fallback (legacy or same-session cache)
   try {
     var raw = localStorage.getItem('credentialing-hub-profile');
-    if (!raw) return;
-    var vault = JSON.parse(raw);
-    if (vault.practice_name) setVal('f-practice-name', vault.practice_name);
-    if (vault.legal_name) setVal('f-provider-name', vault.legal_name);
-    if (vault.phone) setVal('f-practice-phone', vault.phone);
-    if (vault.license_state) setVal('f-state', vault.license_state);
-    // Build address from vault fields if available
+    if (raw) {
+      var local = JSON.parse(raw);
+      applyVaultToForm(local);
+    }
+  } catch(e) {}
+
+  // Then fetch from Supabase (authoritative source, overwrites localStorage data)
+  if (!userEmail) return;
+  fetch('/.netlify/functions/user-tool-data', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: userEmail, toolId: 'vault_profile', action: 'load' })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.found && data.data) {
+      vaultProfile = data.data;
+      applyVaultToForm(data.data);
+      // Cache locally for instant load next time
+      try { localStorage.setItem('credentialing-hub-profile', JSON.stringify(data.data)); } catch(e) {}
+    }
+  })
+  .catch(function() {});
+}
+
+function applyVaultToForm(vault) {
+  if (!vault) return;
+  // Only fill empty fields (don't overwrite user edits or saved progress)
+  if (vault.practice_name && !getVal('f-practice-name')) setVal('f-practice-name', vault.practice_name);
+  if (vault.legal_name && !getVal('f-provider-name')) setVal('f-provider-name', vault.legal_name);
+  if ((vault.legalName) && !getVal('f-provider-name')) setVal('f-provider-name', vault.legalName);
+  if (vault.phone && !getVal('f-practice-phone')) setVal('f-practice-phone', vault.phone);
+  if (vault.license_state && !getVal('f-state')) setVal('f-state', vault.license_state);
+  if (vault.licenseState && !getVal('f-state')) setVal('f-state', vault.licenseState);
+  if (!getVal('f-practice-address')) {
     var addr = [];
     if (vault.practice_address) addr.push(vault.practice_address);
     if (vault.practice_city) addr.push(vault.practice_city);
     if (vault.practice_state) addr.push(vault.practice_state);
     if (vault.practice_zip) addr.push(vault.practice_zip);
     if (addr.length > 0) setVal('f-practice-address', addr.join(', '));
-  } catch(e) {}
+  }
+  if (vault.practice_email && !getVal('f-practice-email')) setVal('f-practice-email', vault.practice_email);
+  if (vault.npi1 && !getVal('f-licensing-board')) {
+    // NPI available for other tools but no direct field here
+  }
+}
+
+function saveToVault() {
+  // Write practice info back to the shared Vault so other tools can use it
+  if (!userEmail) return;
+  var d = wizardData;
+  // Merge into existing vault profile (don't overwrite fields we didn't collect)
+  var updated = Object.assign({}, vaultProfile);
+  if (d.practiceName) updated.practice_name = d.practiceName;
+  if (d.providerName) updated.legal_name = d.providerName;
+  if (d.providerName) updated.legalName = d.providerName;
+  if (d.practicePhone) updated.phone = d.practicePhone;
+  if (d.state) updated.license_state = d.state;
+  if (d.state) updated.licenseState = d.state;
+  if (d.practiceEmail) updated.practice_email = d.practiceEmail;
+  if (d.practiceAddress) updated.practice_address_full = d.practiceAddress;
+
+  fetch('/.netlify/functions/user-tool-data', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: userEmail, toolId: 'vault_profile', action: 'save', data: updated })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    if (data.saved) {
+      vaultProfile = updated;
+      try { localStorage.setItem('credentialing-hub-profile', JSON.stringify(updated)); } catch(e) {}
+    }
+  })
+  .catch(function() {});
 }
 
 // ── CONDITIONAL FIELD VISIBILITY ──
@@ -1307,6 +1372,9 @@ function generateDocuments() {
   collectCurrentStepData();
   var d = wizardData;
   showLoading('Generating your HIPAA compliance documents...');
+
+  // Write practice info back to shared Vault for other tools
+  saveToVault();
 
   setTimeout(function() {
     try {
