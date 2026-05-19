@@ -44,6 +44,7 @@ exports.handler = async function(event) {
 
     var reminders = [];
     var overdue = [];
+    var autoAdvanced = false;
 
     data.items.forEach(function(item) {
       if (!item.dueDate || item.status === 'complete' || item.status === 'dismissed') return;
@@ -51,10 +52,34 @@ exports.handler = async function(event) {
       due.setHours(0, 0, 0, 0);
       var daysUntil = Math.round((due - today) / 86400000);
 
+      // Auto-advance: if recurring item is 30+ days overdue, assume handled and generate next cycle
+      if (daysUntil < -30 && item.recurrence) {
+        item.status = 'complete';
+        item.completedAt = today.toISOString();
+        item.autoAdvanced = true;
+        var nextDate = calcNext(item.dueDate, item.recurrence);
+        if (nextDate) {
+          data.items.push({
+            id: 'trk_' + Date.now().toString(36) + '_' + Math.random().toString(36).substr(2, 6),
+            category: item.category,
+            title: item.title,
+            dueDate: nextDate,
+            status: 'active',
+            notes: item.notes,
+            source: item.source,
+            confidence: item.confidence,
+            recurrence: item.recurrence,
+            createdAt: today.toISOString(),
+            previousCycleId: item.id
+          });
+          autoAdvanced = true;
+        }
+        return; // Skip reminders for this item since it was auto-advanced
+      }
+
       if (daysUntil < 0) {
         overdue.push({ title: item.title, category: item.category, daysOverdue: Math.abs(daysUntil) });
       } else if (reminderWindows.indexOf(daysUntil) !== -1) {
-        // Check if we already sent this reminder window
         var reminderKey = item.id + '_' + daysUntil;
         if (!data._sentReminders || data._sentReminders.indexOf(reminderKey) === -1) {
           reminders.push({ title: item.title, category: item.category, daysUntil: daysUntil, reminderKey: reminderKey });
@@ -62,7 +87,18 @@ exports.handler = async function(event) {
       }
     });
 
-    if (reminders.length === 0 && overdue.length === 0) continue;
+    if (reminders.length === 0 && overdue.length === 0) {
+      // Still save if auto-advance happened
+      if (autoAdvanced) {
+        var updateUrl2 = supabaseUrl + '/rest/v1/user_tool_data?email=eq.' + encodeURIComponent(email) + '&tool_id=eq.compliance_tracker';
+        await fetch(updateUrl2, {
+          method: 'PATCH',
+          headers: Object.assign({}, supaHeaders, { 'Prefer': 'return=minimal' }),
+          body: JSON.stringify({ data: data, updated_at: new Date().toISOString() })
+        });
+      }
+      continue;
+    }
 
     // Build email
     var subject = '';
@@ -112,8 +148,8 @@ exports.handler = async function(event) {
       if (emailRes.ok) emailsSent++;
     } catch(e) { console.log('Email failed for ' + email + ': ' + e.message); }
 
-    // Record sent reminders so we don't re-send
-    if (reminders.length > 0) {
+    // Record sent reminders and save auto-advanced items
+    if (reminders.length > 0 || autoAdvanced) {
       if (!data._sentReminders) data._sentReminders = [];
       reminders.forEach(function(r) { data._sentReminders.push(r.reminderKey); });
 
@@ -130,3 +166,18 @@ exports.handler = async function(event) {
   console.log('Compliance reminders sent: ' + emailsSent + ' emails to ' + rows.length + ' users');
   return { statusCode: 200, body: 'Sent ' + emailsSent + ' reminder emails' };
 };
+
+// Recurrence date calculator (server-side mirror of client-side logic)
+function calcNext(currentDueDate, recurrence) {
+  var due = new Date(currentDueDate);
+  if (isNaN(due.getTime())) return null;
+  if (recurrence === 'quarterly') due.setMonth(due.getMonth() + 3);
+  else if (recurrence === 'annual') due.setFullYear(due.getFullYear() + 1);
+  else if (recurrence === 'biennial') due.setFullYear(due.getFullYear() + 2);
+  else if (recurrence === 'every_120_days') due.setDate(due.getDate() + 120);
+  else if (recurrence === 'monthly') due.setMonth(due.getMonth() + 1);
+  else if (typeof recurrence === 'number') due.setDate(due.getDate() + recurrence);
+  else if (recurrence && typeof recurrence === 'object' && recurrence.months) due.setMonth(due.getMonth() + recurrence.months);
+  else return null;
+  return due.toISOString().split('T')[0];
+}
