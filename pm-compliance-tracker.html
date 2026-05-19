@@ -55,6 +55,8 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
 .track-btn-edit:hover{background:rgba(42,171,184,0.25)}
 .track-btn-delete{background:rgba(248,113,113,0.1);color:var(--red);opacity:.6}
 .track-btn-delete:hover{opacity:1}
+.track-btn-setdate{background:rgba(42,171,184,0.2);color:var(--teal);border:1px dashed var(--teal)}
+.track-btn-setdate:hover{background:rgba(42,171,184,0.3)}
 
 /* Category badges */
 .cat-badge{display:inline-block;padding:2px 8px;border-radius:3px;font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
@@ -122,7 +124,31 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
   .track-actions{grid-column:1/-1;justify-content:flex-end;margin-top:6px}
   .filter-bar .search-input{width:100%}
 }
+
+/* ── LIGHT MODE ── */
+.light-mode{--navy:#f8f6f1;--navy-mid:#f0ede6;--navy-light:#e6e2da;--navy-card:#ffffff;--teal:#1a8a94;--teal-dim:#15717a;--teal-glow:rgba(26,138,148,0.1);--cream:#1a1a1a;--cream-dim:#555;--white:#0b1120;--green:#0d7a4f;--amber:#a06800;--red:#c0392b;--purple:#6a4fb5;--blue:#2563a8;--rule:rgba(26,138,148,0.15)}
+.light-mode body,.light-mode{background:var(--navy);color:var(--cream)}
+.light-mode .summary-card{background:var(--navy-mid);border-color:var(--rule)}
+.light-mode .track-item{background:var(--navy-mid);border-color:var(--rule)}
+.light-mode .track-item:hover{border-color:rgba(26,138,148,0.3)}
+.light-mode .filter-pill{border-color:var(--rule);color:var(--cream-dim)}
+.light-mode .filter-pill:hover{border-color:var(--teal);color:var(--cream)}
+.light-mode .filter-pill.active{background:var(--teal);color:#fff;border-color:var(--teal)}
+.light-mode .filter-bar .search-input{border-color:var(--rule);background:var(--navy-card);color:var(--cream)}
+.light-mode .modal{background:var(--navy-card);border-color:var(--rule)}
+.light-mode .modal .field-input,.light-mode .modal .field-select{background:var(--navy);color:var(--cream);border-color:var(--rule)}
+.light-mode .notif-bar{background:var(--navy-mid);border-color:var(--rule)}
+.light-mode .notif-toggle .slider{background:var(--navy-light)}
+.light-mode .scope-disclaimer{background:rgba(26,138,148,0.06);border-color:var(--rule)}
+.light-mode .toast.success{background:rgba(13,122,79,0.1);border-color:rgba(13,122,79,0.3);color:var(--green)}
+.light-mode .toast.error{background:rgba(192,57,43,0.1);border-color:rgba(192,57,43,0.3);color:var(--red)}
+.light-mode .btn-primary{background:var(--teal);color:#fff}
+.light-mode .btn-secondary{color:var(--teal);border-color:var(--teal)}
+.light-mode .btn-add{color:var(--teal);border-color:var(--teal);background:rgba(26,138,148,0.06)}
+.light-mode .back-link{color:var(--teal)}
+.light-mode #tbp-theme-toggle{background:rgba(248,246,241,0.95);color:#1a1a1a;border-color:rgba(26,138,148,0.2)}
 </style>
+<script src="/theme-toggle.js"></script>
 </head>
 <body>
 <div class="container" id="app-root" style="display:none">
@@ -373,8 +399,10 @@ function seedFromExistingSources(isMigration) {
     seedFederalItems(vault);
 
     // ── STATE-SPECIFIC ITEMS ──
-    // Seed state items (note: uses licenseState as initial source; user should review)
-    var practiceState = vault ? (vault.licenseState || '') : '';
+    // Seed state items
+    // Priority: entityFormationState > licenseState for business entity obligations
+    // licenseState is fallback (most users won't have entityFormationState initially)
+    var practiceState = vault ? (vault.entityFormationState || vault.licenseState || '') : '';
     var entityType = vault ? (vault.bizStructure || '') : '';
     if (practiceState) seedStateItems(practiceState, entityType, vault);
 
@@ -480,6 +508,7 @@ function entityLooksLikeLLP(v) {
   return e.indexOf('llp') !== -1 && e.indexOf('pllc') === -1 && e.indexOf('lllp') === -1;
 }
 function entityHasEmployees(v) {
+  if (v.hasEmployees === true) return true;
   var pt = v.practiceType || '';
   return pt === 'solo-staff' || pt === 'group-small' || pt === 'group-large';
 }
@@ -1895,6 +1924,7 @@ function seedStateItems(state, entityType, vault) {
   if (!rules) return;
 
   var year = new Date().getFullYear();
+  var formationMonth = vault ? (vault.entityFormationMonth || null) : null;
 
   rules.forEach(function(rule) {
     if (rule.confidence === 'user_confirms') return;
@@ -1910,14 +1940,22 @@ function seedStateItems(state, entityType, vault) {
     if (rule.defaultDueMonth && rule.defaultDueDay) {
       var fixedDate = new Date(year, rule.defaultDueMonth - 1, rule.defaultDueDay);
       var today = new Date(); today.setHours(0,0,0,0);
-      // If this year's date has passed, seed next year
       if (fixedDate < today) fixedDate = new Date(year + 1, rule.defaultDueMonth - 1, rule.defaultDueDay);
       dueDate = fixedDate.toISOString().split('T')[0];
     }
 
-    // For entity items needing formation month, prompt for it
+    // For items needing formation month: auto-calculate if we have it, otherwise prompt
     if (rule.needsFormationMonth) {
-      notes = notes + ' Set the due date based on your formation/registration anniversary month.';
+      if (formationMonth) {
+        // Calculate: last day of formation month (or first day, depending on state)
+        var fmDate = new Date(year, formationMonth - 1 + 1, 0); // last day of formation month
+        var today2 = new Date(); today2.setHours(0,0,0,0);
+        if (fmDate < today2) fmDate = new Date(year + 1, formationMonth - 1 + 1, 0);
+        dueDate = fmDate.toISOString().split('T')[0];
+        notes = notes + ' Due date calculated from formation month ' + formationMonth + '. Verify in your state records.';
+      } else {
+        notes = notes + ' Set the due date based on your formation/registration anniversary month.';
+      }
     }
     if (rule.needsUserDate) {
       notes = notes + ' Set the due date after confirming with the relevant state agency.';
@@ -2066,6 +2104,7 @@ function renderItems() {
     }
 
     var catNames = { hipaa:'HIPAA', license:'License', insurance:'Insurance', credentialing:'Credentialing', ce:'CE', tax:'Tax', entity:'Entity', payroll:'Payroll', local:'Local/City', business:'Business', custom:'Other' };
+    var needsDate = !item.dueDate && item.status !== 'complete';
     var div = document.createElement('div');
     div.className = 'track-item';
     div.innerHTML = '<div class="track-dot ' + dotClass + '"></div>' +
@@ -2080,6 +2119,7 @@ function renderItems() {
         '</div>' +
       '</div>' +
       '<div class="track-actions">' +
+        (needsDate ? '<button class="track-btn track-btn-setdate" onclick="setDueDate(\'' + item.id + '\')" title="Set the due date for this item">Set Date</button>' : '') +
         (item.status !== 'complete' ? '<button class="track-btn track-btn-complete" onclick="completeItem(\'' + item.id + '\')" title="Mark complete">Done</button>' : '') +
         (item.status !== 'complete' && daysUntil !== null && daysUntil <= 30 ? '<button class="track-btn track-btn-snooze" onclick="snoozeItem(\'' + item.id + '\')" title="Snooze 30 days">Snooze</button>' : '') +
         '<button class="track-btn track-btn-edit" onclick="editItem(\'' + item.id + '\')" title="Edit">Edit</button>' +
@@ -2204,6 +2244,24 @@ function calculateNextDate(currentDueDate, recurrence) {
   }
 
   return due.toISOString().split('T')[0];
+}
+
+function setDueDate(id) {
+  var item = trackerData.items.find(function(i) { return i.id === id; });
+  if (!item) return;
+  // Open modal pre-filled with item data, focused on due date
+  editingId = item.id;
+  document.getElementById('modal-title').textContent = 'Set Due Date: ' + item.title;
+  document.getElementById('modal-save-btn').textContent = 'Save Date';
+  document.getElementById('m-category').value = item.category;
+  document.getElementById('m-title').value = item.title;
+  document.getElementById('m-due').value = item.dueDate || '';
+  document.getElementById('m-status').value = 'active';
+  document.getElementById('m-notes').value = item.notes || '';
+  document.getElementById('m-source').value = item.source || 'manual';
+  document.getElementById('modal-overlay').classList.add('active');
+  // Auto-focus the date field
+  setTimeout(function() { document.getElementById('m-due').focus(); }, 100);
 }
 
 function snoozeItem(id) {
