@@ -1,17 +1,20 @@
 // netlify/functions/compliance-reminders.js
 // Scheduled daily: checks all users' tracking items for approaching deadlines
 // Sends email reminders via Resend at 90, 60, 30, 14, 7, and 1 day(s) before due date
-// Also flags overdue items
+// Also flags overdue items and auto-advances stale recurring items
 //
 // Schedule: daily at 8am ET (configure in netlify.toml)
 // [[scheduled_functions]]
 //   name = "compliance-reminders"
 //   schedule = "0 12 * * *"
 
+var crypto = require('crypto');
+
 exports.handler = async function(event) {
   var supabaseUrl = process.env.SUPABASE_URL;
   var supabaseKey = process.env.SUPABASE_SERVICE_KEY;
   var resendKey = process.env.RESEND_API_KEY;
+  var actionSecret = process.env.COMPLIANCE_ACTION_SECRET || supabaseKey;
 
   if (!supabaseUrl || !supabaseKey || !resendKey) {
     console.log('Missing environment variables');
@@ -78,17 +81,26 @@ exports.handler = async function(event) {
       }
 
       if (daysUntil < 0) {
-        overdue.push({ title: item.title, category: item.category, daysOverdue: Math.abs(daysUntil) });
+        var completeToken = crypto.createHmac('sha256', actionSecret).update(email + item.id + 'complete').digest('hex').substring(0, 32);
+        overdue.push({
+          title: item.title, category: item.category, daysOverdue: Math.abs(daysUntil),
+          id: item.id, actionUrl: item.actionUrl || '', notes: item.notes || '',
+          completeLink: 'https://thinkbeyondpractice.com/.netlify/functions/compliance-action?email=' + encodeURIComponent(email) + '&item=' + encodeURIComponent(item.id) + '&action=complete&token=' + completeToken
+        });
       } else if (reminderWindows.indexOf(daysUntil) !== -1) {
         var reminderKey = item.id + '_' + daysUntil;
         if (!data._sentReminders || data._sentReminders.indexOf(reminderKey) === -1) {
-          reminders.push({ title: item.title, category: item.category, daysUntil: daysUntil, reminderKey: reminderKey });
+          var cToken = crypto.createHmac('sha256', actionSecret).update(email + item.id + 'complete').digest('hex').substring(0, 32);
+          reminders.push({
+            title: item.title, category: item.category, daysUntil: daysUntil, reminderKey: reminderKey,
+            id: item.id, actionUrl: item.actionUrl || '', notes: item.notes || '',
+            completeLink: 'https://thinkbeyondpractice.com/.netlify/functions/compliance-action?email=' + encodeURIComponent(email) + '&item=' + encodeURIComponent(item.id) + '&action=complete&token=' + cToken
+          });
         }
       }
     });
 
     if (reminders.length === 0 && overdue.length === 0) {
-      // Still save if auto-advance happened
       if (autoAdvanced) {
         var updateUrl2 = supabaseUrl + '/rest/v1/user_tool_data?email=eq.' + encodeURIComponent(email) + '&tool_id=eq.compliance_tracker';
         await fetch(updateUrl2, {
@@ -115,19 +127,21 @@ exports.handler = async function(event) {
     body = 'Hi,\n\nHere is your compliance status update from Think Beyond Practice.\n\n';
 
     if (overdue.length > 0) {
-      body += 'OVERDUE:\n';
+      body += 'OVERDUE:\n\n';
       overdue.forEach(function(o) {
         body += '  [!] ' + o.title + ' (' + o.category + ') - ' + o.daysOverdue + ' day' + (o.daysOverdue > 1 ? 's' : '') + ' overdue\n';
+        if (o.actionUrl) body += '      File/renew here: ' + o.actionUrl + '\n';
+        body += '      Mark complete: ' + o.completeLink + '\n\n';
       });
-      body += '\n';
     }
 
     if (reminders.length > 0) {
-      body += 'UPCOMING:\n';
+      body += 'UPCOMING:\n\n';
       reminders.forEach(function(r) {
         body += '  ' + r.title + ' (' + r.category + ') - due in ' + r.daysUntil + ' day' + (r.daysUntil > 1 ? 's' : '') + '\n';
+        if (r.actionUrl) body += '      File/renew here: ' + r.actionUrl + '\n';
+        body += '      Mark complete: ' + r.completeLink + '\n\n';
       });
-      body += '\n';
     }
 
     body += 'Review your full compliance dashboard:\nhttps://thinkbeyondpractice.com/compliance-tracker\n\n';
