@@ -333,14 +333,14 @@ function seedFromExistingSources() {
 
     // ── VAULT SEEDING ──
     if (vault) {
-      if (vault.licenseExp) addSeedItem('license', 'State License Renewal', vault.licenseExp, 'vault', vault.licenseState ? vault.licenseState + ' license #' + (vault.licenseNum || '') : '');
-      if (vault.deaExp) addSeedItem('license', 'DEA Registration Renewal', vault.deaExp, 'vault', 'DEA #' + (vault.dea || ''));
-      if (vault.boardCertExp) addSeedItem('license', 'Board Certification Renewal', vault.boardCertExp, 'vault', vault.boardCertEntity || '');
-      if (vault.malEnd) addSeedItem('insurance', 'Malpractice Policy Renewal', vault.malEnd, 'vault', vault.malCarrier || vault.malpracticeCarrier || '');
+      if (vault.licenseExp) addSeedItem('license', 'State License Renewal', vault.licenseExp, 'vault', vault.licenseState ? vault.licenseState + ' license #' + (vault.licenseNum || '') : '', 'confirmed', 'annual');
+      if (vault.deaExp) addSeedItem('license', 'DEA Registration Renewal', vault.deaExp, 'vault', 'DEA #' + (vault.dea || ''), 'confirmed', 'annual');
+      if (vault.boardCertExp) addSeedItem('license', 'Board Certification Renewal', vault.boardCertExp, 'vault', vault.boardCertEntity || '', 'confirmed', 'annual');
+      if (vault.malEnd) addSeedItem('insurance', 'Malpractice Policy Renewal', vault.malEnd, 'vault', vault.malCarrier || vault.malpracticeCarrier || '', 'confirmed', 'annual');
       if (vault.caqhId) {
         var caqhNext = new Date();
         caqhNext.setDate(caqhNext.getDate() + 120);
-        addSeedItem('credentialing', 'CAQH Re-attestation', caqhNext.toISOString().split('T')[0], 'vault', 'CAQH ID: ' + vault.caqhId + '. Re-attest every 120 days.');
+        addSeedItem('credentialing', 'CAQH Re-attestation', caqhNext.toISOString().split('T')[0], 'vault', 'CAQH ID: ' + vault.caqhId + '. Re-attest every 120 days.', 'confirmed', 'every_120_days');
       }
     }
 
@@ -393,14 +393,14 @@ function seedFederalItems(vault) {
     var due = new Date(qd.date);
     if (due >= today) {
       addSeedItem('tax', 'Federal Estimated Tax ' + qd.q + ' ' + year, qd.date, 'auto_federal',
-        'REVIEW: May apply if you have self-employment, business, investment, or other income without sufficient withholding. IRS Form 1040-ES. Confirm with CPA.', 'conditional');
+        'REVIEW: May apply if you have self-employment, business, investment, or other income without sufficient withholding. IRS Form 1040-ES. Confirm with CPA.', 'conditional', 'quarterly');
     }
   });
 
   // Annual federal return reminder
   var filingDeadline = nextYear + '-04-15';
   addSeedItem('tax', 'Federal Tax Return Due (' + year + ')', filingDeadline, 'auto_federal',
-    'Confirm exact deadline and extension options with your CPA. Entity type affects due date and form.', 'conditional');
+    'Confirm exact deadline and extension options with your CPA. Entity type affects due date and form.', 'conditional', 'annual');
 
   // Form 941 payroll: only if we know they have employees
   var practiceType = vault ? (vault.practiceType || '') : '';
@@ -415,7 +415,7 @@ function seedFederalItems(vault) {
       var due = new Date(qd.date);
       if (due >= today) {
         addSeedItem('payroll', 'Federal Form 941 Payroll Tax ' + qd.q + ' ' + year, qd.date, 'auto_federal',
-          'REVIEW: Applies to employers with payroll. Confirm payroll processor handles filing or if you file directly.', 'conditional');
+          'REVIEW: Applies to employers with payroll. Confirm payroll processor handles filing or if you file directly.', 'conditional', 'quarterly');
       }
     });
   }
@@ -1802,9 +1802,9 @@ function seedStateItems(state, entityType, vault) {
   });
 }
 
-function addSeedItem(category, title, dueDate, source, notes, confidence) {
+function addSeedItem(category, title, dueDate, source, notes, confidence, recurrence) {
   var exists = trackerData.items.some(function(item) {
-    return item.title === title && item.category === category;
+    return item.title === title && item.category === category && item.status !== 'complete';
   });
   if (exists) return;
   trackerData.items.push({
@@ -1816,7 +1816,8 @@ function addSeedItem(category, title, dueDate, source, notes, confidence) {
     notes: notes || '',
     source: source || 'manual',
     createdAt: new Date().toISOString(),
-    confidence: confidence || 'confirmed'
+    confidence: confidence || 'confirmed',
+    recurrence: recurrence || null
   });
 }
 
@@ -2018,10 +2019,58 @@ function completeItem(id) {
   if (item) {
     item.status = 'complete';
     item.completedAt = new Date().toISOString();
+
+    // Recurrence: generate next cycle if this is a recurring item
+    if (item.recurrence && item.dueDate) {
+      var nextDate = calculateNextDate(item.dueDate, item.recurrence);
+      if (nextDate) {
+        // Create the next cycle as a new item
+        trackerData.items.push({
+          id: generateId(),
+          category: item.category,
+          title: item.title,
+          dueDate: nextDate,
+          status: 'active',
+          notes: item.notes,
+          source: item.source,
+          confidence: item.confidence,
+          recurrence: item.recurrence,
+          createdAt: new Date().toISOString(),
+          previousCycleId: item.id
+        });
+      }
+    }
+
     saveTrackerData();
     renderAll();
-    showToast('Marked as complete.', 'success');
+    showToast('Marked as complete.' + (item.recurrence ? ' Next cycle added.' : ''), 'success');
   }
+}
+
+// ── RECURRENCE DATE CALCULATOR ──
+// Supported intervals: 'quarterly', 'annual', 'biennial', 'every_120_days', 'monthly',
+// or a number (days). Also supports {months: N} for arbitrary month intervals.
+function calculateNextDate(currentDueDate, recurrence) {
+  var due = new Date(currentDueDate);
+  if (isNaN(due.getTime())) return null;
+
+  if (recurrence === 'quarterly') {
+    due.setMonth(due.getMonth() + 3);
+  } else if (recurrence === 'annual') {
+    due.setFullYear(due.getFullYear() + 1);
+  } else if (recurrence === 'biennial') {
+    due.setFullYear(due.getFullYear() + 2);
+  } else if (recurrence === 'every_120_days') {
+    due.setDate(due.getDate() + 120);
+  } else if (recurrence === 'monthly') {
+    due.setMonth(due.getMonth() + 1);
+  } else if (typeof recurrence === 'number') {
+    due.setDate(due.getDate() + recurrence);
+  } else if (recurrence && typeof recurrence === 'object' && recurrence.months) {
+    due.setMonth(due.getMonth() + recurrence.months);
+  }
+
+  return due.toISOString().split('T')[0];
 }
 
 function snoozeItem(id) {
