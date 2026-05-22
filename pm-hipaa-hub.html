@@ -74,6 +74,12 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
 .baa-row{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px;align-items:center;padding:12px 14px;background:var(--navy-mid);border:1px solid var(--rule);border-radius:6px;margin-bottom:8px;font-size:.84rem}
 .baa-vendor-name{color:var(--white);font-weight:600}
 .baa-yes{color:var(--green)}.baa-no{color:var(--red)}.baa-unknown{color:var(--amber)}
+.baa-helper{margin-top:6px;padding:12px 16px;border-radius:6px;font-size:.82rem;line-height:1.6;background:rgba(42,171,184,0.06);border:1px solid var(--rule)}
+.baa-helper-title{font-weight:700;color:var(--teal);margin-bottom:6px;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em}
+.baa-helper-step{margin-bottom:4px;color:var(--cream);font-size:.82rem}
+.baa-helper-step strong{color:var(--white)}
+.baa-helper-warning{margin-top:8px;padding:10px 14px;border-radius:6px;font-size:.8rem;line-height:1.6;background:rgba(248,113,113,0.08);border:1px solid rgba(248,113,113,0.3);color:var(--red)}
+.baa-helper-pending{margin-top:6px;padding:10px 14px;border-radius:6px;font-size:.8rem;line-height:1.6;background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.25);color:var(--amber)}
 .btn-row{display:flex;gap:12px;margin-top:32px}
 .btn-primary{padding:13px 28px;background:var(--teal);color:var(--navy);border:none;border-radius:6px;font-size:.9rem;font-weight:700;font-family:var(--font-body);cursor:pointer;transition:background 0.15s}
 .btn-primary:hover{background:#33c8d6}
@@ -1110,48 +1116,73 @@ function writeTrackingItems() {
   // The tracker picks these up on next load
   var d = wizardData;
   var pending = [];
+  var TODAY_ISO = new Date().toISOString().split('T')[0];
 
-  // Annual review
+  // ── Annual HIPAA Policy Review ──
   if (d.reviewDate) {
-    pending.push({ category: 'hipaa', title: 'HIPAA Annual Policy Review', dueDate: d.reviewDate, source: 'hipaa_hub', notes: 'Review and update all compliance documents. Regenerate from HIPAA Hub.' });
+    pending.push({ category: 'hipaa', title: 'HIPAA Annual Policy Review', dueDate: d.reviewDate, source: 'hipaa_hub', recurrence: 'annual', notes: 'Review and update all compliance documents. Regenerate from HIPAA Hub. Required under 45 CFR 164.530(i).' });
   }
 
-  // Missing BAAs
+  // ── Annual Security Risk Analysis ──
+  if (d.reviewDate) {
+    pending.push({ category: 'hipaa', title: 'Annual Security Risk Analysis', dueDate: d.reviewDate, source: 'hipaa_hub', recurrence: 'annual', notes: 'Update device inventory, vendor list, and risk assessment. Regenerate from HIPAA Hub. Required under 45 CFR 164.308(a)(1)(ii)(A).' });
+  }
+
+  // ── Annual Breach Plan Review ──
+  if (d.reviewDate) {
+    pending.push({ category: 'hipaa', title: 'Breach Response Plan Review', dueDate: d.reviewDate, source: 'hipaa_hub', recurrence: 'annual', notes: 'Review breach response procedures, update key contacts, verify notification procedures. Regenerate from HIPAA Hub.' });
+  }
+
+  // ── Annual BAA Verification ──
+  if (d.reviewDate && d.vendors && d.vendors.length > 0) {
+    pending.push({ category: 'hipaa', title: 'Annual BAA Verification', dueDate: d.reviewDate, source: 'hipaa_hub', recurrence: 'annual', notes: 'Confirm all ' + d.vendors.length + ' vendors are still active. Obtain BAAs from any new vendors added during the year. Remove vendors no longer in use.' });
+  }
+
+  // ── Missing BAAs (immediate action items) ──
   if (d.vendors && d.baas) {
     d.baas.forEach(function(baa, i) {
       if (baa.status === 'no' && d.vendors[i]) {
-        pending.push({ category: 'hipaa', title: 'Missing BAA: ' + d.vendors[i].name, dueDate: '', source: 'hipaa_hub', notes: d.vendors[i].service + '. Obtain signed BAA or stop sharing PHI with this vendor.' });
+        var lookup = BAA_LOOKUP[d.vendors[i].name] || null;
+        var notes = d.vendors[i].service + '. ';
+        if (lookup && lookup.noBAA) {
+          notes += 'This vendor does not offer a BAA. Discontinue use for PHI immediately.';
+        } else if (lookup && lookup.autoBAA) {
+          notes += 'This vendor offers a BAA. ' + lookup.steps;
+        } else {
+          notes += 'Obtain signed BAA or stop sharing PHI with this vendor. Check vendor settings, terms of service, or contact their compliance team.';
+        }
+        pending.push({ category: 'hipaa', title: 'Missing BAA: ' + d.vendors[i].name, dueDate: '', source: 'hipaa_hub', notes: notes });
       }
       if (baa.status === 'pending' && d.vendors[i]) {
         var followUp = new Date(); followUp.setDate(followUp.getDate() + 30);
-        pending.push({ category: 'hipaa', title: 'BAA Pending: ' + d.vendors[i].name, dueDate: followUp.toISOString().split('T')[0], source: 'hipaa_hub', notes: d.vendors[i].service + '. Follow up if not received.' });
+        pending.push({ category: 'hipaa', title: 'BAA Pending: ' + d.vendors[i].name, dueDate: followUp.toISOString().split('T')[0], source: 'hipaa_hub', notes: d.vendors[i].service + '. Follow up if not received within 30 days. If vendor will not sign, discontinue use for PHI.' });
       }
     });
   }
 
-  // Unencrypted devices
+  // ── Unencrypted devices (urgent) ──
   if (d.devices) {
     d.devices.forEach(function(dev) {
       if (dev.encryption === 'not-enabled') {
         var urgent = new Date(); urgent.setDate(urgent.getDate() + 7);
-        pending.push({ category: 'hipaa', title: 'Encrypt Device: ' + (dev.type || 'Unknown device'), dueDate: urgent.toISOString().split('T')[0], source: 'hipaa_hub', notes: 'Enable full-disk encryption immediately. An unencrypted device is almost always a reportable breach if lost.' });
+        pending.push({ category: 'hipaa', title: 'Encrypt Device: ' + (dev.type || 'Unknown device'), dueDate: urgent.toISOString().split('T')[0], source: 'hipaa_hub', notes: 'Enable full-disk encryption immediately. An unencrypted device is almost always a reportable breach if lost. Mac: System Settings > Privacy & Security > FileVault. Windows Pro: Settings > Privacy & Security > Device Encryption. iOS: Set a passcode (encryption is automatic).' });
       }
     });
   }
 
-  // Consumer AI tool discontinuation
+  // ── Consumer AI tool discontinuation (urgent) ──
   var consumerAI = ['chatgpt', 'claude', 'gemini', 'otter', 'other-consumer'];
   if (consumerAI.indexOf(d.aiTools) !== -1) {
     var aiDate = new Date(); aiDate.setDate(aiDate.getDate() + 7);
-    pending.push({ category: 'hipaa', title: 'Transition Off Consumer AI Tool', dueDate: aiDate.toISOString().split('T')[0], source: 'hipaa_hub', notes: 'Consumer AI tools are not HIPAA-compliant. Switch to Suki, Nuance DAX, Abridge, DeepScribe, or Freed.' });
+    pending.push({ category: 'hipaa', title: 'Transition Off Consumer AI Tool', dueDate: aiDate.toISOString().split('T')[0], source: 'hipaa_hub', notes: 'Consumer AI tools are not HIPAA-compliant. Do NOT delete previously created content (creates audit issues). Document the date you stopped. Switch to Suki, Nuance DAX, Abridge, DeepScribe, or Freed.' });
   }
 
-  // Workforce training gaps
+  // ── Workforce training gaps (if they have staff) ──
   if (d.workforce) {
     d.workforce.forEach(function(w) {
       if (w.training === 'no' && w.name) {
         var trainDate = new Date(); trainDate.setDate(trainDate.getDate() + 14);
-        pending.push({ category: 'hipaa', title: 'HIPAA Training: ' + w.name, dueDate: trainDate.toISOString().split('T')[0], source: 'hipaa_hub', notes: 'Complete HIPAA training and document using Training Documentation Form.' });
+        pending.push({ category: 'hipaa', title: 'HIPAA Training: ' + w.name, dueDate: trainDate.toISOString().split('T')[0], source: 'hipaa_hub', notes: 'Complete HIPAA training and document using Training Documentation Form. Required before PHI access under 45 CFR 164.530(b).' });
       }
       if (w.agreement === 'no' && w.name) {
         var agreeDate = new Date(); agreeDate.setDate(agreeDate.getDate() + 7);
@@ -1160,8 +1191,24 @@ function writeTrackingItems() {
     });
   }
 
+  // ── Annual workforce training renewal (if they have staff and training is current) ──
+  if (hasWorkforce(d) && d.reviewDate) {
+    pending.push({ category: 'hipaa', title: 'Annual Workforce HIPAA Training', dueDate: d.reviewDate, source: 'hipaa_hub', recurrence: 'annual', notes: 'All workforce members require annual HIPAA training renewal. Document using Training Documentation Form.' });
+  }
+
+  // ── HIPAA documents generated timestamp ──
+  pending.push({ category: 'hipaa', title: 'HIPAA Compliance Binder Generated', dueDate: TODAY_ISO, source: 'hipaa_hub', status: 'completed', notes: 'Compliance documents generated via HIPAA Hub on ' + TODAY_ISO + '. Store in secure HIPAA Compliance folder.' });
+
   if (pending.length > 0) {
     try { localStorage.setItem('compliance_tracker_pending', JSON.stringify(pending)); } catch(e) {}
+    // Also push to Supabase if email available
+    if (userEmail) {
+      fetch('/.netlify/functions/user-tool-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: userEmail, toolId: 'hipaa_compliance_items', action: 'save', data: { items: pending, lastUpdated: TODAY_ISO } })
+      }).catch(function() {});
+    }
   }
 }
 
@@ -1320,12 +1367,277 @@ function buildBAAList() {
   vendors.forEach(function(v, i) {
     var row = document.createElement('div');
     row.className = 'baa-row';
+    row.setAttribute('data-vendor-index', i);
     row.innerHTML = '<span class="baa-vendor-name">' + escHtml(v.name) + '<br><span style="font-size:.72rem;color:var(--cream-dim);font-weight:400">' + escHtml(v.service) + '</span></span>' +
-      '<select class="field-select baa-status" style="font-size:.8rem;padding:8px 10px" data-vendor="' + i + '"><option value="">Select</option><option value="yes">Yes</option><option value="no">No</option><option value="pending">Requested, pending</option><option value="not-needed">Not needed</option></select>' +
+      '<select class="field-select baa-status" style="font-size:.8rem;padding:8px 10px" data-vendor="' + i + '" onchange="onBAAStatusChange(this,' + i + ')"><option value="">Select</option><option value="yes">Yes</option><option value="no">No</option><option value="pending">Requested, pending</option><option value="not-needed">Not needed</option></select>' +
       '<input class="field-input baa-date" type="date" style="font-size:.8rem;padding:8px 10px" data-vendor="' + i + '">' +
       '<input class="field-input baa-location" placeholder="e.g., Vendor portal, HIPAA folder" style="font-size:.8rem;padding:8px 10px" data-vendor="' + i + '">';
     container.appendChild(row);
+
+    // Add helper container after the row
+    var helperDiv = document.createElement('div');
+    helperDiv.id = 'baa-helper-' + i;
+    container.appendChild(helperDiv);
   });
+}
+
+// ═══════════════════════════════════════════════
+// BAA LOOKUP - VENDOR-SPECIFIC GUIDANCE
+// ═══════════════════════════════════════════════
+var BAA_LOOKUP = {
+  'SimplePractice': {
+    autoBAA: true,
+    where: 'Settings > Account > Legal',
+    steps: 'SimplePractice includes a BAA in their Terms of Service. You accepted it when you created your account. To confirm: log in, go to Settings > Account > Legal. The BAA is listed under "HIPAA Business Associate Agreement." You can download a copy from there.',
+    url: 'https://support.simplepractice.com/hc/en-us/articles/360002817832'
+  },
+  'TherapyNotes': {
+    autoBAA: true,
+    where: 'Settings > Practice > Legal Documents',
+    steps: 'TherapyNotes includes a BAA automatically. Go to Settings > Practice > Legal Documents to view and download your signed BAA.',
+    url: ''
+  },
+  'Tebra': {
+    autoBAA: true,
+    where: 'Settings > Organization > Legal',
+    steps: 'Tebra (formerly Kareo) includes a BAA in their service agreement. Check Settings > Organization > Legal for your copy. If you cannot locate it, contact support and request a copy of your executed BAA.',
+    url: ''
+  },
+  'Headway': {
+    autoBAA: true,
+    where: 'Provider agreement (signed during onboarding)',
+    steps: 'Headway includes a BAA as part of the provider agreement you signed during onboarding. If you need a copy, contact your Headway provider support representative or email support@headway.co.',
+    url: ''
+  },
+  'Alma': {
+    autoBAA: true,
+    where: 'Provider agreement (signed during onboarding)',
+    steps: 'Alma includes a BAA as part of their provider agreement. Contact your Alma support representative or check your onboarding documents for the signed copy.',
+    url: ''
+  },
+  'Luminello': {
+    autoBAA: true,
+    where: 'Terms of Service / Account settings',
+    steps: 'Luminello includes a BAA in their service agreement. Check your account settings or contact support@luminello.com for a copy.',
+    url: ''
+  },
+  'Valant': {
+    autoBAA: true,
+    where: 'Service agreement (signed during setup)',
+    steps: 'Valant includes a BAA in their service agreement. Contact your Valant account manager or check your original onboarding documents.',
+    url: ''
+  },
+  'DrChrono': {
+    autoBAA: true,
+    where: 'Account > Settings > Legal',
+    steps: 'DrChrono includes a BAA. Go to Account > Settings > Legal to locate it, or contact support.',
+    url: ''
+  },
+  'AdvancedMD': {
+    autoBAA: true,
+    where: 'Service agreement / account portal',
+    steps: 'AdvancedMD provides a BAA as part of their service agreement. Check your account portal under legal documents or contact your account representative.',
+    url: ''
+  },
+  'Blueprint Health': {
+    autoBAA: true,
+    where: 'Settings > Legal or service agreement',
+    steps: 'Blueprint Health includes a BAA. Check Settings > Legal in your account, or contact support for a copy.',
+    url: ''
+  },
+  'Doxy.me': {
+    autoBAA: true,
+    where: 'Account > Terms of Service (paid plans)',
+    steps: 'Doxy.me provides a BAA for paid plan subscribers (not the free tier). Go to your account settings to find the BAA, or check the Terms of Service page. If you are on the free plan, upgrade to a paid plan to obtain BAA coverage, or switch to an EHR-integrated telehealth platform.',
+    url: 'https://doxy.me/baa'
+  },
+  'Zoom for Healthcare': {
+    autoBAA: true,
+    where: 'Admin Portal > Account Management > Legal',
+    steps: 'Zoom for Healthcare (different from regular Zoom) includes a BAA. You must be on the Zoom for Healthcare plan specifically. Go to Admin Portal > Account Management to access your BAA. Regular consumer Zoom does NOT offer a BAA.',
+    url: ''
+  },
+  'Google Workspace': {
+    autoBAA: true,
+    where: 'Admin Console > Account > Legal and compliance',
+    steps: 'Google Workspace offers a BAA but you must accept it manually. Go to Admin Console > Account > Legal and compliance > Google Workspace/Cloud Identity BAA. Click "Review and Accept." This covers Gmail, Drive, Meet, and other Workspace apps. The free Gmail does NOT have BAA coverage.',
+    url: 'https://support.google.com/a/answer/3407054'
+  },
+  'Microsoft 365': {
+    autoBAA: true,
+    where: 'Microsoft Trust Center / Online Services Terms',
+    steps: 'Microsoft 365 Business and Enterprise plans include BAA coverage through their Online Services Terms. The BAA is part of the Data Protection Addendum (DPA). Go to the Trust Center or your Microsoft 365 admin portal to download the DPA which includes the BAA. Free Outlook/Hotmail accounts do NOT have BAA coverage.',
+    url: 'https://www.microsoft.com/en-us/trust-center/compliance/hipaa'
+  },
+  'Spruce': {
+    autoBAA: true,
+    where: 'Account settings / Terms of Service',
+    steps: 'Spruce provides a BAA as part of their service. Check your account settings or the Terms of Service. If you cannot locate it, contact support@sprucehealth.com.',
+    url: ''
+  },
+  'Doximity': {
+    autoBAA: true,
+    where: 'Terms of Service (auto-accepted)',
+    steps: 'Doximity provides BAA coverage for their fax and dialer services as part of their Terms of Service. You accepted it when you created your verified clinician account. Contact support if you need a separate copy.',
+    url: ''
+  },
+  'Halo Health': {
+    autoBAA: true,
+    where: 'Service agreement / account settings',
+    steps: 'Halo Health provides a BAA. Check your account settings or contact your account representative.',
+    url: ''
+  },
+  'Dropbox Business': {
+    autoBAA: true,
+    where: 'Admin Console > Settings > BAA',
+    steps: 'Dropbox Business (Advanced and Enterprise plans) offers a BAA. Go to Admin Console > Settings and look for the BAA option. Accept it there. Free Dropbox and Dropbox Plus do NOT offer BAAs.',
+    url: 'https://www.dropbox.com/business/trust/compliance/hipaa-compliance'
+  },
+  'Suki': {
+    autoBAA: true,
+    where: 'Service agreement (signed during onboarding)',
+    steps: 'Suki provides a BAA as part of their clinical documentation service agreement. Contact your Suki representative for a copy.',
+    url: ''
+  },
+  'Nuance DAX': {
+    autoBAA: true,
+    where: 'Service agreement / enterprise portal',
+    steps: 'Nuance DAX provides a BAA as part of their clinical documentation service agreement. Contact your Nuance account manager for a copy.',
+    url: ''
+  },
+  'Abridge': {
+    autoBAA: true,
+    where: 'Service agreement (signed during onboarding)',
+    steps: 'Abridge provides a BAA as part of their service agreement. Contact support for a copy.',
+    url: ''
+  },
+  'DeepScribe': {
+    autoBAA: true,
+    where: 'Service agreement (signed during onboarding)',
+    steps: 'DeepScribe provides a BAA as part of their service agreement. Contact support for a copy.',
+    url: ''
+  },
+  'Freed': {
+    autoBAA: true,
+    where: 'Service agreement (signed during onboarding)',
+    steps: 'Freed provides a BAA as part of their clinical documentation service. Contact support for a copy.',
+    url: ''
+  },
+  'eFax': {
+    autoBAA: true,
+    where: 'Account settings or enterprise portal',
+    steps: 'eFax Corporate/Enterprise offers a BAA. The consumer eFax plan may not. Check your account type and contact eFax support to confirm BAA coverage and obtain a copy.',
+    url: ''
+  },
+  'OneDrive (Microsoft 365)': {
+    autoBAA: true,
+    where: 'Covered under Microsoft 365 DPA/BAA',
+    steps: 'OneDrive is covered under the Microsoft 365 Data Protection Addendum (DPA) which includes BAA terms. See Microsoft 365 entry above. Free OneDrive accounts do NOT have BAA coverage.',
+    url: ''
+  },
+  // Consumer tools that CANNOT provide BAAs
+  'ChatGPT': { autoBAA: false, noBAA: true, steps: 'ChatGPT (consumer) does not offer a BAA and cannot be used for PHI. Do not request a BAA. Discontinue use for clinical documentation immediately and switch to a HIPAA-compliant alternative (Suki, Nuance DAX, Abridge, DeepScribe, Freed).' },
+  'Claude.ai': { autoBAA: false, noBAA: true, steps: 'Claude.ai (consumer) does not offer a BAA and cannot be used for PHI. Discontinue use for clinical documentation and switch to a HIPAA-compliant alternative.' },
+  'Google Gemini': { autoBAA: false, noBAA: true, steps: 'Google Gemini (consumer) does not offer a BAA and cannot be used for PHI. Discontinue use for clinical documentation and switch to a HIPAA-compliant alternative.' },
+  'Otter.ai': { autoBAA: false, noBAA: true, steps: 'Otter.ai does not currently offer a BAA suitable for clinical use. Discontinue use for any recording or transcription involving PHI.' },
+  'Google Drive (free)': { autoBAA: false, noBAA: true, steps: 'Free Google Drive does not offer a BAA. Upgrade to Google Workspace to get BAA coverage, or stop storing PHI in Google Drive.' },
+  'Dropbox (free)': { autoBAA: false, noBAA: true, steps: 'Free Dropbox does not offer a BAA. Upgrade to Dropbox Business (Advanced or Enterprise) for BAA coverage, or stop storing PHI in Dropbox.' },
+  'OneDrive (free)': { autoBAA: false, noBAA: true, steps: 'Free OneDrive does not offer a BAA. Upgrade to Microsoft 365 Business for BAA coverage, or stop storing PHI in OneDrive.' }
+};
+
+var BAA_REQUEST_TEMPLATE = 'Dear [Vendor Name] Compliance/Legal Team,\n\nI am a HIPAA-covered healthcare provider using your service in my clinical practice. Under HIPAA regulations (45 CFR 164.502(e) and 164.504(e)), I am required to have a signed Business Associate Agreement (BAA) with any vendor that creates, receives, maintains, or transmits protected health information (PHI) on my behalf.\n\nPlease provide me with a BAA for execution, or direct me to where I can access and sign your standard BAA.\n\nIf your organization does not offer BAAs, please let me know so I can evaluate whether continued use of your service is appropriate for my practice.\n\nThank you,\n[Your Name]\n[Your Practice Name]';
+
+function onBAAStatusChange(selectEl, vendorIndex) {
+  var status = selectEl.value;
+  var helperDiv = document.getElementById('baa-helper-' + vendorIndex);
+  if (!helperDiv) return;
+  helperDiv.innerHTML = '';
+
+  var vendors = collectVendors();
+  var vendor = vendors[vendorIndex];
+  if (!vendor) return;
+
+  var lookup = BAA_LOOKUP[vendor.name] || null;
+
+  if (status === 'yes' && lookup && lookup.where) {
+    // Show where to find it for confirmation
+    var locationInput = selectEl.closest('.baa-row').querySelector('.baa-location');
+    if (locationInput && !locationInput.value) {
+      locationInput.placeholder = lookup.where;
+    }
+  }
+
+  if (status === 'no') {
+    var html = '';
+    if (lookup && lookup.noBAA) {
+      // Consumer tool -- cannot get a BAA
+      html = '<div class="baa-helper-warning"><strong>&#9888; This vendor does not offer a BAA.</strong><br>' + escHtml(lookup.steps) + '</div>';
+    } else if (lookup && lookup.autoBAA) {
+      // Known vendor -- they already have a BAA, help them find it
+      html = '<div class="baa-helper">';
+      html += '<div class="baa-helper-title">&#x1F4CD; How to get your BAA from ' + escHtml(vendor.name) + '</div>';
+      html += '<div class="baa-helper-step">' + escHtml(lookup.steps) + '</div>';
+      if (lookup.where) html += '<div class="baa-helper-step" style="margin-top:6px"><strong>Look here:</strong> ' + escHtml(lookup.where) + '</div>';
+      if (lookup.url) html += '<div style="margin-top:6px"><a href="' + lookup.url + '" target="_blank" rel="noopener" style="color:var(--teal);font-size:.8rem;text-decoration:none;border-bottom:1px dashed var(--teal)">' + escHtml(vendor.name) + ' BAA documentation &rarr;</a></div>';
+      html += '<div style="margin-top:8px;font-size:.78rem;color:var(--cream-dim)">If you already accepted a BAA during signup, change your answer to "Yes" and note the location above.</div>';
+      html += '</div>';
+    } else {
+      // Unknown vendor -- show request template
+      html = '<div class="baa-helper">';
+      html += '<div class="baa-helper-title">&#x2709; How to request a BAA from ' + escHtml(vendor.name) + '</div>';
+      html += '<div class="baa-helper-step">Most vendors that handle healthcare data have a BAA available. Start by checking their account settings, terms of service, or legal/compliance page. If you cannot find one, send them a BAA request.</div>';
+      html += '<div style="margin-top:8px;font-size:.78rem;color:var(--teal);font-weight:600;cursor:pointer" onclick="copyBAARequest(\'' + escHtml(vendor.name) + '\')">&#x1F4CB; Copy BAA request email template</div>';
+      html += '<div style="margin-top:8px;font-size:.78rem;color:var(--cream-dim)">If the vendor will not sign a BAA, you should not use that vendor for any activity involving PHI.</div>';
+      html += '</div>';
+    }
+    helperDiv.innerHTML = html;
+  }
+
+  if (status === 'pending') {
+    var html = '<div class="baa-helper-pending"><strong>Tracking:</strong> A follow-up reminder will be added to your Compliance Tracker. If you have not received a signed BAA within 30 days, follow up with the vendor. If they will not sign, discontinue use for PHI.</div>';
+    helperDiv.innerHTML = html;
+  }
+
+  // Update the risk flags area
+  updateBAAFlags();
+  saveProgress();
+}
+
+function copyBAARequest(vendorName) {
+  var text = BAA_REQUEST_TEMPLATE.replace('[Vendor Name]', vendorName);
+  if (wizardData.providerName) text = text.replace('[Your Name]', wizardData.providerName);
+  if (wizardData.practiceName) text = text.replace('[Your Practice Name]', wizardData.practiceName);
+  navigator.clipboard.writeText(text).then(function() {
+    showToast('BAA request template copied to clipboard.', 'success');
+  }).catch(function() {
+    // Fallback
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('BAA request template copied to clipboard.', 'success');
+  });
+}
+
+function updateBAAFlags() {
+  var container = document.getElementById('baa-risk-flags');
+  if (!container) return;
+  var html = '';
+  var vendors = collectVendors();
+  document.querySelectorAll('.baa-status').forEach(function(sel) {
+    var idx = parseInt(sel.getAttribute('data-vendor'));
+    var v = vendors[idx];
+    if (!v) return;
+    var lookup = BAA_LOOKUP[v.name] || null;
+    if (sel.value === 'no' && lookup && lookup.noBAA) {
+      html += '<div class="risk-flag danger" style="display:block;margin-bottom:8px"><strong>&#9888; ' + escHtml(v.name) + ':</strong> This vendor does not offer a BAA and cannot be used for PHI. Discontinue use immediately.</div>';
+    } else if (sel.value === 'no') {
+      html += '<div class="risk-flag warning" style="display:block;margin-bottom:8px"><strong>&#9888; Missing BAA: ' + escHtml(v.name) + '</strong> (' + escHtml(v.service) + '). If this vendor handles PHI without a BAA, you are responsible for any breach.</div>';
+    }
+  });
+  container.innerHTML = html;
 }
 
 function collectVendors() {
@@ -2373,6 +2685,35 @@ function generateBAATracking(d) {
       ]}));
     });
     sections.push(new D.Table({ rows: rows, width: { size: 100, type: D.WidthType.PERCENTAGE } }));
+
+    // Vendor-specific instructions for missing/pending BAAs
+    var hasMissing = false;
+    d.vendors.forEach(function(v, i) {
+      var baa = d.baas && d.baas[i] ? d.baas[i] : {};
+      if (baa.status === 'no' || baa.status === 'pending') {
+        if (!hasMissing) {
+          sections.push(blankLine());
+          sections.push(h2('Action Items — Missing or Pending BAAs'));
+          hasMissing = true;
+        }
+        var lookup = BAA_LOOKUP[v.name] || null;
+        sections.push(h3(v.name + ' (' + v.service + ')'));
+        if (lookup && lookup.noBAA) {
+          sections.push(p('STATUS: This vendor does not offer a BAA and cannot be used for PHI.', { bold: true, color: 'CC0000' }));
+          sections.push(p(lookup.steps));
+        } else if (lookup && lookup.autoBAA) {
+          sections.push(p('STATUS: ' + (baa.status === 'no' ? 'BAA available but not confirmed on file.' : 'BAA requested, awaiting confirmation.'), { bold: true, color: '996600' }));
+          sections.push(p('How to obtain: ' + lookup.steps));
+          if (lookup.where) sections.push(p('Where to find it: ' + lookup.where));
+          if (lookup.url) sections.push(p('Documentation: ' + lookup.url));
+        } else {
+          sections.push(p('STATUS: ' + (baa.status === 'no' ? 'No BAA on file.' : 'BAA requested, pending response.'), { bold: true, color: '996600' }));
+          sections.push(p('How to obtain: Check vendor account settings, terms of service, or legal/compliance page. If not available there, contact the vendor directly and request a BAA. Use this language: "I am a HIPAA-covered healthcare provider and need to execute a Business Associate Agreement before continuing to use your service for PHI."'));
+          sections.push(p('If the vendor will not sign a BAA, discontinue use of that vendor for any activity involving PHI.'));
+        }
+        sections.push(blankLine());
+      }
+    });
   }
 
   // AI tools section
