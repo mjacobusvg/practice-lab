@@ -2865,7 +2865,17 @@ function identifyRisks(d) {
   if (d.baas) {
     d.baas.forEach(function(baa, i) {
       if (baa.status === 'no' && d.vendors && d.vendors[i]) {
-        risks.push({ area: 'Missing BAA — ' + d.vendors[i].name, level: 'MEDIUM', description: 'No BAA on file with ' + d.vendors[i].name + ' (' + d.vendors[i].service + '). If this vendor handles PHI without a BAA, you are responsible for any breach.', mitigation: 'Request BAA from vendor. Most vendors have BAAs available in their settings or terms of service. If vendor will not sign a BAA, do not use that vendor for PHI.' });
+        var vName = d.vendors[i].name;
+        var lookup = BAA_LOOKUP[vName] || null;
+        var mitigation = '';
+        if (lookup && lookup.noBAA) {
+          mitigation = 'This vendor does not offer a BAA and cannot be used for PHI. Discontinue use immediately.';
+        } else if (lookup && lookup.autoBAA) {
+          mitigation = lookup.steps + (lookup.where ? ' Look here: ' + lookup.where + '.' : '');
+        } else {
+          mitigation = 'Request BAA from vendor. Check account settings, terms of service, or contact their compliance team. If vendor will not sign a BAA, do not use that vendor for PHI.';
+        }
+        risks.push({ area: 'Missing BAA — ' + vName, level: (lookup && lookup.noBAA) ? 'HIGH' : 'MEDIUM', description: 'No BAA on file with ' + vName + ' (' + d.vendors[i].service + '). If this vendor handles PHI without a BAA, you are responsible for any breach.', mitigation: mitigation });
       }
     });
   }
