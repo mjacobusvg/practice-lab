@@ -122,7 +122,27 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   .type-cards{grid-template-columns:1fr}
   .form-row,.form-row.three{grid-template-columns:1fr}
   .tool-header h1{font-size:1.3rem}
+  .send-actions{flex-direction:column}
 }
+/* ── Send Dialog ── */
+.send-overlay{display:none;position:fixed;inset:0;background:rgba(11,17,32,0.85);z-index:200;align-items:center;justify-content:center}
+.send-overlay.active{display:flex}
+.send-dialog{background:var(--navy-card);border:1px solid var(--rule);border-radius:var(--radius);padding:28px;max-width:440px;width:90%;max-height:85vh;overflow-y:auto}
+.send-dialog h3{font-family:var(--font-display);color:var(--white);font-size:1.1rem;margin-bottom:6px}
+.send-dialog p{font-size:.84rem;color:var(--cream-dim);margin-bottom:16px;line-height:1.6}
+.send-dialog label{font-size:.78rem;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px}
+.send-dialog input{width:100%;border:1px solid var(--rule);border-radius:6px;padding:10px 14px;font-size:.88rem;color:var(--cream);background:var(--navy);font-family:var(--font-body);margin-bottom:12px}
+.send-dialog input:focus{outline:none;border-color:var(--teal)}
+.send-dialog .send-actions{display:flex;gap:10px;margin-top:8px}
+.send-dialog .send-btn{padding:10px 24px;background:var(--teal);color:var(--navy);border:none;border-radius:6px;font-size:.88rem;font-weight:700;cursor:pointer;font-family:var(--font-body)}
+.send-dialog .send-btn:hover{background:#33c8d6}
+.send-dialog .send-btn:disabled{background:var(--navy-light);color:var(--cream-dim);cursor:not-allowed}
+.send-dialog .send-cancel{padding:10px 24px;background:transparent;color:var(--cream-dim);border:1px solid var(--rule);border-radius:6px;font-size:.88rem;font-weight:600;cursor:pointer;font-family:var(--font-body)}
+.send-dialog .send-cancel:hover{border-color:var(--teal);color:var(--teal)}
+.send-status{margin-top:12px;padding:10px 14px;border-radius:6px;font-size:.82rem;line-height:1.5;display:none}
+.send-status.success{display:block;background:rgba(52,211,153,0.1);border:1px solid rgba(52,211,153,0.3);color:var(--green)}
+.send-status.error{display:block;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);color:var(--red)}
+.send-status.sending{display:block;background:rgba(42,171,184,0.1);border:1px solid rgba(42,171,184,0.2);color:var(--teal)}
 </style>
 </head>
 <body>
@@ -260,10 +280,50 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
     <div class="disclaimer">
       AI-assisted draft for clinician review. This letter does not determine legal eligibility, insurance approval, disability status, housing rights, workplace rights, or academic accommodation approval. The clinician should verify accuracy, edit to match the actual treatment record, and remove any statements not supported by clinical documentation. Patient information entered here is processed through HIPAA-compliant API endpoints under Business Associate Agreement. No patient data is retained on this platform after the letter is generated. Templates saved locally on your device are automatically stripped of patient identifiers.
     </div>
-    <div class="btn-group" style="margin-top:16px">
-      <button class="btn btn-secondary" onclick="resetForm()">New Letter</button>
-      <button class="btn btn-secondary" onclick="downloadPDF()">Download PDF</button>
-      <button class="btn btn-secondary" onclick="saveAsTemplate()">Save as Template</button>
+    <div class="btn-group" style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="downloadPDF()" style="font-size:.84rem">Download PDF</button>
+      <button class="btn btn-secondary" onclick="showEmailDialog()" style="font-size:.84rem">Email</button>
+      <button class="btn btn-secondary" onclick="showFaxDialog()" style="font-size:.84rem">Fax</button>
+      <button class="btn btn-secondary" onclick="saveAsTemplate()" style="font-size:.84rem">Save as Template</button>
+      <button class="btn btn-secondary" onclick="copyFullLetter()" style="font-size:.84rem">Copy</button>
+    </div>
+    <div style="margin-top:8px;font-size:.76rem;color:var(--cream-dim);line-height:1.5">PDF renders on your uploaded letterhead. Email and fax send directly from the tool. Templates auto-strip patient identifiers for reuse.</div>
+    <div style="margin-top:12px">
+      <button class="btn btn-secondary" onclick="resetForm()" style="font-size:.82rem;padding:8px 18px;opacity:.7">&#x2190; New Letter</button>
+    </div>
+  </div>
+
+  <!-- Email Send Dialog -->
+  <div class="send-overlay" id="email-overlay" onclick="if(event.target===this)closeEmailDialog()">
+    <div class="send-dialog">
+      <h3>&#x2709; Email Letter</h3>
+      <p>Send this letter to a recipient via email. The letter will be sent as the email body with your practice name in the header. Your email will be set as the reply-to address.</p>
+      <label>Recipient Email</label>
+      <input type="email" id="email-to" placeholder="recipient@example.com">
+      <label>Subject Line</label>
+      <input type="text" id="email-subject" placeholder="Will be auto-filled from letter type">
+      <div class="send-actions">
+        <button class="send-btn" id="email-send-btn" onclick="sendEmail()">Send Email</button>
+        <button class="send-cancel" onclick="closeEmailDialog()">Cancel</button>
+      </div>
+      <div class="send-status" id="email-status"></div>
+    </div>
+  </div>
+
+  <!-- Fax Send Dialog -->
+  <div class="send-overlay" id="fax-overlay" onclick="if(event.target===this)closeFaxDialog()">
+    <div class="send-dialog">
+      <h3>&#x1F4E0; Fax Letter</h3>
+      <p>Send this letter via fax. The letter will be formatted with your practice header and a HIPAA confidentiality footer. You will receive an email notification if the fax fails to deliver.</p>
+      <label>Recipient Fax Number</label>
+      <input type="tel" id="fax-to" placeholder="(555) 123-4567">
+      <label>Recipient Name / Office (optional, for cover page)</label>
+      <input type="text" id="fax-to-name" placeholder="e.g., Dr. Smith's Office, Premera Appeals Dept">
+      <div class="send-actions">
+        <button class="send-btn" id="fax-send-btn" onclick="sendFax()">Send Fax</button>
+        <button class="send-cancel" onclick="closeFaxDialog()">Cancel</button>
+      </div>
+      <div class="send-status" id="fax-status"></div>
     </div>
   </div>
 
@@ -1038,6 +1098,200 @@ function downloadPDF() {
   w.document.write('</body></html>');
   w.document.close();
   setTimeout(function() { w.print(); }, 500);
+}
+
+// ══════════════════════════════════════════════
+// COPY FULL LETTER
+// ══════════════════════════════════════════════
+function copyFullLetter() {
+  var text = document.getElementById('letter-output').textContent;
+  navigator.clipboard.writeText(text).then(function() {
+    showToast('Letter copied to clipboard.', 'success');
+  }).catch(function() {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    showToast('Letter copied to clipboard.', 'success');
+  });
+}
+
+function showToast(msg, type) {
+  var existing = document.getElementById('lg-toast');
+  if (existing) existing.remove();
+  var toast = document.createElement('div');
+  toast.id = 'lg-toast';
+  toast.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:6px;font-size:.84rem;font-family:var(--font-body);z-index:300;transition:opacity 0.3s;';
+  if (type === 'success') toast.style.cssText += 'background:rgba(52,211,153,0.15);border:1px solid rgba(52,211,153,0.4);color:var(--green)';
+  else toast.style.cssText += 'background:rgba(248,113,113,0.15);border:1px solid rgba(248,113,113,0.4);color:var(--red)';
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+  setTimeout(function() { toast.style.opacity = '0'; setTimeout(function() { toast.remove(); }, 300); }, 3000);
+}
+
+// ══════════════════════════════════════════════
+// EMAIL SEND
+// ══════════════════════════════════════════════
+function getLetterSubject() {
+  var letterText = document.getElementById('letter-output').textContent || '';
+  var reLine = letterText.match(/Re:\s*(.+)/);
+  if (reLine) return reLine[1].trim();
+  if (selectedType === 'appeal') return 'Medical Necessity Appeal';
+  if (selectedType === 'esa') return 'Emotional Support Animal Letter';
+  if (selectedType === 'support') return 'Clinical Letter of Support';
+  return 'Clinical Letter';
+}
+
+function showEmailDialog() {
+  var overlay = document.getElementById('email-overlay');
+  overlay.classList.add('active');
+  document.getElementById('email-subject').value = getLetterSubject();
+  document.getElementById('email-to').value = '';
+  document.getElementById('email-status').className = 'send-status';
+  document.getElementById('email-status').textContent = '';
+  document.getElementById('email-send-btn').disabled = false;
+  document.getElementById('email-to').focus();
+}
+
+function closeEmailDialog() {
+  document.getElementById('email-overlay').classList.remove('active');
+}
+
+async function sendEmail() {
+  var to = document.getElementById('email-to').value.trim();
+  var subject = document.getElementById('email-subject').value.trim();
+  var statusEl = document.getElementById('email-status');
+  var sendBtn = document.getElementById('email-send-btn');
+
+  if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+    statusEl.className = 'send-status error';
+    statusEl.textContent = 'Please enter a valid email address.';
+    return;
+  }
+
+  sendBtn.disabled = true;
+  statusEl.className = 'send-status sending';
+  statusEl.textContent = 'Sending...';
+
+  var letterText = document.getElementById('letter-output').textContent;
+
+  // Build HTML body with letterhead
+  var htmlBody = '<div style="font-family:Georgia,serif;max-width:650px;margin:0 auto;color:#111;line-height:1.6">';
+  if (profile.legalName) {
+    htmlBody += '<div style="margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #2aabb8">';
+    htmlBody += '<div style="font-size:16px;font-weight:bold">' + esc(profile.legalName);
+    if (profile.credentials) htmlBody += ', ' + esc(profile.credentials);
+    htmlBody += '</div>';
+    if (profile.practiceName) htmlBody += '<div>' + esc(profile.practiceName) + '</div>';
+    if (profile.practiceAddress) htmlBody += '<div>' + esc(profile.practiceAddress) + '</div>';
+    var contact = [];
+    if (profile.phone) contact.push('Phone: ' + esc(profile.phone));
+    if (profile.fax) contact.push('Fax: ' + esc(profile.fax));
+    if (contact.length) htmlBody += '<div>' + contact.join(' | ') + '</div>';
+    htmlBody += '</div>';
+  }
+  htmlBody += '<pre style="font-family:Georgia,serif;white-space:pre-wrap;font-size:14px;line-height:1.6">' + esc(letterText) + '</pre>';
+  htmlBody += '<div style="margin-top:32px;padding-top:12px;border-top:1px solid #ccc;font-size:11px;color:#666">This message contains Protected Health Information (PHI) intended solely for the named recipient. If received in error, notify the sender immediately. Unauthorized disclosure is prohibited under HIPAA.</div>';
+  htmlBody += '</div>';
+
+  try {
+    var res = await fetch('/.netlify/functions/send-document', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: to,
+        subject: subject,
+        body: letterText,
+        htmlBody: htmlBody,
+        replyTo: profile.email || _lgUserEmail || '',
+        tool: 'Letter Generator'
+      })
+    });
+    var result = await res.json();
+    if (result.success) {
+      statusEl.className = 'send-status success';
+      statusEl.textContent = 'Email sent successfully to ' + to;
+    } else {
+      statusEl.className = 'send-status error';
+      statusEl.textContent = 'Failed to send: ' + (result.error || 'Unknown error');
+      sendBtn.disabled = false;
+    }
+  } catch (err) {
+    statusEl.className = 'send-status error';
+    statusEl.textContent = 'Network error. Check your connection and try again.';
+    sendBtn.disabled = false;
+  }
+}
+
+// ══════════════════════════════════════════════
+// FAX SEND
+// ══════════════════════════════════════════════
+function showFaxDialog() {
+  var overlay = document.getElementById('fax-overlay');
+  overlay.classList.add('active');
+  document.getElementById('fax-to').value = '';
+  document.getElementById('fax-to-name').value = '';
+  document.getElementById('fax-status').className = 'send-status';
+  document.getElementById('fax-status').textContent = '';
+  document.getElementById('fax-send-btn').disabled = false;
+  document.getElementById('fax-to').focus();
+}
+
+function closeFaxDialog() {
+  document.getElementById('fax-overlay').classList.remove('active');
+}
+
+async function sendFax() {
+  var to = document.getElementById('fax-to').value.trim();
+  var toName = document.getElementById('fax-to-name').value.trim();
+  var statusEl = document.getElementById('fax-status');
+  var sendBtn = document.getElementById('fax-send-btn');
+
+  // Basic validation: must have at least 10 digits
+  var digits = to.replace(/\D/g, '');
+  if (digits.length < 10) {
+    statusEl.className = 'send-status error';
+    statusEl.textContent = 'Please enter a valid fax number (at least 10 digits).';
+    return;
+  }
+
+  sendBtn.disabled = true;
+  statusEl.className = 'send-status sending';
+  statusEl.textContent = 'Preparing and sending fax... This may take 30-60 seconds.';
+
+  var letterText = document.getElementById('letter-output').textContent;
+
+  try {
+    var res = await fetch('/.netlify/functions/send-fax', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        to: to,
+        content: letterText,
+        toName: toName,
+        fromName: profile.legalName || '',
+        fromPractice: profile.practiceName || '',
+        subject: getLetterSubject(),
+        tool: 'Letter Generator',
+        clinicianEmail: profile.email || _lgUserEmail || ''
+      })
+    });
+    var result = await res.json();
+    if (result.success) {
+      statusEl.className = 'send-status success';
+      statusEl.textContent = 'Fax queued for delivery to ' + to + '. You will receive an email notification if the fax fails to deliver.';
+    } else {
+      statusEl.className = 'send-status error';
+      statusEl.textContent = 'Failed to send fax: ' + (result.error || 'Unknown error');
+      sendBtn.disabled = false;
+    }
+  } catch (err) {
+    statusEl.className = 'send-status error';
+    statusEl.textContent = 'Network error. Check your connection and try again.';
+    sendBtn.disabled = false;
+  }
 }
 
 // ══════════════════════════════════════════════
