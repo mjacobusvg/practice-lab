@@ -338,34 +338,25 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
   </div>
 
   <div class="field-group">
-    <label class="field-label">Secure Messaging / Communication <span style="font-size:.75rem;color:var(--cream-dim)">(select all that apply)</span></label>
-    <div class="multi-check-group" id="f-messaging-group">
-      <label><input type="checkbox" name="messaging" value="ehr-portal" onchange="updateMultiCheck(this)"> EHR portal messaging</label>
-      <label><input type="checkbox" name="messaging" value="Spruce" onchange="updateMultiCheck(this)"> Spruce</label>
-      <label><input type="checkbox" name="messaging" value="Doximity" onchange="updateMultiCheck(this)"> Doximity</label>
-      <label><input type="checkbox" name="messaging" value="Halo Health" onchange="updateMultiCheck(this)"> Halo Health</label>
-      <label><input type="checkbox" name="messaging" value="other" onchange="updateMultiCheck(this)"> Other</label>
-      <label><input type="checkbox" name="messaging" value="none" onchange="updateMultiCheck(this)"> No secure messaging</label>
+    <label class="field-label">Communication Channels <span style="font-size:.75rem;color:var(--cream-dim)">(select all that apply)</span></label>
+    <div class="field-hint" style="margin-bottom:8px">How do you communicate with or about patients where PHI might be transmitted? Include email, messaging platforms, portals, and any other channel.</div>
+    <div class="multi-check-group" id="f-comm-group">
+      <label><input type="checkbox" name="comm" value="ehr-portal" onchange="updateMultiCheck(this);updateCommFlags()"> EHR patient portal</label>
+      <label><input type="checkbox" name="comm" value="Google Workspace" onchange="updateMultiCheck(this);updateCommFlags()"> Google Workspace email (with BAA)</label>
+      <label><input type="checkbox" name="comm" value="Microsoft 365" onchange="updateMultiCheck(this);updateCommFlags()"> Microsoft 365 email (with BAA)</label>
+      <label><input type="checkbox" name="comm" value="gmail-free" onchange="updateMultiCheck(this);updateCommFlags()"> Gmail (free personal account)</label>
+      <label><input type="checkbox" name="comm" value="outlook-free" onchange="updateMultiCheck(this);updateCommFlags()"> Outlook / Hotmail (free personal)</label>
+      <label><input type="checkbox" name="comm" value="Spruce" onchange="updateMultiCheck(this);updateCommFlags()"> Spruce</label>
+      <label><input type="checkbox" name="comm" value="Doximity" onchange="updateMultiCheck(this);updateCommFlags()"> Doximity (texts, calls, fax)</label>
+      <label><input type="checkbox" name="comm" value="Halo Health" onchange="updateMultiCheck(this);updateCommFlags()"> Halo Health</label>
+      <label><input type="checkbox" name="comm" value="ProtonMail" onchange="updateMultiCheck(this);updateCommFlags()"> ProtonMail</label>
+      <label><input type="checkbox" name="comm" value="other" onchange="updateMultiCheck(this);updateCommFlags()"> Other</label>
     </div>
-    <input class="field-input multi-check-other" id="f-messaging-other" placeholder="Enter messaging platform name">
-  </div>
-
-  <div class="field-group">
-    <label class="field-label">Email System</label>
-    <select class="field-select" id="f-email">
-      <option value="">Select</option>
-      <option value="gmail-free">Gmail (free personal account)</option>
-      <option value="gmail-workspace">Google Workspace (with BAA)</option>
-      <option value="outlook-free">Outlook/Hotmail (free personal)</option>
-      <option value="microsoft-365">Microsoft 365 (with BAA)</option>
-      <option value="protonmail">ProtonMail</option>
-      <option value="ehr-only">I only use my EHR portal for communication</option>
-      <option value="other">Other</option>
-    </select>
-    <div id="email-risk-flag" class="risk-flag"></div>
+    <input class="field-input multi-check-other" id="f-comm-other" placeholder="Enter platform name">
+    <div id="comm-risk-flags" class="risk-flag"></div>
     <div class="edu-blurb">
       <button class="edu-blurb-toggle" onclick="this.classList.toggle('open')"><span class="edu-blurb-arrow">&#x25B6;</span> Why this matters</button>
-      <div class="edu-blurb-content">Standard free email (Gmail, Outlook, Yahoo) is not HIPAA-compliant for transmitting PHI. Google Workspace and Microsoft 365 can be HIPAA-compliant if you enable the compliance settings and have a signed BAA. If you only use email for scheduling with no clinical details, it is lower risk but should still be documented in your policies. (45 CFR 164.312(e) - Transmission Security)</div>
+      <div class="edu-blurb-content">Any channel used to transmit PHI needs a BAA. Free personal email (Gmail, Outlook, Yahoo) does not offer BAAs and is not HIPAA-compliant for transmitting PHI. Google Workspace and Microsoft 365 can be HIPAA-compliant if you accept the BAA in your admin settings. Platforms like Spruce and Doximity include BAAs by default. If you use free email only for scheduling with no clinical details, it is lower risk but should still be documented. (45 CFR 164.312(e) - Transmission Security, 45 CFR 164.502(e) - Business Associate Contracts)</div>
     </div>
   </div>
 
@@ -1081,8 +1072,7 @@ function saveToVault() {
   var th = d.telehealth;
   if (th === 'other' && d.telehealthOther) th = d.telehealthOther;
   if (th && th !== 'none' && th !== 'ehr-integrated') updated.telehealthPlatform = th;
-  if (d.messaging && d.messaging.length > 0) updated.messagingPlatforms = d.messaging;
-  if (d.email) updated.emailSystem = d.email;
+  if (d.commChannels && d.commChannels.length > 0) updated.commChannels = d.commChannels;
   if (d.fax && d.fax !== 'none') updated.faxService = d.fax;
   if (d.cloud && d.cloud.length > 0) updated.cloudStorage = d.cloud;
   if (d.aiTools && d.aiTools !== 'none') updated.aiDocTool = d.aiTools;
@@ -1256,16 +1246,25 @@ function updateWorkforceVisibility() {
 }
 
 // ── RISK FLAG CHECKS ──
-function checkEmailRisk() {
-  var val = getVal('f-email');
-  var flag = document.getElementById('email-risk-flag');
-  flag.className = 'risk-flag';
-  flag.innerHTML = '';
-  if (val === 'gmail-free' || val === 'outlook-free') {
-    flag.className = 'risk-flag danger';
-    flag.innerHTML = '<span class="risk-flag-icon">&#9888;</span> <strong>High Risk:</strong> Free personal email (Gmail, Outlook, Yahoo) is not HIPAA-compliant for transmitting PHI. If you send or receive any patient information via this email, this is a compliance gap. Consider upgrading to Google Workspace or Microsoft 365 with a BAA, or restrict email use to scheduling only with no clinical details.';
+function updateCommFlags() {
+  var vals = getMultiCheckValues('f-comm-group');
+  var container = document.getElementById('comm-risk-flags');
+  if (!container) return;
+  container.className = 'risk-flag';
+  var html = '';
+  if (vals.indexOf('gmail-free') !== -1) {
+    html += '<div style="margin-bottom:6px"><span class="risk-flag-icon">&#9888;</span> <strong>High Risk -- Free Gmail:</strong> Google does not offer a BAA for free Gmail. If you send or receive any patient information via this address, this is a compliance gap. Upgrade to Google Workspace and accept the BAA in Admin Console > Account > Legal, or restrict this email to scheduling only with absolutely no clinical details.</div>';
   }
+  if (vals.indexOf('outlook-free') !== -1) {
+    html += '<div style="margin-bottom:6px"><span class="risk-flag-icon">&#9888;</span> <strong>High Risk -- Free Outlook/Hotmail:</strong> Microsoft does not offer a BAA for free email. Upgrade to Microsoft 365 Business and accept the DPA/BAA, or restrict this email to scheduling only with absolutely no clinical details.</div>';
+  }
+  if (html) { container.className = 'risk-flag danger'; container.innerHTML = html; }
+  else { container.innerHTML = ''; }
+  saveProgress();
 }
+
+// Legacy alias for any old event listeners
+function checkEmailRisk() { updateCommFlags(); }
 
 // checkCloudRisk is defined in the multi-check helpers section below
 
@@ -1650,18 +1649,20 @@ function collectVendors() {
   if (telehealth === 'other') telehealth = getVal('f-telehealth-other');
   if (telehealth && telehealth !== 'none' && telehealth !== 'ehr-integrated') vendors.push({ name: telehealth, service: 'Telehealth Platform' });
 
-  var messagingVals = getMultiCheckValues('f-messaging-group');
-  messagingVals.forEach(function(m) {
-    if (m && m !== 'ehr-portal' && m !== 'none' && m !== 'other') vendors.push({ name: m, service: 'Secure Messaging' });
+  var commVals = getMultiCheckValues('f-comm-group');
+  commVals.forEach(function(c) {
+    if (c === 'ehr-portal' || c === 'other') return; // ehr-portal not a separate vendor; other handled below
+    if (c === 'gmail-free') return; // free gmail = no vendor BAA possible
+    if (c === 'outlook-free') return; // free outlook = no vendor BAA possible
+    if (c === 'Google Workspace') { var exists = vendors.some(function(v) { return v.name === 'Google Workspace'; }); if (!exists) vendors.push({ name: 'Google Workspace', service: 'Email & Communication' }); return; }
+    if (c === 'Microsoft 365') { var exists = vendors.some(function(v) { return v.name === 'Microsoft 365'; }); if (!exists) vendors.push({ name: 'Microsoft 365', service: 'Email & Communication' }); return; }
+    if (c === 'ProtonMail') { vendors.push({ name: 'ProtonMail', service: 'Email' }); return; }
+    vendors.push({ name: c, service: 'Communication' });
   });
-  if (messagingVals.indexOf('other') !== -1) {
-    var mo = getVal('f-messaging-other');
-    if (mo) vendors.push({ name: mo, service: 'Secure Messaging' });
+  if (commVals.indexOf('other') !== -1) {
+    var co = getVal('f-comm-other');
+    if (co) vendors.push({ name: co, service: 'Communication' });
   }
-
-  var email = getVal('f-email');
-  if (email === 'gmail-workspace') vendors.push({ name: 'Google Workspace', service: 'Email & Cloud' });
-  else if (email === 'microsoft-365') vendors.push({ name: 'Microsoft 365', service: 'Email & Cloud' });
 
   var fax = getVal('f-fax');
   if (fax && fax !== 'none' && fax !== 'physical') vendors.push({ name: fax, service: 'Fax Service' });
@@ -1716,9 +1717,8 @@ function collectCurrentStepData() {
   wizardData.ehrOther = getVal('f-ehr-other');
   wizardData.telehealth = getVal('f-telehealth');
   wizardData.telehealthOther = getVal('f-telehealth-other');
-  wizardData.messaging = getMultiCheckValues('f-messaging-group');
-  wizardData.messagingOther = getVal('f-messaging-other');
-  wizardData.email = getVal('f-email');
+  wizardData.commChannels = getMultiCheckValues('f-comm-group');
+  wizardData.commOther = getVal('f-comm-other');
   wizardData.fax = getVal('f-fax');
   wizardData.cloud = getMultiCheckValues('f-cloud-group');
   wizardData.cloudOther = getVal('f-cloud-other');
@@ -1899,9 +1899,8 @@ function restoreFormData() {
   setVal('f-ehr-other', d.ehrOther);
   setVal('f-telehealth', d.telehealth);
   setVal('f-telehealth-other', d.telehealthOther);
-  setMultiCheckValues('f-messaging-group', d.messaging);
-  setVal('f-messaging-other', d.messagingOther);
-  setVal('f-email', d.email);
+  setMultiCheckValues('f-comm-group', d.commChannels);
+  setVal('f-comm-other', d.commOther);
   setVal('f-fax', d.fax);
   setMultiCheckValues('f-cloud-group', d.cloud);
   setVal('f-cloud-other', d.cloudOther);
@@ -2014,8 +2013,7 @@ document.addEventListener('DOMContentLoaded', function() {
   if (retSelect) retSelect.addEventListener('change', function() { updateConditionalField('f-retention', 'state-specific', 'retention-other-group'); });
 
   // Risk checks on change
-  var emailSelect = document.getElementById('f-email');
-  if (emailSelect) emailSelect.addEventListener('change', checkEmailRisk);
+  // Comm channel risks are now handled by onchange="updateCommFlags()" on each checkbox
   // Cloud risk now checked via updateMultiCheck onchange handlers
   var aiSelect = document.getElementById('f-ai-tools');
   if (aiSelect) aiSelect.addEventListener('change', checkAIRisk);
@@ -2205,9 +2203,29 @@ function getReviewDate(d) {
   }
   return 'December 31st each year';
 }
-function getEmailDesc(d) {
-  var map = { 'gmail-free':'Gmail (free personal account)','gmail-workspace':'Google Workspace (with BAA)','outlook-free':'Outlook/Hotmail (free personal)','microsoft-365':'Microsoft 365 (with BAA)','protonmail':'ProtonMail','ehr-only':'EHR patient portal only' };
-  return map[d.email] || d.email || 'Not specified';
+function getCommDesc(d) {
+  var channels = Array.isArray(d.commChannels) ? d.commChannels : (d.commChannels ? [d.commChannels] : []);
+  if (channels.length === 0) return { email: 'Not specified', messaging: 'Not specified' };
+
+  var emailParts = [];
+  var msgParts = [];
+
+  channels.forEach(function(c) {
+    if (c === 'Google Workspace') emailParts.push('Google Workspace (with BAA)');
+    else if (c === 'Microsoft 365') emailParts.push('Microsoft 365 (with BAA)');
+    else if (c === 'gmail-free') emailParts.push('Gmail (free personal -- no BAA)');
+    else if (c === 'outlook-free') emailParts.push('Outlook/Hotmail (free personal -- no BAA)');
+    else if (c === 'ProtonMail') emailParts.push('ProtonMail');
+    else if (c === 'ehr-portal') msgParts.push('EHR patient portal');
+    else if (c === 'other') { if (d.commOther) msgParts.push(d.commOther); }
+    else msgParts.push(c);
+  });
+
+  return {
+    email: emailParts.length > 0 ? emailParts.join(', ') : 'EHR portal only',
+    messaging: msgParts.length > 0 ? msgParts.join(', ') : 'No separate messaging platform',
+    hasFreeEmail: channels.indexOf('gmail-free') !== -1 || channels.indexOf('outlook-free') !== -1
+  };
 }
 function getLocationDesc(d) {
   var map = { 'dedicated-office':'Dedicated private office','shared-building':'Office in shared/multi-tenant building','home-office':'Home office','fully-remote':'Fully remote (telehealth only)','coworking':'Coworking or shared clinical space' };
@@ -2301,17 +2319,12 @@ function generatePrivacyPolicies(d) {
   sections.push(labelValue('Business Associate Agreement', 'On file with ' + ehrName));
   sections.push(labelValue('Backup', 'Automatic cloud backup by EHR vendor with encryption and redundancy'));
 
-  sections.push(h2('Email & Secure Messaging'));
-  sections.push(labelValue('Email', getEmailDesc(d)));
-  var msgArr = Array.isArray(d.messaging) ? d.messaging : (d.messaging ? [d.messaging] : []);
-  var msgDesc = 'Not specified';
-  if (msgArr.length === 0 || (msgArr.length === 1 && msgArr[0] === 'none')) { msgDesc = 'No secure messaging platform'; }
-  else if (msgArr.length === 1 && msgArr[0] === 'ehr-portal') { msgDesc = 'EHR patient portal only'; }
-  else { msgDesc = msgArr.filter(function(m) { return m !== 'none'; }).join(', '); }
-  if (d.messagingOther && msgArr.indexOf('other') !== -1) msgDesc = msgDesc.replace('other', d.messagingOther);
-  sections.push(labelValue('Secure Messaging', msgDesc));
-  if (d.email === 'gmail-free' || d.email === 'outlook-free') {
-    sections.push(p('NOTE: Standard email is used for scheduling and administrative communication only. No clinical details or PHI are included in standard email communications. Patients are informed of email security limitations during intake.', { italic: true, color: '993300' }));
+  sections.push(h2('Email & Communication'));
+  var comm = getCommDesc(d);
+  sections.push(labelValue('Email', comm.email));
+  sections.push(labelValue('Communication Platforms', comm.messaging));
+  if (comm.hasFreeEmail) {
+    sections.push(p('NOTE: Free personal email is used for scheduling and administrative communication only. No clinical details or PHI are included in standard email communications. Patients are informed of email security limitations during intake.', { italic: true, color: '993300' }));
   }
 
   if (d.fax && d.fax !== 'none') {
@@ -2838,9 +2851,13 @@ function generateTrainingForm(d) {
 // ═══════════════════════════════════════════════
 function identifyRisks(d) {
   var risks = [];
-  // Email
-  if (d.email === 'gmail-free' || d.email === 'outlook-free') {
-    risks.push({ area: 'Email System', level: 'HIGH', description: 'Free personal email is not HIPAA-compliant. No BAA available. If PHI is transmitted via this email, it constitutes a compliance violation.', mitigation: 'Upgrade to Google Workspace or Microsoft 365 with BAA, or restrict email use to scheduling only with no clinical details.' });
+  // Communication channels - free email
+  var commArr = Array.isArray(d.commChannels) ? d.commChannels : [];
+  if (commArr.indexOf('gmail-free') !== -1 || commArr.indexOf('outlook-free') !== -1) {
+    var freeNames = [];
+    if (commArr.indexOf('gmail-free') !== -1) freeNames.push('Gmail');
+    if (commArr.indexOf('outlook-free') !== -1) freeNames.push('Outlook/Hotmail');
+    risks.push({ area: 'Email — ' + freeNames.join(', '), level: 'HIGH', description: 'Free personal email does not offer a BAA. If PHI is transmitted via this email, it constitutes a compliance violation.', mitigation: 'Upgrade to Google Workspace or Microsoft 365 with BAA, or restrict email use to scheduling only with no clinical details.' });
   }
   // Cloud storage
   var cloudArr2 = Array.isArray(d.cloud) ? d.cloud : (d.cloud ? [d.cloud] : []);
