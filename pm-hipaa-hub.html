@@ -1715,7 +1715,7 @@ function onBAAStatusChange(selectEl, vendorIndex) {
 
   // Update the risk flags area
   updateBAAFlags();
-  saveProgress();
+  autoSave();
 }
 
 function copyBAARequest(vendorName) {
@@ -1928,22 +1928,48 @@ function collectCurrentStepData() {
 
 // ── SAVE / LOAD ──
 function autoSave() {
+  collectCurrentStepData();
   wizardData._savedAt = new Date().toISOString();
+  wizardData._currentStep = currentStep;
   try { sessionStorage.setItem('hipaa_hub_data', JSON.stringify(wizardData)); } catch(e) {}
+  try { localStorage.setItem('hipaa_hub_data', JSON.stringify(wizardData)); } catch(e) {}
+  // Also push to Supabase (async, non-blocking)
+  if (userEmail) {
+    fetch('/.netlify/functions/user-tool-data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: userEmail, toolId: 'hipaa_binder', action: 'save', data: wizardData })
+    }).catch(function() {});
+  }
 }
 
 function loadSavedProgress() {
   // Try session storage first (current session, no prompt needed)
+  var saved = null;
   try {
     var session = sessionStorage.getItem('hipaa_hub_data');
-    if (session) {
-      wizardData = JSON.parse(session);
-      restoreFormData();
-      return;
-    }
+    if (session) saved = JSON.parse(session);
   } catch(e) {}
 
-  // Then try Supabase (previous session, prompt to resume)
+  // Then try localStorage (survives refresh/tab close)
+  if (!saved) {
+    try {
+      var local = localStorage.getItem('hipaa_hub_data');
+      if (local) saved = JSON.parse(local);
+    } catch(e) {}
+  }
+
+  if (saved) {
+    wizardData = saved;
+    restoreFormData();
+    // Return to the step they were on
+    if (saved._currentStep && saved._currentStep > 0) {
+      goToStep(saved._currentStep);
+    }
+    return;
+  }
+
+  // Then try Supabase (previous session)
   if (!userEmail) return;
   fetch('/.netlify/functions/user-tool-data', {
     method: 'POST',
@@ -1953,16 +1979,14 @@ function loadSavedProgress() {
   .then(function(r) { return r.json(); })
   .then(function(data) {
     if (data.found && data.data) {
-      // Show resume prompt
-      var resumeDate = data.data._savedAt || data.updatedAt || 'a previous session';
-      if (typeof resumeDate === 'string' && resumeDate.indexOf('T') !== -1) {
-        resumeDate = new Date(resumeDate).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+      // Auto-restore without prompting -- no reason to make them click
+      wizardData = data.data;
+      restoreFormData();
+      if (data.data._currentStep && data.data._currentStep > 0) {
+        snapshotDone = true;
+        goToStep(data.data._currentStep);
       }
-      showResumePrompt(resumeDate, function() {
-        wizardData = data.data;
-        restoreFormData();
-        showToast('Progress restored. Pick up where you left off.', 'success');
-      });
+      showToast('Progress restored from your account.', 'success');
     }
   })
   .catch(function() {});
