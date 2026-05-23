@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Chart Coder | Practice Manager</title>
+<title>Chart Audit + Coder v2 | Practice Manager</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -158,7 +158,7 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
 
   <div class="tool-header">
     <a href="/practice-manager" class="back-link">&larr; Hub</a>
-    <h1>Chart <span>Coder</span></h1>
+    <h1>Chart <span>Audit + Coder</span></h1>
   </div>
 
   <div class="scope-banner">
@@ -262,6 +262,7 @@ var preflightAnswers = {};
 var noteText = '';
 var lastMDM = null;
 var lastReview = null;
+var lastAudit = null;
 var followUpMessages = [];
 
 function selectVisitType(el) {
@@ -300,6 +301,79 @@ Rules:
 - medication_safety_decisions: describe any decision NOT to prescribe, NOT to escalate, or to discontinue FOR SAFETY with reasoning
 - questions: 0-3 questions about genuinely ambiguous items that would change coding. Do NOT ask about obvious things.`;
 
+var AUDIT_PROMPT = `You are a psychiatric chart documentation auditor. Your job is to find internal inconsistencies, contradictions, and documentation gaps in a completed psychiatric note BEFORE it is coded. You are NOT coding the note. You are checking whether the note is internally consistent and audit-ready.
+
+Read the entire note carefully. Compare every section against every other section. Flag any of the following:
+
+INCONSISTENCIES (statements in one section that contradict another):
+- HPI symptom reports that contradict ROS (e.g. patient reports insomnia in HPI but ROS says sleep disturbance negative)
+- Medication doses or names in HPI that don't match the Medications list
+- Assessment discusses a medication change but Plan says something different
+- HPI says one dose, Plan says a different dose
+- MSE findings that contradict HPI or Assessment (e.g. MSE says euthymic but Assessment says depressed)
+- Diagnosis in Assessment not reflected in the problem list, or vice versa
+- Patient reports substance use in HPI but substance use section says denies
+
+TIME DISCREPANCIES:
+- Two different psychotherapy times stated in the note (e.g. "Time: 18 minutes" and "Time spent on psychotherapy: 17 minutes")
+- Start/end time doesn't match total time stated
+- Do NOT flag the remaining E/M time as "implausibly low" — psychiatric medication follow-ups can legitimately have short E/M portions when the visit is primarily psychotherapy
+
+DOCUMENTATION GAPS THAT AFFECT AUDIT DEFENSIBILITY:
+- Plan references a medication not discussed anywhere in HPI or Assessment
+- Assessment makes clinical claims not supported by any HPI content
+- Psychotherapy intervention documented but no time stated
+- Medication changed but no rationale documented
+- Safety assessment missing when clinical content suggests it should be present (e.g. patient mentions hopelessness but no SI screening documented)
+
+AI SCRIBE HALLUCINATION PATTERNS (flag these specifically):
+Many clinicians use AI scribes that generate draft notes. These tools commonly introduce errors that weaken audit defensibility. Watch for:
+- Symptoms documented in ROS or Assessment that were never mentioned in HPI (fabricated symptoms)
+- Denials documented that were never actually asked about (inferred negatives from silence)
+- Findings stated with more clinical certainty than the HPI content supports (e.g. "patient reports significant improvement" when HPI says "doing okay")
+- Treatment recommendations or clinical decisions in the Assessment that are not reflected in the Plan (or vice versa)
+- Medications captured with wrong names, wrong doses, or wrong frequencies compared to the medication list
+- Mental health content discussed in HPI that is absent from the Assessment (AI scribes miss mental health details at high rates)
+- MDM complexity inflated by assessment language that overstates what actually happened in the visit (e.g. "comprehensive evaluation" for a routine follow-up, or listing clinical reasoning the note doesn't actually support)
+- Consent or disclosure language that appears auto-generated rather than clinician-written (e.g. "patient was advised of and consented to" without corresponding documentation of that conversation)
+
+DO NOT flag:
+- Stylistic preferences or formatting
+- Missing sections that are optional
+- Things that are clinically reasonable even if not explicitly stated
+- Boilerplate or template language that is clearly intentional (e.g. crisis line information, standard plan language)
+
+Respond ONLY with JSON. No markdown, no backticks.
+
+{
+  "inconsistencies": [
+    {
+      "type": "hpi_vs_ros" or "hpi_vs_plan" or "hpi_vs_meds" or "assessment_vs_plan" or "mse_vs_assessment" or "diagnosis_mismatch" or "substance_use_mismatch" or "fabricated_symptom" or "inferred_denial" or "overstated_finding" or "missing_mental_health_content" or "inflated_complexity" or "other",
+      "sections": ["section 1", "section 2"],
+      "detail": "Specific description of the contradiction with quotes from the note",
+      "severity": "high" or "moderate" or "low",
+      "audit_impact": "One sentence on how this could affect an audit"
+    }
+  ],
+  "time_issues": [
+    {
+      "detail": "Specific time discrepancy with the numbers",
+      "severity": "high" or "moderate" or "low"
+    }
+  ],
+  "documentation_gaps": [
+    {
+      "detail": "Specific gap description",
+      "severity": "high" or "moderate" or "low",
+      "audit_impact": "One sentence on how this could affect an audit"
+    }
+  ],
+  "clean": true or false
+}
+
+If the note has no issues, return {"inconsistencies":[],"time_issues":[],"documentation_gaps":[],"clean":true}.
+Be thorough but precise. Only flag real problems, not nitpicks.`;
+
 var MDM_EVAL_PROMPT = `You are an expert psychiatric E/M coder evaluating Medical Decision Making under the 2021/2025 guidelines.
 
 Read this chart note. Evaluate all three MDM axes: Problems, Data, and Risk.
@@ -314,6 +388,7 @@ PROBLEMS COUNTING RULES:
 - Do NOT collapse related conditions (e.g. depression + anxiety + insomnia) into "one complex" — count each diagnosis being managed
 - If there are separate medications, separate clinical reasoning, or separate diagnostic codes being addressed, they are separate problems
 - Focus on what the clinician is documenting and managing, not theoretical diagnostic relationships
+- A patient with depression (F33.1), GAD (F41.1), and insomnia (G47.00) each with active medications and assessment discussion has THREE problems, not one
 
 Low: 1 stable chronic illness being managed without change, OR 2 or more self-limited problems. A stable follow-up where one condition is well-controlled, the patient reports improvement or stability, and the clinician renews medications without changes IS low. "Deciding not to change a working regimen" for a single stable condition is routine management, not a complex clinical decision. Do not count medications managed by other providers (e.g. PCP-managed antihypertensives) as adding psychiatric complexity.
 
@@ -553,19 +628,25 @@ async function runCodingPasses() {
   var userMsg = 'Visit type: ' + visitType + '\n\nChart note:\n\n' + noteText + pfContext;
 
   try {
+    // Documentation Audit
+    updateProgress(1, 'Auditing note for inconsistencies...');
+    var auditRaw = await callAPI(AUDIT_PROMPT, 'Chart note to audit:\n\n' + noteText);
+    var audit = parseJSON(auditRaw);
+    lastAudit = audit;
+
     // Pass 1: Full MDM Evaluation (all three axes)
-    updateProgress(1, 'Evaluating Medical Decision Making (all three axes)...');
+    updateProgress(2, 'Evaluating Medical Decision Making (all three axes)...');
     var mdmRaw = await callAPI(MDM_EVAL_PROMPT, userMsg);
     var mdm = parseJSON(mdmRaw);
 
     // Pass 2: Adversarial Review + Synthesis
-    updateProgress(2, 'Adversarial review: checking for undercoding...');
+    updateProgress(3, 'Adversarial review: checking for undercoding...');
     var reviewInput = userMsg + '\n\nINITIAL MDM EVALUATION:\n' + JSON.stringify(mdm, null, 2);
     var reviewRaw = await callAPI(REVIEW_PROMPT, reviewInput);
     var review = parseJSON(reviewRaw);
 
     // Done
-    updateProgress(3, 'Complete.');
+    updateProgress(4, 'Complete.');
     lastMDM = mdm;
     lastReview = review;
     followUpMessages = [];
@@ -658,6 +739,65 @@ function renderResults(mdm, review) {
   var isTelehealth = /telehealth|doxy\.me|telemedicine|modifier\s*95|audio\s*and\s*visual/i.test(noteText);
   var timeResult = (visitType === 'new') ? calculateTimeCode() : null;
   var hasTherapyAddon = review.addon_code && review.addon_code !== 'none';
+
+  // ── DOCUMENTATION AUDIT RESULTS ──
+  if (lastAudit && !lastAudit.clean) {
+    var totalIssues = (lastAudit.inconsistencies || []).length + (lastAudit.time_issues || []).length + (lastAudit.documentation_gaps || []).length;
+    var hasHigh = false;
+    (lastAudit.inconsistencies || []).forEach(function(i) { if (i.severity === 'high') hasHigh = true; });
+    (lastAudit.time_issues || []).forEach(function(i) { if (i.severity === 'high') hasHigh = true; });
+    (lastAudit.documentation_gaps || []).forEach(function(i) { if (i.severity === 'high') hasHigh = true; });
+
+    var auditColor = hasHigh ? 'var(--red)' : 'var(--amber)';
+    var auditBg = hasHigh ? 'rgba(248,113,113,0.06)' : 'rgba(251,191,36,0.06)';
+    var auditBorder = hasHigh ? 'rgba(248,113,113,0.25)' : 'rgba(251,191,36,0.25)';
+
+    html += '<div class="section-card" style="border-color:' + auditBorder + '">';
+    html += '<h3 style="color:' + auditColor + '">&#9888; Documentation Audit — ' + totalIssues + ' Issue' + (totalIssues > 1 ? 's' : '') + ' Found</h3>';
+    html += '<div style="font-size:.8rem;color:var(--cream-dim);margin-bottom:12px">Review these before relying on the coding analysis below. Internal inconsistencies weaken audit defensibility regardless of code accuracy.</div>';
+
+    if (lastAudit.inconsistencies && lastAudit.inconsistencies.length > 0) {
+      html += '<div style="font-size:.75rem;font-weight:600;color:' + auditColor + ';margin-bottom:6px;margin-top:10px">INCONSISTENCIES</div>';
+      lastAudit.inconsistencies.forEach(function(item) {
+        var sevColor = item.severity === 'high' ? 'var(--red)' : item.severity === 'moderate' ? 'var(--amber)' : 'var(--cream-dim)';
+        html += '<div style="background:' + auditBg + ';border:1px solid ' + auditBorder + ';border-radius:6px;padding:10px 14px;margin-bottom:8px">';
+        html += '<div style="font-size:.78rem;color:' + sevColor + ';font-weight:600;margin-bottom:4px">' + esc(item.severity).toUpperCase() + ' — ' + esc(item.type.replace(/_/g, ' ')) + '</div>';
+        html += '<div style="font-size:.82rem;color:var(--cream);margin-bottom:4px">' + esc(item.detail) + '</div>';
+        if (item.audit_impact) html += '<div style="font-size:.78rem;color:var(--cream-dim)">Audit impact: ' + esc(item.audit_impact) + '</div>';
+        html += '</div>';
+      });
+    }
+
+    if (lastAudit.time_issues && lastAudit.time_issues.length > 0) {
+      html += '<div style="font-size:.75rem;font-weight:600;color:' + auditColor + ';margin-bottom:6px;margin-top:10px">TIME DISCREPANCIES</div>';
+      lastAudit.time_issues.forEach(function(item) {
+        var sevColor = item.severity === 'high' ? 'var(--red)' : item.severity === 'moderate' ? 'var(--amber)' : 'var(--cream-dim)';
+        html += '<div style="background:' + auditBg + ';border:1px solid ' + auditBorder + ';border-radius:6px;padding:10px 14px;margin-bottom:8px">';
+        html += '<div style="font-size:.78rem;color:' + sevColor + ';font-weight:600;margin-bottom:4px">' + esc(item.severity).toUpperCase() + '</div>';
+        html += '<div style="font-size:.82rem;color:var(--cream)">' + esc(item.detail) + '</div>';
+        html += '</div>';
+      });
+    }
+
+    if (lastAudit.documentation_gaps && lastAudit.documentation_gaps.length > 0) {
+      html += '<div style="font-size:.75rem;font-weight:600;color:' + auditColor + ';margin-bottom:6px;margin-top:10px">DOCUMENTATION GAPS</div>';
+      lastAudit.documentation_gaps.forEach(function(item) {
+        var sevColor = item.severity === 'high' ? 'var(--red)' : item.severity === 'moderate' ? 'var(--amber)' : 'var(--cream-dim)';
+        html += '<div style="background:' + auditBg + ';border:1px solid ' + auditBorder + ';border-radius:6px;padding:10px 14px;margin-bottom:8px">';
+        html += '<div style="font-size:.78rem;color:' + sevColor + ';font-weight:600;margin-bottom:4px">' + esc(item.severity).toUpperCase() + '</div>';
+        html += '<div style="font-size:.82rem;color:var(--cream);margin-bottom:4px">' + esc(item.detail) + '</div>';
+        if (item.audit_impact) html += '<div style="font-size:.78rem;color:var(--cream-dim)">Audit impact: ' + esc(item.audit_impact) + '</div>';
+        html += '</div>';
+      });
+    }
+
+    html += '</div>';
+  } else if (lastAudit && lastAudit.clean) {
+    html += '<div class="section-card" style="border-color:rgba(52,211,153,0.25)">';
+    html += '<h3 style="color:var(--green)">&#10003; Documentation Audit — No Issues Found</h3>';
+    html += '<div style="font-size:.82rem;color:var(--cream-dim)">Note is internally consistent. No contradictions, time discrepancies, or documentation gaps detected.</div>';
+    html += '</div>';
+  }
 
   // ── TIME-BASED CODE (primary for new patients when no therapy add-on) ──
   if (visitType === 'new' && timeResult && timeResult.total > 0) {
@@ -924,6 +1064,7 @@ YOUR SCOPE (strictly enforced):
 - Explain psychotherapy add-on code selection and modifier application
 - Answer questions about CPT 2025 rules as they apply to THIS note
 - Clarify audit defensibility concerns or documentation gaps
+- Explain documentation audit findings: why an inconsistency was flagged, what sections contradict, and what the clinician should check
 
 YOU MUST REFUSE (politely, in one sentence):
 - Requests to write, rewrite, edit, or generate actual chart note text, even a single section
@@ -951,7 +1092,7 @@ async function sendFollowUp() {
   msgBox.scrollTop = msgBox.scrollHeight;
 
   // Build context: note + analysis + conversation history
-  var context = 'ORIGINAL CHART NOTE:\n' + noteText + '\n\nMDM ANALYSIS (Pass 1):\n' + JSON.stringify(lastMDM, null, 2) + '\n\nADVERSARIAL REVIEW (Pass 2):\n' + JSON.stringify(lastReview, null, 2);
+  var context = 'ORIGINAL CHART NOTE:\n' + noteText + '\n\nDOCUMENTATION AUDIT:\n' + JSON.stringify(lastAudit, null, 2) + '\n\nMDM ANALYSIS (Pass 1):\n' + JSON.stringify(lastMDM, null, 2) + '\n\nADVERSARIAL REVIEW (Pass 2):\n' + JSON.stringify(lastReview, null, 2);
 
   // Build messages array with history
   var messages = [{ role: 'user', content: context + '\n\n---\n\nThe clinician has a question about this analysis.' }];
@@ -1018,6 +1159,7 @@ function clearAll() {
   noteText = '';
   lastMDM = null;
   lastReview = null;
+  lastAudit = null;
   followUpMessages = [];
   document.getElementById('followup-chat').style.display = 'none';
   document.getElementById('new-analysis-btn').style.display = 'none';
