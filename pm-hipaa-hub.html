@@ -1460,7 +1460,7 @@ function buildBAAList() {
     row.innerHTML = '<span class="baa-vendor-name">' + escHtml(v.name) + '<br><span style="font-size:.72rem;color:var(--cream-dim);font-weight:400">' + escHtml(v.service) + '</span></span>' +
       '<select class="field-select baa-status" style="font-size:.8rem;padding:8px 10px" data-vendor="' + i + '" onchange="onBAAStatusChange(this,' + i + ')"><option value="">Select</option><option value="yes">Yes</option><option value="no">No</option><option value="pending">Requested, pending</option><option value="not-needed">Not needed</option></select>' +
       '<input class="field-input baa-date" type="date" style="font-size:.8rem;padding:8px 10px" data-vendor="' + i + '">' +
-      '<input class="field-input baa-location" placeholder="e.g., Vendor portal, HIPAA folder" style="font-size:.8rem;padding:8px 10px" data-vendor="' + i + '">';
+      '<select class="field-select baa-location" style="font-size:.8rem;padding:8px 10px" data-vendor="' + i + '" autocomplete="off"><option value="">Where?</option><option value="vendor-portal">Vendor portal / account settings</option><option value="vendor-tos">Part of vendor Terms of Service</option><option value="on-request">Available on request from vendor</option><option value="hipaa-folder">My HIPAA compliance folder</option><option value="email">In my email (signed copy)</option><option value="not-sure">Not sure where it is</option></select>';
     container.appendChild(row);
 
     // Add helper container after the row
@@ -1649,10 +1649,16 @@ function onBAAStatusChange(selectEl, vendorIndex) {
   var lookup = BAA_LOOKUP[vendor.name] || null;
 
   if (status === 'yes' && lookup && lookup.where) {
-    // Show where to find it for confirmation
-    var locationInput = selectEl.closest('.baa-row').querySelector('.baa-location');
-    if (locationInput && !locationInput.value) {
-      locationInput.placeholder = lookup.where;
+    // Auto-suggest where the BAA is stored
+    var locationSelect = selectEl.closest('.baa-row').querySelector('.baa-location');
+    if (locationSelect && !locationSelect.value) {
+      // Map lookup.where to dropdown option
+      var whereText = lookup.where.toLowerCase();
+      if (whereText.indexOf('settings') !== -1 || whereText.indexOf('portal') !== -1 || whereText.indexOf('admin') !== -1 || whereText.indexOf('account') !== -1) {
+        locationSelect.value = 'vendor-portal';
+      } else if (whereText.indexOf('terms') !== -1 || whereText.indexOf('service agreement') !== -1 || whereText.indexOf('provider agreement') !== -1) {
+        locationSelect.value = 'vendor-tos';
+      }
     }
   }
 
@@ -2332,6 +2338,10 @@ function getLocationDesc(d) {
   if (locs.length === 0) return 'Not specified';
   return locs.map(function(l) { return map[l] || l; }).join(', ');
 }
+function getBAALocationDesc(val) {
+  var map = { 'vendor-portal':'Vendor portal / account settings','vendor-tos':'Part of vendor Terms of Service','on-request':'Available on request from vendor','hipaa-folder':'HIPAA compliance folder','email':'Email (signed copy on file)','not-sure':'Location not confirmed' };
+  return map[val] || val || '';
+}
 
 // ═══════════════════════════════════════════════
 // DOC 1: PRIVACY & SECURITY POLICIES
@@ -2795,7 +2805,7 @@ function generateBAATracking(d) {
         new D.TableCell({ children: [p(v.service)] }),
         new D.TableCell({ children: [p(statusMap[baa.status] || '', { bold: baa.status === 'no', color: baa.status === 'no' ? 'CC0000' : undefined })] }),
         new D.TableCell({ children: [p(baa.date || '')] }),
-        new D.TableCell({ children: [p(baa.location || '')] })
+        new D.TableCell({ children: [p(getBAALocationDesc(baa.location))] })
       ]}));
     });
     sections.push(new D.Table({ rows: rows, width: { size: 100, type: D.WidthType.PERCENTAGE } }));
