@@ -475,15 +475,14 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
   <p class="step-subtitle">Where and how you practice affects your physical security documentation.</p>
 
   <div class="field-group">
-    <label class="field-label">Primary Practice Location</label>
-    <select class="field-select" id="f-location-type">
-      <option value="">Select</option>
-      <option value="dedicated-office">Dedicated private office</option>
-      <option value="shared-building">Office in shared/multi-tenant building</option>
-      <option value="home-office">Home office</option>
-      <option value="fully-remote">Fully remote (telehealth only, no physical office)</option>
-      <option value="coworking">Coworking or shared clinical space</option>
-    </select>
+    <label class="field-label">Practice Locations <span style="font-size:.75rem;color:var(--cream-dim)">(select all that apply)</span></label>
+    <div class="multi-check-group" id="f-location-group">
+      <label><input type="checkbox" name="location" value="dedicated-office" onchange="updateMultiCheck(this)"> Dedicated private office</label>
+      <label><input type="checkbox" name="location" value="shared-building" onchange="updateMultiCheck(this)"> Office in shared / multi-tenant building</label>
+      <label><input type="checkbox" name="location" value="home-office" onchange="updateMultiCheck(this)"> Home office</label>
+      <label><input type="checkbox" name="location" value="fully-remote" onchange="updateMultiCheck(this)"> Fully remote (telehealth only, no physical location)</label>
+      <label><input type="checkbox" name="location" value="coworking" onchange="updateMultiCheck(this)"> Coworking or shared clinical space</label>
+    </div>
   </div>
 
   <div class="field-group">
@@ -1074,6 +1073,14 @@ function applyVaultToForm(vault) {
       });
     }
   }
+  // Auto-fill practice locations from Vault
+  var vaultLocs = vault.practiceLocations || (vault.practiceLocationType ? [vault.practiceLocationType] : []);
+  if (vaultLocs.length > 0) {
+    var currentLocs = getMultiCheckValues('f-location-group');
+    if (currentLocs.length === 0) {
+      setMultiCheckValues('f-location-group', vaultLocs);
+    }
+  }
 }
 
 function saveToVault() {
@@ -1093,7 +1100,7 @@ function saveToVault() {
   if (d.practicePhone) updated.practicePhone = d.practicePhone;
   if (d.practiceEmail) updated.practiceEmail = d.practiceEmail;
   if (d.practiceType) updated.practiceType = d.practiceType;
-  if (d.locationType) updated.practiceLocationType = d.locationType;
+  if (d.locations && d.locations.length > 0) updated.practiceLocations = d.locations;
   if (d.state) updated.licenseState = d.state;
 
   // Section 4: Systems & Technology
@@ -1801,7 +1808,7 @@ function collectCurrentStepData() {
   wizardData.aiTools = getVal('f-ai-tools');
   wizardData.billing = getVal('f-billing');
   wizardData.billingService = getVal('f-billing-service');
-  wizardData.locationType = getVal('f-location-type');
+  wizardData.locations = getMultiCheckValues('f-location-group');
   wizardData.paperRecords = getVal('f-paper-records');
   wizardData.phiTransport = getVal('f-phi-transport');
   wizardData.afterhours = {
@@ -1983,7 +1990,7 @@ function restoreFormData() {
   setVal('f-ai-tools', d.aiTools);
   setVal('f-billing', d.billing);
   setVal('f-billing-service', d.billingService);
-  setVal('f-location-type', d.locationType);
+  setMultiCheckValues('f-location-group', d.locations || (d.locationType ? [d.locationType] : []));
   setVal('f-paper-records', d.paperRecords);
   setVal('f-phi-transport', d.phiTransport);
   if (d.afterhours) {
@@ -2305,7 +2312,11 @@ function getCommDesc(d) {
 }
 function getLocationDesc(d) {
   var map = { 'dedicated-office':'Dedicated private office','shared-building':'Office in shared/multi-tenant building','home-office':'Home office','fully-remote':'Fully remote (telehealth only)','coworking':'Coworking or shared clinical space' };
-  return map[d.locationType] || 'Not specified';
+  // Handle new array format
+  var locs = d.locations || (d.locationType ? [d.locationType] : []);
+  if (!Array.isArray(locs)) locs = [locs];
+  if (locs.length === 0) return 'Not specified';
+  return locs.map(function(l) { return map[l] || l; }).join(', ');
 }
 
 // ═══════════════════════════════════════════════
