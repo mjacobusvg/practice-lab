@@ -165,7 +165,7 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
 <div style="text-align:center;margin-bottom:20px;font-size:.82rem;color:var(--cream-dim)">Most solo practices complete this in 20 to 30 minutes. Your progress saves automatically.</div>
 <div class="forum-link-bar">
   <span>&#x1F4D6;</span>
-  <span>For the full breakdown: <a href="https://community.thinkbeyondpractice.com" target="_blank">The HIPAA Compliance Binder: What You Actually Need in Writing &rarr;</a></span>
+  <span>For the full breakdown: <a href="https://community.thinkbeyondpractice.com/c/legal-compliance/the-hipaa-compliance-binder-what-you-actually-need-in-writing-solo-small-practice-edition" target="_blank">The HIPAA Compliance Binder: What You Actually Need in Writing &rarr;</a></span>
 </div>
 <div style="background:var(--navy-mid);border:1px solid var(--rule);border-radius:var(--radius);padding:16px 20px;margin-bottom:16px;font-size:.84rem;color:var(--cream);line-height:1.7">
   Most HIPAA problems in solo practice are not malicious behavior. They are undocumented workflows, consumer tools used casually, missing BAAs, or device security gaps that no one told you to write down. This tool surfaces those risks and builds the written documentation you need to demonstrate compliance.
@@ -1053,6 +1053,27 @@ function applyVaultToForm(vault) {
       updateCommFlags();
     }
   }
+  // Auto-fill devices from Vault
+  if (vault.devices && Array.isArray(vault.devices) && vault.devices.length > 0) {
+    var existingDevices = document.querySelectorAll('.device-row');
+    if (existingDevices.length === 0) {
+      vault.devices.forEach(function(dev) {
+        addDeviceRow();
+        var rows = document.querySelectorAll('.device-row');
+        var lastRow = rows[rows.length - 1];
+        if (dev.type) lastRow.querySelector('.device-type').value = dev.type;
+        if (dev.encryption) lastRow.querySelector('.device-encryption').value = dev.encryption;
+        if (dev.autoLock) lastRow.querySelector('.device-autolock').value = dev.autoLock;
+        if (dev.remoteWipe) lastRow.querySelector('.device-remotewipe').value = dev.remoteWipe;
+        // Trigger the type change to show help text
+        var typeSelect = lastRow.querySelector('.device-type');
+        if (typeSelect) typeSelect.dispatchEvent(new Event('change'));
+        // Trigger encryption change to show risk flags
+        var encSelect = lastRow.querySelector('.device-encryption');
+        if (encSelect) encSelect.dispatchEvent(new Event('change'));
+      });
+    }
+  }
 }
 
 function saveToVault() {
@@ -1087,6 +1108,9 @@ function saveToVault() {
   if (d.aiTools && d.aiTools !== 'none') updated.aiDocTool = d.aiTools;
   if (d.billing) updated.billingSetup = d.billing;
   if (d.billingService) updated.billingService = d.billingService;
+
+  // Devices
+  if (d.devices && d.devices.length > 0) updated.devices = d.devices;
 
   // Section 6: Compliance Status
   updated.hipaaBinderComplete = true;
@@ -1318,13 +1342,51 @@ function addDeviceRow() {
   div.innerHTML = '<div class="device-row-header"><span class="device-row-title">Device ' + deviceCounter + '</span><button class="remove-btn" onclick="this.closest(\'.device-row\').remove()" title="Remove">&times;</button></div>' +
     '<div class="device-fields">' +
     '<div class="field-group"><label class="field-label" style="font-size:.72rem">Device Type</label><select class="field-select device-type"><option value="">Select</option><option value="MacBook">MacBook / Mac laptop</option><option value="Windows laptop">Windows laptop</option><option value="Desktop Mac">Desktop Mac</option><option value="Desktop Windows">Desktop Windows</option><option value="iPhone">iPhone</option><option value="iPad">iPad</option><option value="Android phone">Android phone</option><option value="Android tablet">Android tablet</option><option value="other">Other</option></select></div>' +
-    '<div class="field-group"><label class="field-label" style="font-size:.72rem">Encryption</label><select class="field-select device-encryption"><option value="">Select</option><option value="FileVault">FileVault (Mac)</option><option value="BitLocker">BitLocker (Windows)</option><option value="auto-ios">Automatic (iPhone/iPad with passcode)</option><option value="auto-android">Automatic (Android 10+ with PIN)</option><option value="enabled">Enabled (other)</option><option value="not-enabled">NOT enabled</option><option value="unsure">Not sure</option></select></div>' +
-    '<div class="field-group"><label class="field-label" style="font-size:.72rem">Auto-Lock</label><select class="field-select device-autolock"><option value="">Select</option><option value="1min">1 minute</option><option value="2min">2 minutes</option><option value="5min">5 minutes</option><option value="15min">15 minutes</option><option value="30min">30 minutes</option><option value="none">No auto-lock</option></select></div>' +
-    '<div class="field-group"><label class="field-label" style="font-size:.72rem">Remote Wipe</label><select class="field-select device-remotewipe"><option value="">Select</option><option value="icloud">Find My (iCloud)</option><option value="google">Find My Device (Google)</option><option value="intune">Microsoft Intune</option><option value="enabled">Enabled (other)</option><option value="not-enabled">Not enabled</option></select></div>' +
+    '<div class="field-group"><label class="field-label" style="font-size:.72rem">Encryption</label><select class="field-select device-encryption"><option value="">Select</option><option value="FileVault">FileVault (Mac)</option><option value="BitLocker">BitLocker (Windows)</option><option value="auto-ios">Automatic (iPhone/iPad with passcode)</option><option value="auto-android">Automatic (Android 10+ with PIN)</option><option value="enabled">Enabled (other)</option><option value="not-enabled">NOT enabled</option><option value="unsure">Not sure</option></select><div class="device-help-enc"></div></div>' +
+    '<div class="field-group"><label class="field-label" style="font-size:.72rem">Auto-Lock</label><select class="field-select device-autolock"><option value="">Select</option><option value="1min">1 minute</option><option value="2min">2 minutes</option><option value="5min">5 minutes</option><option value="15min">15 minutes</option><option value="30min">30 minutes</option><option value="none">No auto-lock</option></select><div class="device-help-lock"></div></div>' +
+    '<div class="field-group"><label class="field-label" style="font-size:.72rem">Remote Wipe</label><select class="field-select device-remotewipe"><option value="">Select</option><option value="icloud">Find My (iCloud)</option><option value="google">Find My Device (Google)</option><option value="intune">Microsoft Intune</option><option value="enabled">Enabled (other)</option><option value="not-enabled">Not enabled</option><option value="unsure">Not sure</option></select><div class="device-help-wipe"></div></div>' +
     '</div>';
   container.appendChild(div);
 
-  // Risk flag for unencrypted devices
+  // Show contextual help when device type is selected
+  var typeSelect = div.querySelector('.device-type');
+  typeSelect.addEventListener('change', function() {
+    var type = this.value;
+    var helpEnc = div.querySelector('.device-help-enc');
+    var helpLock = div.querySelector('.device-help-lock');
+    var helpWipe = div.querySelector('.device-help-wipe');
+
+    var encHelp = '';
+    var lockHelp = '';
+    var wipeHelp = '';
+
+    if (type === 'MacBook' || type === 'Desktop Mac') {
+      encHelp = '<strong>How to check:</strong> System Settings > Privacy & Security > FileVault. If it says "FileVault is turned on," select FileVault. If not, turn it on now -- it takes about 30 minutes and does not affect performance.';
+      lockHelp = '<strong>How to check:</strong> System Settings > Lock Screen. Look at "Turn display off" or "Require password after screen saver." Set to 2 minutes or less.';
+      wipeHelp = '<strong>How to check:</strong> System Settings > Apple ID > iCloud > Find My Mac. If it says "On," select Find My (iCloud). If not, turn it on now.';
+    } else if (type === 'Windows laptop' || type === 'Desktop Windows') {
+      encHelp = '<strong>How to check:</strong> Settings > Privacy & Security > Device Encryption. If "Device encryption" is on, select BitLocker. If your Windows edition does not show this option (Home edition), type "BitLocker" in Start menu search. If neither option exists, your device may not support encryption -- flag it as "NOT enabled."';
+      lockHelp = '<strong>How to check:</strong> Settings > Personalization > Lock Screen > Screen timeout settings. Also check Settings > Accounts > Sign-in options > "Require sign-in." Set screen timeout to 2 minutes or less.';
+      wipeHelp = '<strong>How to check:</strong> Sign in to account.microsoft.com/devices. If your device is listed with "Find my device" enabled, select Microsoft Intune or Enabled (other). Most personal Windows machines do not have remote wipe unless managed by an organization.';
+    } else if (type === 'iPhone' || type === 'iPad') {
+      encHelp = '<strong>Good news:</strong> iPhones and iPads are automatically encrypted when you set a passcode. If your device requires a passcode or Face ID/Touch ID to unlock, it is encrypted. Select "Automatic." If you do not have a passcode set, set one now: Settings > Face ID & Passcode.';
+      lockHelp = '<strong>How to check:</strong> Settings > Display & Brightness > Auto-Lock. Set to 1 or 2 minutes.';
+      wipeHelp = '<strong>How to check:</strong> Settings > [Your Name] > Find My > Find My iPhone/iPad. If it says "On," select Find My (iCloud). This lets you remotely erase the device if lost or stolen.';
+    } else if (type === 'Android phone' || type === 'Android tablet') {
+      encHelp = '<strong>Good news:</strong> Android 10 and newer devices are encrypted by default when you set a PIN, pattern, or password. Check: Settings > Security > Encryption. If it says "Encrypted," select "Automatic." If your device is older than Android 10 or shows "Not encrypted," select "NOT enabled."';
+      lockHelp = '<strong>How to check:</strong> Settings > Display > Screen timeout. Set to 1 or 2 minutes. Also check Settings > Security > Screen lock to confirm a PIN or password is required.';
+      wipeHelp = '<strong>How to check:</strong> Go to android.com/find in a browser and sign in with your Google account. If your device appears and shows "Find My Device" enabled, select Find My Device (Google).';
+    }
+
+    if (encHelp) helpEnc.innerHTML = '<div style="font-size:.76rem;color:var(--cream-dim);line-height:1.5;margin-top:6px;padding:8px 12px;background:var(--navy-mid);border:1px solid var(--rule);border-radius:6px">' + encHelp + '</div>';
+    else helpEnc.innerHTML = '';
+    if (lockHelp) helpLock.innerHTML = '<div style="font-size:.76rem;color:var(--cream-dim);line-height:1.5;margin-top:6px;padding:8px 12px;background:var(--navy-mid);border:1px solid var(--rule);border-radius:6px">' + lockHelp + '</div>';
+    else helpLock.innerHTML = '';
+    if (wipeHelp) helpWipe.innerHTML = '<div style="font-size:.76rem;color:var(--cream-dim);line-height:1.5;margin-top:6px;padding:8px 12px;background:var(--navy-mid);border:1px solid var(--rule);border-radius:6px">' + wipeHelp + '</div>';
+    else helpWipe.innerHTML = '';
+  });
+
+  // Risk flag for unencrypted or unsure devices
   var encSelect = div.querySelector('.device-encryption');
   encSelect.addEventListener('change', function() {
     var existing = div.querySelector('.device-risk-flag');
@@ -1332,7 +1394,12 @@ function addDeviceRow() {
     if (this.value === 'not-enabled') {
       var flag = document.createElement('div');
       flag.className = 'risk-flag danger device-risk-flag';
-      flag.innerHTML = '<span class="risk-flag-icon">&#9888;</span> <strong>Critical:</strong> An unencrypted device that is lost or stolen is almost always a reportable breach. Enable encryption immediately. Mac: System Settings > Privacy & Security > FileVault. Windows Pro: Settings > Privacy & Security > Device Encryption.';
+      flag.innerHTML = '<span class="risk-flag-icon">&#9888;</span> <strong>Critical:</strong> An unencrypted device that is lost or stolen is almost always a reportable breach. Enable encryption now using the instructions above for your device type.';
+      div.appendChild(flag);
+    } else if (this.value === 'unsure') {
+      var flag = document.createElement('div');
+      flag.className = 'risk-flag warning device-risk-flag';
+      flag.innerHTML = '<span class="risk-flag-icon">&#9888;</span> <strong>Action needed:</strong> Use the "How to check" instructions above for your device type to verify encryption status. If you cannot confirm encryption is enabled, treat it as not encrypted and enable it now.';
       div.appendChild(flag);
     }
   });
