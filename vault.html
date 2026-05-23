@@ -411,23 +411,22 @@ textarea.field-input{resize:vertical;min-height:60px}
     </div>
   </div>
   <div class="field-row">
-    <div class="field-group">
-      <label class="field-label">Secure Messaging</label>
-      <div class="field-hint">List all platforms (e.g., Spruce, EHR portal)</div>
-      <input class="field-input" id="v-messagingPlatforms" placeholder="Spruce, EHR portal" data-vault="messagingPlatforms">
-    </div>
-    <div class="field-group">
-      <label class="field-label">Email System</label>
-      <select class="field-select" id="v-emailSystem" data-vault="emailSystem">
-        <option value="">Select</option>
-        <option value="gmail-workspace">Google Workspace (with BAA)</option>
-        <option value="gmail-free">Gmail (free personal)</option>
-        <option value="microsoft-365">Microsoft 365 (with BAA)</option>
-        <option value="outlook-free">Outlook (free personal)</option>
-        <option value="protonmail">ProtonMail</option>
-        <option value="ehr-only">EHR patient portal only</option>
-        <option value="other">Other</option>
-      </select>
+    <div class="field-group" style="grid-column:1/-1">
+      <label class="field-label">Communication Channels</label>
+      <div class="field-hint">How do you communicate with or about patients? Select all that apply.</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px" id="v-commChannels-group">
+        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--navy-card);border:1px solid var(--rule);border-radius:6px;font-size:.84rem;color:var(--cream);cursor:pointer"><input type="checkbox" name="v-comm" value="ehr-portal"> EHR patient portal</label>
+        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--navy-card);border:1px solid var(--rule);border-radius:6px;font-size:.84rem;color:var(--cream);cursor:pointer"><input type="checkbox" name="v-comm" value="Google Workspace"> Google Workspace email</label>
+        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--navy-card);border:1px solid var(--rule);border-radius:6px;font-size:.84rem;color:var(--cream);cursor:pointer"><input type="checkbox" name="v-comm" value="Microsoft 365"> Microsoft 365 email</label>
+        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--navy-card);border:1px solid var(--rule);border-radius:6px;font-size:.84rem;color:var(--cream);cursor:pointer"><input type="checkbox" name="v-comm" value="gmail-free"> Gmail (free personal)</label>
+        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--navy-card);border:1px solid var(--rule);border-radius:6px;font-size:.84rem;color:var(--cream);cursor:pointer"><input type="checkbox" name="v-comm" value="outlook-free"> Outlook / Hotmail (free)</label>
+        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--navy-card);border:1px solid var(--rule);border-radius:6px;font-size:.84rem;color:var(--cream);cursor:pointer"><input type="checkbox" name="v-comm" value="Spruce"> Spruce</label>
+        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--navy-card);border:1px solid var(--rule);border-radius:6px;font-size:.84rem;color:var(--cream);cursor:pointer"><input type="checkbox" name="v-comm" value="Doximity"> Doximity</label>
+        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--navy-card);border:1px solid var(--rule);border-radius:6px;font-size:.84rem;color:var(--cream);cursor:pointer"><input type="checkbox" name="v-comm" value="Halo Health"> Halo Health</label>
+        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--navy-card);border:1px solid var(--rule);border-radius:6px;font-size:.84rem;color:var(--cream);cursor:pointer"><input type="checkbox" name="v-comm" value="ProtonMail"> ProtonMail</label>
+        <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--navy-card);border:1px solid var(--rule);border-radius:6px;font-size:.84rem;color:var(--cream);cursor:pointer"><input type="checkbox" name="v-comm" value="other"> Other</label>
+      </div>
+      <input class="field-input" id="v-commChannelsOther" placeholder="Enter platform name" style="margin-top:6px;display:none" data-vault="commChannelsOther">
     </div>
   </div>
   <div class="field-row">
@@ -696,6 +695,15 @@ function loadVault() {
     if (raw) { vault = JSON.parse(raw); applyVaultToForm(); }
   } catch(e) {}
 
+  // Comm channels Other toggle
+  document.querySelectorAll('#v-commChannels-group input[type="checkbox"]').forEach(function(cb) {
+    cb.addEventListener('change', function() {
+      var otherCb = document.querySelector('#v-commChannels-group input[value="other"]');
+      var otherField = document.getElementById('v-commChannelsOther');
+      if (otherCb && otherField) otherField.style.display = otherCb.checked ? 'block' : 'none';
+    });
+  });
+
   // Supabase authoritative
   if (!userEmail) return;
   fetch('/.netlify/functions/user-tool-data', {
@@ -727,6 +735,34 @@ function applyVaultToForm() {
     el.value = val;
   });
 
+  // Communication channels checkboxes
+  if (vault.commChannels && Array.isArray(vault.commChannels)) {
+    document.querySelectorAll('#v-commChannels-group input[type="checkbox"]').forEach(function(cb) {
+      cb.checked = vault.commChannels.indexOf(cb.value) !== -1;
+    });
+    if (vault.commChannels.indexOf('other') !== -1) {
+      document.getElementById('v-commChannelsOther').style.display = 'block';
+      if (vault.commChannelsOther) document.getElementById('v-commChannelsOther').value = vault.commChannelsOther;
+    }
+  }
+
+  // Migrate legacy email/messaging fields on load
+  if (!vault.commChannels && (vault.emailSystem || vault.messagingPlatforms)) {
+    var migrated = [];
+    var emailMap = { 'gmail-workspace':'Google Workspace', 'microsoft-365':'Microsoft 365', 'gmail-free':'gmail-free', 'outlook-free':'outlook-free', 'protonmail':'ProtonMail', 'ehr-only':'ehr-portal' };
+    if (vault.emailSystem && emailMap[vault.emailSystem]) migrated.push(emailMap[vault.emailSystem]);
+    if (vault.messagingPlatforms) {
+      var mp = Array.isArray(vault.messagingPlatforms) ? vault.messagingPlatforms : String(vault.messagingPlatforms).split(',').map(function(s) { return s.trim(); });
+      mp.forEach(function(m) { if (m && migrated.indexOf(m) === -1) migrated.push(m); });
+    }
+    if (migrated.length > 0) {
+      vault.commChannels = migrated;
+      document.querySelectorAll('#v-commChannels-group input[type="checkbox"]').forEach(function(cb) {
+        cb.checked = migrated.indexOf(cb.value) !== -1;
+      });
+    }
+  }
+
   // Letterhead
   if (vault.letterhead || localStorage.getItem('tbp_letterhead')) {
     var lh = vault.letterhead || localStorage.getItem('tbp_letterhead');
@@ -757,13 +793,38 @@ function collectFormToVault() {
       val = parseInt(val) || null;
     }
     // Handle comma-separated arrays
-    if (key === 'foreignQualificationStates' || key === 'messagingPlatforms' || key === 'cloudStorage') {
+    if (key === 'foreignQualificationStates' || key === 'cloudStorage') {
       if (typeof val === 'string' && val.indexOf(',') !== -1) {
         val = val.split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s; });
       }
     }
     vault[key] = val;
   });
+
+  // Collect communication channels checkboxes
+  var commVals = [];
+  document.querySelectorAll('#v-commChannels-group input[type="checkbox"]:checked').forEach(function(cb) {
+    commVals.push(cb.value);
+  });
+  if (commVals.length > 0) vault.commChannels = commVals;
+  else delete vault.commChannels;
+  var commOther = (document.getElementById('v-commChannelsOther') || {}).value;
+  if (commOther && commOther.trim()) vault.commChannelsOther = commOther.trim();
+  else delete vault.commChannelsOther;
+
+  // Migrate legacy fields if present
+  if (vault.emailSystem && !vault.commChannels) {
+    var migrated = [];
+    var emailMap = { 'gmail-workspace':'Google Workspace', 'microsoft-365':'Microsoft 365', 'gmail-free':'gmail-free', 'outlook-free':'outlook-free', 'protonmail':'ProtonMail', 'ehr-only':'ehr-portal' };
+    if (emailMap[vault.emailSystem]) migrated.push(emailMap[vault.emailSystem]);
+    if (vault.messagingPlatforms) {
+      var mp = Array.isArray(vault.messagingPlatforms) ? vault.messagingPlatforms : vault.messagingPlatforms.split(',').map(function(s) { return s.trim(); });
+      mp.forEach(function(m) { if (m && migrated.indexOf(m) === -1) migrated.push(m); });
+    }
+    if (migrated.length > 0) vault.commChannels = migrated;
+    delete vault.emailSystem;
+    delete vault.messagingPlatforms;
+  }
 }
 
 // ── SAVE ──
@@ -800,7 +861,7 @@ function updateCompletion() {
     identity: ['legalName','credentials','providerType','email','phone'],
     identifiers: ['npi1','licenseState','licenseNum','dea','ein','taxonomy'],
     practice: ['practiceName','practiceAddress','practicePhone','practiceType','bizStructure'],
-    systems: ['ehrSystem','emailSystem'],
+    systems: ['ehrSystem','commChannels'],
     credentialing: ['caqhId','medicarePtan'],
     insurance: ['malCarrier','malEnd'],
     education: ['degree1School','boardCert'],
