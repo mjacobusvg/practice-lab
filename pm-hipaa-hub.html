@@ -2207,11 +2207,17 @@ function escHtml(s) { if (!s) return ''; return String(s).replace(/&/g,'&amp;').
 // DOCUMENT GENERATION ENGINE
 // ══════════════════════════════════════════════
 
-var D = window.docx; // UMD global
+var D = window.docx; // UMD global -- may be undefined if CDN hasn't loaded yet
 var TODAY = new Date().toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
 var TODAY_SHORT = new Date().toISOString().split('T')[0];
 
 function generateDocuments() {
+  // Ensure docx library is loaded
+  D = window.docx;
+  if (!D) {
+    showToast('Document generation library is still loading. Please wait a moment and try again.', 'error');
+    return;
+  }
   collectCurrentStepData();
   var d = wizardData;
   showLoading('Generating your HIPAA compliance documents...');
@@ -2308,7 +2314,19 @@ function getReviewDate(d) {
 }
 function getCommDesc(d) {
   var channels = Array.isArray(d.commChannels) ? d.commChannels : (d.commChannels ? [d.commChannels] : []);
-  if (channels.length === 0) return { email: 'Not specified', messaging: 'Not specified' };
+
+  // Legacy fallback: if no commChannels but old email/messaging fields exist
+  if (channels.length === 0) {
+    if (d.email) {
+      var emailMap = { 'gmail-free':'gmail-free','gmail-workspace':'Google Workspace','outlook-free':'outlook-free','microsoft-365':'Microsoft 365','protonmail':'ProtonMail','ehr-only':'ehr-portal' };
+      if (emailMap[d.email]) channels.push(emailMap[d.email]);
+    }
+    if (d.messaging && Array.isArray(d.messaging)) {
+      d.messaging.forEach(function(m) { if (m && m !== 'none' && channels.indexOf(m) === -1) channels.push(m); });
+    }
+  }
+
+  if (channels.length === 0) return { email: 'Not specified', messaging: 'Not specified', hasFreeEmail: false };
 
   var emailParts = [];
   var msgParts = [];
