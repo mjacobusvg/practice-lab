@@ -105,6 +105,17 @@ textarea.field-input{resize:vertical;min-height:60px}
 .light-mode .btn-primary{background:var(--teal);color:#fff}
 .light-mode .btn-secondary{color:var(--teal);border-color:var(--teal)}
 .light-mode #tbp-theme-toggle{background:rgba(248,246,241,0.95);color:#1a1a1a;border-color:rgba(26,138,148,0.2)}
+/* ── Vault Device Rows ── */
+.v-device-row{background:var(--navy-card);border:1px solid var(--rule);border-radius:8px;padding:14px 16px;margin-bottom:8px;position:relative}
+.v-device-row .v-dev-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.v-device-row .v-dev-title{font-size:.84rem;font-weight:600;color:var(--white)}
+.v-device-row .v-dev-remove{background:none;border:none;color:var(--cream-dim);font-size:1.1rem;cursor:pointer;padding:2px 6px}
+.v-device-row .v-dev-remove:hover{color:var(--red)}
+.v-device-row .v-dev-fields{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.v-device-row .v-dev-fields select,.v-device-row .v-dev-fields input{font-size:.82rem;padding:8px 10px}
+.v-device-row .v-dev-help{font-size:.74rem;color:var(--cream-dim);line-height:1.5;margin-top:4px;padding:6px 10px;background:var(--navy-mid);border:1px solid var(--rule);border-radius:4px}
+.btn-add{background:rgba(42,171,184,0.08);border:1px dashed var(--teal);color:var(--teal);padding:8px 18px;border-radius:6px;font-size:.84rem;font-weight:600;cursor:pointer;font-family:var(--font-body);width:100%;text-align:center}
+.btn-add:hover{background:rgba(42,171,184,0.15)}
 </style>
 <script src="/theme-toggle.js"></script>
 </head>
@@ -462,6 +473,16 @@ textarea.field-input{resize:vertical;min-height:60px}
       <input class="field-input" id="v-billingService" placeholder="" data-vault="billingService">
     </div>
   </div>
+
+  <!-- DEVICES -->
+  <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--rule)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <label class="field-label" style="margin:0">Devices Used to Access PHI</label>
+      <button class="btn-add" style="font-size:.78rem;padding:4px 14px" onclick="addVaultDevice()">+ Add Device</button>
+    </div>
+    <div class="field-hint" style="margin-bottom:12px">Every device you use to log into your EHR, check patient messages, or access practice email. This feeds into HIPAA Hub and Compliance Tracker.</div>
+    <div id="v-device-list"></div>
+  </div>
 </div>
 
 <!-- ═══ SECTION 5: CREDENTIALING ═══ -->
@@ -763,6 +784,14 @@ function applyVaultToForm() {
     }
   }
 
+  // Restore devices from vault
+  if (vault.devices && Array.isArray(vault.devices)) {
+    var devContainer = document.getElementById('v-device-list');
+    if (devContainer) devContainer.innerHTML = '';
+    vaultDeviceCounter = 0;
+    vault.devices.forEach(function(d) { addVaultDevice(d); });
+  }
+
   // Letterhead
   if (vault.letterhead || localStorage.getItem('tbp_letterhead')) {
     var lh = vault.letterhead || localStorage.getItem('tbp_letterhead');
@@ -775,6 +804,69 @@ function applyVaultToForm() {
   }
 
   updateCompletion();
+}
+
+// ── VAULT DEVICE MANAGEMENT ──
+var vaultDeviceCounter = 0;
+
+function addVaultDevice(prefill) {
+  vaultDeviceCounter++;
+  var container = document.getElementById('v-device-list');
+  var div = document.createElement('div');
+  div.className = 'v-device-row';
+  div.setAttribute('data-device-idx', vaultDeviceCounter);
+
+  var typeOpts = '<option value="">Select</option><option value="MacBook">MacBook / Mac laptop</option><option value="Windows laptop">Windows laptop</option><option value="Desktop Mac">Desktop Mac</option><option value="Desktop Windows">Desktop Windows</option><option value="iPhone">iPhone</option><option value="iPad">iPad</option><option value="Android phone">Android phone</option><option value="Android tablet">Android tablet</option><option value="other">Other</option>';
+
+  var encOpts = '<option value="">Select</option><option value="FileVault">FileVault (Mac)</option><option value="BitLocker">BitLocker (Windows)</option><option value="auto-ios">Automatic (iPhone/iPad with passcode)</option><option value="auto-android">Automatic (Android 10+ with PIN)</option><option value="enabled">Enabled (other)</option><option value="not-enabled">NOT enabled</option><option value="unsure">Not sure</option>';
+
+  var lockOpts = '<option value="">Select</option><option value="1min">1 minute</option><option value="2min">2 minutes</option><option value="5min">5 minutes</option><option value="15min">15 minutes</option><option value="30min">30 minutes</option><option value="none">No auto-lock</option>';
+
+  var wipeOpts = '<option value="">Select</option><option value="icloud">Find My (iCloud)</option><option value="google">Find My Device (Google)</option><option value="intune">Microsoft Intune</option><option value="enabled">Enabled (other)</option><option value="not-enabled">Not enabled</option><option value="unsure">Not sure</option>';
+
+  div.innerHTML = '<div class="v-dev-header"><span class="v-dev-title">Device ' + vaultDeviceCounter + '</span><button class="v-dev-remove" onclick="this.closest(\'.v-device-row\').remove()" title="Remove">&times;</button></div>' +
+    '<div class="v-dev-fields">' +
+    '<div><label class="field-label" style="font-size:.7rem;margin-bottom:3px">Type</label><select class="field-select v-dev-type">' + typeOpts + '</select></div>' +
+    '<div><label class="field-label" style="font-size:.7rem;margin-bottom:3px">Encryption</label><select class="field-select v-dev-enc">' + encOpts + '</select><div class="v-dev-enc-help"></div></div>' +
+    '<div><label class="field-label" style="font-size:.7rem;margin-bottom:3px">Auto-Lock</label><select class="field-select v-dev-lock">' + lockOpts + '</select></div>' +
+    '<div><label class="field-label" style="font-size:.7rem;margin-bottom:3px">Remote Wipe</label><select class="field-select v-dev-wipe">' + wipeOpts + '</select></div>' +
+    '</div>';
+
+  container.appendChild(div);
+
+  // Set prefill values if provided
+  if (prefill) {
+    if (prefill.type) div.querySelector('.v-dev-type').value = prefill.type;
+    if (prefill.encryption) div.querySelector('.v-dev-enc').value = prefill.encryption;
+    if (prefill.autoLock) div.querySelector('.v-dev-lock').value = prefill.autoLock;
+    if (prefill.remoteWipe) div.querySelector('.v-dev-wipe').value = prefill.remoteWipe;
+  }
+
+  // Contextual help on device type change
+  var typeSelect = div.querySelector('.v-dev-type');
+  typeSelect.addEventListener('change', function() {
+    var type = this.value;
+    var helpEnc = div.querySelector('.v-dev-enc-help');
+    var help = '';
+    if (type === 'MacBook' || type === 'Desktop Mac') help = 'System Settings > Privacy & Security > FileVault.';
+    else if (type === 'Windows laptop' || type === 'Desktop Windows') help = 'Settings > Privacy & Security > Device Encryption or search "BitLocker."';
+    else if (type === 'iPhone' || type === 'iPad') help = 'Encrypted automatically if passcode is set. Settings > Face ID & Passcode.';
+    else if (type === 'Android phone' || type === 'Android tablet') help = 'Android 10+: encrypted by default with PIN. Settings > Security > Encryption.';
+    if (help) helpEnc.innerHTML = '<div class="v-dev-help">' + help + '</div>';
+    else helpEnc.innerHTML = '';
+  });
+}
+
+function collectVaultDevices() {
+  var devices = [];
+  document.querySelectorAll('.v-device-row').forEach(function(row) {
+    var type = (row.querySelector('.v-dev-type') || {}).value || '';
+    var enc = (row.querySelector('.v-dev-enc') || {}).value || '';
+    var lock = (row.querySelector('.v-dev-lock') || {}).value || '';
+    var wipe = (row.querySelector('.v-dev-wipe') || {}).value || '';
+    if (type) devices.push({ type: type, encryption: enc, autoLock: lock, remoteWipe: wipe });
+  });
+  return devices;
 }
 
 // ── COLLECT FORM DATA INTO VAULT ──
@@ -825,6 +917,11 @@ function collectFormToVault() {
     delete vault.emailSystem;
     delete vault.messagingPlatforms;
   }
+
+  // Collect devices
+  var devices = collectVaultDevices();
+  if (devices.length > 0) vault.devices = devices;
+  else delete vault.devices;
 }
 
 // ── SAVE ──
@@ -861,7 +958,7 @@ function updateCompletion() {
     identity: ['legalName','credentials','providerType','email','phone'],
     identifiers: ['npi1','licenseState','licenseNum','dea','ein','taxonomy'],
     practice: ['practiceName','practiceAddress','practicePhone','practiceType','bizStructure'],
-    systems: ['ehrSystem','commChannels'],
+    systems: ['ehrSystem','commChannels','devices'],
     credentialing: ['caqhId','medicarePtan'],
     insurance: ['malCarrier','malEnd'],
     education: ['degree1School','boardCert'],
