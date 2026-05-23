@@ -2462,9 +2462,16 @@ function formatName(name) {
   if (!name) return '[Not specified]';
   if (name === name.toUpperCase() && name.length > 3) {
     return name.split(/\s+/).map(function(w) {
-      if (w.match(/^(M\.?S\.?|M\.?N\.?|PMHNP-?BC|PMHNP|DNP|PhD|MD|DO|NP|PA-C|PA|RN|BSN|MSN|FNP-?BC|FNP|APRN|LCSW|LPC|LMFT|BC)$/i)) return w.toUpperCase();
-      if (w.match(/^(M\.S\.|M\.N\.|PMHNP-BC)$/)) return w;
-      return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+      // Strip trailing comma/period for matching, add back after
+      var trailing = '';
+      var clean = w;
+      var trailMatch = w.match(/^(.+?)([,;.]+)$/);
+      if (trailMatch) { clean = trailMatch[1]; trailing = trailMatch[2]; }
+      // Check if it's a credential abbreviation
+      if (clean.match(/^(M\.?S|M\.?N|PMHNP-?BC|PMHNP|DNP|PhD|MD|DO|NP|PA-?C|PA|RN|BSN|MSN|FNP-?BC|FNP|APRN|LCSW|LPC|LMFT|BC|M\.S|M\.N|D\.O|D\.N\.P)\.?$/i)) {
+        return clean.toUpperCase() + trailing;
+      }
+      return clean.charAt(0).toUpperCase() + clean.slice(1).toLowerCase() + trailing;
     }).join(' ');
   }
   return name;
@@ -3013,7 +3020,7 @@ function generateConfidentialityAgreement(d) {
   sections.push(bullet('I will not discuss patient information in public areas or with unauthorized individuals.'));
   sections.push(bullet('I will follow all privacy and security policies established by ' + practiceName + '.'));
   sections.push(bullet('I will use only approved devices and systems to access PHI.'));
-  sections.push(bullet('I will report any suspected or known security incidents or policy violations immediately to ' + (d.providerName || 'the Privacy Officer') + '.'));
+  sections.push(bullet('I will report any suspected or known security incidents or policy violations immediately to ' + formatName(d.providerName || 'the Privacy Officer') + '.'));
   sections.push(bullet('I understand that violation of these confidentiality requirements may result in disciplinary action, up to and including termination, and may also result in personal liability under state and federal law.'));
   sections.push(bullet('These confidentiality obligations continue even after my employment or contract ends.'));
   sections.push(blankLine(), blankLine());
@@ -3026,7 +3033,7 @@ function generateConfidentialityAgreement(d) {
   sections.push(labelValue('Date', '________________________________'));
   sections.push(blankLine());
   sections.push(labelValue('Supervisor / Practice Owner Signature', '________________________________'));
-  sections.push(labelValue('Printed Name', d.providerName || '________________________________'));
+  sections.push(labelValue('Printed Name', formatName(d.providerName) || '________________________________'));
   sections.push(labelValue('Date', '________________________________'));
 
   return new D.Document({ styles: docStyles(), sections: [{ children: sections }] });
