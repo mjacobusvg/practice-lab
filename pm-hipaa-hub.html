@@ -889,11 +889,14 @@ function goToStep(n) {
   if (n === 6) updateWorkforceVisibility();
   if (n === 7) {
     buildBAAList();
-    // Restore saved BAA data if available
-    if (wizardData.baas && wizardData.baas.length > 0) {
-      var baaRows = document.querySelectorAll('.baa-row');
-      wizardData.baas.forEach(function(baa, i) {
-        if (i < baaRows.length) {
+    // Restore saved BAA data
+    var savedBaas = wizardData.baas;
+    if (savedBaas && savedBaas.length > 0) {
+      setTimeout(function() {
+        var baaRows = document.querySelectorAll('[data-vendor-index]');
+        console.log('BAA restore: ' + savedBaas.length + ' saved, ' + baaRows.length + ' rows');
+        for (var i = 0; i < savedBaas.length && i < baaRows.length; i++) {
+          var baa = savedBaas[i];
           var row = baaRows[i];
           var statusSel = row.querySelector('.baa-status');
           var dateFld = row.querySelector('.baa-date');
@@ -902,7 +905,7 @@ function goToStep(n) {
           if (dateFld && baa.date) dateFld.value = baa.date;
           if (locSel && baa.location) locSel.value = baa.location;
         }
-      });
+      }, 100);
     }
   }
 
@@ -1897,51 +1900,63 @@ function collectCurrentStepData() {
   wizardData.reviewDate = getVal('f-review-date');
   wizardData.priorIncidents = getVal('f-prior-incidents');
 
-  // Collect devices
-  wizardData.devices = [];
-  document.querySelectorAll('.device-row').forEach(function(row) {
-    wizardData.devices.push({
-      type: row.querySelector('.device-type') ? row.querySelector('.device-type').value : '',
-      encryption: row.querySelector('.device-encryption') ? row.querySelector('.device-encryption').value : '',
-      autolock: row.querySelector('.device-autolock') ? row.querySelector('.device-autolock').value : '',
-      remotewipe: row.querySelector('.device-remotewipe') ? row.querySelector('.device-remotewipe').value : ''
+  // Collect devices (only if device rows exist)
+  var deviceRows = document.querySelectorAll('.device-row');
+  if (deviceRows.length > 0) {
+    wizardData.devices = [];
+    deviceRows.forEach(function(row) {
+      wizardData.devices.push({
+        type: row.querySelector('.device-type') ? row.querySelector('.device-type').value : '',
+        encryption: row.querySelector('.device-encryption') ? row.querySelector('.device-encryption').value : '',
+        autolock: row.querySelector('.device-autolock') ? row.querySelector('.device-autolock').value : '',
+        remotewipe: row.querySelector('.device-remotewipe') ? row.querySelector('.device-remotewipe').value : ''
+      });
     });
-  });
+  }
 
-  // Collect workforce
-  wizardData.workforce = [];
-  document.querySelectorAll('.person-row').forEach(function(row) {
-    var accessChecks = row.querySelectorAll('.person-access:checked');
-    var access = [];
-    accessChecks.forEach(function(c) { access.push(c.value); });
-    wizardData.workforce.push({
-      name: row.querySelector('.person-name') ? row.querySelector('.person-name').value : '',
-      relationship: row.querySelector('.person-relationship') ? row.querySelector('.person-relationship').value : '',
-      access: access,
-      training: row.querySelector('.person-training') ? row.querySelector('.person-training').value : '',
-      agreement: row.querySelector('.person-agreement') ? row.querySelector('.person-agreement').value : ''
+  // Collect workforce (only if person rows exist)
+  var personRows = document.querySelectorAll('.person-row');
+  if (personRows.length > 0) {
+    wizardData.workforce = [];
+    personRows.forEach(function(row) {
+      var accessChecks = row.querySelectorAll('.person-access:checked');
+      var access = [];
+      accessChecks.forEach(function(c) { access.push(c.value); });
+      wizardData.workforce.push({
+        name: row.querySelector('.person-name') ? row.querySelector('.person-name').value : '',
+        relationship: row.querySelector('.person-relationship') ? row.querySelector('.person-relationship').value : '',
+        access: access,
+        training: row.querySelector('.person-training') ? row.querySelector('.person-training').value : '',
+        agreement: row.querySelector('.person-agreement') ? row.querySelector('.person-agreement').value : ''
+      });
     });
-  });
+  }
 
-  // Collect vendors and BAAs
+  // Collect vendors and BAAs (only overwrite BAAs if BAA rows exist)
   wizardData.vendors = collectVendors();
-  wizardData.baas = [];
-  document.querySelectorAll('.baa-row').forEach(function(row, i) {
-    wizardData.baas.push({
-      vendorIndex: i,
-      status: row.querySelector('.baa-status') ? row.querySelector('.baa-status').value : '',
-      date: row.querySelector('.baa-date') ? row.querySelector('.baa-date').value : '',
-      location: row.querySelector('.baa-location') ? row.querySelector('.baa-location').value : ''
+  var baaRows = document.querySelectorAll('.baa-row');
+  if (baaRows.length > 0) {
+    wizardData.baas = [];
+    baaRows.forEach(function(row, i) {
+      wizardData.baas.push({
+        vendorIndex: i,
+        status: row.querySelector('.baa-status') ? row.querySelector('.baa-status').value : '',
+        date: row.querySelector('.baa-date') ? row.querySelector('.baa-date').value : '',
+        location: row.querySelector('.baa-location') ? row.querySelector('.baa-location').value : ''
+      });
     });
-  });
+  }
 
-  // Collect additional vendors
-  wizardData.additionalVendors = [];
-  document.querySelectorAll('.vendor-row').forEach(function(row) {
-    var n = row.querySelector('.vendor-name');
-    var s = row.querySelector('.vendor-service');
-    if (n && n.value.trim()) wizardData.additionalVendors.push({ name: n.value.trim(), service: s ? s.value.trim() : '' });
-  });
+  // Collect additional vendors (only if vendor rows exist)
+  var vendorRows = document.querySelectorAll('.vendor-row');
+  if (vendorRows.length > 0) {
+    wizardData.additionalVendors = [];
+    vendorRows.forEach(function(row) {
+      var n = row.querySelector('.vendor-name');
+      var s = row.querySelector('.vendor-service');
+      if (n && n.value.trim()) wizardData.additionalVendors.push({ name: n.value.trim(), service: s ? s.value.trim() : '' });
+    });
+  }
 }
 
 // ── SAVE / LOAD ──
