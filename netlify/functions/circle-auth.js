@@ -110,7 +110,7 @@ exports.handler = async function(event, context) {
         headers,
         body: JSON.stringify({
           verified: false,
-          message: 'Practice Lab access requires the $89 or $119 Think Beyond Practice plan. Your current plan does not include Practice Lab access.'
+          message: 'This tool requires the $119/month Think Beyond Practice plan. Your current plan does not include access.'
         })
       };
     }
