@@ -530,6 +530,18 @@ a { color: inherit; text-decoration: none; }
   margin: 22px 0;
 }
 
+.post-full-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  margin-bottom: 16px;
+  transition: color 0.15s;
+}
+.post-full-back:hover { color: var(--teal); }
+
 /* ══════════════════════════════════════════
    SKELETON
    ══════════════════════════════════════════ */
@@ -661,13 +673,43 @@ a { color: inherit; text-decoration: none; }
 /* ══════════════════════════════════════════
    RESPONSIVE
    ══════════════════════════════════════════ */
+.hamburger {
+  display: none;
+  background: transparent;
+  border: none;
+  font-size: 22px;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+}
+.sidebar-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 149;
+}
+.sidebar-overlay.active { display: block; }
+
 @media (max-width: 1080px) {
   .layout { grid-template-columns: 220px 1fr; }
   .rail { display: none; }
 }
 @media (max-width: 768px) {
+  .hamburger { display: block; }
   .layout { grid-template-columns: 1fr; }
-  .sidebar { display: none; }
+  .sidebar {
+    display: none;
+    position: fixed;
+    top: 52px;
+    left: 0;
+    bottom: 0;
+    width: 260px;
+    z-index: 150;
+    box-shadow: 4px 0 16px rgba(0,0,0,0.3);
+  }
+  .sidebar.open { display: block; }
   .center { padding: 16px; }
   .tools-strip { grid-template-columns: repeat(2, 1fr); }
   .archive-bar { flex-direction: column; }
@@ -681,8 +723,9 @@ a { color: inherit; text-decoration: none; }
 <!-- ═══ TOP BAR ═══ -->
 <div class="topbar">
   <div class="topbar-left">
+    <button class="hamburger" id="hamburger" onclick="toggleSidebar()" aria-label="Toggle menu">&#9776;</button>
     <a href="/" class="topbar-logo">Think Beyond <span>Practice</span></a>
-    <span class="topbar-tag" onclick="showHome()" style="cursor:pointer">Platform</span>
+    <span class="topbar-tag" onclick="showHome();closeSidebar()" style="cursor:pointer">Platform</span>
   </div>
   <div class="topbar-right" id="topbar-right">
     <button class="theme-btn" onclick="toggleTheme()" title="Toggle theme" style="position:relative">
@@ -702,6 +745,7 @@ a { color: inherit; text-decoration: none; }
     <div class="sb-search"><input type="text" placeholder="Search spaces..." id="sb-filter"></div>
     <div id="sb-nav"></div>
   </nav>
+  <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
 
   <!-- ── Center ── -->
   <main class="center" id="center"></main>
@@ -809,11 +853,32 @@ var MODAL_MSGS = {
 // STATE
 // ════════════════════════════════════════
 var S = { user: null, isMember: false, view: 'home', space: null };
+
+// Admin emails that bypass the gate and get full access
+var ADMIN_EMAILS = ['michael@thinkbeyondpsych.com'];
+
+function checkMember() {
+  if (S.user && ADMIN_EMAILS.indexOf(S.user.email) !== -1) {
+    S.isMember = true;
+  }
+}
 var SB = supabase.createClient('https://ubcrrrapedaxkguxniwv.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InViY3JycmFwZWRheGtndXhuaXd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNjA2MTUsImV4cCI6MjA5MDkzNjYxNX0.CoS_t8EvCsgXJJA1dz4WXYWGsE8OMKEDeaWfsExQ1H0');
 
 // Map space slugs to dot colors
 var SPACE_DOTS = {};
 GROUPS.forEach(function(g) { g.spaces.forEach(function(sp) { SPACE_DOTS[sp.key] = sp.dot; }); });
+
+// ════════════════════════════════════════
+// MOBILE SIDEBAR
+// ════════════════════════════════════════
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebar-overlay').classList.toggle('active');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('active');
+}
 
 // ════════════════════════════════════════
 // THEME
@@ -832,7 +897,7 @@ function toggleTheme() {
 function checkAuth() {
   var s = localStorage.getItem('tbp_forum_user');
   if (s) { try { S.user = JSON.parse(s); } catch(e){} }
-  if (S.user) { document.getElementById('gate').classList.add('hidden'); updateTopbar(); init(); }
+  if (S.user) { document.getElementById('gate').classList.add('hidden'); checkMember(); updateTopbar(); init(); }
   else { /* gate visible by default */ }
 }
 function submitGate() {
@@ -1025,6 +1090,7 @@ async function loadActive() {
     if (!data || data.length === 0) { el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-secondary);font-size:0.82rem">No posts yet.</div>'; return; }
     el.innerHTML = data.map(function(p) {
       return postRow({
+        id: p.id,
         title: p.title,
         author: p.accounts ? p.accounts.name : 'Unknown',
         space: p.spaces ? p.spaces.name : '',
@@ -1051,6 +1117,7 @@ async function loadRecent() {
     if (!data || data.length === 0) { el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-secondary);font-size:0.82rem">No posts yet.</div>'; return; }
     el.innerHTML = data.map(function(p) {
       return postRow({
+        id: p.id,
         title: p.title,
         author: p.accounts ? p.accounts.name : 'Unknown',
         space: p.spaces ? p.spaces.name : '',
@@ -1058,7 +1125,8 @@ async function loadRecent() {
         comments: p.comment_count || 0,
         likes: p.reaction_count || 0,
         age: formatDate(p.created_at),
-        slug: p.spaces ? p.spaces.slug : ''
+        slug: p.spaces ? p.spaces.slug : '',
+        id: p.id
       });
     }).join('');
   } catch(e) { console.error('loadRecent:', e); }
@@ -1087,7 +1155,8 @@ function toolCard(icon, name, desc, href) {
 }
 
 function postRow(p) {
-  var h = '<div class="post-row" onclick="showJoin()">';
+  var onclick = S.isMember ? 'viewPost(\''+esc(p.id||'')+'\')' : 'showJoin(\''+esc(p.slug||'')+'\')';
+  var h = '<div class="post-row" onclick="'+onclick+'">';
   h += '<span class="post-dot" style="background:'+p.dot+'"></span>';
   h += '<div class="post-body">';
   h += '<div class="post-title">'+esc(p.title)+'</div>';
@@ -1101,10 +1170,88 @@ function postRow(p) {
   return h;
 }
 
+async function viewPost(postId) {
+  if (!postId) return;
+  closeSidebar();
+  S.view = 'post';
+  var center = document.getElementById('center');
+  center.innerHTML = '<div class="skel skel-h"></div><div class="skel skel-p"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
+
+  try {
+    // Load post
+    var { data: post, error } = await SB
+      .from('forum_posts')
+      .select('id, title, body_plain, excerpt, comment_count, reaction_count, created_at, spaces(name, slug), accounts(name, avatar_url, credentials)')
+      .eq('id', postId)
+      .single();
+    if (error) throw error;
+
+    // Load comments
+    var { data: comments, error: cErr } = await SB
+      .from('forum_comments')
+      .select('id, body_plain, created_at, accounts(name, avatar_url)')
+      .eq('post_id', postId)
+      .order('created_at', { ascending: true })
+      .limit(100);
+    if (cErr) throw cErr;
+
+    var h = '';
+    // Back button
+    h += '<div class="post-full-back" onclick="' + (post.spaces ? 'go(\''+post.spaces.slug+'\')' : 'showHome()') + '">&larr; Back to ' + esc(post.spaces ? post.spaces.name : 'Home') + '</div>';
+
+    // Title
+    h += '<h1 style="font-family:\'DM Serif Display\',serif;font-size:1.4rem;color:var(--text-heading);margin-bottom:12px;line-height:1.3">' + esc(post.title) + '</h1>';
+
+    // Author
+    var authorName = post.accounts ? post.accounts.name : 'Unknown';
+    var authorInitials = authorName.split(' ').map(function(w){return w[0]}).join('').toUpperCase().substring(0,2);
+    var authorCreds = post.accounts && post.accounts.credentials ? post.accounts.credentials : '';
+    h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">';
+    h += '<div style="width:36px;height:36px;border-radius:50%;background:var(--teal);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--text-inverse)">' + authorInitials + '</div>';
+    h += '<div style="font-size:0.8rem;color:var(--text-secondary)"><strong style="color:var(--text-primary)">' + esc(authorName) + '</strong>';
+    if (authorCreds) h += ' <span style="font-size:0.7rem;opacity:0.7">' + esc(authorCreds) + '</span>';
+    h += '<br>' + formatDate(post.created_at);
+    if (post.spaces) h += ' &middot; ' + esc(post.spaces.name);
+    h += '</div></div>';
+
+    // Body
+    h += '<div style="font-size:0.9rem;color:var(--text-primary);line-height:1.75;padding:24px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;white-space:pre-wrap;word-wrap:break-word">';
+    h += esc(post.body_plain || post.excerpt || '');
+    h += '</div>';
+
+    // Comments
+    if (comments && comments.length > 0) {
+      h += '<div style="margin-top:24px;border-top:1px solid var(--border);padding-top:20px">';
+      h += '<div style="font-size:0.85rem;font-weight:600;color:var(--text-primary);margin-bottom:16px">' + comments.length + ' Comment' + (comments.length !== 1 ? 's' : '') + '</div>';
+      comments.forEach(function(c) {
+        var cName = c.accounts ? c.accounts.name : 'Unknown';
+        var cIni = cName.split(' ').map(function(w){return w[0]}).join('').toUpperCase().substring(0,2);
+        var colors = ['#2aabb8','#c084fc','#fbbf24','#34d399','#fb923c','#60a5fa'];
+        var color = colors[cName.length % colors.length];
+        h += '<div style="padding:14px 16px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;margin-bottom:8px">';
+        h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
+        h += '<div style="width:28px;height:28px;border-radius:50%;background:'+color+';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--text-inverse)">' + cIni + '</div>';
+        h += '<div style="font-size:0.75rem;color:var(--text-secondary)"><strong style="color:var(--text-primary)">' + esc(cName) + '</strong> &middot; ' + formatDate(c.created_at) + '</div>';
+        h += '</div>';
+        h += '<div style="font-size:0.84rem;color:var(--text-primary);line-height:1.6;white-space:pre-wrap;word-wrap:break-word">' + esc(c.body_plain || '') + '</div>';
+        h += '</div>';
+      });
+      h += '</div>';
+    }
+
+    center.innerHTML = h;
+    window.scrollTo(0,0);
+  } catch(e) {
+    console.error('viewPost:', e);
+    center.innerHTML = '<div style="padding:28px;color:var(--text-secondary)">Error loading post.</div>';
+  }
+}
+
 // ════════════════════════════════════════
 // SPACE VIEW
 // ════════════════════════════════════════
 function go(key) {
+  closeSidebar();
   if (key === 'ask-archive') { window.location.href = '/ask-archive-public.html'; return; }
   S.view = 'space'; S.space = key;
   clearActive();
@@ -1149,12 +1296,13 @@ async function loadSpacePosts(slug, spaceDef) {
 
     el.innerHTML = data.map(function(p) {
       var isPinned = p.is_pinned;
+      var onclick = S.isMember ? 'viewPost(\''+p.id+'\')' : 'showJoin(\''+slug+'\')';
       var row = '';
       if (isPinned) {
-        row += '<div class="post-row" onclick="showJoin(\'' + slug + '\')" style="border-left:3px solid var(--teal)">';
+        row += '<div class="post-row" onclick="'+onclick+'" style="border-left:3px solid var(--teal)">';
         row += '<span class="post-dot" style="background:var(--teal)"></span>';
       } else {
-        row += '<div class="post-row" onclick="showJoin(\'' + slug + '\')">';
+        row += '<div class="post-row" onclick="'+onclick+'">';
         row += '<span class="post-dot" style="background:' + (spaceDef ? spaceDef.dot : '#60a5fa') + '"></span>';
       }
       row += '<div class="post-body">';
