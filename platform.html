@@ -674,6 +674,7 @@ a { color: inherit; text-decoration: none; }
   .topbar { padding: 0 14px; }
 }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 </head>
 <body>
 
@@ -808,6 +809,11 @@ var MODAL_MSGS = {
 // STATE
 // ════════════════════════════════════════
 var S = { user: null, isMember: false, view: 'home', space: null };
+var SB = supabase.createClient('https://ubcrrrapedaxkguxniwv.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InViY3JycmFwZWRheGtndXhuaXd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNjA2MTUsImV4cCI6MjA5MDkzNjYxNX0.CoS_t8EvCsgXJJA1dz4WXYWGsE8OMKEDeaWfsExQ1H0');
+
+// Map space slugs to dot colors
+var SPACE_DOTS = {};
+GROUPS.forEach(function(g) { g.spaces.forEach(function(sp) { SPACE_DOTS[sp.key] = sp.dot; }); });
 
 // ════════════════════════════════════════
 // THEME
@@ -916,11 +922,11 @@ function buildRail() {
   // Community Stats
   h += '<div class="rail-section">';
   h += '<div class="rail-title">Community</div>';
-  h += '<div class="rail-stat-row"><span class="stat-num">50+</span> active members</div>';
-  h += '<div class="rail-stat-row"><span class="stat-num">400+</span> posts in the archive</div>';
-  h += '<div class="rail-stat-row"><span class="stat-num">1,700+</span> comments</div>';
-  h += '<div class="rail-stat-row"><span class="stat-num">18</span> spaces</div>';
-  h += '</div>';
+  h += '<div id="rail-stats">';
+  h += '<div class="rail-stat-row"><span class="stat-num">--</span> active members</div>';
+  h += '<div class="rail-stat-row"><span class="stat-num">--</span> posts</div>';
+  h += '<div class="rail-stat-row"><span class="stat-num">--</span> comments</div>';
+  h += '</div></div>';
 
   // Recent Archive Queries
   h += '<div class="rail-section">';
@@ -940,6 +946,23 @@ function buildRail() {
   h += '</div>';
 
   document.getElementById('rail').innerHTML = h;
+  loadRailStats();
+}
+
+async function loadRailStats() {
+  try {
+    var [posts, comments, accounts] = await Promise.all([
+      SB.from('forum_posts').select('id', { count: 'exact', head: true }),
+      SB.from('forum_comments').select('id', { count: 'exact', head: true }),
+      SB.from('accounts').select('id', { count: 'exact', head: true })
+    ]);
+    var el = document.getElementById('rail-stats');
+    if (!el) return;
+    el.innerHTML =
+      '<div class="rail-stat-row"><span class="stat-num">' + (accounts.count || 0) + '</span> members</div>' +
+      '<div class="rail-stat-row"><span class="stat-num">' + (posts.count || 0) + '</span> posts</div>' +
+      '<div class="rail-stat-row"><span class="stat-num">' + (comments.count || 0).toLocaleString() + '</span> comments</div>';
+  } catch(e) { console.error('loadRailStats:', e); }
 }
 
 // ════════════════════════════════════════
@@ -968,18 +991,10 @@ function showHome() {
   h += toolCard('&#127891;', 'CE Courses', 'ANCC-accredited continuing education (coming soon)', '#');
   h += '</div>';
 
-  // Zone 2: What's Active
+  // Zone 2: What's Active (skeleton while loading)
   h += '<div class="zone-header"><h2>What\'s Active</h2></div>';
   h += '<div class="post-list" id="active-posts">';
-  // Placeholder active posts from real forum data
-  var active = [
-    { title:'Perimenopause and Menopause: What PMHNPs Actually Need to Know', author:'Michael Van Gelder', space:'Clinical Insights', dot:'#fb923c', comments:3, likes:2, age:'2 days ago' },
-    { title:'Top 5 Common Mistakes I\'ve Made After Opening a Private Practice', author:'Denis Grigorov', space:'Quick Questions', dot:'#c084fc', comments:2, likes:5, age:'4 days ago' },
-    { title:'Recent attempt -- 34yo male, second opinion, now established care', author:'Sandra', space:'Case Discussions', dot:'#c084fc', comments:3, likes:0, age:'6 days ago' },
-    { title:'Can You Bill When a Student Is In the Room?', author:'Michael Van Gelder', space:'Billing & Documentation', dot:'#60a5fa', comments:0, likes:0, age:'1 week ago' },
-    { title:'HIPAA Psychotherapy Notes vs. Your Psychotherapy Notes', author:'Michael Van Gelder', space:'Billing & Documentation', dot:'#60a5fa', comments:0, likes:3, age:'2 weeks ago' },
-  ];
-  active.forEach(function(p) { h += postRow(p); });
+  h += '<div class="skel skel-row"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
   h += '</div>';
 
   h += '<hr class="divider">';
@@ -987,20 +1002,80 @@ function showHome() {
   // Recent
   h += '<div class="zone-header"><h2>Recent Across All Spaces</h2></div>';
   h += '<div class="post-list" id="recent-posts">';
-  var recent = [
-    { title:'When a Patient Asks You to Write a Letter: The Framework Most Prescribers Were Never Taught', author:'Michael Van Gelder', space:'Billing & Documentation', dot:'#60a5fa', comments:0, likes:3, age:'2 days ago' },
-    { title:'Effexor Increase vs SSRI Switch in a Patient With Prior Stroke and Significant Cardiac History', author:'Denis Grigorov', space:'Case Discussions', dot:'#c084fc', comments:3, likes:0, age:'3 days ago' },
-    { title:'Perinatal case', author:'Eniana J. Tabor', space:'Case Discussions', dot:'#c084fc', comments:0, likes:0, age:'4 days ago' },
-    { title:'Headway -- worth paying extra$ for out of state DEA if don\'t plan to Rx Controlleds in that state?', author:'Michelle', space:'Quick Questions', dot:'#c084fc', comments:2, likes:0, age:'5 days ago' },
-    { title:'Qb testing + result but complex history', author:'Michelle', space:'Quick Questions', dot:'#c084fc', comments:1, likes:0, age:'5 days ago' },
-    { title:'The Credentialing Mistakes That Cost You Months', author:'Michael Van Gelder', space:'Practice Growth', dot:'#60a5fa', comments:0, likes:2, age:'1 week ago' },
-    { title:'Social Media Strategy for Private Practice Owners', author:'Denis Grigorov', space:'Member Threads', dot:'#c084fc', comments:3, likes:1, age:'1 week ago' },
-    { title:'ECT in 2026: What It Actually Is', author:'Michael Van Gelder', space:'Clinical Insights', dot:'#fb923c', comments:0, likes:0, age:'3 weeks ago' },
-  ];
-  recent.forEach(function(p) { h += postRow(p); });
+  h += '<div class="skel skel-row"></div><div class="skel skel-row"></div><div class="skel skel-row"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
   h += '</div>';
 
   document.getElementById('center').innerHTML = h;
+
+  // Load live data
+  loadActive();
+  loadRecent();
+}
+
+async function loadActive() {
+  try {
+    var { data, error } = await SB
+      .from('forum_posts')
+      .select('id, title, excerpt, comment_count, reaction_count, created_at, space_id, spaces(name, slug), author_id, accounts(name)')
+      .order('comment_count', { ascending: false })
+      .limit(5);
+    if (error) throw error;
+    var el = document.getElementById('active-posts');
+    if (!el) return;
+    if (!data || data.length === 0) { el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-secondary);font-size:0.82rem">No posts yet.</div>'; return; }
+    el.innerHTML = data.map(function(p) {
+      return postRow({
+        title: p.title,
+        author: p.accounts ? p.accounts.name : 'Unknown',
+        space: p.spaces ? p.spaces.name : '',
+        dot: SPACE_DOTS[p.spaces ? p.spaces.slug : ''] || '#60a5fa',
+        comments: p.comment_count || 0,
+        likes: p.reaction_count || 0,
+        age: formatDate(p.created_at),
+        slug: p.spaces ? p.spaces.slug : ''
+      });
+    }).join('');
+  } catch(e) { console.error('loadActive:', e); }
+}
+
+async function loadRecent() {
+  try {
+    var { data, error } = await SB
+      .from('forum_posts')
+      .select('id, title, excerpt, comment_count, reaction_count, created_at, space_id, spaces(name, slug), author_id, accounts(name)')
+      .order('created_at', { ascending: false })
+      .limit(10);
+    if (error) throw error;
+    var el = document.getElementById('recent-posts');
+    if (!el) return;
+    if (!data || data.length === 0) { el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-secondary);font-size:0.82rem">No posts yet.</div>'; return; }
+    el.innerHTML = data.map(function(p) {
+      return postRow({
+        title: p.title,
+        author: p.accounts ? p.accounts.name : 'Unknown',
+        space: p.spaces ? p.spaces.name : '',
+        dot: SPACE_DOTS[p.spaces ? p.spaces.slug : ''] || '#60a5fa',
+        comments: p.comment_count || 0,
+        likes: p.reaction_count || 0,
+        age: formatDate(p.created_at),
+        slug: p.spaces ? p.spaces.slug : ''
+      });
+    }).join('');
+  } catch(e) { console.error('loadRecent:', e); }
+}
+
+function formatDate(d) {
+  if (!d) return '';
+  var date = new Date(d);
+  var now = new Date();
+  var diff = now - date;
+  var days = Math.floor(diff / 86400000);
+  if (days < 1) return 'Today';
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return days + ' days ago';
+  if (days < 30) return Math.floor(days / 7) + (Math.floor(days / 7) === 1 ? ' week ago' : ' weeks ago');
+  var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return months[date.getMonth()] + ' ' + date.getFullYear();
 }
 
 function toolCard(icon, name, desc, href) {
@@ -1043,11 +1118,58 @@ function go(key) {
   h += '</div>';
 
   h += '<div class="post-list" id="space-posts">';
-  h += '<div style="padding:28px;text-align:center;color:var(--text-secondary);font-size:0.82rem;font-style:italic">Posts will appear here once migration is complete.</div>';
+  h += '<div class="skel skel-row"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
   h += '</div>';
 
   document.getElementById('center').innerHTML = h;
   window.scrollTo(0,0);
+
+  loadSpacePosts(key, sp);
+}
+
+async function loadSpacePosts(slug, spaceDef) {
+  try {
+    var { data, error } = await SB
+      .from('forum_posts')
+      .select('id, title, excerpt, comment_count, reaction_count, created_at, is_pinned, space_id, spaces!inner(name, slug), author_id, accounts(name)')
+      .eq('spaces.slug', slug)
+      .order('is_pinned', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    var el = document.getElementById('space-posts');
+    if (!el) return;
+    if (!data || data.length === 0) { el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-secondary);font-size:0.82rem">No posts in this space yet.</div>'; return; }
+
+    // Update space header with post count
+    var head = document.querySelector('.space-head');
+    if (head && !head.querySelector('.space-meta')) {
+      head.innerHTML += '<div class="space-meta"><span><strong style="color:var(--teal)">' + data.length + '</strong> posts</span></div>';
+    }
+
+    el.innerHTML = data.map(function(p) {
+      var isPinned = p.is_pinned;
+      var row = '';
+      if (isPinned) {
+        row += '<div class="post-row" onclick="showJoin(\'' + slug + '\')" style="border-left:3px solid var(--teal)">';
+        row += '<span class="post-dot" style="background:var(--teal)"></span>';
+      } else {
+        row += '<div class="post-row" onclick="showJoin(\'' + slug + '\')">';
+        row += '<span class="post-dot" style="background:' + (spaceDef ? spaceDef.dot : '#60a5fa') + '"></span>';
+      }
+      row += '<div class="post-body">';
+      if (isPinned) row += '<span style="font-size:0.62rem;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:0.08em">Pinned</span> ';
+      row += '<div class="post-title">' + esc(p.title) + '</div>';
+      if (p.excerpt) row += '<div class="post-excerpt" style="font-size:0.74rem;color:var(--text-secondary);margin-top:2px;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden">' + esc(p.excerpt) + '</div>';
+      row += '<div class="post-meta">' + esc(p.accounts ? p.accounts.name : '') + ' &middot; ' + formatDate(p.created_at) + '</div>';
+      row += '</div>';
+      row += '<div class="post-stats">';
+      row += '<span>&#x2661; ' + (p.reaction_count || 0) + '</span>';
+      row += '<span>&#x1F4AC; ' + (p.comment_count || 0) + '</span>';
+      row += '</div></div>';
+      return row;
+    }).join('');
+  } catch(e) { console.error('loadSpacePosts:', e); }
 }
 
 // ════════════════════════════════════════
