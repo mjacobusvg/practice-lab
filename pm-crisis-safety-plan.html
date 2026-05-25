@@ -374,7 +374,7 @@ input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(0.7) brightn
       </div>
       <div class="field-hint">This is your clinical judgment based on everything above. These categories help you decide how intensively to follow up and what interventions to put in place -- they do not predict who will or won't attempt suicide.</div>
     </div>
-    <div class="field-group"><label class="field-label">Formulation Rationale</label><textarea class="field-textarea" id="riskRationale" rows="3" placeholder="Why this risk level? Reference specific factors: ideation, plan, intent, means access, stressors, protective factors, substance use, prior attempts"></textarea><div class="field-hint">This rationale appears verbatim in the chart documentation. Be specific and defensible.</div></div>
+    <div class="field-group"><label class="field-label">Formulation Rationale</label><textarea class="field-textarea" id="riskRationale" rows="4" placeholder="Auto-generated when you select a risk level. Edit as needed."></textarea><div class="field-hint">Auto-drafted from the data you entered above. Review and edit before proceeding -- this appears verbatim in the chart documentation.</div></div>
 
     <div id="high-risk-warning" class="risk-flag danger" style="display:none">
       <strong>&#9888; High or imminent risk identified.</strong> Consider whether outpatient safety planning is appropriate at this level of risk, or whether the patient requires immediate higher-level care (crisis stabilization, ED referral, mobile crisis team evaluation, or involuntary hold). If proceeding with outpatient safety planning, document your reasoning for why this level of care is appropriate.
@@ -640,7 +640,7 @@ input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(0.7) brightn
     </div>
 
     <div class="section-divider"></div>
-    <div class="field-group"><label class="field-label">Follow-Up Plan</label><input type="text" class="field-input" id="followUpPlan" placeholder="e.g., Follow-up in 48 hours, daily phone check-ins, next appointment 5/28"><div class="field-hint">Document what follow-up the patient agreed to. This appears in the chart documentation.</div></div>
+    <div class="field-group"><label class="field-label">Follow-Up Plan</label><input type="text" class="field-input" id="followUpPlan" placeholder="Auto-suggested based on risk level. Edit to match your actual plan."><div class="field-hint">This is a starting point based on risk level -- edit it. Replace "Suggested:" with the actual plan: your next appointment date, whether you're coordinating with a therapist or counselor, phone vs. in-person, etc. What goes here is what you actually agreed to with the patient.</div></div>
 
     <div class="btn-row">
       <button class="btn-secondary" onclick="goToStep(7)">&#8592; Back</button>
@@ -836,6 +836,104 @@ function selectRA(el, group, value) {
   if (group === 'priorAttempt') showConditionalDetail('priorAttempt', 'priorAttemptDetailGroup', ['remote','recent']);
   if (group === 'riskLevel') {
     document.getElementById('high-risk-warning').style.display = (value === 'high' || value === 'imminent') ? 'block' : 'none';
+    autoDraftRationale(value);
+    autoDraftFollowUp(value);
+  }
+}
+
+function autoDraftRationale(riskLevel) {
+  var el = document.getElementById('riskRationale');
+  // Only auto-draft if the field is empty or was previously auto-drafted
+  // (detect by checking if it starts with "Risk assessed as")
+  if (el.value && !el.value.startsWith('Risk assessed as')) return;
+
+  var riskLabel = { low:'LOW', moderate:'MODERATE', 'moderate-high':'MODERATE-HIGH', high:'HIGH', imminent:'IMMINENT' }[riskLevel] || riskLevel.toUpperCase();
+  var parts = [];
+
+  // Ideation
+  if (isCSSRSMode()) {
+    var positives = [];
+    for (var i = 1; i <= 6; i++) { if (getRadioVal('cssrs-q' + i) === 'yes') positives.push('Q' + i); }
+    if (positives.length) parts.push('C-SSRS positive (' + positives.join(', ') + ')');
+    else parts.push('C-SSRS negative');
+  } else {
+    var ide = raSelections.ideation;
+    if (ide === 'active') parts.push('active suicidal ideation');
+    else if (ide === 'passive') parts.push('passive suicidal ideation');
+    else if (ide === 'none') parts.push('no current suicidal ideation');
+
+    var plan = raSelections.plan;
+    if (plan === 'specific') parts.push('specific plan identified');
+    else if (plan === 'vague') parts.push('vague plan without specifics');
+
+    var intent = raSelections.intent;
+    if (intent === 'clear') parts.push('clear intent to act');
+    else if (intent === 'ambivalent') parts.push('ambivalent about acting');
+
+    var prep = raSelections.prep;
+    if (prep === 'yes') parts.push('preparatory behaviors present');
+  }
+
+  // Prior attempts
+  var attempt = raSelections.priorAttempt;
+  if (attempt === 'recent') parts.push('prior suicide attempt within past 12 months');
+  else if (attempt === 'remote') parts.push('remote history of prior suicide attempt');
+
+  // Substance use
+  var sub = document.getElementById('substanceUse').value.trim();
+  if (sub && sub.toLowerCase() !== 'none') parts.push('current substance use (' + sub + ')');
+
+  // Stressors
+  var stress = document.getElementById('stressors').value.trim();
+  if (stress) parts.push('recent stressor(s): ' + stress);
+
+  // Diagnoses
+  var dx = document.getElementById('diagnoses').value.trim();
+  if (dx) parts.push(dx);
+
+  // Protective factors
+  var pf = [];
+  var rfl = document.getElementById('reasonsForLiving').value.trim();
+  var ss = document.getElementById('socialSupport').value.trim();
+  var ce = document.getElementById('copingEngagement').value.trim();
+  var op = document.getElementById('otherProtective').value.trim();
+  if (rfl) pf.push(rfl);
+  if (ss) pf.push(ss);
+  if (ce) pf.push(ce);
+  if (op) pf.push(op);
+
+  var text = 'Risk assessed as ' + riskLabel + ' based on: ' + (parts.length ? parts.join('; ') : 'clinical assessment') + '.';
+  if (pf.length) text += ' Protective factors include: ' + pf.join('; ') + '.';
+  if (!pf.length && (riskLevel === 'high' || riskLevel === 'imminent')) text += ' Limited protective factors identified.';
+
+  el.value = text;
+}
+
+function autoDraftFollowUp(riskLevel) {
+  var el = document.getElementById('followUpPlan');
+  // Only auto-draft if empty or previously auto-drafted
+  if (el.value && !el.value.startsWith('Suggested:')) return;
+
+  var suggestions = {
+    'low': 'Suggested: Follow-up at next scheduled appointment. Adjust if patient also sees a therapist or counselor who can check in sooner.',
+    'moderate': 'Suggested: Follow-up within 48-72 hours. If patient sees a therapist or other provider sooner, coordinate check-in with that provider.',
+    'moderate-high': 'Suggested: Follow-up within 24-48 hours. Consider daily phone check-ins or coordination with therapist/counselor if seen more frequently.',
+    'high': 'Suggested: Follow-up within 24 hours. Coordinate with any other providers involved in care. Consider whether current level of care is sufficient.',
+    'imminent': 'Suggested: Immediate intervention required. Do not discharge without a safe disposition in place.'
+  };
+  el.value = suggestions[riskLevel] || '';
+
+  // Also adjust compliance tracker follow-up date based on risk
+  var daysMap = { low:14, moderate:3, 'moderate-high':2, high:1, imminent:1 };
+  var days = daysMap[riskLevel] || 7;
+  var fDate = new Date(); fDate.setDate(fDate.getDate() + days);
+  document.getElementById('followupDate').value = fDate.toISOString().split('T')[0];
+
+  // Auto-fill compliance tracker note
+  var noteEl = document.getElementById('followupNote');
+  if (!noteEl.value || noteEl.value === 'e.g., Review safety plan at next visit') {
+    var patName = document.getElementById('patientName').value.trim() || 'Patient';
+    noteEl.value = 'Review safety plan - ' + patName + ' (' + riskLevel + ' risk)';
   }
 }
 
