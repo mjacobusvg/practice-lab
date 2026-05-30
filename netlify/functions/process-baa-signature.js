@@ -3,7 +3,7 @@
 // Netlify Function
 // ============================================
 const { createClient } = require('@supabase/supabase-js');
-const { Resend } = require('resend');
+const SESv2 = require('@aws-sdk/client-sesv2');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 const https = require('https');
 
@@ -11,7 +11,29 @@ const supabase = createClient(
     process.env.SUPABASE_URL,
     process.env.SUPABASE_SERVICE_KEY
 );
-const resend = new Resend(process.env.RESEND_API_KEY);
+
+const sesClient = new SESv2.SESv2Client({
+    region: process.env.SES_AWS_REGION || 'us-east-1',
+    credentials: {
+        accessKeyId: process.env.SES_AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.SES_AWS_SECRET_ACCESS_KEY
+    }
+});
+
+// Helper: send an HTML email via SES v2
+async function sesSend(from, to, subject, html) {
+    const command = new SESv2.SendEmailCommand({
+        FromEmailAddress: from,
+        Destination: { ToAddresses: [to] },
+        Content: {
+            Simple: {
+                Subject: { Data: subject, Charset: 'UTF-8' },
+                Body: { Html: { Data: html, Charset: 'UTF-8' } }
+            }
+        }
+    });
+    return sesClient.send(command);
+}
 
 // URL to the BAA template PDF stored in your repo or Supabase
 const BAA_TEMPLATE_URL = 'https://thinkbeyondpractice.com/baa-template.pdf';
@@ -171,22 +193,22 @@ exports.handler = async (event) => {
 
         // ---- Email member ----
         try {
-            await resend.emails.send({
-                from: 'Think Beyond Practice <michael@thinkbeyondpractice.com>',
-                to: signerEmail.trim(),
-                subject: 'Think Beyond Practice - Signed Business Associate Agreement',
-                html: generateMemberEmail({ signerName: signerName.trim(), entityName: entityName.trim(), baaVersion, signedAt, pdfUrl })
-            });
+            await sesSend(
+                'Think Beyond Practice <michael@thinkbeyondpractice.com>',
+                signerEmail.trim(),
+                'Think Beyond Practice - Signed Business Associate Agreement',
+                generateMemberEmail({ signerName: signerName.trim(), entityName: entityName.trim(), baaVersion, signedAt, pdfUrl })
+            );
         } catch (e) { console.error('Member email error:', e); }
 
         // ---- Notify Michael ----
         try {
-            await resend.emails.send({
-                from: 'Think Beyond Practice <notifications@thinkbeyondpractice.com>',
-                to: 'michael@thinkbeyondpractice.com',
-                subject: `BAA Signed: ${entityName.trim()} (${signerName.trim()})`,
-                html: `<p>New BAA signed:</p><p><b>Name:</b> ${signerName.trim()}<br><b>Email:</b> ${signerEmail.trim()}<br><b>Entity:</b> ${entityName.trim()}<br><b>Title:</b> ${signerTitle.trim()}<br><b>Version:</b> ${baaVersion}<br><b>Signed:</b> ${signedAt}<br><b>IP:</b> ${ipAddress}</p>`
-            });
+            await sesSend(
+                'Think Beyond Practice <notifications@thinkbeyondpractice.com>',
+                'michael@thinkbeyondpractice.com',
+                `BAA Signed: ${entityName.trim()} (${signerName.trim()})`,
+                `<p>New BAA signed:</p><p><b>Name:</b> ${signerName.trim()}<br><b>Email:</b> ${signerEmail.trim()}<br><b>Entity:</b> ${entityName.trim()}<br><b>Title:</b> ${signerTitle.trim()}<br><b>Version:</b> ${baaVersion}<br><b>Signed:</b> ${signedAt}<br><b>IP:</b> ${ipAddress}</p>`
+            );
         } catch (e) { console.error('Notify error:', e); }
 
         return {
