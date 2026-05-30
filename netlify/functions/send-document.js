@@ -1,14 +1,20 @@
 // netlify/functions/send-document.js
 // Shared send utility for all Practice Manager tools.
-// Sends documents via Amazon SES (SMTP) using nodemailer.
+// Sends documents via Amazon SES using the SES v2 HTTPS API (AWS SDK v3).
+//
+// NOTE: Uses the HTTPS API, not SMTP. SMTP connections are unreliable from
+// Netlify/Lambda functions (getaddrinfo EBUSY); the HTTPS API works in the
+// same environment where anthropic-proxy.js already works.
 //
 // Environment variables (set in Netlify):
-//   SES_SMTP_HOST     - email-smtp.us-east-1.amazonses.com
-//   SES_SMTP_PORT     - 587
-//   SES_SMTP_USER     - SES SMTP username (starts with AKIA...)
-//   SES_SMTP_PASS     - SES SMTP password
-//   SUPABASE_URL      - for usage logging (optional)
-//   SUPABASE_SERVICE_KEY - for usage logging (optional)
+//   SES_AWS_ACCESS_KEY_ID     - IAM access key ID with ses:SendEmail permission
+//   SES_AWS_SECRET_ACCESS_KEY - IAM secret access key
+//   SES_AWS_REGION            - us-east-1 (optional; defaults to us-east-1)
+//   SUPABASE_URL              - for usage logging (optional)
+//   SUPABASE_SERVICE_KEY      - for usage logging (optional)
+//
+// (Netlify reserves AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY, so we use
+//  SES_-prefixed variable names to avoid the reserved keys.)
 //
 // Request body:
 //   to: recipient email address
@@ -18,7 +24,7 @@
 //   replyTo: (optional) clinician's email for reply-to header
 //   tool: which tool sent this (for logging)
 
-var nodemailer = require('nodemailer');
+var SESv2 = require('@aws-sdk/client-sesv2');
 
 var FROM_ADDRESS = 'support@thinkbeyondpractice.com';
 var FROM_NAME = 'Think Beyond Practice';
@@ -38,16 +44,15 @@ exports.handler = async function(event) {
     return { statusCode: 405, headers: headers, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
-  var smtpUser = process.env.SES_SMTP_USER;
-  var smtpPass = process.env.SES_SMTP_PASS;
-  var smtpHost = process.env.SES_SMTP_HOST || 'email-smtp.us-east-1.amazonses.com';
-  var smtpPort = parseInt(process.env.SES_SMTP_PORT || '587', 10);
+  var accessKeyId = process.env.SES_AWS_ACCESS_KEY_ID;
+  var secretAccessKey = process.env.SES_AWS_SECRET_ACCESS_KEY;
+  var region = process.env.SES_AWS_REGION || 'us-east-1';
 
-  if (!smtpUser || !smtpPass) {
+  if (!accessKeyId || !secretAccessKey) {
     return {
       statusCode: 500,
       headers: headers,
-      body: JSON.stringify({ error: 'Email service not configured. Set SES_SMTP_USER and SES_SMTP_PASS in Netlify environment variables.' })
+      body: JSON.stringify({ error: 'Email service not configured. Set SES_AWS_ACCESS_KEY_ID and SES_AWS_SECRET_ACCESS_KEY in Netlify environment variables.' })
     };
   }
 
@@ -76,30 +81,40 @@ exports.handler = async function(event) {
       };
     }
 
-    // Configure SES SMTP transport (STARTTLS on port 587)
-    var transporter = nodemailer.createTransport({
-      host: smtpHost,
-      port: smtpPort,
-      secure: smtpPort === 465, // true only for port 465 (TLS wrapper); false for 587 STARTTLS
-      auth: {
-        user: smtpUser,
-        pass: smtpPass
+    var client = new SESv2.SESv2Client({
+      region: region,
+      credentials: {
+        accessKeyId: accessKeyId,
+        secretAccessKey: secretAccessKey
       }
     });
 
-    var mailOptions = {
-      from: FROM_NAME + ' <' + FROM_ADDRESS + '>',
-      to: to,
-      subject: subject
+    // Build the message body (text and/or HTML)
+    var bodyContent = {};
+    if (textBody) bodyContent.Text = { Data: textBody, Charset: 'UTF-8' };
+    if (htmlBody) bodyContent.Html = { Data: htmlBody, Charset: 'UTF-8' };
+
+    var sendParams = {
+      FromEmailAddress: FROM_NAME + ' <' + FROM_ADDRESS + '>',
+      Destination: {
+        ToAddresses: [to]
+      },
+      Content: {
+        Simple: {
+          Subject: { Data: subject, Charset: 'UTF-8' },
+          Body: bodyContent
+        }
+      }
     };
 
-    if (textBody) mailOptions.text = textBody;
-    if (htmlBody) mailOptions.html = htmlBody;
-    if (replyTo) mailOptions.replyTo = replyTo;
+    if (replyTo) {
+      sendParams.ReplyToAddresses = [replyTo];
+    }
 
-    var info;
+    var result;
     try {
-      info = await transporter.sendMail(mailOptions);
+      var command = new SESv2.SendEmailCommand(sendParams);
+      result = await client.send(command);
     } catch (sendErr) {
       return {
         statusCode: 500,
@@ -132,7 +147,7 @@ exports.handler = async function(event) {
     return {
       statusCode: 200,
       headers: headers,
-      body: JSON.stringify({ success: true, messageId: (info && info.messageId) || null })
+      body: JSON.stringify({ success: true, messageId: (result && result.MessageId) || null })
     };
 
   } catch (err) {
