@@ -1,25 +1,41 @@
 // netlify/functions/compliance-reminders.js
 // Scheduled daily: checks all users' tracking items for approaching deadlines
-// Sends email reminders via Resend at 90, 60, 30, 14, 7, and 1 day(s) before due date
+// Sends email reminders via Amazon SES (HTTPS API) at 90, 60, 30, 14, 7, and 1 day(s) before due date
 // Also flags overdue items and auto-advances stale recurring items
 //
 // Schedule: daily at 8am ET (configure in netlify.toml)
 // [[scheduled_functions]]
 //   name = "compliance-reminders"
 //   schedule = "0 12 * * *"
+//
+// Environment variables:
+//   SUPABASE_URL, SUPABASE_SERVICE_KEY
+//   SES_AWS_ACCESS_KEY_ID, SES_AWS_SECRET_ACCESS_KEY, SES_AWS_REGION (defaults us-east-1)
+//   COMPLIANCE_ACTION_SECRET (optional; falls back to SUPABASE_SERVICE_KEY)
 
 var crypto = require('crypto');
+var SESv2 = require('@aws-sdk/client-sesv2');
+
+var FROM_ADDRESS = 'reminders@thinkbeyondpractice.com';
+var FROM_NAME = 'Think Beyond Practice';
 
 exports.handler = async function(event) {
   var supabaseUrl = process.env.SUPABASE_URL;
   var supabaseKey = process.env.SUPABASE_SERVICE_KEY;
-  var resendKey = process.env.RESEND_API_KEY;
+  var accessKeyId = process.env.SES_AWS_ACCESS_KEY_ID;
+  var secretAccessKey = process.env.SES_AWS_SECRET_ACCESS_KEY;
+  var region = process.env.SES_AWS_REGION || 'us-east-1';
   var actionSecret = process.env.COMPLIANCE_ACTION_SECRET || supabaseKey;
 
-  if (!supabaseUrl || !supabaseKey || !resendKey) {
+  if (!supabaseUrl || !supabaseKey || !accessKeyId || !secretAccessKey) {
     console.log('Missing environment variables');
     return { statusCode: 500, body: 'Config missing' };
   }
+
+  var sesClient = new SESv2.SESv2Client({
+    region: region,
+    credentials: { accessKeyId: accessKeyId, secretAccessKey: secretAccessKey }
+  });
 
   var supaHeaders = {
     'apikey': supabaseKey,
@@ -147,19 +163,20 @@ exports.handler = async function(event) {
     body += 'Review your full compliance dashboard:\nhttps://thinkbeyondpractice.com/compliance-tracker\n\n';
     body += 'Think Beyond Practice\nThis is an automated reminder. You can manage notification preferences in the Compliance Tracker settings.';
 
-    // Send via Resend
+    // Send via Amazon SES (HTTPS API)
     try {
-      var emailRes = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + resendKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          from: 'reminders@thinkbeyondpractice.com',
-          to: email,
-          subject: 'Practice Compliance: ' + subject,
-          text: body
-        })
+      var command = new SESv2.SendEmailCommand({
+        FromEmailAddress: FROM_NAME + ' <' + FROM_ADDRESS + '>',
+        Destination: { ToAddresses: [email] },
+        Content: {
+          Simple: {
+            Subject: { Data: 'Practice Compliance: ' + subject, Charset: 'UTF-8' },
+            Body: { Text: { Data: body, Charset: 'UTF-8' } }
+          }
+        }
       });
-      if (emailRes.ok) emailsSent++;
+      await sesClient.send(command);
+      emailsSent++;
     } catch(e) { console.log('Email failed for ' + email + ': ' + e.message); }
 
     // Record sent reminders and save auto-advanced items
