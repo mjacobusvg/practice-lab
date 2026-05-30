@@ -1,6 +1,8 @@
 // netlify/functions/referral-attribution.js
 // Handles form submissions from referral-credit.html
-// Writes to Supabase referral_attributions table and sends Resend notification
+// Writes to Supabase referral_attributions table and sends an SES notification
+
+var SESv2 = require('@aws-sdk/client-sesv2');
 
 exports.handler = async function(event, context) {
   const CORS = {
@@ -33,7 +35,9 @@ exports.handler = async function(event, context) {
 
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
-  const resendKey = process.env.RESEND_API_KEY;
+  const accessKeyId = process.env.SES_AWS_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.SES_AWS_SECRET_ACCESS_KEY;
+  const region = process.env.SES_AWS_REGION || 'us-east-1';
 
   if (!supabaseUrl || !supabaseKey) {
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Server configuration error.' }) };
@@ -63,20 +67,14 @@ exports.handler = async function(event, context) {
       return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Could not save your submission. Please try again.' }) };
     }
 
-    // Send Resend notification (non-blocking — don't fail the request if email fails)
-    if (resendKey) {
+    // Send SES notification (non-blocking — don't fail the request if email fails)
+    if (accessKeyId && secretAccessKey) {
       try {
-        await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${resendKey}`
-          },
-          body: JSON.stringify({
-            from: 'Referral Attribution <noreply@thinkbeyondpractice.com>',
-            to: ['michael@thinkbeyondpsych.com'],
-            subject: `New referral attribution: ${referrer_name.trim()}`,
-            html: `
+        const sesClient = new SESv2.SESv2Client({
+          region: region,
+          credentials: { accessKeyId: accessKeyId, secretAccessKey: secretAccessKey }
+        });
+        const htmlBody = `
               <p>A new member submitted a referral attribution:</p>
               <ul>
                 <li><strong>New member email:</strong> ${new_member_email.trim().toLowerCase()}</li>
@@ -85,11 +83,20 @@ exports.handler = async function(event, context) {
                 ${notes ? `<li><strong>Notes:</strong> ${notes.trim()}</li>` : ''}
               </ul>
               <p>Verify on day 16 and process payout in Supabase.</p>
-            `
-          })
+            `;
+        const command = new SESv2.SendEmailCommand({
+          FromEmailAddress: 'Referral Attribution <noreply@thinkbeyondpractice.com>',
+          Destination: { ToAddresses: ['michael@thinkbeyondpsych.com'] },
+          Content: {
+            Simple: {
+              Subject: { Data: `New referral attribution: ${referrer_name.trim()}`, Charset: 'UTF-8' },
+              Body: { Html: { Data: htmlBody, Charset: 'UTF-8' } }
+            }
+          }
         });
+        await sesClient.send(command);
       } catch (emailErr) {
-        console.error('Resend email failed (non-blocking):', emailErr);
+        console.error('SES email failed (non-blocking):', emailErr);
       }
     }
 
