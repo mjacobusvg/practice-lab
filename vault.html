@@ -709,7 +709,28 @@ textarea.field-input{resize:vertical;min-height:60px}
 // THE VAULT - Think Beyond Practice
 // ══════════════════════════════════════════════
 
-var VAULT_KEY = 'credentialing-hub-profile';
+var VAULT_KEY = 'tbp_vault';
+var VAULT_KEY_LEGACY = 'credentialing-hub-profile';
+
+// One-time migration: copy data from legacy key if it exists
+(function migrateVaultKey() {
+  try {
+    var newData = localStorage.getItem('tbp_vault');
+    if (!newData) {
+      var oldData = localStorage.getItem('credentialing-hub-profile');
+      if (oldData) {
+        localStorage.setItem('tbp_vault', oldData);
+      }
+    }
+  } catch(e) {}
+})();
+
+// Save to both keys during transition so other deployed tools still work
+function saveVaultToStorage() {
+  var data = JSON.stringify(vault);
+  localStorage.setItem(VAULT_KEY, data);
+  localStorage.setItem(VAULT_KEY_LEGACY, data);
+}
 var vault = {};
 var userEmail = '';
 
@@ -766,7 +787,7 @@ function loadVault() {
   .then(function(data) {
     if (data.found && data.data) {
       vault = Object.assign({}, vault, data.data);
-      localStorage.setItem(VAULT_KEY, JSON.stringify(vault));
+      saveVaultToStorage();
       applyVaultToForm();
     }
   })
@@ -980,7 +1001,7 @@ function collectFormToVault() {
 function saveVault() {
   collectFormToVault();
   // localStorage
-  localStorage.setItem(VAULT_KEY, JSON.stringify(vault));
+  saveVaultToStorage();
   // Supabase
   if (userEmail) {
     fetch('/.netlify/functions/user-tool-data', {
@@ -1104,7 +1125,7 @@ function showToast(msg, type) {
 document.addEventListener('change', function(e) {
   if (e.target.hasAttribute('data-vault')) {
     collectFormToVault();
-    localStorage.setItem(VAULT_KEY, JSON.stringify(vault));
+    saveVaultToStorage();
     updateCompletion();
   }
 });
