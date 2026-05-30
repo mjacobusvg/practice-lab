@@ -899,7 +899,7 @@ function autoDraftRationale(riskLevel) {
   else if (attempt === 'remote') riskFactors.push('history of prior suicide attempt');
 
   var sub = clean(document.getElementById('substanceUse').value);
-  if (sub && sub.toLowerCase() !== 'none' && sub.toLowerCase() !== 'denies' && sub.toLowerCase() !== 'n/a') {
+  if (sub && !isNoneValue(sub)) {
     riskFactors.push('current substance use (' + sub + ')');
   }
 
@@ -1032,8 +1032,8 @@ function suggestRiskLevel() {
     reasons.push('prior attempt history');
   }
 
-  var sub = document.getElementById('substanceUse').value.trim().toLowerCase();
-  if (sub && sub !== 'none' && sub !== 'n/a' && sub !== 'denies') {
+  var sub = document.getElementById('substanceUse').value.trim();
+  if (sub && !isNoneValue(sub)) {
     if (suggested === 'low') suggested = 'moderate';
     reasons.push('active substance use');
   }
@@ -1480,6 +1480,26 @@ function generateOutputs() {
 // Helper: strip trailing periods and whitespace from user input to prevent double punctuation
 function cleanInput(s) { return s ? s.replace(/[.\s]+$/, '').trim() : ''; }
 
+function formatPhone(s) {
+  if (!s) return '';
+  // Strip everything except digits
+  var digits = s.replace(/\D/g, '');
+  // If 10 digits, format as (XXX) XXX-XXXX
+  if (digits.length === 10) return '(' + digits.substring(0,3) + ') ' + digits.substring(3,6) + '-' + digits.substring(6);
+  // If 11 digits starting with 1, format as 1-(XXX) XXX-XXXX
+  if (digits.length === 11 && digits[0] === '1') return '1-(' + digits.substring(1,4) + ') ' + digits.substring(4,7) + '-' + digits.substring(7);
+  // If 7 digits, format as XXX-XXXX
+  if (digits.length === 7) return digits.substring(0,3) + '-' + digits.substring(3);
+  // Otherwise return as entered (might be international, extension, or text like "988")
+  return s;
+}
+
+function isNoneValue(s) {
+  if (!s) return true;
+  var v = s.trim().toLowerCase();
+  return v === '' || v === 'none' || v === 'n/a' || v === 'na' || v === 'denies' || v === 'no' || v === 'negative' || v === 'none reported' || v === 'none noted';
+}
+
 // Helper: proper pluralization
 function plural(n, singular, pluralForm) { return n === 1 ? singular : (pluralForm || singular + 's'); }
 
@@ -1503,14 +1523,14 @@ function generatePatientHandout(d) {
   L.push('');
   L.push('STEP 4: PEOPLE I CAN CALL FOR HELP');
   if (!d.contacts.length) L.push('  (none entered)');
-  d.contacts.forEach(function(c,i) { L.push('  ' + (i+1) + '. ' + (c.name || '(name)') + (c.phone ? ' -- ' + c.phone : '')); });
+  d.contacts.forEach(function(c,i) { L.push('  ' + (i+1) + '. ' + (c.name || '(name)') + (c.phone ? ' -- ' + formatPhone(c.phone) : '')); });
   L.push('');
   L.push('STEP 5: PROFESSIONALS AND CRISIS RESOURCES');
-  if (d.clinicianName) { var cl = '  My clinician: ' + d.clinicianName; if (d.clinicianPhone) cl += ' -- ' + d.clinicianPhone; L.push(cl); }
-  if (d.afterHoursPhone) { L.push('  After-hours/on-call: ' + d.afterHoursPhone); }
+  if (d.clinicianName) { var cl = '  My clinician: ' + d.clinicianName; if (d.clinicianPhone) cl += ' -- ' + formatPhone(d.clinicianPhone); L.push(cl); }
+  if (d.afterHoursPhone) { L.push('  After-hours/on-call: ' + formatPhone(d.afterHoursPhone)); }
   else { L.push('  After hours: Call 988 or go to nearest Emergency Department'); }
   d.crisisResources.forEach(function(r) { L.push('  ' + r.name + (r.phone ? ': ' + r.phone : '')); });
-  if (d.edName) { L.push('  Nearest Emergency Department: ' + d.edName); if (d.edAddress) L.push('    Address: ' + d.edAddress); if (d.edPhone) L.push('    Phone: ' + d.edPhone); }
+  if (d.edName) { L.push('  Nearest Emergency Department: ' + d.edName); if (d.edAddress) L.push('    Address: ' + d.edAddress); if (d.edPhone) L.push('    Phone: ' + formatPhone(d.edPhone)); }
   L.push('');
   L.push('STEP 6: MAKING MY ENVIRONMENT SAFE');
   L.push('  Firearms: ' + fmtMeansPatient(d.means.firearms));
@@ -1528,7 +1548,7 @@ function fmtMeansPatient(item) {
 }
 
 function generateChartDoc(d) {
-  var dateStr = d.planDate || new Date().toISOString().split('T')[0];
+  var dateStr = d.planDate ? new Date(d.planDate + 'T12:00:00').toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' }) : new Date().toLocaleDateString('en-US', { month:'long', day:'numeric', year:'numeric' });
   var L = [];
   var typeLabel = { new:'New safety plan created', update:'Existing safety plan updated', review:'Safety plan reviewed, no changes' }[d.planType] || d.planType;
 
@@ -1574,7 +1594,7 @@ function generateChartDoc(d) {
   var rf = [];
   if (d.priorAttempt !== 'none') rf.push('prior suicide attempt');
   if (d.diagnoses) rf.push('psychiatric history (' + cleanInput(d.diagnoses) + ')');
-  if (d.substanceUse) rf.push('substance use (' + cleanInput(d.substanceUse) + ')');
+  if (d.substanceUse && !isNoneValue(d.substanceUse)) rf.push('substance use (' + cleanInput(d.substanceUse) + ')');
   if (d.stressors) rf.push('recent stressors (' + cleanInput(d.stressors) + ')');
   var meansRF = [];
   if (d.means.firearms && d.means.firearms.status !== 'none' && d.means.firearms.status !== 'not assessed') meansRF.push('firearms');
@@ -1675,32 +1695,29 @@ function printOutput(type) {
 function emailOutput(type) {
   var d = collectAll();
   if (type === 'patient') {
-    var email = prompt('Enter patient email address:');
-    if (!email) return;
     var body = document.getElementById('patient-output').textContent;
-    if (typeof TBPSend !== 'undefined') {
-      TBPSend.send({
-        to: email,
+    if (typeof openSendModal !== 'undefined') {
+      openSendModal({
+        content: body,
         subject: 'Your Safety Plan' + (d.patientName ? ' - ' + d.patientName : ''),
-        body: body,
-        from: 'support@thinkbeyondpractice.com'
-      }).then(function() { showToast('Safety plan emailed to patient','success'); }).catch(function(e) { showToast('Email failed: ' + e.message,'error'); });
+        tool: 'Crisis Safety Plan',
+        type: 'safety_plan'
+      });
     } else {
       showToast('Email utility not available. Copy and send manually.','error');
     }
   } else if (type === 'clinician') {
-    var clinEmail = _cspUserEmail;
-    if (!clinEmail) { clinEmail = prompt('Enter your email address:'); if (!clinEmail) return; }
     var chartBody = document.getElementById('chart-output').textContent;
     var patientBody = document.getElementById('patient-output').textContent;
     var fullBody = 'CHART DOCUMENTATION:\n\n' + chartBody + '\n\n---\n\nPATIENT SAFETY PLAN HANDOUT:\n\n' + patientBody;
-    if (typeof TBPSend !== 'undefined') {
-      TBPSend.send({
-        to: clinEmail,
+    if (typeof openSendModal !== 'undefined') {
+      openSendModal({
+        content: fullBody,
         subject: 'Safety Plan Documentation' + (d.patientName ? ' - ' + d.patientName : '') + ' - ' + (d.planDate || ''),
-        body: fullBody,
-        from: 'support@thinkbeyondpractice.com'
-      }).then(function() { showToast('Documentation emailed to ' + clinEmail,'success'); }).catch(function(e) { showToast('Email failed: ' + e.message,'error'); });
+        tool: 'Crisis Safety Plan',
+        type: 'safety_plan',
+        replyTo: _cspUserEmail || null
+      });
     } else {
       showToast('Email utility not available. Copy and send manually.','error');
     }
