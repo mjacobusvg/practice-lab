@@ -1,10 +1,13 @@
 // netlify/functions/send-document.js
 // Shared send utility for all Practice Manager tools.
-// Sends documents via Resend API using raw fetch (no npm dependencies).
+// Sends documents via Amazon SES (SMTP) using nodemailer.
 //
-// Environment variables:
-//   RESEND_API_KEY - Resend API key
-//   SUPABASE_URL - for usage logging (optional)
+// Environment variables (set in Netlify):
+//   SES_SMTP_HOST     - email-smtp.us-east-1.amazonses.com
+//   SES_SMTP_PORT     - 587
+//   SES_SMTP_USER     - SES SMTP username (starts with AKIA...)
+//   SES_SMTP_PASS     - SES SMTP password
+//   SUPABASE_URL      - for usage logging (optional)
 //   SUPABASE_SERVICE_KEY - for usage logging (optional)
 //
 // Request body:
@@ -14,6 +17,8 @@
 //   htmlBody: (optional) HTML body
 //   replyTo: (optional) clinician's email for reply-to header
 //   tool: which tool sent this (for logging)
+
+var nodemailer = require('nodemailer');
 
 var FROM_ADDRESS = 'support@thinkbeyondpractice.com';
 var FROM_NAME = 'Think Beyond Practice';
@@ -33,12 +38,16 @@ exports.handler = async function(event) {
     return { statusCode: 405, headers: headers, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
-  var apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) {
+  var smtpUser = process.env.SES_SMTP_USER;
+  var smtpPass = process.env.SES_SMTP_PASS;
+  var smtpHost = process.env.SES_SMTP_HOST || 'email-smtp.us-east-1.amazonses.com';
+  var smtpPort = parseInt(process.env.SES_SMTP_PORT || '587', 10);
+
+  if (!smtpUser || !smtpPass) {
     return {
       statusCode: 500,
       headers: headers,
-      body: JSON.stringify({ error: 'Email service not configured. Set RESEND_API_KEY in Netlify environment variables.' })
+      body: JSON.stringify({ error: 'Email service not configured. Set SES_SMTP_USER and SES_SMTP_PASS in Netlify environment variables.' })
     };
   }
 
@@ -67,34 +76,35 @@ exports.handler = async function(event) {
       };
     }
 
-    // Build Resend API payload
-    var emailPayload = {
+    // Configure SES SMTP transport (STARTTLS on port 587)
+    var transporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: smtpPort === 465, // true only for port 465 (TLS wrapper); false for 587 STARTTLS
+      auth: {
+        user: smtpUser,
+        pass: smtpPass
+      }
+    });
+
+    var mailOptions = {
       from: FROM_NAME + ' <' + FROM_ADDRESS + '>',
-      to: [to],
+      to: to,
       subject: subject
     };
 
-    if (textBody) emailPayload.text = textBody;
-    if (htmlBody) emailPayload.html = htmlBody;
-    if (replyTo) emailPayload.reply_to = replyTo;
+    if (textBody) mailOptions.text = textBody;
+    if (htmlBody) mailOptions.html = htmlBody;
+    if (replyTo) mailOptions.replyTo = replyTo;
 
-    // Send via Resend REST API (no npm package needed)
-    var res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + apiKey
-      },
-      body: JSON.stringify(emailPayload)
-    });
-
-    var result = await res.json();
-
-    if (!res.ok) {
+    var info;
+    try {
+      info = await transporter.sendMail(mailOptions);
+    } catch (sendErr) {
       return {
         statusCode: 500,
         headers: headers,
-        body: JSON.stringify({ error: (result.message || result.error || 'Resend API error') })
+        body: JSON.stringify({ error: (sendErr.message || 'SES send error') })
       };
     }
 
@@ -122,7 +132,7 @@ exports.handler = async function(event) {
     return {
       statusCode: 200,
       headers: headers,
-      body: JSON.stringify({ success: true, messageId: result.id || null })
+      body: JSON.stringify({ success: true, messageId: (info && info.messageId) || null })
     };
 
   } catch (err) {
