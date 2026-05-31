@@ -204,6 +204,43 @@ body {
   <div class="gen-card" id="genCard">
     <h3>Optional: patient-specific monitoring output</h3>
     <p class="sub">Add context to generate a patient-facing monitoring handout and a chart-ready documentation blurb. PHI is processed transiently and never stored.</p>
+    <div class="field" id="agentField" style="display:none;">
+      <label>Specific antipsychotic <span style="color:var(--red)">*</span> <span style="color:var(--cream-dim);font-weight:400">(names the drug in patient output and tailors counseling)</span></label>
+      <select id="pAgent" onchange="refreshBuckets()">
+        <option value="">Select medication...</option>
+        <optgroup label="Second-generation (atypical)">
+          <option value="aripiprazole">Aripiprazole</option>
+          <option value="asenapine">Asenapine</option>
+          <option value="brexpiprazole">Brexpiprazole</option>
+          <option value="cariprazine">Cariprazine</option>
+          <option value="iloperidone">Iloperidone</option>
+          <option value="lumateperone">Lumateperone</option>
+          <option value="lurasidone">Lurasidone</option>
+          <option value="olanzapine">Olanzapine</option>
+          <option value="paliperidone">Paliperidone</option>
+          <option value="pimavanserin">Pimavanserin</option>
+          <option value="quetiapine">Quetiapine</option>
+          <option value="risperidone">Risperidone</option>
+          <option value="ziprasidone">Ziprasidone</option>
+        </optgroup>
+        <optgroup label="First-generation (typical)">
+          <option value="chlorpromazine">Chlorpromazine</option>
+          <option value="fluphenazine">Fluphenazine</option>
+          <option value="haloperidol">Haloperidol</option>
+          <option value="loxapine">Loxapine</option>
+          <option value="perphenazine">Perphenazine</option>
+          <option value="pimozide">Pimozide</option>
+          <option value="thioridazine">Thioridazine</option>
+          <option value="thiothixene">Thiothixene</option>
+          <option value="trifluoperazine">Trifluoperazine</option>
+        </optgroup>
+        <option value="other">Other / not listed</option>
+        <option value="generic_class">Use generic class language (say "antipsychotic")</option>
+      </select>
+      <div class="field" id="agentOtherWrap" style="display:none;margin-top:10px">
+        <input type="text" id="pAgentOther" placeholder="Medication name">
+      </div>
+    </div>
     <div class="field">
       <label>Visit modality <span style="color:var(--red)">*</span></label>
       <select id="pModality" onchange="refreshBuckets()">
@@ -516,6 +553,33 @@ var MED_BUCKETS = {
   stimulants:    { vitals:true,  labs:false, ekg:'conditional', labsLabel:'Labs / levels' }
 };
 
+// Per-agent deterministic counseling flags for antipsychotics.
+// name = display/patient-facing name. flags = clinician-confirmed counseling points.
+var AGENT_FLAGS = {
+  aripiprazole:   { name:'aripiprazole',   flags:['akathisia/activation/restlessness emphasis','lower prolactin risk','possible impulse-control effects'] },
+  brexpiprazole:  { name:'brexpiprazole',  flags:['akathisia/activation emphasis','lower prolactin risk'] },
+  cariprazine:    { name:'cariprazine',    flags:['akathisia/activation/restlessness emphasis','lower prolactin risk'] },
+  risperidone:    { name:'risperidone',    flags:['prolactin elevation: galactorrhea, amenorrhea, gynecomastia, sexual side effects when clinically relevant'] },
+  paliperidone:   { name:'paliperidone',   flags:['prolactin elevation: galactorrhea, amenorrhea, gynecomastia, sexual side effects when clinically relevant'] },
+  olanzapine:     { name:'olanzapine',     flags:['high metabolic burden: weight, glucose, lipids','sedation'] },
+  quetiapine:     { name:'quetiapine',     flags:['metabolic burden and weight','sedation','orthostasis'] },
+  ziprasidone:    { name:'ziprasidone',    flags:['FOOD REQUIREMENT: must be taken with a meal of at least 500 calories or it will not absorb','QTc consideration'] },
+  lurasidone:     { name:'lurasidone',     flags:['FOOD REQUIREMENT: must be taken with a meal of at least 350 calories or it will not absorb','akathisia/EPS possible','generally lower metabolic burden'] },
+  asenapine:      { name:'asenapine',      flags:['sublingual administration; avoid food/drink 10 minutes after dosing','oral hypoesthesia possible'] },
+  iloperidone:    { name:'iloperidone',    flags:['orthostatic hypotension; slow titration','QTc consideration'] },
+  lumateperone:   { name:'lumateperone',   flags:['generally favorable metabolic profile','sedation'] },
+  pimavanserin:   { name:'pimavanserin',   flags:['QTc consideration','used for Parkinson disease psychosis; no routine metabolic emphasis'] },
+  haloperidol:    { name:'haloperidol',    flags:['EPS, parkinsonism, akathisia, tardive dyskinesia monitoring emphasis','QTc consideration at higher/IV doses'] },
+  fluphenazine:   { name:'fluphenazine',   flags:['EPS, parkinsonism, akathisia, tardive dyskinesia monitoring emphasis'] },
+  chlorpromazine: { name:'chlorpromazine', flags:['EPS and tardive dyskinesia monitoring','sedation, orthostasis, photosensitivity'] },
+  perphenazine:   { name:'perphenazine',   flags:['EPS and tardive dyskinesia monitoring emphasis'] },
+  trifluoperazine:{ name:'trifluoperazine',flags:['EPS and tardive dyskinesia monitoring emphasis'] },
+  thiothixene:    { name:'thiothixene',    flags:['EPS and tardive dyskinesia monitoring emphasis'] },
+  loxapine:       { name:'loxapine',       flags:['EPS and tardive dyskinesia monitoring emphasis'] },
+  thioridazine:   { name:'thioridazine',   flags:['QTc consideration (significant)','EPS and tardive dyskinesia monitoring'] },
+  pimozide:       { name:'pimozide',       flags:['QTc consideration (significant); CYP interactions','EPS and tardive dyskinesia monitoring'] }
+};
+
 function medBuckets() {
   var b = MED_BUCKETS[selectedKey] || { vitals:false, labs:false, ekg:false };
   // stimulant EKG appears only when a cardiac flag is entered
@@ -537,6 +601,12 @@ function refreshBuckets() {
   document.getElementById('bucketLabsField').style.display = bk.labs ? '' : 'none';
   document.getElementById('bucketEkgField').style.display = bk.ekg ? '' : 'none';
   if (bk.labs && bk.labsLabel) document.getElementById('bucketLabsLabel').textContent = bk.labsLabel;
+
+  // Antipsychotic-specific agent selector
+  var agentField = document.getElementById('agentField');
+  agentField.style.display = selectedKey === 'antipsychotics' ? '' : 'none';
+  document.getElementById('agentOtherWrap').style.display =
+    (selectedKey === 'antipsychotics' && document.getElementById('pAgent').value === 'other') ? 'block' : 'none';
 
   // Vitals-entry block (actual readings) — only for meds with a vitals bucket
   var block = document.getElementById('vitalsBlock');
@@ -687,6 +757,25 @@ async function generate() {
   var ms = document.getElementById('pModality');
   ms.style.borderColor = modality ? '' : 'var(--red)';
   if (!modality) { ms.focus(); blocked = true; }
+
+  // Antipsychotic agent is required when antipsychotics is selected
+  var agentVal = '', agentName = '', agentFlags = [];
+  if (selectedKey === 'antipsychotics') {
+    agentVal = document.getElementById('pAgent').value;
+    var as = document.getElementById('pAgent');
+    as.style.borderColor = agentVal ? '' : 'var(--red)';
+    if (!agentVal) { if (!blocked) as.focus(); blocked = true; }
+    else if (agentVal === 'other') {
+      agentName = document.getElementById('pAgentOther').value.trim();
+      if (!agentName) { document.getElementById('pAgentOther').style.borderColor = 'var(--red)'; blocked = true; }
+      else document.getElementById('pAgentOther').style.borderColor = '';
+    } else if (agentVal === 'generic_class') {
+      agentName = ''; // use class language
+    } else if (AGENT_FLAGS[agentVal]) {
+      agentName = AGENT_FLAGS[agentVal].name;
+      agentFlags = AGENT_FLAGS[agentVal].flags;
+    }
+  }
   if (blocked) return;
 
   var btn = document.getElementById('genBtn');
@@ -737,6 +826,7 @@ async function generate() {
 
   var ctxLines = [];
   ctxLines.push('Visit modality: ' + modalityLabel);
+  if (selectedKey === 'antipsychotics' && agentName) ctxLines.push('Specific medication: ' + agentName);
   if (respVitals) ctxLines.push('Vitals responsibility: ' + VITALS_OWNER[respVitals]);
   if (respLabs) ctxLines.push('Labs/levels responsibility: ' + ORDER_OWNER[respLabs]);
   if (respEkg) ctxLines.push('EKG/cardiac responsibility: ' + EKG_OWNER[respEkg]);
@@ -811,6 +901,20 @@ async function generate() {
     // ── Vitals actually entered this session (category 1: completed) ──
     if (vitalsEntered) {
       L.push('VITALS ENTERED THIS SESSION (' + vitalsSource + '): ' + vitalsParts.join(', ') + '. Document these in the chart blurb under category (1) monitoring already completed/reviewed, with the source noted (' + (modality === 'telehealth' ? 'patient-reported home reading' : 'obtained at visit') + '). State the actual values. Do NOT also tell the patient to go obtain these same vitals; they are done for this visit. Continue normal cadence guidance for future checks.');
+    }
+
+    // ── Medication-specific gate (antipsychotic: name the agent, only relevant counseling) ──
+    if (selectedKey === 'antipsychotics') {
+      if (agentName) {
+        L.push('SPECIFIC ANTIPSYCHOTIC = ' + agentName.toUpperCase() + '. In the PATIENT HANDOUT, refer to the medication by name ("your medication, ' + agentName + '" or simply "' + agentName + '"). Do NOT use the word "antipsychotic" in patient-facing text; many patients take these for mood, bipolar, irritability, augmentation, or sleep, and the class label causes confusion or alarm. The chart blurb may use clinical class terms.');
+        if (agentFlags.length) {
+          L.push('AGENT-SPECIFIC COUNSELING for ' + agentName + ' (include ONLY these; do not add counseling for other agents): ' + agentFlags.join('; ') + '.');
+        }
+        L.push('Do NOT include food-with-calories counseling unless it appears in the agent-specific counseling above. Only ziprasidone (>=500 cal) and lurasidone (>=350 cal) carry the food requirement; never show it for other agents.');
+      } else {
+        // generic_class explicitly chosen
+        L.push('GENERIC CLASS LANGUAGE selected: the clinician chose to use class wording. You may say "antipsychotic." Do not include agent-specific food requirements unless an agent is named.');
+      }
     }
 
     // ── Medication-specific gate (stimulant EKG) ──
