@@ -207,7 +207,7 @@ body {
     <div class="field-row">
       <div class="field">
         <label>Visit modality <span style="color:var(--red)">*</span></label>
-        <select id="pModality">
+        <select id="pModality" onchange="refreshVitalsVisibility()">
           <option value="">Select...</option>
           <option value="inperson">In-person</option>
           <option value="telehealth">Telehealth</option>
@@ -253,6 +253,22 @@ body {
       <label>Interacting medications or other notes (optional)</label>
       <textarea id="pNotes" placeholder="e.g. recently added an NSAID, on a diuretic, new valproate alongside clozapine"></textarea>
     </div>
+    <div id="vitalsBlock" style="display:none;">
+      <div class="field" id="vitalsTeleGate" style="display:none;">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:400">
+          <input type="checkbox" id="pHasHomeVitals" onchange="document.getElementById('vitalsInputs').style.display=this.checked?'':'none';" style="width:auto;margin:0;">
+          Patient has home vital readings available this session
+        </label>
+      </div>
+      <div class="field" id="vitalsInputs" style="display:none;">
+        <label>Vitals obtained this session (optional &mdash; entered values are documented as completed)</label>
+        <div class="field-row" style="grid-template-columns:1fr 1fr 1fr;">
+          <input type="text" id="pBP" placeholder="BP e.g. 122/80">
+          <input type="text" id="pHR" placeholder="HR e.g. 74">
+          <input type="text" id="pWt" placeholder="Weight e.g. 168 lb">
+        </div>
+      </div>
+    </div>
     <button class="gen-btn" id="genBtn" onclick="generate()">Generate patient handout + chart blurb</button>
   </div>
 
@@ -270,6 +286,29 @@ body {
         <button class="copy-btn" onclick="copyOut('outChart')">Copy</button>
       </div>
       <div class="out-body" id="outChart"></div>
+    </div>
+
+    <div class="out-block" id="emailBlock">
+      <div class="ob-head">
+        <h4><span class="ob-ic">&#9993;&#65039;</span>Email handout to patient</h4>
+      </div>
+      <p class="sub" style="margin-bottom:14px">Sends the <strong>patient-facing handout only</strong> (never the chart note) via the practice's secure sender. The handout is patient-specific health information.</p>
+      <div class="field">
+        <label>Patient email address</label>
+        <input type="email" id="emailTo" placeholder="patient@example.com">
+      </div>
+      <div class="field">
+        <label>Reply-to (your email, optional)</label>
+        <input type="email" id="emailReplyTo" placeholder="you@thinkbeyondpractice.com">
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-weight:400">
+          <input type="checkbox" id="emailConsent" style="width:auto;margin:3px 0 0;">
+          <span>The patient has consented to receive health information by email, and I have verified this is their correct address.</span>
+        </label>
+      </div>
+      <button class="gen-btn" id="emailBtn" onclick="sendHandout()">Send handout</button>
+      <div id="emailStatus" style="margin-top:12px;font-size:0.85rem;display:none;"></div>
     </div>
   </div>
 
@@ -435,7 +474,34 @@ function selectMed(key) {
   renderRef(key);
   document.getElementById('genCard').classList.add('show');
   document.getElementById('outputWrap').classList.remove('show');
+  refreshVitalsVisibility();
   document.getElementById('refPanel').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+// Meds where BP/HR/weight are part of monitoring
+var VITALS_MEDS = ['stimulants', 'antipsychotics', 'clozapine'];
+
+function refreshVitalsVisibility() {
+  var block = document.getElementById('vitalsBlock');
+  var teleGate = document.getElementById('vitalsTeleGate');
+  var inputs = document.getElementById('vitalsInputs');
+  var modality = document.getElementById('pModality').value;
+  var needsVitals = VITALS_MEDS.indexOf(selectedKey) !== -1;
+  if (!needsVitals) { block.style.display = 'none'; return; }
+  block.style.display = '';
+  if (modality === 'telehealth') {
+    // gated behind the home-vitals checkbox
+    teleGate.style.display = '';
+    inputs.style.display = document.getElementById('pHasHomeVitals').checked ? '' : 'none';
+  } else if (modality === 'inperson') {
+    // open directly; vitals taken at the visit
+    teleGate.style.display = 'none';
+    inputs.style.display = '';
+  } else {
+    // not specified or unselected: keep gate hidden, inputs available but optional
+    teleGate.style.display = 'none';
+    inputs.style.display = '';
+  }
 }
 
 function renderRef(key) {
@@ -553,6 +619,23 @@ async function generate() {
     labs: document.getElementById('pLabs').value.trim(),
     notes: document.getElementById('pNotes').value.trim()
   };
+
+  // Vitals: only count them if the block is visible for this med, and (telehealth) the checkbox is ticked
+  var vitals = { bp:'', hr:'', wt:'' };
+  var vitalsVisible = document.getElementById('vitalsBlock').style.display !== 'none';
+  var vitalsInputsOpen = document.getElementById('vitalsInputs').style.display !== 'none';
+  if (vitalsVisible && vitalsInputsOpen) {
+    vitals.bp = document.getElementById('pBP').value.trim();
+    vitals.hr = document.getElementById('pHR').value.trim();
+    vitals.wt = document.getElementById('pWt').value.trim();
+  }
+  var vitalsParts = [];
+  if (vitals.bp) vitalsParts.push('BP ' + vitals.bp);
+  if (vitals.hr) vitalsParts.push('HR ' + vitals.hr);
+  if (vitals.wt) vitalsParts.push('weight ' + vitals.wt);
+  var vitalsEntered = vitalsParts.length > 0;
+  var vitalsSource = (modality === 'telehealth') ? 'patient-reported home reading' : 'obtained at visit';
+
   var modalityLabel = modality === 'inperson' ? 'In-person' : (modality === 'telehealth' ? 'Telehealth' : 'Not specified');
   var respLabel = responsibility === 'prescriber' ? 'Prescriber orders/reviews directly'
     : responsibility === 'pcp' ? 'PCP/specialist orders/reviews'
@@ -567,6 +650,7 @@ async function generate() {
   if (ctx.comorb) ctxLines.push('Comorbidities: ' + ctx.comorb);
   if (ctx.labs) ctxLines.push('Recent abnormal/borderline labs: ' + ctx.labs);
   if (ctx.notes) ctxLines.push('Interactions/notes: ' + ctx.notes);
+  if (vitalsEntered) ctxLines.push('Vitals THIS SESSION (' + vitalsSource + '): ' + vitalsParts.join(', '));
   var ctxText = ctxLines.join('\n');
 
   var reference = buildReferenceText(selectedKey);
@@ -609,6 +693,11 @@ async function generate() {
 
     // ── Chart documentation distinction (global) ──
     L.push('CHART BLURB must separate four categories and never conflate them: (1) monitoring already completed/reviewed, (2) monitoring ordered or coordinated, (3) patient education provided, (4) follow-up plan. NEVER document monitoring as completed or results as reviewed unless the entered context states it was actually done. Default pending monitoring to "ordered/coordinated, to be reviewed."');
+
+    // ── Vitals actually entered this session (category 1: completed) ──
+    if (vitalsEntered) {
+      L.push('VITALS ENTERED THIS SESSION (' + vitalsSource + '): ' + vitalsParts.join(', ') + '. Document these in the chart blurb under category (1) monitoring already completed/reviewed, with the source noted (' + (modality === 'telehealth' ? 'patient-reported home reading' : 'obtained at visit') + '). State the actual values. Do NOT also tell the patient to go obtain these same vitals; they are done for this visit. Continue normal cadence guidance for future checks.');
+    }
 
     // ── Medication-specific gate (stimulant EKG) ──
     if (isStimulant) {
@@ -689,6 +778,71 @@ function copyOut(id) {
   navigator.clipboard.writeText(t);
   event.target.textContent = 'Copied';
   setTimeout(function(){ event.target.textContent = 'Copy'; }, 1400);
+}
+
+// ══════════════════════════════════════════════
+// EMAIL HANDOUT TO PATIENT (via send-document.js / SES, BAA-covered)
+// Sends the patient handout ONLY. Consent-gated.
+// ══════════════════════════════════════════════
+function showEmailStatus(msg, ok) {
+  var s = document.getElementById('emailStatus');
+  s.style.display = '';
+  s.style.color = ok ? 'var(--green)' : 'var(--red)';
+  s.textContent = msg;
+}
+
+async function sendHandout() {
+  var to = document.getElementById('emailTo').value.trim();
+  var replyTo = document.getElementById('emailReplyTo').value.trim();
+  var consent = document.getElementById('emailConsent').checked;
+  var handout = document.getElementById('outPatient').textContent.trim();
+
+  if (!handout || handout.indexOf('Generation failed') === 0) {
+    showEmailStatus('Generate a handout first.', false); return;
+  }
+  if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+    document.getElementById('emailTo').style.borderColor = 'var(--red)';
+    showEmailStatus('Enter a valid patient email address.', false); return;
+  }
+  document.getElementById('emailTo').style.borderColor = '';
+  if (!consent) {
+    showEmailStatus('You must confirm patient consent before sending.', false); return;
+  }
+
+  var btn = document.getElementById('emailBtn');
+  var orig = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Sending...';
+
+  var medName = (REFS[selectedKey] && REFS[selectedKey].name) || 'your medication';
+  var payload = {
+    to: to,
+    subject: 'Your monitoring plan for ' + medName,
+    body: handout,
+    tool: 'Monitoring Protocol Reference'
+  };
+  if (replyTo && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(replyTo)) payload.replyTo = replyTo;
+
+  try {
+    var res = await fetch('/.netlify/functions/send-document', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    var data = await res.json();
+    if (data.error) throw new Error(data.error);
+    if (data.success) {
+      showEmailStatus('Handout sent to ' + to + '.', true);
+      document.getElementById('emailConsent').checked = false;
+    } else {
+      throw new Error('Send did not complete.');
+    }
+  } catch (err) {
+    showEmailStatus('Could not send: ' + err.message, false);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = orig;
+  }
 }
 
 // ══════════════════════════════════════════════
