@@ -206,6 +206,28 @@ body {
     <p class="sub">Add context to generate a patient-facing monitoring handout and a chart-ready documentation blurb. PHI is processed transiently and never stored.</p>
     <div class="field-row">
       <div class="field">
+        <label>Visit modality <span style="color:var(--red)">*</span></label>
+        <select id="pModality">
+          <option value="">Select...</option>
+          <option value="inperson">In-person</option>
+          <option value="telehealth">Telehealth</option>
+          <option value="unspecified">Not specified</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Monitoring responsibility <span style="color:var(--red)">*</span></label>
+        <select id="pResponsibility">
+          <option value="">Select...</option>
+          <option value="prescriber">I order / review directly</option>
+          <option value="pcp">PCP / specialist orders / reviews</option>
+          <option value="shared">Shared coordination</option>
+          <option value="unspecified">Not specified</option>
+        </select>
+      </div>
+    </div>
+    <p class="sub" style="margin-top:-6px;margin-bottom:16px;font-size:0.78rem">Modality sets <em>where/how</em> monitoring happens. Responsibility sets <em>who</em> orders and reviews it. Both required &mdash; they control documentation accuracy, not clinical content.</p>
+    <div class="field-row">
+      <div class="field">
         <label>Patient age</label>
         <input type="text" id="pAge" placeholder="e.g. 52">
       </div>
@@ -507,6 +529,18 @@ function buildReferenceText(key) {
 
 async function generate() {
   if (!selectedKey) return;
+
+  var modality = document.getElementById('pModality').value;
+  var responsibility = document.getElementById('pResponsibility').value;
+  var blocked = false;
+  var ms = document.getElementById('pModality');
+  var rs = document.getElementById('pResponsibility');
+  ms.style.borderColor = modality ? '' : 'var(--red)';
+  rs.style.borderColor = responsibility ? '' : 'var(--red)';
+  if (!modality) { ms.focus(); blocked = true; }
+  else if (!responsibility) { rs.focus(); blocked = true; }
+  if (blocked) return;
+
   var btn = document.getElementById('genBtn');
   var orig = btn.innerHTML;
   btn.disabled = true;
@@ -519,27 +553,94 @@ async function generate() {
     labs: document.getElementById('pLabs').value.trim(),
     notes: document.getElementById('pNotes').value.trim()
   };
+  var modalityLabel = modality === 'inperson' ? 'In-person' : (modality === 'telehealth' ? 'Telehealth' : 'Not specified');
+  var respLabel = responsibility === 'prescriber' ? 'Prescriber orders/reviews directly'
+    : responsibility === 'pcp' ? 'PCP/specialist orders/reviews'
+    : responsibility === 'shared' ? 'Shared coordination with PCP/specialist'
+    : 'Not specified';
+
   var ctxLines = [];
+  ctxLines.push('Visit modality: ' + modalityLabel);
+  ctxLines.push('Monitoring responsibility: ' + respLabel);
   if (ctx.age) ctxLines.push('Age: ' + ctx.age);
   if (ctx.sex) ctxLines.push('Sex/childbearing: ' + ctx.sex);
   if (ctx.comorb) ctxLines.push('Comorbidities: ' + ctx.comorb);
   if (ctx.labs) ctxLines.push('Recent abnormal/borderline labs: ' + ctx.labs);
   if (ctx.notes) ctxLines.push('Interactions/notes: ' + ctx.notes);
-  var ctxText = ctxLines.length ? ctxLines.join('\n') : 'No patient-specific context provided. Produce the standard monitoring picture for this agent.';
+  var ctxText = ctxLines.join('\n');
 
   var reference = buildReferenceText(selectedKey);
+
+  // ── Deterministic rule tree. The reference decides WHAT monitoring is indicated.
+  //    Modality decides WHERE/HOW it is worded. Responsibility decides WHO orders/reviews.
+  //    The model phrases only; it never infers the standard, the modality, or the responsibility. ──
+  var cardiacText = (ctx.comorb + ' ' + ctx.labs + ' ' + ctx.notes).toLowerCase();
+  var cardiacTerms = ['cardiac','heart','murmur','arrhythm','palpitation','syncope','qt','tachycard','hypertension','htn','chest pain','cardiomyopath','structural','congenital','family history of sudden'];
+  var cardiacFlag = cardiacTerms.some(function(t){ return cardiacText.indexOf(t) !== -1; });
+  var isStimulant = selectedKey === 'stimulants';
+  var isClozapine = selectedKey === 'clozapine';
+
+  function buildRules() {
+    var L = [];
+    L.push('PRINCIPLE: The medication reference determines WHAT monitoring is clinically indicated. The selectors below determine HOW it is worded and documented. Never change the clinical requirement; only change the logistics wording. Never infer modality or responsibility — they are given.');
+
+    // ── Modality: where/how ──
+    if (modality === 'telehealth') {
+      L.push('MODALITY = TELEHEALTH. Nothing physical happens in-office. Do NOT state that vitals, weight, labs, EKG, AIMS/physical exams, or skin exams were performed at the visit. BP/HR/weight: patient-reported home monitoring with a validated device when available, or obtained via PCP, pharmacy, retail clinic, or outside clinical site, reported before/at follow-up. Labs, drug levels (lithium, valproate, carbamazepine), ANC, metabolic panels, pregnancy tests, EKG: ordered/coordinated for completion at an outpatient lab or facility, NOT "obtained today".');
+    } else if (modality === 'inperson') {
+      L.push('MODALITY = IN-PERSON. Vitals may be documented as taken at the visit ONLY (do not assume weight/EKG were done unless contextually implied). Do NOT assume the psychiatric office draws labs or performs EKGs: phrase labs/EKG/levels as obtained in-office where available, or coordinated through PCP/outside lab/facility.');
+    } else {
+      L.push('MODALITY = NOT SPECIFIED. Use neutral logistics language: "monitor BP/HR," "obtain labs," "coordinate EKG/labs as clinically indicated," without stating where or how. Do NOT write "at each visit" or "checked today" — that implies in-office measurement.');
+    }
+
+    // ── Responsibility: who orders/reviews ──
+    if (responsibility === 'prescriber') {
+      L.push('RESPONSIBILITY = PRESCRIBER. This prescriber orders and will review the monitoring directly. Telehealth-compatible: prescriber can order labs to an outpatient lab (e.g. Labcorp/Quest). Phrase as "I ordered [X] to be completed before your next appointment" / chart: "[X] ordered by this prescriber to be completed prior to follow-up; results to be reviewed before further adjustment." Do NOT route to PCP unless context says so.');
+    } else if (responsibility === 'pcp') {
+      L.push('RESPONSIBILITY = PCP/SPECIALIST. The PCP/specialist orders and reviews this monitoring. Phrase as the patient ensuring results are shared with this prescriber. Chart: "monitoring managed by PCP/specialist; patient instructed to complete as directed and ensure results available for psychiatric review."');
+    } else if (responsibility === 'shared') {
+      L.push('RESPONSIBILITY = SHARED. Labs/monitoring coordinated through outpatient lab/PCP as appropriate, with results reviewed by this prescriber and/or the managing medical clinician before further medication adjustments.');
+    } else {
+      L.push('RESPONSIBILITY = NOT SPECIFIED. Do not assert who orders or reviews. Use "to be ordered/coordinated as appropriate" and "results to be reviewed before further adjustment" without naming the responsible party.');
+    }
+
+    // ── Phrasing ban (global) ──
+    L.push('FORBIDDEN PHRASES unless the modality AND responsibility AND entered context actually support them: "checked at today\'s visit," "obtained today," "in clinic," "at each follow-up visit," "we will check." PREFER: "ordered," "coordinated," "to be completed," "patient instructed to report," "results to be reviewed."');
+
+    // ── Chart documentation distinction (global) ──
+    L.push('CHART BLURB must separate four categories and never conflate them: (1) monitoring already completed/reviewed, (2) monitoring ordered or coordinated, (3) patient education provided, (4) follow-up plan. NEVER document monitoring as completed or results as reviewed unless the entered context states it was actually done. Default pending monitoring to "ordered/coordinated, to be reviewed."');
+
+    // ── Medication-specific gate (stimulant EKG) ──
+    if (isStimulant) {
+      if (cardiacFlag) {
+        L.push('STIMULANT + CARDIAC FLAG: Do NOT state an EKG was obtained. Generate CONDITIONAL language: initiation reviewed with cardiac-risk precautions; EKG and/or PCP/cardiology evaluation to be obtained/coordinated prior to initiation or dose escalation as clinically indicated. Educate patient to report chest pain, syncope, palpitations, shortness of breath, exertional symptoms, or dizziness.');
+      } else {
+        L.push('STIMULANT, NO CARDIAC FLAG: Do NOT generate any EKG language. Routine baseline ECG is not required absent cardiac history/symptoms/exam findings/risk factors. Monitor BP/HR and symptoms only.');
+      }
+    }
+
+    // ── Medication-specific gate (clozapine ANC — canonical, pinned) ──
+    if (isClozapine) {
+      L.push('CLOZAPINE ANC (CANONICAL — DO NOT PARAPHRASE LOOSELY): ANC monitoring is NOT routine lab work and must never be phrased as "labs ordered" or grouped with general labs. It MUST be documented as completed/scheduled according to the required ANC monitoring cadence (weekly first 6 months, every 2 weeks months 6-12, monthly after 12 months), with results reviewed or pending review BEFORE continuation/refill decisions as clinically required. ' + (modality === 'telehealth' ? 'TELEHEALTH: ANC is completed through an outside lab or coordinated monitoring site; never imply it was drawn in-office.' : modality === 'inperson' ? 'IN-PERSON: do not imply ANC was drawn in the psychiatric office unless entered; otherwise coordinate through an outside lab/facility.' : 'Do not imply where ANC was obtained.') + ' Separate ANC from the metabolic/cardiometabolic monitoring, which follows the general logistics rules.');
+      L.push('CLOZAPINE CHART BLURB: explicitly distinguish ANC monitoring from general lab monitoring. State ANC as scheduled/completed per the required cadence with results reviewed or pending review before continuation. Never document ANC as obtained in-office unless the entered context says so.');
+      L.push('CLOZAPINE PATIENT HANDOUT: convey that clozapine requires specific blood monitoring (ANC) that is not optional routine bloodwork, must be done on the prescriber-set schedule, is completed through an outside lab or coordinated monitoring site when telehealth, and that the prescriber needs the results to safely continue treatment.');
+    }
+    return L.join('\n');
+  }
+  var hardRules = buildRules();
 
   var sysPrompt =
     'You are a clinical documentation assistant for a psychiatric prescriber. Generate monitoring guidance for a specific medication.\n\n' +
     'AUTHORITATIVE SOURCE (use this first; it reflects the prescriber\'s own clinical guideline):\n' + reference + '\n\n' +
+    'HARD CONSTRAINTS (determined by the prescriber\'s rule logic; NOT negotiable; phrase wording within them, never override them):\n' + hardRules + '\n\n' +
     'RULES:\n' +
     '1. The reference above is authoritative. Do not contradict its intervals, thresholds, or red flags.\n' +
-    '2. Tailor frequency and emphasis to the patient context. Where the context (age, comorbidity, abnormal labs, interactions) warrants increased monitoring per the reference rules, say so explicitly and explain why.\n' +
-    '3. If you add anything not present in the reference, prefix that sentence with "[General guidance]" so the clinician can see it is not from their source material.\n' +
-    '4. Do not invent specific numeric thresholds that are not in the reference.\n' +
-    '5. Output two clearly separated sections with these exact headers on their own lines: "===PATIENT HANDOUT===" and "===CHART BLURB===".\n' +
-    '   - PATIENT HANDOUT: plain-language, second-person ("you"), explains which labs/checks and roughly how often, what symptoms to report, no jargon dumps. No diagnosis labels.\n' +
-    '   - CHART BLURB: concise clinician documentation, third-person, suitable to paste into an EHR. State the monitoring plan ordered, rationale tied to patient factors, and patient education provided.\n' +
+    '2. Tailor frequency and emphasis to the patient context. Where context (age, comorbidity, abnormal labs, interactions) warrants increased monitoring per the reference rules, say so and explain why.\n' +
+    '3. If you add anything not in the reference, prefix that sentence with "[General guidance]".\n' +
+    '4. Do not invent specific numeric thresholds not in the reference.\n' +
+    '5. Output two sections with these exact headers on their own lines: "===PATIENT HANDOUT===" and "===CHART BLURB===".\n' +
+    '   - PATIENT HANDOUT: plain-language, second-person, what checks and roughly how often, what symptoms to report. No jargon dumps, no diagnosis labels. Logistics MUST follow the HARD CONSTRAINTS.\n' +
+    '   - CHART BLURB: concise third-person EHR documentation following the four-category separation in the HARD CONSTRAINTS. Logistics MUST follow the HARD CONSTRAINTS.\n' +
     '6. Keep each section tight. No preamble before the first header.';
 
   var userPrompt = 'PATIENT CONTEXT:\n' + ctxText + '\n\nGenerate the monitoring handout and chart blurb now.';
