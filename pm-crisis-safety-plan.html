@@ -147,7 +147,15 @@ input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(0.7) brightn
       <div class="field-group"><label class="field-label">Plan Type</label><select class="field-select" id="planType"><option value="new">New safety plan</option><option value="update">Update to existing plan</option><option value="review">Routine review (no changes)</option></select></div>
       <div class="field-group"><label class="field-label">Screening Tool Used</label><select class="field-select" id="screeningTool"><option value="">Select...</option><option value="C-SSRS">C-SSRS</option><option value="PHQ-9 Item 9">PHQ-9 Item 9</option><option value="ASQ">ASQ</option><option value="clinical">Clinical concern (no formal screen)</option><option value="other">Other</option></select></div>
     </div>
-    <div class="field-group" id="screeningResultGroup" style="display:none"><label class="field-label">Screening Result</label><input type="text" class="field-input" id="screeningResult" placeholder="e.g., C-SSRS positive on Q2-Q3, PHQ-9 Item 9 = 2"></div>
+    <div class="field-group" id="screeningResultGroup" style="display:none"><label class="field-label">Screening Result</label><input type="text" class="field-input" id="screeningResult" placeholder="e.g., PHQ-9 Item 9 = 2, ASQ positive on Q3"></div>
+    <div class="field-group" id="administerCSSRSGroup" style="display:none">
+      <label class="field-label">Administer C-SSRS now as the structured assessment?</label>
+      <select class="field-select" id="administerCSSRS">
+        <option value="no">No, document screening result only</option>
+        <option value="yes">Yes, walk me through the C-SSRS</option>
+      </select>
+      <div class="field-hint">Recommended when the initial screen is positive. The C-SSRS is the standard structured assessment after a positive screen.</div>
+    </div>
     <div class="btn-row"><button class="btn-primary" onclick="goToStep(1)">Next: Risk Assessment &#8594;</button></div>
   </div>
 
@@ -162,7 +170,7 @@ input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(0.7) brightn
     <!-- ── C-SSRS FLOW ── -->
     <div id="cssrs-flow" style="display:none">
       <div class="cg"><button class="cg-toggle" onclick="toggleCG(this)"><span class="cg-arrow">&#9654;</span> About the C-SSRS in this tool</button><div class="cg-body">
-        <p>This follows the Columbia Suicide Severity Rating Scale question sequence. Each question builds on the last -- if the patient answers "No" to a question, you generally do not need to ask the ones that follow (they describe escalating severity). However, always ask Q6 (preparatory behaviors) regardless, as patients sometimes take action without endorsing clear ideation.</p>
+        <p>This follows the validated Columbia Suicide Severity Rating Scale Screener protocol. Q1 and Q2 are always asked. If Q2 is positive, the tool walks through Q3, Q4, and Q5 in sequence regardless of intermediate answers, per the validated protocol. If Q2 is negative, the tool skips directly to Q6. Q6 is always asked, because preparatory behaviors can be present even when a patient denies current ideation.</p>
         <p>The C-SSRS is a screening and assessment tool, not a risk formulation. You will still assign a risk level on the next step based on the totality of the clinical picture.</p>
       </div></div>
 
@@ -727,13 +735,37 @@ function initTool() {
   seedCrisisResources();
   loadVaultData();
   document.getElementById('screeningTool').addEventListener('change', function() {
-    document.getElementById('screeningResultGroup').style.display = this.value ? 'block' : 'none';
-    var isCSSRS = this.value === 'C-SSRS';
+    var val = this.value;
+    var isCSSRS = val === 'C-SSRS';
+    var isOtherScreen = val && val !== 'C-SSRS';
+
+    // Show "Screening Result" text field for non-C-SSRS selections
+    document.getElementById('screeningResultGroup').style.display = isOtherScreen ? 'block' : 'none';
+
+    // Show "Administer C-SSRS now?" prompt for non-C-SSRS selections
+    document.getElementById('administerCSSRSGroup').style.display = isOtherScreen ? 'block' : 'none';
+
+    // If C-SSRS selected directly, show C-SSRS flow immediately
     document.getElementById('cssrs-flow').style.display = isCSSRS ? 'block' : 'none';
     document.getElementById('general-flow').style.display = isCSSRS ? 'none' : 'block';
+
     if (isCSSRS) {
-      document.getElementById('step1-subtitle').textContent = 'C-SSRS structured inquiry. Questions build sequentially -- each level indicates escalating severity.';
-      document.getElementById('screeningResultGroup').style.display = 'none';
+      document.getElementById('step1-subtitle').textContent = 'C-SSRS structured inquiry. Q1 and Q2 are always asked. If Q2 is positive, Q3-Q6 are asked in sequence per the validated protocol.';
+    } else {
+      document.getElementById('step1-subtitle').textContent = 'Structured inquiry results. These drive your chart documentation and risk formulation.';
+    }
+
+    // Reset administerCSSRS dropdown when screening tool changes
+    document.getElementById('administerCSSRS').value = 'no';
+  });
+
+  // Handle "Administer C-SSRS now?" selection
+  document.getElementById('administerCSSRS').addEventListener('change', function() {
+    var administer = this.value === 'yes';
+    document.getElementById('cssrs-flow').style.display = administer ? 'block' : 'none';
+    document.getElementById('general-flow').style.display = administer ? 'none' : 'block';
+    if (administer) {
+      document.getElementById('step1-subtitle').textContent = 'C-SSRS structured inquiry. Q1 and Q2 are always asked. If Q2 is positive, Q3-Q6 are asked in sequence per the validated protocol.';
     } else {
       document.getElementById('step1-subtitle').textContent = 'Structured inquiry results. These drive your chart documentation and risk formulation.';
     }
@@ -1065,32 +1097,40 @@ function cssrsAdvance(q) {
   var detailEl = document.getElementById('cssrs-q' + q + '-detail');
   if (detailEl) detailEl.classList.toggle('visible', val === 'yes');
 
-  // Show next question
-  if (val === 'yes') {
-    // Always show next question in sequence up to Q6
-    if (q < 6) {
-      document.getElementById('cssrs-q' + (q + 1) + '-section').style.display = 'block';
+  // Validated C-SSRS skip logic:
+  //   Q1 always asked, then Q2 always asked.
+  //   If Q2 is YES, ask Q3, Q4, Q5 in sequence regardless of intermediate answers.
+  //   If Q2 is NO, skip directly to Q6.
+  //   Q6 is always asked, regardless of all prior answers.
+  //   Intensity section appears once Q2+ has been answered yes to any of Q2-Q5.
+
+  if (q === 1) {
+    // Q1 answered (yes or no) -> always show Q2 next
+    document.getElementById('cssrs-q2-section').style.display = 'block';
+  } else if (q === 2) {
+    if (val === 'yes') {
+      // Q2 YES -> proceed through Q3, Q4, Q5, Q6 per validated protocol
+      document.getElementById('cssrs-q3-section').style.display = 'block';
+      document.getElementById('cssrs-intensity-section').style.display = 'block';
+    } else {
+      // Q2 NO -> skip to Q6 per validated protocol
+      document.getElementById('cssrs-q6-section').style.display = 'block';
     }
-    // Show intensity section if Q2+ is yes
-    if (q >= 2) {
+  } else if (q === 3 || q === 4) {
+    // Q3 or Q4 answered (yes or no) -> show next question in sequence
+    // This matches validated C-SSRS: all of Q3-Q5 are asked when Q2 is positive
+    document.getElementById('cssrs-q' + (q + 1) + '-section').style.display = 'block';
+    if (val === 'yes') {
       document.getElementById('cssrs-intensity-section').style.display = 'block';
     }
-  } else {
-    // On "No": if Q1 is No, still show Q2 (some patients deny wish to be dead but endorse active SI)
-    // If Q2 is No, skip to Q6 (always ask about behaviors)
-    // If Q3-Q5 is No, show next question
-    if (q === 1) {
-      document.getElementById('cssrs-q2-section').style.display = 'block';
-    } else if (q === 2) {
-      // Skip Q3-Q5, jump to Q6
-      document.getElementById('cssrs-q6-section').style.display = 'block';
-    } else if (q < 6) {
-      // Q3 No -> show Q6 (skip Q4-Q5 since they require escalating severity)
-      // Q4 No -> show Q6
-      // Q5 No -> show Q6
-      document.getElementById('cssrs-q6-section').style.display = 'block';
+  } else if (q === 5) {
+    // Q5 answered (yes or no) -> always show Q6
+    document.getElementById('cssrs-q6-section').style.display = 'block';
+    if (val === 'yes') {
+      document.getElementById('cssrs-intensity-section').style.display = 'block';
     }
   }
+  // Q6 is the last question. No further advancement needed.
 }
 
 function getRadioVal(name) {
@@ -1099,7 +1139,12 @@ function getRadioVal(name) {
 }
 
 function isCSSRSMode() {
-  return document.getElementById('screeningTool').value === 'C-SSRS';
+  // C-SSRS mode is active if either:
+  // 1. C-SSRS was selected as the screening tool, OR
+  // 2. A different screening tool was used but clinician chose to administer C-SSRS as the assessment
+  var screeningTool = document.getElementById('screeningTool').value;
+  var administerCSSRS = (document.getElementById('administerCSSRS') || {}).value;
+  return screeningTool === 'C-SSRS' || administerCSSRS === 'yes';
 }
 
 function getCSSRSData() {
