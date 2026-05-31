@@ -285,10 +285,13 @@ body {
       </div>
       <div class="field" id="vitalsInputs" style="display:none;">
         <label>Vitals obtained this session (optional &mdash; entered values are documented as completed)</label>
-        <div class="field-row" style="grid-template-columns:1fr 1fr 1fr;">
+        <div class="field-row" style="grid-template-columns:1fr 1fr;">
           <input type="text" id="pBP" placeholder="BP e.g. 122/80">
           <input type="text" id="pHR" placeholder="HR e.g. 74">
+        </div>
+        <div class="field-row" style="grid-template-columns:1fr 1fr;margin-top:12px;">
           <input type="text" id="pWt" placeholder="Weight e.g. 168 lb">
+          <input type="text" id="pHt" placeholder="Height e.g. 5'6&quot; or 168 cm">
         </div>
       </div>
     </div>
@@ -641,6 +644,41 @@ function buildReferenceText(key) {
   return lines.join('\n');
 }
 
+function computeBMI(wtStr, htStr) {
+  if (!wtStr || !htStr) return null;
+  var wMatch = wtStr.toLowerCase().match(/([\d.]+)/);
+  if (!wMatch) return null;
+  var wNum = parseFloat(wMatch[1]);
+  var wKg = /kg/.test(wtStr.toLowerCase()) ? wNum : wNum * 0.453592; // default lb
+  var hM = null;
+  var hLow = htStr.toLowerCase();
+  var ftin = hLow.match(/(\d+)\s*(?:'|ft|feet|\u2019)\s*(\d+(?:\.\d+)?)?/);
+  if (ftin) {
+    var ft = parseFloat(ftin[1]);
+    var inch = ftin[2] ? parseFloat(ftin[2]) : 0;
+    hM = (ft * 12 + inch) * 0.0254;
+  } else if (/cm/.test(hLow)) {
+    hM = parseFloat(hLow) / 100;
+  } else {
+    var n = parseFloat(hLow);
+    if (!isNaN(n)) hM = n > 90 ? n / 100 : (n < 3 ? n : n * 0.0254); // >90 cm, <3 meters, else inches
+  }
+  if (!wKg || !hM || hM <= 0) return null;
+  var bmi = wKg / (hM * hM);
+  if (!isFinite(bmi) || bmi < 5 || bmi > 100) return null;
+  return bmi.toFixed(1);
+}
+
+function stripMarkdown(s) {
+  if (!s) return s;
+  return s
+    .replace(/\*\*(.*?)\*\*/g, '$1')   // **bold**
+    .replace(/\*(.*?)\*/g, '$1')        // *italic*
+    .replace(/^#{1,6}\s*/gm, '')         // # headers
+    .replace(/`([^`]*)`/g, '$1')         // `code`
+    .replace(/^\s*[-*]\s+/gm, '\u2022 '); // bullet markers -> dot
+}
+
 async function generate() {
   if (!selectedKey) return;
 
@@ -676,18 +714,22 @@ async function generate() {
   var EKG_OWNER = { prescriber:'prescriber orders/reviews', pcp:'PCP/specialist/cardiology orders/reviews', shared:'shared coordination', unspecified:'not specified' };
 
   // Vitals: only count entered readings if the block is visible and (telehealth) checkbox ticked
-  var vitals = { bp:'', hr:'', wt:'' };
+  var vitals = { bp:'', hr:'', wt:'', ht:'' };
   var vitalsVisible = document.getElementById('vitalsBlock').style.display !== 'none';
   var vitalsInputsOpen = document.getElementById('vitalsInputs').style.display !== 'none';
   if (vitalsVisible && vitalsInputsOpen) {
     vitals.bp = document.getElementById('pBP').value.trim();
     vitals.hr = document.getElementById('pHR').value.trim();
     vitals.wt = document.getElementById('pWt').value.trim();
+    vitals.ht = document.getElementById('pHt').value.trim();
   }
   var vitalsParts = [];
   if (vitals.bp) vitalsParts.push('BP ' + vitals.bp);
   if (vitals.hr) vitalsParts.push('HR ' + vitals.hr);
   if (vitals.wt) vitalsParts.push('weight ' + vitals.wt);
+  if (vitals.ht) vitalsParts.push('height ' + vitals.ht);
+  var bmi = computeBMI(vitals.wt, vitals.ht);
+  if (bmi) vitalsParts.push('BMI ' + bmi);
   var vitalsEntered = vitalsParts.length > 0;
   var vitalsSource = (modality === 'telehealth') ? 'patient-reported home reading' : 'obtained at visit';
 
@@ -802,7 +844,8 @@ async function generate() {
     '5. Output two sections with these exact headers on their own lines: "===PATIENT HANDOUT===" and "===CHART BLURB===".\n' +
     '   - PATIENT HANDOUT: plain-language, second-person, what checks and roughly how often, what symptoms to report. No jargon dumps, no diagnosis labels. Logistics MUST follow the HARD CONSTRAINTS.\n' +
     '   - CHART BLURB: concise third-person EHR documentation following the four-category separation in the HARD CONSTRAINTS. Logistics MUST follow the HARD CONSTRAINTS.\n' +
-    '6. Keep each section tight. No preamble before the first header.';
+    '6. Keep each section tight. No preamble before the first header.\n' +
+    '7. PLAIN TEXT ONLY. Do NOT use markdown: no **bold**, no asterisks, no # headers, no backticks. This is pasted into EHRs and patient emails where markdown does not render. Use plain labels followed by a colon (e.g. "Blood tests:") and line breaks between sections.';
 
   var userPrompt = 'PATIENT CONTEXT:\n' + ctxText + '\n\nGenerate the monitoring handout and chart blurb now.';
 
@@ -831,8 +874,8 @@ async function generate() {
       chart = '(Could not parse a separate chart section. Full output shown in the handout panel.)';
     }
 
-    document.getElementById('outPatient').textContent = patient;
-    document.getElementById('outChart').textContent = chart;
+    document.getElementById('outPatient').textContent = stripMarkdown(patient);
+    document.getElementById('outChart').textContent = stripMarkdown(chart);
     document.getElementById('outputWrap').classList.add('show');
     document.getElementById('outputWrap').scrollIntoView({ behavior:'smooth', block:'start' });
   } catch (err) {
