@@ -204,28 +204,51 @@ body {
   <div class="gen-card" id="genCard">
     <h3>Optional: patient-specific monitoring output</h3>
     <p class="sub">Add context to generate a patient-facing monitoring handout and a chart-ready documentation blurb. PHI is processed transiently and never stored.</p>
-    <div class="field-row">
-      <div class="field">
-        <label>Visit modality <span style="color:var(--red)">*</span></label>
-        <select id="pModality" onchange="refreshVitalsVisibility()">
-          <option value="">Select...</option>
-          <option value="inperson">In-person</option>
-          <option value="telehealth">Telehealth</option>
+    <div class="field">
+      <label>Visit modality <span style="color:var(--red)">*</span></label>
+      <select id="pModality" onchange="refreshBuckets()">
+        <option value="">Select...</option>
+        <option value="inperson">In-person</option>
+        <option value="telehealth">Telehealth</option>
+        <option value="unspecified">Not specified</option>
+      </select>
+    </div>
+    <div id="bucketContainer" style="display:none;">
+      <p class="sub" style="margin-bottom:10px;font-size:0.78rem">Set who handles each monitoring type. Ownership can differ (e.g. patient reports home BP while PCP runs labs). Optional &mdash; defaults to Not specified.</p>
+      <div class="field" id="bucketVitalsField" style="display:none;">
+        <label>Vitals / measurements (BP, HR, weight)</label>
+        <select id="bVitals">
           <option value="unspecified">Not specified</option>
+          <option value="prescriber">Prescriber / clinic obtains</option>
+          <option value="patient">Patient self-reports home readings</option>
+          <option value="pcp">PCP / specialist obtains</option>
+          <option value="site">Pharmacy / retail clinic / other site obtains</option>
+          <option value="shared">Shared / combination</option>
         </select>
       </div>
-      <div class="field">
-        <label>Monitoring responsibility <span style="color:var(--red)">*</span></label>
-        <select id="pResponsibility">
-          <option value="">Select...</option>
-          <option value="prescriber">I order / review directly</option>
+      <div class="field" id="bucketLabsField" style="display:none;">
+        <label id="bucketLabsLabel">Labs / levels</label>
+        <select id="bLabs">
+          <option value="unspecified">Not specified</option>
+          <option value="prescriber">Prescriber orders / reviews</option>
           <option value="pcp">PCP / specialist orders / reviews</option>
           <option value="shared">Shared coordination</option>
-          <option value="unspecified">Not specified</option>
         </select>
       </div>
+      <div class="field" id="bucketEkgField" style="display:none;">
+        <label>EKG / cardiac testing</label>
+        <select id="bEkg">
+          <option value="unspecified">Not specified</option>
+          <option value="prescriber">Prescriber orders / reviews</option>
+          <option value="pcp">PCP / specialist / cardiology orders / reviews</option>
+          <option value="shared">Shared coordination</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Coordination notes (optional)</label>
+        <input type="text" id="bCoord" placeholder="e.g. PCP ordered labs last week; patient sends BP log via portal; cardiology follows murmur">
+      </div>
     </div>
-    <p class="sub" style="margin-top:-6px;margin-bottom:16px;font-size:0.78rem">Modality sets <em>where/how</em> monitoring happens. Responsibility sets <em>who</em> orders and reviews it. Both required &mdash; they control documentation accuracy, not clinical content.</p>
     <div class="field-row">
       <div class="field">
         <label>Patient age</label>
@@ -243,7 +266,7 @@ body {
     </div>
     <div class="field">
       <label>Relevant medical comorbidities</label>
-      <input type="text" id="pComorb" placeholder="e.g. CKD stage 2, hypothyroidism, cardiac history">
+      <input type="text" id="pComorb" placeholder="e.g. CKD stage 2, hypothyroidism, cardiac history" oninput="refreshBuckets()">
     </div>
     <div class="field">
       <label>Recent abnormal or borderline labs (optional)</label>
@@ -251,7 +274,7 @@ body {
     </div>
     <div class="field">
       <label>Interacting medications or other notes (optional)</label>
-      <textarea id="pNotes" placeholder="e.g. recently added an NSAID, on a diuretic, new valproate alongside clozapine"></textarea>
+      <textarea id="pNotes" placeholder="e.g. recently added an NSAID, on a diuretic, new valproate alongside clozapine" oninput="refreshBuckets()"></textarea>
     </div>
     <div id="vitalsBlock" style="display:none;">
       <div class="field" id="vitalsTeleGate" style="display:none;">
@@ -474,33 +497,58 @@ function selectMed(key) {
   renderRef(key);
   document.getElementById('genCard').classList.add('show');
   document.getElementById('outputWrap').classList.remove('show');
-  refreshVitalsVisibility();
+  refreshBuckets();
   document.getElementById('refPanel').scrollIntoView({ behavior:'smooth', block:'start' });
 }
 
-// Meds where BP/HR/weight are part of monitoring
-var VITALS_MEDS = ['stimulants', 'antipsychotics', 'clozapine'];
+// Per-med monitoring buckets. vitals = BP/HR/weight; labs = any bloodwork/level; ekg = cardiac testing.
+// EKG for stimulants is conditional on a cardiac flag (handled at render time).
+var MED_BUCKETS = {
+  lithium:       { vitals:false, labs:true,  ekg:false, labsLabel:'Labs / levels (lithium level, renal, thyroid)' },
+  valproate:     { vitals:false, labs:true,  ekg:false, labsLabel:'Labs / levels (valproate level, CBC, LFTs, platelets)' },
+  carbamazepine: { vitals:false, labs:true,  ekg:false, labsLabel:'Labs / levels (CBC, CMP, sodium, level)' },
+  lamotrigine:   { vitals:false, labs:false, ekg:false, labsLabel:'Labs / levels' },
+  antipsychotics:{ vitals:true,  labs:true,  ekg:true,  labsLabel:'Labs / levels (A1c, lipids, CMP, prolactin if symptomatic)' },
+  clozapine:     { vitals:true,  labs:true,  ekg:false, labsLabel:'Labs / levels (ANC, metabolic panel)' },
+  stimulants:    { vitals:true,  labs:false, ekg:'conditional', labsLabel:'Labs / levels' }
+};
 
-function refreshVitalsVisibility() {
+function medBuckets() {
+  var b = MED_BUCKETS[selectedKey] || { vitals:false, labs:false, ekg:false };
+  // stimulant EKG appears only when a cardiac flag is entered
+  var ekg = b.ekg;
+  if (ekg === 'conditional') {
+    var txt = (document.getElementById('pComorb').value + ' ' + document.getElementById('pLabs').value + ' ' + document.getElementById('pNotes').value).toLowerCase();
+    ekg = ['cardiac','heart','murmur','arrhythm','palpitation','syncope','qt','tachycard','hypertension','htn','chest pain','cardiomyopath','structural','congenital','family history of sudden'].some(function(t){ return txt.indexOf(t)!==-1; });
+  }
+  return { vitals:b.vitals, labs:b.labs, ekg:ekg, labsLabel:b.labsLabel };
+}
+
+function refreshBuckets() {
+  var modality = document.getElementById('pModality').value;
+  var bk = medBuckets();
+  // Responsibility bucket container shows once a med is selected
+  var container = document.getElementById('bucketContainer');
+  container.style.display = selectedKey ? '' : 'none';
+  document.getElementById('bucketVitalsField').style.display = bk.vitals ? '' : 'none';
+  document.getElementById('bucketLabsField').style.display = bk.labs ? '' : 'none';
+  document.getElementById('bucketEkgField').style.display = bk.ekg ? '' : 'none';
+  if (bk.labs && bk.labsLabel) document.getElementById('bucketLabsLabel').textContent = bk.labsLabel;
+
+  // Vitals-entry block (actual readings) — only for meds with a vitals bucket
   var block = document.getElementById('vitalsBlock');
   var teleGate = document.getElementById('vitalsTeleGate');
   var inputs = document.getElementById('vitalsInputs');
-  var modality = document.getElementById('pModality').value;
-  var needsVitals = VITALS_MEDS.indexOf(selectedKey) !== -1;
-  if (!needsVitals) { block.style.display = 'none'; return; }
-  block.style.display = '';
-  if (modality === 'telehealth') {
-    // gated behind the home-vitals checkbox
-    teleGate.style.display = '';
-    inputs.style.display = document.getElementById('pHasHomeVitals').checked ? '' : 'none';
-  } else if (modality === 'inperson') {
-    // open directly; vitals taken at the visit
-    teleGate.style.display = 'none';
-    inputs.style.display = '';
-  } else {
-    // not specified or unselected: keep gate hidden, inputs available but optional
-    teleGate.style.display = 'none';
-    inputs.style.display = '';
+  if (!bk.vitals) { block.style.display = 'none'; }
+  else {
+    block.style.display = '';
+    if (modality === 'telehealth') {
+      teleGate.style.display = '';
+      inputs.style.display = document.getElementById('pHasHomeVitals').checked ? '' : 'none';
+    } else {
+      teleGate.style.display = 'none';
+      inputs.style.display = '';
+    }
   }
 }
 
@@ -597,14 +645,10 @@ async function generate() {
   if (!selectedKey) return;
 
   var modality = document.getElementById('pModality').value;
-  var responsibility = document.getElementById('pResponsibility').value;
   var blocked = false;
   var ms = document.getElementById('pModality');
-  var rs = document.getElementById('pResponsibility');
   ms.style.borderColor = modality ? '' : 'var(--red)';
-  rs.style.borderColor = responsibility ? '' : 'var(--red)';
   if (!modality) { ms.focus(); blocked = true; }
-  else if (!responsibility) { rs.focus(); blocked = true; }
   if (blocked) return;
 
   var btn = document.getElementById('genBtn');
@@ -620,7 +664,18 @@ async function generate() {
     notes: document.getElementById('pNotes').value.trim()
   };
 
-  // Vitals: only count them if the block is visible for this med, and (telehealth) the checkbox is ticked
+  // Per-bucket responsibility (only buckets relevant to this med are visible/used)
+  var bk = medBuckets();
+  var coordNotes = document.getElementById('bCoord').value.trim();
+  var respVitals = bk.vitals ? document.getElementById('bVitals').value : null;
+  var respLabs = bk.labs ? document.getElementById('bLabs').value : null;
+  var respEkg = bk.ekg ? document.getElementById('bEkg').value : null;
+
+  var VITALS_OWNER = { prescriber:'prescriber/clinic obtains', patient:'patient self-reports home readings', pcp:'PCP/specialist obtains', site:'pharmacy/retail clinic/other site obtains', shared:'shared/combination', unspecified:'not specified' };
+  var ORDER_OWNER = { prescriber:'prescriber orders/reviews', pcp:'PCP/specialist orders/reviews', shared:'shared coordination', unspecified:'not specified' };
+  var EKG_OWNER = { prescriber:'prescriber orders/reviews', pcp:'PCP/specialist/cardiology orders/reviews', shared:'shared coordination', unspecified:'not specified' };
+
+  // Vitals: only count entered readings if the block is visible and (telehealth) checkbox ticked
   var vitals = { bp:'', hr:'', wt:'' };
   var vitalsVisible = document.getElementById('vitalsBlock').style.display !== 'none';
   var vitalsInputsOpen = document.getElementById('vitalsInputs').style.display !== 'none';
@@ -637,14 +692,13 @@ async function generate() {
   var vitalsSource = (modality === 'telehealth') ? 'patient-reported home reading' : 'obtained at visit';
 
   var modalityLabel = modality === 'inperson' ? 'In-person' : (modality === 'telehealth' ? 'Telehealth' : 'Not specified');
-  var respLabel = responsibility === 'prescriber' ? 'Prescriber orders/reviews directly'
-    : responsibility === 'pcp' ? 'PCP/specialist orders/reviews'
-    : responsibility === 'shared' ? 'Shared coordination with PCP/specialist'
-    : 'Not specified';
 
   var ctxLines = [];
   ctxLines.push('Visit modality: ' + modalityLabel);
-  ctxLines.push('Monitoring responsibility: ' + respLabel);
+  if (respVitals) ctxLines.push('Vitals responsibility: ' + VITALS_OWNER[respVitals]);
+  if (respLabs) ctxLines.push('Labs/levels responsibility: ' + ORDER_OWNER[respLabs]);
+  if (respEkg) ctxLines.push('EKG/cardiac responsibility: ' + EKG_OWNER[respEkg]);
+  if (coordNotes) ctxLines.push('Coordination notes: ' + coordNotes);
   if (ctx.age) ctxLines.push('Age: ' + ctx.age);
   if (ctx.sex) ctxLines.push('Sex/childbearing: ' + ctx.sex);
   if (ctx.comorb) ctxLines.push('Comorbidities: ' + ctx.comorb);
@@ -677,19 +731,37 @@ async function generate() {
       L.push('MODALITY = NOT SPECIFIED. Use neutral logistics language: "monitor BP/HR," "obtain labs," "coordinate EKG/labs as clinically indicated," without stating where or how. Do NOT write "at each visit" or "checked today" — that implies in-office measurement.');
     }
 
-    // ── Responsibility: who orders/reviews ──
-    if (responsibility === 'prescriber') {
-      L.push('RESPONSIBILITY = PRESCRIBER. This prescriber orders and will review the monitoring directly. Telehealth-compatible: prescriber can order labs to an outpatient lab (e.g. Labcorp/Quest). Phrase as "I ordered [X] to be completed before your next appointment" / chart: "[X] ordered by this prescriber to be completed prior to follow-up; results to be reviewed before further adjustment." Do NOT route to PCP unless context says so.');
-    } else if (responsibility === 'pcp') {
-      L.push('RESPONSIBILITY = PCP/SPECIALIST. The PCP/specialist orders and reviews this monitoring. Phrase as the patient ensuring results are shared with this prescriber. Chart: "monitoring managed by PCP/specialist; patient instructed to complete as directed and ensure results available for psychiatric review."');
-    } else if (responsibility === 'shared') {
-      L.push('RESPONSIBILITY = SHARED. Labs/monitoring coordinated through outpatient lab/PCP as appropriate, with results reviewed by this prescriber and/or the managing medical clinician before further medication adjustments.');
-    } else {
-      L.push('RESPONSIBILITY = NOT SPECIFIED. Do not assert who orders or reviews. Use "to be ordered/coordinated as appropriate" and "results to be reviewed before further adjustment" without naming the responsible party.');
+    // ── Per-bucket responsibility: who orders/obtains/reviews EACH monitoring type ──
+    L.push('RESPONSIBILITY IS PER MONITORING TYPE. Document each bucket separately when owners differ. Do NOT collapse them into one global statement. Telehealth does NOT imply PCP owns labs; a telehealth prescriber may order labs directly to Labcorp/Quest. Patient self-report is valid for vitals/weight ONLY, never for labs or EKG.');
+    if (respVitals) {
+      L.push('VITALS OWNER = ' + VITALS_OWNER[respVitals].toUpperCase() + '. ' + (
+        respVitals === 'patient' ? 'Patient self-monitors BP/HR/weight (validated home device) and reports readings; do not state they are taken at the visit.' :
+        respVitals === 'prescriber' ? 'Prescriber/clinic obtains vitals (in-person at the visit).' :
+        respVitals === 'pcp' ? 'PCP/specialist obtains vitals; patient ensures readings are shared.' :
+        respVitals === 'site' ? 'Vitals obtained at a pharmacy/retail clinic/other site and reported.' :
+        respVitals === 'shared' ? 'Vitals obtained via a combination of sources (e.g. some home, some in-clinic); describe accordingly.' :
+        'Vitals owner not specified; phrase neutrally as readings to be obtained and reported.'));
+    }
+    if (respLabs) {
+      L.push('LABS/LEVELS OWNER = ' + ORDER_OWNER[respLabs].toUpperCase() + '. ' + (
+        respLabs === 'prescriber' ? 'This prescriber orders/reviews labs directly (telehealth-compatible via Labcorp/Quest/outpatient lab). Chart: ordered by this prescriber, to be completed prior to follow-up, results reviewed before adjustment.' :
+        respLabs === 'pcp' ? 'PCP/specialist orders/reviews labs; patient ensures results are available for psychiatric review.' :
+        respLabs === 'shared' ? 'Labs coordinated through outpatient lab/PCP, results reviewed by this prescriber and/or managing clinician before adjustment.' :
+        'Labs owner not specified; phrase as to be ordered/coordinated as appropriate, results reviewed before adjustment.'));
+    }
+    if (respEkg) {
+      L.push('EKG/CARDIAC OWNER = ' + EKG_OWNER[respEkg].toUpperCase() + '. ' + (
+        respEkg === 'prescriber' ? 'This prescriber orders/reviews the EKG.' :
+        respEkg === 'pcp' ? 'PCP/specialist/cardiology orders/reviews the EKG; coordinate and obtain results before relevant decisions.' :
+        respEkg === 'shared' ? 'EKG coordinated and reviewed jointly with the managing medical clinician.' :
+        'EKG owner not specified; phrase as to be obtained/coordinated as clinically indicated.'));
+    }
+    if (coordNotes) {
+      L.push('COORDINATION NOTES (clinician-entered context, honor it): ' + coordNotes);
     }
 
     // ── Phrasing ban (global) ──
-    L.push('FORBIDDEN PHRASES unless the modality AND responsibility AND entered context actually support them: "checked at today\'s visit," "obtained today," "in clinic," "at each follow-up visit," "we will check." PREFER: "ordered," "coordinated," "to be completed," "patient instructed to report," "results to be reviewed."');
+    L.push('FORBIDDEN PHRASES unless the modality AND the relevant bucket owner AND entered context actually support them: "checked at today\'s visit," "obtained today," "in clinic," "at each follow-up visit," "we will check." PREFER: "ordered," "coordinated," "to be completed," "patient instructed to report," "results to be reviewed."');
 
     // ── Chart documentation distinction (global) ──
     L.push('CHART BLURB must separate four categories and never conflate them: (1) monitoring already completed/reviewed, (2) monitoring ordered or coordinated, (3) patient education provided, (4) follow-up plan. NEVER document monitoring as completed or results as reviewed unless the entered context states it was actually done. Default pending monitoring to "ordered/coordinated, to be reviewed."');
