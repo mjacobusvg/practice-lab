@@ -267,8 +267,17 @@ textarea{resize:vertical;min-height:70px}
         <input type="text" id="f-referral" placeholder="e.g. Psychology Today directory, local CMHC, PCP, 988">
       </div>
       <div class="field">
-        <label>Crisis / emergency coverage language</label>
-        <input type="text" id="f-crisis" placeholder="e.g. call 988 or go to nearest ER; coverage available until [date]">
+        <label>Crisis / emergency coverage</label>
+        <p class="field-hint" style="margin-top:0;margin-bottom:8px">Check the standard options; the coverage language below assembles automatically and stays editable.</p>
+        <div class="check-grid" style="margin-bottom:10px">
+          <label class="check"><input type="checkbox" class="crisisbox" id="cr-988" checked onchange="assembleCrisis()"> 988 Suicide &amp; Crisis Lifeline (call or text)</label>
+          <label class="check"><input type="checkbox" class="crisisbox" id="cr-911" checked onchange="assembleCrisis()"> 911 / nearest ER for emergencies</label>
+          <label class="check"><input type="checkbox" class="crisisbox" id="cr-office" checked onchange="assembleCrisis()"> Contact office for urgent transition issues during notice period</label>
+          <label class="check"><input type="checkbox" class="crisisbox" id="cr-avail" checked onchange="assembleCrisis()"> Provider available for urgent coverage through effective date</label>
+        </div>
+        <input type="text" id="cr-custom" placeholder="Custom crisis resource / covering provider / after-hours number (optional)" onchange="assembleCrisis()" style="margin-bottom:8px">
+        <label style="font-size:.72rem">Assembled coverage language (editable)</label>
+        <textarea id="f-crisis" style="min-height:64px"></textarea>
       </div>
       <div class="field">
         <label>Documented attempts to reach patient (optional)</label>
@@ -288,6 +297,9 @@ textarea{resize:vertical;min-height:70px}
         <label>State-specific notes (optional)</label>
         <input type="text" id="f-statenotes" placeholder="e.g. board requires written notice + 30-day emergency coverage">
         <p class="field-hint">Enter any notice-period or coverage rules you have verified for this state.</p>
+      </div>
+      <div class="state-verify" id="state-practice-note" style="display:none;border-left-color:var(--teal);background:var(--teal-glow)">
+        <strong id="spn-title"></strong> <span id="spn-text"></span>
       </div>
       <div class="state-verify">
         <strong>Verify state rules.</strong> This tool applies a general defensible framework (adequate written notice, emergency coverage during the notice period, refill bridge where appropriate, active referral, and documentation). Notice periods and required language vary by state board and payer. Confirm your jurisdiction's specific requirements before sending; enter them above and they will be honored.
@@ -504,7 +516,698 @@ function esc(s) { if (!s) return ''; return String(s).replace(/&/g,'&amp;').repl
 function val(id) { var el = document.getElementById(id); return el ? el.value.trim() : ''; }
 function highlightPlaceholders(text) { return esc(text).replace(/\[([^\]]+)\]/g, '<span class="placeholder">[$1]</span>'); }
 
+// ══════════════════════════════════════════════
+// STATE RULES (scaffold)
+// WA = verified practice guidance (verbatim, sourced). All others stubbed
+// as general reasonable-notice standard pending verification. Do NOT add
+// state notice periods here without a cited, verified source.
+// ══════════════════════════════════════════════
+var STATE_GENERAL = {
+  status: 'general',
+  noticeStandard: 'Reasonable notice (commonly cited as ~30 days as a customary norm, not a universal statute).',
+  warning: 'No state-specific rule verified for this state yet. Apply the general defensible framework and verify your profession-specific board, payer, and controlled-substance requirements before sending.'
+};
+
+var STATE_RULES = {
+  WA: {
+    status: 'verified-practice-guidance',
+    noticeStandard: 'Reasonable notice; WMC FAQ describes a general expectation of 30 days of emergency care or care until the patient establishes with a new provider.',
+    emergencyCoverage: 'Provide emergency/urgent coverage during the notice period or until care is established.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions; WMC opioid FAQ references 30-day notice and 30 days of medication before discontinuing opioid treatment.',
+    citation: 'Washington Medical Commission FAQ; Washington Board of Nursing abandonment FAQ',
+    verifiedDate: '2026-06-01',
+    badge: 'Washington guidance emphasizes avoiding abandonment through reasonable notice and continuity of care. The WMC FAQ describes a general expectation of 30 days of emergency care or care until the patient establishes with a new provider. WABON frames abandonment around severing a nurse-patient relationship without reasonable notice that allows continuation of care. Verify your profession-specific board and payer requirements before sending.',
+    warning: 'Verify profession-specific board rules, payer rules, and controlled-substance-specific requirements before sending.'
+  },
+  AZ: {
+    status: 'verified-limited',
+    confidence: 'partial',
+    noticeStandard: 'No specific Arizona law identified that sets a universal notice period for closing or terminating a practice relationship. Arizona osteopathic board guidance states there are no laws specifically related to closing a practice, but recommends written notice to active patients at least 3 months before practice closure as a guideline-based best practice. For individual termination, use reasonable written notice sufficient for the patient to arrange alternate care unless a verified profession-specific rule applies.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including urgent/emergency instructions and clinically appropriate transition support. High-risk patients should receive more robust outreach and delivery documentation.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and referral/transition plan.',
+    referralTransfer: 'Provide referral options or instructions for locating alternate care. For practice closure, Arizona osteopathic guidance recommends notifying active patients in writing in sufficient time to arrange care with another provider and including how to contact a new provider.',
+    deliveryDocumentation: 'Written notice should be retained in the chart. Arizona osteopathic guidance recommends registered mail for high-risk patients in the practice-closure context. Certified/registered mail is prudent for higher-risk individual terminations.',
+    citation: 'Arizona Board of Osteopathic Examiners, Closing a Practice; Arizona State Board of Nursing, Advisory Opinion: Abandonment of Patients',
+    verifiedDate: '2026-06-01',
+    badge: 'Arizona practice note: Arizona guidance does not appear to set a universal statutory notice period for outpatient termination. Official osteopathic-board guidance says there are no laws specifically related to closing a practice, but recommends written notice to active patients at least 3 months before closure and registered mail for high-risk patients. Arizona nursing guidance frames abandonment around ending the nurse-patient relationship without adequate and reasonable notice. Verify profession-specific board, payer, and controlled-substance requirements before sending.',
+    warning: 'Do not treat the 3-month closure guidance as a universal individual-patient termination rule. Use reasonable written notice, continuity planning, crisis coverage, referral options, medication bridge planning when appropriate, and stronger delivery documentation for high-risk patients.'
+  },
+  TX: {
+    status: 'verified-limited',
+    confidence: 'partial',
+    noticeStandard: 'Texas physician/practice-transition rules require reasonable notice when a physician retires, terminates employment, or leaves a medical practice, including notice to patients seen in the last two years and office/website posting at least 30 days before termination, departure, sale, or relocation of the practice. For individual patient termination, Texas guidance frames the standard as reasonable notice sufficient for the patient to make alternate care arrangements; 30 days is commonly cited as a risk-management example, not a universal statutory rule for every individual dismissal.',
+    emergencyCoverage: 'Provide continuity-of-care protections during the notice period, including urgent/emergency instructions and continued availability for urgent needs as clinically appropriate until the effective termination date or transfer of care.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document the clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide resources to help the patient locate alternate care, such as insurance plan resources, referral services, community clinics, or other appropriate options. Offer medical-record transfer upon signed authorization and do not withhold records because of an unpaid balance.',
+    deliveryDocumentation: 'Use written notice. Risk-management guidance recommends sending termination letters by certified mail/return receipt requested and regular mail, keeping a copy of the letter and return receipt in the chart, and notifying scheduling staff of the dismissal and effective date.',
+    citation: '22 Tex. Admin. Code section 163.4; Texas Medical Association / Harris County Medical Society patient-physician relationship guidance',
+    verifiedDate: '2026-06-01',
+    badge: 'Texas practice note: Texas physician departure/practice-transition rules require reasonable notice and, in certain practice-transition contexts, direct patient notice plus office/website posting at least 30 days before the transition. For individual patient termination, Texas guidance emphasizes reasonable notice sufficient for the patient to arrange alternate care. Thirty days is commonly used as a risk-management example, but should not be treated as a universal statutory rule for every dismissal. Verify profession-specific board, payer, and controlled-substance requirements before sending.',
+    warning: 'Do not overapply Texas physician practice-transition rules to every individual patient termination. Use reasonable written notice, continuity planning, crisis coverage, referral/resource options, medication bridge planning when appropriate, and certified-mail documentation for higher-risk terminations.'
+  },
+  OR: {
+    status: 'verified',
+    confidence: 'strong',
+    noticeStandard: 'Oregon Medical Board guidance states that when a licensee terminates the provider-patient relationship, the licensee must provide appropriate written notice sufficiently far in advance, at least 30 days, to allow other medical care to be secured. Longer notice may be necessary depending on specialty, location, patient needs, or availability of alternate providers. Shorter notice may be appropriate when the patient is significantly disruptive, threatening, or dangerous.',
+    emergencyCoverage: 'Provide continuity-of-care protections during the notice period and avoid ending care in a way that compromises patient wellbeing. Include crisis/emergency instructions and urgent coverage expectations through the termination date unless immediate termination is clinically or safety justified.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the notice period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Written notice should identify resources that may help the patient establish care with a new provider. Oregon guidance says the discharging licensee is not required to refer to a specific provider or practice. The notice should also explain how the patient may obtain or transfer records.',
+    deliveryDocumentation: 'Provide written notice and retain a copy in the medical record. Certified mail or other trackable delivery is prudent for higher-risk terminations.',
+    citation: 'Oregon Medical Board, Ending the Provider-Patient Relationship, amended October 6, 2022',
+    verifiedDate: '2026-06-01',
+    badge: 'Oregon practice note: Oregon Medical Board guidance states that termination requires written notice at least 30 days in advance to allow other care to be secured. Longer notice may be needed depending on access, specialty, location, or patient needs. Shorter notice may be appropriate for significantly disruptive, threatening, or dangerous patients. Verify payer, contract, and controlled-substance-specific requirements before sending.',
+    warning: 'Do not treat 30 days as automatically sufficient in all Oregon cases. Consider patient acuity, access to alternate care, medication risk, rural/specialty access, and safety concerns.'
+  },
+  CA: {
+    status: 'verified',
+    confidence: 'strong-for-physicians',
+    noticeStandard: 'Medical Board of California guidance states that when a physician wishes to discontinue care, the physician should notify the patient in writing and identify the last day the physician will be available to render medical care. The notice should assure the patient has been provided at least 15 days of emergency treatment and prescriptions before discontinuing physician availability.',
+    emergencyCoverage: 'Provide at least 15 days of emergency treatment and prescriptions before discontinuing availability, consistent with Medical Board of California physician guidance. Include crisis/emergency instructions and the effective final date of availability.',
+    medicationBridge: 'Provide clinically appropriate prescriptions needed during the emergency/transition period, consistent with the guidance referencing at least 15 days of emergency treatment and prescriptions. For controlled substances or higher-risk medications, document safety limits, rationale, and transition plan.',
+    referralTransfer: 'Written notice should identify alternative sources of medical care, such as named physicians or a local medical society referral service, and provide information necessary to obtain medical records.',
+    deliveryDocumentation: 'Written notice should be retained in the chart. The Medical Board of California page references CMA recommendation that letters be sent by certified mail, return receipt requested, and that a copy of the letter with return receipt be kept.',
+    citation: 'Medical Board of California, Physicians and Surgeons Practice Information, Terminating/Severing Physician/Patient Relationship',
+    verifiedDate: '2026-06-01',
+    badge: 'California practice note: Medical Board of California physician guidance says written termination notice should include the last day care will be available, at least 15 days of emergency treatment and prescriptions, alternative sources of care, and medical-record access information. Certified mail with return receipt is recommended by CMA guidance referenced on the MBC page. Verify profession-specific, payer, and controlled-substance requirements before sending.',
+    warning: 'This entry is based on Medical Board of California physician guidance. Do not assume it fully captures every requirement for nurse practitioners, therapists, payer contracts, Medi-Cal, or controlled-substance situations.'
+  },
+  FL: {
+    status: 'verified-limited',
+    confidence: 'limited',
+    noticeStandard: 'No official Florida source identified here that sets a universal notice period for individual outpatient patient termination. Florida osteopathic rules do impose specific notice and records requirements when an osteopathic physician sells or otherwise terminates practice, including publication notice and a conspicuous office sign placed 30 days before voluntary practice termination. For individual patient termination, use reasonable written notice sufficient for the patient to arrange alternate care unless a verified profession-specific rule, payer rule, or contract requirement applies.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral options or instructions for locating alternate care, and provide clear instructions for obtaining or transferring records. Florida osteopathic practice-termination rules specifically require notices/signage to advise patients of the opportunity to transfer or receive records.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or other trackable delivery is prudent for higher-risk terminations. For osteopathic practice closure or relocation, follow the specific publication, signage, and record-retention requirements in Fla. Admin. Code R. 64B15-15.002.',
+    citation: 'Fla. Admin. Code R. 64B15-15.002, Handling of Patient Records Upon Termination of Practice',
+    verifiedDate: '2026-06-01',
+    badge: 'Florida practice note: Official Florida osteopathic rules include specific notice, signage, and records requirements for termination of practice, including a 30-day office sign requirement for voluntary practice termination. This should not be treated as a universal 30-day individual-patient termination rule. For individual terminations, use reasonable written notice, continuity planning, crisis coverage, referral/resource options, and medication bridge planning when appropriate.',
+    warning: 'Do not overapply Florida practice-termination rules to every individual patient dismissal. Verify profession-specific board rules, payer rules, Medicaid/managed-care contracts, and controlled-substance requirements before sending.'
+  },
+  OH: {
+    status: 'verified',
+    confidence: 'strong-for-physicians',
+    noticeStandard: 'Ohio Administrative Code Rule 4731-27-02 requires a physician dismissing a patient from the medical practice to send notice stating that the physician-patient relationship is terminated. Except when the patient or representative has displayed disruptive or threatening behavior, the notice must state that the physician will continue to provide emergency treatment and access to services for up to 30 days from the date the letter was mailed, to allow the patient to secure care from another licensee.',
+    emergencyCoverage: 'Provide emergency treatment and access to services for up to 30 days from the date the notice was mailed, unless an exception applies for disruptive or threatening behavior. Include crisis/emergency instructions and urgent coverage expectations during that transition period.',
+    medicationBridge: 'Consider clinically appropriate prescriptions or bridge medication access during the 30-day emergency/transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Offer to transfer records to a new provider upon the patient signed authorization. The notice should support the patient ability to secure care from another licensee.',
+    deliveryDocumentation: 'Ohio requires notice by certified mail, return receipt requested, with the letter, certified mail receipt, and delivery receipt maintained in the patient record, or by HIPAA-compliant EMR/EHR portal message that can notify the sender whether the message was viewed. If an electronic notice is not viewed within 10 days, certified mail notice is required.',
+    citation: 'Ohio Administrative Code Rule 4731-27-02, Dismissing a patient from the medical practice',
+    verifiedDate: '2026-06-01',
+    badge: 'Ohio practice note: Ohio has a specific physician dismissal rule. The notice must state that the relationship is terminated, offer records transfer with authorization, and, unless disruptive or threatening behavior applies, state that emergency treatment and access to services will continue for up to 30 days from the mailing date. Ohio also specifies certified mail/return receipt or a HIPAA-compliant portal process with view tracking and certified-mail follow-up if not viewed within 10 days.',
+    warning: 'This entry is based on Ohio physician rules. Verify applicability for nurse practitioners, therapists, payer contracts, Medicaid/managed-care rules, and controlled-substance situations before sending.'
+  },
+  NY: {
+    status: 'verified-limited',
+    confidence: 'moderate-for-physicians',
+    noticeStandard: 'New York Department of Health Office of Professional Medical Conduct FAQ states that a physician can stop seeing a patient and that no regulations require a physician to provide advance notice, but typically the physician would give the patient two to four weeks to locate a new physician. Use reasonable written notice sufficient for the patient to arrange alternate care unless a verified profession-specific, payer, facility, or contract rule applies.',
+    emergencyCoverage: 'Avoid abandonment or neglect of a patient in need of immediate care. Provide crisis/emergency instructions and urgent transition-related coverage during the notice period as clinically appropriate.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral options or instructions for locating alternate care, such as insurance plan resources, county medical society resources, community clinics, or other appropriate options. Provide medical-record access and transfer instructions. New York guidance says a physician cannot refuse medical-record access because of an unpaid bill.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations, even though the NY DOH FAQ does not specify a required delivery method for routine individual termination.',
+    citation: 'New York State Department of Health, Office of Professional Medical Conduct FAQ',
+    verifiedDate: '2026-06-01',
+    badge: 'New York practice note: NY DOH physician guidance says no regulation requires advance notice, but physicians typically give two to four weeks for the patient to locate a new physician. The guidance also identifies abandonment or neglect of a patient in need of immediate care as potential misconduct and confirms that records cannot be withheld because of an unpaid bill. Verify profession-specific, payer, facility, and controlled-substance requirements before sending.',
+    warning: 'Do not treat the two-to-four-week language as a hard statutory rule. It is NY DOH FAQ guidance for physicians. Consider acuity, medication risk, access to alternate care, payer rules, and profession-specific requirements.'
+  },
+  CO: {
+    status: 'verified-limited',
+    confidence: 'strong-for-health-first-colorado-limited-for-general',
+    noticeStandard: 'For Health First Colorado fee-for-service Medicaid members, Colorado policy requires no less than 45 days written notice of termination to both the Department and the member. For general non-Medicaid individual patient termination, no universal official notice period was verified here; use reasonable written notice sufficient for the patient to arrange alternate care unless a verified payer, contract, board, or program-specific rule applies.',
+    emergencyCoverage: 'For Health First Colorado members, the notice must include an agreement by the provider to continue provisional coverage of the member health care needs for up to 45 days while the member obtains a new provider. For non-Medicaid patients, provide reasonable continuity-of-care protections, crisis/emergency instructions, and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For Health First Colorado members, medication and care-coverage planning should align with the 45-day provisional coverage expectation. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'For Health First Colorado members, provide referral information regarding possible new providers if possible, and notify the member that records will be sent to the new provider upon written authorization. For non-Medicaid patients, provide referral/resource options and records-transfer instructions.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. For Health First Colorado fee-for-service members, written notice must go to both the Department and the member and should be sent to the Department email identified by HCPF. Certified mail or other trackable delivery is prudent for higher-risk non-Medicaid terminations.',
+    citation: 'Colorado Department of Health Care Policy and Financing, Policy Statement: Dismissing Health First Colorado Members From a Provider Practice; Colorado Medical Board Policy 40-3 / provider-patient relationship policy materials',
+    verifiedDate: '2026-06-01',
+    badge: 'Colorado practice note: Health First Colorado has a specific dismissal policy requiring no less than 45 days written notice to both the Department and the member, provisional coverage for up to 45 days, referral information if possible, and records-transfer instructions. For general non-Medicaid termination, use reasonable written notice and formal termination documentation; Colorado Medical Board policy emphasizes that the provider has responsibility to establish that the provider-patient relationship no longer exists. Verify payer, board, contract, Medicaid/managed-care, and controlled-substance requirements before sending.',
+    warning: 'Do not apply the 45-day Health First Colorado rule as a universal rule for every Colorado patient, but do apply it when the patient is a Health First Colorado member. For non-Medicaid patients, avoid false precision and use reasonable written notice, continuity planning, crisis coverage, referral/resource options, medication bridge planning when appropriate, and trackable delivery for higher-risk cases.'
+  },
+  PA: {
+    status: 'verified-limited',
+    confidence: 'strong-for-abandonment-standard-limited-for-specific-days',
+    noticeStandard: 'Pennsylvania physician regulations define abandonment as withdrawing services after a physician-patient relationship has been established by failing to give notice of the intention to withdraw, failing to allow a reasonable time for the patient to secure another physician, and failing to provide a referral if necessary. No universal fixed notice period was verified in the official source reviewed here.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate until the effective termination date or transfer of care.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral options when necessary and instructions for obtaining or transferring records. The Pennsylvania physician abandonment rule specifically includes failure to provide a referral if necessary as part of the abandonment analysis.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations, although the official physician abandonment rule reviewed here does not specify a required delivery method.',
+    citation: '49 Pa. Code section 16.61, Unprofessional and immoral conduct, abandonment of patient',
+    verifiedDate: '2026-06-01',
+    badge: 'Pennsylvania practice note: Pennsylvania physician regulations define abandonment around failure to give notice, failure to allow reasonable time for the patient to secure another physician, and failure to provide referral if necessary. No universal fixed notice period was verified in the official source reviewed here. Verify profession-specific, payer, Medicaid/managed-care, and controlled-substance requirements before sending.',
+    warning: 'Do not hardcode a 30-day Pennsylvania rule based on general risk-management summaries. Use reasonable written notice, continuity planning, crisis coverage, referral/resource options, medication bridge planning when appropriate, and trackable delivery for higher-risk terminations.'
+  },
+  IL: {
+    status: 'verified-limited',
+    confidence: 'limited',
+    noticeStandard: 'No official Illinois source was verified here that sets a universal notice period for individual outpatient patient termination. Illinois law requires a health care facility or practitioner to provide the public at least 30 days prior notice of closure of the facility or practice, with an explanation of how patients may access records. For individual patient termination, use reasonable written notice sufficient for the patient to arrange alternate care unless a verified profession-specific, payer, or contract rule applies.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral options or instructions for locating alternate care, and provide clear instructions for obtaining or transferring records. For practice closure, Illinois law requires the closure notice to explain how patients may access copies of records.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or other trackable delivery is prudent for higher-risk individual terminations. For practice closure, follow the Illinois public notice and records-access requirements.',
+    citation: 'Illinois Public Act 093-0087 / 735 ILCS 5/8-2001, records access and practice closure notice',
+    verifiedDate: '2026-06-01',
+    badge: 'Illinois practice note: Illinois law requires at least 30 days public notice before closure of a health care facility or practitioner practice, including information about how patients may access records. This should not be treated as a universal 30-day individual patient termination rule. For individual terminations, use reasonable written notice, continuity planning, crisis coverage, referral/resource options, medication bridge planning when appropriate, and trackable delivery for higher-risk cases.',
+    warning: 'Do not overapply the Illinois practice-closure rule to every individual patient dismissal. Verify profession-specific board rules, payer rules, Medicaid/managed-care requirements, and controlled-substance requirements before sending.'
+  },
+  NC: {
+    status: 'verified',
+    confidence: 'strong',
+    noticeStandard: 'North Carolina Medical Board guidance states that patient termination must be accompanied by appropriate written notice provided sufficiently far in advance, at least 30 days, to allow other medical care to be secured. North Carolina Board of Nursing guidance similarly states that written notice should be provided a minimum of 30 days.',
+    emergencyCoverage: 'Provide continuity-of-care protections during the 30-day notice period. North Carolina nursing guidance says care during the 30-day period may include prescription refills, diagnostic testing required, referrals, or urgent care needs.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the 30-day transition period when needed to avoid abrupt interruption of essential medications. North Carolina nursing guidance specifically identifies prescription refills as care that may be included during the notice period. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Written notice should support the patient ability to secure alternate care. North Carolina nursing guidance says the notice should include an offer to help find a new provider. Medical Board guidance requires termination to be consistent with continuity-of-care obligations.',
+    deliveryDocumentation: 'Provide written notice and include a copy in the medical record. Certified mail or other trackable delivery is prudent for higher-risk terminations, although the board guidance reviewed here emphasizes written notice and chart retention rather than mandating certified mail.',
+    citation: 'North Carolina Medical Board, Position Statement 2.1.1 The Licensee-Patient Relationship; North Carolina Board of Nursing, Position Statement: Discharging a Patient from a Practice',
+    verifiedDate: '2026-06-01',
+    badge: 'North Carolina practice note: North Carolina Medical Board guidance states that patient termination requires written notice at least 30 days in advance to allow other care to be secured, with a copy retained in the medical record. North Carolina Board of Nursing guidance similarly calls for minimum 30-day written notice including the reason for discharge, termination date, offer of care during the notice period, and offer to help find a new provider.',
+    warning: 'Do not treat 30 days as automatically sufficient in every North Carolina case. Consider acuity, medication risk, access to alternate care, payer rules, Medicaid/managed-care requirements, controlled-substance issues, and whether longer transition support is clinically necessary.'
+  },
+  GA: {
+    status: 'verified-limited',
+    confidence: 'moderate-official-guidance',
+    noticeStandard: 'Georgia Composite Medical Board guidance states that a physician generally may terminate the doctor-patient relationship upon giving the patient adequate written notice, preferably through certified mail, and a reasonable amount of time to find another health care provider. The Board notes that adequate notice is circumstance-dependent and not a fixed legal term.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral options or instructions for locating alternate care. The notice should give the patient a reasonable opportunity to find another health care provider.',
+    deliveryDocumentation: 'Georgia Composite Medical Board guidance prefers certified mail for written notice. Retain a copy of the letter and delivery documentation in the chart. Certified mail or another trackable method is especially prudent for higher-risk terminations.',
+    citation: 'Georgia Composite Medical Board FAQ, Can my physician terminate my care or discontinue seeing me?',
+    verifiedDate: '2026-06-01',
+    badge: 'Georgia practice note: Georgia Composite Medical Board guidance allows termination of the doctor-patient relationship with adequate written notice, preferably by certified mail, and a reasonable amount of time for the patient to find another provider. The Board does not define a universal fixed notice period; adequacy depends on the circumstances.',
+    warning: 'Do not hardcode a universal 30-day Georgia rule unless a profession-specific, payer, or contract source requires it. Use adequate written notice, continuity planning, crisis coverage, referral/resource options, medication bridge planning when appropriate, and certified-mail documentation for higher-risk cases.'
+  },
+  MI: {
+    status: 'verified-limited',
+    confidence: 'limited',
+    noticeStandard: 'No official Michigan source was verified here that sets a universal notice period for individual outpatient patient termination. Michigan law addressing health facilities/agencies states that when refusal of treatment prevents appropriate care according to ethical and professional standards, the relationship may be terminated upon reasonable notice. For outpatient individual termination, use reasonable written notice sufficient for the patient to arrange alternate care unless a verified profession-specific, payer, facility, or contract rule applies.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral options or instructions for locating alternate care, and provide clear instructions for obtaining or transferring records. If termination is related to refusal of treatment or inability to provide appropriate care, document the clinical and ethical basis clearly.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations, even though no universal outpatient certified-mail requirement was verified here.',
+    citation: 'Michigan Compiled Laws section 333.20201, patient/resident rights; official Michigan Legislature source',
+    verifiedDate: '2026-06-01',
+    badge: 'Michigan practice note: No universal outpatient individual-termination notice period was verified here. Official Michigan facility/agency patient-rights language allows termination upon reasonable notice when refusal of treatment prevents appropriate care according to ethical and professional standards. For outpatient private-practice termination, use reasonable written notice, continuity planning, crisis coverage, referral/resource options, and medication bridge planning when appropriate.',
+    warning: 'Do not hardcode a 30-day Michigan rule based only on general risk-management summaries. Verify profession-specific board rules, payer rules, Medicaid/managed-care requirements, facility policies, and controlled-substance requirements before sending.'
+  },
+  WI: {
+    status: 'verified',
+    confidence: 'strong-for-physicians',
+    noticeStandard: 'Wisconsin Administrative Code Med 10.03 provides that it is unprofessional conduct for a physician to withdraw from a physician-patient relationship without giving the patient at least 30 days notice in advance of the effective withdrawal date, unless an exception applies. Exceptions include situations such as patient-initiated termination, transfer of care, or patient conduct that threatens the physician, staff, or other patients.',
+    emergencyCoverage: 'Provide interim care for urgent patient care needs during the 30-day notice period unless an exception applies. Include crisis/emergency instructions and urgent coverage expectations through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the 30-day notice period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Allow access to or transfer of patient health care records and provide adequate referrals during the notice period, consistent with Wisconsin Administrative Code Med 10.03.',
+    deliveryDocumentation: 'Provide written notice and retain documentation in the chart. Certified mail or other trackable delivery is prudent for higher-risk terminations, although the rule retrieved language emphasizes the 30-day notice, records access/transfer, interim urgent care, and referrals.',
+    citation: 'Wisconsin Administrative Code Med 10.03(3)(h)/(j), unprofessional conduct related to withdrawal from physician-patient relationship',
+    verifiedDate: '2026-06-01',
+    badge: 'Wisconsin practice note: Wisconsin physician rules identify withdrawal from the physician-patient relationship without at least 30 days notice as unprofessional conduct unless an exception applies. The rule also addresses records access/transfer, interim care for urgent needs during the notice period, and adequate referrals.',
+    warning: 'This entry is based on Wisconsin physician rules. Verify applicability for nurse practitioners, therapists, payer contracts, Medicaid/managed-care rules, and controlled-substance situations before sending.'
+  },
+  MA: {
+    status: 'verified-limited',
+    confidence: 'moderate-risk-management-guidance',
+    noticeStandard: 'No Massachusetts board regulation was verified here that sets a universal individual patient termination notice period. Massachusetts Medical Society guidance recommends written notice with an effective date and an agreement to continue treatment for a reasonable period to allow the patient to secure care. The guidance states that 30 days is typically sufficient, but the period may need to be extended based on the patient condition, payer contract, or access to care.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including urgent/emergency instructions and transition-related care as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Advise the patient to contact their health plan for alternative in-network providers and provide records-transfer instructions. Include an offer to provide the subsequent provider with a copy of records upon proper authorization.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Risk-management materials recommend reviewing the termination letter, sending by certified mail with receipt, and keeping the receipt and letter on file.',
+    citation: 'Massachusetts Medical Society, Terminating a Patient-Physician Relationship',
+    verifiedDate: '2026-06-01',
+    badge: 'Massachusetts practice note: Massachusetts Medical Society guidance recommends written notice with a clear effective date and continued treatment for a reasonable period so the patient can secure alternate care. Thirty days is described as typically sufficient, but longer may be needed depending on condition, payer contract, or access to care. Verify board, payer, contract, and controlled-substance requirements before sending.',
+    warning: 'Do not code Massachusetts as a hard 30-day statutory rule based on this source. Treat 30 days as risk-management guidance, not a universal legal requirement.'
+  },
+  NJ: {
+    status: 'verified',
+    confidence: 'strong',
+    noticeStandard: 'New Jersey Administrative Code section 13:35-6.22 requires a licensee terminating a licensee-patient relationship to notify the patient in writing no less than 30 days before the date on which care is to be terminated. The notice must state a date certain when care will end.',
+    emergencyCoverage: 'The notice must state that the licensee will provide emergency care or services for 30 days from the date the patient receives the notice, to allow the patient to obtain care from another licensee.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the 30-day emergency/transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Assist the patient in obtaining care from another licensee and provide appropriate records-transfer instructions. Do not terminate if the licensee knows or reasonably should know that no other licensee is currently able to provide the type of care or services being provided.',
+    deliveryDocumentation: 'New Jersey requires the written notice to be sent by certified mail, return receipt requested, or other proof of delivery, to the patient last known address. Retain the letter and delivery proof in the chart.',
+    citation: 'N.J. Admin. Code section 13:35-6.22, Termination of licensee-patient relationship',
+    verifiedDate: '2026-06-01',
+    badge: 'New Jersey practice note: New Jersey has a specific termination rule. Written notice must be provided no less than 30 days before the termination date, sent by certified mail/return receipt or other proof of delivery. The notice must state that emergency care or services will be provided for 30 days from receipt of the notice and must support transfer of care.',
+    warning: 'Do not terminate in New Jersey if doing so would be discriminatory or if you know, or reasonably should know, that no other licensee is currently able to provide the type of care or services being provided. Verify profession-specific, payer, Medicaid/managed-care, and controlled-substance requirements before sending.'
+  },
+  VA: {
+    status: 'verified',
+    confidence: 'strong-no-fixed-days',
+    noticeStandard: 'Virginia Administrative Code requires documented notice before a practitioner terminates the practitioner-patient relationship or makes services unavailable. The notice must allow a reasonable time for the patient to obtain the services of another practitioner. No universal fixed notice period was verified in the rule reviewed here.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate until the patient has had reasonable time to obtain another practitioner.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Make the patient record available, except where denial of access is allowed by law. Provide records-transfer instructions and reasonable referral/resource information to support the patient ability to obtain another practitioner.',
+    deliveryDocumentation: 'Use documented written notice and retain a copy in the chart. Certified mail, portal notice with view tracking, or another trackable delivery method is prudent for higher-risk terminations, although the Virginia rule reviewed here requires documented notice rather than a specific delivery method.',
+    citation: '18VAC85-20-28, Practitioner-patient communication; 18VAC85-80-150, Practitioner-patient communication',
+    verifiedDate: '2026-06-01',
+    badge: 'Virginia practice note: Virginia requires documented notice before terminating the practitioner-patient relationship or making services unavailable, and the notice must allow the patient reasonable time to obtain another practitioner. The rule does not set a universal fixed number of days. Records must be made available except where denial is allowed by law.',
+    warning: 'Do not hardcode a 30-day Virginia rule from general risk-management summaries. Use documented written notice, reasonable transition time, continuity planning, crisis coverage, records-transfer instructions, medication bridge planning when appropriate, and trackable delivery for higher-risk cases.'
+  },
+  MD: {
+    status: 'verified-limited',
+    confidence: 'moderate-guidance',
+    noticeStandard: 'No Maryland Board of Physicians regulation was verified here that sets a universal fixed notice period for individual outpatient patient termination. MedChi guidance states that physicians have an ethical obligation to support continuity of care and should not terminate the patient-physician relationship without reasonable notice under existing circumstances. Maryland Board of Nursing material defines abandonment as terminating the nurse-patient relationship without reasonable notification for continuation of care.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral options or instructions for locating alternate care, and provide clear instructions for obtaining or transferring records. If the patient has active or high-risk needs, document how continuity of care was supported.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations. MedChi guidance emphasizes reasonable notice and continuity-of-care protection but does not create a verified universal fixed-day rule in the source reviewed here.',
+    citation: 'MedChi, Terminating the Physician/Patient Relationship; Maryland Board of Nursing, Abandonment',
+    verifiedDate: '2026-06-01',
+    badge: 'Maryland practice note: Maryland physician guidance identified here emphasizes reasonable notice under existing circumstances and continuity of care, rather than a universal fixed notice period. Maryland nursing guidance defines abandonment around ending the nurse-patient relationship without reasonable notification for continuation of care. Verify profession-specific board, payer, Medicaid/managed-care, and controlled-substance requirements before sending.',
+    warning: 'Do not hardcode a Maryland 30-day rule from general risk-management summaries alone. Use reasonable written notice, continuity planning, crisis coverage, referral/resource options, medication bridge planning when appropriate, and trackable delivery for higher-risk terminations.'
+  },
+  TN: {
+    status: 'verified-limited',
+    confidence: 'moderate-board-policy-no-fixed-days',
+    noticeStandard: 'Tennessee Board of Medical Examiners policy states that once a physician-patient relationship has been established, the physician has the burden of showing that the relationship no longer exists. The Board considers factors such as formal termination procedures, transfer of care, reasons for termination, time since last visit, length of the relationship, the patient medical problem, and emotional dependence. No universal fixed notice period was verified in the Board policy reviewed here.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date or transfer of care.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral options or instructions for locating alternate care, and provide records-transfer instructions. If the relationship is being terminated because the clinician is leaving a group practice, review the employment contract and Tennessee medical-records rules governing patient notification and record custody.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations. Document the formal termination procedure, effective date, transfer/referral instructions, and any urgent coverage plan.',
+    citation: 'Tennessee State Board of Medical Examiners Policy Statement; Tenn. Comp. R. & Regs. 0880-02-.15, Medical Records',
+    verifiedDate: '2026-06-01',
+    badge: 'Tennessee practice note: Tennessee Board of Medical Examiners policy emphasizes that, once a physician-patient relationship exists, the physician has the burden of showing it no longer exists. The Board looks at formal termination procedures, transfer of care, reasons for termination, length of relationship, patient medical problem, and related factors. No universal fixed notice period was verified in the Board policy reviewed here.',
+    warning: 'Do not hardcode a Tennessee 30-day individual-termination rule based on secondary summaries alone. Use documented written notice, reasonable transition time, continuity planning, crisis coverage, referral/resource options, medication bridge planning when appropriate, and trackable delivery for higher-risk cases.'
+  },
+  MN: {
+    status: 'verified-limited',
+    confidence: 'limited',
+    noticeStandard: 'No official Minnesota source was verified here that sets a universal notice period for individual outpatient patient termination. Minnesota physician disciplinary law gives the Board authority over prohibited conduct, and Minnesota professional counselor rules define unprofessional conduct broadly to include conduct below minimum accepted standards, but no fixed termination-notice rule was verified in the sources reviewed here. Use reasonable written notice sufficient for the patient to arrange alternate care unless a verified profession-specific, payer, facility, or contract rule applies.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral options or instructions for locating alternate care, and provide clear instructions for obtaining or transferring records. Document the rationale and continuity-of-care plan, especially for patients with active psychiatric, medication, or safety risks.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations, although no universal outpatient certified-mail rule was verified here.',
+    citation: 'Minn. Stat. section 147.091, physician disciplinary grounds; Minn. R. 2150.7600, unprofessional conduct for professional counselors',
+    verifiedDate: '2026-06-01',
+    badge: 'Minnesota practice note: No universal outpatient individual-termination notice period was verified here. Use reasonable written notice, continuity planning, crisis coverage, referral/resource options, records-transfer instructions, and medication bridge planning when appropriate. Verify profession-specific board rules, payer rules, Medicaid/managed-care requirements, facility policies, and controlled-substance requirements before sending.',
+    warning: 'Do not hardcode a Minnesota 30-day rule unless a verified Minnesota board, payer, Medicaid/managed-care, contract, or profession-specific source requires it.'
+  },
+  IN: {
+    status: 'verified-limited',
+    confidence: 'limited-moderate',
+    noticeStandard: 'No Indiana physician or nurse-practitioner source was verified here that sets a universal fixed notice period for individual outpatient patient termination. Indiana psychology rules require oral and written notice when termination is necessary and require assistance obtaining services from another professional. Indiana State Medical Association risk guidance recommends written confirmation and notes that AMA generally suggests 30 days, but the appropriate period may vary depending on circumstances and availability of another clinician.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral options or instructions for locating alternate care. Indiana psychology rules specifically require assisting the patient or client in obtaining services from another professional when termination is necessary.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Indiana State Medical Association risk guidance recommends postal mail and certified mail, return receipt requested. Certified mail or another trackable method is prudent for higher-risk terminations.',
+    citation: '868 IAC 1.1-11-4.1, Relationships within professional practice; Indiana State Medical Association, Take care when ending the physician-patient relationship',
+    verifiedDate: '2026-06-01',
+    badge: 'Indiana practice note: A direct Indiana psychology rule requires oral and written notice and assistance obtaining another professional when termination is necessary. No universal physician or PMHNP fixed-day notice rule was verified here. Indiana physician risk guidance points to written notice, certified mail, continuity planning, and the AMA common 30-day guideline, but does not create a hard Indiana-specific notice period.',
+    warning: 'Do not hardcode a universal 30-day Indiana rule unless a profession-specific, payer, Medicaid/managed-care, contract, or controlled-substance source requires it. Use reasonable written notice, continuity planning, crisis coverage, referral/resource options, medication bridge planning when appropriate, and trackable delivery for higher-risk cases.'
+  },
+  MO: {
+    status: 'verified',
+    confidence: 'strong-no-fixed-days',
+    noticeStandard: 'Missouri Revised Statutes section 334.100 identifies terminating the medical care of a patient without adequate notice or without making other arrangements for continued care as a disciplinary ground. No universal fixed number of notice days was verified in the statute reviewed here.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period or arrange for continued care. Include crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral/resource options or other arrangements for continued care when appropriate. The statutory language directly emphasizes adequate notice or other arrangements for continued care.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations, although the statute reviewed here does not specify a required delivery method.',
+    citation: 'Mo. Rev. Stat. section 334.100, disciplinary grounds for physicians and surgeons',
+    verifiedDate: '2026-06-01',
+    badge: 'Missouri practice note: Missouri law directly identifies terminating medical care without adequate notice or without making other arrangements for continued care as a disciplinary ground. The statute does not set a universal fixed notice period, so use adequate written notice, continuity planning, crisis coverage, referral/resource options, and medication bridge planning when appropriate.',
+    warning: 'Do not hardcode a Missouri 30-day rule based only on general risk-management summaries. The verified statutory standard is adequate notice or other arrangements for continued care. Verify payer, Medicaid/managed-care, profession-specific, and controlled-substance requirements before sending.'
+  },
+  SC: {
+    status: 'verified',
+    confidence: 'strong-for-physicians',
+    noticeStandard: 'South Carolina Board of Medical Examiners policy states that a physician cannot withdraw from the physician-patient relationship without giving sufficient advance notice to ensure continuity of care and to permit another medical attendant to be secured. The policy does not phrase this as a universal fixed notice period, but it does require emergency care for up to 30 days.',
+    emergencyCoverage: 'Provide emergency care for up to 30 days, consistent with South Carolina Board of Medical Examiners policy. Include crisis/emergency instructions and urgent coverage expectations through the transition period.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'At minimum, offer to refer the patient to another qualified physician or appropriate medical professional. Comply with the South Carolina Physician Patient Records Act and applicable closing-practice guidance if relevant.',
+    deliveryDocumentation: 'Send written notice by certified mail to the patient or legal representative last known address and retain the letter and delivery documentation in the chart.',
+    citation: 'South Carolina Board of Medical Examiners Policy Relative to Termination of Physician-Patient Relationships, revised August 8, 2014',
+    verifiedDate: '2026-06-01',
+    badge: 'South Carolina practice note: South Carolina Board of Medical Examiners policy requires sufficient advance notice to ensure continuity of care and permit another clinician to be secured. Written notice should be sent by certified mail, the physician must at minimum offer referral to another qualified professional, and emergency care must be provided for up to 30 days.',
+    warning: 'This entry is based on South Carolina physician policy. Verify applicability for nurse practitioners, therapists, payer contracts, Medicaid/managed-care rules, and controlled-substance situations before sending.'
+  },
+  AL: {
+    status: 'verified-guidance',
+    confidence: 'moderate-strong-board-guidance',
+    noticeStandard: 'Alabama Board of Medical Examiners guidance states that a physician terminating the physician-patient relationship should give written notice, preferably by certified mail, return receipt requested. The Board guidance states that the physician must agree to provide treatment and access to services for a reasonable period of time, and that 30 days is considered a reasonable period by the ABME.',
+    emergencyCoverage: 'Provide treatment and access to services for a reasonable transition period, with 30 days identified by ABME guidance as reasonable. Include crisis/emergency instructions and urgent coverage expectations through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide information supporting transfer of care and transfer medical records to a newly designated physician upon signed patient authorization.',
+    deliveryDocumentation: 'Use written notice, preferably certified mail with return receipt requested, and retain the letter and delivery documentation in the chart.',
+    citation: 'Alabama Board of Medical Examiners newsletter guidance on termination of the physician-patient relationship',
+    verifiedDate: '2026-06-01',
+    badge: 'Alabama practice note: Alabama Board of Medical Examiners guidance says termination should be done by written notice, preferably certified mail with return receipt requested. The guidance identifies 30 days as a reasonable period for continued treatment/access to services while the patient secures other care.',
+    warning: 'Treat the 30-day period as ABME guidance, not as a universal statutory rule for every profession or setting. Verify payer, Medicaid/managed-care, controlled-substance, and profession-specific requirements before sending.'
+  },
+  KY: {
+    status: 'verified-limited',
+    confidence: 'moderate-official-guidance-no-fixed-days',
+    noticeStandard: 'Kentucky Board of Medical Licensure FAQ guidance states that when a doctor terminates the physician-patient relationship, the doctor has an ethical obligation to give sufficient notice to permit another medical attendant to be secured. Kentucky Board of Nursing advisory guidance similarly frames abandonment around refusing continued treatment without proper notice and adequate time to find another provider. No universal fixed notice period was verified in the official sources reviewed here.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate until the patient has had adequate time to secure another provider.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral options or instructions for locating alternate care and records-transfer instructions. The core verified Kentucky standard is sufficient notice and adequate time to secure another provider.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations, although no universal certified-mail requirement was verified here.',
+    citation: 'Kentucky Board of Medical Licensure Grievance FAQ; Kentucky Board of Nursing Advisory Opinion Statement #24 Patient Abandonment',
+    verifiedDate: '2026-06-01',
+    badge: 'Kentucky practice note: Kentucky medical guidance emphasizes sufficient notice so another medical attendant can be secured. Kentucky nursing advisory guidance similarly frames abandonment around ending care without proper notice and adequate time to find another provider. No universal fixed notice period was verified here.',
+    warning: 'Do not hardcode a Kentucky 30-day rule unless a verified board, payer, Medicaid/managed-care, contract, or controlled-substance source requires it. Use reasonable written notice, continuity planning, crisis coverage, referral/resource options, medication bridge planning when appropriate, and trackable delivery for higher-risk cases.'
+  },
+  LA: {
+    status: 'verified-limited',
+    confidence: 'limited-moderate',
+    noticeStandard: 'No Louisiana official source was verified here that sets a universal fixed notice period for individual outpatient patient termination. The Louisiana State Board of Medical Examiners identifies termination of the physician-patient relationship as a process requiring detailed documentation and careful consideration for continuity of patient care, and directs clinicians to advisory resources. Use reasonable written notice sufficient for the patient to arrange alternate care unless a verified profession-specific, payer, Medicaid/managed-care, contract, or controlled-substance rule applies.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral options or instructions for locating alternate care and clear instructions for obtaining or transferring records. Document the continuity-of-care plan carefully.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations. If relying on LSMS or other risk-management guidance, label it as guidance rather than a binding rule.',
+    citation: 'Louisiana State Board of Medical Examiners, Health Care Resources for the Practitioner; Louisiana State Medical Society, Termination of Physician/Patient Relationship guidance',
+    verifiedDate: '2026-06-01',
+    badge: 'Louisiana practice note: LSBME publicly frames termination of the physician-patient relationship as requiring detailed documentation and careful attention to continuity of care, but no universal fixed notice period was verified here. Use reasonable written notice, continuity planning, crisis coverage, referral/resource options, records-transfer instructions, and medication bridge planning when appropriate.',
+    warning: 'Do not hardcode a Louisiana 30-day rule based only on advisory or risk-management summaries. Verify profession-specific board rules, payer rules, Medicaid/managed-care requirements, contracts, and controlled-substance requirements before sending.'
+  },
+  OK: {
+    status: 'verified-guidance',
+    confidence: 'strong-osteopathic-guidance',
+    noticeStandard: 'Oklahoma State Board of Osteopathic Examiners termination-of-care guidance states that the termination letter should state a 30-day notice of termination of care with a specific date. The guidance also says the letter should explain the reason for termination and should not be sent electronically by email or patient portal.',
+    emergencyCoverage: 'Include emergency-care language during the notice period and clear crisis/emergency instructions. Provide clinically appropriate urgent transition-related coverage through the effective termination date unless a safety exception applies.',
+    medicationBridge: 'The Oklahoma osteopathic guidance says the letter should state that after the termination date, prescriptions including controlled prescriptions will not be filled. Consider clinically appropriate bridge prescriptions during the notice period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral/resource options or instructions for locating alternate care and records-transfer instructions. Document the reason for termination and the transition plan.',
+    deliveryDocumentation: 'Do not send the termination letter electronically if relying on the Oklahoma osteopathic guidance. Use written non-electronic delivery and retain the letter in the patient record. Certified mail or another trackable delivery method is prudent, especially for higher-risk terminations.',
+    citation: 'Oklahoma State Board of Osteopathic Examiners, Termination of Care Guidelines, February 7, 2025',
+    verifiedDate: '2026-06-01',
+    badge: 'Oklahoma practice note: Oklahoma osteopathic-board guidance says a termination letter should give 30 days notice with a specific date, explain the reason for termination, avoid email or portal delivery, address prescription discontinuation after the termination date, and be retained in the patient record.',
+    warning: 'This entry is based on Oklahoma osteopathic-board guidance. Verify applicability for allopathic physicians, nurse practitioners, therapists, payer contracts, Medicaid/managed-care rules, and controlled-substance situations before sending.'
+  },
+  IA: {
+    status: 'verified',
+    confidence: 'strong-for-physicians',
+    noticeStandard: 'Iowa Administrative Code 653-13.7 requires a physician to provide written notice of termination of the physician-patient relationship. The physician must ensure emergency medical care is available to the patient during the 30-day period following notice of termination.',
+    emergencyCoverage: 'Ensure emergency medical care is available during the 30-day period following notice of termination. Include crisis/emergency instructions and urgent coverage expectations during that transition period.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the 30-day transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral/resource options or instructions for locating alternate care and records-transfer instructions. The notice should support the patient ability to secure ongoing care.',
+    deliveryDocumentation: 'Provide written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations, although the retrieved rule language emphasizes written notice and emergency medical care availability rather than a specific delivery method.',
+    citation: 'Iowa Administrative Code 653-13.7, Standards of Practice, Office Practices',
+    verifiedDate: '2026-06-01',
+    badge: 'Iowa practice note: Iowa physician rules require written notice of termination and require the physician to ensure emergency medical care is available during the 30-day period following notice.',
+    warning: 'This entry is based on Iowa physician rules. Verify applicability for nurse practitioners, therapists, payer contracts, Medicaid/managed-care rules, and controlled-substance situations before sending.'
+  },
+  CT: {
+    status: 'verified-guidance',
+    confidence: 'moderate-official-faq-guidance',
+    noticeStandard: 'Connecticut Department of Public Health FAQ guidance states that a physician can stop seeing a patient and that no regulation requires advance notice, but generally accepted practice indicates the practitioner should give the patient 30 days access to medication refills and time to locate a new practitioner.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the transition period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate while the patient has time to locate a new practitioner.',
+    medicationBridge: 'Connecticut DPH FAQ guidance specifically references 30 days access to medication refills as generally accepted practice. Consider clinically appropriate bridge prescriptions when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral/resource options or instructions for locating alternate care and records-transfer instructions. The verified Connecticut FAQ guidance emphasizes allowing time for the patient to locate a new practitioner.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations, although the Connecticut FAQ does not mandate a specific delivery method.',
+    citation: 'Connecticut Department of Public Health, Practitioner Complaints Frequently Asked Questions; Connecticut Board of Examiners for Nursing patient abandonment guidance',
+    verifiedDate: '2026-06-01',
+    badge: 'Connecticut practice note: Connecticut DPH FAQ guidance says no regulation requires advance notice, but generally accepted practice is to provide 30 days access to medication refills and time for the patient to locate a new practitioner.',
+    warning: 'Do not code Connecticut as a hard statutory 30-day termination rule. The verified source frames this as generally accepted practice, not a regulation. Verify profession-specific, payer, Medicaid/managed-care, contract, and controlled-substance requirements before sending.'
+  },
+  KS: {
+    status: 'verified-limited',
+    confidence: 'limited-moderate',
+    noticeStandard: 'No official Kansas source was verified here that sets a universal notice period for individual outpatient patient termination. Kansas Board of Healing Arts guidance addresses physicians leaving active practice and requires Board notification within 30 days after terminating active practice, including the location of patient records, custodian/contact information, and scheduled destruction date. For individual patient termination, use reasonable written notice sufficient for the patient to arrange alternate care unless a verified profession-specific, payer, Medicaid/managed-care, contract, or controlled-substance rule applies.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral options or instructions for locating alternate care and clear instructions for obtaining or transferring records. If closing or leaving active practice, follow Kansas Board of Healing Arts record-storage notification requirements.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk individual terminations, although no universal outpatient certified-mail rule was verified here.',
+    citation: 'Kansas State Board of Healing Arts, Termination of Physician-Patient Relationship FAQ / K.A.R. 100-24-3; Kansas Medical Society practice-transition guidance',
+    verifiedDate: '2026-06-01',
+    badge: 'Kansas practice note: No universal individual outpatient termination notice period was verified here. Kansas Board of Healing Arts guidance addresses physicians leaving active practice and requires Board notification within 30 days after practice termination with patient-record storage/custodian information. For individual patient termination, use reasonable written notice, continuity planning, crisis coverage, referral/resource options, records-transfer instructions, and medication bridge planning when appropriate.',
+    warning: 'Do not hardcode a Kansas 30-day individual-patient termination rule based on practice-closure or record-storage requirements. Verify profession-specific board rules, payer rules, Medicaid/managed-care requirements, contracts, and controlled-substance requirements before sending.'
+  },
+  AR: {
+    status: 'verified-limited',
+    confidence: 'limited',
+    noticeStandard: 'No official Arkansas source was verified here that sets a universal notice period for individual outpatient patient termination. Arkansas rules require a healthcare provider to inform the Arkansas State Medical Board within 30 days of terminating, retiring from, or relocating a practice setting, including information about the practice setting and patient-record storage/custody/access. For individual patient termination, use reasonable written notice sufficient for the patient to arrange alternate care unless a verified profession-specific, payer, Medicaid/managed-care, contract, or controlled-substance rule applies.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral options or instructions for locating alternate care and clear instructions for obtaining or transferring records. If terminating, retiring from, or relocating a practice setting, follow Arkansas Medical Board notification and record-custody requirements.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk individual terminations, although no universal outpatient certified-mail rule was verified here.',
+    citation: '17 CAR section 140-2703, Provider duty to inform board; Arkansas Medical Practices Act and Rules',
+    verifiedDate: '2026-06-01',
+    badge: 'Arkansas practice note: No universal individual outpatient termination notice period was verified here. Arkansas rules do require Board notification within 30 days when a provider terminates, retires from, or relocates a practice setting, including record-storage and custodian information. For individual patient termination, use reasonable written notice, continuity planning, crisis coverage, referral/resource options, records-transfer instructions, and medication bridge planning when appropriate.',
+    warning: 'Do not hardcode an Arkansas 30-day individual-patient termination rule based on practice-setting termination or relocation requirements. Verify profession-specific board rules, payer rules, Medicaid/managed-care requirements, contracts, and controlled-substance requirements before sending.'
+  },
+  MS: {
+    status: 'verified-guidance',
+    confidence: 'moderate-strong-board-guidance',
+    noticeStandard: 'Mississippi State Board of Medical Licensure guidance states that a physician may terminate the doctor-patient relationship by giving reasonable notice. The Board FAQ says patients should receive notice to seek another physician for continuation of treatment or maintenance medications and recommends 30 days notice.',
+    emergencyCoverage: 'Provide continuing care for a reasonable time during the transition period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential or maintenance medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral resources or instructions for locating alternate care and clear instructions for obtaining or transferring records. Mississippi guidance emphasizes notice allowing continuation of treatment or maintenance medications.',
+    deliveryDocumentation: 'Provide written notice, which may be by certified mail with return receipt requested or other reasonable proof, and include a copy of the letter in the medical record.',
+    citation: 'Mississippi State Board of Medical Licensure Policies; Mississippi State Board of Medical Licensure Consumer Complaint FAQ',
+    verifiedDate: '2026-06-01',
+    badge: 'Mississippi practice note: Mississippi Board guidance says a physician may terminate the relationship with reasonable notice and recommends 30 days notice. The Board policy materials also identify written notice, reasonable proof of delivery, chart retention, a brief valid reason, continuing care for a reasonable time, and referral resources as appropriate termination steps.',
+    warning: 'Treat the 30-day period as Board guidance/recommendation rather than a universal statutory rule unless another verified source requires it. Verify profession-specific board rules, payer rules, Medicaid/managed-care requirements, contracts, and controlled-substance requirements before sending.'
+  },
+  NV: {
+    status: 'verified-guidance',
+    confidence: 'strong-statute-with-board-guidance-no-fixed-statutory-days',
+    noticeStandard: 'Nevada law identifies terminating medical care without adequate notice or without making other arrangements for continued care as a disciplinary ground. Nevada law does not define a specific fixed notice period. Nevada Board of Medical Examiners guidance recommends written correspondence at least 30 days before termination and keeping a copy of the notice in the medical record.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the transition period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date or until other arrangements for continued care are made.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral/resource options or instructions for locating alternate care and records-transfer instructions. The verified Nevada statutory standard allows termination only with adequate notice or other arrangements for continued care.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations, although the Nevada statute does not specify a required delivery method.',
+    citation: 'NRS 630.304(7); Nevada State Board of Medical Examiners Newsletter, February 2024',
+    verifiedDate: '2026-06-01',
+    badge: 'Nevada practice note: Nevada law treats terminating medical care without adequate notice or without making other arrangements for continued care as a disciplinary ground. Nevada law does not define adequate notice, but Nevada Board guidance recommends written notice at least 30 days before termination and keeping a copy in the medical record.',
+    warning: 'Treat 30 days as Nevada Board guidance, not a fixed statutory definition of adequate notice. Verify profession-specific board rules, payer rules, Medicaid/managed-care requirements, contracts, and controlled-substance requirements before sending.'
+  },
+  UT: {
+    status: 'verified-limited',
+    confidence: 'limited-risk-guidance-no-official-fixed-days',
+    noticeStandard: 'No official Utah source was verified here that sets a universal notice period for individual outpatient patient termination. Utah-specific legal risk guidance recommends notifying the patient, giving a reasonable period of time to transfer care to another provider, and notes that 30 days is common but circumstance-dependent. Use reasonable written notice sufficient for the patient to arrange alternate care unless a verified profession-specific, payer, Medicaid/managed-care, contract, or controlled-substance rule applies.',
+    emergencyCoverage: 'Provide necessary care during the transition period and include crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Facilitate transfer of care by providing referral/resource options or instructions for locating alternate care and records-transfer instructions. The goal is to give the patient a reasonable opportunity to transfer care without suffering adverse effect during the interim.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail, regular mail, commercial delivery, portal notice with view tracking, or documented direct communication may be appropriate depending on the circumstances. Trackable delivery is prudent for higher-risk terminations.',
+    citation: 'Holland & Hart, Firing Patients: Avoiding Patient Abandonment',
+    verifiedDate: '2026-06-01',
+    badge: 'Utah practice note: No universal official Utah outpatient termination notice period was verified here. Utah-specific legal risk guidance recommends notice, a reasonable period to transfer care, necessary care during the transition, and support for transfer. Thirty days is commonly used but should not be treated as a verified Utah rule.',
+    warning: 'Do not hardcode a Utah 30-day rule unless a verified Utah board, payer, Medicaid/managed-care, contract, or controlled-substance source requires it. Use reasonable written notice, continuity planning, crisis coverage, referral/resource options, records-transfer instructions, and medication bridge planning when appropriate.'
+  },
+  NM: {
+    status: 'verified-guidance',
+    confidence: 'strong-for-practice-transition-moderate-for-individual-termination',
+    noticeStandard: 'New Mexico Administrative Code requires active patients and patients seen within the previous three years to be notified at least 30 days before closing, selling, relocating, or leaving a practice whenever possible. For individual patient termination, New Mexico Medical Society guidance states that a physician can terminate the relationship with reasonable written notice and recommends no less than 30 days, ideally at least 90 days, but this should be treated as guidance rather than a universal individual termination rule.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the transition period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date or practice transition date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral/resource options or instructions for locating alternate care and clear records-transfer instructions. For closure, selling, relocation, or leaving practice, follow the specific New Mexico patient-notification and records-access requirements.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. For practice closure, sale, relocation, or leaving practice, follow N.M. Admin. Code section 16.10.17.9 notification requirements. Certified mail or another trackable method is prudent for higher-risk individual terminations.',
+    citation: 'N.M. Admin. Code section 16.10.17.9; New Mexico Medical Society, Closing Your Practice: A Guide for Physicians',
+    verifiedDate: '2026-06-01',
+    badge: 'New Mexico practice note: New Mexico has a specific rule requiring active patients and patients seen within the previous three years to be notified at least 30 days before closing, selling, relocating, or leaving a practice whenever possible. For individual patient termination, medical-society guidance recommends reasonable written notice, at least 30 days and ideally 90 days, but that should not be treated as a universal board rule for every dismissal.',
+    warning: 'Do not overapply the New Mexico practice-transition rule to every individual patient termination. For individual terminations, use reasonable written notice, continuity planning, crisis coverage, referral/resource options, records-transfer instructions, medication bridge planning when appropriate, and trackable delivery for higher-risk cases.'
+  },
+  ID: {
+    status: 'verified-guidance',
+    confidence: 'moderate-official-guidance-no-fixed-days',
+    noticeStandard: 'Idaho Board of Medicine guidance states that when a physician has a valid reason to discontinue a relationship with a patient, the physician must take steps to avoid patient abandonment, including providing notice, giving the patient a reasonable opportunity to find another provider, and continuing to provide care during the transition period. No universal fixed notice period was verified in the official source reviewed here.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the transition period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral/resource options or instructions for locating alternate care and records-transfer instructions. The verified Idaho guidance emphasizes giving the patient a reasonable opportunity to find another provider.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations, although no universal certified-mail requirement was verified here.',
+    citation: 'Idaho Board of Medicine, The Report, December 2024; Holland & Hart Idaho patient-relationship guidance',
+    verifiedDate: '2026-06-01',
+    badge: 'Idaho practice note: Idaho Board of Medicine guidance emphasizes notice, reasonable opportunity to find another provider, and continued care during the transition period to avoid abandonment. No universal fixed notice period was verified in the official source reviewed here.',
+    warning: 'Do not hardcode an Idaho 30-day rule unless a verified Idaho board, payer, Medicaid/managed-care, contract, or controlled-substance source requires it. Use reasonable written notice, continuity planning, crisis coverage, referral/resource options, records-transfer instructions, and medication bridge planning when appropriate.'
+  },
+  MT: {
+    status: 'verified-limited',
+    confidence: 'limited',
+    noticeStandard: 'No official Montana source was verified here that sets a universal notice period for individual outpatient patient termination. Montana Board of Medical Examiners rules define unprofessional conduct broadly to include violating any statute, rule, or standard of care governing the licensee scope of practice. For individual patient termination, use reasonable written notice sufficient for the patient to arrange alternate care unless a verified profession-specific, payer, Medicaid/managed-care, contract, or controlled-substance rule applies.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral/resource options or instructions for locating alternate care and clear instructions for obtaining or transferring records. Document the rationale and continuity-of-care plan, especially for patients with active psychiatric, medication, or safety risks.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations, although no universal Montana certified-mail rule was verified here.',
+    citation: 'Mont. Admin. R. 24.156.405, Unprofessional Conduct; Montana Board of Medical Examiners rules',
+    verifiedDate: '2026-06-01',
+    badge: 'Montana practice note: No universal outpatient individual-termination notice period was verified here. Montana rules broadly define unprofessional conduct to include violation of applicable standards of care. Use reasonable written notice, continuity planning, crisis coverage, referral/resource options, records-transfer instructions, and medication bridge planning when appropriate.',
+    warning: 'Do not hardcode a Montana 30-day rule unless a verified Montana board, payer, Medicaid/managed-care, contract, or controlled-substance source requires it.'
+  },
+  WY: {
+    status: 'verified',
+    confidence: 'strong-for-physicians',
+    noticeStandard: 'Wyoming rules require any physician who desires to terminate a physician-patient relationship to notify the patient or legally designated agent in writing at least 30 days before the date of termination that the licensee will no longer treat the patient.',
+    emergencyCoverage: 'The written notice must state that the licensee care of the patient will continue for 30 days or until the patient notifies the licensee of the name and address of the patient new physician, whichever occurs first. Include crisis/emergency instructions and urgent coverage expectations during that transition period.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the 30-day transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral/resource options or instructions for locating alternate care and records-transfer instructions. The Wyoming rule specifically contemplates transition to a new physician identified by name and address.',
+    deliveryDocumentation: 'Wyoming requires the written notice of termination to be sent by certified mail, return receipt requested. Retain the letter and delivery documentation in the chart.',
+    citation: '052-3 Wyo. Code R. sections 3-5, Termination of physician-patient relationship',
+    verifiedDate: '2026-06-01',
+    badge: 'Wyoming practice note: Wyoming has a specific physician-patient termination rule. Written notice must be given at least 30 days before termination and sent by certified mail, return receipt requested. Care continues for 30 days or until the patient provides the name and address of a new physician, whichever occurs first.',
+    warning: 'This entry is based on Wyoming physician rules. Verify applicability for nurse practitioners, therapists, payer contracts, Medicaid/managed-care rules, and controlled-substance situations before sending.'
+  },
+  NE: {
+    status: 'verified-limited',
+    confidence: 'limited-moderate',
+    noticeStandard: 'No official Nebraska source was verified here that sets a universal notice period for individual outpatient patient termination. Nebraska Board of Nursing advisory guidance identifies patient abandonment to include terminating a contractual or other relationship in which the nurse is the primary or sole provider of care without notice to the patient and/or others acting on behalf of the patient to make other arrangements. For individual patient termination, use reasonable written notice sufficient for the patient to arrange alternate care unless a verified profession-specific, payer, Medicaid/managed-care, contract, or controlled-substance rule applies.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral/resource options or instructions for locating alternate care and clear instructions for obtaining or transferring records. If the clinician is the primary or sole provider of care, document how the patient was given notice and a reasonable opportunity to make other arrangements.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations, although no universal Nebraska outpatient certified-mail rule was verified here.',
+    citation: 'Nebraska Board of Nursing Advisory Opinion: Patient Abandonment',
+    verifiedDate: '2026-06-01',
+    badge: 'Nebraska practice note: No universal outpatient individual-termination notice period was verified here. Nebraska nursing advisory guidance frames abandonment around ending a primary or sole provider relationship without notice that allows other arrangements for care. Use reasonable written notice, continuity planning, crisis coverage, referral/resource options, records-transfer instructions, and medication bridge planning when appropriate.',
+    warning: 'Do not hardcode a Nebraska 30-day rule unless a verified Nebraska board, payer, Medicaid/managed-care, contract, or controlled-substance source requires it.'
+  },
+  SD: {
+    status: 'verified-limited',
+    confidence: 'limited',
+    noticeStandard: 'No official South Dakota source was verified here that sets a universal notice period for individual outpatient patient termination. South Dakota administrative rules require the medical record to contain documentation regarding termination of the doctor-patient relationship, but the reviewed rule did not specify a fixed notice period or delivery method. Use reasonable written notice sufficient for the patient to arrange alternate care unless a verified profession-specific, payer, Medicaid/managed-care, contract, or controlled-substance rule applies.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral/resource options or instructions for locating alternate care and clear instructions for obtaining or transferring records. Document the termination rationale, notice, effective date, and continuity-of-care plan in the medical record.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations, although no universal South Dakota outpatient certified-mail rule was verified here.',
+    citation: 'S.D. Admin. R. 20:43:11:01, medical record contents; South Dakota Board of Medical and Osteopathic Examiners complaint/enforcement information',
+    verifiedDate: '2026-06-01',
+    badge: 'South Dakota practice note: No universal outpatient individual-termination notice period was verified here. South Dakota rules do require medical records to include documentation regarding termination of the doctor-patient relationship. Use reasonable written notice, continuity planning, crisis coverage, referral/resource options, records-transfer instructions, medication bridge planning when appropriate, and chart documentation of the termination process.',
+    warning: 'Do not hardcode a South Dakota 30-day rule unless a verified South Dakota board, payer, Medicaid/managed-care, contract, or controlled-substance source requires it.'
+  },
+  ND: {
+    status: 'verified-limited',
+    confidence: 'limited',
+    noticeStandard: 'No official North Dakota source was verified here that sets a universal notice period for individual outpatient patient termination. North Dakota Board of Nursing guidance defines abandonment as accepting a client assignment and disengaging the nurse-client relationship without giving notice to a qualified person, and identifies abandoning a client who is in need of or receiving nursing care as professional misconduct. For individual outpatient termination, use reasonable written notice sufficient for the patient to arrange alternate care unless a verified profession-specific, payer, Medicaid/managed-care, contract, or controlled-substance rule applies.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral/resource options or instructions for locating alternate care and clear instructions for obtaining or transferring records. Document the rationale, notice, effective date, and continuity-of-care plan, especially when the patient has active psychiatric, medication, or safety risks.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations, although no universal North Dakota outpatient certified-mail rule was verified here.',
+    citation: 'North Dakota Board of Nursing, Abandonment; N.D. Admin. Code nursing professional misconduct provisions',
+    verifiedDate: '2026-06-01',
+    badge: 'North Dakota practice note: No universal outpatient individual-termination notice period was verified here. North Dakota nursing guidance frames abandonment around disengaging from a nurse-client relationship without appropriate notice, and abandonment may constitute professional misconduct. Use reasonable written notice, continuity planning, crisis coverage, referral/resource options, records-transfer instructions, and medication bridge planning when appropriate.',
+    warning: 'Do not hardcode a North Dakota 30-day rule unless a verified North Dakota board, payer, Medicaid/managed-care, contract, or controlled-substance source requires it.'
+  },
+  ME: {
+    status: 'verified-limited',
+    confidence: 'limited-moderate',
+    noticeStandard: 'No official Maine source was verified here that sets a universal notice period for individual outpatient patient termination. Maine Board of Licensure in Medicine newsletter guidance addresses practice closure and states that complaints of abandonment or neglect can be avoided by giving patients sufficient notice of the practice closure, approximately 60 to 90 days, so patients can establish with another physician. For individual patient termination, use reasonable written notice sufficient for the patient to arrange alternate care unless a verified profession-specific, payer, Medicaid/managed-care, contract, or controlled-substance rule applies.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral/resource options or instructions for locating alternate care and clear instructions for obtaining or transferring records. If closing a practice, follow Maine Board guidance regarding sufficient advance notice and patient transition planning.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk individual terminations, although no universal Maine outpatient certified-mail rule was verified here.',
+    citation: 'Maine Board of Licensure in Medicine newsletter guidance on practice closure and abandonment/neglect complaints',
+    verifiedDate: '2026-06-01',
+    badge: 'Maine practice note: No universal individual outpatient termination notice period was verified here. Maine Board newsletter guidance addresses practice closure and suggests approximately 60 to 90 days of notice to avoid abandonment or neglect complaints. Do not treat that as a universal individual-patient dismissal rule.',
+    warning: 'Do not hardcode a Maine 60-to-90-day rule for every individual patient termination. That source is practice-closure guidance. Verify profession-specific board rules, payer rules, Medicaid/managed-care requirements, contracts, and controlled-substance requirements before sending.'
+  },
+  NH: {
+    status: 'verified-limited',
+    confidence: 'limited-practice-transition-guidance',
+    noticeStandard: 'No official New Hampshire source was verified here that sets a universal notice period for individual outpatient patient termination. New Hampshire practice-transition guidance recommends written patient notice for physician practice dissolution or transition, including the transition date, explanation that the physician will no longer be available, medical-record transfer information, and instructions for accessing records after the transition. For individual patient termination, use reasonable written notice sufficient for the patient to arrange alternate care unless a verified profession-specific, payer, Medicaid/managed-care, contract, or controlled-substance rule applies.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral/resource options or instructions for locating alternate care and clear instructions for obtaining or transferring records. For practice transition or dissolution, include records-transfer information and instructions for accessing records after the transition date.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk individual terminations, although no universal New Hampshire outpatient certified-mail rule was verified here.',
+    citation: 'McLane Middleton, Know the Law: Notifying Patients of Dissolution of New Hampshire Physician Practice',
+    verifiedDate: '2026-06-01',
+    badge: 'New Hampshire practice note: No universal individual outpatient termination notice period was verified here. Available New Hampshire guidance is strongest for practice transition or dissolution and emphasizes written notice, transition date, records-transfer information, and instructions for accessing records. For individual termination, use reasonable written notice and continuity planning.',
+    warning: 'Do not hardcode a New Hampshire 30-day rule unless a verified New Hampshire board, payer, Medicaid/managed-care, contract, or controlled-substance source requires it.'
+  },
+  VT: {
+    status: 'verified',
+    confidence: 'strong-board-policy-no-fixed-days',
+    noticeStandard: 'Vermont Board of Medical Practice policy states that termination notice should be in writing, presented to the patient by a method that ensures the patient received it, and should specify that the physician-patient relationship will end after a reasonable period of time. No universal fixed number of notice days was verified in the policy reviewed here.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate until the relationship ends after the reasonable notice period.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral/resource options or instructions for locating alternate care and clear instructions for obtaining or transferring records. The notice should support continuity of care and the patient ability to establish with another clinician.',
+    deliveryDocumentation: 'Provide written notice by a method that ensures receipt. Certified mail, return receipt, portal view-tracking, or another documented delivery method may be appropriate depending on the circumstances. Retain the notice and delivery documentation in the chart.',
+    citation: 'Vermont Board of Medical Practice, Policy on Termination of the Physician-Patient Relationship',
+    verifiedDate: '2026-06-01',
+    badge: 'Vermont practice note: Vermont Board of Medical Practice policy says termination notice should be written, delivered by a method that ensures receipt, and should specify that the physician-patient relationship will end after a reasonable period of time. The policy does not set a universal fixed number of days.',
+    warning: 'Do not hardcode a Vermont 30-day rule unless a verified payer, Medicaid/managed-care, contract, controlled-substance, or profession-specific source requires it. Use written notice, confirmed delivery, reasonable transition time, continuity planning, crisis coverage, referral/resource options, and medication bridge planning when appropriate.'
+  },
+  AK: {
+    status: 'verified-guidance',
+    confidence: 'moderate-strong-guidance-no-fixed-days',
+    noticeStandard: 'Alaska State Medical Board archived guidance states that physicians have an obligation to support continuity of care and may not withdraw from a case without giving notice sufficiently far in advance to permit another physician to be secured. No universal fixed notice period was verified in the source reviewed here.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral/resource options or instructions for locating alternate care and clear instructions for obtaining or transferring records. The core Alaska guidance emphasizes continuity of care and sufficient time for another physician to be secured.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations, although no universal Alaska certified-mail requirement was verified here.',
+    citation: 'Alaska State Medical Board archived guidance, Patient Neglect / Termination of Patient-Physician Relationship',
+    verifiedDate: '2026-06-01',
+    badge: 'Alaska practice note: Alaska Medical Board archived guidance emphasizes continuity of care and states that physicians may not withdraw without notice sufficiently far in advance to allow another physician to be secured. No universal fixed notice period was verified here.',
+    warning: 'Do not hardcode an Alaska 30-day rule unless a verified Alaska board, payer, Medicaid/managed-care, contract, or controlled-substance source requires it. Use reasonable written notice, continuity planning, crisis coverage, referral/resource options, records-transfer instructions, and medication bridge planning when appropriate.'
+  },
+  HI: {
+    status: 'verified-limited',
+    confidence: 'limited',
+    noticeStandard: 'No official Hawaii source was verified here that sets a universal notice period for individual outpatient patient termination. Hawaii Medical Board public materials and Chapter 453 physician statutes were reviewed, but no specific individual termination workflow or fixed notice period was verified in the retrieved sources. Use reasonable written notice sufficient for the patient to arrange alternate care unless a verified profession-specific, payer, Medicaid/managed-care, contract, or controlled-substance rule applies.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral/resource options or instructions for locating alternate care and clear instructions for obtaining or transferring records. Document the rationale and continuity-of-care plan, especially for patients with active psychiatric, medication, or safety risks.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations, although no universal Hawaii certified-mail requirement was verified here.',
+    citation: 'Hawaii Medical Board public materials; Hawaii Revised Statutes Chapter 453, Medicine and Surgery',
+    verifiedDate: '2026-06-01',
+    badge: 'Hawaii practice note: No universal outpatient individual-termination notice period was verified here. Use reasonable written notice, continuity planning, crisis coverage, referral/resource options, records-transfer instructions, and medication bridge planning when appropriate.',
+    warning: 'Do not hardcode a Hawaii 30-day rule unless a verified Hawaii board, payer, Medicaid/managed-care, contract, or controlled-substance source requires it.'
+  },
+  DE: {
+    status: 'verified',
+    confidence: 'strong-for-physicians',
+    noticeStandard: 'Delaware law provides that a person certified to practice medicine who is discontinuing a medical-practice business in Delaware, leaving the state, or terminating a patient-physician relationship for any reason and who is not transferring patient records to another certified physician must notify affected patients of record no less than 30 days before discontinuation of physician services.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the 30-day notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the discontinuation date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the 30-day transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide clear instructions for transfer or access to medical records. Delaware statute specifically addresses record transfer/access in the context of discontinuing practice, leaving the state, or terminating a patient-physician relationship.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations, although the retrieved statutory language emphasizes notice and records handling rather than mandating certified mail.',
+    citation: 'Del. Code tit. 24, section 1761, Physician discontinuing business, leaving the State, or terminating a patient-physician relationship',
+    verifiedDate: '2026-06-01',
+    badge: 'Delaware practice note: Delaware law requires at least 30 days notice before discontinuation of physician services when a physician is discontinuing practice, leaving the state, or terminating a patient-physician relationship and is not transferring records to another certified physician. The statute also addresses patient-record transfer and access.',
+    warning: 'This entry is based on Delaware physician law. Verify applicability for nurse practitioners, therapists, payer contracts, Medicaid/managed-care rules, and controlled-substance situations before sending.'
+  },
+  RI: {
+    status: 'verified-limited',
+    confidence: 'limited-for-individual-termination-strong-for-practice-closure',
+    noticeStandard: 'No official Rhode Island source was verified here that sets a universal notice period for individual outpatient patient termination. Rhode Island law requires a physician, at least 90 days before closing a practice, to give public notice regarding the disposition of patient medical records in a newspaper with statewide circulation and to notify the Rhode Island Medical Society and Rhode Island Board of Medical Licensure and Discipline of the location of the records. For individual patient termination, use reasonable written notice sufficient for the patient to arrange alternate care unless a verified profession-specific, payer, Medicaid/managed-care, contract, or controlled-substance rule applies.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral/resource options or instructions for locating alternate care and clear instructions for obtaining or transferring records. If closing a practice, follow Rhode Island 90-day public notice and records-location notification requirements.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk individual terminations, although no universal Rhode Island certified-mail requirement for individual termination was verified here.',
+    citation: 'R.I. Gen. Laws section 5-37-30, Physician closing practice; disposition of patient records',
+    verifiedDate: '2026-06-01',
+    badge: 'Rhode Island practice note: Rhode Island has a specific physician practice-closure rule requiring at least 90 days public notice about the disposition of patient medical records and notification to the Rhode Island Medical Society and Board of Medical Licensure and Discipline regarding record location. This should not be treated as a universal 90-day individual patient termination rule.',
+    warning: 'Do not hardcode a Rhode Island 90-day rule for every individual patient dismissal. That rule applies to practice closure and records disposition. Verify profession-specific board rules, payer rules, Medicaid/managed-care requirements, contracts, and controlled-substance requirements before sending.'
+  },
+  WV: {
+    status: 'verified-limited',
+    confidence: 'limited',
+    noticeStandard: 'No official West Virginia source was verified here that sets a universal notice period for individual outpatient patient termination. West Virginia telemedicine law states that telemedicine practice, including the establishment of a physician-patient relationship, is subject to the same standard of care, professional practice requirements, and scope-of-practice limitations as traditional in-person encounters. For individual patient termination, use reasonable written notice sufficient for the patient to arrange alternate care unless a verified profession-specific, payer, Medicaid/managed-care, contract, or controlled-substance rule applies.',
+    emergencyCoverage: 'Provide reasonable continuity-of-care protections during the notice period, including crisis/emergency instructions and urgent transition-related coverage as clinically appropriate through the effective termination date. Apply the same continuity-of-care logic whether the relationship was maintained in person or by telehealth.',
+    medicationBridge: 'Consider clinically appropriate bridge prescriptions during the transition period when needed to avoid abrupt interruption of essential medications. For controlled substances or higher-risk medications, document clinical rationale, safety limits, and transition/referral plan.',
+    referralTransfer: 'Provide referral/resource options or instructions for locating alternate care and clear instructions for obtaining or transferring records. Document the rationale, notice, effective date, and continuity-of-care plan, especially for patients with active psychiatric, medication, or safety risks.',
+    deliveryDocumentation: 'Use written notice and retain a copy in the chart. Certified mail or another trackable delivery method is prudent for higher-risk terminations, although no universal West Virginia outpatient certified-mail rule was verified here.',
+    citation: 'W. Va. Code section 30-14-12d, telemedicine practice standard-of-care language; West Virginia nursing abandonment guidance',
+    verifiedDate: '2026-06-01',
+    badge: 'West Virginia practice note: No universal outpatient individual-termination notice period was verified here. West Virginia telemedicine law confirms that telemedicine care is subject to the same standard-of-care and professional-practice requirements as in-person care. Use reasonable written notice, continuity planning, crisis coverage, referral/resource options, records-transfer instructions, and medication bridge planning when appropriate.',
+    warning: 'Do not hardcode a West Virginia 30-day rule unless a verified West Virginia board, payer, Medicaid/managed-care, contract, or controlled-substance source requires it.'
+  }
+  // Additional states added here ONLY when verified with a cited source.
+};
+
+function getStateRule(stateCode) {
+  return STATE_RULES[stateCode] || null;
+}
+
+function surfaceStateRule() {
+  var ptState = val('f-ptstate').toUpperCase();
+  var note = document.getElementById('state-practice-note');
+  var rule = getStateRule(ptState);
+  if (rule && rule.badge) {
+    document.getElementById('spn-title').textContent = ptState + ' practice note:';
+    document.getElementById('spn-text').textContent = rule.badge;
+    note.style.display = 'block';
+    // Pre-fill the verified-notes field if empty, so the prompt honors it.
+    var notes = document.getElementById('f-statenotes');
+    if (notes && !notes.value.trim()) {
+      var prefill = rule.noticeStandard;
+      if (rule.emergencyCoverage) prefill += ' ' + rule.emergencyCoverage;
+      if (rule.medicationBridge) prefill += ' ' + rule.medicationBridge;
+      if (rule.referralTransfer) prefill += ' ' + rule.referralTransfer;
+      if (rule.deliveryDocumentation) prefill += ' ' + rule.deliveryDocumentation;
+      notes.value = prefill;
+    }
+  } else {
+    note.style.display = 'none';
+  }
+}
+
 function checkStateMatch() {
+  surfaceStateRule();
   var ptState = val('f-ptstate').toUpperCase();
   var provState = (profile.licenseState || '').toUpperCase();
   var warning = document.getElementById('state-warning');
@@ -518,6 +1221,41 @@ function checkStateMatch() {
 // Reason "other" toggle
 document.getElementById('f-reason').addEventListener('change', function() {
   document.getElementById('reasonOtherWrap').style.display = this.value === 'other' ? 'block' : 'none';
+});
+
+// ══════════════════════════════════════════════
+// CRISIS COVERAGE BUILDER
+// ══════════════════════════════════════════════
+var _crisisEdited = false;
+function assembleCrisis() {
+  var ta = document.getElementById('f-crisis');
+  // If the clinician hand-edited the assembled text, don't clobber it.
+  if (_crisisEdited) return;
+  var parts = [];
+  if (document.getElementById('cr-office').checked) {
+    parts.push('During the notice period, you may contact this office for urgent concerns related to your care transition.');
+  }
+  if (document.getElementById('cr-988').checked) {
+    parts.push('For suicidal or emotional crisis, call or text the 988 Suicide & Crisis Lifeline.');
+  }
+  if (document.getElementById('cr-911').checked) {
+    parts.push('For a medical or psychiatric emergency, call 911 or go to the nearest emergency room.');
+  }
+  if (document.getElementById('cr-avail').checked) {
+    var eff = val('f-effdate');
+    parts.push('Emergency coverage remains available through ' + (eff ? eff : '[effective date]') + '.');
+  }
+  var custom = val('cr-custom');
+  if (custom) parts.push(custom);
+  ta.value = parts.join(' ');
+}
+// Mark as edited if the clinician types directly in the textarea
+document.addEventListener('DOMContentLoaded', function() {
+  var ta = document.getElementById('f-crisis');
+  if (ta) ta.addEventListener('input', function() { _crisisEdited = true; });
+  var eff = document.getElementById('f-effdate');
+  if (eff) eff.addEventListener('change', assembleCrisis);
+  assembleCrisis();
 });
 
 // ══════════════════════════════════════════════
