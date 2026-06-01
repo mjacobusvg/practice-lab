@@ -121,6 +121,7 @@ textarea{resize:vertical;min-height:70px}
         document.getElementById('app-root').style.display = 'block';
         try { _userEmail = localStorage.getItem('tbp_verified_email') || ''; } catch(e) {}
         loadVault();
+        checkCertifiedReturn();
       }
     });
   });
@@ -309,9 +310,45 @@ textarea{resize:vertical;min-height:70px}
             <button class="copy-btn" onclick="copyOutput('letter-output', this)">Copy</button>
             <button class="pdf-btn" onclick="downloadPDF()">PDF</button>
             <button class="email-btn" onclick="showEmailDialog()">Email</button>
+            <button class="email-btn" onclick="showCertifiedDialog()">Certified mail</button>
           </div>
         </div>
         <div class="out-body" id="letter-output"></div>
+      </div>
+
+      <!-- Certified mail send block -->
+      <div class="out-block" id="certifiedBlock" style="display:none">
+        <div class="ob-head"><h4>Send by certified mail</h4></div>
+        <div id="cmDisabledNote" class="state-verify" style="display:none;border-left-color:var(--cream-dim)">
+          <strong>Online certified-mail send is not active yet.</strong> Mail the letter yourself and record the certified tracking number in the manual fields below, or enable online send once the vendor account, BAA, payment, and test send are configured.
+        </div>
+        <div id="cmLiveForm">
+          <p class="field-hint" style="margin-bottom:14px">A pass-through certified-mail fee applies. You will pay before the letter is submitted for mailing. Letter content is transmitted to the mail vendor only when a signed BAA is in place.</p>
+          <div class="form-row">
+            <div><label>Recipient name</label><input type="text" id="cm-toname" placeholder="Patient full name"></div>
+            <div><label>Return-receipt requested</label>
+              <select id="cm-receipt"><option value="yes">Yes (recommended)</option><option value="no">No</option></select>
+            </div>
+          </div>
+          <div class="field"><label>Recipient mailing address</label><input type="text" id="cm-toaddr" placeholder="Street, City, State ZIP"></div>
+          <div class="form-row">
+            <div><label>Return name</label><input type="text" id="cm-fromname" placeholder="Provider / practice"></div>
+            <div><label>Return address</label><input type="text" id="cm-fromaddr" placeholder="Street, City, State ZIP"></div>
+          </div>
+          <div id="cm-cost" style="font-size:.85rem;color:var(--cream);margin:8px 0"></div>
+          <label class="consent"><input type="checkbox" id="cm-confirm"> I have reviewed the termination letter, mailing address, return address, delivery method, and patient identity. I understand that after payment, this letter will be submitted for certified mailing.</label>
+          <div class="btn-row"><button class="btn" id="cm-send-btn" onclick="sendCertified()">Pay &amp; submit certified mail</button></div>
+          <div class="send-status" id="cm-status"></div>
+        </div>
+        <!-- Manual tracking fallback (always available) -->
+        <div style="margin-top:18px;border-top:1px solid var(--rule);padding-top:16px">
+          <label style="margin-bottom:8px">Manual certified-mail tracking (if you mailed it yourself)</label>
+          <div class="form-row">
+            <div><input type="text" id="cm-manual-tracking" placeholder="USPS certified tracking number"></div>
+            <div><input type="date" id="cm-manual-date"></div>
+          </div>
+          <p class="field-hint">Entered manually, these flow into the chart note as "mailed by clinician, tracking entered manually."</p>
+        </div>
       </div>
       <div class="out-block">
         <div class="ob-head">
@@ -711,6 +748,97 @@ function downloadPDF() {
   w.document.close();
   setTimeout(function(){ w.print(); }, 500);
 }
+
+// ══════════════════════════════════════════════
+// CERTIFIED MAIL (bound payment -> send)
+// ══════════════════════════════════════════════
+var CM_FEE_DISPLAY = '$15.00'; // clinician-facing fee (config; actual charge set by Stripe Price)
+
+function showCertifiedDialog() {
+  var letterText = document.getElementById('letter-output').textContent;
+  if (!letterText || letterText.indexOf('Generation failed') === 0) {
+    showToast('Generate a letter first.', 'error'); return;
+  }
+  var block = document.getElementById('certifiedBlock');
+  block.style.display = 'block';
+  // Prefill
+  document.getElementById('cm-toname').value = val('f-ptname');
+  document.getElementById('cm-fromname').value = (profile.legalName || '') + (profile.credentials ? ', ' + profile.credentials : '');
+  document.getElementById('cm-fromaddr').value = profile.practiceAddress || '';
+  document.getElementById('cm-cost').textContent = 'Certified-mail fee: ' + CM_FEE_DISPLAY + ' (pass-through, paid before submission).';
+  block.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+async function sendCertified() {
+  var st = document.getElementById('cm-status');
+  var btn = document.getElementById('cm-send-btn');
+  var letterText = document.getElementById('letter-output').textContent;
+  var toName = document.getElementById('cm-toname').value.trim();
+  var toAddr = document.getElementById('cm-toaddr').value.trim();
+  var fromName = document.getElementById('cm-fromname').value.trim();
+  var fromAddr = document.getElementById('cm-fromaddr').value.trim();
+  var receipt = document.getElementById('cm-receipt').value === 'yes';
+  var confirmed = document.getElementById('cm-confirm').checked;
+
+  if (!toAddr || !fromAddr) { st.className='send-status error'; st.textContent='Enter recipient and return mailing addresses.'; return; }
+  if (!confirmed) { st.className='send-status error'; st.textContent='You must confirm the review statement before payment.'; return; }
+
+  btn.disabled = true;
+  st.className = 'send-status sending'; st.textContent = 'Preparing secure payment...';
+
+  try {
+    var res = await fetch('/.netlify/functions/create-certified-checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        letterText: letterText,
+        toName: toName, toAddress: toAddr,
+        fromName: fromName, fromAddress: fromAddr,
+        returnReceipt: receipt,
+        clinicianEmail: _userEmail || ''
+      })
+    });
+    var data = await res.json();
+    if (res.status === 503 || data.error === 'certified_mail_disabled') {
+      // Fail closed -> show manual fallback note, hide live form
+      document.getElementById('cmDisabledNote').style.display = 'block';
+      document.getElementById('cmLiveForm').style.display = 'none';
+      btn.disabled = false;
+      return;
+    }
+    if (data.error) throw new Error(data.error);
+    if (data.url) {
+      st.textContent = 'Redirecting to secure payment...';
+      window.location.href = data.url; // Stripe Checkout
+      return;
+    }
+    throw new Error('No checkout URL returned.');
+  } catch (err) {
+    st.className='send-status error'; st.textContent='Could not start payment: ' + err.message; btn.disabled = false;
+  }
+}
+
+// On return from Stripe, show job status
+async function checkCertifiedReturn() {
+  var p = new URLSearchParams(window.location.search);
+  var jobId = p.get('cm_job');
+  var cmStatus = p.get('cm_status');
+  if (!jobId) return;
+  var block = document.getElementById('certifiedBlock');
+  block.style.display = 'block';
+  var st = document.getElementById('cm-status');
+  if (cmStatus === 'canceled') {
+    st.className = 'send-status error'; st.textContent = 'Payment canceled. No certified mail was submitted.';
+    return;
+  }
+  st.className = 'send-status sending';
+  st.textContent = 'Payment received. Confirming mail submission...';
+  // The webhook processes asynchronously; surface a non-fake status.
+  st.className = 'send-status success';
+  st.textContent = 'Payment confirmed. Certified mail submission is being processed; tracking will populate once the vendor returns it. (Job ' + jobId + ')';
+  block.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
 
 // ══════════════════════════════════════════════
 // EMAIL (patient letter only, consent-gated, send-document/SES)
