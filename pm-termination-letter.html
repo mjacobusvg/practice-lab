@@ -280,8 +280,10 @@ textarea{resize:vertical;min-height:70px}
         <textarea id="f-crisis" style="min-height:64px"></textarea>
       </div>
       <div class="field">
-        <label>Documented attempts to reach patient (optional)</label>
-        <input type="text" id="f-attempts" placeholder="e.g. 2 calls, 1 portal message over 3 weeks">
+        <label>Outreach ledger (optional)</label>
+        <p class="field-hint" style="margin-top:0;margin-bottom:8px">Log each documented attempt to reach the patient. These render as a dated chronology in the chart note.</p>
+        <div id="outreach-rows"></div>
+        <button class="btn btn-ghost" type="button" onclick="addOutreachRow()" style="padding:6px 14px;font-size:.8rem;margin-top:4px">+ Add outreach attempt</button>
       </div>
       <label class="check" style="margin-top:4px"><input type="checkbox" id="f-records"> Include records-release / transfer-of-records instructions in the letter</label>
     </div>
@@ -396,13 +398,19 @@ textarea{resize:vertical;min-height:70px}
 <!-- Email dialog -->
 <div class="overlay" id="email-overlay">
   <div class="dialog">
-    <h3>Email termination letter</h3>
-    <p style="font-size:.82rem;color:var(--cream-dim);margin-bottom:14px">Sends the <strong>patient letter only</strong> (never the chart note or checklist) via the practice's secure sender. This is patient-specific PHI.</p>
+    <h3>Email the patient</h3>
+    <p style="font-size:.82rem;color:var(--cream-dim);margin-bottom:14px">By default this sends a brief <strong>notification only</strong>, not the termination letter itself, since standard email is not a secure channel for sensitive clinical content. The full letter goes by portal, certified mail, or print.</p>
     <div class="field"><label>Patient email</label><input type="email" id="email-to" placeholder="patient@example.com"></div>
-    <div class="field"><label>Subject</label><input type="text" id="email-subject" value="Regarding your care"></div>
-    <label class="consent"><input type="checkbox" id="email-consent"> The patient has consented to receive health information by email, and I have verified this is their correct address.</label>
+    <div class="field"><label>Subject</label><input type="text" id="email-subject" value="A notice regarding your care"></div>
+
+    <label class="check" style="margin:4px 0 12px"><input type="checkbox" id="email-fullletter" onchange="toggleFullLetter()"> Send the full termination letter in the email body instead of a notification</label>
+
+    <div id="email-fullletter-warn" class="state-verify" style="display:none;border-left-color:var(--red);background:rgba(248,113,113,0.1);margin-bottom:12px">
+      <label class="consent" style="margin:0"><input type="checkbox" id="email-consent"> The patient has specifically consented to receive PHI by email, I have verified the email address, and I understand that standard email may not be secure.</label>
+    </div>
+
     <div class="btn-row" style="display:flex;gap:10px">
-      <button class="btn" id="email-send-btn" onclick="sendEmail()">Send</button>
+      <button class="btn" id="email-send-btn" onclick="sendEmail()">Send notification</button>
       <button class="btn btn-ghost" onclick="closeEmailDialog()">Cancel</button>
     </div>
     <div class="send-status" id="email-status"></div>
@@ -1224,6 +1232,53 @@ document.getElementById('f-reason').addEventListener('change', function() {
 });
 
 // ══════════════════════════════════════════════
+// OUTREACH LEDGER
+// ══════════════════════════════════════════════
+var _outreachSeq = 0;
+var OUTREACH_METHODS = ['Phone call','Voicemail left','Portal message','Email notification','Regular mail','Certified mail','Text (if consented)','Other'];
+var OUTREACH_OUTCOMES = ['No response','Voicemail left','Message viewed','Message not viewed','Spoke with patient','Returned undeliverable','Declined follow-up','Other'];
+
+function addOutreachRow() {
+  _outreachSeq++;
+  var id = _outreachSeq;
+  var wrap = document.createElement('div');
+  wrap.className = 'outreach-row';
+  wrap.id = 'orow-' + id;
+  wrap.style.cssText = 'display:grid;grid-template-columns:130px 1fr 1fr auto;gap:8px;margin-bottom:8px;align-items:center';
+  var methodOpts = OUTREACH_METHODS.map(function(m){ return '<option value="'+esc(m)+'">'+esc(m)+'</option>'; }).join('');
+  var outcomeOpts = OUTREACH_OUTCOMES.map(function(o){ return '<option value="'+esc(o)+'">'+esc(o)+'</option>'; }).join('');
+  wrap.innerHTML =
+    '<input type="date" id="or-date-'+id+'">' +
+    '<select id="or-method-'+id+'">'+methodOpts+'</select>' +
+    '<select id="or-outcome-'+id+'">'+outcomeOpts+'</select>' +
+    '<button type="button" class="btn btn-ghost" onclick="removeOutreachRow('+id+')" style="padding:5px 10px;font-size:.78rem">Remove</button>';
+  document.getElementById('outreach-rows').appendChild(wrap);
+  var note = document.createElement('input');
+  note.type = 'text'; note.id = 'or-note-' + id; note.placeholder = 'Optional note';
+  note.style.cssText = 'grid-column:1 / -1;margin-top:-2px';
+  wrap.appendChild(note);
+}
+function removeOutreachRow(id) {
+  var el = document.getElementById('orow-' + id);
+  if (el) el.parentNode.removeChild(el);
+}
+function collectOutreach() {
+  var rows = document.querySelectorAll('.outreach-row');
+  var out = [];
+  rows.forEach(function(r){
+    var id = r.id.replace('orow-','');
+    var d = (document.getElementById('or-date-'+id)||{}).value || '';
+    var m = (document.getElementById('or-method-'+id)||{}).value || '';
+    var o = (document.getElementById('or-outcome-'+id)||{}).value || '';
+    var n = ((document.getElementById('or-note-'+id)||{}).value || '').trim();
+    if (!d && !n) return; // skip empty rows
+    var line = (d ? d : '[date]') + ': ' + m + (o ? ', ' + o.toLowerCase() : '') + (n ? ' (' + n + ')' : '');
+    out.push(line);
+  });
+  return out;
+}
+
+// ══════════════════════════════════════════════
 // CRISIS COVERAGE BUILDER
 // ══════════════════════════════════════════════
 var _crisisEdited = false;
@@ -1361,7 +1416,8 @@ async function generate() {
   if (val('f-meds')) info.push('Bridge details: ' + val('f-meds'));
   if (val('f-referral')) info.push('Referral/resources: ' + val('f-referral'));
   if (val('f-crisis')) info.push('Crisis/emergency coverage: ' + val('f-crisis'));
-  if (val('f-attempts')) info.push('Documented attempts to reach patient: ' + val('f-attempts'));
+  var outreach = collectOutreach();
+  if (outreach.length) info.push('Documented outreach attempts (chronological): ' + outreach.join(' | '));
   if (document.getElementById('f-records').checked) info.push('Include records-release/transfer instructions in the letter: yes');
   if (val('f-ptname')) info.push('Patient name: ' + val('f-ptname'));
   if (val('f-ptstate')) info.push('Patient state: ' + val('f-ptstate'));
@@ -1392,7 +1448,7 @@ async function generate() {
     'Output EXACTLY these four sections with these exact delimiters on their own lines, in order:\n' +
     '===LETTER===\n(The patient-facing letter. Date line, patient name/address placeholder, "Dear [Patient Name]," body covering: that the relationship is ending and the effective date after the notice period, that emergency care remains available during the notice period, how to obtain records, referral resources, refill/bridge info if applicable, and a respectful closing with the provider signature block. Do not state the blunt reason in a blaming way; keep it professional.)\n' +
     '===CHART===\n(Third-person clinical documentation: reason, clinical-appropriateness assessment including any acute risk factors and how they were addressed, notice given, continuity steps taken, referrals provided, refill bridge, documented outreach attempts, and effective date.)\n' +
-    '===CHECKLIST===\n(An administrative checklist as plain lines beginning with "[ ] ": notice letter sent (method/date), refill bridge provided if applicable, referrals supplied, emergency coverage communicated, records-release process explained, documented attempts to contact patient, effective termination date calendared, and "do not reschedule without provider review" flag set if relevant.)\n' +
+    '===CHECKLIST===\n(An administrative checklist as plain lines beginning with "[ ] ": notice letter sent (method/date), refill bridge provided if applicable, referrals supplied, emergency coverage communicated, records-release process explained, documented attempts to contact patient, effective termination date calendared, and "do not reschedule without provider review" flag set if relevant. ALWAYS also include these electronic-boundary items: "[ ] Disable patient self-scheduling if applicable", "[ ] Cancel future appointments after the termination date unless clinically intended", "[ ] Disable automated appointment reminders after the termination date", "[ ] Stop recurring invoices, autopay, or automated payment reminders if applicable", "[ ] Review refill-routing settings; do not allow automatic refill processing after the termination date", "[ ] Confirm patient portal messaging policy after termination", "[ ] Confirm records-transfer instructions are documented".)\n' +
     '===ALERT===\n(A short scheduling/chart alert line, e.g. "DO NOT SCHEDULE [Patient Name] without provider review. Care terminated effective [DATE]." If termination type is transfer or inactive, adjust wording. Keep to 1-2 lines.)';
 
   try {
@@ -1579,21 +1635,33 @@ async function checkCertifiedReturn() {
 
 
 // ══════════════════════════════════════════════
-// EMAIL (patient letter only, consent-gated, send-document/SES)
+// EMAIL (notification-only default; full-letter behind explicit consent)
 // ══════════════════════════════════════════════
 function showEmailDialog() {
   document.getElementById('email-overlay').classList.add('active');
   document.getElementById('email-to').value = '';
+  document.getElementById('email-fullletter').checked = false;
   document.getElementById('email-consent').checked = false;
+  document.getElementById('email-fullletter-warn').style.display = 'none';
+  document.getElementById('email-subject').value = 'A notice regarding your care';
+  document.getElementById('email-send-btn').textContent = 'Send notification';
   var st = document.getElementById('email-status'); st.className = 'send-status'; st.textContent = '';
   document.getElementById('email-send-btn').disabled = false;
   document.getElementById('email-to').focus();
 }
 function closeEmailDialog() { document.getElementById('email-overlay').classList.remove('active'); }
 
+function toggleFullLetter() {
+  var full = document.getElementById('email-fullletter').checked;
+  document.getElementById('email-fullletter-warn').style.display = full ? 'block' : 'none';
+  document.getElementById('email-send-btn').textContent = full ? 'Send full letter' : 'Send notification';
+  if (!full) document.getElementById('email-consent').checked = false;
+}
+
 async function sendEmail() {
   var to = document.getElementById('email-to').value.trim();
-  var subject = document.getElementById('email-subject').value.trim() || 'Regarding your care';
+  var subject = document.getElementById('email-subject').value.trim() || 'A notice regarding your care';
+  var fullLetter = document.getElementById('email-fullletter').checked;
   var consent = document.getElementById('email-consent').checked;
   var st = document.getElementById('email-status');
   var sendBtn = document.getElementById('email-send-btn');
@@ -1601,35 +1669,52 @@ async function sendEmail() {
 
   if (!letterText || letterText.indexOf('Generation failed') === 0) { st.className='send-status error'; st.textContent='Generate a letter first.'; return; }
   if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) { st.className='send-status error'; st.textContent='Enter a valid email address.'; return; }
-  if (!consent) { st.className='send-status error'; st.textContent='Confirm patient consent before sending.'; return; }
+  if (fullLetter && !consent) { st.className='send-status error'; st.textContent='To email the full letter, confirm the patient consented to receive PHI by email.'; return; }
 
   sendBtn.disabled = true;
   st.className = 'send-status sending'; st.textContent = 'Sending...';
 
-  var htmlBody = '<div style="font-family:Georgia,serif;max-width:650px;margin:0 auto;color:#111;line-height:1.6">';
-  if (profile.legalName) {
-    htmlBody += '<div style="margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #2aabb8">';
-    htmlBody += '<div style="font-size:16px;font-weight:bold">' + esc(profile.legalName);
-    if (profile.credentials) htmlBody += ', ' + esc(profile.credentials);
-    htmlBody += '</div>';
-    if (profile.practiceName) htmlBody += '<div>' + esc(profile.practiceName) + '</div>';
-    if (profile.practiceAddress) htmlBody += '<div>' + esc(profile.practiceAddress) + '</div>';
-    htmlBody += '</div>';
+  var practiceName = profile.practiceName || profile.legalName || 'your provider';
+  var bodyText, htmlBody, sentLabel;
+
+  if (fullLetter) {
+    // Full letter (override path)
+    bodyText = letterText;
+    htmlBody = '<div style="font-family:Georgia,serif;max-width:650px;margin:0 auto;color:#111;line-height:1.6">';
+    if (profile.legalName) {
+      htmlBody += '<div style="margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #2aabb8">';
+      htmlBody += '<div style="font-size:16px;font-weight:bold">' + esc(profile.legalName);
+      if (profile.credentials) htmlBody += ', ' + esc(profile.credentials);
+      htmlBody += '</div>';
+      if (profile.practiceName) htmlBody += '<div>' + esc(profile.practiceName) + '</div>';
+      if (profile.practiceAddress) htmlBody += '<div>' + esc(profile.practiceAddress) + '</div>';
+      htmlBody += '</div>';
+    }
+    htmlBody += '<pre style="font-family:Georgia,serif;white-space:pre-wrap;font-size:14px;line-height:1.6">' + esc(letterText) + '</pre>';
+    htmlBody += '<div style="margin-top:32px;padding-top:12px;border-top:1px solid #ccc;font-size:11px;color:#666">This message contains Protected Health Information (PHI) intended solely for the named recipient. If received in error, notify the sender immediately. Unauthorized disclosure is prohibited under HIPAA.</div></div>';
+    sentLabel = 'Full letter sent to ' + to;
+  } else {
+    // Notification only (default, safe)
+    var notif = 'A formal notice regarding your care has been issued by ' + practiceName + '. Please access your patient portal or contact the office to obtain the notice.';
+    bodyText = notif;
+    htmlBody = '<div style="font-family:Georgia,serif;max-width:650px;margin:0 auto;color:#111;line-height:1.6">';
+    htmlBody += '<p>' + esc(notif) + '</p>';
+    if (profile.phone) htmlBody += '<p style="font-size:13px;color:#444">Office: ' + esc(profile.phone) + '</p>';
+    htmlBody += '<div style="margin-top:24px;padding-top:12px;border-top:1px solid #ccc;font-size:11px;color:#666">This message is intended solely for the named recipient. If received in error, please notify the sender.</div></div>';
+    sentLabel = 'Notification sent to ' + to;
   }
-  htmlBody += '<pre style="font-family:Georgia,serif;white-space:pre-wrap;font-size:14px;line-height:1.6">' + esc(letterText) + '</pre>';
-  htmlBody += '<div style="margin-top:32px;padding-top:12px;border-top:1px solid #ccc;font-size:11px;color:#666">This message contains Protected Health Information (PHI) intended solely for the named recipient. If received in error, notify the sender immediately. Unauthorized disclosure is prohibited under HIPAA.</div></div>';
 
   try {
     var res = await fetch('/.netlify/functions/send-document', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        to: to, subject: subject, body: letterText, htmlBody: htmlBody,
+        to: to, subject: subject, body: bodyText, htmlBody: htmlBody,
         replyTo: profile.email || _userEmail || '', tool: 'Termination Letter Generator'
       })
     });
     var result = await res.json();
-    if (result.success) { st.className='send-status success'; st.textContent='Letter sent to ' + to; }
+    if (result.success) { st.className='send-status success'; st.textContent = sentLabel; }
     else { st.className='send-status error'; st.textContent='Failed to send: ' + (result.error || 'Unknown error'); sendBtn.disabled = false; }
   } catch (err) {
     st.className='send-status error'; st.textContent='Network error. Try again.'; sendBtn.disabled = false;
