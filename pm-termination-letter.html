@@ -79,6 +79,10 @@ textarea{resize:vertical;min-height:70px}
 .copy-btn:hover,.pdf-btn:hover,.email-btn:hover{border-color:var(--teal);color:var(--teal)}
 .copy-btn.copied{color:var(--green);border-color:var(--green)}
 .out-body{font-size:.88rem;color:var(--cream);white-space:pre-wrap;line-height:1.7;font-family:Georgia,serif}
+.editable{border:1px dashed transparent;border-radius:6px;padding:8px;transition:border-color .15s,background .15s}
+.editable:hover{border-color:var(--rule)}
+.editable:focus{outline:none;border-color:var(--teal);border-style:solid;background:rgba(42,171,184,0.04)}
+.edit-hint{font-family:var(--font-body);font-size:.66rem;font-weight:500;color:var(--cream-dim);text-transform:uppercase;letter-spacing:.4px;border:1px solid var(--rule);border-radius:4px;padding:1px 6px;margin-left:8px;vertical-align:middle;font-style:normal}
 .out-body .placeholder{background:rgba(251,191,36,0.18);color:var(--amber);padding:0 3px;border-radius:3px;font-family:var(--font-body)}
 .checklist-body{font-size:.86rem;color:var(--cream);line-height:1.8}
 .alert-body{font-size:.86rem;color:var(--cream);background:rgba(167,139,250,0.1);border-left:3px solid var(--purple);padding:12px 16px;border-radius:6px;white-space:pre-wrap}
@@ -319,9 +323,10 @@ textarea{resize:vertical;min-height:70px}
 
     <!-- Output -->
     <div class="output" id="output">
+      <p style="font-size:.8rem;color:var(--cream-dim);margin-bottom:14px">All four outputs are editable, click into any of them to fill remaining <span style="color:var(--amber)">[BRACKETED]</span> items (e.g. patient address) or adjust wording before you copy, print, email, or mail. You review and own the final text.</p>
       <div class="out-block">
         <div class="ob-head">
-          <h4>Patient-facing termination letter</h4>
+          <h4>Patient-facing termination letter <span class="edit-hint">click to edit</span></h4>
           <div class="ob-actions">
             <button class="copy-btn" onclick="copyOutput('letter-output', this)">Copy</button>
             <button class="pdf-btn" onclick="downloadPDF()">PDF</button>
@@ -329,7 +334,7 @@ textarea{resize:vertical;min-height:70px}
             <button class="email-btn" onclick="showCertifiedDialog()">Certified mail</button>
           </div>
         </div>
-        <div class="out-body" id="letter-output"></div>
+        <div class="out-body editable" id="letter-output" contenteditable="true" spellcheck="true"></div>
       </div>
 
       <!-- Certified mail send block -->
@@ -368,24 +373,24 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div class="out-block">
         <div class="ob-head">
-          <h4>Chart documentation blurb</h4>
+          <h4>Chart documentation blurb <span class="edit-hint">click to edit</span></h4>
           <button class="copy-btn" onclick="copyOutput('chart-output', this)">Copy</button>
         </div>
-        <div class="out-body" id="chart-output" style="font-family:var(--font-body)"></div>
+        <div class="out-body editable" id="chart-output" contenteditable="true" spellcheck="true" style="font-family:var(--font-body)"></div>
       </div>
       <div class="out-block">
         <div class="ob-head">
-          <h4>Administrative checklist</h4>
+          <h4>Administrative checklist <span class="edit-hint">click to edit</span></h4>
           <button class="copy-btn" onclick="copyOutput('checklist-output', this)">Copy</button>
         </div>
-        <div class="checklist-body" id="checklist-output"></div>
+        <div class="checklist-body editable" id="checklist-output" contenteditable="true" spellcheck="true"></div>
       </div>
       <div class="out-block" id="alertBlock">
         <div class="ob-head">
-          <h4>Scheduling / chart alert</h4>
+          <h4>Scheduling / chart alert <span class="edit-hint">click to edit</span></h4>
           <button class="copy-btn" onclick="copyOutput('alert-output', this)">Copy</button>
         </div>
-        <div class="alert-body" id="alert-output"></div>
+        <div class="alert-body editable" id="alert-output" contenteditable="true" spellcheck="true"></div>
       </div>
     </div>
 
@@ -1424,12 +1429,18 @@ async function generate() {
   if (val('f-ptname')) info.push('Patient name: ' + val('f-ptname'));
   if (val('f-ptstate')) info.push('Patient state: ' + val('f-ptstate'));
   if (val('f-statenotes')) info.push('Verified state-specific rules: ' + val('f-statenotes'));
-  // Provider block from Vault
+  // Provider block from Vault — pass full detail so the letter fills real values, not placeholders
   var prov = [];
-  if (profile.legalName) prov.push(profile.legalName + (profile.credentials ? ', ' + profile.credentials : ''));
-  if (profile.practiceName) prov.push(profile.practiceName);
+  if (profile.legalName) prov.push('Name: ' + profile.legalName + (profile.credentials ? ', ' + profile.credentials : ''));
+  if (profile.practiceName) prov.push('Practice: ' + profile.practiceName);
+  if (profile.practiceAddress) prov.push('Address: ' + profile.practiceAddress);
+  if (profile.phone) prov.push('Phone: ' + profile.phone);
+  if (profile.fax) prov.push('Fax: ' + profile.fax);
+  if (profile.email) prov.push('Email: ' + profile.email);
+  if (profile.npi1) prov.push('NPI: ' + profile.npi1);
+  if (profile.licenseNumber) prov.push('License number: ' + profile.licenseNumber);
   if (profile.licenseState) prov.push('License state: ' + profile.licenseState);
-  if (prov.length) info.push('Provider: ' + prov.join(' | '));
+  if (prov.length) info.push('PROVIDER / PRACTICE DETAILS (use these exact values in the letter signature block, header, and any contact instructions; do NOT use bracketed placeholders for any provider detail that is supplied here): ' + prov.join('; '));
 
   var riskRule;
   if (factors.pause.length) {
@@ -1442,13 +1453,13 @@ async function generate() {
   }
 
   var sysPrompt =
-    'You are a clinical documentation assistant helping a psychiatric prescriber terminate a treatment relationship safely, ethically, and defensibly. You produce four artifacts from the clinician-provided information. Do not invent facts; where a detail is missing use a bracketed placeholder like [INSERT DATE].\n\n' +
+    'You are a clinical documentation assistant helping a psychiatric prescriber terminate a treatment relationship safely, ethically, and defensibly. You produce four artifacts from the clinician-provided information. Do not invent facts; where a detail is genuinely missing use a bracketed placeholder like [INSERT DATE]. However, any provider or practice detail supplied in PROVIDER / PRACTICE DETAILS must be used verbatim and never replaced with a placeholder. Only bracket items that were not supplied at all, for example the patient mailing address, which is not collected.\n\n' +
     'ABANDONMENT-RISK FRAMEWORK (apply throughout): a defensible termination provides adequate written notice, emergency/crisis coverage during the notice period, a refill bridge where clinically appropriate, active referral options, and clear documentation. Notice periods and required wording vary by state; if the clinician provided verified state rules, follow them exactly; otherwise use a general defensible standard and insert a [VERIFY STATE NOTICE REQUIREMENT] placeholder rather than inventing a specific number.\n\n' +
     riskRule + '\n\n' +
     'TONE: professional, respectful, non-blaming, non-stigmatizing, even for nonpayment, no-shows, or boundary violations. Minimal necessary disclosure. Do not include clinical diagnosis details in the patient letter beyond what is needed.\n\n' +
     'PLAIN TEXT ONLY. No markdown, no **bold**, no asterisks, no # headers. Use plain labels and line breaks.\n\n' +
     'Output EXACTLY these four sections with these exact delimiters on their own lines, in order:\n' +
-    '===LETTER===\n(The patient-facing letter. Date line, patient name/address placeholder, "Dear [Patient Name]," body covering: that the relationship is ending and the effective date after the notice period, that emergency care remains available during the notice period, how to obtain records, referral resources, refill/bridge info if applicable, and a respectful closing with the provider signature block. Do not state the blunt reason in a blaming way; keep it professional.)\n' +
+    '===LETTER===\n(The patient-facing letter. Begin with the date line, then the salutation "Dear [Patient Name]," using the patient name provided. Do NOT include a recipient inside-address block; the mailing address is handled separately by the delivery workflow, so never insert a [PATIENT ADDRESS] placeholder. Body covering: that the relationship is ending and the effective date after the notice period, that emergency care remains available during the notice period, how to obtain records, referral resources, refill/bridge info if applicable, and a respectful closing with the provider signature block. Do not state the blunt reason in a blaming way; keep it professional.)\n' +
     '===CHART===\n(Third-person clinical documentation: reason, clinical-appropriateness assessment including any acute risk factors and how they were addressed, notice given, continuity steps taken, referrals provided, refill bridge, documented outreach attempts, and effective date.)\n' +
     '===CHECKLIST===\n(An administrative checklist as plain lines beginning with "[ ] ": notice letter sent (method/date), refill bridge provided if applicable, referrals supplied, emergency coverage communicated, records-release process explained, documented attempts to contact patient, effective termination date calendared, and "do not reschedule without provider review" flag set if relevant. ALWAYS also include these electronic-boundary items: "[ ] Disable patient self-scheduling if applicable", "[ ] Cancel future appointments after the termination date unless clinically intended", "[ ] Disable automated appointment reminders after the termination date", "[ ] Stop recurring invoices, autopay, or automated payment reminders if applicable", "[ ] Review refill-routing settings; do not allow automatic refill processing after the termination date", "[ ] Confirm patient portal messaging policy after termination", "[ ] Confirm records-transfer instructions are documented".)\n' +
     '===ALERT===\n(A short scheduling/chart alert line, e.g. "DO NOT SCHEDULE [Patient Name] without provider review. Care terminated effective [DATE]." If termination type is transfer or inactive, adjust wording. Keep to 1-2 lines.)';
@@ -1473,11 +1484,11 @@ async function generate() {
     var checklist = sectionOf(full, 'CHECKLIST');
     var alert = sectionOf(full, 'ALERT');
 
-    document.getElementById('letter-output').innerHTML = highlightPlaceholders(letter || full);
-    document.getElementById('chart-output').innerHTML = highlightPlaceholders(chart || '[INSERT CHART NOTE]');
-    document.getElementById('checklist-output').innerHTML = highlightPlaceholders(checklist || '[INSERT CHECKLIST]');
+    document.getElementById('letter-output').textContent = letter || full;
+    document.getElementById('chart-output').textContent = chart || '[INSERT CHART NOTE]';
+    document.getElementById('checklist-output').textContent = checklist || '[INSERT CHECKLIST]';
     var alertBlock = document.getElementById('alertBlock');
-    if (alert) { document.getElementById('alert-output').innerHTML = highlightPlaceholders(alert); alertBlock.style.display = 'block'; }
+    if (alert) { document.getElementById('alert-output').textContent = alert; alertBlock.style.display = 'block'; }
     else { alertBlock.style.display = 'none'; }
 
     document.getElementById('output').classList.add('active');
