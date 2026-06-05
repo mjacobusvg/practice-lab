@@ -1542,8 +1542,12 @@ function go(key) {
   document.getElementById('center').innerHTML = h;
   window.scrollTo(0,0);
 
-  loadSpaceCollections(key, sp);
-  loadSpacePosts(key, sp);
+  loadSpaceContent(key, sp);
+}
+
+async function loadSpaceContent(slug, spaceDef) {
+  var collectionPostIds = await loadSpaceCollections(slug, spaceDef);
+  loadSpacePosts(slug, spaceDef, collectionPostIds);
 }
 
 function renderPostRow(p, spaceDef, slug) {
@@ -1579,15 +1583,17 @@ async function loadSpaceCollections(slug, spaceDef) {
       .order('sort_order', { ascending: true });
     if (error) throw error;
     var el = document.getElementById('space-collections');
-    if (!el) return;
-    if (!data || data.length === 0) { el.innerHTML = ''; return; }
+    if (!el) return new Set();
+    if (!data || data.length === 0) { el.innerHTML = ''; return new Set(); }
 
+    var collectionPostIds = new Set();
     var h = '<div class="collections-label">Collections</div>';
     data.forEach(function(c) {
       var items = (c.post_collection_items || [])
         .filter(function(i){ return i.forum_posts; })
         .sort(function(a,b){ return (a.sort_order||0) - (b.sort_order||0); });
       if (items.length === 0) return;
+      items.forEach(function(i){ collectionPostIds.add(i.forum_posts.id); });
       h += '<div class="collection" id="col-'+c.id+'">';
       h += '<div class="collection-head" onclick="toggleCollection(\''+c.id+'\')">';
       h += '<span class="collection-name"><span class="collection-caret">&#9656;</span>' + esc(c.name) + '</span>';
@@ -1598,7 +1604,8 @@ async function loadSpaceCollections(slug, spaceDef) {
       h += '</div></div>';
     });
     el.innerHTML = h;
-  } catch(e) { console.error('loadSpaceCollections:', e); }
+    return collectionPostIds;
+  } catch(e) { console.error('loadSpaceCollections:', e); return new Set(); }
 }
 
 function toggleCollection(id) {
@@ -1606,7 +1613,7 @@ function toggleCollection(id) {
   if (el) el.classList.toggle('open');
 }
 
-async function loadSpacePosts(slug, spaceDef) {
+async function loadSpacePosts(slug, spaceDef, excludeIds) {
   try {
     var { data, error } = await SB
       .from('forum_posts')
@@ -1618,15 +1625,24 @@ async function loadSpacePosts(slug, spaceDef) {
     if (error) throw error;
     var el = document.getElementById('space-posts');
     if (!el) return;
-    if (!data || data.length === 0) { el.innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-secondary);font-size:0.82rem">No posts in this space yet.</div>'; return; }
 
-    // Update space header with post count
+    var totalCount = data ? data.length : 0;
+    var feed = (data || []).filter(function(p){ return !(excludeIds && excludeIds.has(p.id)); });
+
+    // Update space header with post count (total in space, including collection posts)
     var head = document.querySelector('.space-head');
     if (head && !head.querySelector('.space-meta')) {
-      head.innerHTML += '<div class="space-meta"><span><strong style="color:var(--teal)">' + data.length + '</strong> posts</span></div>';
+      head.innerHTML += '<div class="space-meta"><span><strong style="color:var(--teal)">' + totalCount + '</strong> posts</span></div>';
     }
 
-    el.innerHTML = data.map(function(p) { return renderPostRow(p, spaceDef, slug); }).join('');
+    if (feed.length === 0) {
+      el.innerHTML = totalCount > 0
+        ? '<div style="padding:20px;text-align:center;color:var(--text-secondary);font-size:0.82rem">All posts in this space are organized in the collections above.</div>'
+        : '<div style="padding:20px;text-align:center;color:var(--text-secondary);font-size:0.82rem">No posts in this space yet.</div>';
+      return;
+    }
+
+    el.innerHTML = feed.map(function(p) { return renderPostRow(p, spaceDef, slug); }).join('');
   } catch(e) { console.error('loadSpacePosts:', e); }
 }
 
