@@ -640,6 +640,73 @@ a { color: inherit; text-decoration: none; }
   color: var(--text-secondary);
 }
 .space-meta strong { color: var(--teal); }
+.space-accent {
+  height: 3px; width: 56px; border-radius: 2px; margin-bottom: 12px;
+}
+.space-head p.space-tagline {
+  font-size: 0.84rem; color: var(--text-secondary); line-height: 1.55; margin-top: 4px; max-width: 640px;
+}
+
+/* ══════════════════════════════════════════
+   ACTIVITY TICKER
+   ══════════════════════════════════════════ */
+.ticker-wrap {
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  padding: 7px 12px;
+  margin-bottom: 18px;
+  overflow: hidden;
+}
+.ticker-label {
+  font-size: 0.6rem; font-weight: 700; letter-spacing: 0.1em;
+  text-transform: uppercase; color: var(--teal);
+  white-space: nowrap; flex-shrink: 0;
+  display: flex; align-items: center; gap: 6px;
+}
+.ticker-pulse {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--green);
+  animation: tickerpulse 2s ease-in-out infinite;
+}
+@keyframes tickerpulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+.ticker-viewport { overflow: hidden; flex: 1; position: relative; }
+.ticker-track {
+  display: inline-flex; gap: 36px; white-space: nowrap;
+  animation: tickerscroll 45s linear infinite;
+  will-change: transform;
+}
+.ticker-wrap:hover .ticker-track { animation-play-state: paused; }
+@keyframes tickerscroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.ticker-item {
+  font-size: 0.72rem; color: var(--text-secondary); cursor: pointer;
+}
+.ticker-item:hover { color: var(--text-primary); }
+.ticker-item .t-name { color: var(--teal); font-weight: 600; }
+.ticker-item .t-post { color: var(--text-primary); }
+@media (prefers-reduced-motion: reduce) { .ticker-track { animation: none; } }
+
+/* ══════════════════════════════════════════
+   ROW AVATARS & NEW BADGE
+   ══════════════════════════════════════════ */
+.row-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  flex-shrink: 0; margin-top: 2px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.68rem; font-weight: 700; color: var(--text-heading);
+  background: var(--bg-card-hover);
+  border: 2px solid var(--border);
+  overflow: hidden;
+}
+.row-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.new-badge {
+  display: inline-block;
+  font-size: 0.58rem; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 1px 6px; border-radius: 3px;
+  background: var(--teal-glow); color: var(--teal);
+  margin-left: 6px; vertical-align: middle;
+}
 
 /* ══════════════════════════════════════════
    COLLECTIONS  (curated sections above feed)
@@ -1030,6 +1097,26 @@ var MODAL_MSGS = {
   'clinical-insights': 'The full thread includes structured pharmacology content, prescribing frameworks, and clinical reasoning.',
   'modalities': 'The full thread includes practical technique application, session examples, and integration strategies for prescribers.',
   'practice-growth': 'The full thread includes revenue strategies, financial planning frameworks, and real-world practice scaling advice.',
+};
+
+var SPACE_TAGLINES = {
+  'start-here': 'Orientation, introductions, and how to get the most out of the platform.',
+  'announcements': 'Platform updates, new tools, and what is coming next.',
+  'quick-q': 'Fast peer answers to clinical and operational questions.',
+  'member-threads': 'Member-started discussions on anything practice-related.',
+  'case-discussions': 'Deidentified cases, differentials, and treatment reasoning.',
+  'billing-docs': 'Codes, documentation standards, denials, and audit-proof charting.',
+  'workflow': 'EHRs, systems, templates, and the operational side of practice.',
+  'licensing': 'State rules, compliance, and the legal side of practice.',
+  'clinical-ref': 'References, dosing guides, and decision frameworks.',
+  'practice-growth': 'Revenue, financial planning, and scaling a practice deliberately.',
+  'toolkit': 'Downloadable templates, checklists, and setup guides.',
+  'tool-feedback': 'Feedback, bug reports, and feature ideas for any platform tool.',
+  'shared-clinical': 'Gray-area presentations and diagnostic uncertainty, worked through together.',
+  'ethics': 'Ethical dilemmas and the systemic pressures behind them.',
+  'critical': 'Challenges to common assumptions, argued with evidence.',
+  'clinical-insights': 'Structured pharmacology and prescribing frameworks.',
+  'modalities': 'Therapy techniques prescribers can actually use in med visits.',
 };
 
 // ════════════════════════════════════════
@@ -1529,9 +1616,13 @@ function go(key) {
 
   var sp = findSpace(key);
   var h = '<div class="space-head">';
+  h += '<div class="space-accent" style="background:'+(sp.dot||'#60a5fa')+'"></div>';
   h += '<h1>'+sp.name+'</h1>';
+  if (SPACE_TAGLINES[key]) h += '<p class="space-tagline">'+SPACE_TAGLINES[key]+'</p>';
   if (sp.vis === 'public') h += '<div class="space-meta"><span style="color:var(--green)">&#x1F513; Public space</span></div>';
   h += '</div>';
+
+  h += '<div id="space-ticker"></div>';
 
   h += '<div class="collections-wrap" id="space-collections"></div>';
 
@@ -1546,24 +1637,76 @@ function go(key) {
 }
 
 async function loadSpaceContent(slug, spaceDef) {
+  loadSpaceTicker(slug);
   var collectionPostIds = await loadSpaceCollections(slug, spaceDef);
   loadSpacePosts(slug, spaceDef, collectionPostIds);
+}
+
+function timeAgo(ts) {
+  var s = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
+  if (s < 3600) return Math.max(1, Math.floor(s/60)) + 'm ago';
+  if (s < 86400) return Math.floor(s/3600) + 'h ago';
+  if (s < 604800) return Math.floor(s/86400) + 'd ago';
+  return Math.floor(s/604800) + 'w ago';
+}
+
+async function loadSpaceTicker(slug) {
+  try {
+    var { data, error } = await SB
+      .from('forum_comments')
+      .select('id, created_at, post_id, accounts(name), forum_posts!inner(id, title, spaces!inner(slug))')
+      .eq('forum_posts.spaces.slug', slug)
+      .order('created_at', { ascending: false })
+      .limit(8);
+    if (error) throw error;
+    var el = document.getElementById('space-ticker');
+    if (!el) return;
+    if (!data || data.length < 3) { el.innerHTML = ''; return; }
+
+    var items = data.map(function(c) {
+      var name = c.accounts ? c.accounts.name.split(' ')[0] : 'A member';
+      var title = c.forum_posts ? c.forum_posts.title : '';
+      if (title.length > 48) title = title.slice(0, 46) + '\u2026';
+      var open = S.isMember ? 'viewPost(\''+c.post_id+'\')' : 'showJoin(\''+slug+'\')';
+      return '<span class="ticker-item" onclick="'+open+'"><span class="t-name">'+esc(name)+'</span> commented on <span class="t-post">'+esc(title)+'</span> &middot; '+timeAgo(c.created_at)+'</span>';
+    });
+    // duplicate the items so the -50% scroll loops seamlessly
+    var track = items.join('') + items.join('');
+    el.innerHTML = '<div class="ticker-wrap">'
+      + '<span class="ticker-label"><span class="ticker-pulse"></span>Latest activity</span>'
+      + '<div class="ticker-viewport"><div class="ticker-track">' + track + '</div></div>'
+      + '</div>';
+  } catch(e) { console.error('loadSpaceTicker:', e); var el = document.getElementById('space-ticker'); if (el) el.innerHTML = ''; }
+}
+
+function initials(name) {
+  if (!name) return '?';
+  var parts = name.trim().split(/\s+/);
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length-1][0] : '')).toUpperCase();
 }
 
 function renderPostRow(p, spaceDef, slug) {
   var isPinned = p.is_pinned;
   var onclick = S.isMember ? 'viewPost(\''+p.id+'\')' : 'showJoin(\''+slug+'\')';
+  var dot = spaceDef ? spaceDef.dot : '#60a5fa';
+  var authorName = p.accounts ? p.accounts.name : '';
+  var avatar;
+  if (p.accounts && p.accounts.avatar_url) {
+    avatar = '<span class="row-avatar" style="border-color:'+(isPinned?'var(--teal)':dot)+'"><img src="'+esc(p.accounts.avatar_url)+'" alt="" loading="lazy"></span>';
+  } else {
+    avatar = '<span class="row-avatar" style="border-color:'+(isPinned?'var(--teal)':dot)+'">'+esc(initials(authorName))+'</span>';
+  }
+  var isNew = (Date.now() - new Date(p.created_at).getTime()) < 7*86400*1000;
   var row = '';
   if (isPinned) {
     row += '<div class="post-row" onclick="'+onclick+'" style="border-left:3px solid var(--teal)">';
-    row += '<span class="post-dot" style="background:var(--teal)"></span>';
   } else {
     row += '<div class="post-row" onclick="'+onclick+'">';
-    row += '<span class="post-dot" style="background:' + (spaceDef ? spaceDef.dot : '#60a5fa') + '"></span>';
   }
+  row += avatar;
   row += '<div class="post-body">';
   if (isPinned) row += '<span style="font-size:0.62rem;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:0.08em">Pinned</span> ';
-  row += '<div class="post-title">' + esc(p.title) + '</div>';
+  row += '<div class="post-title">' + esc(p.title) + (isNew ? '<span class="new-badge">New</span>' : '') + '</div>';
   if (p.excerpt) row += '<div class="post-excerpt" style="font-size:0.74rem;color:var(--text-secondary);margin-top:2px;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden">' + esc(p.excerpt) + '</div>';
   row += '<div class="post-meta">' + esc(p.accounts ? p.accounts.name : '') + ' &middot; ' + formatDate(p.created_at) + '</div>';
   row += '</div>';
@@ -1578,7 +1721,7 @@ async function loadSpaceCollections(slug, spaceDef) {
   try {
     var { data, error } = await SB
       .from('post_collections')
-      .select('id, name, sort_order, spaces!inner(slug), post_collection_items(sort_order, forum_posts(id, title, excerpt, comment_count, reaction_count, created_at, is_pinned, accounts(name)))')
+      .select('id, name, sort_order, spaces!inner(slug), post_collection_items(sort_order, forum_posts(id, title, excerpt, comment_count, reaction_count, created_at, is_pinned, accounts(name, avatar_url)))')
       .eq('spaces.slug', slug)
       .order('sort_order', { ascending: true });
     if (error) throw error;
@@ -1617,7 +1760,7 @@ async function loadSpacePosts(slug, spaceDef, excludeIds) {
   try {
     var { data, error } = await SB
       .from('forum_posts')
-      .select('id, title, excerpt, comment_count, reaction_count, created_at, is_pinned, space_id, spaces!inner(name, slug), author_id, accounts(name)')
+      .select('id, title, excerpt, comment_count, reaction_count, created_at, is_pinned, space_id, spaces!inner(name, slug), author_id, accounts(name, avatar_url)')
       .eq('spaces.slug', slug)
       .order('is_pinned', { ascending: false })
       .order('created_at', { ascending: false })
