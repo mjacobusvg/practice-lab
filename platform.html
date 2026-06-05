@@ -642,6 +642,45 @@ a { color: inherit; text-decoration: none; }
 .space-meta strong { color: var(--teal); }
 
 /* ══════════════════════════════════════════
+   COLLECTIONS  (curated sections above feed)
+   ══════════════════════════════════════════ */
+.collections-wrap { margin-bottom: 20px; }
+.collection {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  margin-bottom: 8px;
+  overflow: hidden;
+  transition: border-color var(--transition);
+}
+.collection:hover { border-color: var(--border-hover); }
+.collection-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 14px;
+  cursor: pointer; user-select: none;
+}
+.collection-head .collection-name {
+  font-size: 0.8rem; font-weight: 600; color: var(--text-heading);
+  display: flex; align-items: center; gap: 8px;
+}
+.collection-head .collection-count {
+  font-size: 0.68rem; color: var(--text-secondary);
+}
+.collection-caret {
+  font-size: 0.7rem; color: var(--teal);
+  transition: transform var(--transition);
+}
+.collection.open .collection-caret { transform: rotate(90deg); }
+.collection-posts { display: none; border-top: 1px solid var(--border); }
+.collection.open .collection-posts { display: block; }
+.collection-posts .post-row { border-radius: 0; border-left: none; border-right: none; }
+.collections-label {
+  font-size: 0.62rem; font-weight: 700; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+
+/* ══════════════════════════════════════════
    DIVIDERS
    ══════════════════════════════════════════ */
 .divider {
@@ -1494,6 +1533,8 @@ function go(key) {
   if (sp.vis === 'public') h += '<div class="space-meta"><span style="color:var(--green)">&#x1F513; Public space</span></div>';
   h += '</div>';
 
+  h += '<div class="collections-wrap" id="space-collections"></div>';
+
   h += '<div class="post-list" id="space-posts">';
   h += '<div class="skel skel-row"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
   h += '</div>';
@@ -1501,7 +1542,68 @@ function go(key) {
   document.getElementById('center').innerHTML = h;
   window.scrollTo(0,0);
 
+  loadSpaceCollections(key, sp);
   loadSpacePosts(key, sp);
+}
+
+function renderPostRow(p, spaceDef, slug) {
+  var isPinned = p.is_pinned;
+  var onclick = S.isMember ? 'viewPost(\''+p.id+'\')' : 'showJoin(\''+slug+'\')';
+  var row = '';
+  if (isPinned) {
+    row += '<div class="post-row" onclick="'+onclick+'" style="border-left:3px solid var(--teal)">';
+    row += '<span class="post-dot" style="background:var(--teal)"></span>';
+  } else {
+    row += '<div class="post-row" onclick="'+onclick+'">';
+    row += '<span class="post-dot" style="background:' + (spaceDef ? spaceDef.dot : '#60a5fa') + '"></span>';
+  }
+  row += '<div class="post-body">';
+  if (isPinned) row += '<span style="font-size:0.62rem;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:0.08em">Pinned</span> ';
+  row += '<div class="post-title">' + esc(p.title) + '</div>';
+  if (p.excerpt) row += '<div class="post-excerpt" style="font-size:0.74rem;color:var(--text-secondary);margin-top:2px;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden">' + esc(p.excerpt) + '</div>';
+  row += '<div class="post-meta">' + esc(p.accounts ? p.accounts.name : '') + ' &middot; ' + formatDate(p.created_at) + '</div>';
+  row += '</div>';
+  row += '<div class="post-stats">';
+  row += '<span>&#x2661; ' + (p.reaction_count || 0) + '</span>';
+  row += '<span>&#x1F4AC; ' + (p.comment_count || 0) + '</span>';
+  row += '</div></div>';
+  return row;
+}
+
+async function loadSpaceCollections(slug, spaceDef) {
+  try {
+    var { data, error } = await SB
+      .from('post_collections')
+      .select('id, name, sort_order, spaces!inner(slug), post_collection_items(sort_order, forum_posts(id, title, excerpt, comment_count, reaction_count, created_at, is_pinned, accounts(name)))')
+      .eq('spaces.slug', slug)
+      .order('sort_order', { ascending: true });
+    if (error) throw error;
+    var el = document.getElementById('space-collections');
+    if (!el) return;
+    if (!data || data.length === 0) { el.innerHTML = ''; return; }
+
+    var h = '<div class="collections-label">Collections</div>';
+    data.forEach(function(c) {
+      var items = (c.post_collection_items || [])
+        .filter(function(i){ return i.forum_posts; })
+        .sort(function(a,b){ return (a.sort_order||0) - (b.sort_order||0); });
+      if (items.length === 0) return;
+      h += '<div class="collection" id="col-'+c.id+'">';
+      h += '<div class="collection-head" onclick="toggleCollection(\''+c.id+'\')">';
+      h += '<span class="collection-name"><span class="collection-caret">&#9656;</span>' + esc(c.name) + '</span>';
+      h += '<span class="collection-count">' + items.length + (items.length === 1 ? ' post' : ' posts') + '</span>';
+      h += '</div>';
+      h += '<div class="collection-posts">';
+      h += items.map(function(i){ return renderPostRow(i.forum_posts, spaceDef, slug); }).join('');
+      h += '</div></div>';
+    });
+    el.innerHTML = h;
+  } catch(e) { console.error('loadSpaceCollections:', e); }
+}
+
+function toggleCollection(id) {
+  var el = document.getElementById('col-' + id);
+  if (el) el.classList.toggle('open');
 }
 
 async function loadSpacePosts(slug, spaceDef) {
@@ -1524,29 +1626,7 @@ async function loadSpacePosts(slug, spaceDef) {
       head.innerHTML += '<div class="space-meta"><span><strong style="color:var(--teal)">' + data.length + '</strong> posts</span></div>';
     }
 
-    el.innerHTML = data.map(function(p) {
-      var isPinned = p.is_pinned;
-      var onclick = S.isMember ? 'viewPost(\''+p.id+'\')' : 'showJoin(\''+slug+'\')';
-      var row = '';
-      if (isPinned) {
-        row += '<div class="post-row" onclick="'+onclick+'" style="border-left:3px solid var(--teal)">';
-        row += '<span class="post-dot" style="background:var(--teal)"></span>';
-      } else {
-        row += '<div class="post-row" onclick="'+onclick+'">';
-        row += '<span class="post-dot" style="background:' + (spaceDef ? spaceDef.dot : '#60a5fa') + '"></span>';
-      }
-      row += '<div class="post-body">';
-      if (isPinned) row += '<span style="font-size:0.62rem;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:0.08em">Pinned</span> ';
-      row += '<div class="post-title">' + esc(p.title) + '</div>';
-      if (p.excerpt) row += '<div class="post-excerpt" style="font-size:0.74rem;color:var(--text-secondary);margin-top:2px;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden">' + esc(p.excerpt) + '</div>';
-      row += '<div class="post-meta">' + esc(p.accounts ? p.accounts.name : '') + ' &middot; ' + formatDate(p.created_at) + '</div>';
-      row += '</div>';
-      row += '<div class="post-stats">';
-      row += '<span>&#x2661; ' + (p.reaction_count || 0) + '</span>';
-      row += '<span>&#x1F4AC; ' + (p.comment_count || 0) + '</span>';
-      row += '</div></div>';
-      return row;
-    }).join('');
+    el.innerHTML = data.map(function(p) { return renderPostRow(p, spaceDef, slug); }).join('');
   } catch(e) { console.error('loadSpacePosts:', e); }
 }
 
