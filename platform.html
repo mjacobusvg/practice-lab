@@ -717,6 +717,16 @@ a { color: inherit; text-decoration: none; }
   overflow: hidden;
 }
 .row-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.request-strip {
+  text-align: center;
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+  margin: 10px 0 26px;
+}
+.request-strip a { color: var(--teal); cursor: pointer; }
+.request-strip a:hover { text-decoration: underline; }
+.request-strip .rs-sep { margin: 0 8px; opacity: 0.5; }
+
 /* ══════════════════════════════════════════
    COMPOSER (admin)
    ══════════════════════════════════════════ */
@@ -1413,6 +1423,12 @@ function showHome() {
     'Courses built from real clinical practice problems -- billing compliance, clinical decision-making, and mandatory state topics. The CE course is the textbook. The Practice Lab is the classroom.');
   h += '</div>';
 
+  h += '<div class="request-strip">Missing something? ';
+  h += '<a onclick="openRequest(\'tool\')">Request a tool</a><span class="rs-sep">&middot;</span>';
+  h += '<a onclick="openRequest(\'topic\')">Request a topic</a><span class="rs-sep">&middot;</span>';
+  h += '<a onclick="openRequest(\'ce\')">Request a CE course</a>';
+  h += '</div>';
+
   // Zone 2: What's Active (skeleton while loading)
   h += '<div class="zone-header"><h2>What\'s Active</h2></div>';
   h += '<div class="post-list" id="active-posts">';
@@ -1839,6 +1855,63 @@ async function loadSpaceTicker(slug) {
 }
 
 // ════════════════════════════════════════
+// REQUESTS: tool / topic / CE
+// ════════════════════════════════════════
+var REQUEST_TYPE = 'tool';
+var REQUEST_COPY = {
+  tool:  { title: 'Request a Tool',      blurb: 'Describe the tool or feature you wish existed. What problem would it solve in your week?', ph: 'e.g. A no-show fee tracker that drafts the patient notice for me' },
+  topic: { title: 'Request a Topic',     blurb: 'A clinical, billing, or practice topic you want covered in the forum or a guide.', ph: 'e.g. How to handle records requests from attorneys' },
+  ce:    { title: 'Request a CE Course', blurb: 'A topic you want as accredited CE. Requests directly shape what gets built next, and each one documents a real educational need.', ph: 'e.g. Clozapine monitoring logistics for solo prescribers' }
+};
+
+function openRequest(type) {
+  REQUEST_TYPE = REQUEST_COPY[type] ? type : 'tool';
+  var c = REQUEST_COPY[REQUEST_TYPE];
+  document.getElementById('request-title').textContent = c.title;
+  document.getElementById('request-blurb').textContent = c.blurb;
+  var ta = document.getElementById('rq-text');
+  ta.value = ''; ta.placeholder = c.ph;
+  var st = document.getElementById('rq-status');
+  st.textContent = S.user ? 'Submitting as ' + S.user.name : '';
+  st.className = 'composer-status';
+  document.getElementById('request-overlay').classList.add('open');
+  ta.focus();
+}
+
+function closeRequest() {
+  document.getElementById('request-overlay').classList.remove('open');
+}
+
+async function submitRequest() {
+  var st = document.getElementById('rq-status');
+  var btn = document.getElementById('rq-submit');
+  var text = document.getElementById('rq-text').value.trim();
+  if (text.length < 10) { st.textContent = 'Tell us a bit more first.'; st.className = 'composer-status err'; return; }
+  btn.disabled = true; st.className = 'composer-status'; st.textContent = 'Sending\u2026';
+  try {
+    var res = await fetch('/.netlify/functions/member-request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: REQUEST_TYPE,
+        text: text,
+        name: S.user ? S.user.name : '',
+        email: S.user ? S.user.email : ''
+      })
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Send failed');
+    st.textContent = 'Received. Thank you!';
+    setTimeout(closeRequest, 900);
+  } catch(e) {
+    st.textContent = e.message || 'Send failed.';
+    st.className = 'composer-status err';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ════════════════════════════════════════
 // COMPOSER (admin slice)
 // ════════════════════════════════════════
 var COMPOSER_MODE = 'new'; // 'new' | 'synthesis'
@@ -2086,6 +2159,20 @@ function esc(s) { return s ? s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replac
 // ════════════════════════════════════════
 checkAuth();
 </script>
+<div class="composer-overlay" id="request-overlay" onclick="if(event.target===this)closeRequest()">
+  <div class="composer" style="max-width:560px">
+    <h3 id="request-title">Request a Tool</h3>
+    <p id="request-blurb" style="font-size:0.8rem;color:var(--text-secondary);line-height:1.6;margin-bottom:4px"></p>
+    <label>Your request</label>
+    <textarea id="rq-text" rows="5" placeholder=""></textarea>
+    <div class="composer-actions">
+      <span class="composer-status" id="rq-status"></span>
+      <button class="btn-ghost" onclick="closeRequest()">Cancel</button>
+      <button class="btn-primary" id="rq-submit" onclick="submitRequest()">Submit</button>
+    </div>
+  </div>
+</div>
+
 <div class="composer-overlay" id="composer-overlay" onclick="if(event.target===this)closeComposer()">
   <div class="composer">
     <h3 id="composer-title">New Post</h3>
