@@ -313,11 +313,14 @@ a { color: inherit; text-decoration: none; }
   background: var(--archive-bg);
   border: 1px solid var(--archive-border);
   border-radius: var(--radius-lg);
-  padding: 28px 28px 24px;
+  padding: 32px 28px 28px;
   margin-bottom: 24px;
   position: relative;
   overflow: hidden;
+  text-align: center;
 }
+.archive-zone p { margin-left: auto; margin-right: auto; max-width: 560px; }
+.archive-zone .archive-bar { max-width: 640px; margin-left: auto; margin-right: auto; }
 .archive-zone::after {
   content: '';
   position: absolute;
@@ -415,11 +418,13 @@ a { color: inherit; text-decoration: none; }
   text-align: center;
   cursor: pointer;
   transition: all var(--transition);
+  box-shadow: 0 0 14px rgba(42,171,184,0.10), inset 0 0 18px rgba(42,171,184,0.03);
 }
 .tool-card:hover {
-  border-color: var(--border-hover);
+  border-color: rgba(42,171,184,0.35);
   background: var(--bg-card-hover);
   transform: translateY(-1px);
+  box-shadow: 0 0 22px rgba(42,171,184,0.20), inset 0 0 18px rgba(42,171,184,0.05);
 }
 .tool-card-icon {
   font-size: 20px;
@@ -1318,6 +1323,9 @@ function showHome() {
   h += '<button onclick="askArchive()">Ask &rarr;</button>';
   h += '</div></div>';
 
+  // Live activity banner
+  h += '<div id="home-ticker"></div>';
+
   // Zone 3: Tool Cards
   h += '<div class="tools-strip">';
   h += toolCard('&#128300;', 'Practice Lab', 'Billing, documentation, and clinical simulations', '/practice-lab-demo',
@@ -1347,15 +1355,42 @@ function showHome() {
   document.getElementById('center').innerHTML = h;
 
   // Load live data
+  loadHomeTicker();
   loadActive();
   loadRecent();
+}
+
+async function loadHomeTicker() {
+  try {
+    var { data, error } = await SB
+      .from('forum_comments')
+      .select('id, created_at, post_id, accounts(name), forum_posts!inner(id, title)')
+      .order('created_at', { ascending: false })
+      .limit(10);
+    if (error) throw error;
+    var el = document.getElementById('home-ticker');
+    if (!el) return;
+    if (!data || data.length < 3) { el.innerHTML = ''; return; }
+    var items = data.map(function(c) {
+      var name = c.accounts ? c.accounts.name.split(' ')[0] : 'A member';
+      var title = c.forum_posts ? c.forum_posts.title : '';
+      if (title.length > 48) title = title.slice(0, 46) + '\u2026';
+      var open = S.isMember ? 'viewPost(\''+c.post_id+'\')' : 'showJoin(\'\')';
+      return '<span class="ticker-item" onclick="'+open+'"><span class="t-name">'+esc(name)+'</span> commented on <span class="t-post">'+esc(title)+'</span> &middot; '+timeAgo(c.created_at)+'</span>';
+    });
+    var track = items.join('') + items.join('');
+    el.innerHTML = '<div class="ticker-wrap" style="margin-bottom:24px">'
+      + '<span class="ticker-label"><span class="ticker-pulse"></span>Live in the community</span>'
+      + '<div class="ticker-viewport"><div class="ticker-track">' + track + '</div></div>'
+      + '</div>';
+  } catch(e) { console.error('loadHomeTicker:', e); var el = document.getElementById('home-ticker'); if (el) el.innerHTML = ''; }
 }
 
 async function loadActive() {
   try {
     var { data, error } = await SB
       .from('forum_posts')
-      .select('id, title, excerpt, comment_count, reaction_count, created_at, space_id, spaces(name, slug), author_id, accounts(name)')
+      .select('id, title, excerpt, comment_count, reaction_count, created_at, space_id, spaces(name, slug), author_id, accounts(name, avatar_url)')
       .order('comment_count', { ascending: false })
       .limit(5);
     if (error) throw error;
@@ -1367,6 +1402,8 @@ async function loadActive() {
         id: p.id,
         title: p.title,
         author: p.accounts ? p.accounts.name : 'Unknown',
+        avatar: p.accounts ? p.accounts.avatar_url : null,
+        created_at: p.created_at,
         space: p.spaces ? p.spaces.name : '',
         dot: SPACE_DOTS[p.spaces ? p.spaces.slug : ''] || '#60a5fa',
         comments: p.comment_count || 0,
@@ -1382,7 +1419,7 @@ async function loadRecent() {
   try {
     var { data, error } = await SB
       .from('forum_posts')
-      .select('id, title, excerpt, comment_count, reaction_count, created_at, space_id, spaces(name, slug), author_id, accounts(name)')
+      .select('id, title, excerpt, comment_count, reaction_count, created_at, space_id, spaces(name, slug), author_id, accounts(name, avatar_url)')
       .order('created_at', { ascending: false })
       .limit(10);
     if (error) throw error;
@@ -1394,6 +1431,8 @@ async function loadRecent() {
         id: p.id,
         title: p.title,
         author: p.accounts ? p.accounts.name : 'Unknown',
+        avatar: p.accounts ? p.accounts.avatar_url : null,
+        created_at: p.created_at,
         space: p.spaces ? p.spaces.name : '',
         dot: SPACE_DOTS[p.spaces ? p.spaces.slug : ''] || '#60a5fa',
         comments: p.comment_count || 0,
@@ -1513,9 +1552,14 @@ function showToast(msg) {
 function postRow(p) {
   var onclick = S.isMember ? 'viewPost(\''+esc(p.id||'')+'\')' : 'showJoin(\''+esc(p.slug||'')+'\')';
   var h = '<div class="post-row" onclick="'+onclick+'">';
-  h += '<span class="post-dot" style="background:'+p.dot+'"></span>';
+  if (p.avatar) {
+    h += '<span class="row-avatar" style="border-color:'+p.dot+'"><img src="'+esc(p.avatar)+'" alt="" loading="lazy"></span>';
+  } else {
+    h += '<span class="row-avatar" style="border-color:'+p.dot+'">'+esc(initials(p.author))+'</span>';
+  }
+  var isNew = p.created_at && (Date.now() - new Date(p.created_at).getTime()) < 7*86400*1000;
   h += '<div class="post-body">';
-  h += '<div class="post-title">'+esc(p.title)+'</div>';
+  h += '<div class="post-title">'+esc(p.title)+(isNew ? '<span class="new-badge">New</span>' : '')+'</div>';
   h += '<div class="post-meta">'+esc(p.author)+' &middot; '+p.age+'</div>';
   h += '</div>';
   h += '<span class="post-space-tag">'+esc(p.space)+'</span>';
