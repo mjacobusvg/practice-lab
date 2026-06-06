@@ -720,7 +720,47 @@ a { color: inherit; text-decoration: none; }
 /* ══════════════════════════════════════════
    COMING NEXT: roadmap voting
    ══════════════════════════════════════════ */
-.roadmap-list { display: flex; flex-direction: column; gap: 8px; }
+.rm-scroll-wrap { position: relative; }
+.roadmap-list {
+  display: flex; flex-direction: column; gap: 8px;
+  max-height: 432px;
+  overflow-y: auto;
+  padding-right: 6px;
+  outline: none;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(42,171,184,0.35) transparent;
+}
+.roadmap-list::-webkit-scrollbar { width: 6px; }
+.roadmap-list::-webkit-scrollbar-track { background: transparent; }
+.roadmap-list::-webkit-scrollbar-thumb { background: rgba(42,171,184,0.35); border-radius: 3px; }
+.roadmap-list::-webkit-scrollbar-thumb:hover { background: rgba(42,171,184,0.6); }
+.rm-scroll-wrap::before, .rm-scroll-wrap::after {
+  content: '';
+  position: absolute; left: 0; right: 6px;
+  height: 36px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s;
+  z-index: 2;
+}
+.rm-scroll-wrap::before { top: 0; background: linear-gradient(180deg, var(--bg) 0%, transparent 100%); }
+.rm-scroll-wrap::after { bottom: 0; background: linear-gradient(0deg, var(--bg) 0%, transparent 100%); }
+.rm-scroll-wrap.fade-top::before { opacity: 1; }
+.rm-scroll-wrap.fade-bottom::after { opacity: 1; }
+.rm-controls {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  margin: 10px 0 32px;
+}
+.rm-arrow-btn {
+  background: transparent; border: 1px solid var(--border); border-radius: 6px;
+  width: 30px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.6rem; color: var(--text-secondary);
+  cursor: pointer; font-family: 'DM Sans', sans-serif;
+  transition: all var(--transition);
+}
+.rm-arrow-btn:hover { border-color: var(--teal); color: var(--teal); }
+.rm-hint { font-size: 0.7rem; color: var(--text-secondary); }
 .roadmap-item {
   display: flex; align-items: flex-start; gap: 14px;
   background: var(--bg-card); border: 1px solid var(--border);
@@ -757,13 +797,6 @@ a { color: inherit; text-decoration: none; }
 .rm-tab:hover { border-color: var(--teal); color: var(--text-primary); }
 .rm-tab.on { border-color: var(--teal); background: var(--teal-glow); color: var(--teal); font-weight: 600; }
 .rm-tab-n { opacity: 0.6; font-size: 0.66rem; }
-.rm-more {
-  display: block; margin: 10px auto 32px;
-  background: transparent; border: 1px solid var(--border); border-radius: 6px;
-  padding: 6px 16px; font-size: 0.74rem; color: var(--text-secondary);
-  cursor: pointer; font-family: 'DM Sans', sans-serif;
-}
-.rm-more:hover { border-color: var(--teal); color: var(--teal); }
 .rm-add-btn {
   margin-left: auto; background: transparent; border: 1px solid rgba(42,171,184,0.4); color: var(--teal);
   padding: 3px 10px; border-radius: 5px; font-size: 0.7rem; cursor: pointer; font-family: 'DM Sans', sans-serif;
@@ -1485,8 +1518,10 @@ function showHome() {
   // Coming Next: roadmap voting
   h += '<div class="zone-header" style="display:flex;align-items:baseline;gap:10px"><h2>Coming Next</h2><span style="font-size:0.72rem;color:var(--text-secondary)">Vote for what gets built first</span>' + (isAdmin() ? '<button class="rm-add-btn" onclick="addRoadmapItem()">+ Add item</button>' : '') + '</div>';
   h += '<div class="rm-tabs" id="roadmap-tabs"></div>';
-  h += '<div class="roadmap-list" id="roadmap-list"><div class="skel skel-row"></div><div class="skel skel-row"></div></div>';
-  h += '<div id="roadmap-more"></div>';
+  h += '<div class="rm-scroll-wrap" id="rm-scroll-wrap">';
+  h += '<div class="roadmap-list" id="roadmap-list" onscroll="rmUpdateFades()" tabindex="0"><div class="skel skel-row"></div><div class="skel skel-row"></div></div>';
+  h += '</div>';
+  h += '<div class="rm-controls" id="roadmap-more"></div>';
 
   // Zone 2: What's Active (skeleton while loading)
   h += '<div class="zone-header"><h2>What\'s Active</h2></div>';
@@ -1527,10 +1562,8 @@ var RM_TABS = [
   { key: 'ce',      label: 'CE Courses',    types: ['ce'] },
   { key: 'feature', label: 'Platform',      types: ['feature'] }
 ];
-var RM_PAGE_SIZE = 4;
 var rmData = [];
 var rmTab = 'post';
-var rmPage = {};
 
 async function loadRoadmap() {
   try {
@@ -1555,13 +1588,28 @@ function rmItemsFor(tabKey) {
   return rmData.filter(function(it){ return tab.types.indexOf(it.item_type) !== -1; });
 }
 
-function rmSetTab(key) { rmTab = key; renderRoadmap(); }
-
-function rmMore() {
-  var total = rmItemsFor(rmTab).length;
-  var pages = Math.ceil(total / RM_PAGE_SIZE);
-  rmPage[rmTab] = ((rmPage[rmTab] || 0) + 1) % pages;
+function rmSetTab(key) {
+  rmTab = key;
   renderRoadmap();
+  var list = document.getElementById('roadmap-list');
+  if (list) list.scrollTop = 0;
+  rmUpdateFades();
+}
+
+function rmScroll(dir) {
+  var list = document.getElementById('roadmap-list');
+  if (!list) return;
+  var item = list.querySelector('.roadmap-item');
+  var step = item ? item.offsetHeight + 8 : 100;
+  list.scrollBy({ top: dir * step, behavior: 'smooth' });
+}
+
+function rmUpdateFades() {
+  var wrap = document.getElementById('rm-scroll-wrap');
+  var list = document.getElementById('roadmap-list');
+  if (!wrap || !list) return;
+  wrap.classList.toggle('fade-top', list.scrollTop > 4);
+  wrap.classList.toggle('fade-bottom', list.scrollTop + list.clientHeight < list.scrollHeight - 4);
 }
 
 function renderRoadmap() {
@@ -1579,12 +1627,9 @@ function renderRoadmap() {
   }).join('');
 
   var items = rmItemsFor(rmTab);
-  var page = rmPage[rmTab] || 0;
-  var start = page * RM_PAGE_SIZE;
-  var slice = items.slice(start, start + RM_PAGE_SIZE);
   var voted = getVoted();
 
-  listEl.innerHTML = slice.map(function(it) {
+  listEl.innerHTML = items.map(function(it) {
     var hasVoted = voted.indexOf(it.id) !== -1;
     var h = '<div class="roadmap-item">';
     h += '<button class="rm-vote' + (hasVoted ? ' voted' : '') + '" id="rmv-' + it.id + '" onclick="voteRoadmap(\'' + it.id + '\')"' + (hasVoted ? ' disabled' : '') + '>';
@@ -1600,13 +1645,15 @@ function renderRoadmap() {
   }).join('');
 
   if (moreEl) {
-    if (items.length > RM_PAGE_SIZE) {
-      var pages = Math.ceil(items.length / RM_PAGE_SIZE);
-      moreEl.innerHTML = '<button class="rm-more" onclick="rmMore()">Show more <span style="opacity:0.6">' + (page + 1) + '/' + pages + '</span> &#9660;</button>';
+    if (items.length > 4) {
+      moreEl.innerHTML = '<button class="rm-arrow-btn" onclick="rmScroll(-1)" title="Scroll up">&#9650;</button>'
+        + '<span class="rm-hint">' + items.length + ' items &middot; scroll for more</span>'
+        + '<button class="rm-arrow-btn" onclick="rmScroll(1)" title="Scroll down">&#9660;</button>';
     } else {
       moreEl.innerHTML = '';
     }
   }
+  rmUpdateFades();
 }
 
 async function voteRoadmap(itemId) {
