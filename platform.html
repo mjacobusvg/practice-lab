@@ -1642,12 +1642,14 @@ async function loadSpaceContent(slug, spaceDef) {
   loadSpacePosts(slug, spaceDef, collectionPostIds);
 }
 
+var MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function timeAgo(ts) {
-  var s = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
+  var d = new Date(ts);
+  var s = Math.floor((Date.now() - d.getTime()) / 1000);
   if (s < 3600) return Math.max(1, Math.floor(s/60)) + 'm ago';
   if (s < 86400) return Math.floor(s/3600) + 'h ago';
-  if (s < 604800) return Math.floor(s/86400) + 'd ago';
-  return Math.floor(s/604800) + 'w ago';
+  if (s < 2592000) return Math.floor(s/86400) + 'd ago';
+  return MONTHS[d.getMonth()] + ' ' + d.getFullYear();
 }
 
 async function loadSpaceTicker(slug) {
@@ -1659,6 +1661,24 @@ async function loadSpaceTicker(slug) {
       .order('created_at', { ascending: false })
       .limit(8);
     if (error) throw error;
+
+    // If this space's activity is stale (nothing in the last 30 days),
+    // fall back to the freshest activity across the whole community.
+    var label = 'Latest activity';
+    var THIRTY_DAYS = 30 * 86400 * 1000;
+    var stale = !data || data.length < 3 || (Date.now() - new Date(data[0].created_at).getTime()) > THIRTY_DAYS;
+    if (stale) {
+      var alt = await SB
+        .from('forum_comments')
+        .select('id, created_at, post_id, accounts(name), forum_posts!inner(id, title, spaces!inner(slug))')
+        .order('created_at', { ascending: false })
+        .limit(8);
+      if (!alt.error && alt.data && alt.data.length >= 3) {
+        data = alt.data;
+        label = 'Across the community';
+      }
+    }
+
     var el = document.getElementById('space-ticker');
     if (!el) return;
     if (!data || data.length < 3) { el.innerHTML = ''; return; }
@@ -1673,7 +1693,7 @@ async function loadSpaceTicker(slug) {
     // duplicate the items so the -50% scroll loops seamlessly
     var track = items.join('') + items.join('');
     el.innerHTML = '<div class="ticker-wrap">'
-      + '<span class="ticker-label"><span class="ticker-pulse"></span>Latest activity</span>'
+      + '<span class="ticker-label"><span class="ticker-pulse"></span>'+label+'</span>'
       + '<div class="ticker-viewport"><div class="ticker-track">' + track + '</div></div>'
       + '</div>';
   } catch(e) { console.error('loadSpaceTicker:', e); var el = document.getElementById('space-ticker'); if (el) el.innerHTML = ''; }
@@ -1681,8 +1701,9 @@ async function loadSpaceTicker(slug) {
 
 function initials(name) {
   if (!name) return '?';
-  var parts = name.trim().split(/\s+/);
-  return (parts[0][0] + (parts.length > 1 ? parts[parts.length-1][0] : '')).toUpperCase();
+  var parts = name.trim().split(/\s+/).map(function(w){ return w.replace(/[^A-Za-z]/g, ''); }).filter(Boolean);
+  if (parts.length === 0) return '?';
+  return (parts[0][0] + (parts.length > 1 ? parts[1][0] : '')).toUpperCase();
 }
 
 function renderPostRow(p, spaceDef, slug) {
