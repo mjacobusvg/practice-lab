@@ -115,7 +115,7 @@ textarea{resize:vertical;min-height:70px}
     <a href="/practice-manager?section=clinical" class="back-link">&larr; Practice Manager</a>
     <h1>Termination <span>Workflow</span></h1>
   </div>
-  <p class="intro">Ending care is a clinical and legal workflow, not just a letter. This tool walks you through reason, clinical appropriateness, abandonment-risk safeguards, notice, continuity planning, and documentation, then generates the patient letter, chart note, an admin checklist, and an optional scheduling alert. AI-assisted, you review and own the output, nothing is stored.</p>
+  <p class="intro">Ending care is a clinical and legal workflow, not just a letter. This tool walks you through reason, clinical appropriateness, abandonment-risk safeguards, notice, continuity planning, and documentation, then matches delivery rigor to the risk level &mdash; from certified dual-send down to a chart-note-only ending when no letter is needed &mdash; and generates the patient letter, chart note, an admin checklist, and an optional scheduling alert. AI-assisted, you review and own the output, nothing is stored.</p>
 
   <script>
   var _userEmail = '';
@@ -237,7 +237,7 @@ textarea{resize:vertical;min-height:70px}
       </div>
       <div class="form-row">
         <div><label>Termination type</label>
-          <select id="f-type">
+          <select id="f-type" onchange="updateDeliveryRec()">
             <option value="discharge">Discharge from care</option>
             <option value="transfer">Transfer to another provider</option>
             <option value="inactive">Inactivation (no recent contact)</option>
@@ -245,19 +245,22 @@ textarea{resize:vertical;min-height:70px}
           </select>
         </div>
         <div><label>Delivery method</label>
-          <select id="f-delivery">
+          <select id="f-delivery" onchange="updateDeliveryRec()">
             <option value="">Select...</option>
             <option value="certified">Certified mail (return receipt)</option>
             <option value="mail">Regular mail</option>
             <option value="portal">Patient portal</option>
             <option value="email">Email (with consent)</option>
             <option value="both">Certified + regular mail</option>
+            <option value="inperson">In person (signed/dated copy in chart)</option>
+            <option value="none">No letter &mdash; chart note only</option>
           </select>
         </div>
       </div>
+      <div class="state-verify" id="deliveryRec" style="display:none;margin-top:10px"></div>
       <div class="form-row">
         <div><label>Refill / bridge plan</label>
-          <select id="f-bridge">
+          <select id="f-bridge" onchange="updateDeliveryRec()">
             <option value="">Select...</option>
             <option value="provided">Bridge supply provided</option>
             <option value="notneeded">Not needed (no active prescriptions)</option>
@@ -299,7 +302,7 @@ textarea{resize:vertical;min-height:70px}
       <h3><span class="step-num">4</span>Patient &amp; state context</h3>
       <div class="form-row">
         <div><label>Patient name</label><input type="text" id="f-ptname" placeholder="Patient full name"></div>
-        <div><label>Patient state</label><input type="text" id="f-ptstate" placeholder="WA" onblur="checkStateMatch()"></div>
+        <div><label>Patient state</label><input type="text" id="f-ptstate" placeholder="WA" onblur="checkStateMatch();updateDeliveryRec()"></div>
       </div>
       <div class="field">
         <label>State-specific notes (optional)</label>
@@ -324,7 +327,7 @@ textarea{resize:vertical;min-height:70px}
     <!-- Output -->
     <div class="output" id="output">
       <p style="font-size:.8rem;color:var(--cream-dim);margin-bottom:14px">All four outputs are editable, click into any of them to fill remaining <span style="color:var(--amber)">[BRACKETED]</span> items (e.g. patient address) or adjust wording before you copy, print, email, or mail. You review and own the final text.</p>
-      <div class="out-block">
+      <div class="out-block" id="letterBlock">
         <div class="ob-head">
           <h4>Patient-facing termination letter <span class="edit-hint">click to edit</span></h4>
           <div class="ob-actions">
@@ -1236,6 +1239,7 @@ function checkStateMatch() {
 // Reason "other" toggle
 document.getElementById('f-reason').addEventListener('change', function() {
   document.getElementById('reasonOtherWrap').style.display = this.value === 'other' ? 'block' : 'none';
+  updateDeliveryRec();
 });
 
 // ══════════════════════════════════════════════
@@ -1380,6 +1384,7 @@ function updateRiskFlag() {
     html += '<div style="margin-top:10px;font-weight:700;color:var(--red)">Recommend not sending the letter until acute instability is addressed.</div>';
   }
   flag.innerHTML = html;
+  updateDeliveryRec();
 }
 
 // ══════════════════════════════════════════════
@@ -1392,8 +1397,70 @@ var REASON_LABELS = {
   controlled:'Controlled-substance boundary/agreement violation', scopemismatch:'Outside scope/not appropriate fit', other:'Other'
 };
 var TYPE_LABELS = { discharge:'Discharge from care', transfer:'Transfer to another provider', inactive:'Inactivation', admin:'Administrative closure' };
-var DELIVERY_LABELS = { certified:'Certified mail (return receipt)', mail:'Regular mail', portal:'Patient portal', email:'Email (with consent)', both:'Certified + regular mail' };
+var DELIVERY_LABELS = { certified:'Certified mail (return receipt)', mail:'Regular mail', portal:'Patient portal', email:'Email (with consent)', both:'Certified + regular mail', inperson:'In person (signed/dated copy in chart)', none:'No letter — chart-note-only documentation' };
 var BRIDGE_LABELS = { provided:'Bridge supply provided', notneeded:'Not needed (no active prescriptions)', notappropriate:'Not clinically appropriate', transferred:'Already transferred to new provider', controlled:'Controlled-substance exception' };
+
+// ══════════════════════════════════════════════
+// DELIVERY RIGOR RECOMMENDATION (three tiers)
+// Tier 3: certified + regular dual-send. Tier 2: written letter with
+// documented receipt. Tier 1: chart-note-only may suffice.
+// ══════════════════════════════════════════════
+function computeDeliveryTier() {
+  var f = collectFactors();
+  var reason = val('f-reason');
+  var type = val('f-type');
+  var bridge = val('f-bridge');
+  var dep = document.getElementById('r-dependence').checked;
+  var noalt = document.getElementById('r-noalt').checked;
+  // Tier 3: high-stakes — acute factors, controlled substances, no alternative care,
+  // the no-contact patient, or a hostile/boundary ending.
+  if (f.pause.length || dep || noalt || reason === 'controlled' || reason === 'noshows' || type === 'inactive') {
+    return { tier: 3 };
+  }
+  // Tier 1 candidates: amicable / patient-initiated / planned transition with no risk factors.
+  var amicable = (reason === 'patientrequest' || reason === 'moving' || type === 'transfer');
+  if (amicable && !f.safeguard.length) {
+    var noRx = (bridge === 'notneeded' || bridge === 'transferred');
+    return { tier: 1, rxException: !noRx };
+  }
+  return { tier: 2 };
+}
+
+function updateDeliveryRec() {
+  var box = document.getElementById('deliveryRec');
+  if (!box) return;
+  var reason = val('f-reason');
+  if (!reason) { box.style.display = 'none'; return; }
+  var rec = computeDeliveryTier();
+  var chosen = val('f-delivery');
+  var html = '';
+  if (rec.tier === 3) {
+    box.style.borderLeftColor = 'var(--amber)';
+    html = '<strong>Recommended delivery: certified mail + regular mail (dual-send).</strong> Certified mail can be refused or left unclaimed; first-class mail creates a presumption of delivery. Document the method, date, and tracking in the chart.';
+    var st = val('f-ptstate').toUpperCase();
+    var rules = (typeof STATE_RULES !== 'undefined') ? STATE_RULES[st] : null;
+    if (rules && rules.deliveryDocumentation) {
+      html += '<div style="margin-top:8px;font-size:.8rem">State note (' + st + '): ' + rules.deliveryDocumentation + '</div>';
+    }
+    if (chosen && chosen !== 'certified' && chosen !== 'both') {
+      html += '<div style="margin-top:8px;color:var(--amber)">The selected method is lighter than recommended for this risk level. If you proceed, the chart note should document why it is sufficient.</div>';
+    }
+  } else if (rec.tier === 1) {
+    box.style.borderLeftColor = 'var(--teal)';
+    html = '<strong>A chart-note-only ending may be sufficient here:</strong> amicable or patient-initiated, no elevated risk factors. If you skip the letter, the chart note must record who initiated the ending, refill disposition, records status, and why written notice was not required. Select "No letter &mdash; chart note only" to generate that documentation.';
+    if (rec.rxException) {
+      html += '<div style="margin-top:8px;color:var(--amber)"><strong>Exception:</strong> active prescriptions appear to be in play. A brief confirming note to the patient (final fill date, no further refills, records availability) is still recommended; consider a letter via portal or regular mail.</div>';
+    }
+    if (chosen === 'certified' || chosen === 'both') {
+      html += '<div style="margin-top:8px">Certified mail is optional at this risk level and can read as adversarial in an amicable ending. Your call.</div>';
+    }
+  } else {
+    box.style.borderLeftColor = 'var(--teal)';
+    html = '<strong>Recommended delivery: written letter with documented receipt</strong> &mdash; patient portal, in person with a signed/dated copy in the chart, or regular mail. Certified mail is optional at this risk level. Whichever method you choose, the chart note should record it and why it was sufficient.';
+  }
+  box.innerHTML = html;
+  box.style.display = 'block';
+}
 
 async function generate() {
   var reason = val('f-reason');
@@ -1452,10 +1519,17 @@ async function generate() {
     riskRule = 'No acute or continuity-risk factors indicated. Use the standard defensible termination structure.';
   }
 
+  var chartOnly = val('f-delivery') === 'none';
+  var deliveryRule = 'DELIVERY DOCUMENTATION: the chart note must record the chosen delivery method and a one-sentence rationale for why that method matches the risk level of this termination.';
+  if (chartOnly) {
+    deliveryRule += ' CHART-NOTE-ONLY MODE: the clinician has determined no patient letter is required (amicable or patient-initiated ending). The ===LETTER=== section must contain exactly this single line and nothing else: [No patient letter generated — chart-note-only termination path selected. Rationale documented in chart note.] The ===CHART=== section must additionally document: who initiated the ending, the patient\'s stated plan or new provider if known, refill disposition, records status, and the explicit rationale for why written notice to the patient was not required. In the ===CHECKLIST===, replace the "notice letter sent" item with "[ ] Termination documented in chart (chart-note-only path; rationale documented)".';
+  }
+
   var sysPrompt =
     'You are a clinical documentation assistant helping a psychiatric prescriber terminate a treatment relationship safely, ethically, and defensibly. You produce four artifacts from the clinician-provided information. Do not invent facts; where a detail is genuinely missing use a bracketed placeholder like [INSERT DATE]. However, any provider or practice detail supplied in PROVIDER / PRACTICE DETAILS must be used verbatim and never replaced with a placeholder. Only bracket items that were not supplied at all, for example the patient mailing address, which is not collected.\n\n' +
     'ABANDONMENT-RISK FRAMEWORK (apply throughout): a defensible termination provides adequate written notice, emergency/crisis coverage during the notice period, a refill bridge where clinically appropriate, active referral options, and clear documentation. Notice periods and required wording vary by state; if the clinician provided verified state rules, follow them exactly; otherwise use a general defensible standard and insert a [VERIFY STATE NOTICE REQUIREMENT] placeholder rather than inventing a specific number.\n\n' +
     riskRule + '\n\n' +
+    deliveryRule + '\n\n' +
     'TONE: professional, respectful, non-blaming, non-stigmatizing, even for nonpayment, no-shows, or boundary violations. Minimal necessary disclosure. Do not include clinical diagnosis details in the patient letter beyond what is needed.\n\n' +
     'PLAIN TEXT ONLY. No markdown, no **bold**, no asterisks, no # headers. Use plain labels and line breaks.\n\n' +
     'Output EXACTLY these four sections with these exact delimiters on their own lines, in order:\n' +
@@ -1485,6 +1559,8 @@ async function generate() {
     var alert = sectionOf(full, 'ALERT');
 
     document.getElementById('letter-output').textContent = letter || full;
+    var lb = document.getElementById('letterBlock');
+    if (lb) lb.style.display = chartOnly ? 'none' : 'block';
     document.getElementById('chart-output').textContent = chart || '[INSERT CHART NOTE]';
     document.getElementById('checklist-output').textContent = checklist || '[INSERT CHECKLIST]';
     var alertBlock = document.getElementById('alertBlock');
