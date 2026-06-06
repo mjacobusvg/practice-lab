@@ -720,7 +720,7 @@ a { color: inherit; text-decoration: none; }
 /* ══════════════════════════════════════════
    COMING NEXT: roadmap voting
    ══════════════════════════════════════════ */
-.roadmap-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 32px; }
+.roadmap-list { display: flex; flex-direction: column; gap: 8px; }
 .roadmap-item {
   display: flex; align-items: flex-start; gap: 14px;
   background: var(--bg-card); border: 1px solid var(--border);
@@ -748,6 +748,22 @@ a { color: inherit; text-decoration: none; }
   padding: 1px 7px; border-radius: 3px; background: var(--teal); color: var(--text-inverse);
 }
 .rm-desc { font-size: 0.78rem; color: var(--text-secondary); line-height: 1.55; margin-top: 3px; }
+.rm-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.rm-tab {
+  background: transparent; border: 1px solid var(--border); border-radius: 999px;
+  padding: 5px 14px; font-size: 0.74rem; color: var(--text-secondary);
+  cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all var(--transition);
+}
+.rm-tab:hover { border-color: var(--teal); color: var(--text-primary); }
+.rm-tab.on { border-color: var(--teal); background: var(--teal-glow); color: var(--teal); font-weight: 600; }
+.rm-tab-n { opacity: 0.6; font-size: 0.66rem; }
+.rm-more {
+  display: block; margin: 10px auto 32px;
+  background: transparent; border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 16px; font-size: 0.74rem; color: var(--text-secondary);
+  cursor: pointer; font-family: 'DM Sans', sans-serif;
+}
+.rm-more:hover { border-color: var(--teal); color: var(--teal); }
 .rm-add-btn {
   margin-left: auto; background: transparent; border: 1px solid rgba(42,171,184,0.4); color: var(--teal);
   padding: 3px 10px; border-radius: 5px; font-size: 0.7rem; cursor: pointer; font-family: 'DM Sans', sans-serif;
@@ -1468,7 +1484,9 @@ function showHome() {
 
   // Coming Next: roadmap voting
   h += '<div class="zone-header" style="display:flex;align-items:baseline;gap:10px"><h2>Coming Next</h2><span style="font-size:0.72rem;color:var(--text-secondary)">Vote for what gets built first</span>' + (isAdmin() ? '<button class="rm-add-btn" onclick="addRoadmapItem()">+ Add item</button>' : '') + '</div>';
+  h += '<div class="rm-tabs" id="roadmap-tabs"></div>';
   h += '<div class="roadmap-list" id="roadmap-list"><div class="skel skel-row"></div><div class="skel skel-row"></div></div>';
+  h += '<div id="roadmap-more"></div>';
 
   // Zone 2: What's Active (skeleton while loading)
   h += '<div class="zone-header"><h2>What\'s Active</h2></div>';
@@ -1502,6 +1520,18 @@ function markVoted(id) {
   try { localStorage.setItem(votedKey(), JSON.stringify(v)); } catch(e) {}
 }
 
+var RM_TABS = [
+  { key: 'post',    label: 'Post Topics',   types: ['post','topic'] },
+  { key: 'tool',    label: 'Manager Tools', types: ['tool'] },
+  { key: 'lab',     label: 'Practice Lab',  types: ['lab'] },
+  { key: 'ce',      label: 'CE Courses',    types: ['ce'] },
+  { key: 'feature', label: 'Platform',      types: ['feature'] }
+];
+var RM_PAGE_SIZE = 4;
+var rmData = [];
+var rmTab = 'post';
+var rmPage = {};
+
 async function loadRoadmap() {
   try {
     var { data, error } = await SB
@@ -1510,29 +1540,73 @@ async function loadRoadmap() {
       .neq('status', 'shipped')
       .order('vote_count', { ascending: false })
       .order('created_at', { ascending: true })
-      .limit(6);
+      .limit(100);
     if (error) throw error;
-    var el = document.getElementById('roadmap-list');
-    if (!el) return;
-    if (!data || !data.length) { el.innerHTML = ''; return; }
-    var voted = getVoted();
-    var TYPE_LABELS = { tool: 'Tool', topic: 'Topic', post: 'Post', ce: 'CE Course', feature: 'Feature' };
-    el.innerHTML = data.map(function(it) {
-      var hasVoted = voted.indexOf(it.id) !== -1;
-      var h = '<div class="roadmap-item">';
-      h += '<button class="rm-vote' + (hasVoted ? ' voted' : '') + '" id="rmv-' + it.id + '" onclick="voteRoadmap(\'' + it.id + '\')"' + (hasVoted ? ' disabled' : '') + '>';
-      h += '<span class="rm-arrow">&#9650;</span><span class="rm-count" id="rmc-' + it.id + '">' + it.vote_count + '</span>';
-      h += '</button>';
-      h += '<div class="rm-body">';
-      h += '<div class="rm-title">' + esc(it.title);
-      h += '<span class="rm-type">' + (TYPE_LABELS[it.item_type] || it.item_type) + '</span>';
-      if (it.status === 'building') h += '<span class="rm-building">Building now</span>';
-      h += '</div>';
-      if (it.description) h += '<div class="rm-desc">' + esc(it.description) + '</div>';
-      h += '</div></div>';
-      return h;
-    }).join('');
+    rmData = data || [];
+    var firstWithItems = RM_TABS.filter(function(t){ return rmItemsFor(t.key).length > 0; })[0];
+    if (firstWithItems && rmItemsFor(rmTab).length === 0) rmTab = firstWithItems.key;
+    renderRoadmap();
   } catch(e) { console.error('loadRoadmap:', e); var el = document.getElementById('roadmap-list'); if (el) el.innerHTML = ''; }
+}
+
+function rmItemsFor(tabKey) {
+  var tab = RM_TABS.filter(function(t){ return t.key === tabKey; })[0];
+  if (!tab) return [];
+  return rmData.filter(function(it){ return tab.types.indexOf(it.item_type) !== -1; });
+}
+
+function rmSetTab(key) { rmTab = key; renderRoadmap(); }
+
+function rmMore() {
+  var total = rmItemsFor(rmTab).length;
+  var pages = Math.ceil(total / RM_PAGE_SIZE);
+  rmPage[rmTab] = ((rmPage[rmTab] || 0) + 1) % pages;
+  renderRoadmap();
+}
+
+function renderRoadmap() {
+  var tabsEl = document.getElementById('roadmap-tabs');
+  var listEl = document.getElementById('roadmap-list');
+  var moreEl = document.getElementById('roadmap-more');
+  if (!tabsEl || !listEl) return;
+
+  if (!rmData.length) { tabsEl.innerHTML = ''; listEl.innerHTML = ''; if (moreEl) moreEl.innerHTML = ''; return; }
+
+  tabsEl.innerHTML = RM_TABS.map(function(t) {
+    var n = rmItemsFor(t.key).length;
+    if (!n) return '';
+    return '<button class="rm-tab' + (t.key === rmTab ? ' on' : '') + '" onclick="rmSetTab(\'' + t.key + '\')">' + t.label + ' <span class="rm-tab-n">' + n + '</span></button>';
+  }).join('');
+
+  var items = rmItemsFor(rmTab);
+  var page = rmPage[rmTab] || 0;
+  var start = page * RM_PAGE_SIZE;
+  var slice = items.slice(start, start + RM_PAGE_SIZE);
+  var voted = getVoted();
+
+  listEl.innerHTML = slice.map(function(it) {
+    var hasVoted = voted.indexOf(it.id) !== -1;
+    var h = '<div class="roadmap-item">';
+    h += '<button class="rm-vote' + (hasVoted ? ' voted' : '') + '" id="rmv-' + it.id + '" onclick="voteRoadmap(\'' + it.id + '\')"' + (hasVoted ? ' disabled' : '') + '>';
+    h += '<span class="rm-arrow">&#9650;</span><span class="rm-count" id="rmc-' + it.id + '">' + it.vote_count + '</span>';
+    h += '</button>';
+    h += '<div class="rm-body">';
+    h += '<div class="rm-title">' + esc(it.title);
+    if (it.status === 'building') h += '<span class="rm-building">Building now</span>';
+    h += '</div>';
+    if (it.description) h += '<div class="rm-desc">' + esc(it.description) + '</div>';
+    h += '</div></div>';
+    return h;
+  }).join('');
+
+  if (moreEl) {
+    if (items.length > RM_PAGE_SIZE) {
+      var pages = Math.ceil(items.length / RM_PAGE_SIZE);
+      moreEl.innerHTML = '<button class="rm-more" onclick="rmMore()">Show more <span style="opacity:0.6">' + (page + 1) + '/' + pages + '</span> &#9660;</button>';
+    } else {
+      moreEl.innerHTML = '';
+    }
+  }
 }
 
 async function voteRoadmap(itemId) {
@@ -1552,6 +1626,7 @@ async function voteRoadmap(itemId) {
       if (typeof data.count === 'number') {
         var c = document.getElementById('rmc-' + itemId);
         if (c) c.textContent = data.count;
+        rmData.forEach(function(it){ if (it.id === itemId) it.vote_count = data.count; });
       }
     } else if (btn) { btn.disabled = false; }
   } catch(e) { console.error('voteRoadmap:', e); if (btn) btn.disabled = false; }
@@ -1562,7 +1637,7 @@ async function addRoadmapItem() {
   var title = prompt('Roadmap item title:');
   if (!title) return;
   var description = prompt('One-line description (optional):') || '';
-  var itemType = prompt('Type: tool / topic / post / ce / feature', 'tool') || 'tool';
+  var itemType = prompt('Type: tool / topic / post / ce / lab / feature', 'post') || 'post';
   try {
     var res = await fetch('/.netlify/functions/roadmap-vote', {
       method: 'POST',
