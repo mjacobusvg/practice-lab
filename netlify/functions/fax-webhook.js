@@ -1,12 +1,15 @@
 // netlify/functions/fax-webhook.js
 // Receives Notifyre webhook events for fax delivery status.
-// On failure, emails the clinician via Resend to notify them.
+// On failure, emails the clinician via Amazon SES (under the AWS BAA) to notify them.
 //
 // Environment variables:
 //   NOTIFYRE_API_KEY - for verifying webhook origin (future)
-//   RESEND_API_KEY - for sending failure notification emails
 //   SUPABASE_URL - for logging (optional)
 //   SUPABASE_SERVICE_KEY - for logging (optional)
+//   SES_REGION / AWS_REGION - SES region (default us-east-1)
+//   SES_ACCESS_KEY_ID / AWS_ACCESS_KEY_ID - SES credentials
+//   SES_SECRET_ACCESS_KEY / AWS_SECRET_ACCESS_KEY - SES credentials
+//   FAX_NOTIFY_FROM - optional sender override (default support@thinkbeyondpractice.com)
 //
 // Notifyre webhook payload for fax_sent:
 //   Event: "fax_sent"
@@ -14,6 +17,8 @@
 //   Payload: { ID, RecipientID, FromNumber, To, Reference, Status, StatusMessage, Pages, ... }
 //
 // Status values: "accepted", "successful", "failed", "in_progress", "queued"
+
+const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
 
 exports.handler = async function(event) {
   var headers = {
@@ -90,13 +95,6 @@ exports.handler = async function(event) {
     };
     var reason = failureReasons[status] || 'The fax could not be delivered (status: ' + status + ').';
 
-    // Send failure notification via Resend
-    var resendKey = process.env.RESEND_API_KEY;
-    if (!resendKey) {
-      console.log('RESEND_API_KEY not set, cannot send fax failure notification');
-      return { statusCode: 200, headers: headers, body: JSON.stringify({ status: 'failed_no_resend' }) };
-    }
-
     var subject = 'Fax Delivery Failed - ' + to;
     var emailBody = 'Your fax to ' + to + ' was not delivered.\n\n';
     emailBody += 'Reason: ' + reason + '\n';
@@ -108,19 +106,28 @@ exports.handler = async function(event) {
     emailBody += 'You can resend the fax from the same tool in Practice Manager.\n\n';
     emailBody += 'Think Beyond Practice';
 
-    await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + resendKey
-      },
-      body: JSON.stringify({
-        from: 'Think Beyond Practice <support@thinkbeyondpractice.com>',
-        to: [clinicianEmail],
-        subject: subject,
-        text: emailBody
-      })
-    });
+    // Send failure notification via Amazon SES (under the AWS BAA)
+    var region = process.env.SES_REGION || process.env.AWS_REGION || 'us-east-1';
+    var accessKeyId = process.env.SES_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
+    var secretAccessKey = process.env.SES_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
+    var fromAddress = process.env.FAX_NOTIFY_FROM || 'Think Beyond Practice <support@thinkbeyondpractice.com>';
+
+    var sesConfig = { region: region };
+    if (accessKeyId && secretAccessKey) {
+      sesConfig.credentials = { accessKeyId: accessKeyId, secretAccessKey: secretAccessKey };
+    }
+
+    var sesClient = new SESv2Client(sesConfig);
+    await sesClient.send(new SendEmailCommand({
+      FromEmailAddress: fromAddress,
+      Destination: { ToAddresses: [clinicianEmail] },
+      Content: {
+        Simple: {
+          Subject: { Data: subject, Charset: 'UTF-8' },
+          Body: { Text: { Data: emailBody, Charset: 'UTF-8' } }
+        }
+      }
+    }));
 
     return {
       statusCode: 200,
