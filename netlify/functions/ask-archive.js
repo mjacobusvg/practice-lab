@@ -2,6 +2,40 @@
 // Handles all admin actions, feedback, template requests, and browse/pagination.
 // Live query pipeline runs via ask-archive-trigger.js -> Inngest -> inngest-serve.mjs
 
+const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
+
+// Internal notification email via Amazon SES (under the AWS BAA).
+// Replaces the previous Resend integration so all outbound mail runs through SES.
+// NOTE: env var names below should match those used by your other SES functions.
+async function sendNotification(subject, html) {
+  const region = process.env.SES_REGION || process.env.AWS_REGION || 'us-east-1';
+  const accessKeyId = process.env.SES_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.SES_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
+  const fromAddress = process.env.SES_FROM || 'Ask the Archive <noreply@thinkbeyondpractice.com>';
+  const toAddress = process.env.NOTIFY_TO || 'michael@thinkbeyondpractice.com';
+
+  const config = { region };
+  if (accessKeyId && secretAccessKey) {
+    config.credentials = { accessKeyId, secretAccessKey };
+  }
+
+  try {
+    const client = new SESv2Client(config);
+    await client.send(new SendEmailCommand({
+      FromEmailAddress: fromAddress,
+      Destination: { ToAddresses: [toAddress] },
+      Content: {
+        Simple: {
+          Subject: { Data: subject, Charset: 'UTF-8' },
+          Body: { Html: { Data: html, Charset: 'UTF-8' } }
+        }
+      }
+    }));
+  } catch (e) {
+    console.log('SES notification error:', e.message);
+  }
+}
+
 exports.handler = async function(event, context) {
   const CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -20,7 +54,6 @@ exports.handler = async function(event, context) {
 
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
-  const resendKey = process.env.RESEND_API_KEY;
 
   // Handle unanswered questions dashboard request
   if (body.action === 'get_unanswered') {
@@ -201,13 +234,7 @@ exports.handler = async function(event, context) {
         headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Prefer': 'return=minimal' },
         body: JSON.stringify({ question: `[TEMPLATE REQUEST] ${question}`, member_requested: true, created_at: new Date().toISOString() })
       });
-      if (resendKey) {
-        await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${resendKey}` },
-          body: JSON.stringify({ from: 'Ask the Archive <noreply@thinkbeyondpractice.com>', to: ['michael@thinkbeyondpractice.com'], subject: 'Ask the Archive — Template Request', html: `<p>A member requested a template for:</p><blockquote>${question}</blockquote>` })
-        });
-      }
+      await sendNotification('Ask the Archive — Template Request', `<p>A member requested a template for:</p><blockquote>${question}</blockquote>`);
     } catch(e) {}
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ success: true, message: 'Template request submitted.' }) };
   }
@@ -220,13 +247,7 @@ exports.handler = async function(event, context) {
         headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Prefer': 'return=minimal' },
         body: JSON.stringify({ question, member_requested: true, created_at: new Date().toISOString() })
       });
-      if (resendKey) {
-        await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${resendKey}` },
-          body: JSON.stringify({ from: 'Ask the Archive <noreply@thinkbeyondpractice.com>', to: ['michael@thinkbeyondpractice.com'], subject: 'Ask the Archive — Topic Request', html: `<p>A member requested this topic:</p><blockquote>${question}</blockquote>` })
-        });
-      }
+      await sendNotification('Ask the Archive — Topic Request', `<p>A member requested this topic:</p><blockquote>${question}</blockquote>`);
     } catch(e) {}
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ success: true }) };
   }
