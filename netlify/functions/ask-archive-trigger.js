@@ -1,6 +1,40 @@
 // netlify/functions/ask-archive-trigger.js
 // Lightweight dispatcher — creates job row in Supabase, sends event to Inngest, returns job_id immediately.
 
+const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
+
+// Internal notification email via Amazon SES (under the AWS BAA).
+// Replaces the previous Resend integration so all outbound mail runs through SES.
+// NOTE: env var names below should match those used by your other SES functions.
+async function sendNotification(subject, html) {
+  const region = process.env.SES_REGION || process.env.AWS_REGION || 'us-east-1';
+  const accessKeyId = process.env.SES_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.SES_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
+  const fromAddress = process.env.SES_FROM || 'Ask the Archive <noreply@thinkbeyondpractice.com>';
+  const toAddress = process.env.NOTIFY_TO || 'michael@thinkbeyondpractice.com';
+
+  const config = { region };
+  if (accessKeyId && secretAccessKey) {
+    config.credentials = { accessKeyId, secretAccessKey };
+  }
+
+  try {
+    const client = new SESv2Client(config);
+    await client.send(new SendEmailCommand({
+      FromEmailAddress: fromAddress,
+      Destination: { ToAddresses: [toAddress] },
+      Content: {
+        Simple: {
+          Subject: { Data: subject, Charset: 'UTF-8' },
+          Body: { Html: { Data: html, Charset: 'UTF-8' } }
+        }
+      }
+    }));
+  } catch (e) {
+    console.log('SES notification error:', e.message);
+  }
+}
+
 exports.handler = async function(event, context) {
   const CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -8,22 +42,16 @@ exports.handler = async function(event, context) {
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Content-Type': 'application/json'
   };
-
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: CORS, body: '' };
   if (event.httpMethod !== 'POST') return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: 'Method not allowed' }) };
-
   let body;
   try { body = JSON.parse(event.body || '{}'); } catch(e) {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Invalid JSON' }) };
   }
-
   const question = (body.question || '').trim();
   if (!question) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Question required' }) };
-
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
-  const resendKey = process.env.RESEND_API_KEY;
-
   // Handle template request inline — no background job needed
   if (body.request_template === true) {
     try {
@@ -32,20 +60,12 @@ exports.handler = async function(event, context) {
         headers: { 'Content-Type': 'application/json', 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}`, 'Prefer': 'return=minimal' },
         body: JSON.stringify({ question: `[TEMPLATE REQUEST] ${question}`, member_requested: true, created_at: new Date().toISOString() })
       });
-      if (resendKey) {
-        await fetch('https://api.resend.com/emails', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${resendKey}` },
-          body: JSON.stringify({ from: 'Ask the Archive <noreply@thinkbeyondpractice.com>', to: ['michael@thinkbeyondpractice.com'], subject: 'Ask the Archive — Template Request', html: `<p>A member requested a template for:</p><blockquote>${question}</blockquote>` })
-        });
-      }
+      await sendNotification('Ask the Archive — Template Request', `<p>A member requested a template for:</p><blockquote>${question}</blockquote>`);
     } catch(e) {}
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ success: true, message: 'Template request submitted.' }) };
   }
-
   // Generate job ID
   const job_id = 'job_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
-
   // Create job row in Supabase
   try {
     await fetch(`${supabaseUrl}/rest/v1/archive_jobs?on_conflict=job_id`, {
@@ -61,7 +81,6 @@ exports.handler = async function(event, context) {
   } catch(e) {
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Failed to create job' }) };
   }
-
   // Send event to Inngest
   try {
     const { Inngest } = await import('inngest');
@@ -79,7 +98,6 @@ exports.handler = async function(event, context) {
     console.error('Inngest trigger error:', e.message);
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Failed to queue job' }) };
   }
-
   return {
     statusCode: 202,
     headers: CORS,
