@@ -812,6 +812,29 @@ a { color: inherit; text-decoration: none; }
   padding: 1px 7px; border-radius: 3px; background: var(--teal); color: var(--text-inverse);
 }
 .rm-desc { font-size: 0.78rem; color: var(--text-secondary); line-height: 1.55; margin-top: 3px; }
+/* Template library */
+.tpl-row { display: flex; align-items: center; gap: 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 13px 16px; }
+.tpl-icon { font-size: 18px; flex-shrink: 0; opacity: 0.8; }
+.tpl-tag { font-size: 0.58rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 1px 7px; border-radius: 3px; border: 1px solid var(--border); color: var(--text-secondary); margin-left: 8px; vertical-align: middle; }
+.tpl-tag.tpl-paid { background: var(--copper-glow); border-color: rgba(217,160,91,0.4); color: var(--copper); }
+.tpl-btn { background: transparent; border: 1px solid var(--teal); color: var(--teal); border-radius: 6px; padding: 6px 16px; font-size: 0.76rem; cursor: pointer; font-family: 'DM Sans', sans-serif; flex-shrink: 0; transition: all var(--transition); }
+.tpl-btn:hover { background: var(--teal); color: var(--text-inverse); }
+.tpl-btn.locked { border-color: var(--border); color: var(--text-secondary); }
+.tpl-btn.locked:hover { border-color: var(--copper); color: var(--copper); background: transparent; }
+
+/* Member directory */
+.dir-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+.dir-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 14px; text-align: center; transition: all var(--transition); }
+.dir-card:hover { border-color: rgba(42,171,184,0.4); background: var(--bg-card-hover); }
+.dir-avatar { width: 52px; height: 52px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; overflow: hidden; border: 2px solid var(--border); margin-bottom: 10px; }
+.dir-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.dir-initials { font-weight: 700; font-size: 0.9rem; color: var(--text-heading); background: var(--bg-card-hover); }
+.dir-name { font-size: 0.88rem; font-weight: 600; color: var(--text-heading); }
+.dir-creds { font-size: 0.68rem; color: var(--text-secondary); margin-top: 1px; }
+.dir-ptype { font-size: 0.7rem; color: var(--teal); margin-top: 6px; }
+.dir-loc { font-size: 0.68rem; color: var(--text-secondary); margin-top: 2px; }
+.dir-headline { font-size: 0.7rem; color: var(--text-secondary); margin-top: 6px; line-height: 1.4; font-style: italic; }
+
 .save-btn {
   background: transparent; border: 1px solid var(--border); border-radius: 6px;
   padding: 5px 14px; font-size: 0.76rem; color: var(--text-secondary);
@@ -1430,6 +1453,8 @@ function init() {
 function buildSidebar() {
   var h = '<div class="sb-item" data-key="home" onclick="showHome()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#127968;</span> Home</div>';
   h += '<div class="sb-item" data-key="saved" onclick="showSaved()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128278;</span> Saved</div>';
+  h += '<div class="sb-item" data-key="library" onclick="showLibrary()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128196;</span> Template Library</div>';
+  h += '<div class="sb-item" data-key="directory" onclick="showDirectory()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128101;</span> Member Directory</div>';
   GROUPS.forEach(function(g) {
     h += '<div class="sb-group-title">' + g.name + '</div>';
     g.spaces.forEach(function(sp) {
@@ -2156,6 +2181,193 @@ async function loadSpaceTicker(slug) {
       + '</div>';
   } catch(e) { console.error('loadSpaceTicker:', e); var el = document.getElementById('space-ticker'); if (el) el.innerHTML = ''; }
 }
+
+// ════════════════════════════════════════
+// TEMPLATE LIBRARY
+// ════════════════════════════════════════
+var TIER_RANK = { free: 0, forum: 1, full: 2 };
+var TEMPLATE_CATS = [
+  { key: 'all', label: 'All' },
+  { key: 'documentation', label: 'Documentation' },
+  { key: 'billing', label: 'Billing & Appeals' },
+  { key: 'letters', label: 'Letters' },
+  { key: 'policies', label: 'Policies & Consent' },
+  { key: 'clinical', label: 'Clinical' },
+  { key: 'operations', label: 'Operations' },
+  { key: 'general', label: 'General' }
+];
+var libData = null;
+var libCat = 'all';
+
+function userTierRank() { return TIER_RANK[(S.user && S.user.tier) ? S.user.tier : 'free'] || 0; }
+
+async function showLibrary() {
+  closeSidebar();
+  S.view = 'library';
+  clearActive();
+  var side = document.querySelector('.sb-item[data-key="library"]');
+  if (side) side.classList.add('active');
+  var center = document.getElementById('center');
+  center.innerHTML = '<div class="skel skel-h"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
+  if (libData === null) {
+    try {
+      var { data, error } = await SB
+        .from('template_library')
+        .select('id, title, description, category, min_tier, is_paid, price_cents, preview')
+        .eq('visible', true)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      libData = data || [];
+    } catch(e) { console.error('library:', e); libData = []; }
+  }
+  renderLibrary();
+}
+
+function renderLibrary() {
+  var center = document.getElementById('center');
+  var h = '<div class="space-head"><div class="space-accent" style="background:var(--copper)"></div>';
+  h += '<h1>Template Library</h1>';
+  h += '<p class="space-tagline">Ready-to-use letters, notes, policies, and forms. Download, adapt, done.</p>';
+  h += (isAdmin() ? '<button class="rm-add-btn" style="margin-top:8px" onclick="openTemplateAdd()">+ Add template</button>' : '');
+  h += '</div>';
+
+  h += '<div class="rm-tabs">' + TEMPLATE_CATS.map(function(c) {
+    var n = c.key === 'all' ? libData.length : libData.filter(function(t){ return t.category === c.key; }).length;
+    if (c.key !== 'all' && !n) return '';
+    return '<button class="rm-tab' + (c.key === libCat ? ' on' : '') + '" onclick="libSetCat(\'' + c.key + '\')">' + c.label + (n ? ' <span class="rm-tab-n">' + n + '</span>' : '') + '</button>';
+  }).join('') + '</div>';
+
+  var items = libCat === 'all' ? libData : libData.filter(function(t){ return t.category === libCat; });
+  if (!items.length) {
+    h += '<div style="padding:28px;border:1px dashed var(--border);border-radius:var(--radius-lg);color:var(--text-secondary);font-size:0.85rem;text-align:center">No templates here yet.</div>';
+    center.innerHTML = h; window.scrollTo(0,0); return;
+  }
+
+  h += '<div class="post-list">';
+  items.forEach(function(t) {
+    var locked = userTierRank() < (TIER_RANK[t.min_tier] || 2);
+    h += '<div class="tpl-row">';
+    h += '<span class="tpl-icon">&#128196;</span>';
+    h += '<div class="post-body">';
+    h += '<div class="post-title">' + esc(t.title);
+    if (t.is_paid) h += '<span class="tpl-tag tpl-paid">$' + ((t.price_cents||0)/100).toFixed(0) + '</span>';
+    else if (t.min_tier === 'full') h += '<span class="tpl-tag">Full</span>';
+    else if (t.min_tier === 'forum') h += '<span class="tpl-tag">Member</span>';
+    h += '</div>';
+    if (t.description) h += '<div class="post-meta">' + esc(t.description) + '</div>';
+    h += '</div>';
+    if (locked) {
+      h += '<button class="tpl-btn locked" onclick="showJoin(\'\')">&#128274; ' + (t.is_paid ? 'Buy' : 'Unlock') + '</button>';
+    } else {
+      h += '<button class="tpl-btn" onclick="downloadTemplate(\'' + t.id + '\')">Download</button>';
+    }
+    h += '</div>';
+  });
+  h += '</div>';
+  center.innerHTML = h; window.scrollTo(0,0);
+}
+
+function libSetCat(k) { libCat = k; renderLibrary(); }
+
+async function downloadTemplate(id) {
+  try {
+    var res = await fetch('/.netlify/functions/template-download', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: S.user ? S.user.email : '', template_id: id })
+    });
+    var data = await res.json();
+    if (data.ok && data.url) { window.open(data.url, '_blank'); }
+    else { alert(data.error || 'Unable to download'); }
+  } catch(e) { alert('Download failed'); }
+}
+
+function openTemplateAdd() {
+  if (!isAdmin()) return;
+  var title = prompt('Template title:'); if (!title) return;
+  var description = prompt('Short description:') || '';
+  var category = prompt('Category: documentation / billing / letters / policies / clinical / operations / general', 'general') || 'general';
+  var min_tier = prompt('Minimum tier to access free: free / forum / full', 'full') || 'full';
+  var file_url = prompt('File URL (downloadable link):') || '';
+  fetch('/.netlify/functions/template-admin', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'add', email: S.user.email, title: title, description: description, category: category.trim().toLowerCase(), min_tier: min_tier.trim().toLowerCase(), file_url: file_url })
+  }).then(function(r){ return r.json(); }).then(function(d){
+    if (d.ok) { libData = null; showLibrary(); } else { alert(d.error || 'Add failed'); }
+  }).catch(function(){ alert('Add failed'); });
+}
+
+// ════════════════════════════════════════
+// MEMBER DIRECTORY
+// ════════════════════════════════════════
+var PRACTICE_LABELS = {
+  solo: 'Solo private practice', group_owner: 'Group practice owner',
+  group_member: 'In a group practice', employed: 'Employed / W2',
+  locums: 'Locums', other: 'Other'
+};
+var dirData = null;
+var dirFilter = 'all';
+
+async function showDirectory() {
+  closeSidebar();
+  S.view = 'directory';
+  clearActive();
+  var side = document.querySelector('.sb-item[data-key="directory"]');
+  if (side) side.classList.add('active');
+  var center = document.getElementById('center');
+  center.innerHTML = '<div class="skel skel-h"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
+  if (dirData === null) {
+    try {
+      var { data, error } = await SB
+        .from('accounts')
+        .select('name, avatar_url, credentials, headline, location, practice_type')
+        .eq('directory_visible', true)
+        .not('practice_type', 'is', null)
+        .order('name', { ascending: true });
+      if (error) throw error;
+      dirData = data || [];
+    } catch(e) { console.error('directory:', e); dirData = []; }
+  }
+  renderDirectory();
+}
+
+function renderDirectory() {
+  var center = document.getElementById('center');
+  var h = '<div class="space-head"><div class="space-accent" style="background:#60a5fa"></div>';
+  h += '<h1>Member Directory</h1>';
+  h += '<p class="space-tagline">Find peers by practice setting. ' + dirData.length + ' members listed.</p>';
+  h += '</div>';
+
+  var filters = [{ key: 'all', label: 'All' }].concat(Object.keys(PRACTICE_LABELS).map(function(k){ return { key: k, label: PRACTICE_LABELS[k] }; }));
+  h += '<div class="rm-tabs">' + filters.map(function(f) {
+    var n = f.key === 'all' ? dirData.length : dirData.filter(function(m){ return m.practice_type === f.key; }).length;
+    if (f.key !== 'all' && !n) return '';
+    return '<button class="rm-tab' + (f.key === dirFilter ? ' on' : '') + '" onclick="dirSetFilter(\'' + f.key + '\')">' + f.label + (n ? ' <span class="rm-tab-n">' + n + '</span>' : '') + '</button>';
+  }).join('') + '</div>';
+
+  var members = dirFilter === 'all' ? dirData : dirData.filter(function(m){ return m.practice_type === dirFilter; });
+  if (!members.length) {
+    h += '<div style="padding:28px;border:1px dashed var(--border);border-radius:var(--radius-lg);color:var(--text-secondary);font-size:0.85rem;text-align:center">No members in this category yet.</div>';
+    center.innerHTML = h; window.scrollTo(0,0); return;
+  }
+
+  h += '<div class="dir-grid">';
+  members.forEach(function(m) {
+    h += '<div class="dir-card">';
+    if (m.avatar_url) h += '<span class="dir-avatar"><img src="' + esc(m.avatar_url) + '" alt="" loading="lazy"></span>';
+    else h += '<span class="dir-avatar dir-initials">' + esc(initials(m.name)) + '</span>';
+    h += '<div class="dir-name">' + esc(m.name || 'Member') + '</div>';
+    if (m.credentials) h += '<div class="dir-creds">' + esc(m.credentials) + '</div>';
+    h += '<div class="dir-ptype">' + esc(PRACTICE_LABELS[m.practice_type] || '') + '</div>';
+    if (m.location) h += '<div class="dir-loc">' + esc(m.location) + '</div>';
+    if (m.headline) h += '<div class="dir-headline">' + esc(m.headline) + '</div>';
+    h += '</div>';
+  });
+  h += '</div>';
+  center.innerHTML = h; window.scrollTo(0,0);
+}
+
+function dirSetFilter(k) { dirFilter = k; renderDirectory(); }
 
 // ════════════════════════════════════════
 // SAVED POSTS (bookmarks)
