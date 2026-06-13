@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Template Upload — Think Beyond Practice</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{--bg:#080e1a;--card:#111d33;--raised:#0d1526;--border:rgba(42,171,184,0.2);--teal:#2aabb8;--text:#e8edf4;--text2:#8da3bd;--head:#f5f9ff;--inverse:#06121a;--radius:10px;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:'DM Sans',sans-serif;line-height:1.6;padding:40px 20px;}
+  .wrap{max-width:720px;margin:0 auto;}
+  h1{font-family:'DM Serif Display',serif;color:var(--head);font-size:1.8rem;margin-bottom:4px;}
+  .sub{color:var(--text2);font-size:0.9rem;margin-bottom:28px;}
+  .gate{max-width:420px;margin:60px auto;background:var(--card);border:1px solid var(--border);border-top:2px solid var(--teal);border-radius:var(--radius);padding:32px;text-align:center;}
+  .gate h2{font-family:'DM Serif Display',serif;color:var(--head);margin-bottom:8px;}
+  .gate p{color:var(--text2);font-size:0.85rem;margin-bottom:18px;}
+  input,select,textarea{width:100%;padding:11px 13px;background:var(--raised);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:0.88rem;font-family:inherit;margin-bottom:12px;}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--teal);}
+  label{display:block;font-size:0.68rem;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:var(--text2);margin-bottom:6px;}
+  .btn{background:var(--teal);color:var(--inverse);border:none;border-radius:6px;padding:12px 22px;font-size:0.88rem;font-weight:700;cursor:pointer;font-family:inherit;}
+  .btn:disabled{opacity:0.5;cursor:not-allowed;}
+  .btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text2);}
+  .drop{border:2px dashed var(--border);border-radius:var(--radius);padding:38px;text-align:center;color:var(--text2);cursor:pointer;transition:all .15s;margin-bottom:18px;background:var(--raised);}
+  .drop.over{border-color:var(--teal);background:rgba(42,171,184,0.06);color:var(--text);}
+  .drop strong{color:var(--teal);}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;margin-bottom:20px;}
+  .row{display:flex;gap:12px;}.row>div{flex:1;}
+  .status{font-size:0.82rem;margin-top:6px;min-height:20px;}
+  .status.ok{color:#4ade80;}.status.err{color:#f87171;}
+  .lib-item{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--raised);border:1px solid var(--border);border-radius:8px;margin-bottom:8px;font-size:0.85rem;}
+  .lib-item .t{flex:1;color:var(--head);}
+  .lib-item .tag{font-size:0.6rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text2);border:1px solid var(--border);border-radius:4px;padding:1px 7px;}
+  .lib-item button{background:transparent;border:none;color:#f87171;cursor:pointer;font-size:1.1rem;}
+  .muted{color:var(--text2);font-size:0.8rem;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Gate -->
+  <div class="gate" id="gate">
+    <h2>Template Upload</h2>
+    <p>Admin access only. Enter your email to continue.</p>
+    <input type="email" id="gate-email" placeholder="you@example.com">
+    <button class="btn" onclick="checkGate()">Continue</button>
+    <div class="status err" id="gate-status"></div>
+  </div>
+
+  <!-- Tool -->
+  <div id="tool" style="display:none">
+    <h1>Template Upload</h1>
+    <div class="sub">Drag a file in, set its details, publish to the member library. Files are stored in your own Supabase Storage.</div>
+
+    <div class="card">
+      <div class="drop" id="drop">
+        <div id="drop-label"><strong>Choose a file</strong> or drag it here<br><span class="muted">PDF, Word, Excel — up to 25MB</span></div>
+        <input type="file" id="file" style="display:none" accept=".pdf,.doc,.docx,.xls,.xlsx,.txt,.rtf">
+      </div>
+
+      <label>Title</label>
+      <input type="text" id="t-title" placeholder="e.g. 90833 Documentation Template">
+
+      <label>Description</label>
+      <textarea id="t-desc" rows="2" placeholder="One line on what this is and when to use it"></textarea>
+
+      <div class="row">
+        <div>
+          <label>Category</label>
+          <select id="t-cat">
+            <option value="documentation">Documentation</option>
+            <option value="billing">Billing &amp; Appeals</option>
+            <option value="letters">Letters</option>
+            <option value="policies">Policies &amp; Consent</option>
+            <option value="clinical">Clinical</option>
+            <option value="operations">Operations</option>
+            <option value="general">General</option>
+          </select>
+        </div>
+        <div>
+          <label>Access tier</label>
+          <select id="t-tier">
+            <option value="full">Full members only</option>
+            <option value="forum">Forum + Full members</option>
+            <option value="free">Everyone (free)</option>
+          </select>
+        </div>
+      </div>
+
+      <button class="btn" id="publish" onclick="publish()" disabled>Publish to library</button>
+      <div class="status" id="status"></div>
+    </div>
+
+    <h1 style="font-size:1.2rem">In the library</h1>
+    <div class="sub">Everything currently published.</div>
+    <div id="lib"></div>
+  </div>
+
+</div>
+
+<script>
+var SB = supabase.createClient('https://ubcrrrapedaxkguxniwv.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InViY3JycmFwZWRheGtndXhuaXd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNjA2MTUsImV4cCI6MjA5MDkzNjYxNX0.CoS_t8EvCsgXJJA1dz4WXYWGsE8OMKEDeaWfsExQ1H0');
+var ADMIN_EMAIL = 'michael@thinkbeyondpsych.com';
+var selectedFile = null;
+var adminEmail = '';
+
+function checkGate(){
+  var e = document.getElementById('gate-email').value.trim().toLowerCase();
+  if (e !== ADMIN_EMAIL) { document.getElementById('gate-status').textContent = 'Not authorized.'; return; }
+  adminEmail = e;
+  try { localStorage.setItem('tbp_verified_email', e); } catch(_){}
+  document.getElementById('gate').style.display='none';
+  document.getElementById('tool').style.display='block';
+  loadLib();
+}
+// auto-pass if already verified in this browser
+try { var ve = localStorage.getItem('tbp_verified_email'); if (ve === ADMIN_EMAIL) { adminEmail = ve; document.getElementById('gate').style.display='none'; document.getElementById('tool').style.display='block'; loadLib(); } } catch(_){}
+
+var drop = document.getElementById('drop'), fileInput = document.getElementById('file');
+drop.onclick = function(){ fileInput.click(); };
+drop.ondragover = function(e){ e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = function(){ drop.classList.remove('over'); };
+drop.ondrop = function(e){ e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); };
+fileInput.onchange = function(){ if (fileInput.files[0]) setFile(fileInput.files[0]); };
+
+function setFile(f){
+  if (f.size > 25*1024*1024) { setStatus('File exceeds 25MB.', true); return; }
+  selectedFile = f;
+  document.getElementById('drop-label').innerHTML = '<strong>'+f.name+'</strong><br><span class="muted">'+(f.size/1024).toFixed(0)+' KB — ready to publish</span>';
+  if (!document.getElementById('t-title').value) document.getElementById('t-title').value = f.name.replace(/\.[^.]+$/,'');
+  document.getElementById('publish').disabled = false;
+}
+function setStatus(m, err){ var s=document.getElementById('status'); s.textContent=m; s.className='status'+(err?' err':' ok'); }
+
+async function publish(){
+  if (!selectedFile) return;
+  var title = document.getElementById('t-title').value.trim();
+  if (!title) { setStatus('Title required.', true); return; }
+  document.getElementById('publish').disabled = true;
+  setStatus('Uploading file…', false);
+  try {
+    var safe = selectedFile.name.replace(/[^a-zA-Z0-9._-]/g,'_');
+    var path = Date.now() + '_' + safe;
+    var up = await SB.storage.from('templates').upload(path, selectedFile, { upsert:false });
+    if (up.error) throw up.error;
+
+    setStatus('Saving to library…', false);
+    var res = await fetch('/.netlify/functions/template-admin', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        action:'add', email:adminEmail, title:title,
+        description: document.getElementById('t-desc').value.trim(),
+        category: document.getElementById('t-cat').value,
+        min_tier: document.getElementById('t-tier').value,
+        storage_path: path
+      })
+    });
+    var data = await res.json();
+    if (!data.ok) throw new Error(data.error||'Save failed');
+    setStatus('Published: '+title, false);
+    // reset
+    selectedFile=null; fileInput.value='';
+    document.getElementById('t-title').value=''; document.getElementById('t-desc').value='';
+    document.getElementById('drop-label').innerHTML='<strong>Choose a file</strong> or drag it here<br><span class="muted">PDF, Word, Excel — up to 25MB</span>';
+    loadLib();
+  } catch(e){ setStatus(e.message||'Upload failed', true); document.getElementById('publish').disabled=false; }
+}
+
+async function loadLib(){
+  try{
+    var r = await SB.from('template_library').select('id,title,category,min_tier').eq('visible',true).order('created_at',{ascending:false});
+    var el = document.getElementById('lib');
+    if (!r.data || !r.data.length){ el.innerHTML='<div class="muted">Nothing published yet.</div>'; return; }
+    el.innerHTML = r.data.map(function(t){
+      return '<div class="lib-item"><span class="t">'+t.title+'</span><span class="tag">'+t.category+'</span><span class="tag">'+t.min_tier+'</span><button onclick="del(\''+t.id+'\')" title="Remove">&times;</button></div>';
+    }).join('');
+  }catch(e){ document.getElementById('lib').innerHTML='<div class="muted">Could not load library.</div>'; }
+}
+
+async function del(id){
+  if (!confirm('Remove this template from the library?')) return;
+  try{
+    await fetch('/.netlify/functions/template-admin', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ action:'remove', email:adminEmail, id:id }) });
+    loadLib();
+  }catch(e){ alert('Remove failed'); }
+}
+</script>
+</body>
+</html>
