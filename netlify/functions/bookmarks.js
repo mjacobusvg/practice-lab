@@ -1,7 +1,7 @@
 // netlify/functions/bookmarks.js
 // Member saved posts: toggle, list, and reorder. Identity is the gate email
 // pre-launch (same posture as roadmap votes); switches to session auth with
-// Supabase Auth. Env vars: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY.
+// Supabase Auth. Env vars: SUPABASE_URL, SUPABASE_SERVICE_KEY.
 
 exports.handler = async function (event) {
   const headers = {
@@ -14,7 +14,7 @@ exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') return { statusCode: 405, headers, body: JSON.stringify({ ok: false, error: 'POST only' }) };
 
   const SUPABASE_URL = process.env.SUPABASE_URL;
-  const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const KEY = process.env.SUPABASE_SERVICE_KEY;
   if (!SUPABASE_URL || !KEY) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'Missing Supabase env vars' }) };
 
   const sbHeaders = {
