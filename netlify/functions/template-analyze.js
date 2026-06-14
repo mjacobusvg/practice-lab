@@ -16,7 +16,11 @@ exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') return { statusCode: 405, headers, body: JSON.stringify({ ok: false, error: 'POST only' }) };
 
   const URL = process.env.SUPABASE_URL, KEY = process.env.SUPABASE_SERVICE_ROLE_KEY, AK = process.env.ANTHROPIC_API_KEY;
-  if (!URL || !KEY || !AK) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'Missing env (need SUPABASE + ANTHROPIC_API_KEY)' }) };
+  var missing = [];
+  if (!URL) missing.push('SUPABASE_URL');
+  if (!KEY) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+  if (!AK) missing.push('ANTHROPIC_API_KEY');
+  if (missing.length) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'Missing env: ' + missing.join(', ') }) };
 
   let p; try { p = JSON.parse(event.body || '{}'); } catch (e) { return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Bad JSON' }) }; }
   const intakeId = String(p.intake_id || '').trim();
