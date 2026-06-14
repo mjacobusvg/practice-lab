@@ -4,7 +4,7 @@
 //
 // Required env vars (Netlify site settings):
 //   SUPABASE_URL                e.g. https://ubcrrrapedaxkguxniwv.supabase.co
-//   SUPABASE_SERVICE_ROLE_KEY   service_role key (never expose client-side)
+//   SUPABASE_SERVICE_KEY   service_role key (never expose client-side)
 
 const ADMIN_EMAILS = ['michael@thinkbeyondpsych.com'];
 const MICHAEL_ACCOUNT_ID = '00000000-0000-0000-0000-000000000001';
@@ -35,8 +35,8 @@ async function sb(path, method, body, env) {
   const res = await fetch(env.SUPABASE_URL + '/rest/v1/' + path, {
     method,
     headers: {
-      'apikey': env.SUPABASE_SERVICE_ROLE_KEY,
-      'Authorization': 'Bearer ' + env.SUPABASE_SERVICE_ROLE_KEY,
+      'apikey': env.SUPABASE_SERVICE_KEY,
+      'Authorization': 'Bearer ' + env.SUPABASE_SERVICE_KEY,
       'Content-Type': 'application/json',
       'Prefer': 'return=representation'
     },
@@ -61,9 +61,9 @@ exports.handler = async function (event) {
 
   const env = {
     SUPABASE_URL: process.env.SUPABASE_URL,
-    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY
+    SUPABASE_SERVICE_KEY: process.env.SUPABASE_SERVICE_KEY
   };
-  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) {
     return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'Missing Supabase env vars' }) };
   }
 
