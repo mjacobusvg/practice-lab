@@ -748,6 +748,7 @@ function runLookup(){
   card+='<h5>Switching in from another LAI</h5>'+line('',d.switchIn);
   card+='<h5>Pearls</h5>';
   d.pearls.forEach(function(x){ card+='<p>• '+esc(x.t)+' '+tagHtml(x.s)+'</p>'; });
+  card+=depotMonitorHtml(m,p,d);
   card+='</div>';
   h+='<div class="out-block">'+card+'</div>';
   // chart blurb
@@ -760,6 +761,30 @@ function runLookup(){
 }
 function stripTrail(t){ t=(t||'').trim(); if(t&&t.slice(-1)!=='.') t+='.'; return t; }
 function piNote(){ return '<p class="pi-note">Deterministic reference. Verify against current package insert before ordering or administering.</p>'; }
+
+// Bounded depot-specific monitoring — ONLY what is unique to the injectable route.
+// Ongoing metabolic / lab / prolactin / ECG monitoring of the molecule lives in the
+// Monitoring Protocol Reference and is intentionally not duplicated here.
+function depotMonitorHtml(m, p, d){
+  var isSC = d.route.indexOf('SC')>=0;
+  var glutealOnly = d.route.indexOf('gluteal')>=0 && d.route.indexOf('deltoid')<0 && !isSC;
+  var h='<h5>Depot-specific monitoring</h5>';
+  // Shared lines (all depots)
+  h+='<p>• Assess injection-site response and administration tolerance at each injection. '+tagHtml('T')+'</p>';
+  h+='<p>• Monitor for symptom recurrence during delayed-onset, cross-coverage, missed-dose, or reinitiation windows. '+tagHtml('T')+'</p>';
+  // Conditional product-specific add-ons
+  if(p==='relprevv'){
+    h+='<p>• Product-specific observation: Zyprexa Relprevv requires post-injection monitoring under the REMS workflow, including the 3-hour observation requirement and discharge/escort restrictions. '+tagHtml('L')+'</p>';
+  }
+  if(glutealOnly){
+    h+='<p>• Administration-site note: this product is gluteal only; confirm appropriate site, needle selection, and administration technique. '+tagHtml('L')+'</p>';
+  } else if(isSC){
+    h+='<p>• Administration-site note: assess the subcutaneous injection sites for nodules, induration, pain, or local reactions that could affect tolerability or absorption. '+tagHtml('L')+'</p>';
+  }
+  // Handoff to the Monitoring Protocol Reference (intentionally not duplicated here)
+  h+='<p class="sub" style="margin-top:6px">For ongoing metabolic, prolactin, ECG, and lab monitoring, use the Monitoring Protocol Reference for '+esc(d.name.split(' ')[0])+'. That schedule is the same regardless of oral or injectable route, so it is not duplicated here.</p>';
+  return h;
+}
 
 // ══════════════════════════════════════════════════════════════
 // MODE 2: oral -> LAI start
@@ -815,10 +840,17 @@ function runStart(){
   if(ovFixed){
     cp+='6. During the overlap: continue the stable oral dose through the full '+ovFixed.days+'-day overlap, then stop. Tapering early risks a coverage gap; continuing past the overlap window adds avoidable adverse-effect burden. ['+(ovFixed.s||'T')+']\n';
   } else if(ov==='option'){
-    cp+='6. Oral coverage depends on the initiation option chosen in step 2: the 1-day start uses a single oral dose on day 1, while the extended option uses about 14 to 21 days of oral medication. Follow the selected pathway exactly; do not substitute a different overlap. [L]\n';
+    var extDays = (ovKey==='aristada') ? '21 days' : '14 days';
+    var oneDayDesc = (ovKey==='aristada')
+      ? 'the Initio start uses a single Aristada Initio injection plus one 30 mg oral aripiprazole dose on day 1'
+      : 'the 1-day start uses the injection(s) plus a single oral dose on day 1';
+    cp+='6. Oral coverage depends on the initiation option chosen in step 2: '+oneDayDesc+', while the extended option uses '+extDays+' of oral medication. Follow the selected pathway exactly; do not substitute a different overlap. [L]\n';
   }
   // 'none' products add no overlap line — the "Oral overlap: None" in step 3 already states it.
-  cp+=(ovFixed||ov==='option'?'7':'6')+'. Monitor: delayed depot onset; EPS/akathisia, sedation, orthostasis, metabolic parameters per agent; relapse during any cross-coverage.';
+  var monLine = (m==='risperidone'||m==='paliperidone')
+    ? 'Monitor: delayed depot onset; EPS/akathisia, prolactin-related effects, sedation/orthostasis, weight and metabolic parameters, injection-site reactions, and relapse during any cross-coverage.'
+    : 'Monitor: delayed depot onset; EPS/akathisia, sedation, orthostasis, metabolic parameters per agent; relapse during any cross-coverage.';
+  cp+=(ovFixed||ov==='option'?'7':'6')+'. '+monLine;
   var cpHtml=esc(cp);
   if(oral){ cpHtml='Current oral therapy: '+esc(oral)+'\n\n'+cpHtml; }
 
@@ -867,9 +899,10 @@ function runStart(){
   if(ov==='none'){
     pf+='With this medication, the start is designed so you do not usually need to keep taking the oral version once the injection begins, unless your prescriber gives you a specific reason. ';
   } else if(ovFixed){
-    pf+='You will keep taking the oral medication for about '+ovFixed.days+' days while the injection reaches a steady enough level, and then stop. This is because the injection releases slowly at first. ';
+    pf+='You will keep taking the oral medication for about '+ovFixed.days+' days while the first injection begins releasing enough medication, and then stop as directed. This is because the injection releases slowly at first. ';
   } else if(ov==='option'){
-    pf+='Depending on the start your prescriber chooses, you may receive more than one injection (and a single oral dose) on the first day, or a single injection plus about two weeks of oral medication. Follow the specific plan they give you. ';
+    var pfExt = (ovKey==='aristada') ? 'about three weeks' : 'about two weeks';
+    pf+='Depending on the start your prescriber chooses, you may receive more than one injection (and a single oral dose) on the first day, or a single injection plus '+pfExt+' of oral medication. Follow the specific plan they give you. ';
   }
   pf+='Keep your injection appointments — the medication is designed to last between visits, and missing a dose can let symptoms return. '+
     'Tell your prescriber about restlessness, stiffness, muscle spasms, or feeling unusually sedated.';
@@ -877,11 +910,17 @@ function runStart(){
 
   // Chart blurb — gated overlap clause + corrected labeling-verification language
   var ovClause;
-  if(ov==='none'){ ovClause='No routine oral overlap is required for standard initiation; prior oral therapy may be discontinued at initiation or tapered briefly if clinically indicated, with monitoring for additive adverse effects or symptom recurrence.'; }
+  if(ov==='none'){
+    ovClause='No routine oral overlap or supplemental oral medication is required for standard initiation; any brief continuation of prior oral therapy would be a patient-specific clinical exception and should be documented, with monitoring for additive adverse effects or symptom recurrence.';
+  }
   else if(ovFixed){ ovClause='Oral overlap planned for approximately '+ovFixed.days+' days, then discontinue.'; }
   else { ovClause='Initiation pathway per the protocol above (1-day vs extended-oral option); selected pathway to be documented.'; }
+  // Tolerability clause reflects the dropdown rather than restating the generic instruction.
+  var tolClause = (tol==='yes')
+    ? 'Oral tolerability for the target molecule reviewed/established. '
+    : 'Plan is to establish oral tolerability for the target molecule before the first injection. ';
   var cn='Reviewed initiation of '+d.name+' from '+(oral?oral:'current oral antipsychotic')+'. '+
-    'Confirmed plan: '+stripTrail(d.oralTrial.t)+' '+stripTrail(d.init.t)+' '+ovClause+' '+
+    tolClause+'Confirmed plan: '+stripTrail(d.init.t)+' '+ovClause+' '+
     'Counseled on delayed depot onset, adverse effects, and the importance of maintaining the injection schedule. '+
     'Current product labeling should be verified prior to ordering or administering.';
 
@@ -892,6 +931,7 @@ function runStart(){
   h+=outBlock('Clinician protocol — '+esc(d.name),'st-cp',cpHtml);
   if(injPearl){ h+='<div class="caveat" style="border-left-color:var(--teal);background:rgba(42,171,184,0.08)"><strong>Injection pearl (needle/site)</strong><br>'+esc(injPearl)+' '+tagHtml('T')+'</div>'; }
   if(sched){ h+=outBlock('Schedule','st-sched',esc(sched)); }
+  h+='<div class="out-block"><div class="refcard">'+depotMonitorHtml(m,p,d)+'</div></div>';
   h+=outBlock('Patient-facing explanation','st-pf',esc(pf),true);
   h+=outBlock('Chart blurb','st-cn',esc(cn),true);
   h+=piNote();
