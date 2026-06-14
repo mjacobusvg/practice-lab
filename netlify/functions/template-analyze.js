@@ -1,7 +1,7 @@
 // netlify/functions/template-analyze.js
 // Takes an intake row's extracted text, asks Claude to propose title/description/
 // category/tier, and fuzzy-matches against the 38-post manifest.
-// Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, ANTHROPIC_API_KEY
+// Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, ANTHROPIC_API_KEY
 
 const VALID_CATS = ['documentation', 'billing', 'letters', 'policies', 'clinical', 'operations', 'general'];
 
@@ -15,10 +15,10 @@ exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers, body: '' };
   if (event.httpMethod !== 'POST') return { statusCode: 405, headers, body: JSON.stringify({ ok: false, error: 'POST only' }) };
 
-  const URL = process.env.SUPABASE_URL, KEY = process.env.SUPABASE_SERVICE_ROLE_KEY, AK = process.env.ANTHROPIC_API_KEY;
+  const URL = process.env.SUPABASE_URL, KEY = process.env.SUPABASE_SERVICE_KEY, AK = process.env.ANTHROPIC_API_KEY;
   var missing = [];
   if (!URL) missing.push('SUPABASE_URL');
-  if (!KEY) missing.push('SUPABASE_SERVICE_ROLE_KEY');
+  if (!KEY) missing.push('SUPABASE_SERVICE_KEY');
   if (!AK) missing.push('ANTHROPIC_API_KEY');
   if (missing.length) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'Missing env: ' + missing.join(', ') }) };
 
