@@ -2,7 +2,7 @@
 // Returns a download URL for a template only if the member's tier qualifies.
 // Files in the private 'templates' bucket are served via short-lived signed URLs;
 // external file_url templates return the link directly.
-// Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+// Env: SUPABASE_URL, SUPABASE_SERVICE_KEY
 
 const TIER_RANK = { free: 0, forum: 1, full: 2 };
 
@@ -16,7 +16,7 @@ exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers, body: '' };
   if (event.httpMethod !== 'POST') return { statusCode: 405, headers, body: JSON.stringify({ ok: false, error: 'POST only' }) };
 
-  const URL = process.env.SUPABASE_URL, KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const URL = process.env.SUPABASE_URL, KEY = process.env.SUPABASE_SERVICE_KEY;
   if (!URL || !KEY) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'Missing env' }) };
 
   let p; try { p = JSON.parse(event.body || '{}'); } catch (e) { return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Bad JSON' }) }; }
