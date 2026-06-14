@@ -4,7 +4,7 @@
 //
 // Required env vars (same as create-post.js):
 //   SUPABASE_URL
-//   SUPABASE_SERVICE_ROLE_KEY
+//   SUPABASE_SERVICE_KEY
 //
 // Notification wiring: to get an email per request, copy the SES send block
 // from access-request.js into the marked spot below. Insert works without it;
@@ -23,7 +23,7 @@ exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') return { statusCode: 405, headers, body: JSON.stringify({ ok: false, error: 'POST only' }) };
 
   const SUPABASE_URL = process.env.SUPABASE_URL;
-  const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const KEY = process.env.SUPABASE_SERVICE_KEY;
   if (!SUPABASE_URL || !KEY) {
     return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'Missing Supabase env vars' }) };
   }
