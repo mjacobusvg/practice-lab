@@ -120,6 +120,10 @@ input:focus,select:focus{outline:none;border-color:var(--teal)}
       <div class="mb-title">LAI → LAI switch</div>
       <div class="mb-sub">Same-molecule rules; cross-family framework</div>
     </button>
+    <button class="modebtn" data-mode="cyp" onclick="setMode('cyp')" style="grid-column:1 / -1">
+      <div class="mb-title">CYP dose check (aripiprazole)</div>
+      <div class="mb-sub">Label-derived dose modification for CYP interactions / metabolizer status</div>
+    </button>
   </div>
 
   <!-- SAFETY SCREEN (shared; non-blocking) -->
@@ -177,6 +181,13 @@ input:focus,select:focus{outline:none;border-color:var(--teal)}
           <select id="st-tol"><option value="yes">Yes</option><option value="no">No / unknown</option></select>
         </div>
       </div>
+      <div class="field"><label>Planned first injection date (optional)</label><input type="date" id="st-date">
+        <div class="field-hint">If entered, the plan includes key follow-up dates.</div>
+      </div>
+      <div class="field"><label>Body habitus / injection-site concern (optional)</label>
+        <select id="st-habitus"><option value="">Not specified</option><option value="obese">Obese / high BMI</option><option value="cachectic">Cachectic / low muscle mass</option></select>
+        <div class="field-hint">Affects needle length and site selection, not dose. LAI antipsychotics are not weight-dosed.</div>
+      </div>
       <button class="btn" onclick="runStart()">Build start plan</button>
     </div>
   </div>
@@ -230,6 +241,47 @@ input:focus,select:focus{outline:none;border-color:var(--teal)}
     </div>
   </div>
 
+  <!-- MODE: CYP -->
+  <div class="mode-form" id="form-cyp">
+    <div class="step">
+      <h3>CYP dose check — aripiprazole LAIs</h3>
+      <div class="step-sub">Label-derived dose modification for CYP2D6 poor metabolizers and strong CYP inhibitors/inducers. Aripiprazole products only. Maintenance/stabilized dosing; initiation routes to the PI.</div>
+      <div class="form-row">
+        <div class="field"><label>Product</label>
+          <select id="cy-prod" onchange="cyDoses()">
+            <option value="">Select...</option>
+            <option value="maintena">Abilify Maintena</option>
+            <option value="asimtufii">Abilify Asimtufii</option>
+            <option value="aristada">Aristada</option>
+            <option value="initio">Aristada Initio</option>
+          </select>
+        </div>
+        <div class="field"><label>Phase</label>
+          <select id="cy-phase"><option value="maint">Stabilized / maintenance</option><option value="init">Initiation</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field"><label>Current dose</label>
+          <select id="cy-dose"><option value="">Select product first</option></select>
+        </div>
+        <div class="field"><label>Duration of interaction</label>
+          <select id="cy-dur"><option value="long">More than 14 days / &gt;2 weeks</option><option value="short">14 days or less / &lt;2 weeks</option></select>
+        </div>
+      </div>
+      <div class="field"><label>CYP scenario</label>
+        <select id="cy-scen">
+          <option value="pm">CYP2D6 poor metabolizer (no strong inhibitor)</option>
+          <option value="inh2d6">Strong CYP2D6 inhibitor</option>
+          <option value="inh3a4">Strong CYP3A4 inhibitor</option>
+          <option value="inhboth">Strong CYP2D6 + strong CYP3A4 inhibitors</option>
+          <option value="pm3a4">CYP2D6 poor metabolizer + strong CYP3A4 inhibitor</option>
+          <option value="inducer">Strong CYP3A4 inducer</option>
+        </select>
+      </div>
+      <button class="btn" onclick="runCyp()">Check dose modification</button>
+    </div>
+  </div>
+
   <div class="output" id="output"></div>
 
   <div class="scope">Part of <strong>Practice Manager</strong> — Think Beyond Practice. Deterministic reference; nothing is stored.</div>
@@ -249,18 +301,18 @@ var LAI = {
       maintenance:{t:'39–234 mg once monthly, deltoid or gluteal. ±7-day window is the exception, not the rule.', s:'L'},
       conv:{t:'Initiation is the fixed 234/156 regimen regardless of prior oral dose; maintenance strength is selected by response (39, 78, 117, 156, 234 mg).', s:'L'},
       missedInit:[
-        {w:'< 4 weeks since first injection', a:'Give 156 mg (deltoid) as soon as possible, then resume monthly.', s:'L'},
-        {w:'4–7 weeks since first injection', a:'Give 156 mg (deltoid) ASAP, then 156 mg one week later, then resume monthly.', s:'L'},
-        {w:'≥ 7 weeks since first injection', a:'Restart initiation: 234 mg day 1, 156 mg one week later (deltoid).', s:'L'}
+        {w:'< 4 weeks since first injection', a:'Give 156 mg (deltoid) as soon as possible; give a third dose of 117 mg (deltoid or gluteal) about 5 weeks after the first injection, then resume monthly.', s:'L', lo:0, hi:4, z:'safe'},
+        {w:'4–7 weeks since first injection', a:'Give 156 mg (deltoid) ASAP, then a second 156 mg (deltoid) one week later, then resume the monthly maintenance dose. (Both catch-up injections are 156 mg; the maintenance-dose figure is separate.)', s:'L', lo:4, hi:7, z:'caution'},
+        {w:'≥ 7 weeks since first injection', a:'Restart initiation: 234 mg day 1, 156 mg one week later (deltoid).', s:'L', lo:7, hi:999, z:'restart'}
       ],
       missedMaint:[
-        {w:'4–6 weeks since last injection', a:'Resume the previously stabilized dose ASAP, then continue monthly.', s:'L'},
-        {w:'> 6 weeks to 6 months', a:'Reinitiate with two deltoid injections of the stabilized dose one week apart, then monthly. Exception: if stabilized on 234 mg, the first two doses are 156 mg.', s:'L'},
-        {w:'≥ 6 months', a:'Restart full initiation: 234 mg day 1, 156 mg one week later (deltoid).', s:'L'}
+        {w:'4–6 weeks since last injection', a:'Resume the previously stabilized dose ASAP, then continue monthly.', s:'L', lo:0, hi:6, z:'safe'},
+        {w:'> 6 weeks to 6 months', a:'Reinitiate with two deltoid injections of the stabilized dose one week apart, then monthly. Exception: if stabilized on 234 mg, the first two doses are 156 mg.', s:'L', lo:6, hi:26, z:'caution'},
+        {w:'≥ 6 months', a:'Restart full initiation: 234 mg day 1, 156 mg one week later (deltoid).', s:'L', lo:26, hi:999, z:'restart'}
       ],
       renal:{t:'Max 156 mg monthly in mild impairment (CrCl 50–<80). Not recommended below CrCl 50.', s:'L'},
       switchIn:{t:'When switching from another LAI at steady state, start Sustenna in place of the next scheduled injection; the 234/156 initiation is not required.', s:'L'},
-      pearls:[{t:'Thin-wall needles are supplied in the kit; do not substitute standard needles.', s:'T'},{t:'Deltoid initiation is required for adequate absorption.', s:'T'}]
+      pearls:[{t:'Thin-wall needles are supplied in the kit; do not substitute standard needles.', s:'T'},{t:'Deltoid initiation is required for adequate absorption.', s:'T'},{t:'Needle length is weight-based: deltoid uses a 1-inch (23-gauge) needle for patients under 90 kg and a 1½-inch (22-gauge) needle for patients 90 kg or more; gluteal uses the 1½-inch (22-gauge) needle regardless of weight.', s:'L'}]
     },
     trinza:{ name:'Invega Trinza', interval:'Every 3 months', route:'IM (deltoid or gluteal)',
       oralTrial:{t:'Not started de novo. Requires prior stabilization on Sustenna.', s:'L'},
@@ -270,9 +322,9 @@ var LAI = {
       conv:{t:'3.5× the established monthly Sustenna dose. Cannot be started directly.', s:'L'},
       missedInit:[],
       missedMaint:[
-        {w:'Up to 3.5 months since last dose', a:'Give the scheduled Trinza dose.', s:'L'},
-        {w:'> 3.5 to 4 months', a:'Give the scheduled Trinza dose as soon as possible.', s:'L'},
-        {w:'> 4 months', a:'Restart Sustenna (monthly) before returning to Trinza; re-establish per PI.', s:'L'}
+        {w:'Up to 3.5 months since last dose', a:'Give the scheduled Trinza dose.', s:'L', lo:0, hi:15.2, z:'safe'},
+        {w:'> 3.5 to 4 months', a:'Give the scheduled Trinza dose as soon as possible.', s:'L', lo:15.2, hi:17.4, z:'caution'},
+        {w:'> 4 months', a:'Restart Sustenna (monthly) before returning to Trinza; re-establish per PI.', s:'L', lo:17.4, hi:999, z:'restart'}
       ],
       renal:{t:'Not recommended below CrCl 50. In mild impairment, stabilize on Sustenna first.', s:'L'},
       switchIn:{t:'Reached only via Sustenna. Trinza→Sustenna: start Sustenna 3 months after the last Trinza dose at the 3.5-fold lower dose.', s:'L'},
@@ -285,7 +337,7 @@ var LAI = {
       maintenance:{t:'1,092 mg or 1,560 mg every 6 months.', s:'L'},
       conv:{t:'Based on established Sustenna/Trinza dose. Cannot be started directly.', s:'L'},
       missedInit:[],
-      missedMaint:[{w:'Outside the q6-month window', a:'Use the label re-initiation regimen (reintroduce Sustenna, then re-establish). Verify PI for the exact ladder.', s:'L'}],
+      missedMaint:[{w:'Outside the q6-month window', a:'Use the label re-initiation regimen (reintroduce Sustenna, then re-establish). Verify PI for the exact ladder.', s:'L', lo:0, hi:999, z:'caution'}],
       renal:{t:'Not recommended below CrCl 50.', s:'L'},
       switchIn:{t:'Reached only via Sustenna or Trinza.', s:'L'},
       pearls:[{t:'Reserve for patients already very stable on paliperidone palmitate.', s:'T'},{t:'Cannot start Hafyera directly.', s:'L'}]
@@ -300,8 +352,8 @@ var LAI = {
       conv:{t:'No fixed oral→depot mg conversion table; start 25 mg q2wk (12.5 mg may suit some), titrate by response with 3-week oral overlap.', s:'L'},
       missedInit:[],
       missedMaint:[
-        {w:'< 6 weeks since last injection', a:'Give the next injection as soon as possible and continue the q2-week schedule.', s:'T'},
-        {w:'≥ 6 weeks', a:'Reinitiate with oral antipsychotic overlap for 3 weeks. Verify PI.', s:'T'}
+        {w:'< 6 weeks since last injection', a:'Give the next injection as soon as possible and continue the q2-week schedule.', s:'T', lo:0, hi:6, z:'safe'},
+        {w:'≥ 6 weeks', a:'Reinitiate with oral antipsychotic overlap for 3 weeks. Verify PI.', s:'T', lo:6, hi:999, z:'caution'}
       ],
       renal:{t:'Titrate oral risperidone to a tolerated dose (≥2 mg/day) before initiating.', s:'L'},
       switchIn:{t:'From another LAI: begin Consta in place of the next scheduled injection with the 3-week oral overlap.', s:'T'},
@@ -314,19 +366,19 @@ var LAI = {
       maintenance:{t:'90 mg or 120 mg once monthly. Do not give more than one dose per month.', s:'L'},
       conv:{t:'90 mg ≈ oral risperidone 3 mg/day; 120 mg ≈ 4 mg/day. Patients stable below 3 or above 4 mg/day may not be candidates.', s:'L'},
       missedInit:[],
-      missedMaint:[{w:'Any missed dose', a:'Administer the next Perseris injection as soon as possible.', s:'L'}],
+      missedMaint:[{w:'Any missed dose', a:'Administer the next Perseris injection as soon as possible.', s:'L', lo:0, hi:999, z:'safe'}],
       renal:{t:'Use the underlying risperidone cautions; establish oral tolerability first.', s:'L'},
       switchIn:{t:'Establish oral risperidone tolerability, then start one day after last oral.', s:'L'},
       pearls:[{t:'Subcutaneous only — abdomen or upper arm.', s:'L'}]
     },
     uzedy:{ name:'Uzedy', interval:'Monthly or every 2 months', route:'SC (abdomen or upper arm)',
       oralTrial:{t:'Establish tolerability with oral risperidone before initiating.', s:'L'},
-      init:{t:'Initiate the day after the last oral dose. Monthly: 50, 75, 100, or 125 mg. Every 2 months: 100, 150, 200, or 250 mg. Select dose per label Table 1 by oral risperidone dose.', s:'L'},
+      init:{t:'Initiate the day after the last oral dose. Monthly: 50, 75, 100, or 125 mg. Every 2 months: 100, 150, 200, or 250 mg. Select the dose from current PI Table 1 by the oral risperidone dose; do not approximate from memory.', s:'L'},
       overlap:{t:'No loading dose and no supplemental oral risperidone when switching.', s:'L'},
       maintenance:{t:'Monthly 50–125 mg or every-2-months 100–250 mg per the conversion table.', s:'L'},
-      conv:{t:'Oral-to-Uzedy conversion is per label Table 1 (e.g. recommended 50 mg monthly / 100 mg q2mo for the standard oral dose). Verify the table for the specific oral dose.', s:'L'},
+      conv:{t:'Oral risperidone to Uzedy conversion is per current PI Table 1, which maps the oral dose to a specific monthly or every-2-month strength. Select from the label table; do not approximate from memory.', s:'L'},
       missedInit:[],
-      missedMaint:[{w:'Missed dose', a:'Administer as soon as possible; verify PI for interval-specific guidance.', s:'L'}],
+      missedMaint:[{w:'Missed dose', a:'Administer as soon as possible; verify PI for interval-specific guidance.', s:'L', lo:0, hi:999, z:'safe'}],
       renal:{t:'In renal or hepatic impairment, titrate oral risperidone to ≥2 mg/day first, then Uzedy 50 mg monthly.', s:'L'},
       switchIn:{t:'From twice-monthly IM risperidone (Consta): start Uzedy monthly at least 5 weeks after the last IM dose, matching the prior dose per label table.', s:'L'},
       pearls:[{t:'Subcutaneous only; gentle flick to clear bubbles.', s:'T'}]
@@ -338,7 +390,7 @@ var LAI = {
       maintenance:{t:'25–50 mg every 2 weeks. Maximum 50 mg every 2 weeks.', s:'L'},
       conv:{t:'Strengths 12.5/25/37.5/50 mg; start 25 mg with 7-day overlap.', s:'L'},
       missedInit:[],
-      missedMaint:[{w:'Missed dose', a:'Give as soon as possible; verify PI.', s:'T'}],
+      missedMaint:[{w:'Missed dose', a:'Give as soon as possible; verify PI.', s:'T', lo:0, hi:999, z:'safe'}],
       renal:{t:'Titrate oral risperidone to ≥2 mg first; a 12.5 mg start may be appropriate.', s:'L'},
       switchIn:{t:'From Consta: same dose; give the first Rykindo 4 weeks (no later than 5 weeks) after the last Consta dose.', s:'L'},
       pearls:[{t:'Shorter oral overlap than Consta (7 days vs 3 weeks).', s:'T'}]
@@ -347,16 +399,16 @@ var LAI = {
   aripiprazole: { label:'Aripiprazole', products:{
     maintena:{ name:'Abilify Maintena', interval:'Monthly', route:'IM (deltoid or gluteal)',
       oralTrial:{t:'Establish tolerability with oral aripiprazole before initiating; full tolerability may take up to 2 weeks.', s:'L'},
-      init:{t:'400 mg IM monthly (may start 300 mg). Continue oral aripiprazole (or current antipsychotic) for 14 consecutive days after the first injection.', s:'L'},
-      overlap:{t:'14 days of oral overlap after the first injection.', s:'L'},
+      init:{t:'Two initiation options. (a) 14-day: one 400 mg IM injection (may use 300 mg) plus 14 consecutive days of oral aripiprazole or the current oral antipsychotic. (b) 1-day: two separate 400 mg IM injections at two different sites plus a single 20 mg oral aripiprazole dose on day 1.', s:'L'},
+      overlap:{t:'14-day option: oral overlap for 14 days. 1-day option: a single 20 mg oral aripiprazole dose with the two injections, no further overlap.', s:'L'},
       maintenance:{t:'300–400 mg monthly; no sooner than 26 days between injections.', s:'L'},
       conv:{t:'No mg-for-mg oral conversion; start 400 mg (300 mg option) with 14-day overlap.', s:'L'},
       missedInit:[],
-      missedMaint:[
-        {w:'< 5 weeks since last injection', a:'Give the dose as soon as possible.', s:'T'},
-        {w:'5–6 weeks', a:'Give ASAP with 14 days of oral overlap.', s:'T'},
-        {w:'> 6 weeks', a:'Restart with initiation plus 14-day overlap. Verify PI.', s:'T'}
-      ],
+      missedMaint:[],
+      missedComplex:{ kind:'phase', intro:'Abilify Maintena missed-dose handling depends on how many doses the patient has already received. Match the dose number to the row and the elapsed time, then act as shown. Verify against PI.', cols:['Dose number','Give injection ASAP if','Restart 14-day oral overlap if'], rows:[
+        ['2nd or 3rd dose missed','> 4 and < 5 weeks since last','> 5 weeks since last'],
+        ['4th or later dose missed','> 4 and < 6 weeks since last','> 6 weeks since last']
+      ], s:'L' },
       renal:{t:'No specific renal adjustment; standard aripiprazole cautions.', s:'T'},
       switchIn:{t:'From another LAI: begin in place of the next scheduled injection with 14-day oral overlap.', s:'T'},
       pearls:[{t:'On a strong CYP3A4 inhibitor AND CYP2D6 inhibitor for >14 days, reduce 400 mg→200 mg (300→160). Poor 2D6 metabolizers also need reduction.', s:'L'}]
@@ -368,10 +420,13 @@ var LAI = {
       maintenance:{t:'441, 662, or 882 mg monthly; 882 mg every 6 weeks; 1,064 mg every 8 weeks. Do not give earlier than 14 days after the previous injection.', s:'L'},
       conv:{t:'From stable oral aripiprazole: 10 mg/day→441 mg monthly; 15 mg/day→662 mg monthly (or 882 q6wk / 1,064 q8wk); 20 mg/day and above→882 mg monthly.', s:'L'},
       missedInit:[],
-      missedMaint:[
-        {w:'Within standard interval grace', a:'Give as soon as possible.', s:'T'},
-        {w:'Beyond grace window', a:'Re-establish with Initio or oral overlap per PI.', s:'T'}
-      ],
+      missedMaint:[],
+      missedComplex:{ kind:'dose', intro:'Aristada missed-dose handling depends on the last dose strength. Match the patient\u2019s last Aristada dose to the row and the elapsed time to the column, then supplement oral aripiprazole as shown. Verify against PI Table 1.', cols:['Last dose','No oral supplement','+7 days oral','+21 days oral'], rows:[
+        ['441 mg','≤ 6 weeks','> 6 to ≤ 7 weeks','> 7 weeks'],
+        ['662 mg','≤ 8 weeks','> 8 to ≤ 12 weeks','> 12 weeks'],
+        ['882 mg','≤ 8 weeks','> 8 to ≤ 12 weeks','> 12 weeks'],
+        ['1064 mg','≤ 10 weeks','> 10 to ≤ 12 weeks','> 12 weeks']
+      ], s:'L' },
       renal:{t:'No specific renal adjustment; standard aripiprazole cautions.', s:'T'},
       switchIn:{t:'Aristada Initio is a one-time initiation dose only — not for repeated dosing.', s:'L'},
       pearls:[{t:'Initio enables a same-day start without 21-day oral overlap.', s:'T'}]
@@ -383,7 +438,11 @@ var LAI = {
       maintenance:{t:'960 mg every 2 months (not more often than every 8 weeks). 720 mg is a reduction option for adverse effects.', s:'L'},
       conv:{t:'From Abilify Maintena 400 mg monthly: give Asimtufii 960 mg in place of the next scheduled Maintena dose.', s:'L'},
       missedInit:[],
-      missedMaint:[{w:'> 8 to 14 weeks since last injection', a:'Restart concomitant oral aripiprazole for 14 days with the next injection.', s:'L'}],
+      missedMaint:[
+        {w:'≤ 8 weeks (within the q2mo window)', a:'Within the expected interval (±2-week window around the 2-month timepoint) — continue the schedule.', s:'L', lo:0, hi:8, z:'safe'},
+        {w:'> 8 to < 14 weeks', a:'Administer the next Asimtufii dose as soon as possible and resume the every-2-month schedule.', s:'L', lo:8, hi:14, z:'caution'},
+        {w:'≥ 14 weeks', a:'Restart with either the 1-day or the 14-day initiation.', s:'L', lo:14, hi:999, z:'restart'}
+      ],
       renal:{t:'No specific renal adjustment; standard aripiprazole cautions.', s:'T'},
       switchIn:{t:'Maintena 400 mg → Asimtufii 960 mg in place of the next scheduled dose.', s:'L'},
       pearls:[{t:'Same CYP reduction logic as Maintena for strong 3A4 + 2D6 inhibition >14 days.', s:'L'}]
@@ -398,7 +457,7 @@ var LAI = {
       maintenance:{t:'Maximum 300 mg every 2 weeks or 405 mg every 4 weeks. Doses above these have not been evaluated.', s:'L'},
       conv:{t:'Label Table 1 — first 8 weeks then maintenance:\n• Target oral 10 mg/day: first 8 weeks 210 mg/2wk or 405 mg/4wk → then maintenance 150 mg/2wk or 300 mg/4wk.\n• Target oral 15 mg/day: first 8 weeks 300 mg/2wk → then maintenance 210 mg/2wk or 405 mg/4wk.\n• Target oral 20 mg/day: 300 mg/2wk (initiation and maintenance).', s:'L'},
       missedInit:[],
-      missedMaint:[{w:'Missed dose', a:'Give as soon as possible and resume the schedule. With a long gap and emerging relapse, use an oral bridge or inpatient management.', s:'T'}],
+      missedMaint:[{w:'Missed dose', a:'Give as soon as possible and resume the schedule. With a long gap and emerging relapse, use an oral bridge or inpatient management.', s:'T', lo:0, hi:999, z:'safe'}],
       renal:{t:'Standard olanzapine cautions; no fixed renal table.', s:'T'},
       switchIn:{t:'Establish oral olanzapine tolerability first; then dose per Table 1.', s:'L'},
       pearls:[{t:'High metabolic burden — baseline and periodic metabolic monitoring.', s:'T'},{t:'Restricted distribution program; not all sites can administer.', s:'L'}]
@@ -413,8 +472,8 @@ var LAI = {
       conv:{t:'For adults under 65 stabilized on ≤10 mg/day oral with normal hepatic function: 10–15× the oral daily dose monthly. For those stabilized on >10 mg/day: 10–20× the oral daily dose. Example: oral 5 mg/day → ~50–75 mg monthly; oral 10 mg/day → ~100–150 mg monthly (first dose capped at 100 mg, balance 3–7 days later).', s:'L'},
       missedInit:[],
       missedMaint:[
-        {w:'≤ 6 weeks since last injection', a:'Give as soon as possible and resume the schedule.', s:'T'},
-        {w:'6–8 weeks', a:'Consider oral bridge or a split reload. Verify PI.', s:'T'}
+        {w:'≤ 6 weeks since last injection', a:'Give as soon as possible and resume the schedule.', s:'T', lo:0, hi:6, z:'safe'},
+        {w:'6–8 weeks', a:'Consider oral bridge or a split reload. Verify PI.', s:'T', lo:6, hi:8, z:'caution'}
       ],
       renal:{t:'No formal renal study. Hepatic impairment may raise levels — use caution.', s:'L'},
       switchIn:{t:'Cross-family switches: see framework. No manufacturer cross-titration protocol.', s:'T'},
@@ -430,8 +489,8 @@ var LAI = {
       conv:{t:'≈ 12.5 mg decanoate every 3 weeks per 10 mg/day oral fluphenazine. Onset 24–72 hours.', s:'L'},
       missedInit:[],
       missedMaint:[
-        {w:'≤ 4–5 weeks since last injection', a:'Give as soon as possible.', s:'T'},
-        {w:'Longer gap', a:'Oral bridge until re-established. Verify PI.', s:'T'}
+        {w:'≤ 4–5 weeks since last injection', a:'Give as soon as possible.', s:'T', lo:0, hi:5, z:'safe'},
+        {w:'Longer gap', a:'Oral bridge until re-established. Verify PI.', s:'T', lo:5, hi:999, z:'caution'}
       ],
       renal:{t:'Standard fluphenazine cautions.', s:'T'},
       switchIn:{t:'Cross-family switches: see framework. No manufacturer cross-titration protocol.', s:'T'},
@@ -467,7 +526,7 @@ function setMode(mode){
   document.querySelectorAll('.modebtn').forEach(function(b){ b.classList.toggle('active', b.dataset.mode===mode); });
   document.querySelectorAll('.mode-form').forEach(function(f){ f.classList.remove('active'); });
   document.getElementById('form-'+mode).classList.add('active');
-  document.getElementById('safetyScreen').style.display = (mode==='lookup') ? 'none' : 'block';
+  document.getElementById('safetyScreen').style.display = (['start','missed','switch'].indexOf(mode)>=0) ? 'block' : 'none';
   document.getElementById('output').classList.remove('active');
   document.getElementById('output').innerHTML='';
 }
@@ -481,7 +540,7 @@ function safetyFlags(mol){
   if(document.getElementById('sf-renal').checked) f.push('Renal impairment — check product-specific renal dosing (paliperidone palmitate is not recommended below CrCl 50; risperidone formulations need oral titration first).');
   if(document.getElementById('sf-hepatic').checked) f.push('Hepatic impairment — may raise levels (notably haloperidol); use caution.');
   if(document.getElementById('sf-qt').checked) f.push('QT/cardiac — baseline and on-treatment ECG; haloperidol prolongs QTc.');
-  if(document.getElementById('sf-cyp').checked) f.push('CYP interaction — aripiprazole LAIs need dose reduction with strong 3A4+2D6 inhibition >14 days; CYP3A4 inducers lower risperidone, paliperidone, and haloperidol levels.');
+  if(document.getElementById('sf-cyp').checked) f.push('CYP/P-gp interaction — aripiprazole LAIs require dose reduction with strong CYP3A4 + CYP2D6 inhibition for >14 days. Risperidone and haloperidol exposure can be affected by CYP interactions (3A4 inducers lower levels); verify product labeling. For paliperidone, renal function is usually the larger dosing consideration than CYP.');
   if(document.getElementById('sf-relapse').checked) f.push('Currently symptomatic/relapsing — depot onset is delayed; ensure adequate cross-coverage and consider whether acute stabilization is needed first.');
   return f;
 }
@@ -511,6 +570,150 @@ function showOutput(html){
   o.scrollIntoView({behavior:'smooth',block:'start'});
 }
 
+// ── date + matcher helpers ──
+function addDays(d,n){ var x=new Date(d.getTime()); x.setDate(x.getDate()+n); return x; }
+function fmtDate(d){ return d.toLocaleDateString(undefined,{weekday:'short',year:'numeric',month:'short',day:'numeric'}); }
+function parseDateInput(v){ if(!v) return null; var p=v.split('-'); return new Date(+p[0],+p[1]-1,+p[2]); }
+
+// Return index of the rule whose [lo,hi) week-window contains `weeks`, or -1.
+function matchRuleIdx(rules,weeks){
+  if(weeks===null) return -1;
+  for(var i=0;i<rules.length;i++){
+    var r=rules[i];
+    if(typeof r.lo==='number'&&typeof r.hi==='number'){
+      if(weeks>=r.lo && weeks<r.hi) return i;
+    }
+  }
+  return -1;
+}
+
+function copyAll(ids){
+  var parts=[];
+  ids.forEach(function(id){ var el=document.getElementById(id); if(el) parts.push(el.innerText); });
+  navigator.clipboard.writeText(parts.join('\n\n')).then(function(){
+    var b=document.getElementById('copyAllBtn');
+    if(b){ b.classList.add('copied'); var o=b.textContent; b.textContent='Copied all'; setTimeout(function(){ b.classList.remove('copied'); b.textContent=o; },1500); }
+  });
+}
+function copyAllBar(ids){
+  return '<div style="margin-bottom:14px"><button class="copy-btn" id="copyAllBtn" onclick=\'copyAll('+JSON.stringify(ids)+')\'>Copy clinician protocol + chart blurb</button></div>';
+}
+
+// ══════════════════════════════════════════════════════════════
+// MODE 5: CYP dose check (aripiprazole LAIs) — label-derived, maintenance-scoped
+// ══════════════════════════════════════════════════════════════
+var CY_DOSES = {
+  maintena:['400 mg','300 mg'],
+  asimtufii:['960 mg','720 mg'],
+  aristada:['441 mg monthly','662 mg monthly','882 mg monthly','882 mg every 6 weeks','1064 mg every 2 months'],
+  initio:[]
+};
+function cyDoses(){
+  var p=document.getElementById('cy-prod').value, sel=document.getElementById('cy-dose');
+  if(!p||!CY_DOSES[p]||!CY_DOSES[p].length){ sel.innerHTML='<option value="">N/A (single strength)</option>'; return; }
+  var html=''; CY_DOSES[p].forEach(function(d){ html+='<option value="'+d+'">'+d+'</option>'; }); sel.innerHTML=html;
+}
+
+// next-lower-strength map for Aristada (label footnote: 882 q6wk and 1064 q2mo -> 441 monthly)
+function aristadaNextLower(dose){
+  if(dose==='882 mg monthly') return '662 mg monthly';
+  if(dose==='662 mg monthly') return '441 mg monthly';
+  if(dose==='882 mg every 6 weeks') return '441 mg monthly';
+  if(dose==='1064 mg every 2 months') return '441 mg monthly';
+  return null; // 441 monthly: no reduction
+}
+
+// returns {level:'avoid'|'reduce'|'none'|'refer', text:'', notes:[]}
+function cypRule(prod, phase, dose, scen, longDur){
+  // duration gate (Aristada uses 2 weeks; Maintena/Asimtufii 14 days — same threshold here)
+  if(!longDur && prod!=='initio'){
+    return { level:'none', text:'No dose modification is recommended when the interacting medication is used for 14 days or less (under 2 weeks for Aristada). Continue the current dose and reassess if it continues beyond that.' };
+  }
+  // Aristada Initio: cannot be adjusted -> avoid for any of these scenarios
+  if(prod==='initio'){
+    return { level:'avoid', text:'Avoid Aristada Initio. It is a single-strength, single-dose syringe and cannot be dose-adjusted, so it should not be used in CYP2D6 poor metabolizers or with strong CYP3A4 inhibitors, strong CYP2D6 inhibitors, or strong CYP3A4 inducers. If a dose adjustment is needed, do not initiate with Initio — use the 21-day oral aripiprazole initiation instead.', notes:[] };
+  }
+  // Initiation phase for Maintena/Aristada: route to PI rather than emit unverified init cells
+  if(phase==='init'){
+    if(prod==='aristada') return { level:'refer', text:'During Aristada initiation: if using the 21-day oral overlap, follow the oral aripiprazole prescribing information for CYP adjustments over those 21 days. If initiation would require a dose adjustment, do not use Aristada Initio. Apply the stabilized-dose rules below once the patient is established.' };
+    return { level:'refer', text:'During Abilify Maintena/Asimtufii 1-day or 14-day initiation, CYP modifications are initiation-specific. Verify the initiation table in the current PI. The combined-inhibitor and inducer scenarios are avoid-use during initiation; single strong inhibitor or poor-metabolizer status uses the reduced strength.' };
+  }
+
+  if(prod==='maintena'){
+    if(scen==='inducer') return { level:'avoid', text:'Avoid use. Avoid concomitant strong CYP3A4 inducers with Abilify Maintena for more than 14 days; aripiprazole levels fall below the effective range.' };
+    if(scen==='pm') return { level:'reduce', text:'Reduce to 300 mg once monthly (CYP2D6 poor metabolizer).', notes:cyWithdraw() };
+    if(scen==='pm3a4') return { level:'reduce', text:'Reduce to 200 mg once monthly (CYP2D6 poor metabolizer plus strong CYP3A4 inhibitor).', notes:cyVial().concat(cyWithdraw()) };
+    var on400 = dose==='400 mg';
+    if(scen==='inh2d6'||scen==='inh3a4') return { level:'reduce', text:'Reduce to '+(on400?'300 mg':'200 mg')+' once monthly (single strong CYP'+(scen==='inh2d6'?'2D6':'3A4')+' inhibitor).', notes:(on400?[]:cyVial()).concat(cyWithdraw()) };
+    if(scen==='inhboth') return { level:'reduce', text:'Reduce to '+(on400?'200 mg':'160 mg')+' once monthly (strong CYP2D6 plus strong CYP3A4 inhibitor).', notes:cyVial().concat(cyWithdraw()) };
+  }
+  if(prod==='asimtufii'){
+    if(scen==='inducer') return { level:'avoid', text:'Avoid use. Avoid concomitant strong CYP3A4 inducers with Abilify Asimtufii for more than 14 days.' };
+    if(scen==='pm') return { level:'reduce', text:'Reduce to 720 mg every 2 months (CYP2D6 poor metabolizer).', notes:cyWithdraw() };
+    if(scen==='pm3a4'||scen==='inhboth') return { level:'avoid', text:'Avoid use ('+(scen==='pm3a4'?'CYP2D6 poor metabolizer plus strong CYP3A4 inhibitor':'strong CYP2D6 plus strong CYP3A4 inhibitor')+').' };
+    if(scen==='inh2d6'||scen==='inh3a4'){
+      if(dose==='720 mg') return { level:'none', text:'Patient is already at 720 mg. No labeled Asimtufii dose below 720 mg is provided for this scenario; verify PI/pharmacy before proceeding.', notes:[] };
+      return { level:'reduce', text:'Reduce to 720 mg every 2 months (single strong CYP'+(scen==='inh2d6'?'2D6':'3A4')+' inhibitor).', notes:cyWithdraw() };
+    }
+  }
+  if(prod==='aristada'){
+    var nl=aristadaNextLower(dose);
+    var on441 = dose==='441 mg monthly';
+    if(scen==='inducer'){
+      if(on441) return { level:'reduce', text:'Increase the 441 mg dose to 662 mg monthly (strong CYP3A4 inducer). No change for 662 mg, 882 mg, or 1064 mg.' };
+      return { level:'none', text:'No dose change for 662 mg, 882 mg, or 1064 mg with a strong CYP3A4 inducer.' };
+    }
+    if(scen==='pm'){
+      if(on441) return { level:'none', text:'No adjustment needed at 441 mg (CYP2D6 poor metabolizer), if tolerated.' };
+      return { level:'reduce', text:'Reduce to 441 mg monthly (CYP2D6 poor metabolizer).' };
+    }
+    if(scen==='inh2d6'){
+      if(on441) return { level:'none', text:'No adjustment needed at 441 mg (strong CYP2D6 inhibitor), if tolerated.' };
+      return { level:'reduce', text:'Reduce to the next lower strength: '+nl+' (strong CYP2D6 inhibitor).' };
+    }
+    if(scen==='inh3a4'){
+      if(on441) return { level:'none', text:'No adjustment needed at 441 mg (strong CYP3A4 inhibitor), if tolerated.' };
+      return { level:'reduce', text:'Reduce to the next lower strength: '+nl+' (strong CYP3A4 inhibitor).' };
+    }
+    if(scen==='pm3a4'){
+      if(on441) return { level:'none', text:'No adjustment needed at 441 mg, if tolerated.' };
+      return { level:'reduce', text:'Reduce to 441 mg monthly (CYP2D6 poor metabolizer plus strong CYP3A4 inhibitor).' };
+    }
+    if(scen==='inhboth'){
+      if(on441) return { level:'none', text:'No adjustment needed at 441 mg, if tolerated.' };
+      return { level:'avoid', text:'Avoid use at 662 mg, 882 mg, or 1064 mg (strong CYP2D6 plus strong CYP3A4 inhibitor). If continued, only the 441 mg dose is acceptable, if tolerated.' };
+    }
+  }
+  return { level:'refer', text:'Verify against the current PI.' };
+}
+function cyVial(){ return ['The 200 mg and 160 mg adjustments are obtained only by using the 300 mg or 400 mg strength vials.']; }
+function cyWithdraw(){ return ['If the CYP inhibitor is later withdrawn, the dose may need to be increased back to the previous dose.']; }
+
+function runCyp(){
+  var prod=document.getElementById('cy-prod').value;
+  if(!prod){ alert('Select a product.'); return; }
+  var phase=document.getElementById('cy-phase').value;
+  var dose=document.getElementById('cy-dose').value;
+  var scen=document.getElementById('cy-scen').value;
+  var longDur=document.getElementById('cy-dur').value==='long';
+  var prodName={maintena:'Abilify Maintena',asimtufii:'Abilify Asimtufii',aristada:'Aristada',initio:'Aristada Initio'}[prod];
+  var scenName={pm:'CYP2D6 poor metabolizer',inh2d6:'strong CYP2D6 inhibitor',inh3a4:'strong CYP3A4 inhibitor',inhboth:'strong CYP2D6 + CYP3A4 inhibitors',pm3a4:'CYP2D6 PM + strong CYP3A4 inhibitor',inducer:'strong CYP3A4 inducer'}[scen];
+  var r=cypRule(prod, phase, dose, scen, longDur);
+
+  var h='';
+  var head = (r.level==='avoid') ? '<div class="rems-banner"><strong>⚠ Avoid use</strong>'+esc(r.text)+' '+tagHtml('L')+'</div>'
+    : '<div class="'+(r.level==='reduce'?'caveat':'caveat')+'" style="'+(r.level==='reduce'?'border-left-color:var(--amber);background:rgba(251,191,36,0.1)':'border-left-color:var(--teal);background:rgba(42,171,184,0.08)')+'"><strong>'+(r.level==='reduce'?'Dose modification':r.level==='refer'?'Refer to PI':'No change')+'</strong><br>'+esc(r.text)+' '+(r.level==='refer'?'':tagHtml('L'))+'</div>';
+  h+=head;
+  if(r.notes&&r.notes.length){ var nb='<div class="caveat"><strong>Notes</strong><ul style="margin:6px 0 0 18px">'; r.notes.forEach(function(n){ nb+='<li>'+esc(n)+'</li>'; }); nb+='</ul></div>'; h+=nb; }
+
+  // chart blurb
+  var actionTxt = r.text;
+  var blurb='CYP interaction/genotype screen reviewed for '+prodName+' ('+(phase==='init'?'initiation':'maintenance')+(dose?', current dose '+dose:'')+'). Scenario: '+scenName+' for '+(longDur?'more than 14 days / >2 weeks':'14 days or less / <2 weeks')+'. Label-derived recommendation: '+actionTxt+' Patient counseled that CYP inhibitors/inducers alter aripiprazole exposure and that dosing may need to return to the prior regimen if the interacting medication is stopped. Product labeling verified.';
+  h+=outBlock('Chart blurb','cy-blurb',esc(blurb),true);
+  h+='<p class="pi-note">Aripiprazole-only, label-derived. Verify against the current package insert before changing a dose.</p>';
+  showOutput(h);
+}
+
 // ══════════════════════════════════════════════════════════════
 // MODE 1: single-agent lookup -> reference card
 // ══════════════════════════════════════════════════════════════
@@ -535,8 +738,12 @@ function runLookup(){
     card+='<h5>Missed second initiation dose</h5>';
     d.missedInit.forEach(function(x){ card+='<p><strong style="color:var(--white)">'+esc(x.w)+':</strong> '+esc(x.a)+' '+tagHtml(x.s)+'</p>'; });
   }
-  card+='<h5>Missed maintenance dose</h5>';
-  d.missedMaint.forEach(function(x){ card+='<p><strong style="color:var(--white)">'+esc(x.w)+':</strong> '+esc(x.a)+' '+tagHtml(x.s)+'</p>'; });
+  if(d.missedComplex){
+    card+='<h5>Missed maintenance dose</h5>'+complexTable(d.missedComplex);
+  } else {
+    card+='<h5>Missed maintenance dose</h5>';
+    d.missedMaint.forEach(function(x){ card+='<p><strong style="color:var(--white)">'+esc(x.w)+':</strong> '+esc(x.a)+' '+tagHtml(x.s)+'</p>'; });
+  }
   card+='<h5>Renal / hepatic</h5>'+line('',d.renal);
   card+='<h5>Switching in from another LAI</h5>'+line('',d.switchIn);
   card+='<h5>Pearls</h5>';
@@ -566,6 +773,19 @@ function runStart(){
   if(tol==='no'){ document.getElementById('sf-notol').checked=true; }
   var flags=safetyFlags(m);
 
+  // Body-habitus needle/site guidance (anatomy only, never dose)
+  var habitus=document.getElementById('st-habitus').value;
+  var injPearl='';
+  var isIM = d.route.indexOf('IM')>=0 || d.route.indexOf('Deep IM')>=0;
+  if(habitus==='obese' && isIM){
+    injPearl='Obese / high BMI: use the longer 1½-inch (38 mm) needle for intramuscular delivery so the dose reaches muscle rather than adipose tissue, which would distort absorption.';
+    if(m==='paliperidone'&&p==='sustenna'){ injPearl+=' For Sustenna specifically, deltoid injection uses the 1½-inch (22-gauge) needle at 90 kg or more (the 1-inch needle is for under 90 kg); gluteal uses the 1½-inch needle regardless of weight.'; }
+  } else if(habitus==='cachectic' && isIM){
+    injPearl='Cachectic / low muscle mass: select a shorter needle and a site with adequate muscle bulk, aspirate, and use Z-track to limit leakage and local reaction. Dose is unchanged.';
+  } else if(habitus && !isIM){
+    injPearl='This product is given subcutaneously, so body habitus does not change needle length the way it does for IM depots. Use the supplied SC needle and a pinch technique at the abdomen or upper arm.';
+  }
+
   // Clinician protocol
   var cp='';
   if(d.rems){ cp+='REMS: '+d.rems+'\n\n'; }
@@ -574,9 +794,50 @@ function runStart(){
   cp+='3. Oral overlap: '+d.overlap.t+'\n';
   cp+='4. Dose selection: '+d.conv.t+'\n';
   cp+='5. Maintenance: '+d.maintenance.t+'\n';
-  cp+='6. Monitor: delayed depot onset; EPS/akathisia, sedation, orthostasis, metabolic parameters per agent; relapse during cross-coverage.';
+  cp+='6. During overlap: continue the stable oral dose through the labeled overlap period unless there is a specific clinical reason not to. Tapering early risks a coverage gap; continuing beyond the overlap window adds avoidable adverse-effect burden. [T]\n';
+  cp+='7. Monitor: delayed depot onset; EPS/akathisia, sedation, orthostasis, metabolic parameters per agent; relapse during cross-coverage.';
   var cpHtml=esc(cp);
   if(oral){ cpHtml='Current oral therapy: '+esc(oral)+'\n\n'+cpHtml; }
+
+  // Optional schedule date math
+  var startV=document.getElementById('st-date').value;
+  var sched='';
+  if(startV){
+    var s=parseDateInput(startV);
+    var lines=[];
+    lines.push('First injection: '+fmtDate(s));
+    if(m==='paliperidone'&&p==='sustenna'){
+      var d8=addDays(s,7);
+      lines.push('Day 8 dose (156 mg, ±4 days): '+fmtDate(d8)+'  [window '+fmtDate(addDays(d8,-4))+' – '+fmtDate(addDays(d8,4))+']');
+      var maint1=addDays(s,35);
+      lines.push('First monthly maintenance (~5 weeks after day 1): '+fmtDate(maint1));
+    } else if(m==='aripiprazole'&&p==='maintena'){
+      lines.push('14-day oral overlap ends: '+fmtDate(addDays(s,14)));
+      lines.push('Approximate next monthly target (~4 weeks): '+fmtDate(addDays(s,28)));
+      lines.push('Earliest permissible next dose: '+fmtDate(addDays(s,26))+' (do not give sooner than 26 days).');
+    } else if(m==='aripiprazole'&&p==='aristada'){
+      lines.push('21-day oral overlap ends (if used): '+fmtDate(addDays(s,21)));
+      lines.push('Earliest permissible next dose: '+fmtDate(addDays(s,14))+' (do not give sooner than 14 days).');
+    } else if(m==='aripiprazole'&&p==='asimtufii'){
+      lines.push('14-day oral overlap ends: '+fmtDate(addDays(s,14)));
+      lines.push('Next injection due (every 2 months): '+fmtDate(addDays(s,56)));
+      lines.push('Earliest permissible next dose: '+fmtDate(addDays(s,56))+' (not more often than every 8 weeks).');
+    } else if(m==='risperidone'&&(p==='consta'||p==='rykindo')){
+      var ov=(p==='consta')?21:7;
+      lines.push('Oral overlap ends ('+ov+' days): '+fmtDate(addDays(s,ov)));
+      lines.push('Next injection due (every 2 weeks): '+fmtDate(addDays(s,14)));
+    } else if(m==='risperidone'&&p==='perseris'){
+      lines.push('Approximate next monthly target (~4 weeks): '+fmtDate(addDays(s,28)));
+    } else if(m==='risperidone'&&p==='uzedy'){
+      lines.push('Approximate next target: '+fmtDate(addDays(s,28))+' (~4 weeks, monthly) or '+fmtDate(addDays(s,56))+' (every 2 months), per chosen interval.');
+    } else if(m==='haloperidol'){
+      lines.push('Oral overlap (~28 days) ends: '+fmtDate(addDays(s,28)));
+      lines.push('Next injection due (every 4 weeks): '+fmtDate(addDays(s,28)));
+    } else if(m==='fluphenazine'){
+      lines.push('Next injection: individualized; many patients every 3–4 weeks. Reassess by response.');
+    }
+    sched=lines.join('\n');
+  }
 
   // Patient-facing
   var pf='This injection is being started to replace your daily oral medication. '+
@@ -594,7 +855,10 @@ function runStart(){
   var h='';
   if(d.rems){ h+='<div class="rems-banner"><strong>⚠ '+esc(d.name)+' REMS</strong>'+esc(d.rems)+'</div>'; }
   h+=flagBlock(flags);
+  h+=copyAllBar(['st-cp','st-cn']);
   h+=outBlock('Clinician protocol — '+esc(d.name),'st-cp',cpHtml);
+  if(injPearl){ h+='<div class="caveat" style="border-left-color:var(--teal);background:rgba(42,171,184,0.08)"><strong>Injection pearl (needle/site)</strong><br>'+esc(injPearl)+' '+tagHtml('T')+'</div>'; }
+  if(sched){ h+=outBlock('Schedule','st-sched',esc(sched)); }
   h+=outBlock('Patient-facing explanation','st-pf',esc(pf),true);
   h+=outBlock('Chart blurb','st-cn',esc(cn),true);
   h+=piNote();
@@ -604,6 +868,47 @@ function runStart(){
 // ══════════════════════════════════════════════════════════════
 // MODE 3: missed-dose helper
 // ══════════════════════════════════════════════════════════════
+// Render a dose- or phase-keyed missed-dose table (no single auto-match; clinician matches the row).
+function complexTable(mc){
+  var h='<p style="font-size:.82rem;color:var(--cream);margin-bottom:8px">'+esc(mc.intro)+' '+tagHtml(mc.s)+'</p>';
+  h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:.8rem">';
+  h+='<tr>'; mc.cols.forEach(function(c){ h+='<th style="text-align:left;padding:6px 8px;border-bottom:1px solid var(--rule);color:var(--teal);font-weight:700">'+esc(c)+'</th>'; }); h+='</tr>';
+  mc.rows.forEach(function(r){ h+='<tr>'; r.forEach(function(cell,i){ h+='<td style="padding:6px 8px;border-bottom:1px solid var(--rule);'+(i===0?'color:var(--white);font-weight:600':'color:var(--cream)')+'">'+esc(cell)+'</td>'; }); h+='</tr>'; });
+  h+='</table></div>';
+  h+='<div class="caveat"><strong>No single auto-match.</strong> This product\u2019s missed-dose rule depends on the dose/dose-number above, so match the correct row yourself and verify against the current PI before acting.</div>';
+  return h;
+}
+
+// Render a green/amber/red timeline of the missed-dose windows with a marker at the elapsed point.
+function buildTimeline(rules, weeks){
+  // need zones + bounds
+  var usable = rules.filter(function(r){ return typeof r.lo==='number' && r.z; });
+  if(usable.length<2) return '';
+  var ZC = {safe:'var(--green)', caution:'var(--amber)', restart:'var(--red)'};
+  // scale: cap the open-ended final zone to 30% of the visual
+  var finite = [];
+  usable.forEach(function(r){ if(r.hi<900) finite.push(r.hi); });
+  var lastBound = finite.length ? Math.max.apply(null,finite) : 26;
+  var scaleMax = lastBound * 1.35;
+  var segs='';
+  usable.forEach(function(r){
+    var hi = (r.hi>=900) ? scaleMax : r.hi;
+    var lo = r.lo;
+    var w = Math.max(0,(hi-lo)/scaleMax*100);
+    var label = (r.hi>=900) ? (lo+'w+') : (r.hi+'w');
+    segs += '<div title="'+esc(r.w)+'" style="width:'+w.toFixed(1)+'%;background:'+ZC[r.z]+';opacity:.5;height:14px;position:relative;border-right:1px solid var(--navy)"></div>';
+  });
+  var markerPct = (weeks!==null) ? Math.min(100, Math.max(0, weeks/scaleMax*100)) : null;
+  var marker = (markerPct!==null) ? '<div style="position:absolute;left:'+markerPct.toFixed(1)+'%;top:-4px;width:2px;height:22px;background:var(--white)"></div><div style="position:absolute;left:'+markerPct.toFixed(1)+'%;top:-18px;transform:translateX(-50%);font-size:.66rem;color:var(--white);white-space:nowrap">'+weeks.toFixed(1)+'w</div>' : '';
+  // boundary ticks
+  var ticks='';
+  usable.forEach(function(r){ if(r.hi<900){ var pct=r.hi/scaleMax*100; ticks+='<span style="position:absolute;left:'+pct.toFixed(1)+'%;top:16px;transform:translateX(-50%);font-size:.62rem;color:var(--cream-dim)">'+r.hi+'w</span>'; } });
+  return '<div style="margin:22px 0 18px;position:relative;height:40px">'+
+    '<div style="display:flex;border-radius:4px;overflow:hidden;position:relative">'+segs+marker+'</div>'+
+    '<div style="position:relative;height:14px">'+ticks+'</div></div>'+
+    '<div style="font-size:.7rem;color:var(--cream-dim);margin-bottom:8px"><span style="color:var(--green)">■</span> give as scheduled / ASAP &nbsp; <span style="color:var(--amber)">■</span> catch-up or reinitiate &nbsp; <span style="color:var(--red)">■</span> full re-initiation</div>';
+}
+
 function runMissed(){
   var m=document.getElementById('ms-mol').value, p=document.getElementById('ms-prod').value;
   var d=getProd(m,p);
@@ -619,15 +924,50 @@ function runMissed(){
   }
   var rules = (phase==='init' && d.missedInit && d.missedInit.length) ? d.missedInit : d.missedMaint;
   var phaseLabel = (phase==='init' && d.missedInit && d.missedInit.length) ? 'second initiation dose' : 'maintenance dose';
+  var matchIdx = matchRuleIdx(rules, weeks);
 
   var h='';
   if(d.rems){ h+='<div class="rems-banner"><strong>⚠ '+esc(d.name)+' REMS</strong>'+esc(d.rems)+'</div>'; }
-  // Build a rules table with source tags (HTML, not just copy text)
-  var tableHtml='<p class="sub" style="color:var(--cream-dim);margin-bottom:8px">'+esc(d.name)+' — '+esc(phaseLabel)+(daysTxt?'<br>'+esc(daysTxt):'')+'</p>';
-  rules.forEach(function(x){ tableHtml+='<p><strong style="color:var(--white)">'+esc(x.w)+':</strong> '+esc(x.a)+' '+tagHtml(x.s)+'</p>'; });
-  tableHtml+='<div class="caveat"><strong>Verify before acting.</strong> Match the elapsed interval to the correct row. For any gap outside these windows, or any uncertainty, check the current package insert; missed-dose handling is product-specific and should not be estimated from half-life.</div>';
-  h+='<div class="out-block"><div class="ob-head"><h4>Missed-dose rule</h4><button class="copy-btn" onclick="copyOut(this,\'ms-cp\')">Copy</button></div><div class="out-body" id="ms-cp" style="white-space:normal">'+tableHtml+'</div></div>';
-  // hidden plain-text mirror for copy is the same node; fine.
+
+  // Dose- or phase-keyed products: render the structured table, no single auto-match.
+  if(d.missedComplex && phase!=='init'){
+    var ch='<p class="sub" style="color:var(--cream-dim);margin-bottom:8px">'+esc(d.name)+(daysTxt?' — '+esc(daysTxt):'')+'</p>';
+    ch+=complexTable(d.missedComplex);
+    h+='<div class="out-block"><div class="ob-head"><h4>Missed-dose rule</h4><button class="copy-btn" onclick="copyOut(this,\'ms-cp\')">Copy</button></div><div class="out-body" id="ms-cp" style="white-space:normal">'+ch+'</div></div>';
+    showOutput(h);
+    return;
+  }
+
+  // Single broad rule (no real ladder): do not imply precision.
+  var hasLadder = rules.filter(function(r){ return typeof r.lo==='number' && !(r.lo===0 && r.hi>=999); }).length >= 1 && rules.length >= 2;
+
+  // Calculated-action box (only when a real ladder exists and dates produce a match)
+  var calc='';
+  if(hasLadder && matchIdx>=0){
+    var r=rules[matchIdx];
+    calc='<div style="background:rgba(42,171,184,0.1);border:1px solid var(--teal);padding:14px 16px;border-radius:8px;margin-bottom:14px">'+
+      '<strong style="color:var(--white)">Likely matching rule — '+esc(d.name)+'</strong>'+
+      '<p style="margin-top:4px">Elapsed: '+esc(daysTxt)+'</p>'+
+      '<p style="margin-top:4px"><strong style="color:var(--teal)">'+esc(r.w)+'</strong></p>'+
+      '<p style="margin-top:2px">'+esc(r.a)+' '+tagHtml(r.s)+'</p>'+
+      '<p style="margin-top:6px;font-size:.78rem;color:var(--amber);font-style:italic">Confirm the elapsed interval and the action against the current PI before administering. Boundaries are exact; a value near a cutoff should be verified.</p></div>';
+  } else if(!hasLadder){
+    calc='<div class="caveat"><strong>No detailed missed-dose ladder is encoded for this product.</strong> '+(daysTxt?'Elapsed: '+esc(daysTxt)+' ':'')+'Give the next injection as soon as possible per the product labeling and verify against the current PI.</div>';
+  } else if(weeks!==null){
+    calc='<div class="caveat"><strong>No single rule auto-matched</strong> for '+esc(daysTxt)+' Review the full ladder below and verify against the PI.</div>';
+  }
+
+  var tableHtml='<p class="sub" style="color:var(--cream-dim);margin-bottom:8px">'+esc(d.name)+' — '+esc(phaseLabel)+(daysTxt&&matchIdx<0?'<br>'+esc(daysTxt):'')+'</p>';
+  var effMatch = hasLadder ? matchIdx : -1;
+  tableHtml+=buildTimeline(rules, weeks);
+  rules.forEach(function(x,i){
+    var hot=(i===effMatch);
+    tableHtml+='<p style="'+(hot?'background:rgba(42,171,184,0.12);border-radius:4px;padding:4px 6px;':'opacity:'+(effMatch>=0?'.55':'1')+';')+'"><strong style="color:var(--white)">'+esc(x.w)+':</strong> '+esc(x.a)+' '+tagHtml(x.s)+'</p>';
+  });
+  if(phase==='init'){ tableHtml+='<p style="font-size:.78rem;color:var(--cream-dim);margin-top:6px">Initiation-miss handling is detailed in PI Table 2; verify the exact regimen there.</p>'; }
+  tableHtml+='<div class="caveat"><strong>Verify before acting.</strong> Missed-dose handling is product-specific and should not be estimated from half-life. For any gap outside these windows, or any uncertainty, check the current package insert.</div>';
+
+  h+='<div class="out-block"><div class="ob-head"><h4>Missed-dose rule</h4><button class="copy-btn" onclick="copyOut(this,\'ms-cp\')">Copy</button></div><div class="out-body" id="ms-cp" style="white-space:normal">'+calc+tableHtml+'</div></div>';
   showOutput(h);
 }
 
@@ -677,7 +1017,7 @@ function runSwitch(){
   var fw='No manufacturer-published cross-titration protocol exists for switching between different LAI molecules. This is clinical-judgment territory. Principled framework:\n\n'+
     '1. Timing: give the first '+d2.name+' injection around the date the next '+d1.name+' dose would have been due, so the new agent comes on as the old depot is declining.\n'+
     '2. Old depot tail: '+d1.name+' continues releasing for weeks after the last injection — account for overlap rather than assuming a clean stop.\n'+
-    '3. Oral tolerability: if the patient has not established tolerability to '+molName(m2)+', do so first ('+stripTrail(d2.oralTrial.t)+')\n'+
+    '3. Oral lead-in: even when the patient tolerates the current LAI, consider a brief oral trial of '+molName(m2)+' before committing to a months-long depot, to surface cross-sensitivity, dystonia, or akathisia while it is still reversible. If tolerability to '+molName(m2)+' is not established, do this first ('+stripTrail(d2.oralTrial.t)+')\n'+
     '4. Target initiation: apply '+d2.name+'\'s own initiation and overlap rules — '+stripTrail(d2.init.t)+' '+stripTrail(d2.overlap.t)+'\n'+
     '5. Monitor closely for relapse, additive adverse effects, EPS/akathisia, sedation, and orthostasis through the transition.';
 
