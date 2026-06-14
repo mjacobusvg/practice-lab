@@ -1,7 +1,7 @@
 // netlify/functions/roadmap-vote.js
 // Casts roadmap votes (one per member per item, enforced in the database)
 // and lets the admin add roadmap items. Same env vars as the other functions:
-//   SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+//   SUPABASE_URL, SUPABASE_SERVICE_KEY
 
 const ADMIN_EMAILS = ['michael@thinkbeyondpsych.com'];
 
@@ -16,7 +16,7 @@ exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') return { statusCode: 405, headers, body: JSON.stringify({ ok: false, error: 'POST only' }) };
 
   const SUPABASE_URL = process.env.SUPABASE_URL;
-  const KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const KEY = process.env.SUPABASE_SERVICE_KEY;
   if (!SUPABASE_URL || !KEY) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'Missing Supabase env vars' }) };
 
   const sbHeaders = {
