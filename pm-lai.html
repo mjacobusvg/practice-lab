@@ -536,7 +536,7 @@ function safetyFlags(mol){
   var f=[];
   if(document.getElementById('sf-notol').checked) f.push('Oral tolerability not established — confirm before any depot injection; tolerating a different antipsychotic does not predict tolerating this one.');
   if(document.getElementById('sf-eps').checked) f.push('Prior EPS/akathisia/NMS — counsel and monitor closely; have benztropine and an akathisia agent (propranolol or mirtazapine) available. NMS history warrants specialist review.');
-  if(document.getElementById('sf-preg').checked) f.push('Pregnancy/planning — third-trimester antipsychotic exposure carries neonatal EPS/withdrawal risk; a long-acting depot persists for months. Specialist discussion advised.');
+  if(document.getElementById('sf-preg').checked) f.push('Pregnancy/planning — third-trimester antipsychotic exposure may be associated with neonatal EPS/withdrawal symptoms, and a depot persists for weeks to months, limiting reversibility. Document a risk-benefit discussion and consider OB/perinatal psychiatry consultation when available.');
   if(document.getElementById('sf-renal').checked) f.push('Renal impairment — check product-specific renal dosing (paliperidone palmitate is not recommended below CrCl 50; risperidone formulations need oral titration first).');
   if(document.getElementById('sf-hepatic').checked) f.push('Hepatic impairment — may raise levels (notably haloperidol); use caution.');
   if(document.getElementById('sf-qt').checked) f.push('QT/cardiac — baseline and on-treatment ECG; haloperidol prolongs QTc.');
@@ -753,7 +753,7 @@ function runLookup(){
   // chart blurb
   var blurb='LAI reference reviewed for '+d.name+' ('+d.interval.toLowerCase()+', '+d.route.toLowerCase()+'). '+
     'Initiation: '+stripTrail(d.init.t)+' Oral overlap: '+stripTrail(d.overlap.t)+' Maintenance: '+stripTrail(d.maintenance.t)+
-    ' Product labeling verified prior to ordering.';
+    ' Current product labeling should be verified prior to ordering or administering.';
   h+=outBlock('Chart blurb','lk-blurb',esc(blurb),true);
   h+=piNote();
   showOutput(h);
@@ -786,6 +786,24 @@ function runStart(){
     injPearl='This product is given subcutaneously, so body habitus does not change needle length the way it does for IM depots. Use the supplied SC needle and a pinch technique at the abdomen or upper arm.';
   }
 
+  // Per-product overlap class — gates every overlap-dependent output line.
+  // 'none' = no routine oral overlap; {days:N} = fixed overlap; 'option' = initiation-option-dependent; 'step' = not started de novo
+  var OV = { sustenna:'none', trinza:'step', hafyera:'step', consta:{days:21,s:'L'}, perseris:'none', uzedy:'none',
+             rykindo:{days:7,s:'L'}, maintena:'option', aristada:'option', asimtufii:'option', relprevv:'none',
+             haloperidol:{days:28,approx:true,s:'L'}, fluphenazine:{days:28,approx:true,s:'T'} };
+  var ovKey = (p==='decanoate') ? m : p;
+  var ov = OV[ovKey] || 'none';
+  var ovFixed = (typeof ov==='object') ? ov : null;
+
+  // Step products (Trinza, Hafyera) are not initiated from oral — block and explain.
+  if(ov==='step'){
+    var sh='<div class="caveat" style="border-left-color:var(--amber);background:rgba(251,191,36,0.1)"><strong>'+esc(d.name)+' is not started from oral medication.</strong><br>'+esc(d.oralTrial.t)+' '+tagHtml(d.oralTrial.s)+'</div>';
+    sh+=outBlock('How it is reached','st-step',esc(stripTrail(d.init.t)+'\n\n'+d.conv.t));
+    sh+=piNote();
+    showOutput(sh);
+    return;
+  }
+
   // Clinician protocol
   var cp='';
   if(d.rems){ cp+='REMS: '+d.rems+'\n\n'; }
@@ -794,8 +812,13 @@ function runStart(){
   cp+='3. Oral overlap: '+d.overlap.t+'\n';
   cp+='4. Dose selection: '+d.conv.t+'\n';
   cp+='5. Maintenance: '+d.maintenance.t+'\n';
-  cp+='6. During overlap: continue the stable oral dose through the labeled overlap period unless there is a specific clinical reason not to. Tapering early risks a coverage gap; continuing beyond the overlap window adds avoidable adverse-effect burden. [T]\n';
-  cp+='7. Monitor: delayed depot onset; EPS/akathisia, sedation, orthostasis, metabolic parameters per agent; relapse during cross-coverage.';
+  if(ovFixed){
+    cp+='6. During the overlap: continue the stable oral dose through the full '+ovFixed.days+'-day overlap, then stop. Tapering early risks a coverage gap; continuing past the overlap window adds avoidable adverse-effect burden. ['+(ovFixed.s||'T')+']\n';
+  } else if(ov==='option'){
+    cp+='6. Oral coverage depends on the initiation option chosen in step 2: the 1-day start uses a single oral dose on day 1, while the extended option uses about 14 to 21 days of oral medication. Follow the selected pathway exactly; do not substitute a different overlap. [L]\n';
+  }
+  // 'none' products add no overlap line — the "Oral overlap: None" in step 3 already states it.
+  cp+=(ovFixed||ov==='option'?'7':'6')+'. Monitor: delayed depot onset; EPS/akathisia, sedation, orthostasis, metabolic parameters per agent; relapse during any cross-coverage.';
   var cpHtml=esc(cp);
   if(oral){ cpHtml='Current oral therapy: '+esc(oral)+'\n\n'+cpHtml; }
 
@@ -812,14 +835,14 @@ function runStart(){
       var maint1=addDays(s,35);
       lines.push('First monthly maintenance (~5 weeks after day 1): '+fmtDate(maint1));
     } else if(m==='aripiprazole'&&p==='maintena'){
-      lines.push('14-day oral overlap ends: '+fmtDate(addDays(s,14)));
+      lines.push('If the 14-day option is used, oral overlap ends: '+fmtDate(addDays(s,14)));
       lines.push('Approximate next monthly target (~4 weeks): '+fmtDate(addDays(s,28)));
       lines.push('Earliest permissible next dose: '+fmtDate(addDays(s,26))+' (do not give sooner than 26 days).');
     } else if(m==='aripiprazole'&&p==='aristada'){
       lines.push('21-day oral overlap ends (if used): '+fmtDate(addDays(s,21)));
       lines.push('Earliest permissible next dose: '+fmtDate(addDays(s,14))+' (do not give sooner than 14 days).');
     } else if(m==='aripiprazole'&&p==='asimtufii'){
-      lines.push('14-day oral overlap ends: '+fmtDate(addDays(s,14)));
+      lines.push('If the 14-day option is used, oral overlap ends: '+fmtDate(addDays(s,14)));
       lines.push('Next injection due (every 2 months): '+fmtDate(addDays(s,56)));
       lines.push('Earliest permissible next dose: '+fmtDate(addDays(s,56))+' (not more often than every 8 weeks).');
     } else if(m==='risperidone'&&(p==='consta'||p==='rykindo')){
@@ -839,18 +862,28 @@ function runStart(){
     sched=lines.join('\n');
   }
 
-  // Patient-facing
-  var pf='This injection is being started to replace your daily oral medication. '+
-    'For the first part of treatment you may still need to take the oral medication while the injection builds up to a steady level. '+
-    'Keep your injection appointments — the medication is designed to last between visits, and missing a dose can let symptoms return. '+
+  // Patient-facing — gated by overlap class
+  var pf='This injection is being started to replace your daily oral medication. ';
+  if(ov==='none'){
+    pf+='With this medication, the start is designed so you do not usually need to keep taking the oral version once the injection begins, unless your prescriber gives you a specific reason. ';
+  } else if(ovFixed){
+    pf+='You will keep taking the oral medication for about '+ovFixed.days+' days while the injection reaches a steady enough level, and then stop. This is because the injection releases slowly at first. ';
+  } else if(ov==='option'){
+    pf+='Depending on the start your prescriber chooses, you may receive more than one injection (and a single oral dose) on the first day, or a single injection plus about two weeks of oral medication. Follow the specific plan they give you. ';
+  }
+  pf+='Keep your injection appointments — the medication is designed to last between visits, and missing a dose can let symptoms return. '+
     'Tell your prescriber about restlessness, stiffness, muscle spasms, or feeling unusually sedated.';
   if(d.rems){ pf+=' For this specific medication you will need to stay at the clinic for at least 3 hours after each injection and have someone drive you home.'; }
 
-  // Chart blurb
+  // Chart blurb — gated overlap clause + corrected labeling-verification language
+  var ovClause;
+  if(ov==='none'){ ovClause='No routine oral overlap is required for standard initiation; prior oral therapy may be discontinued at initiation or tapered briefly if clinically indicated, with monitoring for additive adverse effects or symptom recurrence.'; }
+  else if(ovFixed){ ovClause='Oral overlap planned for approximately '+ovFixed.days+' days, then discontinue.'; }
+  else { ovClause='Initiation pathway per the protocol above (1-day vs extended-oral option); selected pathway to be documented.'; }
   var cn='Reviewed initiation of '+d.name+' from '+(oral?oral:'current oral antipsychotic')+'. '+
-    'Confirmed plan: '+stripTrail(d.oralTrial.t)+' '+stripTrail(d.init.t)+' '+stripTrail(d.overlap.t)+' '+
-    'Counseled on delayed depot onset, continued oral medication during overlap, adverse effects, and the importance of maintaining the injection schedule. '+
-    'Dosing based on current product labeling; PI verified prior to ordering.';
+    'Confirmed plan: '+stripTrail(d.oralTrial.t)+' '+stripTrail(d.init.t)+' '+ovClause+' '+
+    'Counseled on delayed depot onset, adverse effects, and the importance of maintaining the injection schedule. '+
+    'Current product labeling should be verified prior to ordering or administering.';
 
   var h='';
   if(d.rems){ h+='<div class="rems-banner"><strong>⚠ '+esc(d.name)+' REMS</strong>'+esc(d.rems)+'</div>'; }
