@@ -51,18 +51,25 @@ exports.handler = async function (event) {
       '{"title": "...", "description": "one sentence on what it is and when to use it", "category": "one of the categories", "tier": "full|forum|free", "matched_post": "exact title from the list above or empty string", "confidence": "high|medium|low|none"}'
     ].join('\n');
 
-    const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: { 'x-api-key': AK, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 400, messages: [{ role: 'user', content: prompt }] })
-    });
-    const aiData = await aiRes.json();
-    if (!aiRes.ok) throw new Error('Anthropic ' + aiRes.status + ': ' + JSON.stringify(aiData).slice(0, 200));
-
-    let raw = (aiData.content && aiData.content[0] && aiData.content[0].text) ? aiData.content[0].text : '';
-    raw = raw.replace(/```json|```/g, '').trim();
-    let prop;
-    try { prop = JSON.parse(raw); } catch (e) { prop = { title: filename.replace(/\.[^.]+$/, ''), description: '', category: 'general', tier: 'full', matched_post: '', confidence: 'none' }; }
+    // Fallback proposal from the filename, used if the AI call fails for any reason.
+    var fallback = { title: filename.replace(/\.[^.]+$/, '').replace(/\.docx$/i,'').replace(/_/g,' '), description: '', category: 'general', tier: 'full', matched_post: '', confidence: 'none' };
+    let prop = fallback;
+    let aiError = null;
+    try {
+      const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': AK, 'anthropic-version': '2023-06-01', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 400, messages: [{ role: 'user', content: prompt }] })
+      });
+      const aiData = await aiRes.json();
+      if (!aiRes.ok) {
+        aiError = 'Anthropic ' + aiRes.status + ': ' + JSON.stringify(aiData).slice(0, 300);
+      } else {
+        let raw = (aiData.content && aiData.content[0] && aiData.content[0].text) ? aiData.content[0].text : '';
+        raw = raw.replace(/```json|```/g, '').trim();
+        try { prop = JSON.parse(raw); } catch (e) { aiError = 'Parse failed: ' + raw.slice(0,200); prop = fallback; }
+      }
+    } catch (e) { aiError = 'Fetch failed: ' + e.message; }
 
     const cat = VALID_CATS.indexOf(prop.category) !== -1 ? prop.category : 'general';
     const tier = ['full', 'forum', 'free'].indexOf(prop.tier) !== -1 ? prop.tier : 'full';
@@ -83,7 +90,7 @@ exports.handler = async function (event) {
     });
     if (!upd.ok) throw new Error('Supabase update ' + upd.status);
 
-    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, proposal: { title: prop.title, description: prop.description, category: cat, tier: tier, matched_post: prop.matched_post, confidence: prop.confidence } }) };
+    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, ai_error: aiError, proposal: { title: prop.title, description: prop.description, category: cat, tier: tier, matched_post: prop.matched_post, confidence: prop.confidence } }) };
   } catch (e) {
     return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: e.message }) };
   }
