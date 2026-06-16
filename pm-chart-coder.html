@@ -657,15 +657,30 @@ async function runCodingPasses() {
   var userMsg = 'Visit type: ' + visitType + '\n\nChart note:\n\n' + noteText + pfContext;
 
   try {
-    // Documentation Audit
-    updateProgress(1, 'Auditing note for inconsistencies...');
-    var auditRaw = await callAPI(AUDIT_PROMPT, 'Chart note to audit:\n\n' + noteText, 'claude-haiku-4-5-20251001', 5000);
-    var audit = parseJSON(auditRaw);
+    // Audit and MDM fact-extraction are independent (audit reads noteText only,
+    // MDM reads userMsg only). Run them concurrently to cut one call off the
+    // critical path. The audit's try/catch lives INSIDE its own promise so a
+    // failed/empty audit resolves to null instead of rejecting Promise.all and
+    // taking the MDM call down with it.
+    updateProgress(1, 'Auditing note and evaluating MDM...');
+    var auditPromise = (async function() {
+      try {
+        var raw = await callAPI(AUDIT_PROMPT, 'Chart note to audit:\n\n' + noteText, 'claude-haiku-4-5-20251001', 5000);
+        return parseJSON(raw);
+      } catch (e) {
+        console.log('Audit pass failed, continuing without it:', e.message);
+        return null;
+      }
+    })();
+    var mdmPromise = callAPI(MDM_EVAL_PROMPT, userMsg, 'claude-sonnet-4-6', 2500);
+
+    var auditAndMdm = await Promise.all([auditPromise, mdmPromise]);
+    var audit = auditAndMdm[0];
+    var mdmRaw = auditAndMdm[1];
     lastAudit = audit;
 
     // Pass 1: Fact extraction (model reports determinate facts, NOT levels)
     updateProgress(2, 'Evaluating Medical Decision Making (all three axes)...');
-    var mdmRaw = await callAPI(MDM_EVAL_PROMPT, userMsg, 'claude-sonnet-4-6', 2500);
     var facts = parseJSON(mdmRaw);
     if (!facts) throw new Error('Could not parse the MDM fact extraction. Please try again.');
 
