@@ -20,6 +20,7 @@
 | pm-monitoring-protocol.html | clinical-proxy | claude-sonnet-4-6 | Monitoring counseling generation |
 | practice-lab-billing.html | anthropic-proxy | claude-sonnet-4-6 (x9), claude-haiku-4-5-20251001 (x3) | Billing sim, Angela rep, drills |
 | pm-interaction-checker.html | anthropic-proxy | claude-sonnet-4-6 | Interaction analysis |
+| pm-clinical-note-builder.html | anthropic-proxy | claude-sonnet-4-6 | Psychotherapy add-on + assessment generation from pasted HPI |
 | pm-letter-generator.html | clinical-proxy | claude-haiku-4-5-20251001, claude-sonnet-4-6 | Letter generation |
 | pm-termination-workflow.html | clinical-proxy | claude-haiku-4-5-20251001 | Termination package (Haiku is intentional — stays under Netlify 26s timeout) |
 | inngest-serve.mjs | api.anthropic direct | claude-sonnet-4-6 (synthesis), claude-haiku-4-5-20251001 (query expansion) | Ask the Archive RAG pipeline |
