@@ -351,16 +351,17 @@ exports.handler = async function (event) {
     const userMsg = 'Visit type: ' + (visitType || '') + '\n\nChart note:\n\n' + noteText + (preflightContext || '');
 
     console.log('CC audit start for job:', job_id);
-    const auditRaw = await ccCallAnthropic(CC_AUDIT_PROMPT, 'Chart note to audit:\n\n' + noteText, anthropicKey, 2000);
+    const auditRaw = await ccCallAnthropic(CC_AUDIT_PROMPT, 'Chart note to audit:\n\n' + noteText, anthropicKey, 4000);
     const audit = ccParseJSON(auditRaw);
+    console.log('CC audit parsed:', audit ? 'OK clean=' + audit.clean : 'NULL parse-failed raw-len ' + (auditRaw ? auditRaw.length : 0));
 
     console.log('CC mdm start for job:', job_id);
-    const mdmRaw = await ccCallAnthropic(CC_MDM_EVAL_PROMPT, userMsg, anthropicKey, 2000);
+    const mdmRaw = await ccCallAnthropic(CC_MDM_EVAL_PROMPT, userMsg, anthropicKey, 3000);
     const mdm = ccParseJSON(mdmRaw);
 
     console.log('CC review start for job:', job_id);
     const reviewInput = userMsg + '\n\nINITIAL MDM EVALUATION:\n' + JSON.stringify(mdm, null, 2);
-    const reviewRaw = await ccCallAnthropic(CC_REVIEW_PROMPT, reviewInput, anthropicKey, 2000);
+    const reviewRaw = await ccCallAnthropic(CC_REVIEW_PROMPT, reviewInput, anthropicKey, 3000);
     const review = ccParseJSON(reviewRaw);
 
     await saveResult(supabaseUrl, supabaseKey, job_id, 'complete', { audit: audit, mdm: mdm, review: review });
