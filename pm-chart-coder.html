@@ -684,24 +684,49 @@ async function runCodingPasses() {
   var userMsg = 'Visit type: ' + visitType + '\n\nChart note:\n\n' + noteText + pfContext;
 
   try {
-    // Documentation Audit
-    updateProgress(1, 'Auditing note for inconsistencies...');
-    var auditRaw = await callAPI(AUDIT_PROMPT, 'Chart note to audit:\n\n' + noteText, 'claude-haiku-4-5-20251001');
-    var audit = parseJSON(auditRaw);
+    updateProgress(1, 'Submitting note for analysis...');
+
+    // Fire the background job (audit + MDM + review run server-side on Sonnet, no timeout)
+    var trigRes = await fetch('/.netlify/functions/chart-coder-trigger', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        noteText: noteText,
+        visitType: visitType,
+        preflightContext: pfContext
+      })
+    });
+    var trigData = await trigRes.json();
+    if (!trigData.job_id) throw new Error(trigData.error || 'Could not start analysis.');
+    var jobId = trigData.job_id;
+
+    updateProgress(2, 'Evaluating Medical Decision Making (all three axes)...');
+
+    // Poll for completion. Background function has up to 15 min; we poll for ~3 min.
+    var result = null;
+    var attempts = 0;
+    var maxAttempts = 90;   // 90 x 2s = 180s
+    while (attempts < maxAttempts) {
+      await new Promise(function(r) { setTimeout(r, 2000); });
+      attempts++;
+      if (attempts === 8) updateProgress(3, 'Adversarial review: checking for undercoding...');
+      var pollRes = await fetch('/.netlify/functions/chart-coder-poll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_id: jobId })
+      });
+      var pollData = await pollRes.json();
+      if (pollData.status === 'complete') { result = pollData.result; break; }
+      if (pollData.status === 'error') throw new Error(pollData.error || 'Analysis failed.');
+    }
+
+    if (!result) throw new Error('The analysis is taking longer than expected. Please try again.');
+
+    var audit = result.audit;
+    var mdm = result.mdm;
+    var review = result.review;
     lastAudit = audit;
 
-    // Pass 1: Full MDM Evaluation (all three axes)
-    updateProgress(2, 'Evaluating Medical Decision Making (all three axes)...');
-    var mdmRaw = await callAPI(MDM_EVAL_PROMPT, userMsg);
-    var mdm = parseJSON(mdmRaw);
-
-    // Pass 2: Adversarial Review + Synthesis
-    updateProgress(3, 'Adversarial review: checking for undercoding...');
-    var reviewInput = userMsg + '\n\nINITIAL MDM EVALUATION:\n' + JSON.stringify(mdm, null, 2);
-    var reviewRaw = await callAPI(REVIEW_PROMPT, reviewInput, 'claude-haiku-4-5-20251001');
-    var review = parseJSON(reviewRaw);
-
-    // Done
     updateProgress(4, 'Complete.');
     lastMDM = mdm;
     lastReview = review;
