@@ -60,7 +60,14 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div class="panel">
     <label for="hpi">Your HPI / visit narrative</label>
-    <textarea id="hpi" placeholder="Paste the HPI you wrote or dictated. Include enough clinical detail for the assessment to reason from: symptoms, course, current medications and response, relevant history, risk, and what was decided today. If you have a prior note, you can paste it too for continuity."></textarea>
+    <textarea id="hpi" placeholder="Paste the HPI you wrote or dictated. Include enough clinical detail to reason from: symptoms, course, current medications and response, relevant history, and risk."></textarea>
+
+    <label for="dxprior" style="margin-top:16px">Prior assessment + diagnoses <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(recommended)</span></label>
+    <textarea id="dxprior" style="min-height:90px" placeholder="Paste your last assessment, including the diagnosis list with ICD-10 codes. This gives the tool diagnostic continuity and the dx list to carry into today's assessment. If you have no prior assessment, at minimum list the active diagnoses."></textarea>
+
+    <label for="plan" style="margin-top:16px">What are you doing this visit? <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(recommended)</span></label>
+    <textarea id="plan" style="min-height:70px" placeholder="What you're doing today and why: changing a med (which, dose, rationale), continuing, augmenting, ordering labs, referring. The assessment integrates the reasoning behind these decisions."></textarea>
+
     <div class="hint">PHI is processed transiently to generate your sections and is not retained.</div>
   </div>
 
@@ -71,39 +78,18 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
         <div class="opt sel" data-scope="both">Assessment + psychotherapy blurb</div>
         <div class="opt" data-scope="assessment">Assessment only</div>
         <div class="opt" data-scope="therapy">Psychotherapy blurb only</div>
+        <div class="opt" data-scope="reasoning">Clinical reasoning (talk it through)</div>
       </div>
     </div>
-
-    <div id="therapy-cards">
-      <div class="card-group">
-        <label>Was psychotherapy performed, and which add-on?</label>
-        <div class="opts" id="time-opts">
-          <div class="opt sel" data-code="90833">90833 &middot; 16&ndash;37 min</div>
-          <div class="opt" data-code="90836">90836 &middot; 38&ndash;52 min</div>
-          <div class="opt" data-code="90838">90838 &middot; 53+ min</div>
-        </div>
-      </div>
-      <div class="card-group">
-        <label>Modality used this visit</label>
-        <div class="opts" id="mod-opts">
-          <div class="opt sel" data-mod="Supportive psychotherapy">Supportive</div>
-          <div class="opt" data-mod="CBT-informed">CBT-informed</div>
-          <div class="opt" data-mod="Motivational interviewing">MI</div>
-          <div class="opt" data-mod="DBT-informed">DBT-informed</div>
-          <div class="opt" data-mod="Psychodynamic">Psychodynamic</div>
-          <div class="opt" data-mod="Trauma-focused">Trauma-focused</div>
-          <div class="opt" data-mod="ACT">ACT</div>
-        </div>
-        <div class="hint">Pick the modality that matches what actually happened. The blurb is written to read as active therapeutic work, not psychoeducation.</div>
-      </div>
-      <div class="card-group">
-        <label>Psychotherapy minutes (optional, refines the time statement)</label>
-        <input type="text" id="mins" inputmode="numeric" placeholder="e.g. 22" style="width:140px;background:var(--navy);border:1px solid var(--rule);border-radius:8px;color:var(--white);padding:10px 12px;font-size:.9rem">
-      </div>
-    </div>
-
-    <button class="btn" id="go">Generate</button>
+    <button class="btn" id="review">Review the visit &rarr;</button>
+    <div class="hint" style="margin-top:8px">The tool reads your input and suggests the modalities and focus that fit what you documented, the same way it would if a colleague asked what you worked on. You confirm or adjust before it writes.</div>
     <div id="err-box"></div>
+  </div>
+
+  <div id="preflight" class="panel" style="display:none">
+    <div id="preflight-cards"></div>
+    <button class="btn" id="go">Generate</button>
+    <div id="err-box2"></div>
   </div>
 
   <div id="results"></div>
@@ -220,13 +206,58 @@ Do NOT open with "The patient continues to meet DSM-5 criteria for...", "Patient
 === CLINICAL REASONING REQUIREMENTS ===
 Weave these into the formulation (not as labeled sections):
 1. DIAGNOSTIC FRAME: What is the primary organizing pathology? What is secondary or reactive? State explicitly, not as a list of equal diagnoses.
-2. COMPETING INTERPRETATIONS: Challenge at least one assumption. What might be misattributed? What else could explain part of this presentation?
-3. MECHANISM: How is this actually working? What is driving what? Think in causal chains.
+2. COMPETING INTERPRETATIONS: Challenge at least one assumption. What might be misattributed? What else could explain part of this presentation? Example: "While attributed to SSRI sensitivity, an alternative explanation is anxiety-driven somatic hypervigilance amplifying perceived side effects."
+3. MECHANISM: How is this actually working? What is driving what? Think in causal chains, not descriptions. Example: "Intrusive thoughts increase cognitive load and baseline anxiety, which heightens somatic awareness and lowers tolerance for physiologic changes."
+4. CONSTRAINTS: What limits treatment options? Biological (breastfeeding, liver disease), psychological (hypervigilance, treatment avoidance), pharmacologic (side-effect history, failed trials).
+5. CORE TENSION: What makes this case hard? State it directly. Example: "Treatment is complicated by the need for adequate serotonergic dosing versus the patient's limited tolerance for dose escalation."
+6. TREATMENT DIRECTION: What strategy is being taken and why? Not just "continue meds" but the reasoning behind the approach.
+7. FAILURE MODE: What goes wrong if this is mismanaged? Example: "Without ERP, medication adjustments alone are likely to perpetuate a cycle of perceived intolerance and discontinuation."
+
+Not every assessment needs all 7 (a stable follow-up won't have competing interpretations or failure modes). Complex cases and new patient evals should hit most of them. The assessment should read like a clinician thinking through the case, not an AI organizing information.
+
+KEY RULE: The assessment must address EVERY diagnostically relevant item mentioned in the HPI. If OCD traits, social anxiety, diagnostic uncertainty, or any other clinical content appears in the HPI, it must be addressed in the assessment even if briefly. Do not silently drop diagnostically relevant content.
+
+=== ASSESSMENT LENGTH — THE PRINCIPLE ===
+Touch on everything from the HPI, but calibrate depth to clinical significance for THIS visit:
+- Items that drove decisions, represent active clinical questions, or involve diagnostic uncertainty → full reasoning (multiple sentences, visible clinical thinking).
+- Items that are stable, unchanged, or background → 1-2 sentences maximum, woven into the formulation.
+- Items that are unremarkable → brief mention or single clause within a larger sentence.
+The assessment should read like a clinician writing about what MATTERED today, with brief acknowledgment of what didn't change. It should NOT read like a systematic review of every HPI section. Concrete test: if a paragraph could be deleted and the remaining assessment still captures every clinical decision and every active question, that paragraph was filler. Cut it before outputting.
 
 Output ONLY the assessment (diagnosis list + formulation prose). No Plan. No tool heading.`;
 
 // ── State ──
-var scope = 'both', code = '90833', modality = 'Supportive psychotherapy';
+const PREFLIGHT_SYS = `You are an experienced psychiatric prescriber reviewing a visit before documentation is generated. The provider has already indicated they want a psychotherapy blurb and/or an assessment. Your job is to read the HPI and surface the clinical decisions that would change the psychotherapy documentation, fitted to THIS visit's content.
+
+OUTPUT FORMAT: Respond ONLY with a JSON object. No markdown, no backticks. Raw JSON.
+
+{
+  "questions": [ array of question objects ]
+}
+
+Each question object: {"id": "modality" | "focus" | other short id, "text": "one sentence", "options": ["option 1", "option 2", "option 3"]}
+
+REQUIRED CARDS (in this order):
+
+Card 1 — id "time": "Was psychotherapy performed, and which add-on code?"
+options: ["Yes — 90833 (16-37 min)", "Yes — 90836 (38-52 min)", "Yes — 90838 (53+ min)", "No therapy this visit"]
+
+Card 2 — id "modality": Suggest 2-3 modalities that FIT the specific clinical content of this HPI. For EACH option, name what clinical issue(s) it would target, drawn from this visit. Format each option as: "Modality — targeting [specific issues from this visit]".
+Examples of well-fitted options:
+- "Supportive psychotherapy — targeting adjustment to new stressors and reinforcing current coping"
+- "CBT-informed — targeting task-initiation avoidance and cognitive patterns around productivity"
+- "Motivational interviewing — targeting ambivalence about treatment engagement"
+The modality MUST match what plausibly happened given the HPI. If the patient is not ambivalent about anything, do NOT suggest MI. If no cognitive work is suggested by the content, do NOT suggest CBT. Default to supportive psychotherapy when the work was validation, reinforcement, and condition-focused psychoeducation. Always include a final option "Other / enter my own" so the provider can override.
+
+Card 3 — id "focus": "What was the primary therapeutic focus this visit?" with 2-3 options inferred from the HPI content (e.g. ["Medication concerns and treatment expectations", "Caregiver stress and self-care", "Diagnostic uncertainty and symptom patterns"]). Always include "Other / enter my own".
+
+Surface ONLY these cards plus, at most, one genuinely ambiguous clinical decision specific to this case if one exists. Do NOT ask about section order, formatting, assessment style, or the HPI itself. If the provider asked for assessment only (no therapy), return an empty questions array.`;
+
+
+
+var scope = 'both';
+var preflightQuestions = [];
+var selections = {};
 
 function bind(groupId, attr, setter){
   document.getElementById(groupId).addEventListener('click', function(e){
@@ -235,24 +266,39 @@ function bind(groupId, attr, setter){
     o.classList.add('sel'); setter(o.getAttribute(attr));
   });
 }
-bind('scope-opts','data-scope',function(v){ scope=v; document.getElementById('therapy-cards').style.display = (v==='assessment') ? 'none' : 'block'; });
-bind('time-opts','data-code',function(v){ code=v; });
-bind('mod-opts','data-mod',function(v){ modality=v; });
+bind('scope-opts','data-scope',function(v){
+  scope=v;
+  document.getElementById('review').textContent = (v==='reasoning') ? 'Start clinical reasoning →' : 'Review the visit →';
+});
 
-async function callAPI(systemPrompt, userMessage){
+async function callAPI(systemPrompt, messages, maxTokens){
   var response = await fetch('/.netlify/functions/clinical-proxy', {
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify({
       model:'claude-sonnet-4-6',
-      max_tokens:2000,
+      max_tokens: maxTokens || 2000,
       system: systemPrompt,
-      messages:[{role:'user', content:userMessage}]
+      messages: messages
     })
   });
   var data = await response.json();
   if(data.error) throw new Error(data.error.message || data.error);
   return (data.content || []).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('\n').trim();
+}
+
+function gatherInput(){
+  return {
+    hpi: document.getElementById('hpi').value.trim(),
+    dxprior: document.getElementById('dxprior').value.trim(),
+    plan: document.getElementById('plan').value.trim()
+  };
+}
+function contextBlock(inp){
+  var s = 'HPI / visit narrative:\n\n' + inp.hpi;
+  if(inp.dxprior) s += '\n\n---\n\nPrior assessment + diagnoses (for continuity and the diagnosis list):\n\n' + inp.dxprior;
+  if(inp.plan) s += '\n\n---\n\nWhat the provider is doing this visit (integrate the reasoning, not the prescription mechanics):\n\n' + inp.plan;
+  return s;
 }
 
 function outBlock(title, id, text){
@@ -265,41 +311,181 @@ function copyOut(id){
   event.target.textContent='Copied'; setTimeout(function(){ event.target.textContent='Copy'; },1500);
 }
 
-document.getElementById('go').addEventListener('click', async function(){
-  var hpi = document.getElementById('hpi').value.trim();
+// ── STEP 1: Review the visit (preflight) or start reasoning ──
+document.getElementById('review').addEventListener('click', async function(){
+  var inp = gatherInput();
   var errBox = document.getElementById('err-box');
   errBox.innerHTML='';
-  if(hpi.length < 40){ errBox.innerHTML='<div class="err">Please paste an HPI with enough clinical detail to reason from.</div>'; return; }
+  if(inp.hpi.length < 40){ errBox.innerHTML='<div class="err">Please paste an HPI with enough clinical detail to reason from.</div>'; return; }
 
-  var btn=this; btn.disabled=true; var orig=btn.textContent;
-  btn.innerHTML='<span class="spinner"></span>Generating…';
   document.getElementById('results').innerHTML='';
+  document.getElementById('preflight').style.display='none';
   document.getElementById('handoff').style.display='none';
 
+  if(scope==='reasoning'){ startReasoning(inp); return; }
+
+  if(scope==='assessment'){
+    preflightQuestions = []; selections = {};
+    runGenerate(inp);
+    return;
+  }
+
+  var btn=this; btn.disabled=true; var orig=btn.textContent;
+  btn.innerHTML='<span class="spinner"></span>Reading the visit…';
   try{
-    var html='';
-    if(scope==='assessment' || scope==='both'){
-      var assessText = await callAPI(ASSESS_SYS, 'HPI / visit narrative:\n\n'+hpi);
-      html += outBlock('Assessment', 'out-assess', assessText);
-      document.getElementById('results').innerHTML = html;
-    }
-    if(scope==='therapy' || scope==='both'){
-      var mins = document.getElementById('mins').value.trim();
-      var timeLine = mins ? (mins+' minutes of psychotherapy, separate from the E/M service') : ('time band for '+code);
-      var userMsg = 'HPI / visit narrative:\n\n'+hpi+'\n\n---\n\nModality selected by provider: '+modality+
-                    '\nAdd-on code intended: '+code+'\nPsychotherapy time: '+timeLine+
-                    '\n\nGenerate the psychotherapy add-on documentation matched to this modality.';
-      var therapyText = await callAPI(THERAPY_SYS, userMsg);
-      html += outBlock('Psychotherapy add-on ('+code+')', 'out-therapy', therapyText);
-      document.getElementById('results').innerHTML = html;
-    }
-    document.getElementById('handoff').style.display='block';
+    var raw = await callAPI(PREFLIGHT_SYS, [{role:'user', content: contextBlock(inp)}], 1200);
+    var parsed = JSON.parse(raw.replace(/```json|```/g,'').trim());
+    preflightQuestions = parsed.questions || [];
+    renderPreflight(preflightQuestions);
+    document.getElementById('preflight').style.display='block';
+    document.getElementById('preflight').scrollIntoView({behavior:'smooth', block:'start'});
   }catch(err){
-    errBox.innerHTML='<div class="err">Generation failed: '+(err.message||err)+'. Please try again.</div>';
+    errBox.innerHTML='<div class="err">Could not read the visit: '+(err.message||err)+'. You can try again.</div>';
   }finally{
     btn.disabled=false; btn.textContent=orig;
   }
 });
+
+function renderPreflight(questions){
+  selections = {};
+  var host = document.getElementById('preflight-cards');
+  var html = '<div style="font-size:.82rem;color:var(--cream-dim);margin-bottom:14px">Based on what you documented, here is what fits. Confirm or adjust, then generate.</div>';
+  questions.forEach(function(q, qi){
+    html += '<div class="card-group" data-qid="'+qi+'"><label>'+q.text.replace(/</g,'&lt;')+'</label><div class="opts pf-opts">';
+    (q.options||[]).forEach(function(opt, oi){
+      var isCustom = /other\s*\/\s*enter my own/i.test(opt);
+      html += '<div class="opt'+(oi===0 && !isCustom?' sel':'')+'" data-qi="'+qi+'" data-opt="'+opt.replace(/"/g,'&quot;')+'"'+(isCustom?' data-custom="1"':'')+'>'+opt.replace(/</g,'&lt;')+'</div>';
+    });
+    html += '</div><input type="text" class="pf-custom" data-qi="'+qi+'" placeholder="Enter your own…" style="display:none;width:100%;margin-top:8px;background:var(--navy);border:1px solid var(--rule);border-radius:8px;color:var(--white);padding:10px 12px;font-size:.9rem"></div>';
+    var first = (q.options||[]).find(function(o){return !/other\s*\/\s*enter my own/i.test(o);});
+    selections[qi] = first || '';
+  });
+  host.innerHTML = html;
+
+  host.querySelectorAll('.pf-opts').forEach(function(group){
+    group.addEventListener('click', function(e){
+      var o = e.target.closest('.opt'); if(!o) return;
+      var qi = o.getAttribute('data-qi');
+      group.querySelectorAll('.opt').forEach(function(x){ x.classList.remove('sel'); });
+      o.classList.add('sel');
+      var custom = host.querySelector('.pf-custom[data-qi="'+qi+'"]');
+      if(o.getAttribute('data-custom')){
+        custom.style.display='block'; custom.focus();
+        selections[qi] = custom.value.trim();
+      } else {
+        custom.style.display='none';
+        selections[qi] = o.getAttribute('data-opt');
+      }
+    });
+  });
+  host.querySelectorAll('.pf-custom').forEach(function(inp){
+    inp.addEventListener('input', function(){ selections[inp.getAttribute('data-qi')] = inp.value.trim(); });
+  });
+}
+
+// ── STEP 2: Generate ──
+document.getElementById('go').addEventListener('click', function(){ runGenerate(gatherInput()); });
+
+async function runGenerate(inp){
+  if(document.getElementById('err-box2')) document.getElementById('err-box2').innerHTML='';
+  var btn=document.getElementById('go'); btn.disabled=true; var orig=btn.textContent;
+  btn.innerHTML='<span class="spinner"></span>Generating…';
+  document.getElementById('results').innerHTML='';
+  document.getElementById('handoff').style.display='none';
+
+  var code='90833', timeChoice='', modality='', focus='';
+  preflightQuestions.forEach(function(q, qi){
+    var val = selections[qi] || '';
+    if(q.id==='time' || /add-on code/i.test(q.text)){
+      timeChoice = val;
+      var m = val.match(/9083[0-9]/); if(m) code = m[0];
+    } else if(q.id==='modality' || /modality/i.test(q.text)){
+      modality = val.split(' — ')[0].trim();
+    } else if(q.id==='focus' || /focus/i.test(q.text)){
+      focus = val;
+    }
+  });
+  var noTherapy = /no therapy/i.test(timeChoice);
+
+  try{
+    var html='';
+    if(scope==='assessment' || scope==='both'){
+      var assessText = await callAPI(ASSESS_SYS, [{role:'user', content: contextBlock(inp)}], 2000);
+      html += outBlock('Assessment', 'out-assess', assessText);
+      document.getElementById('results').innerHTML = html;
+    }
+    if((scope==='therapy' || scope==='both') && !noTherapy){
+      var userMsg = contextBlock(inp) +
+        '\n\n---\n\nModality selected by provider: ' + (modality||'Supportive psychotherapy') +
+        '\nAdd-on code intended: ' + code +
+        (focus ? '\nPrimary therapeutic focus: ' + focus : '') +
+        '\n\nGenerate the psychotherapy add-on documentation matched to this modality and focus.';
+      var therapyText = await callAPI(THERAPY_SYS, [{role:'user', content: userMsg}], 2000);
+      html += outBlock('Psychotherapy add-on ('+code+')', 'out-therapy', therapyText);
+      document.getElementById('results').innerHTML = html;
+    }
+    document.getElementById('handoff').style.display='block';
+    document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
+  }catch(err){
+    if(document.getElementById('err-box2')) document.getElementById('err-box2').innerHTML='<div class="err">Generation failed: '+(err.message||err)+'. Please try again.</div>';
+  }finally{
+    btn.disabled=false; btn.textContent=orig;
+  }
+}
+
+// ── Clinical reasoning chat (back-and-forth) ──
+var reasoningHistory = [];
+var REASONING_SYS = VOICE + '\n\nThe provider has pasted a clinical note or HPI and wants to think through a clinical question about it. Do NOT generate a psychotherapy blurb or a formatted assessment unless explicitly asked. Reason with them as a knowledgeable colleague would: address their actual question, raise relevant differentials, mechanisms, risks, and considerations grounded in the specific case. Ask a clarifying question if the case is ambiguous. Be direct and specific.';
+
+function startReasoning(inp){
+  reasoningHistory = [{role:'user', content: contextBlock(inp) + '\n\n---\n\n(The provider will ask a clinical question about this case. Acknowledge you have the case and ask what they would like to think through.)'}];
+  var host = document.getElementById('results');
+  host.innerHTML =
+    '<div class="out"><h3>Clinical reasoning</h3>'+
+    '<div id="chat-log" style="display:flex;flex-direction:column;gap:12px"></div>'+
+    '<div style="display:flex;gap:8px;margin-top:14px">'+
+      '<input type="text" id="chat-in" placeholder="Ask your clinical question…" style="flex:1;background:var(--navy);border:1px solid var(--rule);border-radius:8px;color:var(--white);padding:11px 14px;font-size:.9rem">'+
+      '<button class="btn" id="chat-send" style="margin-top:0">Send</button>'+
+    '</div><div id="chat-err"></div></div>';
+  host.scrollIntoView({behavior:'smooth', block:'start'});
+  document.getElementById('chat-send').addEventListener('click', function(){ sendReasoning(false); });
+  document.getElementById('chat-in').addEventListener('keydown', function(e){ if(e.key==='Enter'){ sendReasoning(false); }});
+  sendReasoning(true);
+}
+
+function addChatBubble(role, text){
+  var log = document.getElementById('chat-log');
+  var mine = role==='user';
+  var b = document.createElement('div');
+  b.style.cssText = 'max-width:90%;padding:10px 14px;border-radius:10px;font-size:.88rem;line-height:1.6;white-space:pre-wrap;'+
+    (mine ? 'align-self:flex-end;background:var(--teal-glow);border:1px solid var(--teal);color:var(--white)'
+          : 'align-self:flex-start;background:var(--navy);border:1px solid var(--rule);color:var(--cream)');
+  b.textContent = text;
+  log.appendChild(b);
+}
+
+async function sendReasoning(isKickoff){
+  var input = document.getElementById('chat-in');
+  var sendBtn = document.getElementById('chat-send');
+  var errEl = document.getElementById('chat-err');
+  errEl.innerHTML='';
+  if(isKickoff !== true){
+    var q = input.value.trim(); if(!q) return;
+    addChatBubble('user', q);
+    reasoningHistory.push({role:'user', content:q});
+    input.value='';
+  }
+  sendBtn.disabled=true; input.disabled=true;
+  try{
+    var reply = await callAPI(REASONING_SYS, reasoningHistory, 2000);
+    reasoningHistory.push({role:'assistant', content:reply});
+    addChatBubble('assistant', reply);
+  }catch(err){
+    errEl.innerHTML='<div class="err">'+(err.message||err)+'</div>';
+  }finally{
+    sendBtn.disabled=false; input.disabled=false; input.focus();
+  }
+}
 
 // ── Auth ──
 TBPAuth.protect({
