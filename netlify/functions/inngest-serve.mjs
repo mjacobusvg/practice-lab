@@ -1105,6 +1105,7 @@ const chartCoderPipeline = inngest.createFunction(
 
 export const handler = serve({
   client: inngest,
+  signingKey: process.env.INNGEST_SIGNING_KEY,
   functions: [askArchivePipeline, rechunkAllPosts, chartCoderPipeline],
   serveHost: 'https://thinkbeyondpractice.com',
   servePath: '/.netlify/functions/inngest-serve',
