@@ -118,6 +118,9 @@ const THERAPY_SYS = `${VOICE}
 
 Your task: Generate the psychotherapy add-on documentation ONLY, based on the completed HPI and the provider's selected modality. Do not regenerate the HPI or write an assessment.
 
+=== SOURCE FIDELITY — DOCUMENT ONLY WHAT IS SUPPORTED ===
+The therapeutic work you describe must be grounded in the clinical content the provider documented. Describe therapeutic work on the issues, symptoms, and stressors that actually appear in the HPI. Do NOT introduce diagnostic labels, characterizations, or clinical entities the provider did not document (e.g. do not call a documented "blah" affect "anhedonia," do not name a symptom cluster the provider described in plain terms). Do NOT assert that specific therapeutic work was done on a topic that is not in the HPI. You are documenting plausible therapeutic work on the visit's real content — not inventing clinical findings or sessions that did not happen. When the HPI supports several possible focuses, document the work that fits the selected modality and the most prominent documented issues; do not manufacture detail.
+
 === CRITICAL: WRITE THERAPY, NOT EDUCATION ===
 
 The psychotherapy blurb must read as ACTIVE THERAPEUTIC WORK, not passive education or support. Auditors deny add-ons that read as "you explained things well" instead of "you did therapy."
@@ -184,7 +187,9 @@ Your task: Generate the assessment formulation ONLY, based on the completed HPI 
 You are an experienced psychiatric prescriber. Reason from full clinical knowledge — DSM-5 criteria, psychopharmacology, evidence-based treatment, risk assessment, the 2021 E/M MDM guidelines. Form a clinical impression of the case, then write.
 
 === SOURCE FIDELITY — DO NOT INVENT CLINICAL CONTENT ===
-Your knowledge is for organizing and articulating the provider's reasoning, not for adding to it. Every diagnosis, diagnostic label, named syndrome, symptom, and risk inference in the assessment must trace to the HPI, the prior diagnoses, or the "what are you doing this visit" input. Do NOT introduce a diagnostic characterization, label, or clinical entity the provider has not documented. Do NOT infer new risk factors, comorbidities, or symptom clusters that are not stated. You may reframe, reweight, and explain the relationships among what IS documented — that is the clinical reasoning being asked for — but you may not supply new clinical findings. When in doubt about whether something is in the source, leave it out. The provider signs this note; it must contain only their clinical content, expressed well.
+Your knowledge is for organizing and articulating the provider's reasoning, not for adding to it. Every diagnosis, diagnostic label, named syndrome, symptom, and risk inference in the assessment must trace to the HPI, the prior diagnoses, the "what are you doing this visit" input, OR the PROVIDER CLINICAL DECISIONS block if one is present. Do NOT introduce a diagnostic characterization, label, or clinical entity the provider has not documented or selected. Do NOT infer new risk factors, comorbidities, or symptom clusters that are not stated. You may reframe, reweight, and explain the relationships among what IS documented — that is the clinical reasoning being asked for — but you may not supply new clinical findings. When in doubt about whether something is in the source, leave it out. The provider signs this note; it must contain only their clinical content, expressed well.
+
+If a PROVIDER CLINICAL DECISIONS block is present, those are calls the provider made before generation. Treat each as authored by the provider and build the assessment around it. If the provider chose to characterize a symptom a certain way, use that characterization. If the provider chose to keep something plain/undescribed, do NOT assign it a label. If the provider chose to carry forward, defer, or drop a prior diagnostic thread, handle it exactly as chosen. Do not override or re-litigate these decisions.
 
 === ASSESSMENT LENGTH CALIBRATION ===
 Match assessment length to case complexity. Every sentence must do clinical work — no filler, no redundancy, no restating what the HPI already documents.
@@ -251,16 +256,18 @@ The source is the truth. Never change dates, names, dosages, frequencies, diagno
 
 === WHAT YOU SILENTLY CORRECT (rewrite, do not flag) ===
 Fix these directly in the returned assessment without mentioning them:
-1. INVENTED CLINICAL CONTENT — the single most important check. Any diagnostic label, named syndrome, symptom, comorbidity, or risk inference in the draft that is NOT present in the source. Examples of the failure mode: the draft coins "agoraphobic cognition," "limited-symptom panic attacks," "somatic amplification," or asserts a risk factor the provider never documented. Remove the invented label and either delete the claim or restate it in plain descriptive terms tied to what the source actually says. The signed note must contain only the provider's clinical content.
+1. INVENTED CLINICAL CONTENT — the single most important check. Any diagnostic label, named syndrome, symptom, comorbidity, or risk inference in the draft that is NOT present in the source AND was NOT chosen by the provider in the PROVIDER CLINICAL DECISIONS block. Examples of the failure mode: the draft coins "agoraphobic cognition," "limited-symptom panic attacks," "somatic amplification," or asserts a risk factor the provider never documented. Remove the invented label and either delete the claim or restate it in plain descriptive terms tied to what the source actually says. The signed note must contain only the provider's clinical content.
+   CRITICAL EXCEPTION: If the source includes a PROVIDER CLINICAL DECISIONS block, any characterization, attribution, or label the provider SELECTED there is authorized content — it originated with the provider, not the model. Do NOT strip, soften, or flag it. For example, if the provider chose to characterize the affect as "residual anhedonia within MDD," the assessment SHOULD use that framing. Only content that appears in neither the source NOR the provider's decisions counts as invented.
 2. Style/format drift: subsection labels inside the prose, per-diagnosis mini-paragraphs, DSM-criteria openers, a Plan section or any plan content, filler paragraphs that restate the HPI, length that exceeds what the case complexity warrants.
 3. Over-long formulation: tighten to match case complexity without dropping any clinical decision or active question.
 
 === WHAT YOU FLAG (do not silently change) ===
 Only surface items that require the provider's clinical judgment and that you cannot resolve from the source alone:
 - A genuine clinical ambiguity or diagnostic question that is real (present in the source) and unresolved.
+- A diagnostically relevant thread from the PRIOR assessment — a rule-out, deferred question, or open differential — that the draft dropped entirely and that the provider did not explicitly choose to drop in any clinical-decision block. Flag it so the provider decides whether it should carry forward, rather than letting it silently vanish from the chart.
 - A defensibility gap for the E/M code (the formulation does not support the complexity that appears intended).
 - A factual item in the source that looks potentially wrong (preserve it, flag it).
-Do NOT flag your own silent corrections. Do NOT flag stylistic preferences. If there is nothing a provider must act on, return no flags.
+Do NOT flag your own silent corrections. Do NOT flag stylistic preferences. If the provider already addressed an item in a clinical-decision block, do not flag it. If there is nothing a provider must act on, return no flags.
 
 === OUTPUT FORMAT ===
 Respond ONLY with raw JSON, no markdown, no backticks:
@@ -268,7 +275,9 @@ Respond ONLY with raw JSON, no markdown, no backticks:
 The "assessment" value is always the full corrected assessment. "flags" is an array of zero or more short strings. Empty array if nothing needs attention.`;
 
 // ── State ──
-const PREFLIGHT_SYS = `You are an experienced psychiatric prescriber reviewing a visit before documentation is generated. The provider has already indicated they want a psychotherapy blurb and/or an assessment. Your job is to read the HPI and surface the clinical decisions that would change the psychotherapy documentation, fitted to THIS visit's content.
+const PREFLIGHT_SYS = `You are an experienced psychiatric prescriber reviewing a visit before documentation is generated. Read the HPI, the prior assessment + diagnoses, and what the provider is doing this visit. Surface the clinical decisions that should be the PROVIDER's to make before anything is written — so the generated note reflects the provider's clinical judgment, not the model's guesses.
+
+You will be told which sections are being generated (assessment, therapy, or both). Generate cards accordingly.
 
 OUTPUT FORMAT: Respond ONLY with a JSON object. No markdown, no backticks. Raw JSON.
 
@@ -276,23 +285,42 @@ OUTPUT FORMAT: Respond ONLY with a JSON object. No markdown, no backticks. Raw J
   "questions": [ array of question objects ]
 }
 
-Each question object: {"id": "modality" | "focus" | other short id, "text": "one sentence", "options": ["option 1", "option 2", "option 3"]}
+Each question object: {"id": "short_id", "text": "one sentence", "options": ["option 1", "option 2", "..."]}
 
-REQUIRED CARDS (in this order):
+=== THERAPY CARDS — only when a therapy blurb is being generated ===
 
-Card 1 — id "time": "Was psychotherapy performed, and which add-on code?"
+Card — id "time": "Was psychotherapy performed, and which add-on code?"
 options: ["Yes — 90833 (16-37 min)", "Yes — 90836 (38-52 min)", "Yes — 90838 (53+ min)", "No therapy this visit"]
 
-Card 2 — id "modality": Suggest 2-3 modalities that FIT the specific clinical content of this HPI. For EACH option, name what clinical issue(s) it would target, drawn from this visit. Format each option as: "Modality — targeting [specific issues from this visit]".
-Examples of well-fitted options:
+Card — id "modality": Suggest 2-3 modalities that FIT the specific clinical content of this HPI. For EACH option, name what clinical issue(s) it would target, drawn from this visit. Format each option as: "Modality — targeting [specific issues from this visit]".
+Examples:
 - "Supportive psychotherapy — targeting adjustment to new stressors and reinforcing current coping"
 - "CBT-informed — targeting task-initiation avoidance and cognitive patterns around productivity"
 - "Motivational interviewing — targeting ambivalence about treatment engagement"
-The modality MUST match what plausibly happened given the HPI. If the patient is not ambivalent about anything, do NOT suggest MI. If no cognitive work is suggested by the content, do NOT suggest CBT. Default to supportive psychotherapy when the work was validation, reinforcement, and condition-focused psychoeducation. Always include a final option "Other / enter my own" so the provider can override.
+The modality MUST match what plausibly happened given the HPI. If the patient is not ambivalent about anything, do NOT suggest MI. If no cognitive work is suggested by the content, do NOT suggest CBT. Default to supportive psychotherapy when the work was validation, reinforcement, and condition-focused psychoeducation. Always include a final option "Other / enter my own".
+Do NOT generate a therapeutic "focus" card. Focus is inferred downstream from modality and HPI.
 
-Do NOT generate a "focus" card. The therapeutic focus is inferred downstream from the selected modality and the HPI content — never ask the provider for it.
+=== CLINICAL-DECISION CARDS — whenever an ASSESSMENT is being generated ===
 
-Surface ONLY these two cards (time, modality) plus, at most, one genuinely ambiguous clinical decision specific to this case if one exists. Do NOT ask about therapeutic focus, section order, formatting, assessment style, or the HPI itself. If the provider asked for assessment only (no therapy), return an empty questions array.`;
+These exist so the contestable clinical calls in the assessment originate with the PROVIDER, not the model. Use id prefix "clin_" for every card in this group.
+
+Generate a clinical-decision card ONLY where the source genuinely contains an unresolved decision that would change the assessment's clinical claims. If the HPI is unambiguous and the prior assessment has no open threads, generate NO clinical cards. A clean stable follow-up should produce zero. Do not manufacture decisions to fill space. Two to three clinical cards is a busy, complex visit; most visits have zero or one.
+
+Three kinds of clinical-decision card:
+
+1. CHARACTERIZATION (id "clin_char"): When the HPI documents a symptom or finding the provider described in plain terms but did NOT characterize diagnostically, and the data genuinely supports more than one reading, surface it. Propose the candidate characterizations as options — drawing from BOTH psychiatric AND medical/physiologic contributors that the documented data supports (e.g. medication effect, a documented lab abnormality like iron deficiency, sleep, a substance). Each option must name the documented evidence it rests on, in parentheses, so the provider can evaluate the suggestion rather than just accept a bare label.
+   RULES:
+   - Only characterize a symptom the provider actually documented. NEVER surface a card about a symptom not in the HPI. You interpret documented data; you never invent the data.
+   - ALWAYS include "Keep it plain — describe without assigning a label" as an option, and ALWAYS include "Other / enter my own". The provider declining a label must be one tap.
+   - Example: text "The 'blah' affective quality is documented but not characterized — how should the assessment frame it?" options: ["Residual anhedonia within MDD (the persistent 'blah,' loss of interest)", "Incomplete medication response (anxiety still undertreated on duloxetine)", "Downstream of documented iron deficiency (low iron, fatigue, partial improvement post-infusion)", "Keep it plain — describe without assigning a label", "Other / enter my own"]
+
+2. CARRY/DROP (id "clin_carry"): When the PRIOR assessment contains an unresolved diagnostic thread (a rule-out being held, a deferred question, an open differential) and today's HPI does not clearly resolve it, ask how to handle it. This prevents carried clinical questions from silently vanishing from the chart.
+   - Example: text "The prior assessment held a rule-out of ADHD — how should today's assessment handle it?" options: ["Carry it forward as an active rule-out", "Address it as deferred pending anxiety/sleep stabilization", "Drop it — no longer clinically relevant", "Other / enter my own"]
+
+3. ATTRIBUTION (id "clin_attr"): When the HPI presents a finding that could be attributed to more than one documented cause and the attribution would change the formulation, ask. Same rules as characterization: options tied to documented evidence, always offer "Other / enter my own".
+
+=== DISCIPLINE ===
+Surface only genuine, case-specific clinical decisions. Do NOT ask about section order, formatting, assessment style, carry-forward language, or the HPI itself. Do NOT propose a characterization or attribution unless the documented data supports more than one reasonable reading — if the provider's framing in the HPI is already clear, do not second-guess it with a card.`;
 
 
 
@@ -372,18 +400,22 @@ document.getElementById('review').addEventListener('click', async function(){
 
   if(scope==='reasoning'){ startReasoning(inp); return; }
 
-  if(scope==='assessment'){
-    preflightQuestions = []; selections = {};
-    runGenerate(inp);
-    return;
-  }
-
   var btn=this; btn.disabled=true; var orig=btn.textContent;
   btn.innerHTML='<span class="spinner"></span>Reading the visit…';
   try{
-    var raw = await callAPI(PREFLIGHT_SYS, [{role:'user', content: contextBlock(inp)}], 1200);
+    var scopeNote = '\n\n---\n\nSECTIONS BEING GENERATED: ' +
+      (scope==='assessment' ? 'assessment only (generate clinical-decision cards if warranted; NO therapy cards)' :
+       scope==='therapy' ? 'therapy blurb only (generate therapy cards; NO clinical-decision cards)' :
+       'assessment AND therapy blurb (generate therapy cards AND clinical-decision cards if warranted)');
+    var raw = await callAPI(PREFLIGHT_SYS, [{role:'user', content: contextBlock(inp) + scopeNote}], 1200);
     var parsed = JSON.parse(raw.replace(/```json|```/g,'').trim());
     preflightQuestions = parsed.questions || [];
+    if(!preflightQuestions.length){
+      // Nothing to confirm — generate directly
+      selections = {};
+      runGenerate(inp);
+      return;
+    }
     renderPreflight(preflightQuestions);
     document.getElementById('preflight').style.display='block';
     document.getElementById('preflight').scrollIntoView({behavior:'smooth', block:'start'});
@@ -441,7 +473,7 @@ async function runGenerate(inp){
   document.getElementById('results').innerHTML='';
   document.getElementById('handoff').style.display='none';
 
-  var code='90833', timeChoice='', modality='';
+  var code='90833', timeChoice='', modality='', clinicalDecisions=[];
   preflightQuestions.forEach(function(q, qi){
     var val = selections[qi] || '';
     if(q.id==='time' || /add-on code/i.test(q.text)){
@@ -449,16 +481,21 @@ async function runGenerate(inp){
       var m = val.match(/9083[0-9]/); if(m) code = m[0];
     } else if(q.id==='modality' || /modality/i.test(q.text)){
       modality = val.split(' — ')[0].trim();
+    } else if(/^clin_/.test(q.id||'') && val){
+      clinicalDecisions.push(q.text + ' → ' + val);
     }
   });
   var noTherapy = /no therapy/i.test(timeChoice);
+  var clinBlock = clinicalDecisions.length
+    ? '\n\n---\n\nPROVIDER CLINICAL DECISIONS (the provider made these calls in preflight — treat them as authored by the provider and write the assessment accordingly; do not override or second-guess them):\n- ' + clinicalDecisions.join('\n- ')
+    : '';
 
   try{
     var html='';
     if(scope==='assessment' || scope==='both'){
-      var assessText = await callAPI(ASSESS_SYS, [{role:'user', content: contextBlock(inp)}], 2000);
+      var assessText = await callAPI(ASSESS_SYS, [{role:'user', content: contextBlock(inp) + clinBlock}], 2000);
       // Hybrid review pass: silently corrects invented content/style drift, flags only genuine judgment calls
-      var reviewMsg = 'ORIGINAL SOURCE:\n\n' + contextBlock(inp) +
+      var reviewMsg = 'ORIGINAL SOURCE:\n\n' + contextBlock(inp) + clinBlock +
         '\n\n---\n\nDRAFT ASSESSMENT:\n\n' + assessText;
       try{
         var reviewRaw = await callAPI(REVIEW_SYS, [{role:'user', content: reviewMsg}], 2000);
