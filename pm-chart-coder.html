@@ -332,6 +332,23 @@ DOCUMENTATION GAPS THAT AFFECT AUDIT DEFENSIBILITY:
 - Medication changed but no rationale documented
 - Safety assessment missing when clinical content suggests it should be present (e.g. patient mentions hopelessness but no SI screening documented)
 
+PSYCHOTHERAPY ADD-ON SUFFICIENCY (only evaluate this if the note appears to bill or document a psychotherapy add-on — 90833/90836/90838 — or contains a psychotherapy section):
+A psychotherapy add-on is one of the most audited and most often denied elements in psychiatric billing. The central failure is documentation that is actually MEDICATION MANAGEMENT COUNSELING (already bundled into and paid by the E/M code) being presented as billable psychotherapy. Apply this test rigorously and flag gaps.
+
+THE BUNDLING DISTINCTION (the most important check):
+- BUNDLED INTO E/M, NOT billable psychotherapy: teaching how to take the medication, what side effects to watch for, lab/BP/vitals monitoring, dosing timing, substance avoidance counseling, adherence counseling, follow-up planning, and discussion of the medication plan. These are medication management counseling and do NOT support a psychotherapy add-on no matter how much time is spent.
+- BILLABLE PSYCHOTHERAPY: active therapeutic work targeting the psychiatric condition or its symptoms/behaviors — e.g. teaching about the disorder itself (neurobiology, course, prognosis) with the target being the patient's understanding of and engagement with their illness, cognitive restructuring, processing, skills work, exploring ambivalence, emotional regulation work. Psychoeducation IS a recognized modality, but only when it addresses the psychiatric condition, not the mechanics of medication-taking.
+- THE PRACTICAL TEST: would the note still describe a therapeutic encounter if the medication-management content were removed? If no, what is documented is E/M-only and a psychotherapy add-on is not defensible. Flag this explicitly.
+
+THE FIVE REQUIRED ELEMENTS (flag each that is missing or invalid):
+1. Modality — must be named AND tied to actual therapeutic work, not medication counseling. "Talk therapy," "counseling," or bare "psychotherapy" are too vague. "Individual psychotherapy via telehealth" names delivery format, not modality.
+2. Intervention — the specific active therapeutic technique inside the modality must be documented. Content topics alone are not an intervention. Flag when interventions read as passive/educational ("provided psychoeducation," "discussed," "advised") rather than active therapeutic work, OR when the documented intervention is actually medication counseling.
+3. Focus — must be a psychiatric symptom or behavior being therapeutically addressed (e.g. illness-related avoidance, executive-function challenges, emotional regulation, illness beliefs). Flag when the stated focus is medication-management topics (adherence, monitoring, affordability, side-effect tracking).
+4. Patient response — must be a response to a THERAPEUTIC intervention, not agreement with the medication plan. Flag "patient agreed with plan" / "engaged" when it responds to med management rather than therapy.
+5. Time — psychotherapy-only minutes, documented separately from the E/M. Flag if missing.
+
+When flagging psychotherapy issues, name which of the five elements fail and whether the deeper problem is that the content is medication management rather than psychotherapy.
+
 AI SCRIBE HALLUCINATION PATTERNS (flag these specifically):
 Many clinicians use AI scribes that generate draft notes. These tools commonly introduce errors that weaken audit defensibility. Watch for:
 - Symptoms documented in ROS or Assessment that were never mentioned in HPI (fabricated symptoms)
@@ -374,10 +391,19 @@ Respond ONLY with JSON. No markdown, no backticks.
       "audit_impact": "One sentence on how this could affect an audit"
     }
   ],
+  "psychotherapy_issues": [
+    {
+      "elements_failed": ["modality" and/or "intervention" and/or "focus" and/or "patient_response" and/or "time"],
+      "is_actually_em_only": true or false,
+      "detail": "Specific description: which elements fail, and whether the content is medication management rather than psychotherapy, with quotes from the note",
+      "severity": "high" or "moderate" or "low",
+      "audit_impact": "One sentence on the add-on denial / takeback risk"
+    }
+  ],
   "clean": true or false
 }
 
-If the note has no issues, return {"inconsistencies":[],"time_issues":[],"documentation_gaps":[],"clean":true}.
+If the note has no issues, return {"inconsistencies":[],"time_issues":[],"documentation_gaps":[],"psychotherapy_issues":[],"clean":true}.
 Be thorough but precise. Only flag real problems, not nitpicks.`;
 
 var MDM_EVAL_PROMPT = `You are an expert psychiatric E/M coder evaluating Medical Decision Making under the 2021/2025 guidelines.
@@ -766,11 +792,12 @@ function renderResults(mdm, review) {
 
   // ── DOCUMENTATION AUDIT RESULTS ──
   if (lastAudit && !lastAudit.clean) {
-    var totalIssues = (lastAudit.inconsistencies || []).length + (lastAudit.time_issues || []).length + (lastAudit.documentation_gaps || []).length;
+    var totalIssues = (lastAudit.inconsistencies || []).length + (lastAudit.time_issues || []).length + (lastAudit.documentation_gaps || []).length + (lastAudit.psychotherapy_issues || []).length;
     var hasHigh = false;
     (lastAudit.inconsistencies || []).forEach(function(i) { if (i.severity === 'high') hasHigh = true; });
     (lastAudit.time_issues || []).forEach(function(i) { if (i.severity === 'high') hasHigh = true; });
     (lastAudit.documentation_gaps || []).forEach(function(i) { if (i.severity === 'high') hasHigh = true; });
+    (lastAudit.psychotherapy_issues || []).forEach(function(i) { if (i.severity === 'high') hasHigh = true; });
 
     var auditColor = hasHigh ? 'var(--red)' : 'var(--amber)';
     var auditBg = hasHigh ? 'rgba(248,113,113,0.06)' : 'rgba(251,191,36,0.06)';
@@ -815,8 +842,23 @@ function renderResults(mdm, review) {
       });
     }
 
+    if (lastAudit.psychotherapy_issues && lastAudit.psychotherapy_issues.length > 0) {
+      html += '<div style="font-size:.75rem;font-weight:600;color:' + auditColor + ';margin-bottom:6px;margin-top:10px">PSYCHOTHERAPY ADD-ON SUFFICIENCY</div>';
+      lastAudit.psychotherapy_issues.forEach(function(item) {
+        var sevColor = item.severity === 'high' ? 'var(--red)' : item.severity === 'moderate' ? 'var(--amber)' : 'var(--cream-dim)';
+        html += '<div style="background:' + auditBg + ';border:1px solid ' + auditBorder + ';border-radius:6px;padding:10px 14px;margin-bottom:8px">';
+        var tag = item.is_actually_em_only ? ' — CONTENT READS AS E/M-ONLY' : '';
+        html += '<div style="font-size:.78rem;color:' + sevColor + ';font-weight:600;margin-bottom:4px">' + esc(item.severity).toUpperCase() + tag + '</div>';
+        if (item.elements_failed && item.elements_failed.length > 0) {
+          html += '<div style="font-size:.74rem;color:var(--cream-dim);margin-bottom:4px">Elements failing: ' + item.elements_failed.map(function(e){return esc(e.replace(/_/g,' '));}).join(', ') + '</div>';
+        }
+        html += '<div style="font-size:.82rem;color:var(--cream);margin-bottom:4px">' + esc(item.detail) + '</div>';
+        if (item.audit_impact) html += '<div style="font-size:.78rem;color:var(--cream-dim)">Audit impact: ' + esc(item.audit_impact) + '</div>';
+        html += '</div>';
+      });
+    }
+
     html += '</div>';
-  } else if (lastAudit && lastAudit.clean) {
     html += '<div class="section-card" style="border-color:rgba(52,211,153,0.25)">';
     html += '<h3 style="color:var(--green)">&#10003; Documentation Audit — No Issues Found</h3>';
     html += '<div style="font-size:.82rem;color:var(--cream-dim)">Note is internally consistent. No contradictions, time discrepancies, or documentation gaps detected.</div>';
