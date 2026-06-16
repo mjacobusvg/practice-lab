@@ -1081,7 +1081,7 @@ function renderResults(mdm, review) {
 // ══════════════════════════════════════════════════════════════
 
 async function callAPI(systemPrompt, userMessage, model, maxTokens) {
-  var response = await fetch('/.netlify/functions/anthropic-proxy', {
+  var response = await fetch('/.netlify/functions/clinical-proxy-stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -1091,14 +1091,45 @@ async function callAPI(systemPrompt, userMessage, model, maxTokens) {
       messages: [{ role: 'user', content: userMessage }]
     })
   });
-  var raw = await response.text();
-  var data;
-  try { data = JSON.parse(raw); }
-  catch (e) { throw new Error('Non-JSON response (HTTP ' + response.status + '): ' + (raw ? raw.substring(0, 300) : 'empty')); }
-  if (data.error) throw new Error('API error: ' + (data.error.message || JSON.stringify(data.error)));
+
+  if (!response.ok) {
+    var errBody = '';
+    try { errBody = await response.text(); } catch (e) {}
+    throw new Error('Proxy error (HTTP ' + response.status + '): ' + errBody.substring(0, 300));
+  }
+
+  // Read the streamed Server-Sent Events and reassemble the assistant text.
+  // Streaming keeps the connection active so the proxy never trips the idle timeout.
+  var reader = response.body.getReader();
+  var decoder = new TextDecoder();
+  var buffer = '';
   var text = '';
-  if (data.content) {
-    data.content.forEach(function(c) { if (c.type === 'text') text += c.text; });
+  while (true) {
+    var chunk = await reader.read();
+    if (chunk.done) break;
+    buffer += decoder.decode(chunk.value, { stream: true });
+    var idx;
+    while ((idx = buffer.indexOf('\n\n')) !== -1) {
+      var rawEvent = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      var lines = rawEvent.split('\n');
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (line.indexOf('data:') !== 0) continue;
+        var dataStr = line.slice(5).trim();
+        if (!dataStr || dataStr === '[DONE]') continue;
+        try {
+          var evt = JSON.parse(dataStr);
+          if (evt.type === 'content_block_delta' && evt.delta && typeof evt.delta.text === 'string') {
+            text += evt.delta.text;
+          } else if (evt.type === 'error') {
+            throw new Error('Stream error: ' + (evt.error ? (evt.error.message || 'unknown') : 'unknown'));
+          }
+        } catch (e) {
+          // ignore keep-alive / non-JSON lines (e.g. ping events)
+        }
+      }
+    }
   }
   return text;
 }
@@ -1178,7 +1209,7 @@ async function sendFollowUp() {
   messages.push({ role: 'user', content: question });
 
   try {
-    var response = await fetch('/.netlify/functions/anthropic-proxy', {
+    var response = await fetch('/.netlify/functions/clinical-proxy-stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1188,12 +1219,37 @@ async function sendFollowUp() {
         messages: messages
       })
     });
-    var data = await response.json();
-    if (data.error) throw new Error(data.error);
+    if (!response.ok) {
+      var fErr = '';
+      try { fErr = await response.text(); } catch (e) {}
+      throw new Error('Proxy error (HTTP ' + response.status + '): ' + fErr.substring(0, 200));
+    }
 
+    var fReader = response.body.getReader();
+    var fDecoder = new TextDecoder();
+    var fBuffer = '';
     var answer = '';
-    if (data.content) {
-      data.content.forEach(function(c) { if (c.type === 'text') answer += c.text; });
+    while (true) {
+      var fChunk = await fReader.read();
+      if (fChunk.done) break;
+      fBuffer += fDecoder.decode(fChunk.value, { stream: true });
+      var fIdx;
+      while ((fIdx = fBuffer.indexOf('\n\n')) !== -1) {
+        var fRaw = fBuffer.slice(0, fIdx);
+        fBuffer = fBuffer.slice(fIdx + 2);
+        var fLines = fRaw.split('\n');
+        for (var fi = 0; fi < fLines.length; fi++) {
+          if (fLines[fi].indexOf('data:') !== 0) continue;
+          var fData = fLines[fi].slice(5).trim();
+          if (!fData || fData === '[DONE]') continue;
+          try {
+            var fEvt = JSON.parse(fData);
+            if (fEvt.type === 'content_block_delta' && fEvt.delta && typeof fEvt.delta.text === 'string') {
+              answer += fEvt.delta.text;
+            }
+          } catch (e) {}
+        }
+      }
     }
 
     // Store in history
