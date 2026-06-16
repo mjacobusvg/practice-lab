@@ -587,7 +587,7 @@ Return ONLY the JSON object. Nothing before or after it.`;
       const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 4000, system: systemPrompt + followUpInstruction, messages: messages })
+        body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 4000, system: systemPrompt + followUpInstruction, messages: messages })
       });
 
       if (!claudeRes.ok) throw new Error('Claude synthesis failed');
