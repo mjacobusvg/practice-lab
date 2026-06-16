@@ -82,7 +82,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
       </div>
     </div>
     <button class="btn" id="review">Review the visit &rarr;</button>
-    <div class="hint" style="margin-top:8px">The tool reads your input and suggests the modalities and focus that fit what you documented, the same way it would if a colleague asked what you worked on. You confirm or adjust before it writes.</div>
+    <div class="hint" style="margin-top:8px">The tool reads your input and suggests the modality that fits what you documented, the same way it would if a colleague asked what you worked on. You confirm or adjust before it writes.</div>
     <div id="err-box"></div>
   </div>
 
@@ -147,12 +147,16 @@ TRAUMA-FOCUSED: Processing trauma-related content, cognitive processing of traum
 
 ACT: Values clarification, defusion from thoughts, acceptance of difficult emotions, commitment to values-based action.
 
-=== FIVE PARTS REQUIRED ===
-1. Modality (as selected by provider)
-2. Intervention (specific therapeutic work — ACTIVE language, matched to modality)
-3. Focus (what clinical problems were being addressed and their impact on functioning)
-4. Patient Response (engagement, insight, behavior change — be specific)
-5. Time (psychotherapy-only minutes, separate from E/M)
+=== FIVE LABELED SECTIONS REQUIRED — ALWAYS, EVERY TIME ===
+The output MUST contain all five of the following sections, each introduced by its exact bold label on its own line, in this exact order. Never omit, merge, or rename a section. Never fold these into undifferentiated prose. If a section would be thin, still write it under its own label.
+
+**Modality:** [the modality as selected by provider — one line]
+**Intervention:** [the specific therapeutic work done — ACTIVE language, matched to modality; this is the substantive paragraph(s)]
+**Focus:** [what clinical problems were being addressed this visit and their impact on functioning — inferred from the modality and HPI, not asked of the provider]
+**Patient Response:** [engagement, insight, behavior change — be specific]
+**Time:** [psychotherapy-only minutes, separate from and in addition to the E/M service]
+
+The Intervention section may run one to three paragraphs; the others are typically one to a few sentences. Do not write a single flowing essay that buries these elements — the five labels must be visibly present.
 
 NEVER use these as modality:
 - "Individual psychotherapy via telehealth" — telehealth is delivery format, not modality
@@ -160,7 +164,7 @@ NEVER use these as modality:
 
 Time bands: 16-37 min → 90833. 38-52 min → 90836. 53+ min → 90838.
 
-Output ONLY the psychotherapy add-on documentation as chart-ready prose. Do not include a heading line naming the tool.`;
+Output ONLY the psychotherapy add-on documentation as chart-ready text, using the five labeled sections above. Do not include a heading line naming the tool.`;
 
 const ASSESS_SYS = `${VOICE}
 
@@ -249,9 +253,9 @@ Examples of well-fitted options:
 - "Motivational interviewing — targeting ambivalence about treatment engagement"
 The modality MUST match what plausibly happened given the HPI. If the patient is not ambivalent about anything, do NOT suggest MI. If no cognitive work is suggested by the content, do NOT suggest CBT. Default to supportive psychotherapy when the work was validation, reinforcement, and condition-focused psychoeducation. Always include a final option "Other / enter my own" so the provider can override.
 
-Card 3 — id "focus": "What was the primary therapeutic focus this visit?" with 2-3 options inferred from the HPI content (e.g. ["Medication concerns and treatment expectations", "Caregiver stress and self-care", "Diagnostic uncertainty and symptom patterns"]). Always include "Other / enter my own".
+Do NOT generate a "focus" card. The therapeutic focus is inferred downstream from the selected modality and the HPI content — never ask the provider for it.
 
-Surface ONLY these cards plus, at most, one genuinely ambiguous clinical decision specific to this case if one exists. Do NOT ask about section order, formatting, assessment style, or the HPI itself. If the provider asked for assessment only (no therapy), return an empty questions array.`;
+Surface ONLY these two cards (time, modality) plus, at most, one genuinely ambiguous clinical decision specific to this case if one exists. Do NOT ask about therapeutic focus, section order, formatting, assessment style, or the HPI itself. If the provider asked for assessment only (no therapy), return an empty questions array.`;
 
 
 
@@ -393,7 +397,7 @@ async function runGenerate(inp){
   document.getElementById('results').innerHTML='';
   document.getElementById('handoff').style.display='none';
 
-  var code='90833', timeChoice='', modality='', focus='';
+  var code='90833', timeChoice='', modality='';
   preflightQuestions.forEach(function(q, qi){
     var val = selections[qi] || '';
     if(q.id==='time' || /add-on code/i.test(q.text)){
@@ -401,8 +405,6 @@ async function runGenerate(inp){
       var m = val.match(/9083[0-9]/); if(m) code = m[0];
     } else if(q.id==='modality' || /modality/i.test(q.text)){
       modality = val.split(' — ')[0].trim();
-    } else if(q.id==='focus' || /focus/i.test(q.text)){
-      focus = val;
     }
   });
   var noTherapy = /no therapy/i.test(timeChoice);
@@ -418,8 +420,7 @@ async function runGenerate(inp){
       var userMsg = contextBlock(inp) +
         '\n\n---\n\nModality selected by provider: ' + (modality||'Supportive psychotherapy') +
         '\nAdd-on code intended: ' + code +
-        (focus ? '\nPrimary therapeutic focus: ' + focus : '') +
-        '\n\nGenerate the psychotherapy add-on documentation matched to this modality and focus.';
+        '\n\nGenerate the psychotherapy add-on documentation matched to this modality, using the five labeled sections. Infer the therapeutic focus from the modality and HPI.';
       var therapyText = await callAPI(THERAPY_SYS, [{role:'user', content: userMsg}], 2000);
       html += outBlock('Psychotherapy add-on ('+code+')', 'out-therapy', therapyText);
       document.getElementById('results').innerHTML = html;
