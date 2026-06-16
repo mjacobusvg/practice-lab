@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clinical Note Builder | Think Beyond Practice</title>
+<style>
+:root{
+  --navy:#0f1929; --navy-mid:#152033; --navy-card:#16243a; --rule:#24344d;
+  --teal:#2aabb8; --teal-glow:rgba(42,171,184,0.15); --blue:#3b82f6; --green:#34d399;
+  --amber:#fbbf24; --red:#f87171;
+  --white:#f5f8fc; --cream:#cdd9e8; --cream-dim:#8499b3;
+  --radius:12px;
+  --font-display:'Georgia',serif; --font-body:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--navy);color:var(--cream);font-family:var(--font-body);line-height:1.6;padding:24px 16px 60px}
+#tool-container{display:none;max-width:860px;margin:0 auto}
+#tool-container.tbp-shown{display:block!important}
+a{color:var(--teal)}
+.back{font-size:.82rem;color:var(--teal);text-decoration:none;display:inline-block;margin-bottom:18px}
+h1{font-family:var(--font-display);font-size:1.85rem;color:var(--white);margin-bottom:4px}
+h1 span{color:var(--teal)}
+.sub{color:var(--cream-dim);font-size:.92rem;margin-bottom:20px;max-width:680px}
+.caveat{background:rgba(248,113,113,0.08);border-left:3px solid var(--red);border-radius:8px;padding:14px 18px;font-size:.85rem;color:var(--cream);margin-bottom:22px}
+.caveat strong{color:var(--white)}
+.panel{background:var(--navy-card);border:1px solid var(--rule);border-radius:var(--radius);padding:20px;margin-bottom:18px}
+label{display:block;font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--cream-dim);margin-bottom:7px}
+textarea,select{width:100%;background:var(--navy);border:1px solid var(--rule);border-radius:8px;color:var(--white);font-family:var(--font-body);font-size:.92rem;padding:12px 14px}
+textarea{min-height:150px;resize:vertical;line-height:1.6}
+.hint{font-size:.76rem;color:var(--cream-dim);margin-top:6px}
+.cards{display:grid;gap:14px;margin-top:4px}
+.card-group{margin-bottom:16px}
+.opts{display:flex;gap:8px;flex-wrap:wrap}
+.opt{padding:8px 14px;border-radius:7px;font-size:.82rem;font-weight:600;cursor:pointer;background:var(--navy);border:1px solid var(--rule);color:var(--cream)}
+.opt.sel{background:var(--teal-glow);border-color:var(--teal);color:var(--white)}
+.btn{background:var(--teal);color:#06222b;border:none;border-radius:8px;padding:12px 22px;font-size:.92rem;font-weight:700;cursor:pointer;margin-top:6px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-copy{background:var(--navy);border:1px solid var(--rule);color:var(--cream);border-radius:6px;padding:5px 12px;font-size:.74rem;font-weight:600;cursor:pointer;float:right}
+.out{background:var(--navy-card);border:1px solid var(--rule);border-radius:var(--radius);padding:20px;margin-top:18px}
+.out h3{font-family:var(--font-display);color:var(--white);font-size:1.15rem;margin-bottom:12px}
+.out-body{white-space:pre-wrap;font-size:.9rem;color:var(--cream);line-height:1.7}
+.spinner{display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.3);border-top-color:#06222b;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.handoff{background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.25);border-radius:8px;padding:14px 18px;font-size:.85rem;margin-top:18px}
+.handoff a{color:var(--green);font-weight:600}
+.scope{font-style:italic;color:var(--cream-dim);font-size:.78rem;text-align:center;margin-top:30px;border-top:1px solid var(--rule);padding-top:18px}
+.err{background:rgba(248,113,113,0.1);border:1px solid var(--red);border-radius:8px;padding:12px 16px;color:var(--red);font-size:.85rem;margin-top:14px}
+</style>
+<script src="/auth-gate.js"></script>
+</head>
+<body>
+<div id="tool-container">
+<div>
+  <a href="/practice-manager.html" class="back">&larr; Practice Manager</a>
+  <h1>Clinical Note <span>Builder</span></h1>
+  <p class="sub">Generate psychotherapy and assessment documentation from your HPI. Paste the HPI you already wrote or dictated, and this builds the two sections that are the most cognitively demanding and the most audit-sensitive: a code-ready psychotherapy add-on blurb and a unified clinical assessment formulation. It does not generate the HPI or the Plan. Those stay yours.</p>
+
+  <div class="caveat"><strong>Documentation aid, not a clinical or coding authority.</strong> Output is generated from the text you provide and must be reviewed, corrected, and signed by you. This tool writes the sections; it does not assign or guarantee a billing code. Verify medical necessity, time, and code selection yourself, and run the finished note through the Chart Audit + Coder to confirm what it supports. No patient data is stored.</div>
+
+  <div class="panel">
+    <label for="hpi">Your HPI / visit narrative</label>
+    <textarea id="hpi" placeholder="Paste the HPI you wrote or dictated. Include enough clinical detail for the assessment to reason from: symptoms, course, current medications and response, relevant history, risk, and what was decided today. If you have a prior note, you can paste it too for continuity."></textarea>
+    <div class="hint">PHI is processed transiently to generate your sections and is not retained.</div>
+  </div>
+
+  <div class="panel">
+    <div class="card-group">
+      <label>What do you want generated?</label>
+      <div class="opts" id="scope-opts">
+        <div class="opt sel" data-scope="both">Assessment + psychotherapy blurb</div>
+        <div class="opt" data-scope="assessment">Assessment only</div>
+        <div class="opt" data-scope="therapy">Psychotherapy blurb only</div>
+      </div>
+    </div>
+
+    <div id="therapy-cards">
+      <div class="card-group">
+        <label>Was psychotherapy performed, and which add-on?</label>
+        <div class="opts" id="time-opts">
+          <div class="opt sel" data-code="90833">90833 &middot; 16&ndash;37 min</div>
+          <div class="opt" data-code="90836">90836 &middot; 38&ndash;52 min</div>
+          <div class="opt" data-code="90838">90838 &middot; 53+ min</div>
+        </div>
+      </div>
+      <div class="card-group">
+        <label>Modality used this visit</label>
+        <div class="opts" id="mod-opts">
+          <div class="opt sel" data-mod="Supportive psychotherapy">Supportive</div>
+          <div class="opt" data-mod="CBT-informed">CBT-informed</div>
+          <div class="opt" data-mod="Motivational interviewing">MI</div>
+          <div class="opt" data-mod="DBT-informed">DBT-informed</div>
+          <div class="opt" data-mod="Psychodynamic">Psychodynamic</div>
+          <div class="opt" data-mod="Trauma-focused">Trauma-focused</div>
+          <div class="opt" data-mod="ACT">ACT</div>
+        </div>
+        <div class="hint">Pick the modality that matches what actually happened. The blurb is written to read as active therapeutic work, not psychoeducation.</div>
+      </div>
+      <div class="card-group">
+        <label>Psychotherapy minutes (optional, refines the time statement)</label>
+        <input type="text" id="mins" inputmode="numeric" placeholder="e.g. 22" style="width:140px;background:var(--navy);border:1px solid var(--rule);border-radius:8px;color:var(--white);padding:10px 12px;font-size:.9rem">
+      </div>
+    </div>
+
+    <button class="btn" id="go">Generate</button>
+    <div id="err-box"></div>
+  </div>
+
+  <div id="results"></div>
+
+  <div class="handoff" id="handoff" style="display:none">
+    Once you have assembled your full note, run it through the <a href="/pm-chart-coder.html">Chart Audit + Coder</a> to confirm what the documentation actually supports and whether your intended E/M and add-on codes are defensible.
+  </div>
+
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. Nothing is stored.</div>
+</div>
+</div>
+
+<script>
+// ── House voice (neutralized from the personal Copilot voice) ──
+const VOICE = `You are a clinical documentation generator for psychiatric prescribers (PMHNPs, psychiatrists, psychiatric PAs) writing in their own practice.
+- Paragraph form, not bullets (except where a numbered psychotherapy structure is required).
+- Clinical nuance preserved, not dumbed down or overly academic.
+- Write in a clean, professional clinical voice. Be direct. No filler. Specific and actionable.
+- This is documentation the prescriber will review, edit, and sign. Do not address the prescriber; produce chart-ready text.`;
+
+const THERAPY_SYS = `${VOICE}
+
+Your task: Generate the psychotherapy add-on documentation ONLY, based on the completed HPI and the provider's selected modality. Do not regenerate the HPI or write an assessment.
+
+=== CRITICAL: WRITE THERAPY, NOT EDUCATION ===
+
+The psychotherapy blurb must read as ACTIVE THERAPEUTIC WORK, not passive education or support. Auditors deny add-ons that read as "you explained things well" instead of "you did therapy."
+
+USE THESE VERBS (active therapeutic work):
+- Explored, examined, processed, facilitated, engaged the patient in
+- Helped the patient differentiate, identify, recognize, challenge
+- Worked with the patient to reframe, restructure, develop
+
+AVOID THESE VERBS (passive/educational):
+- Provided psychoeducation, educated, informed, explained
+- Validated, supported, reinforced, encouraged (these are fine as SECONDARY actions but should not be the PRIMARY intervention language)
+
+The intervention section should make clear that the clinician and patient did cognitive, emotional, or behavioral WORK together — not that the clinician talked and the patient listened.
+
+=== MODALITY-MATCHED INTERVENTIONS ===
+
+The provider will specify which modality to use. Use ONLY interventions that belong to the named modality.
+
+SUPPORTIVE PSYCHOTHERAPY: Reinforcing existing healthy coping, validating emotional experience, reality-testing distorted thinking without formal protocols, strengthening adaptive defenses, maintaining therapeutic alliance during stress. Even in supportive work, frame interventions actively: "Explored the patient's response to..." not "Provided support regarding..."
+
+CBT-INFORMED: Identifying cognitive distortions, examining interpretations, structured cognitive restructuring (Socratic questioning, evidence examination, reframing), behavioral experiments, pattern identification, challenging automatic thoughts.
+
+MOTIVATIONAL INTERVIEWING: Reflective listening, evoking change talk, exploring ambivalence, developing discrepancy, rolling with resistance, affirming autonomy.
+
+DBT-INFORMED: Validation paired with change strategies, distress tolerance skills, emotion regulation skills, interpersonal effectiveness, mindfulness.
+
+PSYCHODYNAMIC: Exploring unconscious patterns, linking past relationships to present patterns, examining defenses, transference observations.
+
+TRAUMA-FOCUSED: Processing trauma-related content, cognitive processing of trauma-related beliefs, examining trauma responses and their impact on current functioning.
+
+ACT: Values clarification, defusion from thoughts, acceptance of difficult emotions, commitment to values-based action.
+
+=== FIVE PARTS REQUIRED ===
+1. Modality (as selected by provider)
+2. Intervention (specific therapeutic work — ACTIVE language, matched to modality)
+3. Focus (what clinical problems were being addressed and their impact on functioning)
+4. Patient Response (engagement, insight, behavior change — be specific)
+5. Time (psychotherapy-only minutes, separate from E/M)
+
+NEVER use these as modality:
+- "Individual psychotherapy via telehealth" — telehealth is delivery format, not modality
+- "Talk therapy" / "Counseling" / bare "Psychotherapy" — too vague
+
+Time bands: 16-37 min → 90833. 38-52 min → 90836. 53+ min → 90838.
+
+Output ONLY the psychotherapy add-on documentation as chart-ready prose. Do not include a heading line naming the tool.`;
+
+const ASSESS_SYS = `${VOICE}
+
+Your task: Generate the assessment formulation ONLY, based on the completed HPI provided. Do not regenerate the HPI. Do not generate a Plan section.
+
+You are an experienced psychiatric prescriber. Reason from full clinical knowledge — DSM-5 criteria, psychopharmacology, evidence-based treatment, risk assessment, the 2021 E/M MDM guidelines. Form a clinical impression of the case, then write.
+
+=== ASSESSMENT LENGTH CALIBRATION ===
+Match assessment length to case complexity. Every sentence must do clinical work — no filler, no redundancy, no restating what the HPI already documents.
+
+STABLE FOLLOW-UP, no med changes, well-controlled: 1-2 paragraphs.
+STABLE-BUT-COMPLEX, multiple diagnoses, diagnostic uncertainty, no med changes: 2-3 paragraphs.
+MEDICATION CHANGE with decision tension: 2-3 paragraphs.
+COMPLEX/HIGH-RISK, crisis, escalation decisions, severe exacerbation: 3-4 paragraphs.
+NEW PATIENT EVAL: 3-5 paragraphs.
+
+Do NOT produce 5 paragraphs for a stable follow-up. Do NOT repeat content across paragraphs. If a clinical point can be covered in one sentence, use one sentence. The assessment should be scannable in 10-15 seconds for a routine case.
+
+=== ASSESSMENT STYLE ===
+The assessment has TWO parts in this exact order:
+
+PART 1 - DIAGNOSIS LIST:
+List diagnoses with ICD-10 codes, one per line. Primary diagnosis first.
+
+PART 2 - UNIFIED CLINICAL FORMULATION:
+One cohesive passage (one or a few paragraphs) addressing ALL diagnoses together as an integrated clinical picture. Integrate symptom progression, treatment response, functioning, psychosocial context, and rationale for decisions. Make clinical reasoning visible. Document what was considered. Capture risk/benefit for medication decisions. Support medical necessity and complexity for the E/M code.
+
+WRONG (never do this — per-diagnosis mini-paragraphs):
+"ADHD: Patient continues to benefit from methylphenidate..."
+"GAD: Anxiety remains mild..."
+
+ALSO WRONG — SUBSECTION LABELS INSIDE THE ASSESSMENT:
+Do NOT use headers/subheadings inside the prose such as "Clinical Formulation:", "Clinical Picture:", "Treatment Plan:", "Summary:", "Risk Assessment:". The diagnoses are listed once at the top with ICD-10 codes. After that, the entire remainder is unlabeled prose. The formulation IS the assessment.
+
+=== NEVER GENERATE A PLAN SECTION ===
+The prescriber maintains a separate Plan section (prescription mechanics, refill dates, return timing, crisis resources, PARQ, patient education). It is NOT this tool's job to generate any of that. Output ends at the end of the assessment formulation. Do NOT produce: a "Plan:" section, bulleted plan items, crisis line numbers/988, PARQ language, return visit timing, patient education statements, or refill dates/prescription mechanics.
+
+The WHY of every medication decision belongs IN the formulation as integrated prose (e.g. "Increased the stimulant today to optimize the current trial before considering alternative strategies."). The decision and reasoning live in the formulation; the prescription mechanics do not appear at all. If a prior note with a Plan section is provided, use it only as reference for what was done and what the patient is on — do not reproduce it.
+
+=== DO NOT OPEN WITH DOCUMENTATION LANGUAGE ===
+Do NOT open with "The patient continues to meet DSM-5 criteria for...", "Patient meets criteria for...", or "The patient has a diagnosis of...". Open with the diagnostic frame, the primary clinical question today, the organizing pathology, or the current clinical status in formulation language. The opening line should immediately do clinical work.
+
+=== CLINICAL REASONING REQUIREMENTS ===
+Weave these into the formulation (not as labeled sections):
+1. DIAGNOSTIC FRAME: What is the primary organizing pathology? What is secondary or reactive? State explicitly, not as a list of equal diagnoses.
+2. COMPETING INTERPRETATIONS: Challenge at least one assumption. What might be misattributed? What else could explain part of this presentation?
+3. MECHANISM: How is this actually working? What is driving what? Think in causal chains.
+
+Output ONLY the assessment (diagnosis list + formulation prose). No Plan. No tool heading.`;
+
+// ── State ──
+var scope = 'both', code = '90833', modality = 'Supportive psychotherapy';
+
+function bind(groupId, attr, setter){
+  document.getElementById(groupId).addEventListener('click', function(e){
+    var o = e.target.closest('.opt'); if(!o) return;
+    this.querySelectorAll('.opt').forEach(function(x){ x.classList.remove('sel'); });
+    o.classList.add('sel'); setter(o.getAttribute(attr));
+  });
+}
+bind('scope-opts','data-scope',function(v){ scope=v; document.getElementById('therapy-cards').style.display = (v==='assessment') ? 'none' : 'block'; });
+bind('time-opts','data-code',function(v){ code=v; });
+bind('mod-opts','data-mod',function(v){ modality=v; });
+
+async function callAPI(systemPrompt, userMessage){
+  var response = await fetch('/.netlify/functions/clinical-proxy', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      model:'claude-sonnet-4-6',
+      max_tokens:2000,
+      system: systemPrompt,
+      messages:[{role:'user', content:userMessage}]
+    })
+  });
+  var data = await response.json();
+  if(data.error) throw new Error(data.error.message || data.error);
+  return (data.content || []).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('\n').trim();
+}
+
+function outBlock(title, id, text){
+  return '<div class="out"><button class="btn-copy" onclick="copyOut(\''+id+'\')">Copy</button>'+
+         '<h3>'+title+'</h3><div class="out-body" id="'+id+'">'+text.replace(/</g,'&lt;')+'</div></div>';
+}
+function copyOut(id){
+  var t = document.getElementById(id).innerText;
+  navigator.clipboard.writeText(t);
+  event.target.textContent='Copied'; setTimeout(function(){ event.target.textContent='Copy'; },1500);
+}
+
+document.getElementById('go').addEventListener('click', async function(){
+  var hpi = document.getElementById('hpi').value.trim();
+  var errBox = document.getElementById('err-box');
+  errBox.innerHTML='';
+  if(hpi.length < 40){ errBox.innerHTML='<div class="err">Please paste an HPI with enough clinical detail to reason from.</div>'; return; }
+
+  var btn=this; btn.disabled=true; var orig=btn.textContent;
+  btn.innerHTML='<span class="spinner"></span>Generating…';
+  document.getElementById('results').innerHTML='';
+  document.getElementById('handoff').style.display='none';
+
+  try{
+    var html='';
+    if(scope==='assessment' || scope==='both'){
+      var assessText = await callAPI(ASSESS_SYS, 'HPI / visit narrative:\n\n'+hpi);
+      html += outBlock('Assessment', 'out-assess', assessText);
+      document.getElementById('results').innerHTML = html;
+    }
+    if(scope==='therapy' || scope==='both'){
+      var mins = document.getElementById('mins').value.trim();
+      var timeLine = mins ? (mins+' minutes of psychotherapy, separate from the E/M service') : ('time band for '+code);
+      var userMsg = 'HPI / visit narrative:\n\n'+hpi+'\n\n---\n\nModality selected by provider: '+modality+
+                    '\nAdd-on code intended: '+code+'\nPsychotherapy time: '+timeLine+
+                    '\n\nGenerate the psychotherapy add-on documentation matched to this modality.';
+      var therapyText = await callAPI(THERAPY_SYS, userMsg);
+      html += outBlock('Psychotherapy add-on ('+code+')', 'out-therapy', therapyText);
+      document.getElementById('results').innerHTML = html;
+    }
+    document.getElementById('handoff').style.display='block';
+  }catch(err){
+    errBox.innerHTML='<div class="err">Generation failed: '+(err.message||err)+'. Please try again.</div>';
+  }finally{
+    btn.disabled=false; btn.textContent=orig;
+  }
+});
+
+// ── Auth ──
+TBPAuth.protect({
+  toolName: 'Clinical Note Builder',
+  spaceId: 2546298,
+  onVerified: function(){
+    document.body.classList.remove('tbp-gate-active');
+    document.body.style.display='block';
+    document.body.style.overflow='';
+    var tc=document.getElementById('tool-container');
+    tc.style.display='block';
+    tc.classList.add('tbp-shown');
+  }
+});
+</script>
+</body>
+</html>
