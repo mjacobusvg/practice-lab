@@ -303,6 +303,7 @@ async function rechunkOnePost(post, supabaseUrl, supabaseKey, openaiKey) {
 
 const inngest = new Inngest({
   id: 'think-beyond-practice',
+  isDev: false,
   signingKey: process.env.INNGEST_SIGNING_KEY,
   eventKey: process.env.INNGEST_EVENT_KEY,
 });
