@@ -559,7 +559,7 @@ async function startCoding() {
   document.getElementById('code-btn').textContent = 'Reading note...';
 
   try {
-    var pfResult = await callAPI(PREFLIGHT_PROMPT, 'Chart note for coding evaluation:\n\nVisit type: ' + visitType + '\n\n' + noteText);
+    var pfResult = await callAPI(PREFLIGHT_PROMPT, 'Chart note for coding evaluation:\n\nVisit type: ' + visitType + '\n\n' + noteText, 'claude-haiku-4-5-20251001');
     var pf = parseJSON(pfResult);
 
     if (pf) {
@@ -680,7 +680,7 @@ async function runCodingPasses() {
   try {
     // Documentation Audit
     updateProgress(1, 'Auditing note for inconsistencies...');
-    var auditRaw = await callAPI(AUDIT_PROMPT, 'Chart note to audit:\n\n' + noteText);
+    var auditRaw = await callAPI(AUDIT_PROMPT, 'Chart note to audit:\n\n' + noteText, 'claude-haiku-4-5-20251001');
     var audit = parseJSON(auditRaw);
     lastAudit = audit;
 
@@ -692,7 +692,7 @@ async function runCodingPasses() {
     // Pass 2: Adversarial Review + Synthesis
     updateProgress(3, 'Adversarial review: checking for undercoding...');
     var reviewInput = userMsg + '\n\nINITIAL MDM EVALUATION:\n' + JSON.stringify(mdm, null, 2);
-    var reviewRaw = await callAPI(REVIEW_PROMPT, reviewInput);
+    var reviewRaw = await callAPI(REVIEW_PROMPT, reviewInput, 'claude-haiku-4-5-20251001');
     var review = parseJSON(reviewRaw);
 
     // Done
@@ -1075,19 +1075,26 @@ function renderResults(mdm, review) {
 // API / UTILITIES
 // ══════════════════════════════════════════════════════════════
 
-async function callAPI(systemPrompt, userMessage) {
+async function callAPI(systemPrompt, userMessage, model) {
   var response = await fetch('/.netlify/functions/anthropic-proxy', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model: model || 'claude-sonnet-4-6',
       max_tokens: 2000,
       system: systemPrompt,
       messages: [{ role: 'user', content: userMessage }]
     })
   });
-  var data = await response.json();
-  if (data.error) throw new Error(data.error);
+  var raw = await response.text();
+  var data;
+  try {
+    data = JSON.parse(raw);
+  } catch (e) {
+    // Non-JSON response = almost always a Netlify timeout/gateway HTML page
+    throw new Error('The analysis step took too long or the service returned an unexpected response. Try a shorter note or run it again.');
+  }
+  if (data.error) throw new Error(data.error.message || data.error);
   var text = '';
   if (data.content) {
     data.content.forEach(function(c) { if (c.type === 'text') text += c.text; });
