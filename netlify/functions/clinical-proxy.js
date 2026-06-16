@@ -2,12 +2,13 @@
 // Dedicated Anthropic proxy for PHI-handling clinical tools
 // (Letter Generator, Chart Coder, Interaction Checker, etc.).
 //
-// Transparent pass-through: forwards the request body to Anthropic and
-// returns the raw response. Does NOT log message content. Does NOT inspect
-// or label traffic. Kept separate from anthropic-proxy.js (which serves
-// non-PHI Practice Lab / Ask the Archive traffic) so PHI and non-PHI tools
-// run on clearly distinct backend paths.
+// STREAMING pass-through: forwards the request to Anthropic with stream=true
+// and relays Server-Sent Events back to the browser as they arrive. Because
+// bytes flow continuously while the model generates, the serverless inactivity
+// timeout is not tripped by long generations the way a single blocking request
+// is. The browser reassembles the streamed text.
 //
+// Does NOT log message content. Does NOT inspect or label traffic.
 // Covered by the Anthropic API BAA.
 //
 // Environment variables:
@@ -15,49 +16,67 @@
 //
 // Request body: raw Anthropic /v1/messages payload
 //   { model, max_tokens, system?, messages, tools? }
-// Response: raw Anthropic response (e.g. { content: [...], ... })
+// Response: text/event-stream (Anthropic SSE passed through verbatim)
 
 const https = require('https');
 
-exports.handler = async function(event, context) {
-  const headers = {
+exports.handler = async function (event, context) {
+  const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Content-Type': 'application/json'
+    'Access-Control-Allow-Methods': 'POST, OPTIONS'
   };
 
   if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 200, headers: headers, body: '' };
+    return { statusCode: 200, headers: corsHeaders, body: '' };
   }
   if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, headers: headers, body: JSON.stringify({ error: 'Method Not Allowed' }) };
+    return {
+      statusCode: 405,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: 'Method Not Allowed' })
+    };
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return {
       statusCode: 500,
-      headers: headers,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({ error: 'API key not configured.' })
     };
   }
 
+  let body;
   try {
-    const body = JSON.parse(event.body);
-
-    const requestPayload = {
-      model: body.model || 'claude-haiku-4-5-20251001',
-      max_tokens: body.max_tokens || 1000,
-      system: body.system || '',
-      messages: body.messages || []
+    body = JSON.parse(event.body);
+  } catch (e) {
+    return {
+      statusCode: 400,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: 'Invalid request body.' })
     };
-    if (body.tools && Array.isArray(body.tools)) {
-      requestPayload.tools = body.tools;
-    }
-    const requestBody = JSON.stringify(requestPayload);
+  }
 
-    const result = await new Promise((resolve, reject) => {
+  const requestPayload = {
+    model: body.model || 'claude-haiku-4-5-20251001',
+    max_tokens: body.max_tokens || 1000,
+    system: body.system || '',
+    messages: body.messages || [],
+    stream: true
+  };
+  if (body.tools && Array.isArray(body.tools)) {
+    requestPayload.tools = body.tools;
+  }
+  const requestBody = JSON.stringify(requestPayload);
+
+  // Collect the streamed SSE from Anthropic. Because we read chunks as they
+  // arrive, the underlying socket stays active throughout generation. We
+  // accumulate the assistant text and return it as a normal JSON response,
+  // matching the existing { content: [{ type:'text', text }] } shape so the
+  // browser callers need no change beyond pointing here.
+  try {
+    const fullText = await new Promise((resolve, reject) => {
       const options = {
         hostname: 'api.anthropic.com',
         path: '/v1/messages',
@@ -69,30 +88,67 @@ exports.handler = async function(event, context) {
           'Content-Length': Buffer.byteLength(requestBody)
         }
       };
+
       const req = https.request(options, (res) => {
-        let data = '';
-        res.on('data', (chunk) => { data += chunk; });
-        res.on('end', () => {
-          try {
-            const parsed = JSON.parse(data);
-            if (res.statusCode !== 200) {
-              reject(new Error('Anthropic API error ' + res.statusCode + ': ' + data));
-            } else {
-              resolve(parsed);
+        let buffer = '';
+        let assembled = '';
+        let apiErr = null;
+
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => {
+          buffer += chunk;
+          // SSE events are separated by double newlines
+          let idx;
+          while ((idx = buffer.indexOf('\n\n')) !== -1) {
+            const rawEvent = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 2);
+            const lines = rawEvent.split('\n');
+            for (const line of lines) {
+              if (!line.startsWith('data:')) continue;
+              const dataStr = line.slice(5).trim();
+              if (!dataStr || dataStr === '[DONE]') continue;
+              try {
+                const evt = JSON.parse(dataStr);
+                if (evt.type === 'content_block_delta' && evt.delta && typeof evt.delta.text === 'string') {
+                  assembled += evt.delta.text;
+                } else if (evt.type === 'error') {
+                  apiErr = evt.error ? (evt.error.message || JSON.stringify(evt.error)) : 'stream error';
+                }
+              } catch (e) {
+                // ignore non-JSON keep-alive lines
+              }
             }
-          } catch (e) {
-            reject(new Error('Invalid JSON from Anthropic (status ' + res.statusCode + '): ' + data));
+          }
+        });
+
+        res.on('end', () => {
+          if (res.statusCode !== 200) {
+            reject(new Error('Anthropic API error ' + res.statusCode + (assembled ? ': ' + assembled : '')));
+          } else if (apiErr) {
+            reject(new Error('Anthropic stream error: ' + apiErr));
+          } else {
+            resolve(assembled);
           }
         });
       });
-      req.on('error', (e) => { reject(e); });
+
+      req.on('error', (e) => reject(e));
       req.write(requestBody);
       req.end();
     });
 
-    return { statusCode: 200, headers: headers, body: JSON.stringify(result) };
+    // Return in the same non-streaming shape the callers already parse.
+    return {
+      statusCode: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: [{ type: 'text', text: fullText }] })
+    };
 
   } catch (err) {
-    return { statusCode: 500, headers: headers, body: JSON.stringify({ error: err.message }) };
+    return {
+      statusCode: 500,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ error: err.message })
+    };
   }
 };
