@@ -686,26 +686,20 @@ async function runCodingPasses() {
   try {
     updateProgress(1, 'Auditing note for inconsistencies and gaps...');
 
-    // Direct synchronous calls on Sonnet via anthropic-proxy.
-    // Audit and MDM are independent, so run them in parallel — total wall-clock
-    // time is the longer of the two, and each gets its own proxy timeout window.
-    // Review depends on the MDM result, so it runs after.
-    var auditP = callAPI(AUDIT_PROMPT, 'Chart note to audit:\n\n' + noteText, 'claude-sonnet-4-6');
-    var mdmP = callAPI(MDM_EVAL_PROMPT, userMsg, 'claude-sonnet-4-6');
-
-    var auditRaw, mdmRaw;
-    try {
-      var pair = await Promise.all([auditP, mdmP]);
-      auditRaw = pair[0];
-      mdmRaw = pair[1];
-    } catch (parErr) {
-      throw new Error('Audit/MDM step failed: ' + parErr.message);
-    }
-
+    // Sequential direct calls on Sonnet via the streaming clinical-proxy.
+    // Sequential (not parallel) so each call gets a clean, full-speed run and
+    // its own fresh function invocation window, rather than two calls competing
+    // through one proxy at once. The streaming proxy keeps the socket active so
+    // long generations don't trip the inactivity timeout.
+    var auditRaw = await callAPI(AUDIT_PROMPT, 'Chart note to audit:\n\n' + noteText, 'claude-sonnet-4-6');
     var audit = parseJSON(auditRaw);
+    lastAudit = audit;
+
+    updateProgress(2, 'Evaluating Medical Decision Making (all three axes)...');
+
+    var mdmRaw = await callAPI(MDM_EVAL_PROMPT, userMsg, 'claude-sonnet-4-6');
     var mdm = parseJSON(mdmRaw);
     if (!mdm) throw new Error('Could not parse the MDM evaluation. Please try again.');
-    lastAudit = audit;
 
     updateProgress(3, 'Adversarial review: checking for undercoding...');
 
@@ -1094,7 +1088,7 @@ function renderResults(mdm, review) {
 // ══════════════════════════════════════════════════════════════
 
 async function callAPI(systemPrompt, userMessage, model) {
-  var response = await fetch('/.netlify/functions/anthropic-proxy', {
+  var response = await fetch('/.netlify/functions/clinical-proxy', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -1195,7 +1189,7 @@ async function sendFollowUp() {
   messages.push({ role: 'user', content: question });
 
   try {
-    var response = await fetch('/.netlify/functions/anthropic-proxy', {
+    var response = await fetch('/.netlify/functions/clinical-proxy', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
