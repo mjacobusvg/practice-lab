@@ -219,7 +219,7 @@ For Risk: Verify that the clinical decisions Pass 1 cited are documented in the 
 
 CRITICAL RULE — Prescription Drug Management: Per the AMA MDM table, "prescription drug management" is an example of moderate risk. Continuing a medication IS prescription drug management when the note documents patient-specific assessment (tolerability, side effects, safety monitoring, clinical reasoning about continuing). The standard interview alone (ROS, MSE, symptom check) is NOT prescription drug management. Documented medication-specific evaluation with clinical reasoning IS moderate risk.
 
-After verification, apply the 2-of-3 rule.
+After verification, apply the 2-of-3 rule MECHANICALLY. List your three final axis levels (Problems, Data, Risk) after any corrections. Then count: the E/M level is the HIGHEST level that AT LEAST TWO of the three axes reach. A level reached by only ONE axis CANNOT be the final level. Example: high/moderate/moderate = moderate (99214), because only one axis is high but two reach moderate. Example: high/high/moderate = high (99215). Do this count explicitly after any axis correction, and make the final code match the count. If a correction lowered an axis, re-run this count, do not retain the pre-correction code.
 
 === CPT 2025 CRITICAL RULE ===
 When a psychotherapy add-on code (90833, 90836, 90838) is billed alongside an E/M code, TIME CANNOT BE USED as the basis for E/M level selection. E/M level MUST be determined by MDM complexity alone. (CPT 2025, p. 766)
