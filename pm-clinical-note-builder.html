@@ -40,6 +40,10 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 .out{background:var(--navy-card);border:1px solid var(--rule);border-radius:var(--radius);padding:20px;margin-top:18px}
 .out h3{font-family:var(--font-display);color:var(--white);font-size:1.15rem;margin-bottom:12px}
 .out-body{white-space:pre-wrap;font-size:.9rem;color:var(--cream);line-height:1.7}
+.flags{background:rgba(251,191,36,0.07);border:1px solid var(--amber);border-left:3px solid var(--amber);border-radius:8px;padding:14px 18px;margin-top:14px}
+.flags-h{font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--amber);margin-bottom:8px}
+.flags ul{margin:0;padding-left:18px}
+.flags li{font-size:.86rem;color:var(--cream);line-height:1.55;margin-bottom:5px}
 .spinner{display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.3);border-top-color:#06222b;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:8px}
 @keyframes spin{to{transform:rotate(360deg)}}
 .handoff{background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.25);border-radius:8px;padding:14px 18px;font-size:.85rem;margin-top:18px}
@@ -179,6 +183,9 @@ Your task: Generate the assessment formulation ONLY, based on the completed HPI 
 
 You are an experienced psychiatric prescriber. Reason from full clinical knowledge — DSM-5 criteria, psychopharmacology, evidence-based treatment, risk assessment, the 2021 E/M MDM guidelines. Form a clinical impression of the case, then write.
 
+=== SOURCE FIDELITY — DO NOT INVENT CLINICAL CONTENT ===
+Your knowledge is for organizing and articulating the provider's reasoning, not for adding to it. Every diagnosis, diagnostic label, named syndrome, symptom, and risk inference in the assessment must trace to the HPI, the prior diagnoses, or the "what are you doing this visit" input. Do NOT introduce a diagnostic characterization, label, or clinical entity the provider has not documented. Do NOT infer new risk factors, comorbidities, or symptom clusters that are not stated. You may reframe, reweight, and explain the relationships among what IS documented — that is the clinical reasoning being asked for — but you may not supply new clinical findings. When in doubt about whether something is in the source, leave it out. The provider signs this note; it must contain only their clinical content, expressed well.
+
 === ASSESSMENT LENGTH CALIBRATION ===
 Match assessment length to case complexity. Every sentence must do clinical work — no filler, no redundancy, no restating what the HPI already documents.
 
@@ -217,7 +224,7 @@ Do NOT open with "The patient continues to meet DSM-5 criteria for...", "Patient
 === CLINICAL REASONING REQUIREMENTS ===
 Weave these into the formulation (not as labeled sections):
 1. DIAGNOSTIC FRAME: What is the primary organizing pathology? What is secondary or reactive? State explicitly, not as a list of equal diagnoses.
-2. COMPETING INTERPRETATIONS: Challenge at least one assumption. What might be misattributed? What else could explain part of this presentation? Example: "While attributed to SSRI sensitivity, an alternative explanation is anxiety-driven somatic hypervigilance amplifying perceived side effects."
+2. COMPETING INTERPRETATIONS: Where the HPI data genuinely supports it, reweight or reframe what is driving the presentation — what might be misattributed, what else could explain part of the picture. This means reasoning about the relative contribution of conditions ALREADY in the diagnostic picture (e.g. "the anxiety presentation is better explained as secondary to undertreated ADHD-driven restlessness than as a primary anxiety disorder"). It does NOT mean introducing a new diagnostic label, syndrome, or named phenomenon the provider has not documented. Do not coin characterizations like "agoraphobic cognition," "limited-symptom panic," "somatic amplification," or any DSM/clinical entity that does not appear in the HPI or prior diagnoses. If the data is suggestive but unnamed, describe the pattern in plain terms and note it as something to watch — never assign it a clinical name the provider did not use. When no competing interpretation is supported by the documented data, omit this element entirely rather than manufacturing one.
 3. MECHANISM: How is this actually working? What is driving what? Think in causal chains, not descriptions. Example: "Intrusive thoughts increase cognitive load and baseline anxiety, which heightens somatic awareness and lowers tolerance for physiologic changes."
 4. CONSTRAINTS: What limits treatment options? Biological (breastfeeding, liver disease), psychological (hypervigilance, treatment avoidance), pharmacologic (side-effect history, failed trials).
 5. CORE TENSION: What makes this case hard? State it directly. Example: "Treatment is complicated by the need for adequate serotonergic dosing versus the patient's limited tolerance for dose escalation."
@@ -236,6 +243,29 @@ Touch on everything from the HPI, but calibrate depth to clinical significance f
 The assessment should read like a clinician writing about what MATTERED today, with brief acknowledgment of what didn't change. It should NOT read like a systematic review of every HPI section. Concrete test: if a paragraph could be deleted and the remaining assessment still captures every clinical decision and every active question, that paragraph was filler. Cut it before outputting.
 
 Output ONLY the assessment (diagnosis list + formulation prose). No Plan. No tool heading.`;
+
+const REVIEW_SYS = `You are a senior psychiatric prescriber and documentation auditor. Another model just drafted an assessment for a provider who will review and sign it. You receive the ORIGINAL SOURCE (HPI, prior diagnoses, what the provider is doing this visit) and the DRAFT ASSESSMENT. Your job is to return a clean, signable assessment plus a short list of anything the provider genuinely needs to look at.
+
+=== ABSOLUTE RULE: NEVER ALTER THE PROVIDER'S FACTS ===
+The source is the truth. Never change dates, names, dosages, frequencies, diagnoses, or any factual detail from the source. If a fact looks wrong, preserve it and flag it — do not edit it.
+
+=== WHAT YOU SILENTLY CORRECT (rewrite, do not flag) ===
+Fix these directly in the returned assessment without mentioning them:
+1. INVENTED CLINICAL CONTENT — the single most important check. Any diagnostic label, named syndrome, symptom, comorbidity, or risk inference in the draft that is NOT present in the source. Examples of the failure mode: the draft coins "agoraphobic cognition," "limited-symptom panic attacks," "somatic amplification," or asserts a risk factor the provider never documented. Remove the invented label and either delete the claim or restate it in plain descriptive terms tied to what the source actually says. The signed note must contain only the provider's clinical content.
+2. Style/format drift: subsection labels inside the prose, per-diagnosis mini-paragraphs, DSM-criteria openers, a Plan section or any plan content, filler paragraphs that restate the HPI, length that exceeds what the case complexity warrants.
+3. Over-long formulation: tighten to match case complexity without dropping any clinical decision or active question.
+
+=== WHAT YOU FLAG (do not silently change) ===
+Only surface items that require the provider's clinical judgment and that you cannot resolve from the source alone:
+- A genuine clinical ambiguity or diagnostic question that is real (present in the source) and unresolved.
+- A defensibility gap for the E/M code (the formulation does not support the complexity that appears intended).
+- A factual item in the source that looks potentially wrong (preserve it, flag it).
+Do NOT flag your own silent corrections. Do NOT flag stylistic preferences. If there is nothing a provider must act on, return no flags.
+
+=== OUTPUT FORMAT ===
+Respond ONLY with raw JSON, no markdown, no backticks:
+{"assessment": "the clean, corrected assessment text — diagnosis list + formulation prose, ready to sign", "flags": ["short, specific item the provider should review", "..."]}
+The "assessment" value is always the full corrected assessment. "flags" is an array of zero or more short strings. Empty array if nothing needs attention.`;
 
 // ── State ──
 const PREFLIGHT_SYS = `You are an experienced psychiatric prescriber reviewing a visit before documentation is generated. The provider has already indicated they want a psychotherapy blurb and/or an assessment. Your job is to read the HPI and surface the clinical decisions that would change the psychotherapy documentation, fitted to THIS visit's content.
@@ -312,6 +342,10 @@ function contextBlock(inp){
   return s;
 }
 
+function flagBlock(flags){
+  var items = flags.map(function(f){ return '<li>'+String(f).replace(/</g,'&lt;')+'</li>'; }).join('');
+  return '<div class="flags"><div class="flags-h">Worth a look before you sign</div><ul>'+items+'</ul></div>';
+}
 function outBlock(title, id, text){
   var safe = text.replace(/</g,'&lt;');
   // render **label:** as bold for display; copy strips it back to plain text
@@ -423,7 +457,23 @@ async function runGenerate(inp){
     var html='';
     if(scope==='assessment' || scope==='both'){
       var assessText = await callAPI(ASSESS_SYS, [{role:'user', content: contextBlock(inp)}], 2000);
-      html += outBlock('Assessment', 'out-assess', assessText);
+      // Hybrid review pass: silently corrects invented content/style drift, flags only genuine judgment calls
+      var reviewMsg = 'ORIGINAL SOURCE:\n\n' + contextBlock(inp) +
+        '\n\n---\n\nDRAFT ASSESSMENT:\n\n' + assessText;
+      try{
+        var reviewRaw = await callAPI(REVIEW_SYS, [{role:'user', content: reviewMsg}], 2000);
+        var reviewed = JSON.parse(reviewRaw.replace(/```json|```/g,'').trim());
+        if(reviewed && typeof reviewed.assessment === 'string' && reviewed.assessment.trim()){
+          assessText = reviewed.assessment.trim();
+        }
+        html += outBlock('Assessment', 'out-assess', assessText);
+        if(reviewed && Array.isArray(reviewed.flags) && reviewed.flags.length){
+          html += flagBlock(reviewed.flags);
+        }
+      }catch(e){
+        // If review fails or returns non-JSON, fall back to the unreviewed draft rather than blocking output
+        html += outBlock('Assessment', 'out-assess', assessText);
+      }
       document.getElementById('results').innerHTML = html;
     }
     if((scope==='therapy' || scope==='both') && !noTherapy){
