@@ -310,9 +310,21 @@ var AUDIT_PROMPT = `You are a psychiatric chart documentation auditor. Your job 
 
 Read the entire note carefully. Compare every section against every other section. Produce ONE consolidated list of documentation issues (do not split contradictions and gaps into separate lists — they overlap and a single finding must appear only ONCE). Each issue is tagged with a "kind":
 
-- "contradiction" — two statements in the note disagree (both are present, they conflict). Examples: HPI symptom contradicts ROS; med dose in HPI ≠ Medications list; Assessment discusses a med change but Plan says something different; HPI says one dose, Plan a different dose; MSE contradicts Assessment; diagnosis in Assessment not on problem list or vice versa; substance use reported in HPI but denied in substance section.
+- "contradiction" — two statements in the note disagree about the SAME point in time (both present, genuinely conflicting). Examples: HPI symptom contradicts ROS; a current med dose in HPI ≠ the Medications list for that same med at the same time; MSE contradicts Assessment; diagnosis in Assessment not on problem list or vice versa; substance use reported in HPI but denied in substance section. NOTE: a dose in the HPI differing from a dose in the Plan is NOT automatically a contradiction — see the TEMPORAL STRUCTURE rule below.
 - "gap" — something that should be documented is ABSENT. Examples: medication changed but no rationale documented; safety assessment missing when clinical content suggests it (e.g. hopelessness mentioned but no SI screening); psychotherapy intervention documented but no time stated; a clinical claim in the Assessment with no supporting HPI content.
-- "scribe_pattern" — AI-scribe hallucination patterns that weaken defensibility: symptoms in ROS/Assessment never in HPI (fabricated); denials never actually asked (inferred negatives); findings stated with more certainty than HPI supports; meds with wrong names/doses/frequencies vs. the list; mental health content in HPI absent from Assessment; complexity inflated by assessment language overstating the visit; consent/disclosure language that reads auto-generated.
+- "scribe_pattern" — AI-scribe hallucination patterns that weaken defensibility: symptoms in ROS/Assessment never in HPI (fabricated); denials never actually asked (inferred negatives); findings stated with more certainty than HPI supports; meds with wrong names/doses/frequencies vs. the list at the SAME point in time; mental health content in HPI absent from Assessment; complexity inflated by assessment language overstating the visit; consent/disclosure language that reads auto-generated.
+
+TEMPORAL STRUCTURE OF A FOLLOW-UP NOTE (read this before flagging ANY medication or dose difference):
+A follow-up note is sequential in time. The HPI documents the patient's status and regimen AS THEY PRESENT — what they are on BEFORE any change made today. The Assessment may describe a contemplated or recommended change. The Plan documents the actions TAKEN at this visit, including dose changes made today. These describe DIFFERENT POINTS IN TIME and are SUPPOSED to differ when a change was made.
+
+NEVER flag the following — they are correct documentation, not contradictions:
+- HPI states the pre-visit dose (e.g. "ziprasidone 40 mg BID") and the Plan documents a different post-change dose made today (e.g. "20 mg AM / 40 mg PM, decreased today"). This is a dose change, not a conflict — HPI is the baseline, Plan is the action. This is exactly how a med-change visit is documented.
+- The Assessment recommends/justifies a change AND the Plan shows that change was made today. That is alignment, not contradiction.
+- Plan notation recording the action with refill tracking (e.g. "X mg decreased 6/16/26 w/2 refills, due 9/16/26"; "Y mg renewed 6/16/26"). Dated medication-action notation is normal record-keeping; "decreased"/"renewed" are normal terms for what was done.
+- "No other medications were changed today" alongside a documented change to one medication — standard correct closer meaning the OTHER meds were continued unchanged.
+- Brand and generic names used interchangeably (Geodon/ziprasidone, Lamictal/lamotrigine) — normal, not a discrepancy worth flagging.
+
+A medication difference is ONLY a contradiction when it is internally inconsistent ABOUT THE SAME POINT IN TIME — e.g. the Plan says "decreased to 20 mg AM" but today's active prescription/MAR shows 40 mg AM, or two sections both stating today's post-visit regimen disagree with each other. Pre-change vs. post-change differences across HPI and Plan are never contradictions.
 
 CRITICAL DEDUPLICATION RULE: A single underlying problem appears as exactly ONE issue, even if it could be described multiple ways. For example, "Assessment recommends a dose reduction but Plan says no medication changes" is ONE issue (kind: contradiction) — do NOT also list it as a gap ("Plan fails to document the change") or a scribe pattern. Pick the single most accurate kind and the highest applicable severity, and list it once. Likewise, "Plan references prazosin found nowhere else in the note" is ONE issue, not two. Never report the same finding under more than one entry.
 
@@ -344,11 +356,21 @@ THE FIVE REQUIRED ELEMENTS (flag each that is missing or invalid):
 
 When flagging psychotherapy issues, name which of the five elements fail and whether the deeper problem is that the content is medication management rather than psychotherapy.
 
-DO NOT flag:
-- Stylistic preferences or formatting
-- Missing sections that are optional
-- Things that are clinically reasonable even if not explicitly stated
-- Boilerplate or template language that is clearly intentional (e.g. crisis line information, standard plan language)
+DO NOT flag (these are normal and must NOT generate issues):
+- Stylistic preferences or formatting.
+- Missing sections that are optional.
+- Things that are clinically reasonable even if not explicitly stated (e.g. a clear rationale for not changing a stable medication does not have to be spelled out as a patient-encounter quote).
+- Intentional boilerplate or standard template language: crisis-line/ER instructions, PARQ ("Procedures, Alternatives, Risks, Questions discussed and agreed to"), standard integrative-care/therapy psychoeducation paragraphs, return-precaution language. These are deliberate standard-of-care inclusions. Do NOT flag them as "auto-generated," "not individualized," or "padding." Their presence STRENGTHENS the note.
+- Safety assessment: if the note documents ANY of crisis-line information, ER/return precautions for SI, a PARQ statement, or an SI/HI denial in ROS or MSE, then a safety assessment IS documented. Do NOT flag "missing safety assessment" or "no suicide screening" when these are present. Only flag a safety gap when there is explicit acute risk content (stated hopelessness, SI, self-harm) with NO corresponding screening or response anywhere in the note.
+- Brand/generic name interchange (Geodon/ziprasidone, Lamictal/lamotrigine) and dated medication-action notation with refill tracking.
+- Pre-change vs. post-change dose differences between HPI and Plan (see TEMPORAL STRUCTURE rule above).
+
+TIER — assign every issue a tier so the provider knows what actually requires action versus what is optional:
+- "must_fix": a genuine error that would confuse a covering provider, misrepresent what the patient is taking or what was done, or read as a real inconsistency to an auditor. Examples: two sections disagreeing about the CURRENT regimen, a fabricated symptom, a diagnosis billed that the note does not support, an acute-risk statement with no screening anywhere. These should be corrected before signing. Most notes have ZERO or ONE.
+- "strengthen": the note is correct and defensible as written, but adding something would make it harder to challenge in an aggressive audit (e.g. formally noting an external record was reviewed, restating a monitoring plan in the Plan). Purely optional; the provider can reasonably skip these.
+- "minor": a small documentation nicety with negligible real-world impact (naming a specific CBT technique, wording polish). Informational only.
+
+Be conservative about must_fix; do NOT inflate. If an issue is a documentation-quality nicety rather than something that makes the note wrong or misleading, it is "strengthen" or "minor," never "must_fix." The goal is that a clean, well-documented note shows zero must_fix items so the provider is not made to feel the note is full of errors when it is fine. When unsure between tiers, choose the LOWER tier.
 
 Respond ONLY with JSON. No markdown, no backticks.
 
@@ -356,6 +378,7 @@ Respond ONLY with JSON. No markdown, no backticks.
   "documentation_issues": [
     {
       "kind": "contradiction" or "gap" or "scribe_pattern",
+      "tier": "must_fix" or "strengthen" or "minor",
       "type": "hpi_vs_ros" or "hpi_vs_plan" or "hpi_vs_meds" or "assessment_vs_plan" or "mse_vs_assessment" or "diagnosis_mismatch" or "substance_use_mismatch" or "fabricated_symptom" or "inferred_denial" or "overstated_finding" or "missing_mental_health_content" or "inflated_complexity" or "unsupported_plan_reference" or "missing_rationale" or "missing_safety_assessment" or "other",
       "sections": ["section 1", "section 2"],
       "detail": "Specific description with quotes from the note",
@@ -805,42 +828,78 @@ function renderResults(mdm, review) {
       docIssues = (lastAudit.inconsistencies||[]).map(function(i){ i.kind = i.kind || 'contradiction'; return i; })
         .concat((lastAudit.documentation_gaps||[]).map(function(g){ g.kind = g.kind || 'gap'; return g; }));
     }
-    // severity sort: high → moderate → low
-    var sevRank = { high: 0, moderate: 1, low: 2 };
-    docIssues = docIssues.slice().sort(function(a, b){ return (sevRank[a.severity]||3) - (sevRank[b.severity]||3); });
+    // severity sort: high → moderate → low (case-insensitive; guard against the 0-is-falsy trap)
+    function sevRankOf(s){
+      var k = String(s || '').toLowerCase();
+      if (k === 'high') return 0;
+      if (k === 'moderate') return 1;
+      if (k === 'low') return 2;
+      return 3;
+    }
+    docIssues = docIssues.slice().sort(function(a, b){ return sevRankOf(a.severity) - sevRankOf(b.severity); });
 
-    var totalIssues = docIssues.length + (lastAudit.time_issues || []).length + (lastAudit.psychotherapy_issues || []).length;
-    var hasHigh = false;
-    docIssues.forEach(function(i) { if (i.severity === 'high') hasHigh = true; });
-    (lastAudit.time_issues || []).forEach(function(i) { if (i.severity === 'high') hasHigh = true; });
-    (lastAudit.psychotherapy_issues || []).forEach(function(i) { if (i.severity === 'high') hasHigh = true; });
+    // tier helper + grouping (back-compat: items with no tier inferred from severity)
+    function tierOf(i){
+      var t = String(i.tier||'').toLowerCase();
+      if (t === 'must_fix' || t === 'strengthen' || t === 'minor') return t;
+      var s = String(i.severity||'').toLowerCase();
+      return s === 'high' ? 'must_fix' : s === 'moderate' ? 'strengthen' : 'minor';
+    }
+    var mustFix = docIssues.filter(function(i){ return tierOf(i)==='must_fix'; });
+    var strengthen = docIssues.filter(function(i){ return tierOf(i)==='strengthen'; });
+    var minor = docIssues.filter(function(i){ return tierOf(i)==='minor'; });
+    var ptIssues = lastAudit.psychotherapy_issues || [];
+    var timeIssues = lastAudit.time_issues || [];
+    // a low-severity psychotherapy nitpick (e.g. "could name the CBT technique") is not a must-fix
+    function isActionable(i){ return String(i.severity||'').toLowerCase() !== 'low'; }
+    var actionablePt = ptIssues.filter(isActionable);
+    var actionableTime = timeIssues.filter(isActionable);
+
+    // must-fix count drives the headline
+    var mustFixCount = mustFix.length + actionableTime.length + actionablePt.length;
+    var optionalCount = strengthen.length + minor.length + (ptIssues.length - actionablePt.length) + (timeIssues.length - actionableTime.length);
+    var hasHigh = mustFixCount > 0;
 
     var auditColor = hasHigh ? 'var(--red)' : 'var(--amber)';
     var auditBg = hasHigh ? 'rgba(248,113,113,0.06)' : 'rgba(251,191,36,0.06)';
     var auditBorder = hasHigh ? 'rgba(248,113,113,0.25)' : 'rgba(251,191,36,0.25)';
+    // if there is nothing must-fix and only optional polish, present calmly (amber/neutral, not alarm)
+    if (!hasHigh) { auditColor = 'var(--cream-dim)'; auditBorder = 'rgba(148,168,179,0.25)'; auditBg = 'rgba(148,168,179,0.05)'; }
 
     html += '<div class="section-card" style="border-color:' + auditBorder + '">';
-    html += '<h3 style="color:' + auditColor + '">&#9888; Documentation Audit — ' + totalIssues + ' Issue' + (totalIssues > 1 ? 's' : '') + ' Found</h3>';
-    html += '<div style="font-size:.8rem;color:var(--cream-dim);margin-bottom:12px">Review these before relying on the coding analysis below. Internal inconsistencies weaken audit defensibility regardless of code accuracy.</div>';
+    if (hasHigh) {
+      html += '<h3 style="color:' + auditColor + '">&#9888; Documentation Audit — ' + mustFixCount + ' to address before signing</h3>';
+      html += '<div style="font-size:.8rem;color:var(--cream-dim);margin-bottom:12px">' + mustFixCount + ' item' + (mustFixCount>1?'s':'') + ' should be corrected before signing' + (optionalCount? '. ' + optionalCount + ' optional suggestion' + (optionalCount>1?'s':'') + ' below.' : '.') + '</div>';
+    } else {
+      html += '<h3 style="color:var(--green)">&#10003; Documentation Audit — Nothing to fix before signing</h3>';
+      html += '<div style="font-size:.8rem;color:var(--cream-dim);margin-bottom:12px">The note is internally consistent and defensible as written.' + (optionalCount? ' ' + optionalCount + ' optional suggestion' + (optionalCount>1?'s':'') + ' below — purely to strengthen the note, not required.' : '') + '</div>';
+    }
 
-    if (docIssues.length > 0) {
-      html += '<div style="font-size:.75rem;font-weight:600;color:' + auditColor + ';margin-bottom:6px;margin-top:10px">DOCUMENTATION ISSUES</div>';
-      var kindLabel = { contradiction: 'Contradiction', gap: 'Gap', scribe_pattern: 'Scribe pattern' };
-      docIssues.forEach(function(item) {
-        var sevColor = item.severity === 'high' ? 'var(--red)' : item.severity === 'moderate' ? 'var(--amber)' : 'var(--cream-dim)';
+    var kindLabel = { contradiction: 'Contradiction', gap: 'Gap', scribe_pattern: 'Scribe pattern' };
+    function renderIssueGroup(items, headerText, headerColor){
+      if (!items.length) return;
+      html += '<div style="font-size:.75rem;font-weight:600;color:' + headerColor + ';margin-bottom:6px;margin-top:14px">' + headerText + '</div>';
+      items.forEach(function(item){
+        var sl = String(item.severity||'').toLowerCase();
+        var sevColor = sl === 'high' ? 'var(--red)' : sl === 'moderate' ? 'var(--amber)' : 'var(--cream-dim)';
         var tag = kindLabel[item.kind] || 'Issue';
-        html += '<div style="background:' + auditBg + ';border:1px solid ' + auditBorder + ';border-radius:6px;padding:10px 14px;margin-bottom:8px">';
-        html += '<div style="font-size:.78rem;color:' + sevColor + ';font-weight:600;margin-bottom:4px">' + esc(item.severity).toUpperCase() + ' — ' + esc(tag) + (item.type ? ' (' + esc(String(item.type).replace(/_/g, ' ')) + ')' : '') + '</div>';
+        var rowBg = (tierOf(item)==='must_fix') ? 'rgba(248,113,113,0.06)' : 'rgba(148,168,179,0.05)';
+        var rowBorder = (tierOf(item)==='must_fix') ? 'rgba(248,113,113,0.25)' : 'rgba(148,168,179,0.22)';
+        html += '<div style="background:' + rowBg + ';border:1px solid ' + rowBorder + ';border-radius:6px;padding:10px 14px;margin-bottom:8px">';
+        html += '<div style="font-size:.78rem;color:' + sevColor + ';font-weight:600;margin-bottom:4px">' + esc(tag) + (item.type ? ' (' + esc(String(item.type).replace(/_/g, ' ')) + ')' : '') + '</div>';
         html += '<div style="font-size:.82rem;color:var(--cream);margin-bottom:4px">' + esc(item.detail) + '</div>';
         if (item.audit_impact) html += '<div style="font-size:.78rem;color:var(--cream-dim)">Audit impact: ' + esc(item.audit_impact) + '</div>';
         html += '</div>';
       });
     }
+    renderIssueGroup(mustFix, 'MUST FIX BEFORE SIGNING', 'var(--red)');
+    renderIssueGroup(strengthen, 'OPTIONAL — WOULD STRENGTHEN THE NOTE', 'var(--cream-dim)');
+    renderIssueGroup(minor, 'MINOR — INFORMATIONAL', 'var(--cream-dim)');
 
     if (lastAudit.time_issues && lastAudit.time_issues.length > 0) {
       html += '<div style="font-size:.75rem;font-weight:600;color:' + auditColor + ';margin-bottom:6px;margin-top:10px">TIME DISCREPANCIES</div>';
       lastAudit.time_issues.forEach(function(item) {
-        var sevColor = item.severity === 'high' ? 'var(--red)' : item.severity === 'moderate' ? 'var(--amber)' : 'var(--cream-dim)';
+        var sevColor = String(item.severity||'').toLowerCase() === 'high' ? 'var(--red)' : String(item.severity||'').toLowerCase() === 'moderate' ? 'var(--amber)' : 'var(--cream-dim)';
         html += '<div style="background:' + auditBg + ';border:1px solid ' + auditBorder + ';border-radius:6px;padding:10px 14px;margin-bottom:8px">';
         html += '<div style="font-size:.78rem;color:' + sevColor + ';font-weight:600;margin-bottom:4px">' + esc(item.severity).toUpperCase() + '</div>';
         html += '<div style="font-size:.82rem;color:var(--cream)">' + esc(item.detail) + '</div>';
@@ -851,7 +910,7 @@ function renderResults(mdm, review) {
     if (lastAudit.psychotherapy_issues && lastAudit.psychotherapy_issues.length > 0) {
       html += '<div style="font-size:.75rem;font-weight:600;color:' + auditColor + ';margin-bottom:6px;margin-top:10px">PSYCHOTHERAPY ADD-ON SUFFICIENCY</div>';
       lastAudit.psychotherapy_issues.forEach(function(item) {
-        var sevColor = item.severity === 'high' ? 'var(--red)' : item.severity === 'moderate' ? 'var(--amber)' : 'var(--cream-dim)';
+        var sevColor = String(item.severity||'').toLowerCase() === 'high' ? 'var(--red)' : String(item.severity||'').toLowerCase() === 'moderate' ? 'var(--amber)' : 'var(--cream-dim)';
         html += '<div style="background:' + auditBg + ';border:1px solid ' + auditBorder + ';border-radius:6px;padding:10px 14px;margin-bottom:8px">';
         html += '<div style="font-size:.78rem;color:' + sevColor + ';font-weight:600;margin-bottom:4px">' + esc(item.severity).toUpperCase();
         if (item.is_actually_em_only) html += ' — CONTENT READS AS E/M-ONLY';
