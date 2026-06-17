@@ -824,6 +824,8 @@ a { color: inherit; text-decoration: none; }
 }
 .rm-desc { font-size: 0.78rem; color: var(--text-secondary); line-height: 1.55; margin-top: 3px; }
 /* Template library */
+.tpl-source { font-size: 0.72rem; color: var(--teal); margin-top: 6px; cursor: pointer; }
+.tpl-source:hover { text-decoration: underline; }
 .tpl-row { display: flex; align-items: center; gap: 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 13px 16px; }
 .tpl-icon { font-size: 18px; flex-shrink: 0; opacity: 0.8; }
 .tpl-tag { font-size: 0.58rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; padding: 1px 7px; border-radius: 3px; border: 1px solid var(--border); color: var(--text-secondary); margin-left: 8px; vertical-align: middle; }
@@ -1497,8 +1499,25 @@ async function signInGoogle() {
 }
 
 async function signOut() {
+  try {
+    localStorage.removeItem('tbp_auth_token');
+    localStorage.removeItem('tbp_auth_expiry');
+    localStorage.removeItem('tbp_verified_email');
+  } catch(e) {}
   await SB.auth.signOut();
   window.location.reload();
+}
+
+// Bridge to the legacy tool gate (auth-gate.js): write the same localStorage keys
+// it checks, so same-domain tools recognize a platform-authenticated member for 4h.
+// Cross-subdomain tools (e.g. credentialing.thinkbeyondpractice.com) can't read these.
+function writeToolSession(email) {
+  try {
+    var FOUR_HOURS = 4 * 60 * 60 * 1000;
+    localStorage.setItem('tbp_auth_token', email);
+    localStorage.setItem('tbp_auth_expiry', (Date.now() + FOUR_HOURS).toString());
+    localStorage.setItem('tbp_verified_email', (email||'').toLowerCase());
+  } catch(e) {}
 }
 
 // Resolve the signed-in identity from the database (tier, admin, profile).
@@ -1512,6 +1531,7 @@ async function loadIdentity() {
     if (acct) {
       S.user = { id: acct.id, email: acct.email, name: acct.name, avatar_url: acct.avatar_url,
                  tier: acct.tier, is_admin: acct.is_admin, practice_type: acct.practice_type };
+      writeToolSession(acct.email);
     } else {
       // Session exists but no linked account yet (trigger runs on insert); fall back to session email as free.
       var su = sessionData.session.user;
@@ -2352,7 +2372,7 @@ async function showLibrary() {
     try {
       var { data, error } = await SB
         .from('template_library')
-        .select('id, title, description, category, min_tier, is_paid, price_cents, preview')
+        .select('id, title, description, category, min_tier, is_paid, price_cents, preview, source_post_id, forum_posts:source_post_id(id,title)')
         .eq('visible', true)
         .order('sort_order', { ascending: true })
         .order('created_at', { ascending: false });
@@ -2395,6 +2415,10 @@ function renderLibrary() {
     else if (t.min_tier === 'forum') h += '<span class="tpl-tag">Member</span>';
     h += '</div>';
     if (t.description) h += '<div class="post-meta">' + esc(t.description) + '</div>';
+    if (t.source_post_id && isPaidMember()) {
+      var srcTitle = (t.forum_posts && t.forum_posts.title) ? t.forum_posts.title : 'the full post';
+      h += '<div class="tpl-source" onclick="event.stopPropagation();viewPost(\'' + t.source_post_id + '\')">&#128196; Read the full post: ' + esc(srcTitle) + ' &rarr;</div>';
+    }
     h += '</div>';
     if (locked) {
       h += '<button class="tpl-btn locked" onclick="showJoin(\'\')">&#128274; ' + (t.is_paid ? 'Buy' : 'Unlock') + '</button>';
