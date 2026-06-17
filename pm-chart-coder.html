@@ -306,20 +306,17 @@ NEVER ask about any of the following — these are NOT ambiguities and asking ab
 - Whether the provider has an "ongoing psychotherapy relationship." A prescriber's brief psychotherapy during a med-management visit is independently billable; this is irrelevant to add-on eligibility and must never be asked.
 - Which time to "use" for the E/M when a psychotherapy add-on is present. When an add-on is billed, E/M is set by MDM, not time, so there is no time-selection decision to ask about.`;
 
-var AUDIT_PROMPT = `You are a psychiatric chart documentation auditor. Your job is to find internal inconsistencies, contradictions, and documentation gaps in a completed psychiatric note BEFORE it is coded. You are NOT coding the note. You are checking whether the note is internally consistent and audit-ready.
+var AUDIT_PROMPT = `You are a psychiatric chart documentation auditor. Your job is to find documentation issues — contradictions, gaps, and AI-scribe error patterns — in a completed psychiatric note BEFORE it is coded. You are NOT coding the note. You are checking whether the note is internally consistent and audit-ready.
 
-Read the entire note carefully. Compare every section against every other section. Flag any of the following:
+Read the entire note carefully. Compare every section against every other section. Produce ONE consolidated list of documentation issues (do not split contradictions and gaps into separate lists — they overlap and a single finding must appear only ONCE). Each issue is tagged with a "kind":
 
-INCONSISTENCIES (statements in one section that contradict another):
-- HPI symptom reports that contradict ROS (e.g. patient reports insomnia in HPI but ROS says sleep disturbance negative)
-- Medication doses or names in HPI that don't match the Medications list
-- Assessment discusses a medication change but Plan says something different
-- HPI says one dose, Plan says a different dose
-- MSE findings that contradict HPI or Assessment (e.g. MSE says euthymic but Assessment says depressed)
-- Diagnosis in Assessment not reflected in the problem list, or vice versa
-- Patient reports substance use in HPI but substance use section says denies
+- "contradiction" — two statements in the note disagree (both are present, they conflict). Examples: HPI symptom contradicts ROS; med dose in HPI ≠ Medications list; Assessment discusses a med change but Plan says something different; HPI says one dose, Plan a different dose; MSE contradicts Assessment; diagnosis in Assessment not on problem list or vice versa; substance use reported in HPI but denied in substance section.
+- "gap" — something that should be documented is ABSENT. Examples: medication changed but no rationale documented; safety assessment missing when clinical content suggests it (e.g. hopelessness mentioned but no SI screening); psychotherapy intervention documented but no time stated; a clinical claim in the Assessment with no supporting HPI content.
+- "scribe_pattern" — AI-scribe hallucination patterns that weaken defensibility: symptoms in ROS/Assessment never in HPI (fabricated); denials never actually asked (inferred negatives); findings stated with more certainty than HPI supports; meds with wrong names/doses/frequencies vs. the list; mental health content in HPI absent from Assessment; complexity inflated by assessment language overstating the visit; consent/disclosure language that reads auto-generated.
 
-TIME DISCREPANCIES (VERY NARROW SCOPE — most notes will have ZERO time issues):
+CRITICAL DEDUPLICATION RULE: A single underlying problem appears as exactly ONE issue, even if it could be described multiple ways. For example, "Assessment recommends a dose reduction but Plan says no medication changes" is ONE issue (kind: contradiction) — do NOT also list it as a gap ("Plan fails to document the change") or a scribe pattern. Pick the single most accurate kind and the highest applicable severity, and list it once. Likewise, "Plan references prazosin found nowhere else in the note" is ONE issue, not two. Never report the same finding under more than one entry.
+
+TIME (VERY NARROW SCOPE — most notes will have ZERO time issues):
 The ONLY time issue worth flagging is when the note contains two DIFFERENT numbers for PSYCHOTHERAPY time specifically. Example: "Time: 18 minutes" in one place and "Time spent on psychotherapy services only: 17 minutes" in another place. Those are two claims about the SAME thing that disagree.
 
 EVERYTHING ELSE ABOUT TIME IS NORMAL AND MUST NOT BE FLAGGED:
@@ -329,24 +326,6 @@ EVERYTHING ELSE ABOUT TIME IS NORMAL AND MUST NOT BE FLAGGED:
 - Do NOT do subtraction between total time and psychotherapy time. Do NOT comment on it. Do NOT mention it.
 
 If you cannot identify two conflicting statements about psychotherapy time, return an empty time_issues array.
-
-DOCUMENTATION GAPS THAT AFFECT AUDIT DEFENSIBILITY:
-- Plan references a medication not discussed anywhere in HPI or Assessment
-- Assessment makes clinical claims not supported by any HPI content
-- Psychotherapy intervention documented but no time stated
-- Medication changed but no rationale documented
-- Safety assessment missing when clinical content suggests it should be present (e.g. patient mentions hopelessness but no SI screening documented)
-
-AI SCRIBE HALLUCINATION PATTERNS (flag these specifically):
-Many clinicians use AI scribes that generate draft notes. These tools commonly introduce errors that weaken audit defensibility. Watch for:
-- Symptoms documented in ROS or Assessment that were never mentioned in HPI (fabricated symptoms)
-- Denials documented that were never actually asked about (inferred negatives from silence)
-- Findings stated with more clinical certainty than the HPI content supports (e.g. "patient reports significant improvement" when HPI says "doing okay")
-- Treatment recommendations or clinical decisions in the Assessment that are not reflected in the Plan (or vice versa)
-- Medications captured with wrong names, wrong doses, or wrong frequencies compared to the medication list
-- Mental health content discussed in HPI that is absent from the Assessment (AI scribes miss mental health details at high rates)
-- MDM complexity inflated by assessment language that overstates what actually happened in the visit (e.g. "comprehensive evaluation" for a routine follow-up, or listing clinical reasoning the note doesn't actually support)
-- Consent or disclosure language that appears auto-generated rather than clinician-written (e.g. "patient was advised of and consented to" without corresponding documentation of that conversation)
 
 PSYCHOTHERAPY ADD-ON SUFFICIENCY (only evaluate this if the note appears to bill or document a psychotherapy add-on — 90833/90836/90838 — or contains a psychotherapy section):
 A psychotherapy add-on is one of the most audited and most often denied elements in psychiatric billing. The central failure is documentation that is actually MEDICATION MANAGEMENT COUNSELING (already bundled into and paid by the E/M code) being presented as billable psychotherapy. Apply this test rigorously and flag gaps.
@@ -374,11 +353,12 @@ DO NOT flag:
 Respond ONLY with JSON. No markdown, no backticks.
 
 {
-  "inconsistencies": [
+  "documentation_issues": [
     {
-      "type": "hpi_vs_ros" or "hpi_vs_plan" or "hpi_vs_meds" or "assessment_vs_plan" or "mse_vs_assessment" or "diagnosis_mismatch" or "substance_use_mismatch" or "fabricated_symptom" or "inferred_denial" or "overstated_finding" or "missing_mental_health_content" or "inflated_complexity" or "other",
+      "kind": "contradiction" or "gap" or "scribe_pattern",
+      "type": "hpi_vs_ros" or "hpi_vs_plan" or "hpi_vs_meds" or "assessment_vs_plan" or "mse_vs_assessment" or "diagnosis_mismatch" or "substance_use_mismatch" or "fabricated_symptom" or "inferred_denial" or "overstated_finding" or "missing_mental_health_content" or "inflated_complexity" or "unsupported_plan_reference" or "missing_rationale" or "missing_safety_assessment" or "other",
       "sections": ["section 1", "section 2"],
-      "detail": "Specific description of the contradiction with quotes from the note",
+      "detail": "Specific description with quotes from the note",
       "severity": "high" or "moderate" or "low",
       "audit_impact": "One sentence on how this could affect an audit"
     }
@@ -387,13 +367,6 @@ Respond ONLY with JSON. No markdown, no backticks.
     {
       "detail": "Specific time discrepancy with the numbers",
       "severity": "high" or "moderate" or "low"
-    }
-  ],
-  "documentation_gaps": [
-    {
-      "detail": "Specific gap description",
-      "severity": "high" or "moderate" or "low",
-      "audit_impact": "One sentence on how this could affect an audit"
     }
   ],
   "psychotherapy_issues": [
@@ -408,7 +381,7 @@ Respond ONLY with JSON. No markdown, no backticks.
   "clean": true or false
 }
 
-If the note has no issues, return {"inconsistencies":[],"time_issues":[],"documentation_gaps":[],"psychotherapy_issues":[],"clean":true}.
+If the note has no issues, return {"documentation_issues":[],"time_issues":[],"psychotherapy_issues":[],"clean":true}.
 Be thorough but precise. Only flag real problems, not nitpicks.`;
 
 var MDM_EVAL_PROMPT = `You are an expert psychiatric E/M coder extracting the DETERMINATE FACTS needed to classify Medical Decision Making under the 2021/2025 AMA guidelines.
@@ -518,7 +491,7 @@ Respond ONLY with JSON. No markdown.
   "coding_support_reason": "one sentence",
   "audit_defensibility": "Strong or Moderate or Weak",
   "audit_reason": "one sentence",
-  "documentation_gaps": ["gap 1 that could weaken the code", "gap 2"],
+  "documentation_gaps": ["CODING-SPECIFIC gaps only — documentation that, if added, would strengthen THIS code's defensibility (e.g. an MDM data source referenced but not formally noted, a monitoring plan not specified, medical necessity context not stated). Do NOT repeat note-integrity problems (internal contradictions, unsupported references, missing safety assessment, scribe errors) — those are handled by the separate documentation audit and must not be duplicated here. If a finding is a contradiction or a note-consistency issue rather than a code-defensibility gap, omit it from this list."],
   "suggested_language": ["specific language to add to strengthen documentation"],
   "attestation": "A chart-ready MDM attestation for audit defensibility. Use this exact structure: '[Visit type] ([code]) was determined by [level] complexity medical decision making based on: (1) [level] problems — [one sentence with specific clinical content]; (2) [level] data — [one sentence]; (3) [level] risk — [one sentence with specific clinical content]. [2-of-3 rule statement]. Psychotherapy add-on [code] for [X] minutes of [modality]. Modifiers: [list with descriptions].' Use the code-computed levels and E/M code you were given. Do NOT write a visit narrative. For established patients say 'established patient follow-up visit,' for new patients say 'new patient evaluation.'"
 }`;
@@ -826,11 +799,20 @@ function renderResults(mdm, review) {
 
   // ── DOCUMENTATION AUDIT RESULTS ──
   if (lastAudit && !lastAudit.clean) {
-    var totalIssues = (lastAudit.inconsistencies || []).length + (lastAudit.time_issues || []).length + (lastAudit.documentation_gaps || []).length + (lastAudit.psychotherapy_issues || []).length;
+    // back-compat: if an older audit returned split lists, merge them
+    var docIssues = lastAudit.documentation_issues || [];
+    if (!docIssues.length && ((lastAudit.inconsistencies||[]).length || (lastAudit.documentation_gaps||[]).length)) {
+      docIssues = (lastAudit.inconsistencies||[]).map(function(i){ i.kind = i.kind || 'contradiction'; return i; })
+        .concat((lastAudit.documentation_gaps||[]).map(function(g){ g.kind = g.kind || 'gap'; return g; }));
+    }
+    // severity sort: high → moderate → low
+    var sevRank = { high: 0, moderate: 1, low: 2 };
+    docIssues = docIssues.slice().sort(function(a, b){ return (sevRank[a.severity]||3) - (sevRank[b.severity]||3); });
+
+    var totalIssues = docIssues.length + (lastAudit.time_issues || []).length + (lastAudit.psychotherapy_issues || []).length;
     var hasHigh = false;
-    (lastAudit.inconsistencies || []).forEach(function(i) { if (i.severity === 'high') hasHigh = true; });
+    docIssues.forEach(function(i) { if (i.severity === 'high') hasHigh = true; });
     (lastAudit.time_issues || []).forEach(function(i) { if (i.severity === 'high') hasHigh = true; });
-    (lastAudit.documentation_gaps || []).forEach(function(i) { if (i.severity === 'high') hasHigh = true; });
     (lastAudit.psychotherapy_issues || []).forEach(function(i) { if (i.severity === 'high') hasHigh = true; });
 
     var auditColor = hasHigh ? 'var(--red)' : 'var(--amber)';
@@ -841,12 +823,14 @@ function renderResults(mdm, review) {
     html += '<h3 style="color:' + auditColor + '">&#9888; Documentation Audit — ' + totalIssues + ' Issue' + (totalIssues > 1 ? 's' : '') + ' Found</h3>';
     html += '<div style="font-size:.8rem;color:var(--cream-dim);margin-bottom:12px">Review these before relying on the coding analysis below. Internal inconsistencies weaken audit defensibility regardless of code accuracy.</div>';
 
-    if (lastAudit.inconsistencies && lastAudit.inconsistencies.length > 0) {
-      html += '<div style="font-size:.75rem;font-weight:600;color:' + auditColor + ';margin-bottom:6px;margin-top:10px">INCONSISTENCIES</div>';
-      lastAudit.inconsistencies.forEach(function(item) {
+    if (docIssues.length > 0) {
+      html += '<div style="font-size:.75rem;font-weight:600;color:' + auditColor + ';margin-bottom:6px;margin-top:10px">DOCUMENTATION ISSUES</div>';
+      var kindLabel = { contradiction: 'Contradiction', gap: 'Gap', scribe_pattern: 'Scribe pattern' };
+      docIssues.forEach(function(item) {
         var sevColor = item.severity === 'high' ? 'var(--red)' : item.severity === 'moderate' ? 'var(--amber)' : 'var(--cream-dim)';
+        var tag = kindLabel[item.kind] || 'Issue';
         html += '<div style="background:' + auditBg + ';border:1px solid ' + auditBorder + ';border-radius:6px;padding:10px 14px;margin-bottom:8px">';
-        html += '<div style="font-size:.78rem;color:' + sevColor + ';font-weight:600;margin-bottom:4px">' + esc(item.severity).toUpperCase() + ' — ' + esc(item.type.replace(/_/g, ' ')) + '</div>';
+        html += '<div style="font-size:.78rem;color:' + sevColor + ';font-weight:600;margin-bottom:4px">' + esc(item.severity).toUpperCase() + ' — ' + esc(tag) + (item.type ? ' (' + esc(String(item.type).replace(/_/g, ' ')) + ')' : '') + '</div>';
         html += '<div style="font-size:.82rem;color:var(--cream);margin-bottom:4px">' + esc(item.detail) + '</div>';
         if (item.audit_impact) html += '<div style="font-size:.78rem;color:var(--cream-dim)">Audit impact: ' + esc(item.audit_impact) + '</div>';
         html += '</div>';
@@ -860,18 +844,6 @@ function renderResults(mdm, review) {
         html += '<div style="background:' + auditBg + ';border:1px solid ' + auditBorder + ';border-radius:6px;padding:10px 14px;margin-bottom:8px">';
         html += '<div style="font-size:.78rem;color:' + sevColor + ';font-weight:600;margin-bottom:4px">' + esc(item.severity).toUpperCase() + '</div>';
         html += '<div style="font-size:.82rem;color:var(--cream)">' + esc(item.detail) + '</div>';
-        html += '</div>';
-      });
-    }
-
-    if (lastAudit.documentation_gaps && lastAudit.documentation_gaps.length > 0) {
-      html += '<div style="font-size:.75rem;font-weight:600;color:' + auditColor + ';margin-bottom:6px;margin-top:10px">DOCUMENTATION GAPS</div>';
-      lastAudit.documentation_gaps.forEach(function(item) {
-        var sevColor = item.severity === 'high' ? 'var(--red)' : item.severity === 'moderate' ? 'var(--amber)' : 'var(--cream-dim)';
-        html += '<div style="background:' + auditBg + ';border:1px solid ' + auditBorder + ';border-radius:6px;padding:10px 14px;margin-bottom:8px">';
-        html += '<div style="font-size:.78rem;color:' + sevColor + ';font-weight:600;margin-bottom:4px">' + esc(item.severity).toUpperCase() + '</div>';
-        html += '<div style="font-size:.82rem;color:var(--cream);margin-bottom:4px">' + esc(item.detail) + '</div>';
-        if (item.audit_impact) html += '<div style="font-size:.78rem;color:var(--cream-dim)">Audit impact: ' + esc(item.audit_impact) + '</div>';
         html += '</div>';
       });
     }
