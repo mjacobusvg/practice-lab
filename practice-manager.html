@@ -284,6 +284,26 @@ body {
 <body>
 
 <div class="pm-container" id="pm-container" style="display:none">
+
+  <!-- ── Terms of Use gate modal ── -->
+  <div id="terms-modal" style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(11,17,32,0.72); align-items:center; justify-content:center; padding:20px;">
+    <div style="background:#fff; max-width:560px; width:100%; border-radius:14px; padding:28px 30px; box-shadow:0 20px 60px rgba(0,0,0,0.3); max-height:90vh; overflow-y:auto; font-family:'Plus Jakarta Sans',sans-serif;">
+      <h2 style="margin:0 0 6px; font-family:'DM Serif Display',serif; font-size:1.5rem; color:#0b1120;">Practice Manager &mdash; Terms of Use</h2>
+      <p style="margin:0 0 14px; color:#374151; font-size:0.95rem;">By accessing Practice Manager and its tools, I confirm and agree:</p>
+      <ol style="margin:0 0 16px; padding-left:20px; color:#374151; font-size:0.92rem; line-height:1.55;">
+        <li style="margin-bottom:9px;">I am a licensed prescriber or clinician using this account solely for myself. I will not share my login or allow anyone else to use my access.</li>
+        <li style="margin-bottom:9px;">Any patient information I enter is for patients under my own care and clinical authority, and I am responsible for reviewing and approving every output before it enters a medical record.</li>
+        <li>These tools support my clinical work; they do not replace my professional judgment, and I remain solely responsible for all clinical decisions and documentation.</li>
+      </ol>
+      <label style="display:flex; gap:9px; align-items:flex-start; margin:0 0 6px; cursor:pointer; color:#0b1120; font-size:0.92rem;">
+        <input type="checkbox" id="terms-agree-box" style="margin-top:3px; width:16px; height:16px; flex-shrink:0;">
+        <span>I have read and agree to these terms.</span>
+      </label>
+      <div id="terms-error" style="color:#c0392b; font-size:0.85rem; min-height:1.1em; margin-bottom:8px;"></div>
+      <button id="terms-accept-btn" onclick="acceptTermsAndContinue()" style="background:linear-gradient(135deg,var(--teal,#2aabb8),var(--green,#1e8449)); color:#fff; border:none; border-radius:9px; padding:12px 20px; font-size:0.95rem; font-weight:600; cursor:pointer; width:100%; font-family:'Plus Jakarta Sans',sans-serif;">Agree and continue</button>
+    </div>
+  </div>
+
   <div class="pm-header">
     <h1>Practice <span>Manager</span></h1>
     <p>Clinical tools and practice operations. Use them with patients, use them for patients, use them to run the business behind it all.</p>
@@ -580,8 +600,14 @@ function openTool(toolId) {
   var tool = TOOLS.find(function(t) { return t.id === toolId; });
   if (!tool) return;
 
-  // Live tools open in a new tab as standalone files
+  // Live tools open in a new tab as standalone files,
+  // but only after the member has accepted the current Terms of Use.
   if (tool.status === 'live') {
+    if (!TERMS_STATE.accepted) {
+      TERMS_STATE.pendingToolId = toolId;   // remember what they were trying to open
+      showTermsModal();
+      return;
+    }
     window.open(tool.url || ('/' + tool.id), '_blank');
     return;
   }
@@ -884,6 +910,114 @@ function checkUrlParams() {
 }
 
 // ══════════════════════════════════════════════
+// TERMS OF USE GATE
+// ══════════════════════════════════════════════
+var CURRENT_TERMS_VERSION = 'interim_v1';
+var TERMS_STATE = { accepted: false, email: null, name: null, pendingToolId: null };
+
+// Pull the signed-in member's email/name from the auth gate.
+// Tries the common shapes TBPAuth may expose; falls back safely.
+function getAuthIdentity() {
+  try {
+    if (window.TBPAuth) {
+      if (typeof TBPAuth.getUser === 'function') {
+        var u = TBPAuth.getUser() || {};
+        return { email: u.email || u.member_email || null, name: u.name || u.member_name || null };
+      }
+      if (TBPAuth.user) {
+        return { email: TBPAuth.user.email || null, name: TBPAuth.user.name || null };
+      }
+      if (TBPAuth.email) {
+        return { email: TBPAuth.email, name: TBPAuth.name || null };
+      }
+    }
+  } catch (e) { /* fall through */ }
+  return { email: null, name: null };
+}
+
+function showTermsModal() {
+  var m = document.getElementById('terms-modal');
+  if (m) m.style.display = 'flex';
+}
+function hideTermsModal() {
+  var m = document.getElementById('terms-modal');
+  if (m) m.style.display = 'none';
+}
+
+// On load: ask the server whether this member already accepted the current version.
+async function initTermsGate() {
+  var id = getAuthIdentity();
+  TERMS_STATE.email = id.email;
+  TERMS_STATE.name = id.name;
+
+  // If we can't determine the email, fail safe: require acceptance this session.
+  if (!id.email) { TERMS_STATE.accepted = false; return; }
+
+  try {
+    var res = await fetch('/.netlify/functions/record-terms-acceptance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'check', member_email: id.email, terms_version: CURRENT_TERMS_VERSION })
+    });
+    var data = await res.json();
+    TERMS_STATE.accepted = !!(res.ok && data.accepted);
+  } catch (e) {
+    console.error('terms check error', e);
+    TERMS_STATE.accepted = false;  // fail safe
+  }
+}
+
+async function acceptTermsAndContinue() {
+  var box = document.getElementById('terms-agree-box');
+  var errEl = document.getElementById('terms-error');
+  var btn = document.getElementById('terms-accept-btn');
+  if (!box || !box.checked) {
+    if (errEl) errEl.textContent = 'Please check the box to continue.';
+    return;
+  }
+  if (errEl) errEl.textContent = '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+
+  var id = getAuthIdentity();
+  var email = id.email || TERMS_STATE.email;
+  if (!email) {
+    if (errEl) errEl.textContent = 'Could not identify your account. Please refresh and try again.';
+    if (btn) { btn.disabled = false; btn.textContent = 'Agree and continue'; }
+    return;
+  }
+
+  try {
+    var res = await fetch('/.netlify/functions/record-terms-acceptance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'record', member_email: email, member_name: id.name || TERMS_STATE.name, terms_version: CURRENT_TERMS_VERSION })
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) {
+      if (errEl) errEl.textContent = 'Could not record your acceptance. Please try again.';
+      if (btn) { btn.disabled = false; btn.textContent = 'Agree and continue'; }
+      return;
+    }
+  } catch (e) {
+    console.error('terms record error', e);
+    if (errEl) errEl.textContent = 'Could not record your acceptance. Please try again.';
+    if (btn) { btn.disabled = false; btn.textContent = 'Agree and continue'; }
+    return;
+  }
+
+  TERMS_STATE.accepted = true;
+  hideTermsModal();
+  if (btn) { btn.disabled = false; btn.textContent = 'Agree and continue'; }
+
+  // If they were trying to open a tool when the gate appeared, open it now.
+  if (TERMS_STATE.pendingToolId) {
+    var pid = TERMS_STATE.pendingToolId;
+    TERMS_STATE.pendingToolId = null;
+    openTool(pid);
+  }
+}
+
+// ══════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════
 function updateLiveCount() {
@@ -901,7 +1035,11 @@ TBPAuth.protect({
     document.getElementById('pm-container').style.display = '';
     loadVault();
     updateLiveCount();
-    checkUrlParams();
+    // Resolve terms acceptance FIRST, then process any deep-link tool open,
+    // so a ?tool= deep link can't bypass the gate.
+    initTermsGate().then(function() {
+      checkUrlParams();
+    });
   }
 });
 </script>
