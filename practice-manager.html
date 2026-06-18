@@ -915,24 +915,28 @@ function checkUrlParams() {
 var CURRENT_TERMS_VERSION = 'interim_v1';
 var TERMS_STATE = { accepted: false, email: null, name: null, pendingToolId: null };
 
-// Pull the signed-in member's email/name from the auth gate.
-// Tries the common shapes TBPAuth may expose; falls back safely.
+// Pull the signed-in member's email from where auth-gate.js stores it.
+// auth-gate.js writes the verified email to localStorage('tbp_verified_email')
+// after a successful Circle verification.
 function getAuthIdentity() {
-  try {
-    if (window.TBPAuth) {
-      if (typeof TBPAuth.getUser === 'function') {
-        var u = TBPAuth.getUser() || {};
-        return { email: u.email || u.member_email || null, name: u.name || u.member_name || null };
+  var email = null;
+  try { email = localStorage.getItem('tbp_verified_email') || null; } catch (e) {}
+  // Fallbacks in case a future auth version exposes an object instead.
+  if (!email) {
+    try {
+      if (window.TBPAuth) {
+        if (typeof TBPAuth.getUser === 'function') {
+          var u = TBPAuth.getUser() || {};
+          email = u.email || u.member_email || null;
+        } else if (TBPAuth.user && TBPAuth.user.email) {
+          email = TBPAuth.user.email;
+        } else if (TBPAuth.email) {
+          email = TBPAuth.email;
+        }
       }
-      if (TBPAuth.user) {
-        return { email: TBPAuth.user.email || null, name: TBPAuth.user.name || null };
-      }
-      if (TBPAuth.email) {
-        return { email: TBPAuth.email, name: TBPAuth.name || null };
-      }
-    }
-  } catch (e) { /* fall through */ }
-  return { email: null, name: null };
+    } catch (e) {}
+  }
+  return { email: email ? email.trim().toLowerCase() : null, name: null };
 }
 
 function showTermsModal() {
