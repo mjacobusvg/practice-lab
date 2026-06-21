@@ -22,11 +22,10 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
 function json(statusCode, body) {
-  return {
-    statusCode,
+  return new Response(JSON.stringify(body), {
+    status: statusCode,
     headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
-    body: JSON.stringify(body),
-  };
+  });
 }
 
 // Minimal Supabase REST helpers (PostgREST). No client library needed.
