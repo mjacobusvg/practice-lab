@@ -112,6 +112,7 @@ const VOICE = `You are a clinical documentation generator for psychiatric prescr
 - Paragraph form, not bullets (except where a numbered psychotherapy structure is required).
 - Clinical nuance preserved, not dumbed down or overly academic.
 - Write in a clean, professional clinical voice. Be direct. No filler. Specific and actionable.
+- Never use em dashes or en dashes (the long dashes). Use a comma, a colon, a period, or parentheses instead. This applies to all generated text without exception.
 - This is documentation the prescriber will review, edit, and sign. Do not address the prescriber; produce chart-ready text.`;
 
 const THERAPY_SYS = `${VOICE}
@@ -268,6 +269,10 @@ Output ONLY the assessment (diagnosis list + formulation prose). No Plan. No too
 
 const REVIEW_SYS = `You are a senior psychiatric prescriber and documentation auditor. Another model just drafted an assessment for a provider who will review and sign it. You receive the ORIGINAL SOURCE (HPI, prior diagnoses, what the provider is doing this visit) and the DRAFT ASSESSMENT. Your job is to return a clean, signable assessment plus a short list of anything the provider genuinely needs to look at.
 
+=== FORMATTING RULE: NO EM DASHES ===
+The returned assessment must contain no em dashes or en dashes (the long dashes). If the draft contains any, replace each with a comma, colon, period, or parentheses as the sentence requires. Use only regular hyphens in hyphenated terms (e.g. "first-line").
+
+
 === ABSOLUTE RULE: NEVER ALTER THE PROVIDER'S FACTS ===
 The source is the truth. Never change dates, names, dosages, frequencies, diagnoses, or any factual detail from the source. If a fact looks wrong, preserve it and flag it — do not edit it.
 
@@ -398,8 +403,16 @@ function flagBlock(flags){
   var items = flags.map(function(f){ return '<li>'+String(f).replace(/</g,'&lt;')+'</li>'; }).join('');
   return '<div class="flags"><div class="flags-h">Worth a look before you sign</div><ul>'+items+'</ul></div>';
 }
+function stripDashes(s){
+  // Safety net: no em/en dashes in chart-ready output. Spaced long dash becomes a comma;
+  // an unspaced one becomes a hyphen. Covers em (—), en (–), and the horizontal bar (―).
+  return String(s)
+    .replace(/\s*[—–―]\s+/g, ', ')   // " — word"  -> ", word"
+    .replace(/\s+[—–―]\s*/g, ', ')   // "word — "   -> "word, "
+    .replace(/[—–―]/g, '-');          // any remaining unspaced long dash -> hyphen
+}
 function outBlock(title, id, text){
-  var safe = text.replace(/</g,'&lt;');
+  var safe = stripDashes(text).replace(/</g,'&lt;');
   // render **label:** as bold for display; copy strips it back to plain text
   var display = safe.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   return '<div class="out"><button class="btn-copy" onclick="copyOut(\''+id+'\')">Copy</button>'+
