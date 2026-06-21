@@ -201,6 +201,7 @@
       var onVerified = options.onVerified || function() {};
       var requirePHIGate = options.requirePHIGate === true;
       var termsVersion = options.termsVersion || 'interim_v1';
+      var baaVersion = options.baaVersion || '2.0';
 
       // Opt-in PHI gate. When a tool passes requirePHIGate:true, we wrap its
       // onVerified so that after the member is auth-verified we enforce, in order:
@@ -211,7 +212,7 @@
       if (requirePHIGate) {
         var realOnVerified = onVerified;
         onVerified = function() {
-          runPHIGate(toolName, termsVersion, realOnVerified);
+          runPHIGate(toolName, termsVersion, baaVersion, realOnVerified);
         };
       }
 
@@ -257,7 +258,8 @@
     phiOverlay(
       '<div style="font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--tbp-teal,#2aabb8);margin-bottom:10px">Think Beyond Practice</div>' +
       '<h1 style="font-size:19px;color:var(--tbp-white,#f5f4f2);margin:0 0 10px">Business Associate Agreement required</h1>' +
-      '<p style="font-size:14px;color:var(--tbp-cream-dim,#b0aa9e);line-height:1.6;margin:0 0 22px">This tool processes clinical content that may include protected health information. A signed BAA is required before you can use it. It takes about a minute and you only do it once.</p>' +
+      '<p style="font-size:14px;color:var(--tbp-cream-dim,#b0aa9e);line-height:1.6;margin:0 0 14px">This tool processes clinical content that may include protected health information. A current signed Business Associate Agreement is required before you can use it. It takes about a minute.</p>' +
+      '<p style="font-size:13px;color:var(--tbp-cream-dim,#b0aa9e);line-height:1.6;margin:0 0 22px;padding:10px 14px;background:rgba(245,200,66,0.10);border-left:3px solid #f5c842;border-radius:6px">If you have signed a BAA before, you may be asked to sign again. The agreement is updated periodically as new tools are added to the platform, and using the clinical tools requires your signature on the current version.</p>' +
       '<a href="/baa-sign.html?email=' + encodeURIComponent(email) + '&redirect=' + redirect + '" style="display:inline-block;padding:13px 26px;background:var(--tbp-teal,#2aabb8);color:var(--tbp-navy,#0b1120);border-radius:6px;font-size:14px;font-weight:700;text-decoration:none">Review and sign the BAA</a>' +
       '<p style="font-size:12px;color:var(--tbp-cream-dim,#b0aa9e);margin:18px 0 0">Questions? michael@thinkbeyondpractice.com</p>'
     );
@@ -292,19 +294,22 @@
     });
   }
 
-  function runPHIGate(toolName, termsVersion, proceed) {
+  function runPHIGate(toolName, termsVersion, baaVersion, proceed) {
     var email = getVerifiedEmail();
     // Fail closed: if we cannot identify the member, require the BAA path.
     if (!email) { showBaaRequired(''); return; }
 
-    // 1) BAA check (fail closed: any error or non-signed => show sign screen)
+    // 1) BAA check (fail closed). Require the CURRENT version: a member who
+    // signed an older version (e.g. 1.0) does not satisfy 2.0 and is sent to re-sign.
     fetch('/.netlify/functions/check-baa-status', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: email })
     })
     .then(function(r){ return r.ok ? r.json() : { hasBaa: false }; })
     .then(function(baa){
-      if (!baa || baa.hasBaa !== true) { showBaaRequired(email); return; }
+      var signedCurrent = baa && baa.hasBaa === true &&
+        String(baa.baaVersion || '') === String(baaVersion);
+      if (!signedCurrent) { showBaaRequired(email); return; }
       // 2) Terms check (fail closed: any error or non-accepted => show terms)
       return fetch('/.netlify/functions/record-terms-acceptance', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
