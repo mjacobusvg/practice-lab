@@ -199,17 +199,17 @@
       var toolName = options.toolName || 'Think Beyond Practice';
       var spaceId = options.spaceId || null;
       var onVerified = options.onVerified || function() {};
-      var requirePHIGate = options.requirePHIGate === true;
+      var skipPHIGate = options.skipPHIGate === true;
       var termsVersion = options.termsVersion || 'interim_v1';
       var baaVersion = options.baaVersion || '2.0';
 
-      // Opt-in PHI gate. When a tool passes requirePHIGate:true, we wrap its
-      // onVerified so that after the member is auth-verified we enforce, in order:
-      //   1) a signed BAA  2) accepted Terms of Use
-      // before the tool is ever shown. Tools that do NOT pass the flag are
-      // completely unaffected (the wrapped path never runs for them).
-      // This gate fails CLOSED: any ambiguity or error blocks access.
-      if (requirePHIGate) {
+      // OPT-OUT PHI gate. The BAA + Terms gate runs by DEFAULT for every tool.
+      // A page only skips it by explicitly passing skipPHIGate:true (used for
+      // non-PHI reference tools, practice-data tools, the Practice Lab,
+      // Credentialing Hub, Ask the Archive, and the marketing/platform pages).
+      // This means a NEW tool is gated unless you deliberately exempt it: the
+      // safe failure mode. The gate fails CLOSED on any ambiguity or error.
+      if (!skipPHIGate) {
         var realOnVerified = onVerified;
         onVerified = function() {
           runPHIGate(toolName, termsVersion, baaVersion, realOnVerified);
