@@ -10,9 +10,13 @@ consent table shape, the tool classification, or a send/job pattern changes,
 update this file in the SAME commit. Same discipline as MODEL-REGISTRY.md.
 
 Last verified against live code and Supabase schema: June 2026.
-Last content revision: June 2026 (added PHI data-classification principle,
-de-identification standard, planned BAA 3.0 bump note, audio recording-consent
-stub, email-only/no-SMS delivery decision).
+Last content revision: June 2026 (shipped Assessment Suite: added it to the tool
+classification, documented the assessment.html public token-route exception, the
+assessment_consents table, the three assessment_* structural tables, and a new
+Section 9 covering the token-based patient-facing PHI lifecycle; earlier this
+revision added PHI data-classification principle, de-identification standard,
+planned BAA 3.0 bump note, audio recording-consent stub, email-only/no-SMS
+delivery decision).
 
 ---
 
@@ -156,14 +160,26 @@ column default. If you build or touch the BAA-signing function, confirm it passe
 
 PHI-GATED (default, no skip flag):
 pm-clinical-note-builder, note-builder-trial, chart-coder-trial, pm-chart-coder,
-pm-letter-generator, pm-termination-workflow, pm-crisis-safety-plan. Any new
-clinical-content tool joins this list by default.
+pm-letter-generator, pm-termination-workflow, pm-crisis-safety-plan,
+pm-assessment-suite. Any new clinical-content tool joins this list by default.
 
 EXEMPT (`skipPHIGate: true`, non-PHI):
 pm-interaction-checker, pm-monitoring-protocol, pm-lai, pm-hipaa-hub,
 pm-compliance-tracker, vault, ask-archive, practice-manager hub,
 practice-lab-hub and sub-pages, members, index.html (Credentialing Hub),
 and the public marketing/demo pages (e.g. ai-scribe-demo.html).
+
+PUBLIC PATIENT-FACING (no auth-gate.js at all — documented exception):
+`assessment.html` is the patient-facing form for the Assessment Suite. It is the
+first and currently only NON-member surface in the stack, so it deliberately does
+NOT include auth-gate.js and is NOT a member-protected page. Access is gated
+solely by an unguessable per-assessment token in the URL (`?t=...`,
+crypto.randomBytes(24).base64url, single-use, 14-day completion TTL). The page
+exposes no member functionality and no provider PII; it only renders the
+instrument items for that token and posts responses back. This is the one
+intentional exception to "every protected page includes auth-gate.js" — it is not
+a protected page. The PROVIDER half of the tool (`pm-assessment-suite.html`) is
+fully PHI-gated in the normal way. See Section 9 for the full lifecycle.
 
 When you add a tool, add it to the correct list here.
 
@@ -201,6 +217,14 @@ the real client IP and user-agent. The canonical example is
   pdf_storage_path, circle_member_id, created_at.
 - `loa_signatures` (credentialing letter-of-authorization): id, email,
   signed_name, signed_at, ip_address, user_agent.
+- `assessment_consents` (Assessment Suite patient acknowledgment): id,
+  assessment_id (fk to assessments, on delete set null), token, consent_version
+  (default `assessment_v1`; code-side constant `CURRENT_ASSESSMENT_CONSENT_VERSION`
+  in `assessment-submit.js`), accepted_at, ip_address, user_agent, created_at.
+  Captured at patient form submission by `assessment-submit.js`, which captures
+  IP/user-agent server-side the same way record-terms-acceptance does. NOTE: this
+  is a patient (non-member) consent, so the natural key is the submission itself,
+  not (member_email, version); it is not upserted on a member identity. RLS on.
 
 ### Building a new consent type (e.g. patient recording-consent)
 
@@ -355,6 +379,24 @@ Do not create a new table per tool unless the data is genuinely relational.
   the service key.
 - Reads `email` from the client's `tbp_verified_email`.
 
+### Structural-table exception: Assessment Suite
+
+The Assessment Suite does NOT use `user_tool_data`. Its data is genuinely
+relational with distinct lifecycles, so it has three dedicated tables (this is
+the "genuinely structural" carve-out the rule above allows):
+
+- `assessments`: id (uuid pk), token (unique), provider_email, patient_name
+  (PHI; nulled on purge), instrument_set (jsonb), status
+  (pending|completed|retrieved|expired), deidentified_meta (jsonb; survives
+  purge), created_at, expires_at, completed_at, retrieved_at, purged_at. RLS on;
+  service-key only.
+- `assessment_results`: id, assessment_id (fk, on delete cascade), responses
+  (jsonb; PHI item-level), scores (jsonb), flags (jsonb), created_at. THE
+  PHI-BEARING ROW; deleted by the retention purge. RLS on.
+- `assessment_consents`: see Section 2.
+
+Full lifecycle in Section 9.
+
 ---
 
 ## 6. Identity, tiers, and env vars
@@ -418,3 +460,68 @@ table. Tracked here so it is not forgotten.
   Update in the same commit when a tool gains, loses, or changes a model.
 - Per-tool QA checklists (e.g. qa-termination-test.md) with a pointer comment in
   the tool's HTML.
+
+---
+
+## 9. Token-based patient-facing PHI lifecycle (Assessment Suite)
+
+The Assessment Suite is the canonical pattern for a tool that collects PHI from a
+NON-member patient via a tokenized link, scores it server-side, returns results
+to the provider, and auto-deletes the PHI on a fixed clock. Build future
+patient-facing collectors (intake forms, outcome-measure trackers) to this shape.
+
+Surfaces and files:
+- `pm-assessment-suite.html` — provider tool, PHI-gated (Section 1), default gate.
+- `assessment.html` — PUBLIC patient form, token-gated only (Section 1 exception).
+- `assessment-instruments.js` — shared server-side instrument defs + scoring.
+- `assessment-create.js` — provider creates a tokenized assessment.
+- `assessment-fetch.js` — public; patient form loads instrument render-defs by token.
+- `assessment-submit.js` — public; scores, stores result, records consent.
+- `assessment-list.js` — provider dashboard list.
+- `assessment-retrieve.js` — provider pulls the scored report; also `expire` action.
+
+Decisions baked in (do not re-derive):
+
+- IDENTITY. Patients are not members. The per-assessment unguessable token is the
+  only credential to the patient form. Single-use (consumed on submit), 14-day
+  completion TTL (`expires_at`).
+- PATIENT NAME IS STORED, as PHI. `assessments.patient_name` holds the real name
+  so the provider can identify the returned result across devices. It is handled
+  as PHI: RLS on, service-key only, retrieval restricted to the creating provider
+  by `provider_email` match, and nulled by the purge. There is deliberately NO
+  "use initials / local-label" hybrid — that was rejected as clinician-hostile;
+  the storage risk is accepted because the dashboard's whole purpose is to tell
+  the clinician which patient each result belongs to.
+- NO PATIENT-FACING SCORES. The patient form shows only a neutral submission
+  confirmation plus 988 crisis language. All scores, bands, and interpretation go
+  ONLY to the provider via `assessment-retrieve.js`.
+- SCORING IS SERVER-SIDE AND ISOLATED. All item text, scoring, severity bands, and
+  chart language live in `assessment-instruments.js`. The patient form receives
+  only render-defs (item text + options) via `getRenderDef`; scoring logic never
+  reaches the client.
+- SUICIDE INSTRUMENTS EXCLUDED FROM PATIENT-SEND. C-SSRS and ASQ are NOT in the
+  patient-send allowlist (`PATIENT_SEND_IDS` in assessment-instruments.js) and are
+  re-validated server-side in assessment-create.js. They remain clinician-
+  administered in pm-crisis-safety-plan.html. PHQ-9 item 9 and EPDS item 10
+  endorsement raise a provider-facing risk flag on retrieval AND surface inline
+  crisis language on the patient form. MSI-BPD item 2 (self-harm/attempt history)
+  also flags for provider review.
+- RETENTION: uniform 30 days from `completed_at`, regardless of retrieval.
+  Retrieval stamps `retrieved_at` but does NOT change the clock. The purge
+  (`purge_assessment_phi()`) deletes the `assessment_results` row and nulls
+  `patient_name`, setting `purged_at`; the `assessments` row and its
+  `deidentified_meta` (instrument ids, totals, bands, flag types, timestamps — no
+  identifiers, no item-level responses) persist for longitudinal/QA signal. This
+  is a STORED-PHI tool by the Section 0 classification, turned on deliberately
+  with the retention safeguard actually running (below).
+- SCHEDULING IS LIVE. The purge is scheduled via pg_cron: extension `pg_cron`
+  enabled on the project, job `purge-assessment-phi` runs daily at 03:00 UTC
+  (`select cron.schedule('purge-assessment-phi','0 3 * * *','select
+  public.purge_assessment_phi()')`). Verify with `select * from cron.job`. If the
+  project is ever restored/migrated, re-confirm the extension and job survive, the
+  retention claim depends on this job existing.
+- SEND. The provider report reuses `openSendModal` (Section 3); email delivery of
+  the patient LINK reuses `send-document`. No new SES logic.
+- SMS: OFF, consistent with Section 3. Patient link goes by copy or email only.
+- NOT AN AI TOOL. Scoring is deterministic; no model is called. Recorded as a
+  no-model tool in MODEL-REGISTRY.md.
