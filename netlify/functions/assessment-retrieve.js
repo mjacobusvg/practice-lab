@@ -19,15 +19,15 @@ const CORS = {
   'Content-Type': 'application/json'
 };
 
-async function verifyMember(circleToken, email) {
-  const res = await fetch(
-    'https://app.circle.so/api/v1/community_members/search?email=' + encodeURIComponent(email),
-    { headers: { 'Authorization': 'Token ' + circleToken } }
-  );
-  if (!res.ok) return false;
-  const d = await res.json();
-  const m = Array.isArray(d) ? d[0] : d;
-  return !!(m && m.id);
+async function verifyMember(email) {
+  const base = (process.env.SITE_URL || 'https://thinkbeyondpractice.com').replace(/\/$/, '');
+  const res = await fetch(base + '/.netlify/functions/circle-auth', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email })
+  });
+  const d = await res.json().catch(() => ({}));
+  return !!d.verified;
 }
 
 exports.handler = async (event) => {
@@ -38,8 +38,7 @@ exports.handler = async (event) => {
 
   const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ubcrrrapedaxkguxniwv.supabase.co';
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-  const CIRCLE_TOKEN = process.env.CIRCLE_API_V2_TOKEN;
-  if (!SERVICE_KEY || !CIRCLE_TOKEN) {
+  if (!SERVICE_KEY) {
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Server not configured' }) };
   }
 
@@ -56,7 +55,7 @@ exports.handler = async (event) => {
   }
 
   try {
-    const ok = await verifyMember(CIRCLE_TOKEN, providerEmail);
+    const ok = await verifyMember(providerEmail);
     if (!ok) return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'No active membership found.' }) };
   } catch (e) {
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Membership verification failed.' }) };
