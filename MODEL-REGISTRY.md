@@ -40,7 +40,7 @@
 
 ## Not AI tools (no model calls)
 
-pm-lai.html (deterministic), pm-crisis-safety-plan.html (crisis-resources lookup), pm-hipaa-hub.html (user-tool-data storage), practice-lab-private-practice.html (the `model:` field there is a business/income model object, not AI), ask-archive.js (Supabase + SES only — the RAG model lives in inngest-serve.mjs).
+pm-lai.html (deterministic), pm-crisis-safety-plan.html (crisis-resources lookup), pm-hipaa-hub.html (user-tool-data storage), practice-lab-private-practice.html (the `model:` field there is a business/income model object, not AI), ask-archive.js (Supabase + SES only — the RAG model lives in inngest-serve.mjs), and the **Assessment Suite** — pm-assessment-suite.html, assessment.html, and assessment-create/fetch/submit/list/retrieve.js — which scores validated screeners deterministically in assessment-instruments.js with no model call (the only outbound call is to send-document for optional email-link delivery).
 
 ---
 
