@@ -10,6 +10,9 @@ consent table shape, the tool classification, or a send/job pattern changes,
 update this file in the SAME commit. Same discipline as MODEL-REGISTRY.md.
 
 Last verified against live code and Supabase schema: June 2026.
+Last content revision: June 2026 (added PHI data-classification principle,
+de-identification standard, planned BAA 3.0 bump note, audio recording-consent
+stub, email-only/no-SMS delivery decision).
 
 ---
 
@@ -37,6 +40,30 @@ When building a new tool, work through this:
    the `user_tool_data` table. Do not create a new table per tool unless the
    data is genuinely structural. See Section 5.
 8. Tier scope: which membership tier can use this? See Section 6.
+
+### Governing principle: PHI data classification (what needs counsel, what does not)
+
+New tools do NOT each require a counsel engagement. The documents (BAA + Terms)
+were deliberately scoped to permit the roadmap. Classify the tool's data and
+proceed accordingly:
+
+- NO PHI (reference tools, marketing site, forum, CE, practice-data-only tools):
+  build freely. Pass `skipPHIGate: true`. No counsel needed.
+- TRANSIENT PHI (processed then deleted, not stored; e.g. note builder, screener
+  scoring, letter generator): already covered by the BAA. Build under the
+  standard safeguards (PHI gate on, delete after delivery, de-identification
+  standard below where output is shared/AI-processed). No counsel needed.
+- STORED PHI (PHI persisted over time, e.g. longitudinal assessment tracking):
+  PERMITTED. This is NOT blocked and does NOT require re-papering the BAA, the
+  documents already allow it under appropriate safeguards. It is a RISK decision,
+  not a contract decision: storing PHI increases breach surface and adds
+  retention/disposal/access duties you must actually run, so turn it on
+  deliberately when the clinical value justifies carrying that risk. The only
+  optional counsel touch at that point is confirming safeguards are adequate, not
+  re-opening the BAA. Do not treat storage as forbidden.
+
+Default for v1 of any PHI tool: transient. Move to stored only as a deliberate,
+safeguarded choice.
 
 ---
 
@@ -100,6 +127,18 @@ TBPAuth.protect({
 When the BAA or Terms version is bumped, change it in BOTH the gate defaults and
 the recording function, force re-acceptance is automatic because the check is an
 exact-version match, and update this section.
+
+PLANNED BUMP (not yet live): BAA **2.0** is the current LIVE/gating version and
+must stay 2.0 until the bump is executed. A substantially revised BAA is in
+finalization with outside counsel (Joel Schwarz): three-hub Platform definition
+(Practice Hub, Credentialing Hub, Community and Education Hub), Washington
+Addendum incorporated as Exhibit A, AI-training restrictions, and expanded
+definitions. That document will become live version **3.0** once counsel
+delivers the FINAL (the gating Exhibit A still outstanding). NOTE ON NUMBERING:
+the working drafts exchanged with counsel carry their own sequence (currently
+"v6"); that is the counsel-side draft number, NOT the live gate version. Do not
+set the gate to any "v#" number. The live gate goes 2.0 -> 3.0, and only when
+the final is signed off. Until then, leave 2.0 in place everywhere.
 
 KNOWN INCONSISTENCY TO BE AWARE OF: the `baa_signatures` table column
 `baa_version` still DEFAULTS to `'1.0'` at the database level. The signing flow
@@ -174,6 +213,62 @@ natural key. If it needs a new table, give it: id (uuid pk), the identity column
 ip_address, user_agent, created_at. Enable RLS on the new table (service-key
 writes bypass RLS; see Section 7). Then document the new table here.
 
+### PLANNED consent type: Audio Recording / Ambient Documentation
+
+For the ambient AI scribe (records the visit, transcribes, then deletes audio).
+Scoped but NOT yet built. Build it following the pattern above. Key decisions
+already made, do not re-derive:
+
+- The PROVIDER is solely responsible for obtaining the patient's recording
+  consent, including Washington's all-party consent requirement. The platform
+  supplies the tooling only; the BAA's Audio Recording and Ambient Documentation
+  clause allocates this to the Covered Entity.
+- Consent model: a standalone recording-consent form signed ONCE at intake, PLUS
+  a documented verbal confirmation each session. Consent is REVOCABLE; a
+  revocation must stop recording for that patient going forward.
+- Audio is transcribed then deleted; no audio retained. STT vendor must be under
+  BAA (AWS Transcribe under the existing AWS BAA is the path of least resistance).
+- When built: create `record-recording-consent.js` and a
+  `recording_consents` table (identity column, `consent_version` with a
+  `CURRENT_RECORDING_CONSENT_VERSION` constant, signed_at, ip_address,
+  user_agent, plus a per-session verbal-confirmation log or a revoked_at column
+  as the design requires). Add the STT vendor row to MODEL-REGISTRY.md. Update
+  this section and the tool classification in Section 1. Optional only: a quick
+  counsel wording spot-check on the consent form once drafted; building it does
+  not require counsel sign-off.
+
+---
+
+## 2A. De-identification standard (clinical-content output)
+
+Applies to any tool that takes clinical content and produces output that is
+shared, displayed beyond the treating clinician, or sent to an AI model in a form
+that could carry patient identity (e.g. case presentation generator, anything
+that turns a real patient encounter into shareable/teaching/aggregated text).
+
+The agreed standard is layered, do not drop layers:
+
+1. Safe Harbor: strip the 18 HIPAA Safe Harbor identifiers.
+2. Narrative generalization: generalize free-text specifics that could
+   re-identify even after Safe Harbor (rare-condition + location combos, unusual
+   dates/sequences, employer, distinctive verbatim details). Safe Harbor alone is
+   not enough for narrative clinical text.
+3. Refusal: the tool should refuse / flag rather than emit output when content
+   cannot be adequately de-identified.
+4. Member review: the clinician reviews the de-identified output before it leaves
+   the tool. Human-in-the-loop is part of the standard, not optional polish.
+
+UNDECIDED (do not assume): expert-determination de-identification (a formal
+statistical determination by a qualified expert) is NOT currently part of the
+standard and may never be. It is under consideration only, leaning against,
+because it adds time and cost and is not necessarily needed given the layered
+approach above. Do not build toward an expert-determination requirement unless
+that decision is explicitly made and recorded here.
+
+STANDING RULE: revisit this standard whenever an algorithm/output is REUSED for a
+new purpose (especially anything aggregating across patients or feeding model
+development). Reuse is the trigger to re-check adequacy.
+
 ---
 
 ## 3. Sending email / fax (send-util.js)
@@ -209,6 +304,16 @@ Notes:
 - SMS exists (`send-sms.js`) but is OFF by default. Do not add an SMS send branch
   to a new tool unless explicitly decided. The `providers.notify_sms` column and
   `notifications.channel = 'sms'` support it for later.
+- DECISION (current): patient-facing delivery is EMAIL ONLY. Nothing is sent via
+  SMS to anyone at this time. This includes the Assessment Tool / screener-sender
+  (patient gets the screener link by email; they can open it on a phone if they
+  want). Rationale: email is not subject to TCPA, so email-only sidesteps the
+  texting-consent question entirely. SMS is a possible FUTURE feature, deferred as
+  a deliberate scoped build. Open question to resolve with counsel before any SMS
+  ships: can we rely on the clinician obtaining TCPA consent from the patient
+  (BAA requiring the clinician to represent they did), or must the platform
+  capture that consent itself. Until that is answered and SMS is deliberately
+  turned on, do not wire any tool to send SMS.
 
 ---
 
