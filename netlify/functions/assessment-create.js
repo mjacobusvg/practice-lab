@@ -72,21 +72,33 @@ exports.handler = async (event) => {
   }
 
   // Verify provider is an active Circle member.
+  // TEMP DIAGNOSTIC: on failure, echo back the Circle status + response shape so we
+  // can see exactly why verification fails. REVERT after debugging.
   try {
     const verifyRes = await fetch(
       'https://app.circle.so/api/v1/community_members/search?email=' + encodeURIComponent(providerEmail),
       { headers: { 'Authorization': 'Token ' + CIRCLE_TOKEN } }
     );
+    const rawText = await verifyRes.text();
+    let memberData;
+    try { memberData = JSON.parse(rawText); } catch (e) { memberData = null; }
+
     if (!verifyRes.ok) {
-      return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'Could not verify membership.' }) };
+      return { statusCode: 403, headers: CORS, body: JSON.stringify({
+        error: 'Could not verify membership.',
+        _debug: { stage: 'http', circleStatus: verifyRes.status, emailSent: providerEmail, tokenPresent: !!CIRCLE_TOKEN, bodyPreview: rawText.slice(0, 300) }
+      }) };
     }
-    const memberData = await verifyRes.json();
+
     const member = Array.isArray(memberData) ? memberData[0] : memberData;
     if (!member || !member.id) {
-      return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'No active membership found.' }) };
+      return { statusCode: 403, headers: CORS, body: JSON.stringify({
+        error: 'No active membership found.',
+        _debug: { stage: 'shape', emailSent: providerEmail, isArray: Array.isArray(memberData), keys: memberData && !Array.isArray(memberData) ? Object.keys(memberData) : null, arrayLen: Array.isArray(memberData) ? memberData.length : null, bodyPreview: rawText.slice(0, 300) }
+      }) };
     }
   } catch (e) {
-    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Membership verification failed.' }) };
+    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Membership verification failed.', _debug: String(e) }) };
   }
 
   // Generate an unguessable token (URL-safe).
