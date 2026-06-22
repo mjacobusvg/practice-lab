@@ -159,11 +159,18 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
 
 <script>
 // ── AUTH (PHI-gated; default, no skipPHIGate) ──
+// auth-gate.js calls onVerified() with NO argument; the verified identity is
+// stored in localStorage as tbp_verified_email (the canonical identity key every
+// tool reads). Read it from there, not from a callback parameter.
 var PROVIDER_EMAIL = '';
+function getProviderEmail(){
+  try { return (localStorage.getItem('tbp_verified_email') || '').trim().toLowerCase(); }
+  catch(e){ return ''; }
+}
 TBPAuth.protect({
   toolName: 'Assessment Suite',
-  onVerified: function(email){
-    PROVIDER_EMAIL = email || '';
+  onVerified: function(){
+    PROVIDER_EMAIL = getProviderEmail();
     document.getElementById('app-root').style.display = 'block';
     initTool();
   }
@@ -235,6 +242,8 @@ function switchTab(t){
 }
 
 async function generate(){
+  if(!PROVIDER_EMAIL) PROVIDER_EMAIL = getProviderEmail();
+  if(!PROVIDER_EMAIL){ toast('Your session could not be verified. Please refresh the page.','error'); return; }
   var name = document.getElementById('patient-name').value.trim();
   if(!selectedInstruments.length){ toast('Select at least one instrument.','error'); return; }
   if(delivery==='email'){
@@ -301,6 +310,7 @@ function copyLink(){
 }
 
 async function loadDashboard(){
+  if(!PROVIDER_EMAIL) PROVIDER_EMAIL = getProviderEmail();
   var list = document.getElementById('dashboard-list');
   list.innerHTML = '<div class="loading-row">Loading…</div>';
   try{
