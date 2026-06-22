@@ -31,10 +31,9 @@ exports.handler = async (event) => {
 
   const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ubcrrrapedaxkguxniwv.supabase.co';
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-  const CIRCLE_TOKEN = process.env.CIRCLE_API_V2_TOKEN;
   const SITE_URL = process.env.SITE_URL || 'https://thinkbeyondpractice.com';
 
-  if (!SERVICE_KEY || !CIRCLE_TOKEN) {
+  if (!SERVICE_KEY) {
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Server not configured' }) };
   }
 
@@ -71,34 +70,23 @@ exports.handler = async (event) => {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Valid patientEmail required for email delivery' }) };
   }
 
-  // Verify provider is an active Circle member.
-  // TEMP DIAGNOSTIC: on failure, echo back the Circle status + response shape so we
-  // can see exactly why verification fails. REVERT after debugging.
+  // Verify provider is an active member via the SAME path that gates the page:
+  // the circle-auth function. Direct Circle v1 calls fail because the available
+  // token is a v2 token (v1 endpoints reject it as unauthorized). circle-auth
+  // uses the correct credentials server-side.
   try {
-    const verifyRes = await fetch(
-      'https://app.circle.so/api/v1/community_members/search?email=' + encodeURIComponent(providerEmail),
-      { headers: { 'Authorization': 'Token ' + CIRCLE_TOKEN } }
-    );
-    const rawText = await verifyRes.text();
-    let memberData;
-    try { memberData = JSON.parse(rawText); } catch (e) { memberData = null; }
-
-    if (!verifyRes.ok) {
-      return { statusCode: 403, headers: CORS, body: JSON.stringify({
-        error: 'Could not verify membership.',
-        _debug: { stage: 'http', circleStatus: verifyRes.status, emailSent: providerEmail, tokenPresent: !!CIRCLE_TOKEN, bodyPreview: rawText.slice(0, 300) }
-      }) };
-    }
-
-    const member = Array.isArray(memberData) ? memberData[0] : memberData;
-    if (!member || !member.id) {
-      return { statusCode: 403, headers: CORS, body: JSON.stringify({
-        error: 'No active membership found.',
-        _debug: { stage: 'shape', emailSent: providerEmail, isArray: Array.isArray(memberData), keys: memberData && !Array.isArray(memberData) ? Object.keys(memberData) : null, arrayLen: Array.isArray(memberData) ? memberData.length : null, bodyPreview: rawText.slice(0, 300) }
-      }) };
+    const base = (process.env.SITE_URL || 'https://thinkbeyondpractice.com').replace(/\/$/, '');
+    const verifyRes = await fetch(base + '/.netlify/functions/circle-auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: providerEmail })
+    });
+    const verifyData = await verifyRes.json().catch(() => ({}));
+    if (!verifyData.verified) {
+      return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'No active membership found.' }) };
     }
   } catch (e) {
-    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Membership verification failed.', _debug: String(e) }) };
+    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Membership verification failed.' }) };
   }
 
   // Generate an unguessable token (URL-safe).
