@@ -396,29 +396,38 @@ function applyVaultToUI() {
 }
 
 function populateVaultFields() {
+  // Read Vault's canonical field names, with fallbacks to legacy field names for users
+  // who may have saved data under the older Letter Generator field naming.
   document.getElementById('v-name').value = profile.legalName || '';
   document.getElementById('v-creds').value = profile.credentials || '';
   document.getElementById('v-practice').value = profile.practiceName || '';
   document.getElementById('v-npi').value = profile.npi1 || '';
-  document.getElementById('v-license').value = profile.licenseNumber || '';
+  document.getElementById('v-license').value = profile.licenseNum || profile.licenseNumber || '';
   document.getElementById('v-state').value = profile.licenseState || '';
   document.getElementById('v-address').value = profile.practiceAddress || '';
-  document.getElementById('v-phone').value = profile.phone || '';
-  document.getElementById('v-fax').value = profile.fax || '';
-  document.getElementById('v-email').value = profile.email || '';
+  document.getElementById('v-phone').value = profile.practicePhone || profile.phone || '';
+  document.getElementById('v-fax').value = profile.practiceFax || profile.fax || '';
+  document.getElementById('v-email').value = profile.practiceEmail || profile.email || '';
 }
 
 function saveVault() {
+  // Write to Vault's canonical field names so other Practice Manager tools
+  // and the central Vault read the same data. Do not write to legacy aliases.
   profile.legalName = document.getElementById('v-name').value.trim();
   profile.credentials = document.getElementById('v-creds').value.trim();
   profile.practiceName = document.getElementById('v-practice').value.trim();
   profile.npi1 = document.getElementById('v-npi').value.trim();
-  profile.licenseNumber = document.getElementById('v-license').value.trim();
+  profile.licenseNum = document.getElementById('v-license').value.trim();
   profile.licenseState = document.getElementById('v-state').value.trim();
   profile.practiceAddress = document.getElementById('v-address').value.trim();
-  profile.phone = document.getElementById('v-phone').value.trim();
-  profile.fax = document.getElementById('v-fax').value.trim();
-  profile.email = document.getElementById('v-email').value.trim();
+  profile.practicePhone = document.getElementById('v-phone').value.trim();
+  profile.practiceFax = document.getElementById('v-fax').value.trim();
+  profile.practiceEmail = document.getElementById('v-email').value.trim();
+  // Clean up any legacy aliases so we don't keep stale data around
+  delete profile.licenseNumber;
+  delete profile.phone;
+  delete profile.fax;
+  delete profile.email;
   localStorage.setItem(VAULT_KEY, JSON.stringify(profile));
   // Sync to Supabase
   if (_lgUserEmail) {
@@ -935,15 +944,18 @@ async function generateLetter() {
   document.getElementById('output').classList.remove('active');
   startLoadingTips();
 
-  // Build provider info string
+  // Build provider info string. Read Vault's canonical field names with legacy fallbacks.
   var prov = 'Provider: ' + (profile.legalName || 'Not provided');
   if (profile.credentials) prov += ', ' + profile.credentials;
   if (profile.practiceName) prov += '\nPractice: ' + profile.practiceName;
   if (profile.practiceAddress) prov += '\nAddress: ' + profile.practiceAddress;
-  if (profile.phone) prov += '\nPhone: ' + profile.phone;
-  if (profile.fax) prov += '\nFax: ' + profile.fax;
+  var provPhone = profile.practicePhone || profile.phone;
+  if (provPhone) prov += '\nPhone: ' + provPhone;
+  var provFax = profile.practiceFax || profile.fax;
+  if (provFax) prov += '\nFax: ' + provFax;
   if (profile.npi1) prov += '\nNPI: ' + profile.npi1;
-  if (profile.licenseNumber) prov += '\nLicense: ' + profile.licenseNumber + ' (' + (profile.licenseState || '') + ')';
+  var provLicense = profile.licenseNum || profile.licenseNumber;
+  if (provLicense) prov += '\nLicense: ' + provLicense + ' (' + (profile.licenseState || '') + ')';
 
   // Build clinical info from form
   var info = 'PROVIDER INFORMATION:\n' + prov + '\n\n';
@@ -1091,8 +1103,10 @@ function downloadPDF() {
     if (profile.practiceName) headerHtml += '<div>' + esc(profile.practiceName) + '</div>';
     if (profile.practiceAddress) headerHtml += '<div>' + esc(profile.practiceAddress) + '</div>';
     var contact = [];
-    if (profile.phone) contact.push('Phone: ' + esc(profile.phone));
-    if (profile.fax) contact.push('Fax: ' + esc(profile.fax));
+    var hPhone = profile.practicePhone || profile.phone;
+    var hFax = profile.practiceFax || profile.fax;
+    if (hPhone) contact.push('Phone: ' + esc(hPhone));
+    if (hFax) contact.push('Fax: ' + esc(hFax));
     if (contact.length) headerHtml += '<div>' + contact.join(' | ') + '</div>';
     if (profile.npi1) headerHtml += '<div>NPI: ' + esc(profile.npi1) + '</div>';
     headerHtml += '</div>';
@@ -1192,8 +1206,10 @@ async function sendEmail() {
     if (profile.practiceName) htmlBody += '<div>' + esc(profile.practiceName) + '</div>';
     if (profile.practiceAddress) htmlBody += '<div>' + esc(profile.practiceAddress) + '</div>';
     var contact = [];
-    if (profile.phone) contact.push('Phone: ' + esc(profile.phone));
-    if (profile.fax) contact.push('Fax: ' + esc(profile.fax));
+    var ePhone = profile.practicePhone || profile.phone;
+    var eFax = profile.practiceFax || profile.fax;
+    if (ePhone) contact.push('Phone: ' + esc(ePhone));
+    if (eFax) contact.push('Fax: ' + esc(eFax));
     if (contact.length) htmlBody += '<div>' + contact.join(' | ') + '</div>';
     htmlBody += '</div>';
   }
@@ -1210,7 +1226,7 @@ async function sendEmail() {
         subject: subject,
         body: letterText,
         htmlBody: htmlBody,
-        replyTo: profile.email || _lgUserEmail || '',
+        replyTo: profile.practiceEmail || profile.email || _lgUserEmail || '',
         tool: 'Letter Generator'
       })
     });
@@ -1280,7 +1296,7 @@ async function sendFax() {
         fromPractice: profile.practiceName || '',
         subject: getLetterSubject(),
         tool: 'Letter Generator',
-        clinicianEmail: profile.email || _lgUserEmail || ''
+        clinicianEmail: profile.practiceEmail || profile.email || _lgUserEmail || ''
       })
     });
     var result = await res.json();
