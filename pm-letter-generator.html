@@ -349,17 +349,27 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 <script>
 // ══════════════════════════════════════════════
 // VAULT (Supabase-backed, shared across all tools)
+// The canonical Vault tool stores under 'tbp_vault'. The 'credentialing-hub-profile'
+// key is the legacy name from when Vault was part of the Credentialing Hub repo,
+// and is kept only as a one-way fallback for users who haven't re-saved their Vault yet.
 // ══════════════════════════════════════════════
-var VAULT_KEY = 'credentialing-hub-profile';
+var VAULT_KEY = 'tbp_vault';
+var VAULT_KEY_LEGACY = 'credentialing-hub-profile';
 var LETTERHEAD_KEY = 'pm-letterhead';
 var profile = {};
 
 function loadVault() {
-  // Load from localStorage first (instant)
-  try { var r = localStorage.getItem(VAULT_KEY); if (r) profile = JSON.parse(r); } catch(e) { profile = {}; }
+  // Load from localStorage first (instant). Prefer the canonical key, fall back to legacy.
+  try {
+    var r = localStorage.getItem(VAULT_KEY);
+    if (!r) r = localStorage.getItem(VAULT_KEY_LEGACY);
+    if (r) profile = JSON.parse(r);
+  } catch(e) { profile = {}; }
   applyVaultToUI();
 
-  // Then fetch from Supabase (authoritative)
+  // Then fetch from Supabase (authoritative). Supabase data wins over local cache
+  // when both exist, since the Vault tool may have updated Supabase from another device
+  // or browser. Local cache is just for instant render before the network call returns.
   if (!_lgUserEmail) return;
   fetch('/.netlify/functions/user-tool-data', {
     method: 'POST',
@@ -368,10 +378,9 @@ function loadVault() {
   })
   .then(function(r) { return r.json(); })
   .then(function(data) {
-    if (data.found && data.data) {
-      profile = Object.assign({}, data.data, profile.legalName ? profile : {});
-      // If Supabase has data the user doesn't have locally, use it
-      if (data.data.legalName && !profile.legalName) profile = Object.assign(profile, data.data);
+    if (data && data.found && data.data) {
+      // Supabase is authoritative. Replace local profile with Supabase data.
+      profile = data.data;
       try { localStorage.setItem(VAULT_KEY, JSON.stringify(profile)); } catch(e) {}
       applyVaultToUI();
     }
