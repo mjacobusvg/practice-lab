@@ -701,7 +701,21 @@ function addChatBubble(role, text){
   b.style.cssText = 'max-width:90%;padding:10px 14px;border-radius:10px;font-size:.88rem;line-height:1.6;white-space:pre-wrap;'+
     (mine ? 'align-self:flex-end;background:var(--teal-glow);border:1px solid var(--teal);color:var(--white)'
           : 'align-self:flex-start;background:var(--navy);border:1px solid var(--rule);color:var(--cream)');
-  b.textContent = text;
+  if(mine){
+    // user text: never interpret as markup
+    b.textContent = text;
+  } else {
+    // assistant text: render the markdown the model emits, matching outBlock's convention.
+    // escape first, then convert, so nothing in the reply can inject HTML.
+    var safe = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    safe = safe
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')   // **bold**
+      .replace(/(^|[^\*])\*(?!\s)([^\*\n]+?)\*(?!\*)/g, '$1<em>$2</em>')  // *italic*, not bullets
+      .replace(/^\s*[-*]\s+/gm, '\u2022 ')                 // - / * bullets -> bullet char
+      .replace(/^\s*#{1,6}\s+(.+)$/gm, '<strong>$1</strong>')  // ### headings -> bold line
+      .replace(/^\s*---+\s*$/gm, '<span style="display:block;border-top:1px solid var(--rule);margin:8px 0"></span>'); // --- rule
+    b.innerHTML = safe;
+  }
   log.appendChild(b);
 }
 
