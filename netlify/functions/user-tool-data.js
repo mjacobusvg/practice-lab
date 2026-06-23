@@ -5,7 +5,6 @@
 // Environment variables:
 //   SUPABASE_URL
 //   SUPABASE_SERVICE_KEY
-//   CIRCLE_API_V2_TOKEN (for verifying user identity)
 //
 // Endpoints (all POST):
 //   action: "load"   - Load saved data for a tool
@@ -18,7 +17,10 @@
 //   action: string    - "load" | "save" | "delete"
 //   data: object      - (save only) The data to store
 //
-// Security: Verifies email is an active Circle community member before any operation.
+// Security: Verifies email via the circle-auth function (which uses the correct
+// Circle API token routing). Previously this function called Circle's v1 endpoint
+// directly with a v2 token, which produced 403 errors. The circle-auth function
+// is the same one used by auth-gate.js across the platform.
 
 exports.handler = async function(event) {
   var headers = {
@@ -37,9 +39,8 @@ exports.handler = async function(event) {
 
   var supabaseUrl = process.env.SUPABASE_URL;
   var supabaseKey = process.env.SUPABASE_SERVICE_KEY;
-  var circleToken = process.env.CIRCLE_API_V2_TOKEN;
 
-  if (!supabaseUrl || !supabaseKey || !circleToken) {
+  if (!supabaseUrl || !supabaseKey) {
     return {
       statusCode: 500,
       headers: headers,
@@ -66,20 +67,24 @@ exports.handler = async function(event) {
     return { statusCode: 400, headers: headers, body: JSON.stringify({ error: 'Invalid action. Must be load, save, or delete.' }) };
   }
 
-  // Verify the email belongs to an active Circle member
+  // Verify membership via circle-auth, which is the canonical verification function
+  // used by auth-gate.js across the platform. Previously this function called Circle's
+  // v1 endpoint directly with CIRCLE_API_V2_TOKEN, which is a v2 token and gets rejected
+  // by v1 endpoints (403 unauthorized). circle-auth handles the correct token routing.
   try {
-    var verifyRes = await fetch('https://app.circle.so/api/v1/community_members/search?email=' + encodeURIComponent(email), {
-      headers: { 'Authorization': 'Token ' + circleToken }
+    var authUrl = (process.env.URL || process.env.DEPLOY_URL || '') + '/.netlify/functions/circle-auth';
+    var verifyRes = await fetch(authUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email })
     });
 
     if (!verifyRes.ok) {
       return { statusCode: 403, headers: headers, body: JSON.stringify({ error: 'Could not verify membership.' }) };
     }
 
-    var memberData = await verifyRes.json();
-    // Circle v1 search returns an array or object; check for active member
-    var member = Array.isArray(memberData) ? memberData[0] : memberData;
-    if (!member || !member.id) {
+    var authData = await verifyRes.json();
+    if (!authData || !authData.verified) {
       return { statusCode: 403, headers: headers, body: JSON.stringify({ error: 'No active membership found for this email.' }) };
     }
   } catch(e) {
