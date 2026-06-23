@@ -59,6 +59,24 @@ textarea.field-input{resize:vertical;min-height:60px}
 .completion-bar .bar-label{font-size:.8rem;color:var(--cream-dim);white-space:nowrap}
 .completion-bar .bar-pct{font-size:.9rem;font-weight:700;color:var(--teal);min-width:40px;text-align:right}
 
+/* Cloud Backup Banner — alerts users to save data to Supabase for cross-device sync */
+.backup-banner{background:linear-gradient(135deg,rgba(251,191,36,0.12),rgba(251,191,36,0.04));border:1px solid rgba(251,191,36,0.4);border-left:4px solid var(--amber);border-radius:var(--radius);padding:16px 20px;margin-bottom:20px;display:flex;align-items:flex-start;gap:14px;position:relative;animation:bannerSlide .4s ease-out}
+@keyframes bannerSlide{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+.backup-banner .bb-icon{font-size:1.4rem;flex-shrink:0;line-height:1.2}
+.backup-banner .bb-content{flex:1;min-width:0}
+.backup-banner .bb-title{font-weight:700;color:var(--amber);font-size:.92rem;margin-bottom:4px;display:flex;align-items:center;gap:8px}
+.backup-banner .bb-body{color:var(--cream);font-size:.82rem;line-height:1.55}
+.backup-banner .bb-body strong{color:var(--white)}
+.backup-banner .bb-actions{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
+.backup-banner .bb-btn{padding:7px 16px;border-radius:6px;font-size:.78rem;font-weight:600;cursor:pointer;border:none;font-family:var(--font-body);transition:all .15s}
+.backup-banner .bb-btn-primary{background:var(--amber);color:#1a1208}
+.backup-banner .bb-btn-primary:hover{background:#f6b318;transform:translateY(-1px)}
+.backup-banner .bb-btn-secondary{background:transparent;color:var(--cream-dim);border:1px solid rgba(176,170,158,0.3)}
+.backup-banner .bb-btn-secondary:hover{color:var(--cream);border-color:rgba(176,170,158,0.5)}
+.backup-banner .bb-dismiss{position:absolute;top:10px;right:12px;background:none;border:none;color:var(--cream-dim);font-size:1.1rem;cursor:pointer;padding:4px 8px;line-height:1;opacity:.6;transition:opacity .15s}
+.backup-banner .bb-dismiss:hover{opacity:1;color:var(--cream)}
+.backup-banner.hidden{display:none}
+
 /* Action bar */
 .action-bar{display:flex;gap:12px;justify-content:flex-end;margin-top:24px;padding-top:16px;border-top:1px solid var(--rule)}
 .btn{padding:10px 22px;border-radius:6px;font-family:var(--font-body);font-size:.85rem;font-weight:600;cursor:pointer;border:none;transition:all .15s}
@@ -72,6 +90,8 @@ textarea.field-input{resize:vertical;min-height:60px}
 /* Toast */
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:8px;font-size:.84rem;z-index:100;opacity:0;transition:opacity .3s}
 .toast.success{background:rgba(52,211,153,0.12);border:1px solid rgba(52,211,153,0.3);color:var(--green)}
+.toast.warning{background:rgba(251,191,36,0.12);border:1px solid rgba(251,191,36,0.3);color:var(--amber)}
+.toast.error{background:rgba(248,113,113,0.12);border:1px solid rgba(248,113,113,0.3);color:var(--red)}
 .toast.visible{opacity:1}
 
 /* Scope disclaimer */
@@ -129,6 +149,22 @@ textarea.field-input{resize:vertical;min-height:60px}
 
 <div class="scope-disclaimer">
   Your data is stored securely and used only to pre-fill your tools. No information is shared with third parties. You can export or delete your data at any time.
+</div>
+
+<!-- Cloud Backup Banner — shown until user has successfully saved to Supabase -->
+<div class="backup-banner hidden" id="backup-banner">
+  <span class="bb-icon">&#9888;&#65039;</span>
+  <div class="bb-content">
+    <div class="bb-title">Back up your Vault to secure cloud storage</div>
+    <div class="bb-body">
+      Until recently, Vault data was only saved <strong>on this device</strong> due to a backend issue. That issue is now fixed. Open the Vault, review your information, and click <strong>Save All</strong> to push your profile to secure cloud storage so it syncs across all your devices and survives browser cache clears. <strong>Recommended for every member, even if your Vault looks complete.</strong>
+    </div>
+    <div class="bb-actions">
+      <button class="bb-btn bb-btn-primary" onclick="scrollToSaveButton()">Take me to Save</button>
+      <button class="bb-btn bb-btn-secondary" onclick="dismissBackupBanner()">I'll do this later</button>
+    </div>
+  </div>
+  <button class="bb-dismiss" onclick="dismissBackupBanner()" title="Dismiss for now" aria-label="Dismiss">&times;</button>
 </div>
 
 <!-- Completion bar -->
@@ -742,6 +778,7 @@ TBPAuth.protect({
     document.getElementById('app-root').style.display = 'block';
     try { userEmail = localStorage.getItem('tbp_verified_email') || ''; } catch(e) {}
     loadVault();
+    showBackupBannerIfNeeded();
   }
 });
 
@@ -1009,10 +1046,63 @@ function saveVault() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: userEmail, toolId: 'vault_profile', action: 'save', data: vault })
-    }).catch(function() {});
+    })
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(data) {
+      if (data && data.saved) {
+        // Successful Supabase write. Mark cloud backup confirmed and hide the banner.
+        try { localStorage.setItem('tbp_vault_cloud_backed_up', '1'); } catch(e) {}
+        hideBackupBanner();
+        showToast('Vault saved and backed up to cloud storage.', 'success');
+      } else {
+        showToast('Saved locally, but cloud backup may have failed. Try again or contact support.', 'warning');
+      }
+    })
+    .catch(function() {
+      showToast('Saved locally, but could not reach cloud storage.', 'warning');
+    });
+  } else {
+    showToast('Vault saved locally on this device.', 'success');
   }
   updateCompletion();
-  showToast('Vault saved successfully.', 'success');
+}
+
+// ── CLOUD BACKUP BANNER ──
+function showBackupBannerIfNeeded() {
+  try {
+    var alreadyBackedUp = localStorage.getItem('tbp_vault_cloud_backed_up') === '1';
+    var explicitlyDismissed = localStorage.getItem('tbp_vault_backup_banner_dismissed') === '1';
+    if (alreadyBackedUp || explicitlyDismissed) return;
+    var banner = document.getElementById('backup-banner');
+    if (banner) banner.classList.remove('hidden');
+  } catch(e) {}
+}
+
+function hideBackupBanner() {
+  var banner = document.getElementById('backup-banner');
+  if (banner) banner.classList.add('hidden');
+}
+
+function dismissBackupBanner() {
+  try { localStorage.setItem('tbp_vault_backup_banner_dismissed', '1'); } catch(e) {}
+  hideBackupBanner();
+}
+
+function scrollToSaveButton() {
+  // Find the visible Save button (last one) and scroll to it
+  var buttons = document.querySelectorAll('button.btn-primary');
+  var saveBtn = null;
+  buttons.forEach(function(b) {
+    if (b.textContent.toLowerCase().indexOf('save') !== -1) saveBtn = b;
+  });
+  if (saveBtn) {
+    saveBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    saveBtn.style.animation = 'bannerSlide .4s ease-out';
+    // Brief highlight ring
+    var originalShadow = saveBtn.style.boxShadow;
+    saveBtn.style.boxShadow = '0 0 0 4px rgba(251,191,36,0.4)';
+    setTimeout(function() { saveBtn.style.boxShadow = originalShadow; }, 2000);
+  }
 }
 
 // ── COMPLETION TRACKING ──
