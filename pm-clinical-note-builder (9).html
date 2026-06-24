@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clinical Note Builder | Think Beyond Practice</title>
+<style>
+:root{
+  --navy:#0f1929; --navy-mid:#152033; --navy-card:#16243a; --rule:#24344d;
+  --teal:#2aabb8; --teal-glow:rgba(42,171,184,0.15); --blue:#3b82f6; --green:#34d399;
+  --amber:#fbbf24; --red:#f87171;
+  --white:#f5f8fc; --cream:#cdd9e8; --cream-dim:#8499b3;
+  --radius:12px;
+  --font-display:'Georgia',serif; --font-body:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--navy);color:var(--cream);font-family:var(--font-body);line-height:1.6;padding:24px 16px 60px}
+#tool-container{display:none;max-width:860px;margin:0 auto}
+#tool-container.tbp-shown{display:block!important}
+a{color:var(--teal)}
+.back{font-size:.82rem;color:var(--teal);text-decoration:none;display:inline-block;margin-bottom:18px}
+h1{font-family:var(--font-display);font-size:1.85rem;color:var(--white);margin-bottom:4px}
+h1 span{color:var(--teal)}
+.sub{color:var(--cream-dim);font-size:.92rem;margin-bottom:20px;max-width:680px}
+.caveat{background:rgba(248,113,113,0.08);border-left:3px solid var(--red);border-radius:8px;padding:14px 18px;font-size:.85rem;color:var(--cream);margin-bottom:22px}
+.caveat strong{color:var(--white)}
+.panel{background:var(--navy-card);border:1px solid var(--rule);border-radius:var(--radius);padding:20px;margin-bottom:18px}
+label{display:block;font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--cream-dim);margin-bottom:7px}
+textarea,select{width:100%;background:var(--navy);border:1px solid var(--rule);border-radius:8px;color:var(--white);font-family:var(--font-body);font-size:.92rem;padding:12px 14px}
+textarea{min-height:150px;resize:vertical;line-height:1.6}
+.hint{font-size:.76rem;color:var(--cream-dim);margin-top:6px}
+.cards{display:grid;gap:14px;margin-top:4px}
+.card-group{margin-bottom:16px}
+.opts{display:flex;gap:8px;flex-wrap:wrap}
+.opt{padding:8px 14px;border-radius:7px;font-size:.82rem;font-weight:600;cursor:pointer;background:var(--navy);border:1px solid var(--rule);color:var(--cream)}
+.opt.sel{background:var(--teal-glow);border-color:var(--teal);color:var(--white)}
+.btn{background:var(--teal);color:#06222b;border:none;border-radius:8px;padding:12px 22px;font-size:.92rem;font-weight:700;cursor:pointer;margin-top:6px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-copy{background:var(--navy);border:1px solid var(--rule);color:var(--cream);border-radius:6px;padding:5px 12px;font-size:.74rem;font-weight:600;cursor:pointer;float:right}
+.out{background:var(--navy-card);border:1px solid var(--rule);border-radius:var(--radius);padding:20px;margin-top:18px}
+.out h3{font-family:var(--font-display);color:var(--white);font-size:1.15rem;margin-bottom:12px}
+.out-body{white-space:pre-wrap;font-size:.9rem;color:var(--cream);line-height:1.7}
+.flags{background:rgba(251,191,36,0.07);border:1px solid var(--amber);border-left:3px solid var(--amber);border-radius:8px;padding:14px 18px;margin-top:14px}
+.flags-h{font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--amber);margin-bottom:8px}
+.flags ul{margin:0;padding-left:18px}
+.flags li{font-size:.86rem;color:var(--cream);line-height:1.55;margin-bottom:5px}
+.spinner{display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.3);border-top-color:#06222b;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.handoff{background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.25);border-radius:8px;padding:14px 18px;font-size:.85rem;margin-top:18px}
+.handoff a{color:var(--green);font-weight:600}
+.scope{font-style:italic;color:var(--cream-dim);font-size:.78rem;text-align:center;margin-top:30px;border-top:1px solid var(--rule);padding-top:18px}
+.err{background:rgba(248,113,113,0.1);border:1px solid var(--red);border-radius:8px;padding:12px 16px;color:var(--red);font-size:.85rem;margin-top:14px}
+</style>
+<script src="/auth-gate.js"></script>
+</head>
+<body>
+<div id="tool-container">
+<div>
+  <a href="/practice-manager.html" class="back">&larr; Practice Manager</a>
+  <h1>Clinical Note <span>Builder</span></h1>
+  <p class="sub">Generate psychotherapy and assessment documentation from your HPI. Paste the HPI you already wrote or dictated, and this builds the two sections that are the most cognitively demanding and the most audit-sensitive: a code-ready psychotherapy add-on blurb and a unified clinical assessment formulation. It does not generate the HPI or the Plan. Those stay yours.</p>
+
+  <div class="caveat"><strong>Documentation aid, not a clinical or coding authority.</strong> Output is generated from the text you provide and must be reviewed, corrected, and signed by you. This tool writes the sections; it does not assign or guarantee a billing code. Verify medical necessity, time, and code selection yourself, and run the finished note through the Chart Audit + Coder to confirm what it supports. No patient data is stored.</div>
+
+  <div class="panel">
+    <label for="hpi">Your HPI / visit narrative</label>
+    <textarea id="hpi" placeholder="Paste the HPI you wrote or dictated. Include enough clinical detail to reason from: symptoms, course, current medications and response, relevant history, and risk."></textarea>
+
+    <label for="dxprior" style="margin-top:16px">Prior assessment + diagnoses <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(recommended)</span></label>
+    <textarea id="dxprior" style="min-height:90px" placeholder="Paste your last assessment, including the diagnosis list with ICD-10 codes. This gives the tool diagnostic continuity and the dx list to carry into today's assessment. If you have no prior assessment, at minimum list the active diagnoses."></textarea>
+
+    <label for="plan" style="margin-top:16px">What are you doing this visit? <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(recommended)</span></label>
+    <textarea id="plan" style="min-height:70px" placeholder="What you're doing today and why: changing a med (which, dose, rationale), continuing, augmenting, ordering labs, referring. The assessment integrates the reasoning behind these decisions."></textarea>
+
+    <div class="hint">PHI is processed transiently to generate your sections and is not retained.</div>
+  </div>
+
+  <div class="panel">
+    <div class="card-group">
+      <label>What do you want generated?</label>
+      <div class="opts" id="scope-opts">
+        <div class="opt sel" data-scope="both">Assessment + psychotherapy blurb</div>
+        <div class="opt" data-scope="assessment">Assessment only</div>
+        <div class="opt" data-scope="therapy">Psychotherapy blurb only</div>
+        <div class="opt" data-scope="reasoning">Clinical reasoning (talk it through)</div>
+      </div>
+    </div>
+    <button class="btn" id="review">Review the visit &rarr;</button>
+    <div class="hint" style="margin-top:8px">The tool reads your input and suggests the modality that fits what you documented, the same way it would if a colleague asked what you worked on. You confirm or adjust before it writes.</div>
+    <div id="err-box"></div>
+  </div>
+
+  <div id="preflight" class="panel" style="display:none">
+    <div id="preflight-cards"></div>
+    <button class="btn" id="go">Generate</button>
+    <div id="err-box2"></div>
+  </div>
+
+  <div id="results"></div>
+
+  <div class="handoff" id="handoff" style="display:none">
+    Once you have assembled your full note, run it through the <a href="/pm-chart-coder.html">Chart Audit + Coder</a> to confirm what the documentation actually supports and whether your intended E/M and add-on codes are defensible.
+  </div>
+
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. Nothing is stored.</div>
+</div>
+</div>
+
+<script>
+// ── House voice (neutralized from the personal Copilot voice) ──
+const VOICE = `You are a clinical documentation generator for psychiatric prescribers (PMHNPs, psychiatrists, psychiatric PAs) writing in their own practice.
+- Paragraph form, not bullets (except where a numbered psychotherapy structure is required).
+- Clinical nuance preserved, not dumbed down or overly academic.
+- Write in a clean, professional clinical voice. Be direct. No filler. Specific and actionable.
+- Never use em dashes or en dashes (the long dashes). Use a comma, a colon, a period, or parentheses instead. This applies to all generated text without exception.
+- This is documentation the prescriber will review, edit, and sign. Do not address the prescriber; produce chart-ready text.`;
+
+const THERAPY_SYS = `${VOICE}
+
+Your task: Generate the psychotherapy add-on documentation ONLY, based on the completed HPI and the provider's selected modality. Do not regenerate the HPI or write an assessment.
+
+=== SOURCE FIDELITY — DOCUMENT ONLY WHAT IS SUPPORTED ===
+The therapeutic work you describe must be grounded in the clinical content the provider documented. Describe therapeutic work on the issues, symptoms, and stressors that actually appear in the HPI. Do NOT introduce diagnostic labels, characterizations, or clinical entities the provider did not document (e.g. do not call a documented "blah" affect "anhedonia," do not name a symptom cluster the provider described in plain terms). Do NOT assert that specific therapeutic work was done on a topic that is not in the HPI. You are documenting plausible therapeutic work on the visit's real content — not inventing clinical findings or sessions that did not happen. When the HPI supports several possible focuses, document the work that fits the selected modality and the most prominent documented issues; do not manufacture detail.
+
+=== CRITICAL: WRITE THERAPY, NOT EDUCATION ===
+
+The psychotherapy blurb must read as ACTIVE THERAPEUTIC WORK, not passive education or support. Auditors deny add-ons that read as "you explained things well" instead of "you did therapy."
+
+USE THESE VERBS (active therapeutic work):
+- Explored, examined, processed, facilitated, engaged the patient in
+- Helped the patient differentiate, identify, recognize, challenge
+- Worked with the patient to reframe, restructure, develop
+
+AVOID THESE VERBS (passive/educational):
+- Provided psychoeducation, educated, informed, explained
+- Validated, supported, reinforced, encouraged (these are fine as SECONDARY actions but should not be the PRIMARY intervention language)
+
+The intervention section should make clear that the clinician and patient did cognitive, emotional, or behavioral WORK together — not that the clinician talked and the patient listened.
+
+=== MODALITY-MATCHED INTERVENTIONS ===
+
+The provider will specify which modality to use. Use ONLY interventions that belong to the named modality.
+
+SUPPORTIVE PSYCHOTHERAPY: Reinforcing existing healthy coping, validating emotional experience, reality-testing distorted thinking without formal protocols, strengthening adaptive defenses, maintaining therapeutic alliance during stress. Even in supportive work, frame interventions actively: "Explored the patient's response to..." not "Provided support regarding..."
+
+CBT-INFORMED: Identifying cognitive distortions, examining interpretations, structured cognitive restructuring (Socratic questioning, evidence examination, reframing), behavioral experiments, pattern identification, challenging automatic thoughts.
+
+MOTIVATIONAL INTERVIEWING: Reflective listening, evoking change talk, exploring ambivalence, developing discrepancy, rolling with resistance, affirming autonomy.
+
+DBT-INFORMED: Validation paired with change strategies, distress tolerance skills, emotion regulation skills, interpersonal effectiveness, mindfulness.
+
+PSYCHODYNAMIC: Exploring unconscious patterns, linking past relationships to present patterns, examining defenses, transference observations.
+
+TRAUMA-FOCUSED: Processing trauma-related content, cognitive processing of trauma-related beliefs, examining trauma responses and their impact on current functioning.
+
+ACT: Values clarification, defusion from thoughts, acceptance of difficult emotions, commitment to values-based action.
+
+=== FIVE LABELED SECTIONS REQUIRED — ALWAYS, EVERY TIME ===
+The output MUST contain all five of the following sections, each introduced by its exact bold label on its own line, in this exact order. Never omit, merge, or rename a section. Never fold these into undifferentiated prose. If a section would be thin, still write it under its own label.
+
+**Modality:** [the modality as selected by provider — one line]
+**Intervention:** [the specific therapeutic work done, ACTIVE language, matched to modality; length governed by the time band, see the length rules below, brief at 90833 and fuller only at the higher time bands]
+**Focus:** [what clinical problems were being addressed this visit and their impact on functioning — inferred from the modality and HPI, not asked of the provider]
+**Patient Response:** [engagement, insight, behavior change — be specific]
+**Time:** [psychotherapy-only minutes, separate from and in addition to the E/M service]
+
+The Intervention is the section that carries the therapeutic detail, but its length follows the time band (brief at 90833, fuller at 90836/90838), it is not automatically long. The other four sections are one sentence to a few. Do not write a single flowing essay that buries these elements, the five labels must be visibly present. Put each labeled section on its own line with a blank line between sections so they are visually distinct.
+
+=== LENGTH MUST MATCH THE TIME BILLED ===
+The volume of documented therapeutic work must be proportionate to the add-on code's time band. Documentation that describes far more work than the billed minutes credibly support is an audit liability, not a strength. Length is governed by TWO things, not one: sentence count AND density (how many distinct therapeutic moves you document). Watch both — a single paragraph can still describe far too much work if it packs in four fully-developed therapeutic constructs.
+
+A "therapeutic move" is one distinct piece of clinical work: one reframe, one parallel drawn, one differentiation, one skill reinforced, one pattern named. Each move documented in depth implies real session time. Count them, and keep the count proportionate:
+- 90833 (16-37 min): Brief and proportionate, documented per header, not as a session reconstruction. Modality: a phrase. Intervention: ONE therapeutic move in one to two plain sentences (a third only if genuinely needed), the single piece of work that anchored the add-on, not every issue discussed. Focus: one sentence. Patient Response: one sentence. Time: one sentence. Do NOT chain multiple constructs (e.g. a routine-consistency reframe AND a late-night-phone analysis AND a task-batching strategy AND a motivation reframe); that reconstructs a 45-minute session in 20 minutes' billing. Pick the primary psychotherapy thread and let the rest go. The one thing brevity cannot cost you: the Intervention must still read as active therapeutic work (examining, reframing, testing a pattern with the patient), not advice-giving or education, briefly stated active therapy, not a longer description of counseling.
+- 90836 (38-52 min): one to two paragraphs, two to three therapeutic moves.
+- 90838 (53+ min): two to three paragraphs, more moves as warranted.
+Across all codes, Focus, Patient Response, and Time stay brief.
+
+PLAIN OVER POLISHED: Write what happened in the room in direct clinical language. Do NOT over-elaborate or reach for conceptually dense phrasing ("behavioral containment of anxiety-driven decision-making rather than pure practicality," "the drive to resolve that uncertainty is itself familiar"). Specifically avoid the "X rather than Y" rhetorical contrast that signals writing-after-the-fact (e.g. "active contributors rather than incidental factors," "a scheduled behavior rather than a mood-dependent one," "routine consistency rather than any single intervention"). State the point plainly: say what the work was, not what it was "rather than." Documentation that reads as elegantly constructed rather than plainly recorded is LESS credible in an audit, not more, it reads as written-after-the-fact. Concise, specific, and plainly worded is the most defensible. Never pad to look thorough. Specific phrases to avoid because they read as composed, not charted: "functional anchor rather than something incidental," "active tools she was deploying, not passive habits," "behavioral scaffolding," and any "X rather than Y" contrast. Use plain clinical verbs: worked with her to examine, helped her identify, reviewed, reinforced, she recognized, she uses. Document what was done, not a polished summary of what it meant. Plain replacements for the kind of phrasing to avoid: instead of "identified routine consistency as a functional anchor rather than something incidental," write "routine consistency has helped maintain symptom control"; instead of "active tools she was deploying, not passive habits," write "grounding and list-making remain useful coping strategies she continues to use."
+
+NEVER use these as modality:
+- "Individual psychotherapy via telehealth" — telehealth is delivery format, not modality
+- "Talk therapy" / "Counseling" / bare "Psychotherapy" — too vague
+- "Psychoeducation" / "Psychoeducation-focused" alone — a component, not a standalone billable modality
+
+=== NEVER REFUSE — ALWAYS PRODUCE A NOTE ===
+Do not bounce the request back or explain why a modality is invalid. The provider selected a modality and expects documentation. If the selected modality is one of the problematic ones above, silently reframe it into the most appropriate defensible modality given the documented work and write the note in that frame. Specifically: if "psychoeducation" or "psychoeducation-focused" arrives as the modality, document it as "Supportive psychotherapy with psychoeducation" — write the educational work as active therapeutic process (how the patient appraises/integrates the information, how it reframes their understanding, reinforcing adaptive response) rather than as bare information-giving. If a vague modality ("talk therapy," "counseling") arrives, default to supportive psychotherapy. Always output a complete five-section note. Never output a refusal, a request to resubmit, or a list of alternative modalities.
+
+Time bands: 16-37 min → 90833. 38-52 min → 90836. 53+ min → 90838.
+
+Output ONLY the psychotherapy add-on documentation as chart-ready text, using the five labeled sections above. Do not include a heading line naming the tool.`;
+
+const ASSESS_SYS = `${VOICE}
+
+Your task: Generate the assessment formulation ONLY, based on the completed HPI provided. Do not regenerate the HPI. Do not generate a Plan section.
+
+You are an experienced psychiatric prescriber. Reason from full clinical knowledge — DSM-5 criteria, psychopharmacology, evidence-based treatment, risk assessment, the 2021 E/M MDM guidelines. Form a clinical impression of the case, then write.
+
+=== SOURCE FIDELITY — DO NOT INVENT CLINICAL CONTENT ===
+Your knowledge is for organizing and articulating the provider's reasoning, not for adding to it. Every diagnosis, diagnostic label, named syndrome, symptom, and risk inference in the assessment must trace to the HPI, the prior diagnoses, the "what are you doing this visit" input, OR the PROVIDER CLINICAL DECISIONS block if one is present. Do NOT introduce a diagnostic characterization, label, or clinical entity the provider has not documented or selected. Do NOT infer new risk factors, comorbidities, or symptom clusters that are not stated. You may reframe, reweight, and explain the relationships among what IS documented — that is the clinical reasoning being asked for — but you may not supply new clinical findings. When in doubt about whether something is in the source, leave it out. The provider signs this note; it must contain only their clinical content, expressed well.
+
+If a PROVIDER CLINICAL DECISIONS block is present, those are calls the provider made before generation. Treat each as authored by the provider and build the assessment around it. If the provider chose to characterize a symptom a certain way, use that characterization. If the provider chose to keep something plain/undescribed, do NOT assign it a label. If the provider chose to carry forward, defer, or drop a prior diagnostic thread, handle it exactly as chosen. Do not override or re-litigate these decisions.
+
+=== ASSESSMENT LENGTH CALIBRATION ===
+Default to SHORT. Two paragraphs is the right length for most visits. Longer is the exception, reserved for genuine clinical complexity, not for visits that merely mention many topics.
+
+CRITICAL — what "complexity" means: complexity is whether threads DROVE A DECISION or represent an ACTIVE, UNRESOLVED clinical question today. It is NOT the number of topics documented in the HPI. A stable, no-change visit with a robust treatment response is a SHORT assessment even if the HPI touches caffeine, nicotine, marijuana, sleep, cardiac monitoring, trauma history, and a counseling referral. Those stable threads each get at most a clause or a single sentence woven into the formulation — never a paragraph, and never a dedicated "review of every topic" paragraph. If nothing changed and nothing is an active question, the assessment is short, full stop.
+
+Length tiers:
+STABLE FOLLOW-UP, no med changes, good response: 1-2 paragraphs. This is the most common visit. Default here unless there is a real reason not to.
+STABLE-BUT-COMPLEX, genuine diagnostic uncertainty or an active unresolved clinical question, no med changes: 2 paragraphs, occasionally 3 only if multiple genuine questions are live.
+MEDICATION CHANGE with decision tension: 2-3 paragraphs.
+COMPLEX/HIGH-RISK, crisis, escalation, severe exacerbation: 3-4 paragraphs.
+NEW PATIENT EVAL: 3-5 paragraphs.
+
+Hard rules:
+- Do NOT write a paragraph that systematically walks through each HPI section (sleep, then substance use, then cardiac, then counseling...). That is a review of systems, not a formulation. Stable threads collapse into clauses inside the main reasoning, or are omitted if they add nothing.
+- Do NOT mistake a content-rich but clinically stable visit for a complex one. Many documented topics + no decisions + good response = SHORT.
+- Concrete test: if a paragraph could be deleted and the assessment still captures every clinical decision and active question, delete it.
+- The assessment should be scannable in 10-15 seconds for a routine case.
+
+=== ASSESSMENT STYLE ===
+The assessment has TWO parts in this exact order:
+
+PART 1 - DIAGNOSIS LIST:
+List diagnoses with ICD-10 codes, one per line. Primary diagnosis first.
+
+ADDING A CODE NOT ON THE PRIOR LIST: Base the list on the prior diagnoses plus anything the provider explicitly directed (visit input or a clinical-decision card). You MAY add a new diagnosis code that was not on the prior list ONLY when the condition is ACTIVELY ADDRESSED this visit — documented and being worked up, attributed, managed, or treated (e.g. erectile dysfunction with a pending urology referral and etiologic discussion). Do NOT add a code for a condition that is merely MENTIONED in passing, or for incidental medical history that is not a focus of today's care. When you add a code not on the prior list, the work is not done at the diagnosis line — you must also raise it in the flags, stating the clinical basis for adding it and that it was not on the prior list, so the provider can keep it as a coded diagnosis or move it to descriptive prose. When in doubt about whether something rises to a coded diagnosis, keep it in the formulation prose rather than adding a code.
+
+PART 2 - UNIFIED CLINICAL FORMULATION:
+One cohesive passage (one or a few paragraphs) addressing ALL diagnoses together as an integrated clinical picture. Integrate symptom progression, treatment response, functioning, psychosocial context, and rationale for decisions. Make clinical reasoning visible. Document what was considered. Capture risk/benefit for medication decisions. Support medical necessity and complexity for the E/M code.
+
+WRONG (never do this — per-diagnosis mini-paragraphs):
+"ADHD: Patient continues to benefit from methylphenidate..."
+"GAD: Anxiety remains mild..."
+
+ALSO WRONG — SUBSECTION LABELS INSIDE THE ASSESSMENT:
+Do NOT use headers/subheadings inside the prose such as "Clinical Formulation:", "Clinical Picture:", "Treatment Plan:", "Summary:", "Risk Assessment:". The diagnoses are listed once at the top with ICD-10 codes. After that, the entire remainder is unlabeled prose. The formulation IS the assessment.
+
+=== NEVER GENERATE A PLAN SECTION ===
+The prescriber maintains a separate Plan section (prescription mechanics, refill dates, return timing, crisis resources, PARQ, patient education). It is NOT this tool's job to generate any of that. Output ends at the end of the assessment formulation. Do NOT produce: a "Plan:" section, bulleted plan items, crisis line numbers/988, PARQ language, return visit timing, patient education statements, or refill dates/prescription mechanics.
+
+The WHY of every medication decision belongs IN the formulation as integrated prose (e.g. "Increased the stimulant today to optimize the current trial before considering alternative strategies."). The decision and reasoning live in the formulation; the prescription mechanics do not appear at all. If a prior note with a Plan section is provided, use it only as reference for what was done and what the patient is on — do not reproduce it.
+
+=== DO NOT OPEN WITH DOCUMENTATION LANGUAGE ===
+Do NOT open with "The patient continues to meet DSM-5 criteria for...", "Patient meets criteria for...", or "The patient has a diagnosis of...". Open with the diagnostic frame, the primary clinical question today, the organizing pathology, or the current clinical status in formulation language. The opening line should immediately do clinical work.
+
+=== CLINICAL REASONING REQUIREMENTS ===
+Weave these into the formulation (not as labeled sections):
+1. DIAGNOSTIC FRAME: What is the primary organizing pathology? What is secondary or reactive? State explicitly, not as a list of equal diagnoses.
+2. COMPETING INTERPRETATIONS: Where the HPI data genuinely supports it, reweight or reframe what is driving the presentation — what might be misattributed, what else could explain part of the picture. This means reasoning about the relative contribution of conditions ALREADY in the diagnostic picture (e.g. "the anxiety presentation is better explained as secondary to undertreated ADHD-driven restlessness than as a primary anxiety disorder"). It does NOT mean introducing a new diagnostic label, syndrome, or named phenomenon the provider has not documented. Do not coin characterizations like "agoraphobic cognition," "limited-symptom panic," "somatic amplification," or any DSM/clinical entity that does not appear in the HPI or prior diagnoses. If the data is suggestive but unnamed, describe the pattern in plain terms and note it as something to watch — never assign it a clinical name the provider did not use. When no competing interpretation is supported by the documented data, omit this element entirely rather than manufacturing one.
+3. MECHANISM: How is this actually working? What is driving what? Think in causal chains, not descriptions. Example: "Intrusive thoughts increase cognitive load and baseline anxiety, which heightens somatic awareness and lowers tolerance for physiologic changes."
+4. CONSTRAINTS: What limits treatment options? Biological (breastfeeding, liver disease), psychological (hypervigilance, treatment avoidance), pharmacologic (side-effect history, failed trials).
+5. CORE TENSION: What makes this case hard? State it directly. Example: "Treatment is complicated by the need for adequate serotonergic dosing versus the patient's limited tolerance for dose escalation."
+6. TREATMENT DIRECTION: What strategy is being taken and why? Not just "continue meds" but the reasoning behind the approach.
+7. FAILURE MODE: What goes wrong if this is mismanaged? Example: "Without ERP, medication adjustments alone are likely to perpetuate a cycle of perceived intolerance and discontinuation."
+
+Not every assessment needs all 7 (a stable follow-up won't have competing interpretations or failure modes). Complex cases and new patient evals should hit most of them. The assessment should read like a clinician thinking through the case, not an AI organizing information.
+
+KEY RULE: Do not silently drop a diagnostically relevant thread that is ACTIVE or UNRESOLVED — a rule-out being held, a diagnostic question, a new or changing diagnosis, or a symptom cluster that bears on a current clinical decision. These must be addressed even if briefly. This rule is about not losing live clinical questions; it is NOT a license to mention every stable, unchanged, or background item. A stable thread that drives no decision can be a clause or omitted. Active diagnostic threads must be addressed; stable background does not have to be.
+
+=== ASSESSMENT LENGTH — THE PRINCIPLE ===
+Address what is clinically relevant for THIS visit; you do not need to mention every topic the HPI touches. Calibrate depth to clinical significance:
+- Items that drove decisions, represent active clinical questions, or involve diagnostic uncertainty → reasoning with visible clinical thinking.
+- Items that are stable, unchanged, or background → at most a clause or single sentence, woven into the formulation, or omitted if they add nothing to the clinical picture.
+- A stable thread that did not change and did not drive a decision does not require its own sentence just because it was documented.
+The assessment should read like a clinician writing about what MATTERED today, not a systematic review of every HPI section. Concrete test: if a paragraph could be deleted and the remaining assessment still captures every clinical decision and every active question, that paragraph was filler. Cut it before outputting.
+
+=== PLAIN OVER POLISHED ===
+Write in direct clinical language, the way a prescriber actually charts, not the way a paper is written. Do NOT reach for elegant or conceptually dense phrasing, and specifically avoid the "X rather than Y" rhetorical contrast that signals writing-after-the-fact (e.g. "active contributors to sustained improvement rather than incidental lifestyle factors," "a behavioral system rather than willpower," "threat appraisal rather than insufficient stimulant effect"). State the clinical point plainly instead: say what the thing is, not what it is "rather than." Documentation that reads as elegantly constructed is LESS credible in an audit, not more, because it reads as composed rather than recorded. Concise, specific, plainly worded clinical prose is the most defensible. Reason clearly; do not perform. Specific phrases to avoid because they read as composed, not charted: "behavioral scaffolding," "functional anchor," "active contributor rather than incidental," "deploying tools," and any "X rather than something incidental/passive" framing. Prefer plain clinical verbs: she uses, she manages, this supports, this drives, this is stable, this continues. Say the thing directly.
+
+=== STABLE MAINTENANCE VISITS ===
+For a stable maintenance visit with no medication changes and no diagnostic uncertainty, keep the assessment to one or two concise paragraphs. Name that it is stable, state why the current regimen is being continued, and stop. Do NOT introduce complexity, competing interpretations, or developed reasoning that the visit does not require to explain the plan. A stable visit that reads as clinically intricate is overbuilt and is an over-documentation risk.
+
+Output ONLY the assessment (diagnosis list + formulation prose). No Plan. No tool heading.`;
+
+const REVIEW_SYS = `You are a senior psychiatric prescriber and documentation auditor. Another model just drafted an assessment for a provider who will review and sign it. You receive the ORIGINAL SOURCE (HPI, prior diagnoses, what the provider is doing this visit) and the DRAFT ASSESSMENT. Your job is to return a clean, signable assessment plus a short list of anything the provider genuinely needs to look at.
+
+=== FORMATTING RULE: NO EM DASHES ===
+The returned assessment must contain no em dashes or en dashes (the long dashes). If the draft contains any, replace each with a comma, colon, period, or parentheses as the sentence requires. Use only regular hyphens in hyphenated terms (e.g. "first-line").
+
+
+=== ABSOLUTE RULE: NEVER ALTER THE PROVIDER'S FACTS ===
+The source is the truth. Never change dates, names, dosages, frequencies, diagnoses, or any factual detail from the source. If a fact looks wrong, preserve it and flag it — do not edit it.
+
+=== WHAT YOU SILENTLY CORRECT (rewrite, do not flag) ===
+Fix these directly in the returned assessment without mentioning them:
+1. INVENTED CLINICAL CONTENT — the single most important check. Any diagnostic label, named syndrome, symptom, comorbidity, or risk inference in the draft that is NOT present in the source AND was NOT chosen by the provider in the PROVIDER CLINICAL DECISIONS block. Examples of the failure mode: the draft coins "agoraphobic cognition," "limited-symptom panic attacks," "somatic amplification," or asserts a risk factor the provider never documented. Remove the invented label and either delete the claim or restate it in plain descriptive terms tied to what the source actually says. The signed note must contain only the provider's clinical content.
+   CRITICAL EXCEPTION: If the source includes a PROVIDER CLINICAL DECISIONS block, any characterization, attribution, or label the provider SELECTED there is authorized content — it originated with the provider, not the model. Do NOT strip, soften, or flag it. For example, if the provider chose to characterize the affect as "residual anhedonia within MDD," the assessment SHOULD use that framing. Only content that appears in neither the source NOR the provider's decisions counts as invented.
+2. Style/format drift: subsection labels inside the prose, per-diagnosis mini-paragraphs, DSM-criteria openers, a Plan section or any plan content, filler paragraphs that restate the HPI, length that exceeds what the case complexity warrants, and polished or essay-like phrasing that reads as composed rather than charted. In particular, rewrite the "X rather than Y" rhetorical contrast into a plain statement of what the thing is (e.g. change "active contributors rather than incidental lifestyle factors" to "active contributors"). State clinical points directly; remove conceptually dense or elegant constructions in favor of plain clinical language. This is silent cleanup, not a flag.
+3. Over-long formulation: tighten to match case complexity without dropping any clinical decision or active question.
+   PROVIDER-SELECTED LENGTH OVERRIDE: If the source contains a PROVIDER-SELECTED ASSESSMENT LENGTH directive, that is the provider's explicit choice and governs length. Do not trim a THOROUGH assessment back toward "case complexity," and do not expand a BRIEF one. Under any selected length you still remove genuine filler (text that restates the HPI, padding that adds no clinical reasoning) and you never drop an active clinical decision or safety element, but you do not fight the provider's chosen length. When no length directive is present, apply the default calibration above.
+
+=== WHAT YOU FLAG (do not silently change) ===
+Only surface items that require the provider's clinical judgment and that you cannot resolve from the source alone:
+- A genuine clinical ambiguity or diagnostic question that is real (present in the source) and unresolved.
+- A diagnostically relevant thread from the PRIOR assessment — a rule-out, deferred question, or open differential — that the draft dropped entirely and that the provider did not explicitly choose to drop in any clinical-decision block. Flag it so the provider decides whether it should carry forward, rather than letting it silently vanish from the chart.
+- A defensibility gap for the E/M code (the formulation does not support the complexity that appears intended).
+- A NEW diagnosis code in the draft's diagnosis list that does NOT appear in the prior diagnosis list. Do not remove it — the model may add a code for a condition actively addressed this visit (worked up, attributed, managed). Flag it stating the clinical basis and that it was not on the prior list, so the provider can keep it as a coded diagnosis or move it to prose. (Exception: if the provider explicitly added or formalized it via a clinical-decision block, do not flag — it is provider-directed.) If a code was added for a condition only MENTIONED in passing rather than actively addressed, move it out of the diagnosis list into the prose yourself and note that you did so.
+- A factual item in the source that looks potentially wrong (preserve it, flag it). Apply this narrowly: only flag a date or value that is genuinely implausible or internally contradictory (e.g. a future date for a past event, a dose that is physiologically impossible). Do NOT flag dated quotes embedded in the HPI's history or substance-use narrative — providers routinely carry forward quotes tagged with the date they were said (e.g. 'on 4/14/26 he noted...'), and these are normal documentation, not timeline errors. A date is only worth flagging if it is actually impossible or clearly inconsistent, not merely present.
+Do NOT flag your own silent corrections. Do NOT flag stylistic preferences. If the provider already addressed an item in a clinical-decision block, do not flag it. If there is nothing a provider must act on, return no flags.
+
+=== OUTPUT FORMAT ===
+Respond ONLY with raw JSON, no markdown, no backticks:
+{"assessment": "the clean, corrected assessment text — diagnosis list + formulation prose, ready to sign", "flags": ["short, specific item the provider should review", "..."]}
+The "assessment" value is always the full corrected assessment. "flags" is an array of zero or more short strings. Empty array if nothing needs attention.`;
+
+// ── State ──
+const PREFLIGHT_SYS = `You are an experienced psychiatric prescriber reviewing a visit before documentation is generated. Read the HPI, the prior assessment + diagnoses, and what the provider is doing this visit. Surface the clinical decisions that should be the PROVIDER's to make before anything is written — so the generated note reflects the provider's clinical judgment, not the model's guesses.
+
+You will be told which sections are being generated (assessment, therapy, or both). Generate cards accordingly.
+
+OUTPUT FORMAT: Respond ONLY with a JSON object. No markdown, no backticks. Raw JSON.
+
+{
+  "questions": [ array of question objects ]
+}
+
+Each question object: {"id": "short_id", "select": "single" | "multi", "text": "one sentence", "options": ["option 1", "option 2", "..."]}
+
+SELECT MODE — set this per card:
+- "single" for cards where exactly one answer applies: the time card, the modality card, and CARRY/DROP cards (you either carry, defer, or drop a thread — not several at once).
+- "multi" for CHARACTERIZATION and ATTRIBUTION cards. A symptom can have several simultaneous contributors, and the formulation should hold all the provider selects. The provider picks every option that applies. "Keep it plain" and "Other / enter my own" still appear; selecting "Keep it plain" means assign no label.
+
+=== THERAPY CARDS — only when a therapy blurb is being generated ===
+
+Card — id "time": "Was psychotherapy performed, and which add-on code?"
+options: ["Yes — 90833 (16-37 min)", "Yes — 90836 (38-52 min)", "Yes — 90838 (53+ min)", "No therapy this visit"]
+
+Card — id "modality": Suggest 2-3 modalities that FIT the specific clinical content of this HPI. For EACH option, name what clinical issue(s) it would target, drawn from this visit. Format each option as: "Modality — targeting [specific issues from this visit]".
+Examples:
+- "Supportive psychotherapy — targeting adjustment to new stressors and reinforcing current coping"
+- "CBT-informed — targeting task-initiation avoidance and cognitive patterns around productivity"
+- "Motivational interviewing — targeting ambivalence about treatment engagement"
+The modality MUST match what plausibly happened given the HPI. If the patient is not ambivalent about anything, do NOT suggest MI. If no cognitive work is suggested by the content, do NOT suggest CBT.
+NEVER offer "psychoeducation" or "psychoeducation-focused" as a standalone modality option. Psychoeducation is a legitimate therapeutic component but does not stand alone as a billable add-on modality — naming it as the sole modality invites audit denial. When the documented work was largely educational (e.g. explaining a new diagnosis, medication, or condition's impact), fold it into a supportive frame instead and offer it as: "Supportive psychotherapy with psychoeducation — targeting [the patient's understanding/appraisal of X and reinforcing adaptive response]". The education then reads as therapeutic work within an active modality rather than as bare information-giving.
+Default to supportive psychotherapy when the work was validation, reinforcement, and condition-focused education. Always include a final option "Other / enter my own".
+Do NOT generate a therapeutic "focus" card. Focus is inferred downstream from modality and HPI.
+
+=== CLINICAL-DECISION CARDS — whenever an ASSESSMENT is being generated ===
+
+These exist so the contestable clinical calls in the assessment originate with the PROVIDER, not the model. Use id prefix "clin_" for every card in this group.
+
+Generate a clinical-decision card ONLY where the source genuinely contains an unresolved decision that would change the assessment's clinical claims. If the HPI is unambiguous and the prior assessment has no open threads, generate NO clinical cards. A clean stable follow-up should produce zero. Do not manufacture decisions to fill space. Two to three clinical cards is a busy, complex visit; most visits have zero or one.
+
+Three kinds of clinical-decision card:
+
+1. CHARACTERIZATION (id "clin_char"): When the HPI documents a symptom or finding the provider described in plain terms but did NOT characterize diagnostically, and the data genuinely supports more than one reading, surface it. Propose the candidate characterizations as options — drawing from BOTH psychiatric AND medical/physiologic contributors that the documented data supports (e.g. medication effect, a documented lab abnormality like iron deficiency, sleep, a substance). Each option must name the documented evidence it rests on, in parentheses, so the provider can evaluate the suggestion rather than just accept a bare label.
+   RULES:
+   - Only characterize a symptom the provider actually documented. NEVER surface a card about a symptom not in the HPI. You interpret documented data; you never invent the data.
+   - ALWAYS include "Keep it plain — describe without assigning a label" as an option, and ALWAYS include "Other / enter my own". The provider declining a label must be one tap.
+   - Example: text "The 'blah' affective quality is documented but not characterized — how should the assessment frame it?" options: ["Residual anhedonia within MDD (the persistent 'blah,' loss of interest)", "Incomplete medication response (anxiety still undertreated on duloxetine)", "Downstream of documented iron deficiency (low iron, fatigue, partial improvement post-infusion)", "Keep it plain — describe without assigning a label", "Other / enter my own"]
+
+2. CARRY/DROP (id "clin_carry"): When the PRIOR assessment contains an unresolved diagnostic thread (a rule-out being held, a deferred question, an open differential) and today's HPI does not clearly resolve it, ask how to handle it. This prevents carried clinical questions from silently vanishing from the chart.
+   - Example: text "The prior assessment held a rule-out of ADHD — how should today's assessment handle it?" options: ["Carry it forward as an active rule-out", "Address it as deferred pending anxiety/sleep stabilization", "Drop it — no longer clinically relevant", "Other / enter my own"]
+
+3. ATTRIBUTION (id "clin_attr"): When the HPI presents a finding that could be attributed to more than one documented cause and the attribution would change the formulation, ask. Same rules as characterization: options tied to documented evidence, always offer "Other / enter my own".
+
+=== DISCIPLINE ===
+Surface only genuine, case-specific clinical decisions. Do NOT ask about section order, formatting, assessment style, carry-forward language, or the HPI itself. Do NOT propose a characterization or attribution unless the documented data supports more than one reasonable reading — if the provider's framing in the HPI is already clear, do not second-guess it with a card.`;
+
+
+
+var scope = 'both';
+var preflightQuestions = [];
+var selections = {};
+
+function bind(groupId, attr, setter){
+  document.getElementById(groupId).addEventListener('click', function(e){
+    var o = e.target.closest('.opt'); if(!o) return;
+    this.querySelectorAll('.opt').forEach(function(x){ x.classList.remove('sel'); });
+    o.classList.add('sel'); setter(o.getAttribute(attr));
+  });
+}
+bind('scope-opts','data-scope',function(v){
+  scope=v;
+  document.getElementById('review').textContent = (v==='reasoning') ? 'Start clinical reasoning →' : 'Review the visit →';
+});
+
+async function callAPI(systemPrompt, messages, maxTokens){
+  var response;
+  try {
+    response = await fetch('/.netlify/functions/clinical-proxy-stream', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        model:'claude-sonnet-4-6',
+        max_tokens: maxTokens || 2000,
+        system: systemPrompt,
+        messages: messages
+      })
+    });
+  } catch(netErr){
+    throw new Error('Could not reach the server. Check your connection and try again.');
+  }
+
+  // On an upstream error the proxy returns JSON (not a stream). Detect that and surface it cleanly.
+  var ctype = response.headers.get('content-type') || '';
+  if(!response.ok || ctype.indexOf('application/json') !== -1){
+    var errText = await response.text();
+    var msg;
+    try { var j = JSON.parse(errText); msg = j.error && (j.error.message || j.error) ? (j.error.message || j.error) : (j.error || errText); }
+    catch(e){ msg = errText && errText.charAt(0) === '<'
+      ? 'The server timed out or returned an error page. This note may be very long — try again, or shorten the input (e.g. trim the reviewed-records section).'
+      : (errText || ('Request failed (' + response.status + ').')); }
+    throw new Error(msg);
+  }
+
+  // Stream path: read the SSE body and reassemble the text from content_block_delta events.
+  if(!response.body || !response.body.getReader){
+    // Fallback: no streaming support in this browser — read the whole body and parse SSE from the string.
+    var whole = await response.text();
+    return reassembleSSE(whole);
+  }
+
+  var reader = response.body.getReader();
+  var decoder = new TextDecoder();
+  var buffer = '';
+  var assembled = '';
+  var streamErr = null;
+
+  while(true){
+    var chunk = await reader.read();
+    if(chunk.done) break;
+    buffer += decoder.decode(chunk.value, { stream:true });
+    var idx;
+    while((idx = buffer.indexOf('\n\n')) !== -1){
+      var rawEvent = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      var lines = rawEvent.split('\n');
+      for(var i=0;i<lines.length;i++){
+        var line = lines[i];
+        if(line.indexOf('data:') !== 0) continue;
+        var dataStr = line.slice(5).trim();
+        if(!dataStr || dataStr === '[DONE]') continue;
+        try{
+          var evt = JSON.parse(dataStr);
+          if(evt.type === 'content_block_delta' && evt.delta && typeof evt.delta.text === 'string'){
+            assembled += evt.delta.text;
+          } else if(evt.type === 'error'){
+            streamErr = (evt.error && (evt.error.message || JSON.stringify(evt.error))) || 'stream error';
+          }
+        }catch(e){ /* ignore keep-alive / non-JSON lines */ }
+      }
+    }
+  }
+  if(streamErr) throw new Error(streamErr);
+  return assembled.trim();
+}
+
+// Reassemble assistant text from a full SSE string (non-streaming fallback path).
+function reassembleSSE(text){
+  var out = '';
+  var events = text.split('\n\n');
+  for(var e=0;e<events.length;e++){
+    var lines = events[e].split('\n');
+    for(var i=0;i<lines.length;i++){
+      var line = lines[i];
+      if(line.indexOf('data:') !== 0) continue;
+      var dataStr = line.slice(5).trim();
+      if(!dataStr || dataStr === '[DONE]') continue;
+      try{
+        var evt = JSON.parse(dataStr);
+        if(evt.type === 'content_block_delta' && evt.delta && typeof evt.delta.text === 'string'){
+          out += evt.delta.text;
+        }
+      }catch(e2){}
+    }
+  }
+  return out.trim();
+}
+
+function gatherInput(){
+  return {
+    hpi: document.getElementById('hpi').value.trim(),
+    dxprior: document.getElementById('dxprior').value.trim(),
+    plan: document.getElementById('plan').value.trim()
+  };
+}
+function contextBlock(inp){
+  var s = 'HPI / visit narrative:\n\n' + inp.hpi;
+  if(inp.dxprior) s += '\n\n---\n\nPrior assessment + diagnoses (for continuity and the diagnosis list):\n\n' + inp.dxprior;
+  if(inp.plan) s += '\n\n---\n\nWhat the provider is doing this visit (integrate the reasoning, not the prescription mechanics):\n\n' + inp.plan;
+  return s;
+}
+
+function flagBlock(flags){
+  var items = flags.map(function(f){ return '<li>'+String(f).replace(/</g,'&lt;')+'</li>'; }).join('');
+  return '<div class="flags"><div class="flags-h">Worth a look before you sign</div><ul>'+items+'</ul></div>';
+}
+function stripDashes(s){
+  // Safety net: no em/en dashes in chart-ready output. Spaced long dash becomes a comma;
+  // an unspaced one becomes a hyphen. Covers em (—), en (–), and the horizontal bar (―).
+  return String(s)
+    .replace(/\s*[—–―]\s+/g, ', ')   // " — word"  -> ", word"
+    .replace(/\s+[—–―]\s*/g, ', ')   // "word — "   -> "word, "
+    .replace(/[—–―]/g, '-');          // any remaining unspaced long dash -> hyphen
+}
+function outBlock(title, id, text){
+  var safe = stripDashes(text).replace(/</g,'&lt;');
+  // render **label:** as bold for display; copy strips it back to plain text
+  var display = safe.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  return '<div class="out"><button class="btn-copy" onclick="copyOut(\''+id+'\')">Copy</button>'+
+         '<h3>'+title+'</h3><div class="out-body" id="'+id+'">'+display+'</div></div>';
+}
+function copyOut(id){
+  var t = document.getElementById(id).innerText.replace(/\*\*/g,'');
+  navigator.clipboard.writeText(t);
+  event.target.textContent='Copied'; setTimeout(function(){ event.target.textContent='Copy'; },1500);
+}
+
+// ── STEP 1: Review the visit (preflight) or start reasoning ──
+document.getElementById('review').addEventListener('click', async function(){
+  var inp = gatherInput();
+  var errBox = document.getElementById('err-box');
+  errBox.innerHTML='';
+  if(inp.hpi.length < 40){ errBox.innerHTML='<div class="err">Please paste an HPI with enough clinical detail to reason from.</div>'; return; }
+
+  document.getElementById('results').innerHTML='';
+  document.getElementById('preflight').style.display='none';
+  document.getElementById('handoff').style.display='none';
+
+  if(scope==='reasoning'){ startReasoning(inp); return; }
+
+  var btn=this; btn.disabled=true; var orig=btn.textContent;
+  btn.innerHTML='<span class="spinner"></span>Reading the visit…';
+  try{
+    var scopeNote = '\n\n---\n\nSECTIONS BEING GENERATED: ' +
+      (scope==='assessment' ? 'assessment only (generate clinical-decision cards if warranted; NO therapy cards)' :
+       scope==='therapy' ? 'therapy blurb only (generate therapy cards; NO clinical-decision cards)' :
+       'assessment AND therapy blurb (generate therapy cards AND clinical-decision cards if warranted)');
+    var raw = await callAPI(PREFLIGHT_SYS, [{role:'user', content: contextBlock(inp) + scopeNote}], 1200);
+    var parsed = JSON.parse(raw.replace(/```json|```/g,'').trim());
+    preflightQuestions = parsed.questions || [];
+    // Fixed length-control card, always shown when an assessment is being generated.
+    // Deterministic (not model-generated) so the options are identical every time.
+    if(scope==='assessment' || scope==='both'){
+      preflightQuestions.unshift({
+        id: 'length',
+        text: 'How much reasoning do you want in the assessment?',
+        select: 'single',
+        options: [
+          'Standard — the reasoning behind the active decisions, without exhausting every thread (about two paragraphs for a typical visit)',
+          'Brief — the formulation and the decisions, tightly stated (about one paragraph)',
+          'Thorough — full reasoning on every active thread (length follows the clinical content)'
+        ]
+      });
+    }
+    if(!preflightQuestions.length){
+      // Nothing to confirm — generate directly
+      selections = {};
+      runGenerate(inp);
+      return;
+    }
+    renderPreflight(preflightQuestions);
+    document.getElementById('preflight').style.display='block';
+    document.getElementById('preflight').scrollIntoView({behavior:'smooth', block:'start'});
+  }catch(err){
+    errBox.innerHTML='<div class="err">Could not read the visit: '+(err.message||err)+'. You can try again.</div>';
+  }finally{
+    btn.disabled=false; btn.textContent=orig;
+  }
+});
+
+function renderPreflight(questions){
+  selections = {};
+  var host = document.getElementById('preflight-cards');
+  var html = '<div style="font-size:.82rem;color:var(--cream-dim);margin-bottom:14px">Based on what you documented, here is what fits. Confirm or adjust, then generate. Where more than one factor applies, select all that fit.</div>';
+  questions.forEach(function(q, qi){
+    var multi = (q.select === 'multi');
+    var hint = multi ? ' <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--cream-dim)">(select all that apply)</span>' : '';
+    html += '<div class="card-group" data-qid="'+qi+'" data-multi="'+(multi?'1':'0')+'"><label>'+q.text.replace(/</g,'&lt;')+hint+'</label><div class="opts pf-opts">';
+    (q.options||[]).forEach(function(opt, oi){
+      var isCustom = /other\s*\/\s*enter my own/i.test(opt);
+      // single-select defaults to first non-custom option; multi-select defaults to nothing selected
+      var preSel = (!multi && oi===0 && !isCustom);
+      html += '<div class="opt'+(preSel?' sel':'')+'" data-qi="'+qi+'" data-opt="'+opt.replace(/"/g,'&quot;')+'"'+(isCustom?' data-custom="1"':'')+'>'+opt.replace(/</g,'&lt;')+'</div>';
+    });
+    html += '</div><input type="text" class="pf-custom" data-qi="'+qi+'" placeholder="Enter your own…" style="display:none;width:100%;margin-top:8px;background:var(--navy);border:1px solid var(--rule);border-radius:8px;color:var(--white);padding:10px 12px;font-size:.9rem"></div>';
+    if(multi){
+      selections[qi] = [];
+    } else {
+      var first = (q.options||[]).find(function(o){return !/other\s*\/\s*enter my own/i.test(o);});
+      selections[qi] = first || '';
+    }
+  });
+  host.innerHTML = html;
+
+  host.querySelectorAll('.pf-opts').forEach(function(group){
+    var groupEl = group.closest('.card-group');
+    var isMulti = groupEl.getAttribute('data-multi')==='1';
+    group.addEventListener('click', function(e){
+      var o = e.target.closest('.opt'); if(!o) return;
+      var qi = o.getAttribute('data-qi');
+      var custom = host.querySelector('.pf-custom[data-qi="'+qi+'"]');
+      if(isMulti){
+        var isPlain = /keep it plain/i.test(o.getAttribute('data-opt')||'');
+        if(isPlain){
+          // selecting keep-plain clears all other picks in this card
+          group.querySelectorAll('.opt').forEach(function(x){ if(x!==o) x.classList.remove('sel'); });
+          o.classList.toggle('sel');
+        } else {
+          // selecting any label clears keep-plain
+          group.querySelectorAll('.opt').forEach(function(x){
+            if(/keep it plain/i.test(x.getAttribute('data-opt')||'')) x.classList.remove('sel');
+          });
+          o.classList.toggle('sel');
+        }
+        // gather all currently selected options for this card
+        var picked = [];
+        group.querySelectorAll('.opt.sel').forEach(function(x){
+          if(x.getAttribute('data-custom')){
+            picked.push(custom.value.trim() || '(custom)');
+          } else {
+            picked.push(x.getAttribute('data-opt'));
+          }
+        });
+        // show custom input if the custom option is among the selected
+        var customSel = !!group.querySelector('.opt.sel[data-custom]');
+        custom.style.display = customSel ? 'block' : 'none';
+        if(customSel) custom.focus();
+        selections[qi] = picked;
+      } else {
+        group.querySelectorAll('.opt').forEach(function(x){ x.classList.remove('sel'); });
+        o.classList.add('sel');
+        if(o.getAttribute('data-custom')){
+          custom.style.display='block'; custom.focus();
+          selections[qi] = custom.value.trim();
+        } else {
+          custom.style.display='none';
+          selections[qi] = o.getAttribute('data-opt');
+        }
+      }
+    });
+  });
+  host.querySelectorAll('.pf-custom').forEach(function(inp){
+    inp.addEventListener('input', function(){
+      var qi = inp.getAttribute('data-qi');
+      var groupEl = host.querySelector('.card-group[data-qid="'+qi+'"]');
+      if(groupEl && groupEl.getAttribute('data-multi')==='1'){
+        // rebuild the multi array, replacing the custom slot with current text
+        var group = groupEl.querySelector('.pf-opts');
+        var picked = [];
+        group.querySelectorAll('.opt.sel').forEach(function(x){
+          if(x.getAttribute('data-custom')){ picked.push(inp.value.trim() || '(custom)'); }
+          else { picked.push(x.getAttribute('data-opt')); }
+        });
+        selections[qi] = picked;
+      } else {
+        selections[qi] = inp.value.trim();
+      }
+    });
+  });
+}
+
+// ── STEP 2: Generate ──
+document.getElementById('go').addEventListener('click', function(){ runGenerate(gatherInput()); });
+
+async function runGenerate(inp){
+  if(document.getElementById('err-box2')) document.getElementById('err-box2').innerHTML='';
+  var btn=document.getElementById('go'); btn.disabled=true; var orig=btn.textContent;
+  btn.innerHTML='<span class="spinner"></span>Generating…';
+  document.getElementById('results').innerHTML='';
+  document.getElementById('handoff').style.display='none';
+
+  var code='90833', timeChoice='', modality='', clinicalDecisions=[], lengthChoice='';
+  preflightQuestions.forEach(function(q, qi){
+    var val = selections[qi];
+    if(q.id==='time' || /add-on code/i.test(q.text)){
+      timeChoice = (typeof val==='string') ? val : '';
+      var m = timeChoice.match(/9083[0-9]/); if(m) code = m[0];
+    } else if(q.id==='length'){
+      lengthChoice = (typeof val==='string') ? val : '';
+    } else if(q.id==='modality' || /modality/i.test(q.text)){
+      modality = (typeof val==='string' ? val : '').split(' — ')[0].trim();
+    } else if(/^clin_/.test(q.id||'')){
+      var chosen;
+      if(Array.isArray(val)){
+        chosen = val.filter(function(x){ return x && x !== '(custom)'; });
+      } else if(val){
+        chosen = [val];
+      } else {
+        chosen = [];
+      }
+      if(chosen.length){
+        // multiple selections = a multi-factor differential the provider wants held together
+        var joined = chosen.length > 1
+          ? 'the provider selected MULTIPLE contributing factors to hold together in the formulation: ' + chosen.join('; ')
+          : chosen[0];
+        clinicalDecisions.push(q.text + ' → ' + joined);
+      } else if(/^clin_(char|attr)/.test(q.id)){
+        // characterization/attribution left unanswered → keep plain, do not let the model fill the vacuum
+        clinicalDecisions.push(q.text + ' → the provider did not select a characterization; keep this plain and descriptive, do NOT assign a diagnostic label.');
+      }
+    }
+  });
+  var noTherapy = /no therapy/i.test(timeChoice);
+  var clinBlock = clinicalDecisions.length
+    ? '\n\n---\n\nPROVIDER CLINICAL DECISIONS (the provider made these calls in preflight — treat them as authored by the provider and write the assessment accordingly; do not override or second-guess them. Where the provider selected multiple factors for one item, the formulation must integrate ALL of them as a multi-factor differential, not pick one):\n- ' + clinicalDecisions.join('\n- ')
+    : '';
+
+  // Provider-selected assessment length. This is an explicit instruction from the provider and
+  // overrides the default calibration toward longer output; it does NOT license padding a simple
+  // visit or dropping an active clinical question to hit a length.
+  var lengthBlock = '';
+  if(/^brief/i.test(lengthChoice)){
+    lengthBlock = '\n\n---\n\nPROVIDER-SELECTED ASSESSMENT LENGTH: BRIEF. The provider wants a tight assessment: the formulation and the active decisions, stated directly, roughly one paragraph. State each active clinical decision and its core reasoning in a sentence or two, not a developed paragraph each. Do not exhaust every angle. Do not, however, drop an active clinical question or safety element to hit this length; compress the reasoning, do not omit a live decision.';
+  } else if(/^standard/i.test(lengthChoice)){
+    lengthBlock = '\n\n---\n\nPROVIDER-SELECTED ASSESSMENT LENGTH: STANDARD. The provider wants the reasoning behind the active decisions without exhausting every thread, roughly two paragraphs. Develop the threads that drove a decision or are unresolved; keep stable background to a clause.';
+  } else if(/^thorough/i.test(lengthChoice)){
+    lengthBlock = '\n\n---\n\nPROVIDER-SELECTED ASSESSMENT LENGTH: THOROUGH. The provider wants full reasoning developed on each active thread, with nothing compressed away. This removes the compression a shorter setting would apply; it does NOT set a paragraph floor. Length must still follow the actual clinical content: a complex visit with several active, interacting decisions will run several paragraphs, while a stable no-change visit with little to reason about stays short even at this setting. Do NOT add paragraphs, restate the HPI, or expand stable background into developed prose to reach a length. If the visit genuinely warrants only a paragraph or two, output a paragraph or two. Thorough means "leave nothing actively clinical undeveloped," not "write at length regardless."';
+  }
+
+  try{
+    var html='';
+    if(scope==='assessment' || scope==='both'){
+      var assessText = await callAPI(ASSESS_SYS, [{role:'user', content: contextBlock(inp) + clinBlock + lengthBlock}], 2000);
+      // Hybrid review pass: silently corrects invented content/style drift, flags only genuine judgment calls
+      var reviewMsg = 'ORIGINAL SOURCE:\n\n' + contextBlock(inp) + clinBlock + lengthBlock +
+        '\n\n---\n\nDRAFT ASSESSMENT:\n\n' + assessText;
+      try{
+        var reviewRaw = await callAPI(REVIEW_SYS, [{role:'user', content: reviewMsg}], 2000);
+        var reviewed = JSON.parse(reviewRaw.replace(/```json|```/g,'').trim());
+        if(reviewed && typeof reviewed.assessment === 'string' && reviewed.assessment.trim()){
+          assessText = reviewed.assessment.trim();
+        }
+        html += outBlock('Assessment', 'out-assess', assessText);
+        if(reviewed && Array.isArray(reviewed.flags) && reviewed.flags.length){
+          html += flagBlock(reviewed.flags);
+        }
+      }catch(e){
+        // If review fails or returns non-JSON, fall back to the unreviewed draft rather than blocking output
+        html += outBlock('Assessment', 'out-assess', assessText);
+      }
+      document.getElementById('results').innerHTML = html;
+    }
+    if((scope==='therapy' || scope==='both') && !noTherapy){
+      var userMsg = contextBlock(inp) +
+        '\n\n---\n\nModality selected by provider: ' + (modality||'Supportive psychotherapy') +
+        '\nAdd-on code intended: ' + code +
+        '\n\nGenerate the psychotherapy add-on documentation matched to this modality, using the five labeled sections. Infer the therapeutic focus from the modality and HPI.';
+      var therapyText = await callAPI(THERAPY_SYS, [{role:'user', content: userMsg}], 2000);
+      html += outBlock('Psychotherapy add-on ('+code+')', 'out-therapy', therapyText);
+      document.getElementById('results').innerHTML = html;
+    }
+    document.getElementById('handoff').style.display='block';
+    document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
+  }catch(err){
+    if(document.getElementById('err-box2')) document.getElementById('err-box2').innerHTML='<div class="err">Generation failed: '+(err.message||err)+'. Please try again.</div>';
+  }finally{
+    btn.disabled=false; btn.textContent=orig;
+  }
+}
+
+// ── Clinical reasoning chat (back-and-forth) ──
+var reasoningHistory = [];
+var REASONING_SYS = VOICE + '\n\nThe provider has pasted a clinical note or HPI and wants to think through a clinical question about it. Do NOT generate a psychotherapy blurb or a formatted assessment unless explicitly asked. Reason with them as a knowledgeable colleague would: address their actual question, raise relevant differentials, mechanisms, risks, and considerations grounded in the specific case. Ask a clarifying question if the case is ambiguous. Be direct and specific.';
+
+function startReasoning(inp){
+  reasoningHistory = [{role:'user', content: contextBlock(inp) + '\n\n---\n\n(The provider will ask a clinical question about this case. Acknowledge you have the case and ask what they would like to think through.)'}];
+  var host = document.getElementById('results');
+  host.innerHTML =
+    '<div class="out"><h3>Clinical reasoning</h3>'+
+    '<div id="chat-log" style="display:flex;flex-direction:column;gap:12px"></div>'+
+    '<div style="display:flex;gap:8px;margin-top:14px">'+
+      '<input type="text" id="chat-in" placeholder="Ask your clinical question…" style="flex:1;background:var(--navy);border:1px solid var(--rule);border-radius:8px;color:var(--white);padding:11px 14px;font-size:.9rem">'+
+      '<button class="btn" id="chat-send" style="margin-top:0">Send</button>'+
+    '</div><div id="chat-err"></div></div>';
+  host.scrollIntoView({behavior:'smooth', block:'start'});
+  document.getElementById('chat-send').addEventListener('click', function(){ sendReasoning(false); });
+  document.getElementById('chat-in').addEventListener('keydown', function(e){ if(e.key==='Enter'){ sendReasoning(false); }});
+  sendReasoning(true);
+}
+
+function addChatBubble(role, text){
+  var log = document.getElementById('chat-log');
+  var mine = role==='user';
+  var b = document.createElement('div');
+  b.style.cssText = 'max-width:90%;padding:10px 14px;border-radius:10px;font-size:.88rem;line-height:1.6;white-space:pre-wrap;'+
+    (mine ? 'align-self:flex-end;background:var(--teal-glow);border:1px solid var(--teal);color:var(--white)'
+          : 'align-self:flex-start;background:var(--navy);border:1px solid var(--rule);color:var(--cream)');
+  if(mine){
+    // user text: never interpret as markup
+    b.textContent = text;
+  } else {
+    // assistant text: render the markdown the model emits, matching outBlock's convention.
+    // escape first, then convert, so nothing in the reply can inject HTML.
+    var safe = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    safe = safe
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')   // **bold**
+      .replace(/(^|[^\*])\*(?!\s)([^\*\n]+?)\*(?!\*)/g, '$1<em>$2</em>')  // *italic*, not bullets
+      .replace(/^\s*[-*]\s+/gm, '\u2022 ')                 // - / * bullets -> bullet char
+      .replace(/^\s*#{1,6}\s+(.+)$/gm, '<strong>$1</strong>')  // ### headings -> bold line
+      .replace(/^\s*---+\s*$/gm, '<span style="display:block;border-top:1px solid var(--rule);margin:8px 0"></span>'); // --- rule
+    b.innerHTML = safe;
+  }
+  log.appendChild(b);
+}
+
+async function sendReasoning(isKickoff){
+  var input = document.getElementById('chat-in');
+  var sendBtn = document.getElementById('chat-send');
+  var errEl = document.getElementById('chat-err');
+  errEl.innerHTML='';
+  if(isKickoff !== true){
+    var q = input.value.trim(); if(!q) return;
+    addChatBubble('user', q);
+    reasoningHistory.push({role:'user', content:q});
+    input.value='';
+  }
+  sendBtn.disabled=true; input.disabled=true;
+  try{
+    var reply = await callAPI(REASONING_SYS, reasoningHistory, 2000);
+    reasoningHistory.push({role:'assistant', content:reply});
+    addChatBubble('assistant', reply);
+  }catch(err){
+    errEl.innerHTML='<div class="err">'+(err.message||err)+'</div>';
+  }finally{
+    sendBtn.disabled=false; input.disabled=false; input.focus();
+  }
+}
+
+// ── Auth ──
+TBPAuth.protect({
+  toolName: 'Clinical Note Builder',
+  spaceId: 2546298,
+  termsVersion: 'interim_v1',
+  onVerified: function(){
+    document.body.classList.remove('tbp-gate-active');
+    document.body.style.display='block';
+    document.body.style.overflow='';
+    var tc=document.getElementById('tool-container');
+    tc.style.display='block';
+    tc.classList.add('tbp-shown');
+  }
+});
+</script>
+</body>
+</html>
