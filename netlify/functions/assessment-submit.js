@@ -55,7 +55,7 @@ exports.handler = async (event) => {
   // Load and validate the assessment (must be pending + unexpired).
   const { data: assessment, error: loadErr } = await sb
     .from('assessments')
-    .select('id, instrument_set, status, expires_at')
+    .select('id, instrument_set, status, expires_at, provider_email')
     .eq('token', token)
     .maybeSingle();
 
@@ -130,6 +130,27 @@ exports.handler = async (event) => {
   if (consentErr) {
     console.error('assessment-submit consent insert failed:', consentErr);
     // Non-fatal for the patient experience; logged.
+  }
+
+  // Notify the provider that a screener has returned. PHI-FREE by design:
+  // no patient name, no instruments, no scores, no risk flag in the email body.
+  // Best-effort; never blocks the patient confirmation.
+  try {
+    if (assessment.provider_email) {
+      const base = (process.env.SITE_URL || 'https://thinkbeyondpractice.com').replace(/\/$/, '');
+      await fetch(base + '/.netlify/functions/send-document', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: assessment.provider_email,
+          subject: 'A patient assessment has been returned',
+          body: 'A patient assessment has been returned and is ready to review in the Assessment Suite. Log in to view the results.\n\nThis message intentionally contains no patient information.',
+          tool: 'Assessment Suite'
+        })
+      });
+    }
+  } catch (e) {
+    console.error('assessment-submit provider notification failed (non-fatal):', e);
   }
 
   return {
