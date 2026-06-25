@@ -144,7 +144,7 @@ exports.handler = async (event) => {
         body: JSON.stringify({
           to: assessment.provider_email,
           subject: 'A patient assessment has been returned',
-          body: 'A patient assessment has been returned and is ready to review in the Assessment Suite. Log in to view the results.\n\nThis message intentionally contains no patient information.',
+          body: 'A patient assessment has been returned and is ready to review in the Assessment Suite.\n\nReview it here: ' + base + '/pm-assessment-suite.html#returned\n\nThis message intentionally contains no patient information.',
           tool: 'Assessment Suite'
         })
       });
