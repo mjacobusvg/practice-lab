@@ -11,6 +11,7 @@
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, CIRCLE_API_V2_TOKEN
 
 const { createClient } = require('@supabase/supabase-js');
+const instruments = require('./assessment-instruments.js');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -125,6 +126,19 @@ exports.handler = async (event) => {
   if (assessment.status === 'completed') update.status = 'retrieved';
   await sb.from('assessments').update(update).eq('id', assessmentId);
 
+  // Generate the two chart blurbs from the stored scores + raw responses.
+  // scores is the array of scored results; reconstruct the battery shape the
+  // blurb builders expect.
+  const battery = { results: result.scores || [], flags: result.flags || [] };
+  let screenerReviewBlurb = '';
+  let hpiSymptomBlurb = '';
+  try {
+    screenerReviewBlurb = instruments.screenerReviewBlurb(battery);
+    hpiSymptomBlurb = instruments.hpiSymptomBlurb(battery, result.responses || {});
+  } catch (e) {
+    console.error('assessment-retrieve blurb generation failed (non-fatal):', e);
+  }
+
   return {
     statusCode: 200,
     headers: CORS,
@@ -134,7 +148,12 @@ exports.handler = async (event) => {
       instrumentSet: assessment.instrument_set,
       completedAt: assessment.completed_at,
       scores: result.scores,
-      flags: result.flags || []
+      responses: result.responses || {},
+      flags: result.flags || [],
+      blurbs: {
+        screenerReview: screenerReviewBlurb,
+        hpiSymptom: hpiSymptomBlurb
+      }
     })
   };
 };
