@@ -477,15 +477,19 @@ INSTRUMENTS['pcl5'] = {
     };
   },
   chartLanguage: function (s) {
-    var t = 'PCL-5 administered. Total score ' + s.total + '/80. ' +
-      'Cluster scores — B (Intrusion): ' + s.subscales['Cluster B (Intrusion)'] +
-      ', C (Avoidance): ' + s.subscales['Cluster C (Avoidance)'] +
-      ', D (Negative cognitions/mood): ' + s.subscales['Cluster D (Cognition/Mood)'] +
-      ', E (Arousal/reactivity): ' + s.subscales['Cluster E (Arousal)'] + '. ';
-    t += s.interpretation.charAt(0).toUpperCase() + s.interpretation.slice(1) + '. ';
-    t += s.provisionalDiagnosis
-      ? 'DSM-5 symptom-cluster criteria provisionally met by the cluster-endorsement rule (item ≥2). Clinical interview required to confirm diagnosis.'
-      : 'DSM-5 symptom-cluster criteria not provisionally met by the cluster-endorsement rule. Clinical correlation indicated.';
+    var thresholdStatus = (s.total >= 31)
+      ? 'above the common provisional PTSD screening cutoff (31-33)'
+      : 'below the common provisional PTSD screening cutoff (31-33)';
+    var clusterStatus = s.provisionalDiagnosis
+      ? 'DSM-5 symptom-cluster screening criteria appear met by the item-endorsement rule (>=1 intrusion, >=1 avoidance, >=2 negative cognition/mood, >=2 arousal items endorsed at item score >=2)'
+      : 'DSM-5 symptom-cluster screening criteria do not appear met by the item-endorsement rule';
+    var t = 'PCL-5 administered. Total score ' + s.total + '/80, ' + thresholdStatus + '. ';
+    t += 'Cluster scores: B intrusion ' + s.subscales['Cluster B (Intrusion)'] +
+      ', C avoidance ' + s.subscales['Cluster C (Avoidance)'] +
+      ', D negative cognition/mood ' + s.subscales['Cluster D (Cognition/Mood)'] +
+      ', E arousal/reactivity ' + s.subscales['Cluster E (Arousal)'] + '. ';
+    t += clusterStatus + '. ';
+    t += 'This is a positive screen requiring clinical confirmation; confirm Criterion A trauma exposure, symptom duration, functional impairment, and differential diagnosis in interview.';
     return t;
   }
 };
@@ -772,12 +776,274 @@ function deidentifiedMetadata(scoredBattery) {
   });
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SYMPTOM MAP + CHART BLURBS
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Two copyable outputs are generated from a completed battery:
+//   1. screenerReviewBlurb  - concise first-person "I reviewed screeners..." note
+//                             documenting scores, severity, screen result, risk.
+//   2. hpiSymptomBlurb       - narrative, ENDORSED-ONLY, screening-provenance
+//                             framing ("screening responses reviewed as part of
+//                             the interview; endorsed items include ..."). Maps
+//                             endorsed items to short clinical symptom phrases by
+//                             domain. Feeds the Clinical Note Builder.
+//
+// Design rules baked in (locked decisions):
+//   - ENDORSED-ONLY: the HPI blurb names only items the patient actually endorsed.
+//   - SCREENING-PROVENANCE: never asserts symptoms as interview-confirmed; always
+//     frames them as screening responses to be integrated with the interview.
+//
+// SYMPTOM_MAP[instrumentId] = {
+//   domainLabel: string,                 // narrative domain header
+//   endorsedThreshold: number,           // item value at/above which = endorsed
+//   reverseEndorsed: { itemId: true },   // items where endorsement is INVERTED
+//   phrases: { itemId: 'short symptom phrase' }
+// }
+
+var SYMPTOM_MAP = {
+  phq9: {
+    domainLabel: 'Depression',
+    endorsedThreshold: 1, // 0-3 freq scale; >=1 (Several days+) counts as present
+    phrases: {
+      phq9_1: 'anhedonia (little interest or pleasure in doing things)',
+      phq9_2: 'depressed mood (feeling down, depressed, or hopeless)',
+      phq9_3: 'sleep disturbance',
+      phq9_4: 'low energy or fatigue',
+      phq9_5: 'appetite change',
+      phq9_6: 'feelings of worthlessness or excessive guilt',
+      phq9_7: 'impaired concentration',
+      phq9_8: 'psychomotor change (slowing or restlessness)',
+      phq9_9: 'thoughts of being better off dead or of self-harm'
+    }
+  },
+  gad7: {
+    domainLabel: 'Anxiety',
+    endorsedThreshold: 1,
+    phrases: {
+      gad7_1: 'feeling nervous, anxious, or on edge',
+      gad7_2: 'inability to stop or control worrying',
+      gad7_3: 'excessive worry about different things',
+      gad7_4: 'difficulty relaxing',
+      gad7_5: 'restlessness',
+      gad7_6: 'irritability',
+      gad7_7: 'a sense that something awful might happen'
+    }
+  },
+  auditc: {
+    domainLabel: 'Alcohol use',
+    endorsedThreshold: 1,
+    phrases: {
+      auditc_1: 'regular alcohol consumption',
+      auditc_2: 'elevated quantity per drinking occasion',
+      auditc_3: 'episodes of heavy (binge) drinking'
+    }
+  },
+  dast10: {
+    domainLabel: 'Substance use',
+    endorsedThreshold: 1, // yes/no (1/0); yes = endorsed
+    reverseEndorsed: { dast10_3: true }, // "always able to stop" -> a NO is the concern
+    phrases: {
+      dast10_1: 'non-medical drug use',
+      dast10_2: 'polysubstance use',
+      dast10_3: 'difficulty stopping drug use when desired',
+      dast10_4: 'blackouts or flashbacks related to drug use',
+      dast10_5: 'guilt about drug use',
+      dast10_6: 'family or partner concern about drug use',
+      dast10_7: 'neglect of family due to drug use',
+      dast10_8: 'illegal activity to obtain drugs',
+      dast10_9: 'withdrawal symptoms on stopping',
+      dast10_10: 'medical problems resulting from drug use'
+    }
+  },
+  epds: {
+    domainLabel: 'Perinatal mood',
+    endorsedThreshold: 1, // EPDS items are 0-3 after directional scoring
+    phrases: {
+      epds_1: 'reduced ability to laugh or see the funny side of things',
+      epds_2: 'reduced anticipation or enjoyment',
+      epds_3: 'self-blame',
+      epds_4: 'anxiety or worry without clear cause',
+      epds_5: 'feeling scared or panicky',
+      epds_6: 'feeling overwhelmed or unable to cope',
+      epds_7: 'sleep disturbance due to unhappiness',
+      epds_8: 'sadness',
+      epds_9: 'tearfulness',
+      epds_10: 'thoughts of self-harm'
+    }
+  },
+  pcl5: {
+    domainLabel: 'Trauma / PTSD',
+    endorsedThreshold: 2, // PCL-5 0-4; DSM-5 endorsement convention is >=2 (Moderately+)
+    phrases: {
+      pcl5_1: 'intrusive memories',
+      pcl5_2: 'distressing dreams',
+      pcl5_3: 'dissociative reactions or flashbacks',
+      pcl5_4: 'psychological distress to reminders',
+      pcl5_5: 'physiological reactivity to reminders',
+      pcl5_6: 'avoidance of internal reminders',
+      pcl5_7: 'avoidance of external reminders',
+      pcl5_8: 'dissociative amnesia for the event',
+      pcl5_9: 'persistent negative beliefs',
+      pcl5_10: 'distorted blame',
+      pcl5_11: 'persistent negative emotional state',
+      pcl5_12: 'diminished interest in activities',
+      pcl5_13: 'detachment or estrangement from others',
+      pcl5_14: 'restricted positive affect',
+      pcl5_15: 'irritability or angry outbursts',
+      pcl5_16: 'reckless or self-destructive behavior',
+      pcl5_17: 'hypervigilance',
+      pcl5_18: 'exaggerated startle response',
+      pcl5_19: 'concentration difficulty',
+      pcl5_20: 'sleep disturbance'
+    }
+  },
+  ace10: {
+    domainLabel: 'Childhood adversity',
+    endorsedThreshold: 1, // yes/no
+    phrases: {
+      ace_1: 'recurrent emotional abuse',
+      ace_2: 'recurrent physical abuse',
+      ace_3: 'sexual abuse',
+      ace_4: 'emotional neglect',
+      ace_5: 'physical neglect',
+      ace_6: 'parental separation or divorce',
+      ace_7: 'witnessing intimate-partner violence in the home',
+      ace_8: 'household substance use',
+      ace_9: 'household mental illness or suicide attempt',
+      ace_10: 'household incarceration'
+    }
+  },
+  asrs: {
+    domainLabel: 'ADHD',
+    endorsedThreshold: 2, // 0-4; >=2 (Sometimes+) as a narrative-presence floor
+    phrases: {
+      asrs_1: 'difficulty completing the final details of projects',
+      asrs_2: 'difficulty with organization',
+      asrs_3: 'problems remembering appointments or obligations',
+      asrs_4: 'avoidance or delay of tasks requiring sustained mental effort',
+      asrs_5: 'fidgetiness or restlessness',
+      asrs_6: 'feeling overly active or driven by a motor'
+    }
+  },
+  wfirs: {
+    domainLabel: 'Functional impairment',
+    endorsedThreshold: 2, // 0-3; >=2 (Often/much) = meaningful impairment
+    phrases: {
+      wfirs_1: 'family or home-life impairment',
+      wfirs_2: 'occupational impairment',
+      wfirs_3: 'academic or learning impairment',
+      wfirs_4: 'life-skills impairment (time, money, self-care, sleep)',
+      wfirs_5: 'impaired self-concept or confidence',
+      wfirs_6: 'social impairment',
+      wfirs_7: 'risk-related or impulse-control problems'
+    }
+  },
+  msibpd: {
+    domainLabel: 'Personality (borderline features)',
+    endorsedThreshold: 1, // yes/no
+    phrases: {
+      msibpd_1: 'unstable, conflictual relationships',
+      msibpd_2: 'deliberate self-harm and/or past suicide attempt',
+      msibpd_3: 'impulsivity across multiple domains',
+      msibpd_4: 'marked mood reactivity',
+      msibpd_5: 'inappropriate or intense anger',
+      msibpd_6: 'pervasive distrust of others',
+      msibpd_7: 'dissociative or derealization experiences',
+      msibpd_8: 'chronic emptiness',
+      msibpd_9: 'identity disturbance',
+      msibpd_10: 'frantic efforts to avoid abandonment'
+    }
+  }
+};
+
+// Determine whether an item value counts as "endorsed" for narrative purposes.
+function isEndorsed(instId, itemId, value) {
+  if (typeof value !== 'number') return false;
+  var map = SYMPTOM_MAP[instId];
+  if (!map) return false;
+  var reverse = map.reverseEndorsed && map.reverseEndorsed[itemId];
+  if (reverse) {
+    // Inverted item (e.g., "able to stop"): a low/"no" answer is the concern.
+    return value < map.endorsedThreshold;
+  }
+  return value >= map.endorsedThreshold;
+}
+
+// Returns the list of endorsed symptom phrases for one instrument given its
+// raw responses map.
+function endorsedPhrases(instId, responses) {
+  var map = SYMPTOM_MAP[instId];
+  if (!map || !responses) return [];
+  var out = [];
+  var inst = INSTRUMENTS[instId];
+  var order = inst ? inst.items.map(function (it) { return it.id; }) : Object.keys(map.phrases);
+  for (var i = 0; i < order.length; i++) {
+    var itemId = order[i];
+    if (!map.phrases[itemId]) continue;
+    if (isEndorsed(instId, itemId, responses[itemId])) {
+      out.push(map.phrases[itemId]);
+    }
+  }
+  return out;
+}
+
+function joinClause(items) {
+  if (!items.length) return '';
+  if (items.length === 1) return items[0];
+  if (items.length === 2) return items[0] + ' and ' + items[1];
+  return items.slice(0, -1).join(', ') + ', and ' + items[items.length - 1];
+}
+
+// 1) Concise first-person screener-review blurb (results documentation).
+// Input: scoredBattery from scoreBattery(). Returns a clean paragraph string.
+function screenerReviewBlurb(scoredBattery) {
+  var results = (scoredBattery && scoredBattery.results) || [];
+  if (!results.length) return '';
+  var names = results.map(function (r) { return r.instrumentName; });
+  var lead = 'I reviewed patient-completed screeners, including ' + joinClause(names) + '. ';
+  var sentences = results.map(function (r) {
+    // Reuse each instrument's own chart language (already score-accurate).
+    return r.chartLanguage;
+  });
+  var closing = ' Screening results are not diagnostic and were reviewed in the context of the clinical interview, history, risk assessment, and diagnostic formulation.';
+  return lead + sentences.join(' ') + closing;
+}
+
+// 2) Narrative endorsed-only HPI symptom-domain blurb (screening-provenance).
+// Input: scoredBattery + the raw responsesByInstrument map. Returns a paragraph.
+function hpiSymptomBlurb(scoredBattery, responsesByInstrument) {
+  var results = (scoredBattery && scoredBattery.results) || [];
+  if (!results.length) return '';
+  var parts = [];
+  for (var i = 0; i < results.length; i++) {
+    var r = results[i];
+    var instId = r.instrumentId;
+    var map = SYMPTOM_MAP[instId];
+    if (!map) continue;
+    var resp = (responsesByInstrument && responsesByInstrument[instId]) || {};
+    var phrases = endorsedPhrases(instId, resp);
+    if (!phrases.length) {
+      parts.push('On ' + r.instrumentName + ' screening (' + map.domainLabel.toLowerCase() + '), the patient did not endorse symptoms above the screening threshold.');
+      continue;
+    }
+    parts.push(map.domainLabel + ' symptoms endorsed on ' + r.instrumentName + ' screening include ' + joinClause(phrases) + '.');
+  }
+  var lead = 'Screening responses were reviewed as part of the diagnostic interview. ';
+  var closing = ' These are screening-derived self-report findings, not stand-alone diagnoses, and were integrated with interview data, history, and clinical judgment.';
+  return lead + parts.join(' ') + closing;
+}
+
 module.exports = {
   INSTRUMENTS: INSTRUMENTS,
   PATIENT_SEND_IDS: PATIENT_SEND_IDS,
+  SYMPTOM_MAP: SYMPTOM_MAP,
   getRenderDef: getRenderDef,
   isPatientSendAllowed: isPatientSendAllowed,
   scoreInstrument: scoreInstrument,
   scoreBattery: scoreBattery,
-  deidentifiedMetadata: deidentifiedMetadata
+  deidentifiedMetadata: deidentifiedMetadata,
+  endorsedPhrases: endorsedPhrases,
+  screenerReviewBlurb: screenerReviewBlurb,
+  hpiSymptomBlurb: hpiSymptomBlurb
 };
