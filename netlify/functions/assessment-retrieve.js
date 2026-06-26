@@ -7,6 +7,8 @@
 // Also supports two ownership-restricted management actions on the same endpoint:
 //   action: 'retrieve' (default) - return scored report
 //   action: 'expire'             - manually expire a pending assessment
+//   action: 'delete'             - clinician-initiated PHI delete (same end state
+//                                  as the 30-day purge) for a completed record
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, CIRCLE_API_V2_TOKEN
 
@@ -95,6 +97,39 @@ exports.handler = async (event) => {
       return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Could not expire assessment' }) };
     }
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, status: 'expired' }) };
+  }
+
+  // ── Manage: clinician-initiated delete of PHI (same end state as the 30-day
+  //    purge, but on demand). Deletes the PHI-bearing result row, nulls the
+  //    patient name, stamps purged_at; KEEPS the assessment row + de-identified
+  //    metadata. Only allowed on completed/retrieved records (not pending).
+  if (action === 'delete') {
+    if (assessment.status !== 'completed' && assessment.status !== 'retrieved') {
+      return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Only completed assessments can be deleted.' }) };
+    }
+    if (assessment.purged_at) {
+      // Already purged; nothing to delete. Idempotent success.
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, alreadyPurged: true }) };
+    }
+    // Delete the PHI-bearing result row(s).
+    const { error: delErr } = await sb
+      .from('assessment_results')
+      .delete()
+      .eq('assessment_id', assessmentId);
+    if (delErr) {
+      console.error('assessment delete (results) failed:', delErr);
+      return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Could not delete results' }) };
+    }
+    // Null the patient name + stamp purged (mirrors purge_assessment_phi()).
+    const { error: updErr } = await sb
+      .from('assessments')
+      .update({ patient_name: null, purged_at: new Date().toISOString() })
+      .eq('id', assessmentId);
+    if (updErr) {
+      console.error('assessment delete (mark purged) failed:', updErr);
+      return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Results deleted but record update failed' }) };
+    }
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, deleted: true }) };
   }
 
   // ── Retrieve scored report ──
