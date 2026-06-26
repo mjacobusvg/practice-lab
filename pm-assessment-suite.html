@@ -416,9 +416,10 @@ function renderDashboard(items){
     html += '<div class="row-actions">';
     if(a.status==='completed' || a.status==='retrieved'){
       if(a.purged){
-        html += '<span style="font-size:.78rem;color:var(--cream-dim)">Results deleted (30-day retention). Summary metadata retained.</span>';
+        html += '<span style="font-size:.78rem;color:var(--cream-dim)">Results deleted. Summary metadata retained.</span>';
       } else {
         html += '<button class="btn-small teal" onclick="retrieve(\''+a.id+'\')">View results</button>';
+        html += '<button class="btn-small danger" onclick="deleteResults(\''+a.id+'\')">Delete results</button>';
       }
     } else if(a.status==='pending'){
       html += '<button class="btn-small outline" onclick="copyExisting(\''+a.id+'\')">Copy link</button>';
@@ -449,6 +450,23 @@ async function expireAssessment(id){
     var data = await res.json();
     if(data.ok){ toast('Link expired'); loadDashboard(); }
     else { toast(data.error || 'Could not expire.','error'); }
+  }catch(e){ toast('Network error.','error'); }
+}
+
+async function deleteResults(id){
+  var msg = 'Delete these results now?\n\n'
+    + 'This permanently removes the patient\u2019s responses and scored report from the Assessment Suite. '
+    + 'Make sure you have already entered everything you need into the chart, because this cannot be undone.\n\n'
+    + 'The de-identified summary (instruments, score bands, dates \u2014 no patient identifiers) is kept; the patient\u2019s answers are gone.';
+  if(!confirm(msg)) return;
+  try{
+    var res = await fetch('/.netlify/functions/assessment-retrieve',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ providerEmail: PROVIDER_EMAIL, assessmentId: id, action:'delete' })
+    });
+    var data = await res.json();
+    if(data.ok){ toast('Results deleted'); loadDashboard(); }
+    else { toast(data.error || 'Could not delete.','error'); }
   }catch(e){ toast('Network error.','error'); }
 }
 
