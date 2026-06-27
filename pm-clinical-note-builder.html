@@ -377,19 +377,99 @@ bind('scope-opts','data-scope',function(v){
 });
 
 async function callAPI(systemPrompt, messages, maxTokens){
-  var response = await fetch('/.netlify/functions/clinical-proxy', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({
-      model:'claude-sonnet-4-6',
-      max_tokens: maxTokens || 2000,
-      system: systemPrompt,
-      messages: messages
-    })
-  });
-  var data = await response.json();
-  if(data.error) throw new Error(data.error.message || data.error);
-  return (data.content || []).filter(function(b){return b.type==='text';}).map(function(b){return b.text;}).join('\n').trim();
+  var response;
+  var authToken = '';
+  try { authToken = localStorage.getItem('tbp_auth_token') || ''; } catch(e){}
+  try {
+    response = await fetch('/.netlify/functions/clinical-proxy-stream', {
+      method:'POST',
+      headers:{'Content-Type':'application/json', 'Authorization':'Bearer ' + authToken},
+      body: JSON.stringify({
+        token: authToken,
+        model:'claude-sonnet-4-6',
+        max_tokens: maxTokens || 2000,
+        system: systemPrompt,
+        messages: messages
+      })
+    });
+  } catch(netErr){
+    throw new Error('Could not reach the server. Check your connection and try again.');
+  }
+
+  // On an upstream error the proxy returns JSON (not a stream). Detect that and surface it cleanly.
+  var ctype = response.headers.get('content-type') || '';
+  if(!response.ok || ctype.indexOf('application/json') !== -1){
+    var errText = await response.text();
+    var msg;
+    try { var j = JSON.parse(errText); msg = j.error && (j.error.message || j.error) ? (j.error.message || j.error) : (j.error || errText); }
+    catch(e){ msg = errText && errText.charAt(0) === '<'
+      ? 'The server timed out or returned an error page. This note may be very long — try again, or shorten the input (e.g. trim the reviewed-records section).'
+      : (errText || ('Request failed (' + response.status + ').')); }
+    throw new Error(msg);
+  }
+
+  // Stream path: read the SSE body and reassemble the text from content_block_delta events.
+  if(!response.body || !response.body.getReader){
+    // Fallback: no streaming support in this browser — read the whole body and parse SSE from the string.
+    var whole = await response.text();
+    return reassembleSSE(whole);
+  }
+
+  var reader = response.body.getReader();
+  var decoder = new TextDecoder();
+  var buffer = '';
+  var assembled = '';
+  var streamErr = null;
+
+  while(true){
+    var chunk = await reader.read();
+    if(chunk.done) break;
+    buffer += decoder.decode(chunk.value, { stream:true });
+    var idx;
+    while((idx = buffer.indexOf('\n\n')) !== -1){
+      var rawEvent = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      var lines = rawEvent.split('\n');
+      for(var i=0;i<lines.length;i++){
+        var line = lines[i];
+        if(line.indexOf('data:') !== 0) continue;
+        var dataStr = line.slice(5).trim();
+        if(!dataStr || dataStr === '[DONE]') continue;
+        try{
+          var evt = JSON.parse(dataStr);
+          if(evt.type === 'content_block_delta' && evt.delta && typeof evt.delta.text === 'string'){
+            assembled += evt.delta.text;
+          } else if(evt.type === 'error'){
+            streamErr = (evt.error && (evt.error.message || JSON.stringify(evt.error))) || 'stream error';
+          }
+        }catch(e){ /* ignore keep-alive / non-JSON lines */ }
+      }
+    }
+  }
+  if(streamErr) throw new Error(streamErr);
+  return assembled.trim();
+}
+
+// Reassemble assistant text from a full SSE string (non-streaming fallback path).
+function reassembleSSE(text){
+  var out = '';
+  var events = text.split('\n\n');
+  for(var e=0;e<events.length;e++){
+    var lines = events[e].split('\n');
+    for(var i=0;i<lines.length;i++){
+      var line = lines[i];
+      if(line.indexOf('data:') !== 0) continue;
+      var dataStr = line.slice(5).trim();
+      if(!dataStr || dataStr === '[DONE]') continue;
+      try{
+        var evt = JSON.parse(dataStr);
+        if(evt.type === 'content_block_delta' && evt.delta && typeof evt.delta.text === 'string'){
+          out += evt.delta.text;
+        }
+      }catch(e2){}
+    }
+  }
+  return out.trim();
 }
 
 function gatherInput(){
@@ -575,6 +655,50 @@ function renderPreflight(questions){
   });
 }
 
+// ── Generating-state tips (cycle while the model works; no live draft, avoids review-pass flicker) ──
+var NOTE_TIPS = [
+  "Documentation aid only — every generated section must be reviewed and signed by you.",
+  "The assessment is built from what you documented plus your preflight selections. It does not invent clinical content.",
+  "For a 90833 (16–37 min), keep the psychotherapy note to one or two therapeutic moves told plainly — proportionate to the time billed.",
+  "When the E/M is billed alongside a psychotherapy add-on, the E/M level is set by MDM complexity, not time (CPT 2025).",
+  "A stable, no-change visit is a short assessment — even when the HPI touches many topics. Length should track decisions, not word count.",
+  "Run the finished note through the Chart Audit + Coder to confirm what your documentation actually supports.",
+  "Multi-select cards let you hold several contributors at once — the assessment will weave them as a differential rather than pick one.",
+  "Pre-change dose in the HPI and post-change dose in the Plan is normal documentation of a med change, not a contradiction.",
+  "Carried diagnoses stay on the problem list during well periods — a negative ROS today doesn't retire a chronic diagnosis.",
+  "The assessment may propose a diagnosis, code, or modifier (e.g. 'in full remission') you did not specify — especially on a new patient with no prior problem list. Treat these as suggestions: confirm the ones you agree with and change the rest before signing.",
+  "Coding by time instead of MDM? The Chart Audit + Coder has a time-based mode — enter your face-to-face, prep, and documentation minutes and it computes the E/M code plus any 99417 units, with a chart-ready attestation.",
+  "Nothing is stored. PHI is processed transiently to generate your sections and is not retained."
+];
+var _tipTimer = null;
+function startTips(){
+  var host = document.getElementById('results');
+  if(!host) return;
+  var order = NOTE_TIPS.slice();
+  for(var i=order.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=order[i]; order[i]=order[j]; order[j]=t; }
+  var idx = 0;
+  function paint(){
+    host.innerHTML =
+      '<div style="background:var(--navy-card);border:1px solid var(--rule);border-radius:var(--radius);padding:22px 24px;display:flex;align-items:flex-start;gap:14px">' +
+        '<span class="spinner" style="margin-top:3px;flex:0 0 auto"></span>' +
+        '<div>' +
+          '<div style="font-size:.72rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--teal);margin-bottom:6px">Generating — while you wait</div>' +
+          '<div id="tip-text" style="font-size:.9rem;color:var(--cream);line-height:1.6">' + order[idx].replace(/</g,'&lt;') + '</div>' +
+        '</div>' +
+      '</div>';
+  }
+  paint();
+  _tipTimer = setInterval(function(){
+    idx = (idx + 1) % order.length;
+    var el = document.getElementById('tip-text');
+    if(el){ el.style.opacity = '0'; setTimeout(function(){ el.textContent = order[idx]; el.style.opacity = '1'; }, 180); }
+    el && (el.style.transition = 'opacity .18s ease');
+  }, 3200);
+}
+function stopTips(){
+  if(_tipTimer){ clearInterval(_tipTimer); _tipTimer = null; }
+}
+
 // ── STEP 2: Generate ──
 document.getElementById('go').addEventListener('click', function(){ runGenerate(gatherInput()); });
 
@@ -584,6 +708,7 @@ async function runGenerate(inp){
   btn.innerHTML='<span class="spinner"></span>Generating…';
   document.getElementById('results').innerHTML='';
   document.getElementById('handoff').style.display='none';
+  startTips();
 
   var code='90833', timeChoice='', modality='', clinicalDecisions=[], lengthChoice='';
   preflightQuestions.forEach(function(q, qi){
@@ -654,6 +779,7 @@ async function runGenerate(inp){
         // If review fails or returns non-JSON, fall back to the unreviewed draft rather than blocking output
         html += outBlock('Assessment', 'out-assess', assessText);
       }
+      stopTips();
       document.getElementById('results').innerHTML = html;
     }
     if((scope==='therapy' || scope==='both') && !noTherapy){
@@ -663,13 +789,17 @@ async function runGenerate(inp){
         '\n\nGenerate the psychotherapy add-on documentation matched to this modality, using the five labeled sections. Infer the therapeutic focus from the modality and HPI.';
       var therapyText = await callAPI(THERAPY_SYS, [{role:'user', content: userMsg}], 2000);
       html += outBlock('Psychotherapy add-on ('+code+')', 'out-therapy', therapyText);
+      stopTips();
       document.getElementById('results').innerHTML = html;
     }
     document.getElementById('handoff').style.display='block';
     document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
   }catch(err){
+    stopTips();
+    if(document.getElementById('results')) document.getElementById('results').innerHTML='';
     if(document.getElementById('err-box2')) document.getElementById('err-box2').innerHTML='<div class="err">Generation failed: '+(err.message||err)+'. Please try again.</div>';
   }finally{
+    stopTips();
     btn.disabled=false; btn.textContent=orig;
   }
 }
