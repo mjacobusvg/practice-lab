@@ -141,6 +141,28 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
 .bundle-chip.save{border-style:dashed;color:var(--cream-dim)}
 .bundle-del{color:var(--cream-dim);font-weight:700;font-size:1rem;line-height:1;padding-left:2px}
 .bundle-del:hover{color:var(--red)}
+.spark-wrap{display:flex;align-items:center;gap:10px;margin-top:10px;padding-top:10px;border-top:1px solid rgba(42,171,184,0.1)}
+.spark-label{font-size:.72rem;font-weight:700;color:var(--teal);white-space:nowrap}
+.spark-seq{font-size:.72rem;color:var(--cream-dim)}
+.interp-check{background:var(--navy-mid);border:1px solid var(--rule);border-radius:9px;padding:14px 16px;margin-bottom:16px}
+.interp-head{font-size:.8rem;font-weight:700;color:var(--white);margin-bottom:8px}
+.interp-item{display:flex;align-items:flex-start;gap:8px;font-size:.82rem;color:var(--cream);padding:4px 0;cursor:pointer}
+.interp-item input{accent-color:var(--teal);margin-top:2px}
+.sched-card{background:var(--navy-mid);border:1px solid var(--rule);border-radius:9px;padding:14px 16px;margin-bottom:10px}
+.sched-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.sched-label{font-size:.92rem;font-weight:700;color:var(--white)}
+.sched-status{font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 9px;border-radius:20px}
+.sched-status.active{background:var(--teal-glow);color:var(--teal)}
+.sched-status.paused{background:rgba(251,191,36,0.14);color:var(--amber)}
+.sched-meta{font-size:.78rem;color:var(--cream-dim);margin-bottom:3px}
+.sched-form-card{background:var(--navy-mid);border:1px solid var(--teal);border-radius:9px;padding:18px;margin-bottom:14px}
+.sched-form-row{margin-bottom:14px}
+.sched-inst-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:4px}
+@media(max-width:600px){.sched-inst-grid{grid-template-columns:1fr}}
+.sched-inst{display:flex;align-items:center;gap:7px;font-size:.84rem;color:var(--cream);cursor:pointer}
+.sched-inst input{accent-color:var(--teal)}
+.sched-ack{display:flex;align-items:flex-start;gap:9px;font-size:.82rem;color:var(--cream);line-height:1.5;margin:6px 0 16px;cursor:pointer}
+.sched-ack input{accent-color:var(--teal);margin-top:2px;flex-shrink:0}
 </style>
 </head>
 <body>
@@ -166,6 +188,12 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
       <label class="field-label">Patient name or your reference</label>
       <input type="text" class="field-input" id="patient-name" placeholder="e.g., Jane Doe">
       <div class="field-hint">Used so you can identify the returned result. Stored securely and deleted with the rest of the record after 30 days.</div>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Trend match key <span style="font-weight:400;color:var(--cream-dim)">(optional)</span></label>
+      <input type="text" class="field-input" id="match-key" placeholder="e.g., Doe 1985-03-12">
+      <div class="field-hint">Last name + date of birth. Used only to link this patient\u2019s assessments over time for a progress trend. It is hashed on our server and never stored as text. Leave blank to skip trend tracking for this send.</div>
     </div>
 
     <div class="field-group">
@@ -222,6 +250,14 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
       <button class="btn-secondary" onclick="loadDashboard()">Refresh</button>
     </div>
     <div id="dashboard-list"><div class="loading-row">Loading…</div></div>
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:28px 0 14px">
+      <div class="section-title" style="margin:0">Recurring (autosend)</div>
+      <button class="btn-secondary" onclick="openScheduleForm()">+ New recurring send</button>
+    </div>
+    <div class="field-hint" style="margin-bottom:12px">Automatically email a patient the same screeners on a schedule, so their progress trend fills in over time. Email delivery only. The patient can opt out from any message; you can pause or end any schedule here.</div>
+    <div id="schedule-form" style="display:none"></div>
+    <div id="schedule-list"><div class="loading-row">Loading…</div></div>
   </div>
 </div>
 
@@ -441,6 +477,7 @@ async function generate(){
   try { vault = JSON.parse(localStorage.getItem('credentialing-hub-profile') || '{}'); } catch(e){}
 
   var reasonSent = (document.getElementById('reason-sent') || {}).value || '';
+  var matchKey = (document.getElementById('match-key') || {}).value || '';
 
   try{
     var res = await fetch('/.netlify/functions/assessment-create',{
@@ -452,6 +489,7 @@ async function generate(){
         delivery: delivery,
         patientEmail: delivery==='email' ? document.getElementById('patient-email').value.trim() : '',
         reasonSent: reasonSent || null,
+        matchKey: matchKey || null,
         replyTo: vault.email || null
       })
     });
@@ -495,6 +533,7 @@ function showLinkResult(data){
   // reset form selections lightly
   document.getElementById('patient-name').value = '';
   document.getElementById('patient-email').value = '';
+  var mk = document.getElementById('match-key'); if(mk) mk.value = '';
   selectedInstruments = [];
   CATALOG.forEach(function(c){
     document.getElementById('ic-'+c.id).classList.remove('selected');
@@ -524,6 +563,131 @@ async function loadDashboard(){
   }catch(e){
     list.innerHTML = '<div class="empty-state">Network error loading assessments.</div>';
   }
+  loadSchedules();
+}
+
+async function loadSchedules(){
+  var list = document.getElementById('schedule-list');
+  if(!list) return;
+  list.innerHTML = '<div class="loading-row">Loading…</div>';
+  try{
+    var res = await fetch('/.netlify/functions/assessment-schedule',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ providerEmail: PROVIDER_EMAIL, action:'list' })
+    });
+    var data = await safeJson(res);
+    if(!data || !data.ok){ list.innerHTML = '<div class="empty-state">Could not load schedules.</div>'; return; }
+    renderSchedules(data.schedules || []);
+  }catch(e){
+    list.innerHTML = '<div class="empty-state">Network error loading schedules.</div>';
+  }
+}
+
+function renderSchedules(items){
+  var list = document.getElementById('schedule-list');
+  if(!items.length){ list.innerHTML = '<div class="empty-state">No recurring sends set up.</div>'; return; }
+  var html = '';
+  items.forEach(function(s){
+    var paused = s.status === 'paused';
+    html += '<div class="sched-card">';
+    html += '<div class="sched-head"><span class="sched-label">'+escapeHtml(s.patient_label || 'Unlabeled patient')+'</span>';
+    html += '<span class="sched-status '+(paused?'paused':'active')+'">'+(paused?'Paused':'Active')+'</span></div>';
+    html += '<div class="sched-meta">'+escapeHtml(instNames(s.instrument_set||[]))+' · '+escapeHtml(s.cadence)+'</div>';
+    html += '<div class="sched-meta">Next: '+fmtDate(s.next_run_at)+(s.sends_count?(' · '+s.sends_count+' sent'):'')+(s.end_date?(' · ends '+fmtDate(s.end_date)):'')+'</div>';
+    html += '<div class="row-actions">';
+    if(paused){ html += '<button class="btn-small teal" onclick="scheduleAction(\''+s.id+'\',\'resume\')">Resume</button>'; }
+    else { html += '<button class="btn-small outline" onclick="scheduleAction(\''+s.id+'\',\'pause\')">Pause</button>'; }
+    html += '<button class="btn-small danger" onclick="endSchedule(\''+s.id+'\')">End</button>';
+    html += '</div></div>';
+  });
+  list.innerHTML = html;
+}
+
+async function scheduleAction(id, action){
+  try{
+    var res = await fetch('/.netlify/functions/assessment-schedule',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ providerEmail: PROVIDER_EMAIL, action:action, scheduleId:id })
+    });
+    var data = await safeJson(res);
+    if(data && data.ok){ toast(action==='pause'?'Paused':'Resumed'); loadSchedules(); }
+    else { toast((data && data.error) || 'Could not update.','error'); }
+  }catch(e){ toast('Network error.','error'); }
+}
+
+async function endSchedule(id){
+  if(!confirm('End this recurring send? No further questionnaires will go out on this schedule. This cannot be undone (you can create a new one later). Past results and trend history are kept.')) return;
+  try{
+    var res = await fetch('/.netlify/functions/assessment-schedule',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ providerEmail: PROVIDER_EMAIL, action:'end', scheduleId:id })
+    });
+    var data = await safeJson(res);
+    if(data && data.ok){ toast('Recurring send ended'); loadSchedules(); }
+    else { toast((data && data.error) || 'Could not end.','error'); }
+  }catch(e){ toast('Network error.','error'); }
+}
+
+function openScheduleForm(){
+  var f = document.getElementById('schedule-form');
+  if(f.style.display==='block'){ f.style.display='none'; return; }
+  var instOpts = CATALOG.map(function(c){
+    return '<label class="sched-inst"><input type="checkbox" value="'+c.id+'"> '+escapeHtml(c.name)+'</label>';
+  }).join('');
+  f.innerHTML =
+    '<div class="sched-form-card">'
+    + '<div class="sched-form-row"><label class="field-label">Patient label (optional)</label>'
+    + '<input type="text" class="field-input" id="sch-label" placeholder="e.g., Doe, J."></div>'
+    + '<div class="sched-form-row"><label class="field-label">Trend match key (required)</label>'
+    + '<input type="text" class="field-input" id="sch-matchkey" placeholder="e.g., Doe 1985-03-12">'
+    + '<div class="field-hint">Last name + DOB. Hashed on our server; links this patient\u2019s sends into one trend.</div></div>'
+    + '<div class="sched-form-row"><label class="field-label">Patient email (required)</label>'
+    + '<input type="email" class="field-input" id="sch-email" placeholder="patient@example.com">'
+    + '<div class="field-hint">Stored so the schedule can send automatically. By scheduling, you confirm the patient consented to receive health information by email.</div></div>'
+    + '<div class="sched-form-row"><label class="field-label">Instruments</label>'
+    + '<div class="sched-inst-grid">'+instOpts+'</div></div>'
+    + '<div class="sched-form-row"><label class="field-label">Cadence</label>'
+    + '<select class="field-select" id="sch-cadence"><option value="weekly">Weekly</option><option value="monthly" selected>Monthly</option><option value="quarterly">Quarterly</option></select></div>'
+    + '<div class="sched-form-row"><label class="field-label">End date (optional)</label>'
+    + '<input type="date" class="field-input" id="sch-enddate"></div>'
+    + '<label class="sched-ack"><input type="checkbox" id="sch-consent"> <span>I confirm I have informed this patient and have their consent to receive recurring assessment questionnaires by email as part of their care.</span></label>'
+    + '<button class="btn-primary" onclick="createSchedule()">Start recurring send</button>'
+    + '</div>';
+  f.style.display='block';
+}
+
+async function createSchedule(){
+  var label = document.getElementById('sch-label').value.trim();
+  var matchKey = document.getElementById('sch-matchkey').value.trim();
+  var email = document.getElementById('sch-email').value.trim();
+  var cadence = document.getElementById('sch-cadence').value;
+  var endDate = document.getElementById('sch-enddate').value;
+  var instruments = [];
+  document.querySelectorAll('#schedule-form .sched-inst input:checked').forEach(function(cb){ instruments.push(cb.value); });
+  if(!matchKey){ toast('Match key (name + DOB) is required.','error'); return; }
+  if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){ toast('Enter a valid patient email.','error'); return; }
+  if(!instruments.length){ toast('Select at least one instrument.','error'); return; }
+  var consent = document.getElementById('sch-consent');
+  if(!consent || !consent.checked){ toast('Please confirm patient consent for recurring sends.','error'); return; }
+  try{
+    var res = await fetch('/.netlify/functions/assessment-schedule',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        providerEmail: PROVIDER_EMAIL, action:'create',
+        patientLabel: label || null, matchKey: matchKey, patientEmail: email,
+        instrumentSet: instruments, cadence: cadence, endDate: endDate || null,
+        reasonSent: 'monitoring'
+      })
+    });
+    var data = await safeJson(res);
+    if(data && data.ok){
+      toast('Recurring send started');
+      document.getElementById('schedule-form').style.display='none';
+      loadSchedules();
+    } else {
+      toast((data && data.error) || 'Could not create schedule.','error');
+    }
+  }catch(e){ toast('Network error.','error'); }
 }
 
 function instNames(ids){
@@ -603,9 +767,9 @@ async function expireAssessment(id){
 
 async function deleteResults(id){
   var msg = 'Delete these results now?\n\n'
-    + 'This permanently removes the patient\u2019s responses and scored report from the Assessment Suite. '
+    + 'This permanently removes the patient\u2019s responses and scored report, and removes this entry from your Sent & Returned list. '
     + 'Make sure you have already entered everything you need into the chart, because this cannot be undone.\n\n'
-    + 'The de-identified summary (instruments, score bands, dates \u2014 no patient identifiers) is kept; the patient\u2019s answers are gone.';
+    + 'If you use trend tracking, the de-identified score point (no name, no answers) is kept so the patient\u2019s progress line stays intact.';
   if(!confirm(msg)) return;
   try{
     var res = await fetch('/.netlify/functions/assessment-retrieve',{
@@ -763,6 +927,9 @@ function buildReviewPanel(data){
       html += buildChipGrid(s.instrumentId, resp);
     }
 
+    // Trend sparkline (longitudinal score series for this patient)
+    html += buildSparkline(s.instrumentId);
+
     html += '</div>';
   });
 
@@ -795,8 +962,38 @@ function buildWfirsCard(s){
   }
   html += '</div>';
   html += '<div class="ace-note">Impairment threshold (validated): a domain flags as impaired with \u22652 items rated 2, \u22651 item rated 3, or a domain mean above 1.5. Measures functional impact, not symptoms; not diagnostic alone.</div>';
+  html += buildSparkline('wfirs');
   html += '</div>';
   return html;
+}
+
+// Inline SVG sparkline of the patient's score trajectory for one instrument.
+// Reads LAST_DATA.trends[instId] = [{score,band,date}, ...] (oldest first).
+function buildSparkline(instId){
+  var series = (LAST_DATA && LAST_DATA.trends && LAST_DATA.trends[instId]) || [];
+  if(series.length < 2) return ''; // need at least two points for a trend
+  var vals = series.map(function(p){ return (typeof p.score==='number')?p.score:0; });
+  var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+  var range = (max - min) || 1;
+  var W = 180, H = 36, pad = 4;
+  var step = (W - pad*2) / (vals.length - 1);
+  var pts = vals.map(function(v, i){
+    var x = pad + i*step;
+    var y = H - pad - ((v - min)/range) * (H - pad*2);
+    return [x, y];
+  });
+  var path = pts.map(function(p, i){ return (i===0?'M':'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1); }).join(' ');
+  var first = vals[0], last = vals[vals.length-1];
+  var dir = last < first ? 'down' : (last > first ? 'up' : 'flat');
+  var arrow = dir==='down' ? '\u2193' : (dir==='up' ? '\u2191' : '\u2192');
+  var svg = '<svg viewBox="0 0 '+W+' '+H+'" width="'+W+'" height="'+H+'" preserveAspectRatio="none">';
+  svg += '<polyline points="'+pts.map(function(p){return p[0].toFixed(1)+','+p[1].toFixed(1);}).join(' ')+'" fill="none" stroke="var(--teal)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+  // endpoint dots
+  svg += '<circle cx="'+pts[0][0].toFixed(1)+'" cy="'+pts[0][1].toFixed(1)+'" r="2.5" fill="var(--cream-dim)"/>';
+  svg += '<circle cx="'+pts[pts.length-1][0].toFixed(1)+'" cy="'+pts[pts.length-1][1].toFixed(1)+'" r="3" fill="var(--teal)"/>';
+  svg += '</svg>';
+  var seq = vals.join(' \u2192 ');
+  return '<div class="spark-wrap"><span class="spark-label">Trend '+arrow+'</span>'+svg+'<span class="spark-seq">'+escapeHtml(seq)+'</span></div>';
 }
 
 function buildChipGrid(instId, resp){
@@ -859,6 +1056,15 @@ function buildChartPanel(data){
   var review = b.screenerReview || buildChartText(data);
   var hpi = b.hpiSymptom || '';
   var html = '';
+
+  // Interpretation checklist — reinforces correct use before pasting to chart.
+  html += '<div class="interp-check">'
+    + '<div class="interp-head">Before charting, confirm:</div>'
+    + '<label class="interp-item"><input type="checkbox"> Results reviewed in full</label>'
+    + '<label class="interp-item"><input type="checkbox"> Any risk items addressed</label>'
+    + '<label class="interp-item"><input type="checkbox"> Scores interpreted in context of interview and history</label>'
+    + '<label class="interp-item"><input type="checkbox"> Screening results not used as a standalone diagnosis</label>'
+    + '</div>';
 
   html += '<div class="blurb-sec">';
   html += '<div class="blurb-head">Screener review blurb<span class="blurb-sub">data reviewed / assessment section</span></div>';
