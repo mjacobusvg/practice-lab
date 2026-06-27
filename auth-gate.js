@@ -304,9 +304,12 @@
 
     // 1) BAA check (fail closed). Require the CURRENT version: a member who
     // signed an older version (e.g. 1.0) does not satisfy 2.0 and is sent to re-sign.
+    // Identity is the SIGNED token; check-baa-status derives the email from it.
+    var authToken = getSessionToken();
     fetch('/.netlify/functions/check-baa-status', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email })
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+      body: JSON.stringify({ token: authToken })
     })
     .then(function(r){ return r.ok ? r.json() : { hasBaa: false }; })
     .then(function(baa){
