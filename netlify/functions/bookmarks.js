@@ -3,6 +3,8 @@
 // pre-launch (same posture as roadmap votes); switches to session auth with
 // Supabase Auth. Env vars: SUPABASE_URL, SUPABASE_SERVICE_KEY.
 
+const { verifyToken } = require('./_lib/session');
+
 exports.handler = async function (event) {
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -34,8 +36,16 @@ exports.handler = async function (event) {
   try { p = JSON.parse(event.body || '{}'); }
   catch (e) { return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Invalid JSON' }) }; }
 
-  const email = String(p.email || '').trim().toLowerCase();
-  if (!email || email.indexOf('@') === -1) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Sign in first' }) };
+  // Identity from the SIGNED session token (body.token or Authorization: Bearer),
+  // never from a client-supplied email. Bookmarks are available to ANY member
+  // (forum or full) — no tier gate.
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const sessionToken = (p.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+  const session = verifyToken(sessionToken);
+  if (!session.valid) return { statusCode: 401, headers, body: JSON.stringify({ ok: false, error: 'Sign in first' }) };
+  if (session.claims.scope !== 'member') return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Members only' }) };
+  const email = String(session.claims.email || '').trim().toLowerCase();
+  if (!email || email.indexOf('@') === -1) return { statusCode: 401, headers, body: JSON.stringify({ ok: false, error: 'Sign in first' }) };
   const emailFilter = 'member_email=eq.' + encodeURIComponent(email);
 
   try {
