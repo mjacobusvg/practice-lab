@@ -6,6 +6,8 @@
 //   SUPABASE_URL                e.g. https://ubcrrrapedaxkguxniwv.supabase.co
 //   SUPABASE_SERVICE_KEY   service_role key (never expose client-side)
 
+const { verifyToken } = require('./_lib/session');
+
 const ADMIN_EMAILS = ['michael@thinkbeyondpsych.com'];
 const MICHAEL_ACCOUNT_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -71,9 +73,15 @@ exports.handler = async function (event) {
   try { p = JSON.parse(event.body || '{}'); }
   catch (e) { return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Invalid JSON' }) }; }
 
-  // Admin gate. Client-supplied email matched against allowlist: same trust
-  // posture as the existing auth-gate. Tighten when Supabase Auth lands.
-  const email = String(p.email || '').toLowerCase().trim();
+  // Admin gate. Identity from the SIGNED token (not a client-supplied email), then
+  // matched against the admin allowlist. A spoofed email can no longer post as Michael.
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const sessionToken = (p.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+  const session = verifyToken(sessionToken);
+  if (!session.valid) {
+    return { statusCode: 401, headers, body: JSON.stringify({ ok: false, error: 'Invalid or expired session.' }) };
+  }
+  const email = String(session.claims.email || '').toLowerCase().trim();
   if (ADMIN_EMAILS.indexOf(email) === -1) {
     return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Not authorized' }) };
   }
