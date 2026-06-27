@@ -4,6 +4,7 @@
 // POST: contribute a new resource
 
 const fetch = require('node-fetch');
+const { verifyToken } = require('./_lib/session');
 
 exports.handler = async function(event) {
   const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -45,8 +46,15 @@ exports.handler = async function(event) {
       return { statusCode: 200, headers, body: JSON.stringify(data) };
 
     } else if (event.httpMethod === 'POST') {
-      // Contribute a new resource
+      // Contribute a new resource — MEMBER ONLY (signed token). Crisis resources are
+      // patient-safety content (phone numbers shown to people in crisis), so anonymous
+      // writes are not allowed: a member identity must stand behind every contribution.
       var body = JSON.parse(event.body);
+      var authHeader = event.headers.authorization || event.headers.Authorization || '';
+      var sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+      var session = verifyToken(sessionToken);
+      if (!session.valid) return { statusCode: 401, headers, body: JSON.stringify({ error: 'Sign in to contribute a resource.' }) };
+      if (session.claims.scope !== 'member') return { statusCode: 403, headers, body: JSON.stringify({ error: 'Members only.' }) };
       if (!body.state || !body.resource_name) return { statusCode: 400, headers, body: JSON.stringify({ error: 'state and resource_name required' }) };
 
       var record = {
@@ -55,7 +63,7 @@ exports.handler = async function(event) {
         resource_name: body.resource_name,
         phone: body.phone || null,
         instructions: body.instructions || null,
-        contributed_by: body.contributed_by || 'anonymous',
+        contributed_by: (session.claims.email || 'member'),
         is_default: false,
         verified: false
       };
