@@ -1,3 +1,4 @@
+var { verifyToken } = require('./_lib/session');
 // netlify/functions/send-document.js
 // Shared send utility for all Practice Manager tools.
 // Sends documents via Amazon SES using the SES v2 HTTPS API (AWS SDK v3).
@@ -58,6 +59,20 @@ exports.handler = async function(event) {
 
   try {
     var payload = JSON.parse(event.body);
+
+    // AUTH: clinical sender — full-tier only. Identity from signed token (body.token or
+    // Authorization: Bearer). Closes the open send-relay hole (spam/PHI/toll-fraud on our
+    // accounts). Server-side callers must forward the provider's token.
+    var __authHeader = event.headers.authorization || event.headers.Authorization || '';
+    var __sessionToken = (payload.token || __authHeader.replace(/^Bearer\s+/i, '')).trim();
+    var __session = verifyToken(__sessionToken);
+    if (!__session.valid) {
+      return { statusCode: 401, headers: headers, body: JSON.stringify({ error: 'Invalid or expired session.' }) };
+    }
+    if (!(__session.claims.scope === 'member' && __session.claims.tier === 'full')) {
+      return { statusCode: 403, headers: headers, body: JSON.stringify({ error: 'This tool requires the full Think Beyond Practice membership.' }) };
+    }
+
     var to = payload.to;
     var subject = payload.subject;
     var textBody = payload.body;
