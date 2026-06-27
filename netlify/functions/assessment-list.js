@@ -1,17 +1,20 @@
 // netlify/functions/assessment-list.js
 //
-// Provider-authenticated. Returns the list of assessments the provider has sent
-// (pending + completed + retrieved), with patient_name and status so they can
-// find and retrieve results. Verifies Circle membership and that the requesting
-// provider owns each row (provider_email match).
+// Provider-authenticated. Returns the assessments the provider has sent.
 //
-// Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, CIRCLE_API_V2_TOKEN
+// SECURITY (hardened): provider identity comes from the SIGNED SESSION TOKEN
+// (verified via _lib/session.js), NOT a client-supplied providerEmail. The list
+// is scoped to the token's verified email, so a caller cannot enumerate another
+// provider's patient list.
+//
+// Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, SESSION_SIGNING_SECRET
 
 const { createClient } = require('@supabase/supabase-js');
+const { verifyToken } = require('./_lib/session');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Content-Type': 'application/json'
 };
@@ -32,30 +35,21 @@ exports.handler = async (event) => {
   try { body = JSON.parse(event.body || '{}'); }
   catch (e) { return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Invalid request' }) }; }
 
-  const providerEmail = (body.providerEmail || '').trim().toLowerCase();
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+  const session = verifyToken(sessionToken);
+  if (!session.valid) {
+    return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Invalid or expired session.', reason: session.reason }) };
+  }
+  if (session.claims.scope !== 'member') {
+    return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'This tool requires full membership.' }) };
+  }
+  const providerEmail = (session.claims.email || '').trim().toLowerCase();
   if (!providerEmail) {
-    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'providerEmail required' }) };
+    return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Session missing identity.' }) };
   }
 
-  // Verify membership via circle-auth (the same path that gates the page).
-  try {
-    const base = (process.env.SITE_URL || 'https://thinkbeyondpractice.com').replace(/\/$/, '');
-    const verifyRes = await fetch(base + '/.netlify/functions/circle-auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: providerEmail })
-    });
-    const verifyData = await verifyRes.json().catch(() => ({}));
-    if (!verifyData.verified) {
-      return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'No active membership found.' }) };
-    }
-  } catch (e) {
-    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Membership verification failed.' }) };
-  }
-
-  const sb = createClient(SUPABASE_URL, SERVICE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
+  const sb = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 
   const { data, error } = await sb
     .from('assessments')
@@ -69,8 +63,6 @@ exports.handler = async (event) => {
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Could not load assessments' }) };
   }
 
-  // Shape for the dashboard. Include a hasFlags hint from deidentified_meta so the
-  // provider sees a risk indicator before retrieving (without exposing scores).
   const items = (data || []).map(function (r) {
     var hasFlags = false;
     if (Array.isArray(r.deidentified_meta)) {
