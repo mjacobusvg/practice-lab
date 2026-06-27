@@ -3,6 +3,8 @@
 // Files live in the private 'templates' Supabase Storage bucket (storage_path).
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY
 
+const { verifyToken } = require('./_lib/session');
+
 const ADMIN_EMAILS = ['michael@thinkbeyondpsych.com'];
 const VALID_TIERS = ['free', 'forum', 'full'];
 const VALID_CATS = ['documentation', 'billing', 'letters', 'policies', 'clinical', 'operations', 'general'];
@@ -21,7 +23,11 @@ exports.handler = async function (event) {
   if (!URL || !KEY) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'Missing env' }) };
 
   let p; try { p = JSON.parse(event.body || '{}'); } catch (e) { return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Bad JSON' }) }; }
-  const email = String(p.email || '').toLowerCase().trim();
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const sessionToken = (p.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+  const session = verifyToken(sessionToken);
+  if (!session.valid) return { statusCode: 401, headers, body: JSON.stringify({ ok: false, error: 'Invalid or expired session.' }) };
+  const email = String(session.claims.email || '').toLowerCase().trim();
   if (ADMIN_EMAILS.indexOf(email) === -1) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Not authorized' }) };
 
   const sbHeaders = { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json' };
