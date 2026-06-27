@@ -6,6 +6,9 @@ const { createClient } = require('@supabase/supabase-js');
 const SESv2 = require('@aws-sdk/client-sesv2');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 const https = require('https');
+const { verifyToken } = require('./_lib/session');
+
+function escHtml(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
 const supabase = createClient(
     process.env.SUPABASE_URL,
@@ -55,11 +58,23 @@ exports.handler = async (event) => {
     }
 
     try {
-        const { signerName, signerEmail, entityName, signerTitle, baaVersion, agreedAt } = JSON.parse(event.body);
+        const reqBody = JSON.parse(event.body);
+        const { signerName, entityName, signerTitle, baaVersion, agreedAt } = reqBody;
+
+        // Identity from the SIGNED token. The member_email recorded on the BAA — the one the
+        // PHI gate later checks via check-baa-status — MUST equal the member's login identity,
+        // not a client-declared email. This both blocks spoofing and prevents the
+        // signed-with-a-different-email-than-login mismatch that would trap a member behind
+        // the BAA wall forever.
+        const authHeader = event.headers['authorization'] || event.headers['Authorization'] || '';
+        const sessionToken = (reqBody.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+        const session = verifyToken(sessionToken);
+        if (!session.valid) return { statusCode: 401, body: JSON.stringify({ error: 'Invalid or expired session. Please sign in again and retry.' }) };
+        const signerEmail = (session.claims.email || '').toLowerCase().trim();
+        if (!signerEmail) return { statusCode: 401, body: JSON.stringify({ error: 'Session missing identity.' }) };
 
         // Validate
         if (!signerName || signerName.trim().length < 2) return { statusCode: 400, body: JSON.stringify({ error: 'Full legal name is required.' }) };
-        if (!signerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signerEmail)) return { statusCode: 400, body: JSON.stringify({ error: 'Valid email is required.' }) };
         if (!entityName || entityName.trim().length < 2) return { statusCode: 400, body: JSON.stringify({ error: 'Practice or entity name is required.' }) };
         if (!signerTitle || signerTitle.trim().length < 2) return { statusCode: 400, body: JSON.stringify({ error: 'Title is required.' }) };
 
@@ -207,7 +222,7 @@ exports.handler = async (event) => {
                 'Think Beyond Practice <notifications@thinkbeyondpractice.com>',
                 'michael@thinkbeyondpractice.com',
                 `BAA Signed: ${entityName.trim()} (${signerName.trim()})`,
-                `<p>New BAA signed:</p><p><b>Name:</b> ${signerName.trim()}<br><b>Email:</b> ${signerEmail.trim()}<br><b>Entity:</b> ${entityName.trim()}<br><b>Title:</b> ${signerTitle.trim()}<br><b>Version:</b> ${baaVersion}<br><b>Signed:</b> ${signedAt}<br><b>IP:</b> ${ipAddress}</p>`
+                `<p>New BAA signed:</p><p><b>Name:</b> ${escHtml(signerName.trim())}<br><b>Email:</b> ${escHtml(signerEmail)}<br><b>Entity:</b> ${escHtml(entityName.trim())}<br><b>Title:</b> ${escHtml(signerTitle.trim())}<br><b>Version:</b> ${escHtml(baaVersion)}<br><b>Signed:</b> ${escHtml(signedAt)}<br><b>IP:</b> ${escHtml(ipAddress)}</p>`
             );
         } catch (e) { console.error('Notify error:', e); }
 
