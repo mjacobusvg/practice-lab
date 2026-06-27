@@ -1,51 +1,55 @@
-// netlify/functions/user-tool-data.js
+// netlify/functions/user-tool-data.js  (thinkbeyondpractice repo)
 // Generic persistence layer for Practice Manager tools.
 // Stores per-user, per-tool JSON data in Supabase.
+//
+// SECURITY (hardened): identity comes from a SIGNED SESSION TOKEN, verified
+// server-side via _lib/session.js. The client no longer supplies its own email
+// — a caller cannot read or write another user's data by claiming their address.
+// The old email + circle-auth round-trip is removed entirely.
 //
 // Environment variables:
 //   SUPABASE_URL
 //   SUPABASE_SERVICE_KEY
+//   SESSION_SIGNING_SECRET   (must match every other repo/Netlify project)
 //
 // Endpoints (all POST):
-//   action: "load"   - Load saved data for a tool
-//   action: "save"   - Save/update data for a tool
-//   action: "delete" - Delete saved data for a tool
+//   action: "load" | "save" | "delete"
 //
 // Request body:
-//   email: string     - User's verified email (from tbp_verified_email)
-//   toolId: string    - Tool identifier (e.g., "hipaa_binder", "ce_tracker")
-//   action: string    - "load" | "save" | "delete"
-//   data: object      - (save only) The data to store
+//   token:  string  - signed session token (from localStorage 'tbp_auth_token')
+//   toolId: string  - tool identifier (e.g. "hipaa_binder", "ce_tracker", "vault_profile")
+//   action: string
+//   data:   object  - (save only) the data to store
 //
-// Security: Verifies email via the circle-auth function (which uses the correct
-// Circle API token routing). Previously this function called Circle's v1 endpoint
-// directly with a v2 token, which produced 403 errors. The circle-auth function
-// is the same one used by auth-gate.js across the platform.
+// SCOPE:
+//   'member' scope reaches every toolId.
+//   'hub' scope (standalone Credentialing Hub buyer) reaches ONLY 'vault_profile'
+//   (the shared provider profile the Hub depends on) — nothing else here.
+
+const { verifyToken } = require('./_lib/session');
+
+// Tools a non-member ('hub') scope may touch in this repo. Extend if more
+// tools become standalone-eligible.
+const HUB_ALLOWED_TOOLS = ['vault_profile'];
 
 exports.handler = async function(event) {
   var headers = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Content-Type': 'application/json'
   };
 
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers: headers, body: '' };
   }
-
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, headers: headers, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
   var supabaseUrl = process.env.SUPABASE_URL;
   var supabaseKey = process.env.SUPABASE_SERVICE_KEY;
-
   if (!supabaseUrl || !supabaseKey) {
-    return {
-      statusCode: 500,
-      headers: headers,
-      body: JSON.stringify({ error: 'Server configuration missing.' })
-    };
+    return { statusCode: 500, headers: headers, body: JSON.stringify({ error: 'Server configuration missing.' }) };
   }
 
   var body;
@@ -55,40 +59,44 @@ exports.handler = async function(event) {
     return { statusCode: 400, headers: headers, body: JSON.stringify({ error: 'Invalid request body.' }) };
   }
 
-  var email = (body.email || '').trim().toLowerCase();
+  // Token may arrive in the body or the Authorization: Bearer header.
+  var authHeader = event.headers.authorization || event.headers.Authorization || '';
+  var token = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
   var toolId = (body.toolId || '').trim();
   var action = (body.action || '').trim();
 
-  if (!email || !toolId || !action) {
-    return { statusCode: 400, headers: headers, body: JSON.stringify({ error: 'Missing required fields: email, toolId, action.' }) };
+  if (!token || !toolId || !action) {
+    return { statusCode: 400, headers: headers, body: JSON.stringify({ error: 'Missing required fields: token, toolId, action.' }) };
   }
-
   if (['load', 'save', 'delete'].indexOf(action) === -1) {
     return { statusCode: 400, headers: headers, body: JSON.stringify({ error: 'Invalid action. Must be load, save, or delete.' }) };
   }
 
-  // Verify membership via circle-auth, which is the canonical verification function
-  // used by auth-gate.js across the platform. Previously this function called Circle's
-  // v1 endpoint directly with CIRCLE_API_V2_TOKEN, which is a v2 token and gets rejected
-  // by v1 endpoints (403 unauthorized). circle-auth handles the correct token routing.
-  try {
-    var authUrl = (process.env.URL || process.env.DEPLOY_URL || '') + '/.netlify/functions/circle-auth';
-    var verifyRes = await fetch(authUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email })
-    });
+  // Verify the SIGNED token. Identity (email) comes from the verified token,
+  // never from client input.
+  var session = verifyToken(token);
+  if (!session.valid) {
+    return { statusCode: 401, headers: headers, body: JSON.stringify({ error: 'Invalid or expired session.', reason: session.reason }) };
+  }
 
-    if (!verifyRes.ok) {
-      return { statusCode: 403, headers: headers, body: JSON.stringify({ error: 'Could not verify membership.' }) };
-    }
+  // ACCESS RULES:
+  //   - vault_profile is the one shared store: ANY authenticated identity may use it
+  //     (full member, forum-only member, or standalone hub buyer). The Vault is just
+  //     data; it's useless without full-tier tools, so forum members may fill it out.
+  //   - Every OTHER toolId requires a FULL member (scope 'member' AND tier 'full').
+  //     Forum-only members (tier 'forum') and hub-scope buyers are blocked from them.
+  var scope = session.claims.scope;
+  var tier = session.claims.tier || null;
+  var SHARED_TOOLS = ['vault_profile'];
+  var isShared = SHARED_TOOLS.indexOf(toolId) !== -1;
+  var isFullMember = (scope === 'member' && tier === 'full');
+  if (!isShared && !isFullMember) {
+    return { statusCode: 403, headers: headers, body: JSON.stringify({ error: 'This tool requires the full Think Beyond Practice membership.' }) };
+  }
 
-    var authData = await verifyRes.json();
-    if (!authData || !authData.verified) {
-      return { statusCode: 403, headers: headers, body: JSON.stringify({ error: 'No active membership found for this email.' }) };
-    }
-  } catch(e) {
-    return { statusCode: 500, headers: headers, body: JSON.stringify({ error: 'Membership verification failed.' }) };
+  var email = (session.claims.email || '').trim().toLowerCase();
+  if (!email) {
+    return { statusCode: 401, headers: headers, body: JSON.stringify({ error: 'Session missing identity.' }) };
   }
 
   // Supabase REST API base
@@ -122,7 +130,6 @@ exports.handler = async function(event) {
         return { statusCode: 400, headers: headers, body: JSON.stringify({ error: 'Missing or invalid data field.' }) };
       }
 
-      // Upsert: try to update existing row, insert if not found
       var upsertRes = await fetch(
         tableUrl + '?on_conflict=email,tool_id',
         {
@@ -141,16 +148,14 @@ exports.handler = async function(event) {
         var errText = await upsertRes.text();
         return { statusCode: 500, headers: headers, body: JSON.stringify({ error: 'Save failed.', detail: errText }) };
       }
-
       return { statusCode: 200, headers: headers, body: JSON.stringify({ saved: true }) };
     }
 
     if (action === 'delete') {
-      var delRes = await fetch(
+      await fetch(
         tableUrl + '?email=eq.' + encodeURIComponent(email) + '&tool_id=eq.' + encodeURIComponent(toolId),
         { method: 'DELETE', headers: supaHeaders }
       );
-
       return { statusCode: 200, headers: headers, body: JSON.stringify({ deleted: true }) };
     }
   } catch(e) {
