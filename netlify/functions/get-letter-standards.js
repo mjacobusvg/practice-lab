@@ -1,3 +1,5 @@
+const { verifyToken } = require('./_lib/session');
+
 // netlify/functions/get-letter-standards.js
 // Returns active TBP Clinical Letter Standards.
 // Uses Supabase REST API directly (no SDK dependency).
@@ -12,18 +14,18 @@ exports.handler = async (event) => {
     'Access-Control-Allow-Methods': 'GET, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-Requested-With',
     'Content-Type': 'application/json',
-    'Cache-Control': 'public, max-age=300'
+    'Cache-Control': 'no-store'
   };
 
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers, body: '' };
   }
-  if (event.httpMethod !== 'GET') {
+  if (event.httpMethod !== 'GET' && event.httpMethod !== 'POST') {
     return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
   const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
   if (!SUPABASE_URL || !SERVICE_KEY) {
     return {
       statusCode: 500,
@@ -33,8 +35,27 @@ exports.handler = async (event) => {
   }
 
   const qs = event.queryStringParameters || {};
-  const email = (qs.email || '').toLowerCase().trim();
   const standardKey = (qs.standard_key || '').trim();
+
+  // Identity from the SIGNED token, never from a client-supplied ?email=. The Letter
+  // Generator is a full-tier tool; a valid full-member token unlocks that member's OWN
+  // authored templates in addition to system standards. Without a valid full token, only
+  // system standards are returned (still useful, not user-scoped, safe to cache).
+  let email = '';
+  let isFull = false;
+  let bodyObj = {};
+  if (event.httpMethod === 'POST') {
+    try { bodyObj = JSON.parse(event.body || '{}'); } catch (e) { bodyObj = {}; }
+  }
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const sessionToken = (bodyObj.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+  if (sessionToken) {
+    const session = verifyToken(sessionToken);
+    if (session.valid && session.claims.scope === 'member' && session.claims.tier === 'full') {
+      email = (session.claims.email || '').toLowerCase().trim();
+      isFull = true;
+    }
+  }
 
   // Build Supabase REST URL with PostgREST filters
   const selectCols = 'id,standard_key,variant_key,version,category_label,variant_label,short_description,spec,body_template,placeholders,conditional_blocks,optional_toggles,authored_by,author_name,is_system,is_shared_to_group,status,created_at,updated_at';
