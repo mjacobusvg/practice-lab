@@ -582,59 +582,196 @@ INSTRUMENTS['asrs'] = {
 
 // ── WFIRS-S (Weiss Functional Impairment Rating Scale — Self-Report) — free ───
 // Functional impairment companion to ADHD screening.
+// ── WFIRS-S (Weiss Functional Impairment Rating Scale — Self-Report) ──────────
+// The REAL validated instrument: 69 items across 7 domains, 0-3 Likert plus n/a.
+// © University of British Columbia 2011 (Margaret D. Weiss). Public domain to
+// encourage use; may be reproduced without permission provided the instrument is
+// unmodified and the copyright notice is retained. Items transcribed verbatim from
+// the CADDRA October 2011 WFIRS-S source.
+//
+// n/a handling: an item may be Not Applicable (e.g., no partner, not employed,
+// not in school). n/a is the value NA_VALUE (-1) and is OMITTED from all scoring
+// (domain mean, totals, impairment rule), per the published scoring instructions.
+//
+// Conditional domains: Work and School are gated on employment/enrollment status
+// collected up front; a respondent who is not employed/enrolled does not see those
+// items (they are treated as entirely n/a).
+//
+// Validated impairment rule (per source): a domain is impaired if it has >=2 items
+// scored 2, OR >=1 item scored 3, OR a domain mean > 1.5.
 INSTRUMENTS['wfirs'] = {
   id: 'wfirs',
   name: 'WFIRS-S',
   fullName: 'Weiss Functional Impairment Rating Scale — Self-Report',
   domain: 'Functional impairment',
-  attribution: 'Weiss (2000). Free for clinical use.',
-  itemCount: 7, // Domain-level short form used here (one item per functional domain).
-  instructionText: 'For each area of your life, please rate how much you have had problems over the past month, using the scale provided. This captures real-world functional impairment across domains.',
+  attribution: '\u00a9 University of British Columbia 2011 (Margaret D. Weiss, MD PhD). Public domain; reproduced unmodified with copyright notice retained.',
+  itemCount: 69,
+  naAllowed: true,
+  instructionText: 'Circle the rating that best describes how your emotional or behavioural problems have affected each item in the last month. If an item does not apply to you, choose "Not applicable."',
   options: [
     { value: 0, label: 'Never or not at all' },
     { value: 1, label: 'Sometimes or somewhat' },
     { value: 2, label: 'Often or much' },
-    { value: 3, label: 'Very often or very much' }
+    { value: 3, label: 'Very often or very much' },
+    { value: -1, label: 'Not applicable' }
+  ],
+  // Domain definitions: which item ids belong to each, plus optional gating.
+  domains: [
+    { key: 'A', label: 'Family', prefix: 'wfirs_a' },
+    { key: 'B', label: 'Work', prefix: 'wfirs_b', conditionalOn: 'employed' },
+    { key: 'C', label: 'School', prefix: 'wfirs_c', conditionalOn: 'inSchool' },
+    { key: 'D', label: 'Life skills', prefix: 'wfirs_d' },
+    { key: 'E', label: 'Self-concept', prefix: 'wfirs_e' },
+    { key: 'F', label: 'Social', prefix: 'wfirs_f' },
+    { key: 'G', label: 'Risk', prefix: 'wfirs_g' }
   ],
   items: [
-    { id: 'wfirs_1', text: 'Family: problems in your relationships with family members, partner, or in your home life' },
-    { id: 'wfirs_2', text: 'Work: problems with performance, attendance, or relationships at work' },
-    { id: 'wfirs_3', text: 'School / learning: problems with studying, completing work, or learning' },
-    { id: 'wfirs_4', text: 'Life skills: problems with managing money, time, daily responsibilities, sleep, or self-care' },
-    { id: 'wfirs_5', text: 'Self-concept: problems with how you feel about yourself, your confidence, or self-worth' },
-    { id: 'wfirs_6', text: 'Social: problems getting along with others, making or keeping friends, or social activities' },
-    { id: 'wfirs_7', text: 'Risk: problems with risky behavior, impulsive decisions, anger, or safety' }
+    // A. FAMILY (8)
+    { id: 'wfirs_a1', domain: 'Family', text: 'Having problems with family' },
+    { id: 'wfirs_a2', domain: 'Family', text: 'Having problems with spouse/partner' },
+    { id: 'wfirs_a3', domain: 'Family', text: 'Relying on others to do things for you' },
+    { id: 'wfirs_a4', domain: 'Family', text: 'Causing fighting in the family' },
+    { id: 'wfirs_a5', domain: 'Family', text: 'Makes it hard for the family to have fun together' },
+    { id: 'wfirs_a6', domain: 'Family', text: 'Problems taking care of your family' },
+    { id: 'wfirs_a7', domain: 'Family', text: 'Problems balancing your needs against those of your family' },
+    { id: 'wfirs_a8', domain: 'Family', text: 'Problems losing control with family' },
+    // B. WORK (11) — conditional on employment
+    { id: 'wfirs_b1', domain: 'Work', text: 'Problems performing required duties' },
+    { id: 'wfirs_b2', domain: 'Work', text: 'Problems with getting your work done efficiently' },
+    { id: 'wfirs_b3', domain: 'Work', text: 'Problems with your supervisor' },
+    { id: 'wfirs_b4', domain: 'Work', text: 'Problems keeping a job' },
+    { id: 'wfirs_b5', domain: 'Work', text: 'Getting fired from work' },
+    { id: 'wfirs_b6', domain: 'Work', text: 'Problems working in a team' },
+    { id: 'wfirs_b7', domain: 'Work', text: 'Problems with your attendance' },
+    { id: 'wfirs_b8', domain: 'Work', text: 'Problems with being late' },
+    { id: 'wfirs_b9', domain: 'Work', text: 'Problems taking on new tasks' },
+    { id: 'wfirs_b10', domain: 'Work', text: 'Problems working to your potential' },
+    { id: 'wfirs_b11', domain: 'Work', text: 'Poor performance evaluations' },
+    // C. SCHOOL (10) — conditional on enrollment
+    { id: 'wfirs_c1', domain: 'School', text: 'Problems taking notes' },
+    { id: 'wfirs_c2', domain: 'School', text: 'Problems completing assignments' },
+    { id: 'wfirs_c3', domain: 'School', text: 'Problems getting your work done efficiently' },
+    { id: 'wfirs_c4', domain: 'School', text: 'Problems with teachers' },
+    { id: 'wfirs_c5', domain: 'School', text: 'Problems with school administrators' },
+    { id: 'wfirs_c6', domain: 'School', text: 'Problems meeting minimum requirements to stay in school' },
+    { id: 'wfirs_c7', domain: 'School', text: 'Problems with attendance' },
+    { id: 'wfirs_c8', domain: 'School', text: 'Problems with being late' },
+    { id: 'wfirs_c9', domain: 'School', text: 'Problems with working to your potential' },
+    { id: 'wfirs_c10', domain: 'School', text: 'Problems with inconsistent grades' },
+    // D. LIFE SKILLS (12)
+    { id: 'wfirs_d1', domain: 'Life skills', text: 'Excessive or inappropriate use of internet, video games or TV' },
+    { id: 'wfirs_d2', domain: 'Life skills', text: 'Problems keeping an acceptable appearance' },
+    { id: 'wfirs_d3', domain: 'Life skills', text: 'Problems getting ready to leave the house' },
+    { id: 'wfirs_d4', domain: 'Life skills', text: 'Problems getting to bed' },
+    { id: 'wfirs_d5', domain: 'Life skills', text: 'Problems with nutrition' },
+    { id: 'wfirs_d6', domain: 'Life skills', text: 'Problems with sex' },
+    { id: 'wfirs_d7', domain: 'Life skills', text: 'Problems with sleeping' },
+    { id: 'wfirs_d8', domain: 'Life skills', text: 'Getting hurt or injured' },
+    { id: 'wfirs_d9', domain: 'Life skills', text: 'Avoiding exercise' },
+    { id: 'wfirs_d10', domain: 'Life skills', text: 'Problems keeping regular appointments with doctor/dentist' },
+    { id: 'wfirs_d11', domain: 'Life skills', text: 'Problems keeping up with household chores' },
+    { id: 'wfirs_d12', domain: 'Life skills', text: 'Problems managing money' },
+    // E. SELF-CONCEPT (5)
+    { id: 'wfirs_e1', domain: 'Self-concept', text: 'Feeling bad about yourself' },
+    { id: 'wfirs_e2', domain: 'Self-concept', text: 'Feeling frustrated with yourself' },
+    { id: 'wfirs_e3', domain: 'Self-concept', text: 'Feeling discouraged' },
+    { id: 'wfirs_e4', domain: 'Self-concept', text: 'Not feeling happy with your life' },
+    { id: 'wfirs_e5', domain: 'Self-concept', text: 'Feeling incompetent' },
+    // F. SOCIAL (9)
+    { id: 'wfirs_f1', domain: 'Social', text: 'Getting into arguments' },
+    { id: 'wfirs_f2', domain: 'Social', text: 'Trouble cooperating' },
+    { id: 'wfirs_f3', domain: 'Social', text: 'Trouble getting along with people' },
+    { id: 'wfirs_f4', domain: 'Social', text: 'Problems having fun with other people' },
+    { id: 'wfirs_f5', domain: 'Social', text: 'Problems participating in hobbies' },
+    { id: 'wfirs_f6', domain: 'Social', text: 'Problems making friends' },
+    { id: 'wfirs_f7', domain: 'Social', text: 'Problems keeping friends' },
+    { id: 'wfirs_f8', domain: 'Social', text: 'Saying inappropriate things' },
+    { id: 'wfirs_f9', domain: 'Social', text: 'Complaints from neighbours' },
+    // G. RISK (14)
+    { id: 'wfirs_g1', domain: 'Risk', text: 'Aggressive driving' },
+    { id: 'wfirs_g2', domain: 'Risk', text: 'Doing other things while driving' },
+    { id: 'wfirs_g3', domain: 'Risk', text: 'Road rage' },
+    { id: 'wfirs_g4', domain: 'Risk', text: 'Breaking or damaging things' },
+    { id: 'wfirs_g5', domain: 'Risk', text: 'Doing things that are illegal' },
+    { id: 'wfirs_g6', domain: 'Risk', text: 'Being involved with the police' },
+    { id: 'wfirs_g7', domain: 'Risk', text: 'Smoking cigarettes' },
+    { id: 'wfirs_g8', domain: 'Risk', text: 'Smoking marijuana' },
+    { id: 'wfirs_g9', domain: 'Risk', text: 'Drinking alcohol' },
+    { id: 'wfirs_g10', domain: 'Risk', text: 'Taking "street" drugs' },
+    { id: 'wfirs_g11', domain: 'Risk', text: 'Sex without protection (birth control, condom)' },
+    { id: 'wfirs_g12', domain: 'Risk', text: 'Sexually inappropriate behaviour' },
+    { id: 'wfirs_g13', domain: 'Risk', text: 'Being physically aggressive' },
+    { id: 'wfirs_g14', domain: 'Risk', text: 'Being verbally aggressive' }
   ],
   score: function (responses) {
-    var ids = allItemIds(this);
-    var total = sumItems(responses, ids);
-    var answered = answeredCount(responses, ids);
-    var mean = answered > 0 ? (total / answered) : 0;
-    // Domains with item score >=2 are considered impaired.
-    var impaired = [];
-    for (var i = 0; i < this.items.length; i++) {
-      if ((responses[this.items[i].id] || 0) >= 2) {
-        impaired.push(this.items[i].text.split(':')[0]);
+    var NA = -1;
+    var domainResults = {};
+    var impairedDomains = [];
+    var grandSum = 0, grandCount = 0;
+
+    for (var d = 0; d < this.domains.length; d++) {
+      var dom = this.domains[d];
+      var domItems = this.items.filter(function (it) { return it.domain === dom.label; });
+      var sum = 0, count = 0, num2 = 0, num3 = 0;
+      for (var i = 0; i < domItems.length; i++) {
+        var v = responses[domItems[i].id];
+        if (typeof v !== 'number' || v === NA) continue; // omit n/a + unanswered
+        sum += v; count += 1;
+        if (v === 2) num2 += 1;
+        if (v === 3) num3 += 1;
+        grandSum += v; grandCount += 1;
       }
+      if (count === 0) {
+        // Whole domain n/a or unseen (e.g., not employed). Record as N/A.
+        domainResults[dom.label] = { applicable: false, mean: null, count: 0 };
+        continue;
+      }
+      var dmean = sum / count;
+      // Validated impairment rule: >=2 items at 2, OR >=1 item at 3, OR mean > 1.5
+      var impaired = (num2 >= 2) || (num3 >= 1) || (dmean > 1.5);
+      domainResults[dom.label] = {
+        applicable: true,
+        mean: Math.round(dmean * 100) / 100,
+        count: count,
+        impaired: impaired
+      };
+      if (impaired) impairedDomains.push(dom.label);
     }
+
+    var overallMean = grandCount > 0 ? (grandSum / grandCount) : 0;
     var band, bandLabel, interp;
-    if (mean < 0.5) { band = 0; bandLabel = 'Minimal impairment'; interp = 'minimal functional impairment across domains'; }
-    else if (mean < 1.5) { band = 1; bandLabel = 'Mild–moderate impairment'; interp = 'mild-to-moderate functional impairment'; }
-    else { band = 2; bandLabel = 'Marked impairment'; interp = 'marked functional impairment'; }
+    // Bands reflect overall mean; the clinically meaningful unit is the per-domain
+    // impairment flag above, surfaced explicitly.
+    if (impairedDomains.length === 0) { band = 0; bandLabel = 'No domain impaired'; interp = 'no functional domain reached the validated impairment threshold'; }
+    else if (impairedDomains.length <= 2) { band = 1; bandLabel = 'Impairment in some domains'; interp = 'functional impairment in ' + impairedDomains.length + ' domain(s)'; }
+    else { band = 2; bandLabel = 'Impairment across multiple domains'; interp = 'functional impairment across ' + impairedDomains.length + ' domains'; }
+
     return {
-      total: total, max: ids.length * 3, mean: Math.round(mean * 100) / 100,
+      overallMean: Math.round(overallMean * 100) / 100,
+      itemsScored: grandCount,
       band: band, bandLabel: bandLabel, interpretation: interp,
-      impairedDomains: impaired, flags: []
+      domainResults: domainResults,
+      impairedDomains: impairedDomains,
+      flags: []
     };
   },
   chartLanguage: function (s) {
-    var t = 'WFIRS-S (domain-level) administered. Mean domain score ' + s.mean + ' (total ' + s.total + '/' + s.max + '), indicating ' + s.interpretation + '. ';
+    var t = 'WFIRS-S administered (Weiss Functional Impairment Rating Scale, Self-Report; \u00a9 University of British Columbia). ';
+    t += 'Overall mean item score ' + s.overallMean + ' across ' + s.itemsScored + ' applicable items. ';
     if (s.impairedDomains && s.impairedDomains.length) {
-      t += 'Domains with notable impairment (≥2): ' + s.impairedDomains.join(', ') + '. ';
+      t += 'Domains meeting the validated impairment threshold (\u22652 items rated 2, \u22651 item rated 3, or domain mean >1.5): ' + s.impairedDomains.join(', ') + '. ';
     } else {
-      t += 'No single domain reached the impairment threshold. ';
+      t += 'No domain met the validated impairment threshold. ';
     }
-    t += 'Functional impairment documentation supports ADHD and other diagnostic formulations where real-world impact is a criterion.';
+    t += 'Per-domain means: ';
+    var parts = [];
+    for (var label in s.domainResults) {
+      if (!Object.prototype.hasOwnProperty.call(s.domainResults, label)) continue;
+      var dr = s.domainResults[label];
+      parts.push(label + ': ' + (dr.applicable ? dr.mean : 'n/a'));
+    }
+    t += parts.join(', ') + '. ';
+    t += 'The WFIRS-S measures functional impairment, not symptoms, and is not diagnostic on its own; it documents real-world impact to support diagnostic formulation and to track change with treatment.';
     return t;
   }
 };
@@ -715,8 +852,15 @@ function getRenderDef(id) {
     domain: inst.domain,
     instructionText: inst.instructionText,
     options: inst.options,
+    naAllowed: inst.naAllowed || false,
+    domains: inst.domains || null, // for domain-grouped/conditional rendering (WFIRS-S)
     items: inst.items.map(function (it) {
-      return { id: it.id, text: it.text, options: it.options || null };
+      return {
+        id: it.id,
+        text: it.text,
+        options: it.options || null,
+        itemDomain: it.domain || null // domain label for grouping/gating
+      };
     })
   };
 }
@@ -928,15 +1072,15 @@ var SYMPTOM_MAP = {
   },
   wfirs: {
     domainLabel: 'Functional impairment',
-    endorsedThreshold: 2, // 0-3; >=2 (Often/much) = meaningful impairment
-    phrases: {
-      wfirs_1: 'family or home-life impairment',
-      wfirs_2: 'occupational impairment',
-      wfirs_3: 'academic or learning impairment',
-      wfirs_4: 'life-skills impairment (time, money, self-care, sleep)',
-      wfirs_5: 'impaired self-concept or confidence',
-      wfirs_6: 'social impairment',
-      wfirs_7: 'risk-related or impulse-control problems'
+    domainBased: true, // special: HPI blurb uses scored impairedDomains, not item phrases
+    domainPhrases: {
+      'Family': 'family / home-life impairment',
+      'Work': 'occupational impairment',
+      'School': 'academic / learning impairment',
+      'Life skills': 'life-skills impairment (time, money, self-care, sleep)',
+      'Self-concept': 'impaired self-concept or confidence',
+      'Social': 'social impairment',
+      'Risk': 'risk-related or impulse-control problems'
     }
   },
   msibpd: {
@@ -974,7 +1118,7 @@ function isEndorsed(instId, itemId, value) {
 // raw responses map.
 function endorsedPhrases(instId, responses) {
   var map = SYMPTOM_MAP[instId];
-  if (!map || !responses) return [];
+  if (!map || !map.phrases || !responses) return [];
   var out = [];
   var inst = INSTRUMENTS[instId];
   var order = inst ? inst.items.map(function (it) { return it.id; }) : Object.keys(map.phrases);
@@ -997,11 +1141,19 @@ function joinClause(items) {
 
 // 1) Concise first-person screener-review blurb (results documentation).
 // Input: scoredBattery from scoreBattery(). Returns a clean paragraph string.
-function screenerReviewBlurb(scoredBattery) {
+function screenerReviewBlurb(scoredBattery, reasonSent) {
   var results = (scoredBattery && scoredBattery.results) || [];
   if (!results.length) return '';
   var names = results.map(function (r) { return r.instrumentName; });
-  var lead = 'I reviewed patient-completed screeners, including ' + joinClause(names) + '. ';
+  var reasonClause = {
+    intake: ' as part of the intake assessment',
+    monitoring: ' for interval symptom monitoring',
+    medchange: ' to monitor response following a medication change',
+    worsening: ' in the context of worsening symptoms',
+    annual: ' as part of an annual screen',
+    documentation: ' for documentation update'
+  }[reasonSent] || '';
+  var lead = 'I reviewed patient-completed screeners' + reasonClause + ', including ' + joinClause(names) + '. ';
   var sentences = results.map(function (r) {
     // Reuse each instrument's own chart language (already score-accurate).
     return r.chartLanguage;
@@ -1021,6 +1173,20 @@ function hpiSymptomBlurb(scoredBattery, responsesByInstrument) {
     var instId = r.instrumentId;
     var map = SYMPTOM_MAP[instId];
     if (!map) continue;
+
+    // Domain-based instruments (WFIRS-S): use the scored impaired domains, not
+    // per-item phrases.
+    if (map.domainBased) {
+      var impaired = r.impairedDomains || [];
+      if (!impaired.length) {
+        parts.push('On ' + r.instrumentName + ' (functional impairment), no domain reached the validated impairment threshold.');
+      } else {
+        var domPhrases = impaired.map(function (d) { return (map.domainPhrases && map.domainPhrases[d]) || d.toLowerCase(); });
+        parts.push('Functional impairment endorsed on ' + r.instrumentName + ' reaches the validated threshold in: ' + joinClause(domPhrases) + '.');
+      }
+      continue;
+    }
+
     var resp = (responsesByInstrument && responsesByInstrument[instId]) || {};
     var phrases = endorsedPhrases(instId, resp);
     if (!phrases.length) {
