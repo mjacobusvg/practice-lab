@@ -19,6 +19,11 @@
 // Response: text/event-stream (Anthropic SSE passed through verbatim)
 
 const https = require('https');
+const { verifyToken } = require('./_lib/session');
+
+// Models this proxy is permitted to call. Locks out caller-chosen expensive models.
+const ALLOWED_MODELS = ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'];
+const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 
 exports.handler = async function (event, context) {
   const corsHeaders = {
@@ -58,8 +63,21 @@ exports.handler = async function (event, context) {
     };
   }
 
+  // AUTH: clinical tools are full-tier. Require a valid signed token with tier 'full'.
+  // Identity is not used for anything except gating here (no PHI logged), but the gate
+  // closes the open-proxy credit-burn hole.
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+  const session = verifyToken(sessionToken);
+  if (!session.valid) {
+    return { statusCode: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Invalid or expired session.' }) };
+  }
+  if (!(session.claims.scope === 'member' && session.claims.tier === 'full')) {
+    return { statusCode: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'This tool requires the full Think Beyond Practice membership.' }) };
+  }
+
   const requestPayload = {
-    model: body.model || 'claude-haiku-4-5-20251001',
+    model: (ALLOWED_MODELS.indexOf(body.model) !== -1 ? body.model : DEFAULT_MODEL),
     max_tokens: body.max_tokens || 1000,
     system: body.system || '',
     messages: body.messages || [],
