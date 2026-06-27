@@ -18,6 +18,8 @@
 // Export submitCertifiedMail(jobId) so the webhook can call it directly,
 // and also expose an HTTP handler for manual/testing invocation.
 
+var { verifyToken } = require('./_lib/session');
+
 var SUPABASE_URL = process.env.SUPABASE_URL;
 var SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY;
 
@@ -131,6 +133,19 @@ exports.handler = async function(event) {
   if (event.httpMethod !== 'POST') return { statusCode: 405, headers: headers, body: JSON.stringify({ error: 'Method not allowed' }) };
   try {
     var body = JSON.parse(event.body || '{}');
+
+    // AUTH: the public HTTP handler is full-tier only. (The Stripe webhook does NOT use this
+    // handler — it calls submitCertifiedMail() directly after verifying the Stripe signature.)
+    // This closes the 'trigger a send by jobId' hole that becomes live once the vendor adapter
+    // is implemented.
+    var authHeader = event.headers.authorization || event.headers.Authorization || '';
+    var sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+    var session = verifyToken(sessionToken);
+    if (!session.valid) return { statusCode: 401, headers: headers, body: JSON.stringify({ error: 'Invalid or expired session.' }) };
+    if (!(session.claims.scope === 'member' && session.claims.tier === 'full')) {
+      return { statusCode: 403, headers: headers, body: JSON.stringify({ error: 'This tool requires the full Think Beyond Practice membership.' }) };
+    }
+
     if (!body.jobId) return { statusCode: 400, headers: headers, body: JSON.stringify({ error: 'jobId required' }) };
     var r = await submitCertifiedMail(body.jobId);
     return { statusCode: 200, headers: headers, body: JSON.stringify(r) };
