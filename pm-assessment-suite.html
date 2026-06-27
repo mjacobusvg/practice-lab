@@ -278,14 +278,20 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
 // stored in localStorage as tbp_verified_email (the canonical identity key every
 // tool reads). Read it from there, not from a callback parameter.
 var PROVIDER_EMAIL = '';
+var AUTH_TOKEN = '';
 function getProviderEmail(){
   try { return (localStorage.getItem('tbp_verified_email') || '').trim().toLowerCase(); }
+  catch(e){ return ''; }
+}
+function getAuthToken(){
+  try { return localStorage.getItem('tbp_auth_token') || ''; }
   catch(e){ return ''; }
 }
 TBPAuth.protect({
   toolName: 'Assessment Suite',
   onVerified: function(){
     PROVIDER_EMAIL = getProviderEmail();
+    AUTH_TOKEN = getAuthToken();
     document.getElementById('app-root').style.display = 'block';
     initTool();
   }
@@ -396,8 +402,8 @@ function deleteCustomBundle(id){
 async function loadCustomBundles(){
   try{
     var res = await fetch('/.netlify/functions/user-tool-data',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ providerEmail: PROVIDER_EMAIL, action:'get', key: CUSTOM_BUNDLE_KEY })
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+AUTH_TOKEN},
+      body: JSON.stringify({ token: AUTH_TOKEN, providerEmail: PROVIDER_EMAIL, action:'get', key: CUSTOM_BUNDLE_KEY })
     });
     if(!res.ok) return;
     var data = await safeJson(res);
@@ -411,8 +417,8 @@ async function loadCustomBundles(){
 async function persistCustomBundles(){
   try{
     await fetch('/.netlify/functions/user-tool-data',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ providerEmail: PROVIDER_EMAIL, action:'set', key: CUSTOM_BUNDLE_KEY, value: JSON.stringify(customBundles) })
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+AUTH_TOKEN},
+      body: JSON.stringify({ token: AUTH_TOKEN, providerEmail: PROVIDER_EMAIL, action:'set', key: CUSTOM_BUNDLE_KEY, value: JSON.stringify(customBundles) })
     });
   }catch(e){ toast('Saved locally for this session; could not sync.','error'); }
 }
@@ -481,9 +487,9 @@ async function generate(){
 
   try{
     var res = await fetch('/.netlify/functions/assessment-create',{
-      method:'POST', headers:{'Content-Type':'application/json'},
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+AUTH_TOKEN},
       body: JSON.stringify({
-        providerEmail: PROVIDER_EMAIL,
+        token: AUTH_TOKEN, providerEmail: PROVIDER_EMAIL,
         patientName: name || null,
         instrumentSet: selectedInstruments,
         delivery: delivery,
@@ -554,8 +560,8 @@ async function loadDashboard(){
   list.innerHTML = '<div class="loading-row">Loading…</div>';
   try{
     var res = await fetch('/.netlify/functions/assessment-list',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ providerEmail: PROVIDER_EMAIL })
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+AUTH_TOKEN},
+      body: JSON.stringify({ token: AUTH_TOKEN, providerEmail: PROVIDER_EMAIL })
     });
     var data = await safeJson(res);
     if(!data || !data.ok){ list.innerHTML = '<div class="empty-state">Could not load assessments.</div>'; return; }
@@ -572,8 +578,8 @@ async function loadSchedules(){
   list.innerHTML = '<div class="loading-row">Loading…</div>';
   try{
     var res = await fetch('/.netlify/functions/assessment-schedule',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ providerEmail: PROVIDER_EMAIL, action:'list' })
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+AUTH_TOKEN},
+      body: JSON.stringify({ token: AUTH_TOKEN, providerEmail: PROVIDER_EMAIL, action:'list' })
     });
     var data = await safeJson(res);
     if(!data || !data.ok){ list.innerHTML = '<div class="empty-state">Could not load schedules.</div>'; return; }
@@ -606,8 +612,8 @@ function renderSchedules(items){
 async function scheduleAction(id, action){
   try{
     var res = await fetch('/.netlify/functions/assessment-schedule',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ providerEmail: PROVIDER_EMAIL, action:action, scheduleId:id })
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+AUTH_TOKEN},
+      body: JSON.stringify({ token: AUTH_TOKEN, providerEmail: PROVIDER_EMAIL, action:action, scheduleId:id })
     });
     var data = await safeJson(res);
     if(data && data.ok){ toast(action==='pause'?'Paused':'Resumed'); loadSchedules(); }
@@ -619,8 +625,8 @@ async function endSchedule(id){
   if(!confirm('End this recurring send? No further questionnaires will go out on this schedule. This cannot be undone (you can create a new one later). Past results and trend history are kept.')) return;
   try{
     var res = await fetch('/.netlify/functions/assessment-schedule',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ providerEmail: PROVIDER_EMAIL, action:'end', scheduleId:id })
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+AUTH_TOKEN},
+      body: JSON.stringify({ token: AUTH_TOKEN, providerEmail: PROVIDER_EMAIL, action:'end', scheduleId:id })
     });
     var data = await safeJson(res);
     if(data && data.ok){ toast('Recurring send ended'); loadSchedules(); }
@@ -671,9 +677,9 @@ async function createSchedule(){
   if(!consent || !consent.checked){ toast('Please confirm patient consent for recurring sends.','error'); return; }
   try{
     var res = await fetch('/.netlify/functions/assessment-schedule',{
-      method:'POST', headers:{'Content-Type':'application/json'},
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+AUTH_TOKEN},
       body: JSON.stringify({
-        providerEmail: PROVIDER_EMAIL, action:'create',
+        token: AUTH_TOKEN, providerEmail: PROVIDER_EMAIL, action:'create',
         patientLabel: label || null, matchKey: matchKey, patientEmail: email,
         instrumentSet: instruments, cadence: cadence, endDate: endDate || null,
         reasonSent: 'monitoring'
@@ -756,8 +762,8 @@ async function expireAssessment(id){
   if(!confirm('Expire this link? The patient will no longer be able to complete it.')) return;
   try{
     var res = await fetch('/.netlify/functions/assessment-retrieve',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ providerEmail: PROVIDER_EMAIL, assessmentId: id, action:'expire' })
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+AUTH_TOKEN},
+      body: JSON.stringify({ token: AUTH_TOKEN, providerEmail: PROVIDER_EMAIL, assessmentId: id, action:'expire' })
     });
     var data = await safeJson(res);
     if(data && data.ok){ toast('Link expired'); loadDashboard(); }
@@ -773,8 +779,8 @@ async function deleteResults(id){
   if(!confirm(msg)) return;
   try{
     var res = await fetch('/.netlify/functions/assessment-retrieve',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ providerEmail: PROVIDER_EMAIL, assessmentId: id, action:'delete' })
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+AUTH_TOKEN},
+      body: JSON.stringify({ token: AUTH_TOKEN, providerEmail: PROVIDER_EMAIL, assessmentId: id, action:'delete' })
     });
     var data = await safeJson(res);
     if(data && data.ok){ toast('Results deleted'); loadDashboard(); }
@@ -787,8 +793,8 @@ var LAST_DATA = null;
 async function retrieve(id){
   try{
     var res = await fetch('/.netlify/functions/assessment-retrieve',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ providerEmail: PROVIDER_EMAIL, assessmentId: id, action:'retrieve' })
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+AUTH_TOKEN},
+      body: JSON.stringify({ token: AUTH_TOKEN, providerEmail: PROVIDER_EMAIL, assessmentId: id, action:'retrieve' })
     });
     var data = await safeJson(res);
     if(!data || !data.ok){ toast((data && data.message) || 'Could not retrieve.','error'); return; }
