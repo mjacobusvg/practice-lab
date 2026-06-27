@@ -204,7 +204,7 @@
       var onVerified = options.onVerified || function() {};
       var skipPHIGate = options.skipPHIGate === true;
       var termsVersion = options.termsVersion || 'interim_v1';
-      var baaVersion = options.baaVersion || '2.0';
+      var baaVersion = options.baaVersion || '3.0';
 
       // OPT-OUT PHI gate. The BAA + Terms gate runs by DEFAULT for every tool.
       // A page only skips it by explicitly passing skipPHIGate:true (used for
