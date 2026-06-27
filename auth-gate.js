@@ -157,10 +157,13 @@
       .then(function(res) { return res.json(); })
       .then(function(data) {
         setLoading(false);
-        if (data.verified) {
-          setSessionToken(data.token || email);
+        if (data.verified && data.token) {
+          // Store ONLY the real signed token. No email fallback — an email is
+          // not a valid session token and the hardened backends would reject it.
+          setSessionToken(data.token);
           try {
             localStorage.setItem('tbp_verified_email', email);
+            if (data.tier) localStorage.setItem('tbp_tier', data.tier);
             if (data.memberToken) localStorage.setItem('tbp_member_jwt', data.memberToken);
             if (data.communityMemberId) localStorage.setItem('tbp_member_id', String(data.communityMemberId));
           } catch(e) {}
