@@ -10,6 +10,7 @@
 //   SUPABASE_SERVICE_KEY      -> service role key (server-side only)
 
 const { createClient } = require('@supabase/supabase-js');
+const { verifyToken } = require('./_lib/session');
 
 const CURRENT_TERMS_VERSION = 'interim_v1';
 
@@ -36,12 +37,21 @@ exports.handler = async (event) => {
   }
 
   const action = (body.action || 'record').trim();        // 'check' or 'record'
-  const email = (body.member_email || '').trim().toLowerCase();
+
+  // Identity from the SIGNED session token (body.token or Authorization: Bearer),
+  // never from a client-supplied member_email. This is part of the PHI gate.
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+  const session = verifyToken(sessionToken);
+  if (!session.valid) {
+    return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Invalid or expired session.' }) };
+  }
+  const email = (session.claims.email || '').trim().toLowerCase();
   const name = (body.member_name || '').trim() || null;
   const version = (body.terms_version || CURRENT_TERMS_VERSION).trim();
 
   if (!email) {
-    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'member_email required' }) };
+    return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Session missing identity.' }) };
   }
 
   const SUPABASE_URL_EARLY = process.env.SUPABASE_URL || 'https://ubcrrrapedaxkguxniwv.supabase.co';
