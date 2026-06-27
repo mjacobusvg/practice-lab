@@ -285,8 +285,9 @@
       err.style.display = 'none';
       btn.disabled = true; btn.textContent = 'Saving...';
       fetch('/.netlify/functions/record-terms-acceptance', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'record', member_email: email, terms_version: termsVersion })
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getSessionToken() },
+        body: JSON.stringify({ action: 'record', token: getSessionToken(), terms_version: termsVersion })
       })
       .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, d: d }; }); })
       .then(function(res){
@@ -318,8 +319,9 @@
       if (!signedCurrent) { showBaaRequired(email); return; }
       // 2) Terms check (fail closed: any error or non-accepted => show terms)
       return fetch('/.netlify/functions/record-terms-acceptance', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'check', member_email: email, terms_version: termsVersion })
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+        body: JSON.stringify({ action: 'check', token: authToken, terms_version: termsVersion })
       })
       .then(function(r){ return r.ok ? r.json() : { accepted: false }; })
       .then(function(terms){
