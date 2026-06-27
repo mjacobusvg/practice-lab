@@ -7,6 +7,7 @@
 // ============================================
 
 const { createClient } = require('@supabase/supabase-js');
+const { verifyToken } = require('./_lib/session');
 
 const supabase = createClient(
     process.env.SUPABASE_URL,
@@ -19,16 +20,25 @@ exports.handler = async (event) => {
     }
 
     try {
-        const { email } = JSON.parse(event.body);
+        const body = JSON.parse(event.body || '{}');
 
+        // Identity from the SIGNED session token (body.token or Authorization: Bearer),
+        // never from a client-supplied email. The PHI gate already holds the token.
+        const authHeader = event.headers.authorization || event.headers.Authorization || '';
+        const sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+        const session = verifyToken(sessionToken);
+        if (!session.valid) {
+            return { statusCode: 401, body: JSON.stringify({ error: 'Invalid or expired session.' }) };
+        }
+        const email = String(session.claims.email || '').trim().toLowerCase();
         if (!email) {
-            return { statusCode: 400, body: JSON.stringify({ error: 'Email is required.' }) };
+            return { statusCode: 401, body: JSON.stringify({ error: 'Session missing identity.' }) };
         }
 
         const { data, error } = await supabase
             .from('baa_signatures')
             .select('id, baa_version, signed_at')
-            .eq('member_email', email.toLowerCase().trim())
+            .eq('member_email', email)
             .order('signed_at', { ascending: false })
             .limit(1)
             .maybeSingle();
