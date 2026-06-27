@@ -124,6 +124,23 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
 .blurb-head{font-size:.82rem;font-weight:700;color:var(--white);margin-bottom:6px}
 .blurb-sub{display:block;font-size:.7rem;font-weight:500;color:var(--cream-dim);text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
 .blurb-actions{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
+.rep-card-history{border-left:3px solid var(--purple)}
+.ace-note{font-size:.74rem;color:var(--cream-dim);line-height:1.55;margin-top:8px;font-style:italic}
+.wfirs-table{margin:8px 0 4px}
+.wfirs-row{display:flex;align-items:center;gap:10px;padding:5px 0;border-bottom:1px solid rgba(42,171,184,0.08);font-size:.82rem}
+.wfirs-row.impaired{color:var(--white)}
+.wfirs-dom{flex:1;color:var(--cream)}
+.wfirs-mean{color:var(--cream-dim);font-size:.78rem}
+.wfirs-na{color:var(--cream-dim);font-size:.76rem;font-style:italic}
+.wfirs-flag{background:rgba(251,191,36,0.14);color:var(--amber);font-size:.68rem;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.04em}
+.wfirs-ok{color:var(--cream-dim)}
+.bundle-bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+.bundle-chip{display:inline-flex;align-items:center;gap:6px;background:var(--navy-mid);border:1px solid var(--rule);color:var(--cream);font-size:.8rem;font-weight:600;padding:7px 13px;border-radius:20px;cursor:pointer;font-family:var(--font-body)}
+.bundle-chip:hover{border-color:var(--teal);color:var(--white)}
+.bundle-chip.custom{border-color:rgba(42,171,184,0.4)}
+.bundle-chip.save{border-style:dashed;color:var(--cream-dim)}
+.bundle-del{color:var(--cream-dim);font-weight:700;font-size:1rem;line-height:1;padding-left:2px}
+.bundle-del:hover{color:var(--red)}
 </style>
 </head>
 <body>
@@ -149,6 +166,25 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
       <label class="field-label">Patient name or your reference</label>
       <input type="text" class="field-input" id="patient-name" placeholder="e.g., Jane Doe">
       <div class="field-hint">Used so you can identify the returned result. Stored securely and deleted with the rest of the record after 30 days.</div>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Reason sent</label>
+      <select class="field-select" id="reason-sent">
+        <option value="">(optional — sharpens the chart blurb)</option>
+        <option value="intake">Intake assessment</option>
+        <option value="monitoring">Interval symptom monitoring</option>
+        <option value="medchange">Medication change follow-up</option>
+        <option value="worsening">Worsening symptoms</option>
+        <option value="annual">Annual screen</option>
+        <option value="documentation">Documentation update</option>
+      </select>
+    </div>
+
+    <div class="field-group">
+      <label class="field-label">Bundles</label>
+      <div class="bundle-bar" id="bundle-bar"></div>
+      <div class="field-hint">Quick-select a battery, then adjust below. Save your own current selection as a custom bundle.</div>
     </div>
 
     <div class="field-group">
@@ -221,9 +257,9 @@ TBPAuth.protect({
 
 // ── Instrument catalog (display only; scoring is server-side) ──
 // ── Item/risk/option lookups (generated from assessment-instruments.js) ──
-var INSTRUMENT_ITEMS = {"phq9":[{"id":"phq9_1","text":"Little interest or pleasure in doing things"},{"id":"phq9_2","text":"Feeling down, depressed, or hopeless"},{"id":"phq9_3","text":"Trouble falling or staying asleep, or sleeping too much"},{"id":"phq9_4","text":"Feeling tired or having little energy"},{"id":"phq9_5","text":"Poor appetite or overeating"},{"id":"phq9_6","text":"Feeling bad about yourself, or that you are a failure, or have let yourself or your family down"},{"id":"phq9_7","text":"Trouble concentrating on things, such as reading the newspaper or watching television"},{"id":"phq9_8","text":"Moving or speaking so slowly that other people could have noticed; or the opposite, being so fidgety or restless that you have been moving around a lot more than usual"},{"id":"phq9_9","text":"Thoughts that you would be better off dead, or of hurting yourself in some way"}],"gad7":[{"id":"gad7_1","text":"Feeling nervous, anxious, or on edge"},{"id":"gad7_2","text":"Not being able to stop or control worrying"},{"id":"gad7_3","text":"Worrying too much about different things"},{"id":"gad7_4","text":"Trouble relaxing"},{"id":"gad7_5","text":"Being so restless that it is hard to sit still"},{"id":"gad7_6","text":"Becoming easily annoyed or irritable"},{"id":"gad7_7","text":"Feeling afraid, as if something awful might happen"}],"auditc":[{"id":"auditc_1","text":"How often did you have a drink containing alcohol in the past year?"},{"id":"auditc_2","text":"How many standard drinks containing alcohol did you have on a typical day when you were drinking in the past year?"},{"id":"auditc_3","text":"How often did you have six or more drinks on one occasion in the past year?"}],"dast10":[{"id":"dast10_1","text":"Have you used drugs other than those required for medical reasons?"},{"id":"dast10_2","text":"Do you abuse more than one drug at a time?"},{"id":"dast10_3","text":"Are you always able to stop using drugs when you want to?"},{"id":"dast10_4","text":"Have you ever had blackouts or flashbacks as a result of drug use?"},{"id":"dast10_5","text":"Do you ever feel bad or guilty about your drug use?"},{"id":"dast10_6","text":"Does your spouse (or parents) ever complain about your involvement with drugs?"},{"id":"dast10_7","text":"Have you neglected your family because of your use of drugs?"},{"id":"dast10_8","text":"Have you engaged in illegal activities in order to obtain drugs?"},{"id":"dast10_9","text":"Have you ever experienced withdrawal symptoms (felt sick) when you stopped taking drugs?"},{"id":"dast10_10","text":"Have you had medical problems as a result of your drug use (e.g., memory loss, hepatitis, convulsions, bleeding)?"}],"epds":[{"id":"epds_1","text":"I have been able to laugh and see the funny side of things."},{"id":"epds_2","text":"I have looked forward with enjoyment to things."},{"id":"epds_3","text":"I have blamed myself unnecessarily when things went wrong."},{"id":"epds_4","text":"I have been anxious or worried for no good reason."},{"id":"epds_5","text":"I have felt scared or panicky for no very good reason."},{"id":"epds_6","text":"Things have been getting on top of me."},{"id":"epds_7","text":"I have been so unhappy that I have had difficulty sleeping."},{"id":"epds_8","text":"I have felt sad or miserable."},{"id":"epds_9","text":"I have been so unhappy that I have been crying."},{"id":"epds_10","text":"The thought of harming myself has occurred to me."}],"pcl5":[{"id":"pcl5_1","text":"Repeated, disturbing, and unwanted memories of the stressful experience"},{"id":"pcl5_2","text":"Repeated, disturbing dreams of the stressful experience"},{"id":"pcl5_3","text":"Suddenly feeling or acting as if the stressful experience were actually happening again"},{"id":"pcl5_4","text":"Feeling very upset when something reminded you of the stressful experience"},{"id":"pcl5_5","text":"Having strong physical reactions when something reminded you of the stressful experience (e.g., heart pounding, trouble breathing, sweating)"},{"id":"pcl5_6","text":"Avoiding memories, thoughts, or feelings related to the stressful experience"},{"id":"pcl5_7","text":"Avoiding external reminders of the stressful experience (e.g., people, places, conversations, activities, objects, or situations)"},{"id":"pcl5_8","text":"Trouble remembering important parts of the stressful experience"},{"id":"pcl5_9","text":"Having strong negative beliefs about yourself, other people, or the world (e.g., I am bad, there is something seriously wrong with me, no one can be trusted, the world is completely dangerous)"},{"id":"pcl5_10","text":"Blaming yourself or someone else for the stressful experience or what happened after it"},{"id":"pcl5_11","text":"Having strong negative feelings such as fear, horror, anger, guilt, or shame"},{"id":"pcl5_12","text":"Loss of interest in activities that you used to enjoy"},{"id":"pcl5_13","text":"Feeling distant or cut off from other people"},{"id":"pcl5_14","text":"Trouble experiencing positive feelings (e.g., being unable to feel happiness or have loving feelings for people close to you)"},{"id":"pcl5_15","text":"Irritable behavior, angry outbursts, or acting aggressively"},{"id":"pcl5_16","text":"Taking too many risks or doing things that could cause you harm"},{"id":"pcl5_17","text":"Being superalert or watchful or on guard"},{"id":"pcl5_18","text":"Feeling jumpy or easily startled"},{"id":"pcl5_19","text":"Having difficulty concentrating"},{"id":"pcl5_20","text":"Trouble falling or staying asleep"}],"ace10":[{"id":"ace_1","text":"Did a parent or other adult in the household often or very often swear at you, insult you, put you down, or humiliate you; or act in a way that made you afraid that you might be physically hurt?"},{"id":"ace_2","text":"Did a parent or other adult in the household often or very often push, grab, slap, or throw something at you; or ever hit you so hard that you had marks or were injured?"},{"id":"ace_3","text":"Did an adult or person at least 5 years older than you ever touch or fondle you or have you touch their body in a sexual way; or attempt or actually have oral, anal, or vaginal intercourse with you?"},{"id":"ace_4","text":"Did you often or very often feel that no one in your family loved you or thought you were important or special; or that your family did not look out for each other, feel close to each other, or support each other?"},{"id":"ace_5","text":"Did you often or very often feel that you did not have enough to eat, had to wear dirty clothes, and had no one to protect you; or that your parents were too drunk or high to take care of you or take you to the doctor if you needed it?"},{"id":"ace_6","text":"Were your parents ever separated or divorced?"},{"id":"ace_7","text":"Was your mother or stepmother often or very often pushed, grabbed, slapped, or had something thrown at her; or sometimes/often/very often kicked, bitten, hit with a fist, hit with something hard, repeatedly hit over at least a few minutes, or threatened or hurt with a weapon?"},{"id":"ace_8","text":"Did you live with anyone who was a problem drinker or alcoholic, or who used street drugs?"},{"id":"ace_9","text":"Was a household member depressed or mentally ill, or did a household member attempt suicide?"},{"id":"ace_10","text":"Did a household member go to prison?"}],"asrs":[{"id":"asrs_1","text":"How often do you have trouble wrapping up the final details of a project, once the challenging parts have been done?"},{"id":"asrs_2","text":"How often do you have difficulty getting things in order when you have to do a task that requires organization?"},{"id":"asrs_3","text":"How often do you have problems remembering appointments or obligations?"},{"id":"asrs_4","text":"When you have a task that requires a lot of thought, how often do you avoid or delay getting started?"},{"id":"asrs_5","text":"How often do you fidget or squirm with your hands or feet when you have to sit down for a long time?"},{"id":"asrs_6","text":"How often do you feel overly active and compelled to do things, like you were driven by a motor?"}],"wfirs":[{"id":"wfirs_1","text":"Family: problems in your relationships with family members, partner, or in your home life"},{"id":"wfirs_2","text":"Work: problems with performance, attendance, or relationships at work"},{"id":"wfirs_3","text":"School / learning: problems with studying, completing work, or learning"},{"id":"wfirs_4","text":"Life skills: problems with managing money, time, daily responsibilities, sleep, or self-care"},{"id":"wfirs_5","text":"Self-concept: problems with how you feel about yourself, your confidence, or self-worth"},{"id":"wfirs_6","text":"Social: problems getting along with others, making or keeping friends, or social activities"},{"id":"wfirs_7","text":"Risk: problems with risky behavior, impulsive decisions, anger, or safety"}],"msibpd":[{"id":"msibpd_1","text":"Have any of your closest relationships been troubled by a lot of arguments or repeated breakups?"},{"id":"msibpd_2","text":"Have you deliberately hurt yourself physically (e.g., punched yourself, cut yourself, burned yourself)? Or made a suicide attempt?"},{"id":"msibpd_3","text":"Have you had at least two other problems with impulsivity (e.g., eating binges and spending sprees, drinking too much and verbal outbursts)?"},{"id":"msibpd_4","text":"Have you been extremely moody?"},{"id":"msibpd_5","text":"Have you felt very angry a lot of the time? Or often acted in an angry or sarcastic manner?"},{"id":"msibpd_6","text":"Have you often been distrustful of other people?"},{"id":"msibpd_7","text":"Have you frequently felt unreal or as if things around you were unreal?"},{"id":"msibpd_8","text":"Have you chronically felt empty?"},{"id":"msibpd_9","text":"Have you often felt that you had no idea of who you are or that you have no identity?"},{"id":"msibpd_10","text":"Have you made desperate efforts to avoid feeling abandoned or being abandoned (e.g., repeatedly called someone to reassure yourself that they still cared, begged them not to leave you, clung to them physically)?"}]};
+var INSTRUMENT_ITEMS = {"phq9":[{"id":"phq9_1","text":"Little interest or pleasure in doing things"},{"id":"phq9_2","text":"Feeling down, depressed, or hopeless"},{"id":"phq9_3","text":"Trouble falling or staying asleep, or sleeping too much"},{"id":"phq9_4","text":"Feeling tired or having little energy"},{"id":"phq9_5","text":"Poor appetite or overeating"},{"id":"phq9_6","text":"Feeling bad about yourself, or that you are a failure, or have let yourself or your family down"},{"id":"phq9_7","text":"Trouble concentrating on things, such as reading the newspaper or watching television"},{"id":"phq9_8","text":"Moving or speaking so slowly that other people could have noticed; or the opposite, being so fidgety or restless that you have been moving around a lot more than usual"},{"id":"phq9_9","text":"Thoughts that you would be better off dead, or of hurting yourself in some way"}],"gad7":[{"id":"gad7_1","text":"Feeling nervous, anxious, or on edge"},{"id":"gad7_2","text":"Not being able to stop or control worrying"},{"id":"gad7_3","text":"Worrying too much about different things"},{"id":"gad7_4","text":"Trouble relaxing"},{"id":"gad7_5","text":"Being so restless that it is hard to sit still"},{"id":"gad7_6","text":"Becoming easily annoyed or irritable"},{"id":"gad7_7","text":"Feeling afraid, as if something awful might happen"}],"auditc":[{"id":"auditc_1","text":"How often did you have a drink containing alcohol in the past year?"},{"id":"auditc_2","text":"How many standard drinks containing alcohol did you have on a typical day when you were drinking in the past year?"},{"id":"auditc_3","text":"How often did you have six or more drinks on one occasion in the past year?"}],"dast10":[{"id":"dast10_1","text":"Have you used drugs other than those required for medical reasons?"},{"id":"dast10_2","text":"Do you abuse more than one drug at a time?"},{"id":"dast10_3","text":"Are you always able to stop using drugs when you want to?"},{"id":"dast10_4","text":"Have you ever had blackouts or flashbacks as a result of drug use?"},{"id":"dast10_5","text":"Do you ever feel bad or guilty about your drug use?"},{"id":"dast10_6","text":"Does your spouse (or parents) ever complain about your involvement with drugs?"},{"id":"dast10_7","text":"Have you neglected your family because of your use of drugs?"},{"id":"dast10_8","text":"Have you engaged in illegal activities in order to obtain drugs?"},{"id":"dast10_9","text":"Have you ever experienced withdrawal symptoms (felt sick) when you stopped taking drugs?"},{"id":"dast10_10","text":"Have you had medical problems as a result of your drug use (e.g., memory loss, hepatitis, convulsions, bleeding)?"}],"epds":[{"id":"epds_1","text":"I have been able to laugh and see the funny side of things."},{"id":"epds_2","text":"I have looked forward with enjoyment to things."},{"id":"epds_3","text":"I have blamed myself unnecessarily when things went wrong."},{"id":"epds_4","text":"I have been anxious or worried for no good reason."},{"id":"epds_5","text":"I have felt scared or panicky for no very good reason."},{"id":"epds_6","text":"Things have been getting on top of me."},{"id":"epds_7","text":"I have been so unhappy that I have had difficulty sleeping."},{"id":"epds_8","text":"I have felt sad or miserable."},{"id":"epds_9","text":"I have been so unhappy that I have been crying."},{"id":"epds_10","text":"The thought of harming myself has occurred to me."}],"pcl5":[{"id":"pcl5_1","text":"Repeated, disturbing, and unwanted memories of the stressful experience"},{"id":"pcl5_2","text":"Repeated, disturbing dreams of the stressful experience"},{"id":"pcl5_3","text":"Suddenly feeling or acting as if the stressful experience were actually happening again"},{"id":"pcl5_4","text":"Feeling very upset when something reminded you of the stressful experience"},{"id":"pcl5_5","text":"Having strong physical reactions when something reminded you of the stressful experience (e.g., heart pounding, trouble breathing, sweating)"},{"id":"pcl5_6","text":"Avoiding memories, thoughts, or feelings related to the stressful experience"},{"id":"pcl5_7","text":"Avoiding external reminders of the stressful experience (e.g., people, places, conversations, activities, objects, or situations)"},{"id":"pcl5_8","text":"Trouble remembering important parts of the stressful experience"},{"id":"pcl5_9","text":"Having strong negative beliefs about yourself, other people, or the world (e.g., I am bad, there is something seriously wrong with me, no one can be trusted, the world is completely dangerous)"},{"id":"pcl5_10","text":"Blaming yourself or someone else for the stressful experience or what happened after it"},{"id":"pcl5_11","text":"Having strong negative feelings such as fear, horror, anger, guilt, or shame"},{"id":"pcl5_12","text":"Loss of interest in activities that you used to enjoy"},{"id":"pcl5_13","text":"Feeling distant or cut off from other people"},{"id":"pcl5_14","text":"Trouble experiencing positive feelings (e.g., being unable to feel happiness or have loving feelings for people close to you)"},{"id":"pcl5_15","text":"Irritable behavior, angry outbursts, or acting aggressively"},{"id":"pcl5_16","text":"Taking too many risks or doing things that could cause you harm"},{"id":"pcl5_17","text":"Being superalert or watchful or on guard"},{"id":"pcl5_18","text":"Feeling jumpy or easily startled"},{"id":"pcl5_19","text":"Having difficulty concentrating"},{"id":"pcl5_20","text":"Trouble falling or staying asleep"}],"ace10":[{"id":"ace_1","text":"Did a parent or other adult in the household often or very often swear at you, insult you, put you down, or humiliate you; or act in a way that made you afraid that you might be physically hurt?"},{"id":"ace_2","text":"Did a parent or other adult in the household often or very often push, grab, slap, or throw something at you; or ever hit you so hard that you had marks or were injured?"},{"id":"ace_3","text":"Did an adult or person at least 5 years older than you ever touch or fondle you or have you touch their body in a sexual way; or attempt or actually have oral, anal, or vaginal intercourse with you?"},{"id":"ace_4","text":"Did you often or very often feel that no one in your family loved you or thought you were important or special; or that your family did not look out for each other, feel close to each other, or support each other?"},{"id":"ace_5","text":"Did you often or very often feel that you did not have enough to eat, had to wear dirty clothes, and had no one to protect you; or that your parents were too drunk or high to take care of you or take you to the doctor if you needed it?"},{"id":"ace_6","text":"Were your parents ever separated or divorced?"},{"id":"ace_7","text":"Was your mother or stepmother often or very often pushed, grabbed, slapped, or had something thrown at her; or sometimes/often/very often kicked, bitten, hit with a fist, hit with something hard, repeatedly hit over at least a few minutes, or threatened or hurt with a weapon?"},{"id":"ace_8","text":"Did you live with anyone who was a problem drinker or alcoholic, or who used street drugs?"},{"id":"ace_9","text":"Was a household member depressed or mentally ill, or did a household member attempt suicide?"},{"id":"ace_10","text":"Did a household member go to prison?"}],"asrs":[{"id":"asrs_1","text":"How often do you have trouble wrapping up the final details of a project, once the challenging parts have been done?"},{"id":"asrs_2","text":"How often do you have difficulty getting things in order when you have to do a task that requires organization?"},{"id":"asrs_3","text":"How often do you have problems remembering appointments or obligations?"},{"id":"asrs_4","text":"When you have a task that requires a lot of thought, how often do you avoid or delay getting started?"},{"id":"asrs_5","text":"How often do you fidget or squirm with your hands or feet when you have to sit down for a long time?"},{"id":"asrs_6","text":"How often do you feel overly active and compelled to do things, like you were driven by a motor?"}],"wfirs":[{"id":"wfirs_a1","text":"Having problems with family"},{"id":"wfirs_a2","text":"Having problems with spouse/partner"},{"id":"wfirs_a3","text":"Relying on others to do things for you"},{"id":"wfirs_a4","text":"Causing fighting in the family"},{"id":"wfirs_a5","text":"Makes it hard for the family to have fun together"},{"id":"wfirs_a6","text":"Problems taking care of your family"},{"id":"wfirs_a7","text":"Problems balancing your needs against those of your family"},{"id":"wfirs_a8","text":"Problems losing control with family"},{"id":"wfirs_b1","text":"Problems performing required duties"},{"id":"wfirs_b2","text":"Problems with getting your work done efficiently"},{"id":"wfirs_b3","text":"Problems with your supervisor"},{"id":"wfirs_b4","text":"Problems keeping a job"},{"id":"wfirs_b5","text":"Getting fired from work"},{"id":"wfirs_b6","text":"Problems working in a team"},{"id":"wfirs_b7","text":"Problems with your attendance"},{"id":"wfirs_b8","text":"Problems with being late"},{"id":"wfirs_b9","text":"Problems taking on new tasks"},{"id":"wfirs_b10","text":"Problems working to your potential"},{"id":"wfirs_b11","text":"Poor performance evaluations"},{"id":"wfirs_c1","text":"Problems taking notes"},{"id":"wfirs_c2","text":"Problems completing assignments"},{"id":"wfirs_c3","text":"Problems getting your work done efficiently"},{"id":"wfirs_c4","text":"Problems with teachers"},{"id":"wfirs_c5","text":"Problems with school administrators"},{"id":"wfirs_c6","text":"Problems meeting minimum requirements to stay in school"},{"id":"wfirs_c7","text":"Problems with attendance"},{"id":"wfirs_c8","text":"Problems with being late"},{"id":"wfirs_c9","text":"Problems with working to your potential"},{"id":"wfirs_c10","text":"Problems with inconsistent grades"},{"id":"wfirs_d1","text":"Excessive or inappropriate use of internet, video games or TV"},{"id":"wfirs_d2","text":"Problems keeping an acceptable appearance"},{"id":"wfirs_d3","text":"Problems getting ready to leave the house"},{"id":"wfirs_d4","text":"Problems getting to bed"},{"id":"wfirs_d5","text":"Problems with nutrition"},{"id":"wfirs_d6","text":"Problems with sex"},{"id":"wfirs_d7","text":"Problems with sleeping"},{"id":"wfirs_d8","text":"Getting hurt or injured"},{"id":"wfirs_d9","text":"Avoiding exercise"},{"id":"wfirs_d10","text":"Problems keeping regular appointments with doctor/dentist"},{"id":"wfirs_d11","text":"Problems keeping up with household chores"},{"id":"wfirs_d12","text":"Problems managing money"},{"id":"wfirs_e1","text":"Feeling bad about yourself"},{"id":"wfirs_e2","text":"Feeling frustrated with yourself"},{"id":"wfirs_e3","text":"Feeling discouraged"},{"id":"wfirs_e4","text":"Not feeling happy with your life"},{"id":"wfirs_e5","text":"Feeling incompetent"},{"id":"wfirs_f1","text":"Getting into arguments"},{"id":"wfirs_f2","text":"Trouble cooperating"},{"id":"wfirs_f3","text":"Trouble getting along with people"},{"id":"wfirs_f4","text":"Problems having fun with other people"},{"id":"wfirs_f5","text":"Problems participating in hobbies"},{"id":"wfirs_f6","text":"Problems making friends"},{"id":"wfirs_f7","text":"Problems keeping friends"},{"id":"wfirs_f8","text":"Saying inappropriate things"},{"id":"wfirs_f9","text":"Complaints from neighbours"},{"id":"wfirs_g1","text":"Aggressive driving"},{"id":"wfirs_g2","text":"Doing other things while driving"},{"id":"wfirs_g3","text":"Road rage"},{"id":"wfirs_g4","text":"Breaking or damaging things"},{"id":"wfirs_g5","text":"Doing things that are illegal"},{"id":"wfirs_g6","text":"Being involved with the police"},{"id":"wfirs_g7","text":"Smoking cigarettes"},{"id":"wfirs_g8","text":"Smoking marijuana"},{"id":"wfirs_g9","text":"Drinking alcohol"},{"id":"wfirs_g10","text":"Taking \"street\" drugs"},{"id":"wfirs_g11","text":"Sex without protection (birth control, condom)"},{"id":"wfirs_g12","text":"Sexually inappropriate behaviour"},{"id":"wfirs_g13","text":"Being physically aggressive"},{"id":"wfirs_g14","text":"Being verbally aggressive"}],"msibpd":[{"id":"msibpd_1","text":"Have any of your closest relationships been troubled by a lot of arguments or repeated breakups?"},{"id":"msibpd_2","text":"Have you deliberately hurt yourself physically (e.g., punched yourself, cut yourself, burned yourself)? Or made a suicide attempt?"},{"id":"msibpd_3","text":"Have you had at least two other problems with impulsivity (e.g., eating binges and spending sprees, drinking too much and verbal outbursts)?"},{"id":"msibpd_4","text":"Have you been extremely moody?"},{"id":"msibpd_5","text":"Have you felt very angry a lot of the time? Or often acted in an angry or sarcastic manner?"},{"id":"msibpd_6","text":"Have you often been distrustful of other people?"},{"id":"msibpd_7","text":"Have you frequently felt unreal or as if things around you were unreal?"},{"id":"msibpd_8","text":"Have you chronically felt empty?"},{"id":"msibpd_9","text":"Have you often felt that you had no idea of who you are or that you have no identity?"},{"id":"msibpd_10","text":"Have you made desperate efforts to avoid feeling abandoned or being abandoned (e.g., repeatedly called someone to reassure yourself that they still cared, begged them not to leave you, clung to them physically)?"}]};
 var RISK_ITEMS = {"phq9":["phq9_9"],"epds":["epds_10"],"msibpd":["msibpd_2"]};
-var RESPONSE_OPTIONS = {"phq9":{"_shared":[{"value":0,"label":"Not at all"},{"value":1,"label":"Several days"},{"value":2,"label":"More than half the days"},{"value":3,"label":"Nearly every day"}]},"gad7":{"_shared":[{"value":0,"label":"Not at all"},{"value":1,"label":"Several days"},{"value":2,"label":"More than half the days"},{"value":3,"label":"Nearly every day"}]},"auditc":{"auditc_1":[{"value":0,"label":"Never"},{"value":1,"label":"Monthly or less"},{"value":2,"label":"2–4 times a month"},{"value":3,"label":"2–3 times a week"},{"value":4,"label":"4 or more times a week"}],"auditc_2":[{"value":0,"label":"1 or 2"},{"value":1,"label":"3 or 4"},{"value":2,"label":"5 or 6"},{"value":3,"label":"7 to 9"},{"value":4,"label":"10 or more"}],"auditc_3":[{"value":0,"label":"Never"},{"value":1,"label":"Less than monthly"},{"value":2,"label":"Monthly"},{"value":3,"label":"Weekly"},{"value":4,"label":"Daily or almost daily"}]},"dast10":{"_shared":[{"value":1,"label":"Yes"},{"value":0,"label":"No"}]},"epds":{"epds_1":[{"value":0,"label":"As much as I always could"},{"value":1,"label":"Not quite so much now"},{"value":2,"label":"Definitely not so much now"},{"value":3,"label":"Not at all"}],"epds_2":[{"value":0,"label":"As much as I ever did"},{"value":1,"label":"Rather less than I used to"},{"value":2,"label":"Definitely less than I used to"},{"value":3,"label":"Hardly at all"}],"epds_3":[{"value":3,"label":"Yes, most of the time"},{"value":2,"label":"Yes, some of the time"},{"value":1,"label":"Not very often"},{"value":0,"label":"No, never"}],"epds_4":[{"value":0,"label":"No, not at all"},{"value":1,"label":"Hardly ever"},{"value":2,"label":"Yes, sometimes"},{"value":3,"label":"Yes, very often"}],"epds_5":[{"value":3,"label":"Yes, quite a lot"},{"value":2,"label":"Yes, sometimes"},{"value":1,"label":"No, not much"},{"value":0,"label":"No, not at all"}],"epds_6":[{"value":3,"label":"Yes, most of the time I have not been able to cope at all"},{"value":2,"label":"Yes, sometimes I have not been coping as well as usual"},{"value":1,"label":"No, most of the time I have coped quite well"},{"value":0,"label":"No, I have been coping as well as ever"}],"epds_7":[{"value":3,"label":"Yes, most of the time"},{"value":2,"label":"Yes, sometimes"},{"value":1,"label":"Not very often"},{"value":0,"label":"No, not at all"}],"epds_8":[{"value":3,"label":"Yes, most of the time"},{"value":2,"label":"Yes, quite often"},{"value":1,"label":"Not very often"},{"value":0,"label":"No, not at all"}],"epds_9":[{"value":3,"label":"Yes, most of the time"},{"value":2,"label":"Yes, quite often"},{"value":1,"label":"Only occasionally"},{"value":0,"label":"No, never"}],"epds_10":[{"value":3,"label":"Yes, quite often"},{"value":2,"label":"Sometimes"},{"value":1,"label":"Hardly ever"},{"value":0,"label":"Never"}]},"pcl5":{"_shared":[{"value":0,"label":"Not at all"},{"value":1,"label":"A little bit"},{"value":2,"label":"Moderately"},{"value":3,"label":"Quite a bit"},{"value":4,"label":"Extremely"}]},"ace10":{"_shared":[{"value":1,"label":"Yes"},{"value":0,"label":"No"}]},"asrs":{"_shared":[{"value":0,"label":"Never"},{"value":1,"label":"Rarely"},{"value":2,"label":"Sometimes"},{"value":3,"label":"Often"},{"value":4,"label":"Very often"}]},"wfirs":{"_shared":[{"value":0,"label":"Never or not at all"},{"value":1,"label":"Sometimes or somewhat"},{"value":2,"label":"Often or much"},{"value":3,"label":"Very often or very much"}]},"msibpd":{"_shared":[{"value":1,"label":"Yes"},{"value":0,"label":"No"}]}};
+var RESPONSE_OPTIONS = {"phq9":{"_shared":[{"value":0,"label":"Not at all"},{"value":1,"label":"Several days"},{"value":2,"label":"More than half the days"},{"value":3,"label":"Nearly every day"}]},"gad7":{"_shared":[{"value":0,"label":"Not at all"},{"value":1,"label":"Several days"},{"value":2,"label":"More than half the days"},{"value":3,"label":"Nearly every day"}]},"auditc":{"auditc_1":[{"value":0,"label":"Never"},{"value":1,"label":"Monthly or less"},{"value":2,"label":"2–4 times a month"},{"value":3,"label":"2–3 times a week"},{"value":4,"label":"4 or more times a week"}],"auditc_2":[{"value":0,"label":"1 or 2"},{"value":1,"label":"3 or 4"},{"value":2,"label":"5 or 6"},{"value":3,"label":"7 to 9"},{"value":4,"label":"10 or more"}],"auditc_3":[{"value":0,"label":"Never"},{"value":1,"label":"Less than monthly"},{"value":2,"label":"Monthly"},{"value":3,"label":"Weekly"},{"value":4,"label":"Daily or almost daily"}]},"dast10":{"_shared":[{"value":1,"label":"Yes"},{"value":0,"label":"No"}]},"epds":{"epds_1":[{"value":0,"label":"As much as I always could"},{"value":1,"label":"Not quite so much now"},{"value":2,"label":"Definitely not so much now"},{"value":3,"label":"Not at all"}],"epds_2":[{"value":0,"label":"As much as I ever did"},{"value":1,"label":"Rather less than I used to"},{"value":2,"label":"Definitely less than I used to"},{"value":3,"label":"Hardly at all"}],"epds_3":[{"value":3,"label":"Yes, most of the time"},{"value":2,"label":"Yes, some of the time"},{"value":1,"label":"Not very often"},{"value":0,"label":"No, never"}],"epds_4":[{"value":0,"label":"No, not at all"},{"value":1,"label":"Hardly ever"},{"value":2,"label":"Yes, sometimes"},{"value":3,"label":"Yes, very often"}],"epds_5":[{"value":3,"label":"Yes, quite a lot"},{"value":2,"label":"Yes, sometimes"},{"value":1,"label":"No, not much"},{"value":0,"label":"No, not at all"}],"epds_6":[{"value":3,"label":"Yes, most of the time I have not been able to cope at all"},{"value":2,"label":"Yes, sometimes I have not been coping as well as usual"},{"value":1,"label":"No, most of the time I have coped quite well"},{"value":0,"label":"No, I have been coping as well as ever"}],"epds_7":[{"value":3,"label":"Yes, most of the time"},{"value":2,"label":"Yes, sometimes"},{"value":1,"label":"Not very often"},{"value":0,"label":"No, not at all"}],"epds_8":[{"value":3,"label":"Yes, most of the time"},{"value":2,"label":"Yes, quite often"},{"value":1,"label":"Not very often"},{"value":0,"label":"No, not at all"}],"epds_9":[{"value":3,"label":"Yes, most of the time"},{"value":2,"label":"Yes, quite often"},{"value":1,"label":"Only occasionally"},{"value":0,"label":"No, never"}],"epds_10":[{"value":3,"label":"Yes, quite often"},{"value":2,"label":"Sometimes"},{"value":1,"label":"Hardly ever"},{"value":0,"label":"Never"}]},"pcl5":{"_shared":[{"value":0,"label":"Not at all"},{"value":1,"label":"A little bit"},{"value":2,"label":"Moderately"},{"value":3,"label":"Quite a bit"},{"value":4,"label":"Extremely"}]},"ace10":{"_shared":[{"value":1,"label":"Yes"},{"value":0,"label":"No"}]},"asrs":{"_shared":[{"value":0,"label":"Never"},{"value":1,"label":"Rarely"},{"value":2,"label":"Sometimes"},{"value":3,"label":"Often"},{"value":4,"label":"Very often"}]},"wfirs":{"_shared":[{"value":0,"label":"Never or not at all"},{"value":1,"label":"Sometimes or somewhat"},{"value":2,"label":"Often or much"},{"value":3,"label":"Very often or very much"},{"value":-1,"label":"Not applicable"}]},"msibpd":{"_shared":[{"value":1,"label":"Yes"},{"value":0,"label":"No"}]}};
 
 var CATALOG = [
   { id:'phq9',   name:'PHQ-9',   domain:'Depression',           desc:'9-item depression severity (0–27).' },
@@ -234,19 +270,115 @@ var CATALOG = [
   { id:'pcl5',   name:'PCL-5',   domain:'PTSD',                 desc:'20-item PTSD symptom checklist (DSM-5).' },
   { id:'ace10',  name:'ACE',     domain:'Childhood adversity',  desc:'10-item adverse childhood experiences.' },
   { id:'asrs',   name:'ASRS v1.1', domain:'ADHD (screen)',      desc:'6-item adult ADHD screener.' },
-  { id:'wfirs',  name:'WFIRS-S', domain:'Functional impairment',desc:'7-domain functional impairment.' },
+  { id:'wfirs',  name:'WFIRS-S', domain:'Functional impairment',desc:'69-item validated functional impairment scale (7 domains).' },
   { id:'msibpd', name:'MSI-BPD', domain:'Personality (BPD)',    desc:'10-item borderline PD screen.' }
 ];
 
 var selectedInstruments = [];
 var delivery = 'link';
 
+// Preset bundles (curated batteries). Custom bundles load from the per-clinician
+// store and are appended at render time.
+var PRESET_BUNDLES = [
+  { id:'mood',      label:'Mood Baseline',   instruments:['phq9','gad7'] },
+  { id:'substance', label:'Substance Screen', instruments:['auditc','dast10','phq9','gad7'] },
+  { id:'perinatal', label:'Perinatal Intake', instruments:['epds','gad7'] },
+  { id:'adhd',      label:'ADHD Eval',       instruments:['asrs','wfirs','phq9','gad7'] },
+  { id:'trauma',    label:'Trauma Intake',   instruments:['pcl5','phq9','gad7','ace10'] }
+];
+var customBundles = [];   // [{id,label,instruments}]
+var CUSTOM_BUNDLE_KEY = 'assessment_custom_bundles';
+
 function initTool(){
   renderCatalog();
-  // Deep-link from the notification email: #returned opens the dashboard tab.
+  renderBundleBar();
+  loadCustomBundles();
   if((window.location.hash || '').toLowerCase() === '#returned'){
     switchTab('dashboard');
   }
+}
+
+function renderBundleBar(){
+  var bar = document.getElementById('bundle-bar');
+  if(!bar) return;
+  var html = '';
+  PRESET_BUNDLES.forEach(function(b){
+    html += '<button type="button" class="bundle-chip" onclick="applyBundle(\''+b.id+'\',false)">'+escapeHtml(b.label)+'</button>';
+  });
+  customBundles.forEach(function(b){
+    html += '<button type="button" class="bundle-chip custom" onclick="applyBundle(\''+escapeHtml(b.id)+'\',true)">'
+      + escapeHtml(b.label)
+      + '<span class="bundle-del" onclick="event.stopPropagation();deleteCustomBundle(\''+escapeHtml(b.id)+'\')" title="Delete bundle">\u00d7</span>'
+      + '</button>';
+  });
+  html += '<button type="button" class="bundle-chip save" onclick="saveCustomBundle()">+ Save current</button>';
+  bar.innerHTML = html;
+}
+
+function applyBundle(id, isCustom){
+  var list = isCustom ? customBundles : PRESET_BUNDLES;
+  var b = null;
+  for(var i=0;i<list.length;i++){ if(list[i].id===id){ b=list[i]; break; } }
+  if(!b) return;
+  // Set selection to exactly the bundle's instruments (intersected with catalog).
+  var valid = b.instruments.filter(function(x){ return CATALOG.some(function(c){ return c.id===x; }); });
+  selectedInstruments = valid.slice();
+  // Sync the grid UI.
+  CATALOG.forEach(function(c){
+    var on = selectedInstruments.indexOf(c.id) !== -1;
+    var card = document.getElementById('ic-'+c.id);
+    var cb = document.getElementById('cb-'+c.id);
+    if(card){ card.classList.toggle('selected', on); }
+    if(cb){ cb.checked = on; }
+  });
+  toast('Applied: ' + b.label);
+}
+
+function saveCustomBundle(){
+  if(!selectedInstruments.length){ toast('Select some instruments first.','error'); return; }
+  var label = prompt('Name this bundle:');
+  if(!label) return;
+  label = label.trim().slice(0,40);
+  if(!label) return;
+  var id = 'c_' + Date.now();
+  customBundles.push({ id:id, label:label, instruments:selectedInstruments.slice() });
+  persistCustomBundles();
+  renderBundleBar();
+  toast('Bundle saved');
+}
+
+function deleteCustomBundle(id){
+  if(!confirm('Delete this custom bundle? Your saved instrument set for it will be removed. This does not affect any sent assessments.')) return;
+  customBundles = customBundles.filter(function(b){ return b.id !== id; });
+  persistCustomBundles();
+  renderBundleBar();
+}
+
+// Custom bundles persist per-clinician via the shared user-tool-data store.
+// Presets always work; custom save/load degrades gracefully if the store is
+// unreachable (e.g., the function contract differs), keeping the tool usable.
+async function loadCustomBundles(){
+  try{
+    var res = await fetch('/.netlify/functions/user-tool-data',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ providerEmail: PROVIDER_EMAIL, action:'get', key: CUSTOM_BUNDLE_KEY })
+    });
+    if(!res.ok) return;
+    var data = await safeJson(res);
+    if(data && data.value){
+      var parsed = (typeof data.value === 'string') ? JSON.parse(data.value) : data.value;
+      if(Array.isArray(parsed)){ customBundles = parsed; renderBundleBar(); }
+    }
+  }catch(e){ /* presets still work; silent */ }
+}
+
+async function persistCustomBundles(){
+  try{
+    await fetch('/.netlify/functions/user-tool-data',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ providerEmail: PROVIDER_EMAIL, action:'set', key: CUSTOM_BUNDLE_KEY, value: JSON.stringify(customBundles) })
+    });
+  }catch(e){ toast('Saved locally for this session; could not sync.','error'); }
 }
 
 function renderCatalog(){
@@ -308,6 +440,8 @@ async function generate(){
   var vault = {};
   try { vault = JSON.parse(localStorage.getItem('credentialing-hub-profile') || '{}'); } catch(e){}
 
+  var reasonSent = (document.getElementById('reason-sent') || {}).value || '';
+
   try{
     var res = await fetch('/.netlify/functions/assessment-create',{
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -317,16 +451,30 @@ async function generate(){
         instrumentSet: selectedInstruments,
         delivery: delivery,
         patientEmail: delivery==='email' ? document.getElementById('patient-email').value.trim() : '',
+        reasonSent: reasonSent || null,
         replyTo: vault.email || null
       })
     });
-    var data = await res.json();
-    if(!data.ok){ toast(data.error || 'Could not create assessment.','error'); btn.disabled=false; btn.textContent='Generate & send'; return; }
+    var data = await safeJson(res);
+    if(!data || !data.ok){ toast((data && data.error) || 'Could not create assessment. Please try again.','error'); btn.disabled=false; btn.textContent='Generate & send'; return; }
     showLinkResult(data);
     btn.disabled = false; btn.textContent = 'Generate & send';
   }catch(e){
     toast('Network error. Try again.','error');
     btn.disabled = false; btn.textContent = 'Generate & send';
+  }
+}
+
+// Safely parse a fetch Response as JSON. If the server returned a non-JSON body
+// (e.g., an HTML 500 error page), this returns null instead of throwing, so
+// callers can show a clean error and always re-enable their buttons.
+async function safeJson(res){
+  try{
+    var text = await res.text();
+    if(!text) return null;
+    return JSON.parse(text);
+  }catch(e){
+    return null;
   }
 }
 
@@ -370,8 +518,8 @@ async function loadDashboard(){
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ providerEmail: PROVIDER_EMAIL })
     });
-    var data = await res.json();
-    if(!data.ok){ list.innerHTML = '<div class="empty-state">Could not load assessments.</div>'; return; }
+    var data = await safeJson(res);
+    if(!data || !data.ok){ list.innerHTML = '<div class="empty-state">Could not load assessments.</div>'; return; }
     renderDashboard(data.assessments || []);
   }catch(e){
     list.innerHTML = '<div class="empty-state">Network error loading assessments.</div>';
@@ -447,9 +595,9 @@ async function expireAssessment(id){
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ providerEmail: PROVIDER_EMAIL, assessmentId: id, action:'expire' })
     });
-    var data = await res.json();
-    if(data.ok){ toast('Link expired'); loadDashboard(); }
-    else { toast(data.error || 'Could not expire.','error'); }
+    var data = await safeJson(res);
+    if(data && data.ok){ toast('Link expired'); loadDashboard(); }
+    else { toast((data && data.error) || 'Could not expire.','error'); }
   }catch(e){ toast('Network error.','error'); }
 }
 
@@ -464,9 +612,9 @@ async function deleteResults(id){
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ providerEmail: PROVIDER_EMAIL, assessmentId: id, action:'delete' })
     });
-    var data = await res.json();
-    if(data.ok){ toast('Results deleted'); loadDashboard(); }
-    else { toast(data.error || 'Could not delete.','error'); }
+    var data = await safeJson(res);
+    if(data && data.ok){ toast('Results deleted'); loadDashboard(); }
+    else { toast((data && data.error) || 'Could not delete.','error'); }
   }catch(e){ toast('Network error.','error'); }
 }
 
@@ -478,8 +626,8 @@ async function retrieve(id){
       method:'POST', headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ providerEmail: PROVIDER_EMAIL, assessmentId: id, action:'retrieve' })
     });
-    var data = await res.json();
-    if(!data.ok){ toast(data.message || 'Could not retrieve.','error'); return; }
+    var data = await safeJson(res);
+    if(!data || !data.ok){ toast((data && data.message) || 'Could not retrieve.','error'); return; }
     showReport(data);
   }catch(e){ toast('Network error.','error'); }
 }
@@ -557,8 +705,25 @@ function buildReviewPanel(data){
 
   // Per-instrument cards
   (data.scores || []).forEach(function(s){
-    html += '<div class="rep-card">';
+    var resp = (data.responses && data.responses[s.instrumentId]) || null;
+
+    // ── WFIRS-S: domain-impairment card (no total/severity bar/chip grid) ──
+    if(s.instrumentId === 'wfirs'){
+      html += buildWfirsCard(s);
+      return;
+    }
+
+    html += '<div class="rep-card'+(s.instrumentId==='ace10'?' rep-card-history':'')+'">';
     html += '<div class="rep-card-head"><span class="rep-card-name">'+escapeHtml(s.instrumentName)+'</span><span class="rep-card-domain">'+escapeHtml(s.domain)+'</span></div>';
+
+    // ── ACE: historical-adversity framing, not symptom severity ──
+    if(s.instrumentId === 'ace10'){
+      html += '<div class="rep-score">ACE score '+escapeHtml(String(s.total))+' / 10 · <span class="rep-band">'+escapeHtml(s.bandLabel||'')+'</span></div>';
+      html += '<div class="ace-note">Cumulative count of adverse childhood experiences \u2014 historical exposure, not a current symptom-severity measure. Higher counts correlate with elevated long-term health and behavioral-health risk. Not diagnostic; use to inform trauma-informed care.</div>';
+      if(resp){ html += buildChipGrid(s.instrumentId, resp); }
+      html += '</div>';
+      return;
+    }
 
     // Score line
     var scoreStr = (typeof s.total==='number') ? (s.total + (s.max?(' / '+s.max):'')) : '';
@@ -594,7 +759,6 @@ function buildReviewPanel(data){
     }
 
     // Chip grid (item response pattern)
-    var resp = (data.responses && data.responses[s.instrumentId]) || null;
     if(resp){
       html += buildChipGrid(s.instrumentId, resp);
     }
@@ -609,6 +773,32 @@ function buildReviewPanel(data){
   return html;
 }
 
+// WFIRS-S card: per-domain mean + impairment flags, using validated rule.
+function buildWfirsCard(s){
+  var html = '<div class="rep-card">';
+  html += '<div class="rep-card-head"><span class="rep-card-name">'+escapeHtml(s.instrumentName)+'</span><span class="rep-card-domain">Functional impairment</span></div>';
+  html += '<div class="rep-score">Overall mean '+escapeHtml(String(s.overallMean))+' · <span class="rep-band">'+escapeHtml(s.bandLabel||'')+'</span></div>';
+  html += '<div class="wfirs-table">';
+  var dr = s.domainResults || {};
+  for(var label in dr){
+    if(!Object.prototype.hasOwnProperty.call(dr,label)) continue;
+    var d = dr[label];
+    if(!d.applicable){
+      html += '<div class="wfirs-row"><span class="wfirs-dom">'+escapeHtml(label)+'</span><span class="wfirs-na">N/A</span></div>';
+    } else {
+      var cls = d.impaired ? ' impaired' : '';
+      html += '<div class="wfirs-row'+cls+'"><span class="wfirs-dom">'+escapeHtml(label)+'</span>'
+        + '<span class="wfirs-mean">mean '+escapeHtml(String(d.mean))+'</span>'
+        + (d.impaired?'<span class="wfirs-flag">Impaired</span>':'<span class="wfirs-ok">\u2014</span>')
+        + '</div>';
+    }
+  }
+  html += '</div>';
+  html += '<div class="ace-note">Impairment threshold (validated): a domain flags as impaired with \u22652 items rated 2, \u22651 item rated 3, or a domain mean above 1.5. Measures functional impact, not symptoms; not diagnostic alone.</div>';
+  html += '</div>';
+  return html;
+}
+
 function buildChipGrid(instId, resp){
   var inst = INSTRUMENT_ITEMS[instId];
   if(!inst) return '';
@@ -618,7 +808,7 @@ function buildChipGrid(instId, resp){
   inst.forEach(function(it, idx){
     var v = resp[it.id];
     var lvl = 'na';
-    if(typeof v==='number'){
+    if(typeof v==='number' && v!==-1){
       if(max===1){ lvl = v===1 ? 'h' : 'z'; }
       else {
         var ratio = v/max;
@@ -637,6 +827,7 @@ function buildChipGrid(instId, resp){
 
 function responseLabel(instId, itemId, v){
   if(typeof v!=='number') return 'no response';
+  if(v===-1) return 'Not applicable';
   var opts = RESPONSE_OPTIONS[instId] && (RESPONSE_OPTIONS[instId][itemId] || RESPONSE_OPTIONS[instId]._shared);
   if(opts){ for(var i=0;i<opts.length;i++){ if(opts[i].value===v) return opts[i].label; } }
   return 'score '+v;
