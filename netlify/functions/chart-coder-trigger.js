@@ -8,6 +8,8 @@
 // PHI note: the chart note is forwarded to the background function and the
 // Anthropic API (BAA-covered). It is NOT written to the job row or logged.
 
+const { verifyToken } = require('./_lib/session');
+
 exports.handler = async function (event) {
   const CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -25,6 +27,15 @@ exports.handler = async function (event) {
 
   const noteText = (body.noteText || '').trim();
   if (!noteText) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Note text required' }) };
+
+  // AUTH: full-tier only. Identity from signed token (body.token or Authorization: Bearer).
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+  const session = verifyToken(sessionToken);
+  if (!session.valid) return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Invalid or expired session.' }) };
+  if (!(session.claims.scope === 'member' && session.claims.tier === 'full')) {
+    return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'This tool requires the full Think Beyond Practice membership.' }) };
+  }
 
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
@@ -62,7 +73,8 @@ exports.handler = async function (event) {
         job_id,
         noteText,
         visitType: body.visitType || '',
-        preflightContext: body.preflightContext || ''
+        preflightContext: body.preflightContext || '',
+        token: sessionToken
       })
     });
   } catch (e) {
