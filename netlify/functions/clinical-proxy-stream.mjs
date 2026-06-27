@@ -22,6 +22,37 @@ const { verifyToken } = require('./_lib/session.js');
 const ALLOWED_MODELS = ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'];
 const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 
+const TRIAL_DAYS = 7;
+
+// READ-ONLY: does this member have an unexpired trial row? Lets a forum-tier member
+// through the full-tier gate during their trial. Never creates a trial (that side
+// effect belongs to trial-check.mjs). Both trial tools share one clock (version 'v1').
+async function hasActiveTrial(cmid, email) {
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+  if (!SUPABASE_URL || !SERVICE_KEY) return false;
+  const keyId = (cmid != null && String(cmid).trim()) ? String(cmid).trim() : (email || '').toString().trim().toLowerCase();
+  if (!keyId) return false;
+  try {
+    const res = await fetch(
+      SUPABASE_URL + '/rest/v1/note_builder_trials?community_member_id=eq.' +
+      encodeURIComponent(keyId) + '&select=started_at',
+      { headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY } }
+    );
+    if (!res.ok) return false;
+    const rows = await res.json();
+    if (!Array.isArray(rows) || !rows.length) return false;
+    const msInDay = 24 * 60 * 60 * 1000;
+    for (let i = 0; i < rows.length; i++) {
+      const started = new Date(rows[i].started_at).getTime();
+      if (!isNaN(started) && (Date.now() - started) / msInDay < TRIAL_DAYS) return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
 export default async function handler(request) {
   const cors = {
     'Access-Control-Allow-Origin': '*',
@@ -52,8 +83,9 @@ export default async function handler(request) {
     });
   }
 
-  // AUTH: clinical streaming proxy is full-tier only. Identity from signed token
-  // (body.token or Authorization: Bearer). Closes the open credit-burn hole.
+  // AUTH: full-tier OR a forum member with a live 7-day trial (shared clock).
+  // Identity from signed token (body.token or Authorization: Bearer). Closes the
+  // open credit-burn hole while keeping trial users working.
   const authHeader = request.headers.get('authorization') || '';
   const sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
   const session = verifyToken(sessionToken);
@@ -62,10 +94,18 @@ export default async function handler(request) {
       status: 401, headers: { ...cors, 'Content-Type': 'application/json' }
     });
   }
-  if (!(session.claims.scope === 'member' && session.claims.tier === 'full')) {
+  if (session.claims.scope !== 'member') {
     return new Response(JSON.stringify({ error: 'This tool requires the full Think Beyond Practice membership.' }), {
       status: 403, headers: { ...cors, 'Content-Type': 'application/json' }
     });
+  }
+  if (session.claims.tier !== 'full') {
+    const trialOk = await hasActiveTrial(session.claims.cmid, session.claims.email);
+    if (!trialOk) {
+      return new Response(JSON.stringify({ error: 'This tool requires the full Think Beyond Practice membership.' }), {
+        status: 403, headers: { ...cors, 'Content-Type': 'application/json' }
+      });
+    }
   }
 
   const payload = {
