@@ -1,37 +1,27 @@
 // netlify/functions/assessment-retrieve.js
 //
 // Provider-authenticated. Returns the scored report for one assessment the
-// provider owns. Marks retrieved_at (does NOT delete — retention is a uniform
-// 30-day purge from completion, handled by purge_assessment_phi()).
+// provider owns; also supports ownership-restricted 'expire' and 'delete'.
 //
-// Also supports two ownership-restricted management actions on the same endpoint:
-//   action: 'retrieve' (default) - return scored report
-//   action: 'expire'             - manually expire a pending assessment
-//   action: 'delete'             - clinician-initiated PHI delete (same end state
-//                                  as the 30-day purge) for a completed record
+// SECURITY (hardened): provider identity comes from the SIGNED SESSION TOKEN
+// (verified via _lib/session.js), NOT a client-supplied providerEmail. The
+// ownership check now compares the row's provider_email to the TOKEN's verified
+// email, so it is meaningful (previously it compared to attacker-supplied input).
 //
-// Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, CIRCLE_API_V2_TOKEN
+// action: 'retrieve' (default) | 'expire' | 'delete'
+//
+// Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, SESSION_SIGNING_SECRET
 
 const { createClient } = require('@supabase/supabase-js');
 const instruments = require('./assessment-instruments.js');
+const { verifyToken } = require('./_lib/session');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Content-Type': 'application/json'
 };
-
-async function verifyMember(email) {
-  const base = (process.env.SITE_URL || 'https://thinkbeyondpractice.com').replace(/\/$/, '');
-  const res = await fetch(base + '/.netlify/functions/circle-auth', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: email })
-  });
-  const d = await res.json().catch(() => ({}));
-  return !!d.verified;
-}
 
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
@@ -49,26 +39,28 @@ exports.handler = async (event) => {
   try { body = JSON.parse(event.body || '{}'); }
   catch (e) { return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Invalid request' }) }; }
 
-  const providerEmail = (body.providerEmail || '').trim().toLowerCase();
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+  const session = verifyToken(sessionToken);
+  if (!session.valid) {
+    return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Invalid or expired session.', reason: session.reason }) };
+  }
+  if (session.claims.scope !== 'member') {
+    return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'This tool requires full membership.' }) };
+  }
+  const providerEmail = (session.claims.email || '').trim().toLowerCase();
+  if (!providerEmail) {
+    return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Session missing identity.' }) };
+  }
+
   const assessmentId = (body.assessmentId || '').trim();
   const action = (body.action || 'retrieve').trim();
-
-  if (!providerEmail || !assessmentId) {
-    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'providerEmail and assessmentId required' }) };
+  if (!assessmentId) {
+    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'assessmentId required' }) };
   }
 
-  try {
-    const ok = await verifyMember(providerEmail);
-    if (!ok) return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'No active membership found.' }) };
-  } catch (e) {
-    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Membership verification failed.' }) };
-  }
+  const sb = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 
-  const sb = createClient(SUPABASE_URL, SERVICE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
-
-  // Load the assessment and confirm ownership.
   const { data: assessment, error: aErr } = await sb
     .from('assessments')
     .select('id, provider_email, patient_name, instrument_set, status, completed_at, purged_at, reason_sent')
@@ -79,8 +71,8 @@ exports.handler = async (event) => {
     console.error('assessment-retrieve load failed:', aErr);
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Could not load assessment' }) };
   }
+  // Ownership: compare to the TOKEN's verified email (now meaningful).
   if (!assessment || assessment.provider_email !== providerEmail) {
-    // Ownership failure returns 404-style generic to avoid leaking existence.
     return { statusCode: 404, headers: CORS, body: JSON.stringify({ error: 'Assessment not found' }) };
   }
 
@@ -89,42 +81,25 @@ exports.handler = async (event) => {
     if (assessment.status !== 'pending') {
       return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Only pending assessments can be expired.' }) };
     }
-    const { error: exErr } = await sb
-      .from('assessments')
-      .update({ status: 'expired' })
-      .eq('id', assessmentId);
-    if (exErr) {
-      return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Could not expire assessment' }) };
-    }
+    const { error: exErr } = await sb.from('assessments').update({ status: 'expired' }).eq('id', assessmentId);
+    if (exErr) return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Could not expire assessment' }) };
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, status: 'expired' }) };
   }
 
-  // ── Manage: clinician-initiated delete of PHI (same end state as the 30-day
-  //    purge, but on demand). Deletes the PHI-bearing result row, nulls the
-  //    patient name, stamps purged_at; KEEPS the assessment row + de-identified
-  //    metadata. Only allowed on completed/retrieved records (not pending).
+  // ── Manage: clinician-initiated PHI delete ──
   if (action === 'delete') {
     if (assessment.status !== 'completed' && assessment.status !== 'retrieved') {
       return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Only completed assessments can be deleted.' }) };
     }
     if (assessment.purged_at) {
-      // Already purged; nothing to delete. Idempotent success.
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, alreadyPurged: true }) };
     }
-    // Delete the PHI-bearing result row(s).
-    const { error: delErr } = await sb
-      .from('assessment_results')
-      .delete()
-      .eq('assessment_id', assessmentId);
+    const { error: delErr } = await sb.from('assessment_results').delete().eq('assessment_id', assessmentId);
     if (delErr) {
       console.error('assessment delete (results) failed:', delErr);
       return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Could not delete results' }) };
     }
-    // Null the patient name + stamp purged (mirrors purge_assessment_phi()).
-    const { error: updErr } = await sb
-      .from('assessments')
-      .update({ patient_name: null, purged_at: new Date().toISOString() })
-      .eq('id', assessmentId);
+    const { error: updErr } = await sb.from('assessments').update({ patient_name: null, purged_at: new Date().toISOString() }).eq('id', assessmentId);
     if (updErr) {
       console.error('assessment delete (mark purged) failed:', updErr);
       return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Results deleted but record update failed' }) };
@@ -156,14 +131,10 @@ exports.handler = async (event) => {
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: false, message: 'No results found for this assessment.' }) };
   }
 
-  // Stamp retrieved_at (first retrieval; does not change retention clock).
   const update = { retrieved_at: new Date().toISOString() };
   if (assessment.status === 'completed') update.status = 'retrieved';
   await sb.from('assessments').update(update).eq('id', assessmentId);
 
-  // Generate the two chart blurbs from the stored scores + raw responses.
-  // scores is the array of scored results; reconstruct the battery shape the
-  // blurb builders expect.
   const battery = { results: result.scores || [], flags: result.flags || [] };
   let screenerReviewBlurb = '';
   let hpiSymptomBlurb = '';
@@ -185,10 +156,7 @@ exports.handler = async (event) => {
       scores: result.scores,
       responses: result.responses || {},
       flags: result.flags || [],
-      blurbs: {
-        screenerReview: screenerReviewBlurb,
-        hpiSymptom: hpiSymptomBlurb
-      }
+      blurbs: { screenerReview: screenerReviewBlurb, hpiSymptom: hpiSymptomBlurb }
     })
   };
 };
