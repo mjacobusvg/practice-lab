@@ -45,6 +45,7 @@ exports.handler = async (event) => {
   const patientName = (body.patientName || '').trim() || null;
   const instrumentSet = Array.isArray(body.instrumentSet) ? body.instrumentSet : [];
   const delivery = (body.delivery || 'link').trim();           // 'link' | 'email'
+  const reasonSent = (body.reasonSent || '').trim() || null;   // optional category
   const patientEmail = (body.patientEmail || '').trim();
   const replyTo = (body.replyTo || '').trim() || null;
 
@@ -105,6 +106,7 @@ exports.handler = async (event) => {
       provider_email: providerEmail,
       patient_name: patientName,
       instrument_set: instrumentSet,
+      reason_sent: reasonSent,
       status: 'pending',
       expires_at: expiresAt.toISOString()
     })
