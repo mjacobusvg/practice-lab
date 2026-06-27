@@ -87,6 +87,11 @@ exports.handler = async function(event) {
   //     Forum-only members (tier 'forum') and hub-scope buyers are blocked from them.
   var scope = session.claims.scope;
   var tier = session.claims.tier || null;
+  // vault_profile is the one shared store ANY authenticated identity may use (full
+  // member, forum-only member, or standalone hub buyer) — it's just a profile, useless
+  // without full-tier tools. Every OTHER toolId requires a FULL member (scope 'member'
+  // AND tier 'full'); forum-only and hub-scope are blocked. The clinical/practice tools
+  // that write these stores (HIPAA Hub, Compliance Tracker, etc.) are full-tier tools.
   var SHARED_TOOLS = ['vault_profile'];
   var isShared = SHARED_TOOLS.indexOf(toolId) !== -1;
   var isFullMember = (scope === 'member' && tier === 'full');
