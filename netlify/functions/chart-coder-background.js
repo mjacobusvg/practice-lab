@@ -12,6 +12,7 @@
 // API (BAA-covered). It is NOT written to the job row or logged.
 
 const https = require('https');
+const { verifyToken } = require('./_lib/session');
 
 // ── Prompts (verbatim from pm-chart-coder.html) ──────────────────────────────
 
@@ -336,6 +337,19 @@ exports.handler = async function (event) {
   let body;
   try { body = JSON.parse(event.body || '{}'); } catch (e) {
     return { statusCode: 400, body: 'Invalid JSON' };
+  }
+
+  // AUTH: this background function has a PUBLIC Netlify URL, so it must gate itself
+  // (gating only chart-coder-trigger is insufficient). Full-tier only. The trigger
+  // forwards the caller's signed token in its internal POST.
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+  const session = verifyToken(sessionToken);
+  if (!session.valid) {
+    return { statusCode: 401, body: 'Invalid or expired session.' };
+  }
+  if (!(session.claims.scope === 'member' && session.claims.tier === 'full')) {
+    return { statusCode: 403, body: 'This tool requires the full Think Beyond Practice membership.' };
   }
 
   const { job_id, noteText, visitType, preflightContext } = body;
