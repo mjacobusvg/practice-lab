@@ -24,6 +24,13 @@ p.lead{color:var(--cream-dim);font-size:.9rem;margin-bottom:6px}
 .crisis-banner strong{color:var(--red)}
 .inst-block{margin-bottom:28px}
 .inst-intro{font-size:.88rem;color:var(--cream-dim);margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--rule)}
+.wfirs-gate{background:var(--navy);border:1px solid var(--rule);border-radius:8px;padding:14px 16px;margin-bottom:18px}
+.gate-q{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:.9rem;color:var(--cream);padding:6px 0}
+.gate-opts{display:flex;gap:14px}
+.gate-opt{display:inline-flex;align-items:center;gap:6px;font-size:.88rem;cursor:pointer}
+.gate-opt input{accent-color:var(--teal)}
+.wfirs-domain{margin-bottom:10px}
+.domain-head{font-size:.82rem;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.05em;margin:14px 0 6px;padding-top:10px;border-top:1px solid var(--rule)}
 .q{padding:14px 0;border-bottom:1px solid rgba(42,171,184,0.08)}
 .q:last-child{border-bottom:none}
 .q-text{font-size:.92rem;color:var(--cream);margin-bottom:12px;line-height:1.55}
@@ -147,26 +154,106 @@ function renderInstruments(){
   var html = '';
   INSTRUMENTS.forEach(function(inst){
     RESPONSES[inst.id] = RESPONSES[inst.id] || {};
-    html += '<div class="card inst-block">';
+    html += '<div class="card inst-block" data-instcard="'+esc(inst.id)+'">';
     html += '<h2>'+esc(inst.fullName || inst.name)+'</h2>';
     html += '<div class="inst-intro">'+esc(inst.instructionText)+'</div>';
-    inst.items.forEach(function(item, idx){
-      var opts = item.options || inst.options || [];
-      html += '<div class="q" data-inst="'+esc(inst.id)+'" data-item="'+esc(item.id)+'">';
-      html += '<div class="q-text"><span class="q-num">'+(idx+1)+'.</span>'+esc(item.text)+'</div>';
-      html += '<div class="opts">';
-      opts.forEach(function(o){
-        var name = inst.id+'__'+item.id;
-        html += '<label class="opt" onclick="pick(this,\''+esc(inst.id)+'\',\''+esc(item.id)+'\','+o.value+')">';
-        html += '<input type="radio" name="'+esc(name)+'" value="'+o.value+'">';
-        html += '<span class="opt-label">'+esc(o.label)+'</span>';
-        html += '</label>';
+
+    // Special handling: WFIRS-S has conditional Work/School domains gated on an
+    // employment/enrollment question, and supports a "Not applicable" option.
+    if(inst.domains && inst.domains.length){
+      html += renderWfirsGate(inst);
+      html += renderDomainGroupedItems(inst);
+    } else {
+      inst.items.forEach(function(item, idx){
+        html += renderQ(inst, item, idx+1);
       });
-      html += '</div></div>';
-    });
+    }
     html += '</div>';
   });
   wrap.innerHTML = html;
+}
+
+function renderQ(inst, item, num){
+  var opts = item.options || inst.options || [];
+  var h = '<div class="q" data-inst="'+esc(inst.id)+'" data-item="'+esc(item.id)+'">';
+  h += '<div class="q-text"><span class="q-num">'+num+'.</span>'+esc(item.text)+'</div>';
+  h += '<div class="opts">';
+  opts.forEach(function(o){
+    var name = inst.id+'__'+item.id;
+    h += '<label class="opt" onclick="pick(this,\''+esc(inst.id)+'\',\''+esc(item.id)+'\','+o.value+')">';
+    h += '<input type="radio" name="'+esc(name)+'" value="'+o.value+'">';
+    h += '<span class="opt-label">'+esc(o.label)+'</span>';
+    h += '</label>';
+  });
+  h += '</div></div>';
+  return h;
+}
+
+// Upfront employment/enrollment question for WFIRS-S conditional domains.
+function renderWfirsGate(inst){
+  var h = '<div class="wfirs-gate">';
+  h += '<div class="gate-q"><span>Are you currently employed?</span>'
+    + '<span class="gate-opts">'
+    + '<label class="gate-opt"><input type="radio" name="wfirs_employed" onclick="setWfirsGate(\''+esc(inst.id)+'\',\'employed\',true)"> Yes</label>'
+    + '<label class="gate-opt"><input type="radio" name="wfirs_employed" onclick="setWfirsGate(\''+esc(inst.id)+'\',\'employed\',false)"> No</label>'
+    + '</span></div>';
+  h += '<div class="gate-q"><span>Are you currently in school?</span>'
+    + '<span class="gate-opts">'
+    + '<label class="gate-opt"><input type="radio" name="wfirs_inschool" onclick="setWfirsGate(\''+esc(inst.id)+'\',\'inSchool\',true)"> Yes</label>'
+    + '<label class="gate-opt"><input type="radio" name="wfirs_inschool" onclick="setWfirsGate(\''+esc(inst.id)+'\',\'inSchool\',false)"> No</label>'
+    + '</span></div>';
+  h += '</div>';
+  return h;
+}
+
+function renderDomainGroupedItems(inst){
+  var h = '';
+  inst.domains.forEach(function(dom){
+    var domItems = inst.items.filter(function(it){ return it.itemDomain === dom.label; });
+    if(!domItems.length) return;
+    var hidden = dom.conditionalOn ? ' style="display:none"' : '';
+    h += '<div class="wfirs-domain" data-domain="'+esc(dom.label)+'" data-cond="'+esc(dom.conditionalOn||'')+'"'+hidden+'>';
+    h += '<div class="domain-head">'+esc(dom.label)+'</div>';
+    domItems.forEach(function(item, idx){
+      h += renderQ(inst, item, idx+1);
+    });
+    h += '</div>';
+  });
+  return h;
+}
+
+// Track WFIRS gate answers; show/hide conditional domains and auto-n/a hidden items.
+var WFIRS_GATE = { employed: null, inSchool: null };
+function setWfirsGate(instId, key, value){
+  WFIRS_GATE[key] = value;
+  RESPONSES[instId] = RESPONSES[instId] || {};
+  document.querySelectorAll('.wfirs-domain[data-cond="'+key+'"]').forEach(function(domEl){
+    var domLabel = domEl.getAttribute('data-domain');
+    if(value){
+      domEl.style.display = '';
+      // Clear any auto-n/a we set so the patient answers normally.
+      INSTRUMENTS.forEach(function(inst){
+        if(!inst.domains) return;
+        inst.items.forEach(function(it){
+          if(it.itemDomain === domLabel && RESPONSES[inst.id][it.id] === -1){
+            // only clear if it was auto-set (no radio checked)
+            var anyChecked = document.querySelector('input[name="'+inst.id+'__'+it.id+'"]:checked');
+            if(!anyChecked) delete RESPONSES[inst.id][it.id];
+          }
+        });
+      });
+    } else {
+      domEl.style.display = 'none';
+      // Auto-mark every item in this domain as n/a (-1).
+      INSTRUMENTS.forEach(function(inst){
+        if(!inst.domains) return;
+        inst.items.forEach(function(it){
+          if(it.itemDomain === domLabel) RESPONSES[inst.id][it.id] = -1;
+        });
+      });
+    }
+  });
+  updateProgress();
 }
 
 function pick(el, instId, itemId, value){
@@ -188,18 +275,28 @@ function answeredItems(){
   var n = 0;
   INSTRUMENTS.forEach(function(i){
     var r = RESPONSES[i.id] || {};
-    i.items.forEach(function(it){ if(typeof r[it.id] === 'number') n++; });
+    i.items.forEach(function(it){ if(typeof r[it.id] === 'number') n++; }); // -1 (n/a) counts
   });
   return n;
+}
+
+// WFIRS requires the two gate questions to be answered before it's complete.
+function wfirsGateComplete(){
+  var hasWfirs = INSTRUMENTS.some(function(i){ return i.domains && i.domains.length; });
+  if(!hasWfirs) return true;
+  return WFIRS_GATE.employed !== null && WFIRS_GATE.inSchool !== null;
 }
 
 function updateProgress(){
   var total = totalItems(), done = answeredItems();
   var consent = document.getElementById('consent-check').checked;
-  var allAnswered = done >= total;
+  var gateOk = wfirsGateComplete();
+  var allAnswered = done >= total && gateOk;
   document.getElementById('submit-btn').disabled = !(allAnswered && consent);
   var note = document.getElementById('progress-note');
-  if(!allAnswered){
+  if(!gateOk){
+    note.textContent = 'Please answer the employment and school questions first.';
+  } else if(!allAnswered){
     note.textContent = done + ' of ' + total + ' questions answered';
   } else if(!consent){
     note.textContent = 'All questions answered. Please check the box above to submit.';
