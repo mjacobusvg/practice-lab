@@ -3,6 +3,9 @@
 // category/tier, and fuzzy-matches against the 38-post manifest.
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, ANTHROPIC_API_KEY
 
+const { verifyToken } = require('./_lib/session');
+
+const ADMIN_EMAILS = ['michael@thinkbeyondpsych.com'];
 const VALID_CATS = ['documentation', 'billing', 'letters', 'policies', 'clinical', 'operations', 'general'];
 
 exports.handler = async function (event) {
@@ -23,6 +26,16 @@ exports.handler = async function (event) {
   if (missing.length) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'Missing env: ' + missing.join(', ') }) };
 
   let p; try { p = JSON.parse(event.body || '{}'); } catch (e) { return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Bad JSON' }) }; }
+
+  // Admin-only (was unauthenticated; this also calls Anthropic, so it's an AI-cost surface).
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const sessionToken = (p.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+  const session = verifyToken(sessionToken);
+  if (!session.valid) return { statusCode: 401, headers, body: JSON.stringify({ ok: false, error: 'Invalid or expired session.' }) };
+  if (ADMIN_EMAILS.indexOf(String(session.claims.email || '').toLowerCase().trim()) === -1) {
+    return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Not authorized' }) };
+  }
+
   const intakeId = String(p.intake_id || '').trim();
   const filename = String(p.filename || '').trim();
   const text = String(p.text || '').slice(0, 8000); // cap input
