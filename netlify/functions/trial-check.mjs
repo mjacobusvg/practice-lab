@@ -16,6 +16,10 @@
 //   note_builder_trials(community_member_id text, trial_version text, email text,
 //                       started_at timestamptz, primary key (community_member_id, trial_version))
 
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const { verifyToken } = require('./_lib/session.js');
+
 const TRIAL_DAYS = 7;
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -68,11 +72,20 @@ export default async (req) => {
     return json(400, { status: 'error', message: 'Invalid request body.' });
   }
 
-  const memberId = (payload.memberId || '').toString().trim();
-  const email = (payload.email || '').toString().trim().toLowerCase();
   const trialVersion = (payload.trialVersion || 'v1').toString().trim();
 
-  // Key on member ID when available (closes the multi-email loophole); fall back to email.
+  // Identity from the SIGNED token, never client-declared. Keying the trial to a verified
+  // community member id (and verified email) stops trial-farming by varying memberId/email.
+  const authHeader = req.headers.get('authorization') || '';
+  const sessionToken = (payload.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+  const session = verifyToken(sessionToken);
+  if (!session.valid) {
+    return json(401, { status: 'error', message: 'Invalid or expired session.' });
+  }
+  const memberId = (session.claims.cmid != null ? String(session.claims.cmid) : '').trim();
+  const email = (session.claims.email || '').toString().trim().toLowerCase();
+
+  // Key on verified member ID when available; fall back to verified email.
   const keyId = memberId || email;
   if (!keyId) {
     return json(400, { status: 'error', message: 'Missing member identity.' });
