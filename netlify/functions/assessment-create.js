@@ -48,8 +48,8 @@ exports.handler = async (event) => {
     return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Invalid or expired session.', reason: session.reason }) };
   }
   // Assessment Suite is a full-member tool.
-  if (session.claims.scope !== 'member') {
-    return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'This tool requires full membership.' }) };
+  if (!(session.claims.scope === 'member' && session.claims.tier === 'full')) {
+    return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'This tool requires the full Think Beyond Practice membership.' }) };
   }
   const providerEmail = (session.claims.email || '').trim().toLowerCase();
   if (!providerEmail) {
@@ -113,7 +113,7 @@ exports.handler = async (event) => {
       const sendRes = await fetch(SITE_URL.replace(/\/$/, '') + '/.netlify/functions/send-document', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ to: patientEmail, subject: 'A questionnaire from your provider', body: emailBody, replyTo: replyTo, tool: 'Assessment Suite' })
+        body: JSON.stringify({ to: patientEmail, subject: 'A questionnaire from your provider', body: emailBody, replyTo: replyTo, tool: 'Assessment Suite', token: sessionToken })
       });
       const sendData = await sendRes.json().catch(() => ({}));
       emailSent = !!sendData.success;
