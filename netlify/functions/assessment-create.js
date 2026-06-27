@@ -1,22 +1,22 @@
 // netlify/functions/assessment-create.js
 //
 // Provider-authenticated. Creates a pending tokenized assessment, stores the
-// record (including the patient name as PHI), and returns the token URL. If
-// delivery === 'email', also posts to send-document with the patient link.
+// record (including the patient name as PHI), and returns the token URL.
 //
-// Verifies the requesting email is an active Circle member (same pattern as
-// user-tool-data.js). The provider identity comes from the client's
-// tbp_verified_email.
+// SECURITY (hardened): the provider identity comes from a SIGNED SESSION TOKEN
+// verified via _lib/session.js — NOT from a client-supplied providerEmail. A
+// caller can no longer act as another provider by passing their address.
 //
-// Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, CIRCLE_API_V2_TOKEN, SITE_URL (opt)
+// Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, SESSION_SIGNING_SECRET, SITE_URL (opt)
 
 const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
 const instruments = require('./assessment-instruments.js');
+const { verifyToken } = require('./_lib/session');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Content-Type': 'application/json'
 };
@@ -32,7 +32,6 @@ exports.handler = async (event) => {
   const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ubcrrrapedaxkguxniwv.supabase.co';
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
   const SITE_URL = process.env.SITE_URL || 'https://thinkbeyondpractice.com';
-
   if (!SERVICE_KEY) {
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Server not configured' }) };
   }
@@ -41,63 +40,46 @@ exports.handler = async (event) => {
   try { body = JSON.parse(event.body || '{}'); }
   catch (e) { return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Invalid JSON' }) }; }
 
-  const providerEmail = (body.providerEmail || '').trim().toLowerCase();
+  // Identity from signed token (body.token or Authorization: Bearer).
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+  const session = verifyToken(sessionToken);
+  if (!session.valid) {
+    return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Invalid or expired session.', reason: session.reason }) };
+  }
+  // Assessment Suite is a full-member tool.
+  if (session.claims.scope !== 'member') {
+    return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'This tool requires full membership.' }) };
+  }
+  const providerEmail = (session.claims.email || '').trim().toLowerCase();
+  if (!providerEmail) {
+    return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Session missing identity.' }) };
+  }
+
   const patientName = (body.patientName || '').trim() || null;
   const instrumentSet = Array.isArray(body.instrumentSet) ? body.instrumentSet : [];
   const delivery = (body.delivery || 'link').trim();           // 'link' | 'email'
-  const reasonSent = (body.reasonSent || '').trim() || null;   // optional category
+  const reasonSent = (body.reasonSent || '').trim() || null;
   const patientEmail = (body.patientEmail || '').trim();
   const replyTo = (body.replyTo || '').trim() || null;
 
-  if (!providerEmail) {
-    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'providerEmail required' }) };
-  }
   if (!instrumentSet.length) {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'At least one instrument required' }) };
   }
-
-  // Validate every instrument is in the patient-send allowlist (rejects C-SSRS/ASQ
-  // and anything not cleared).
   for (let i = 0; i < instrumentSet.length; i++) {
     if (!instruments.isPatientSendAllowed(instrumentSet[i])) {
-      return {
-        statusCode: 400,
-        headers: CORS,
-        body: JSON.stringify({ error: 'Instrument not permitted in patient-send: ' + instrumentSet[i] })
-      };
+      return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Instrument not permitted in patient-send: ' + instrumentSet[i] }) };
     }
   }
   if (delivery === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(patientEmail)) {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Valid patientEmail required for email delivery' }) };
   }
 
-  // Verify provider is an active member via the SAME path that gates the page:
-  // the circle-auth function. Direct Circle v1 calls fail because the available
-  // token is a v2 token (v1 endpoints reject it as unauthorized). circle-auth
-  // uses the correct credentials server-side.
-  try {
-    const base = (process.env.SITE_URL || 'https://thinkbeyondpractice.com').replace(/\/$/, '');
-    const verifyRes = await fetch(base + '/.netlify/functions/circle-auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: providerEmail })
-    });
-    const verifyData = await verifyRes.json().catch(() => ({}));
-    if (!verifyData.verified) {
-      return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'No active membership found.' }) };
-    }
-  } catch (e) {
-    return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Membership verification failed.' }) };
-  }
-
-  // Generate an unguessable token (URL-safe).
   const token = crypto.randomBytes(24).toString('base64url');
   const now = new Date();
   const expiresAt = new Date(now.getTime() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
 
-  const sb = createClient(SUPABASE_URL, SERVICE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false }
-  });
+  const sb = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 
   const { data, error } = await sb
     .from('assessments')
@@ -120,7 +102,6 @@ exports.handler = async (event) => {
 
   const link = SITE_URL.replace(/\/$/, '') + '/assessment.html?t=' + encodeURIComponent(token);
 
-  // Optional email delivery via the shared send-document function.
   let emailSent = null;
   if (delivery === 'email') {
     const emailBody =
@@ -132,13 +113,7 @@ exports.handler = async (event) => {
       const sendRes = await fetch(SITE_URL.replace(/\/$/, '') + '/.netlify/functions/send-document', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: patientEmail,
-          subject: 'A questionnaire from your provider',
-          body: emailBody,
-          replyTo: replyTo,
-          tool: 'Assessment Suite'
-        })
+        body: JSON.stringify({ to: patientEmail, subject: 'A questionnaire from your provider', body: emailBody, replyTo: replyTo, tool: 'Assessment Suite' })
       });
       const sendData = await sendRes.json().catch(() => ({}));
       emailSent = !!sendData.success;
@@ -150,14 +125,6 @@ exports.handler = async (event) => {
   return {
     statusCode: 200,
     headers: CORS,
-    body: JSON.stringify({
-      ok: true,
-      assessmentId: data.id,
-      token: data.token,
-      link: link,
-      expiresAt: data.expires_at,
-      delivery: delivery,
-      emailSent: emailSent
-    })
+    body: JSON.stringify({ ok: true, assessmentId: data.id, token: data.token, link: link, expiresAt: data.expires_at, delivery: delivery, emailSent: emailSent })
   };
 };
