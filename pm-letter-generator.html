@@ -497,6 +497,9 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   .lib-fill-preview { position: static; }
 }
 </style>
+
+<!-- pdf-lib for letterhead overlay rendering (loads async; libDownloadAsPDF checks for it) -->
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 </head>
 <body>
 <div class="container" id="app-root" style="display:none">
@@ -682,8 +685,9 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
       <div class="lib-output-sidebar">
         <div class="lib-output-actions">
           <h4>Actions</h4>
+          <button onclick="libDownloadAsPDF()" id="lib-download-pdf-btn" style="background: rgba(42,171,184,0.18); border-color: var(--teal); color: var(--cream); font-weight: 600;">⬇ Download as PDF<span id="lib-download-pdf-note" style="display:block;font-size:.72rem;color:var(--cream-muted);margin-top:3px;font-weight:400">on your letterhead</span></button>
           <button onclick="libCopyText()">📋 Copy letter text</button>
-          <button onclick="libDownloadText()">⬇ Download as .txt</button>
+          <button onclick="libDownloadText()">📄 Download as plain text (.txt)</button>
           <button onclick="libPrintLetter()">🖨 Print</button>
           <button onclick="libGenerateAnother()">＋ Generate another letter</button>
         </div>
@@ -1448,7 +1452,7 @@ async function libSmartIntake() {
       '   - "medium": Best match but some ambiguity OR multiple parsing fields missing from input\n' +
       '   - "low": Multiple plausible matches OR very vague description\n' +
       '6. Extract values for as many extractable_fields as possible from the clinician\'s description.\n' +
-      '   - Be liberal with extraction. If they mention "her dog Charlie", set ANIMAL_PHRASE to "her dog Charlie" or similar.\n' +
+      '   - Be liberal with extraction. If they mention "her dog Charlie", set ANIMAL_PHRASE to "the patient\'s dog Charlie". Always frame the animal as the patient\'s, not the patient\'s pronoun (avoid "her", "his", "their").\n' +
       '   - For TREATMENT_START, normalize date phrases like "since March" or "for 6 months" into a usable string.\n' +
       '   - For PATIENT_NAME and PATIENT_FIRST_NAME: extract from description. Default PATIENT_FIRST_NAME to first word of full name if not separately given.\n' +
       '   - For accommodations/restrictions lists: DO NOT invent specifics the clinician did not provide. Leave empty rather than fabricate.\n' +
@@ -1771,17 +1775,39 @@ function libSelectStandard(standardId, extractedValues) {
   libShowView('fill');
 }
 
-function libGetVaultValue(key) {
+function libGetVaultData() {
+  // Cached read from localStorage.tbp_vault (populated by Vault page from Supabase).
+  // Returns the full Vault data object or null. Field names match the Supabase JSONB schema.
+  if (LIB._vaultCache) return LIB._vaultCache;
   try {
     var raw = localStorage.getItem('tbp_vault');
-    if (!raw) return '';
-    var v = JSON.parse(raw);
+    if (!raw) return null;
+    LIB._vaultCache = JSON.parse(raw);
+    return LIB._vaultCache;
+  } catch (e) { return null; }
+}
+
+function libGetVaultValue(key) {
+  // Maps Library placeholder keys to actual Vault field names.
+  // Vault schema (from Supabase user_tool_data.data): legalName, providerType, boardCert,
+  // practiceName, practiceAddress, practicePhone, practiceFax, practiceEmail, npi1,
+  // licenseNum, licenseState, letterhead (base64 PDF data URL), plus credentialing fields.
+  try {
+    var v = libGetVaultData();
+    if (!v) return '';
     var map = {
-      PROVIDER_NAME: v.providerName || v.name || '',
+      // legalName already contains credentials ("MICHAEL VAN GELDER M.S., M.N., PMHNP"),
+      // so PROVIDER_CREDENTIALS is intentionally empty in most cases. The template cleanup
+      // in libRenderTemplate collapses the trailing ", " when credentials are empty.
+      PROVIDER_NAME: v.legalName || v.providerName || v.name || '',
       PROVIDER_CREDENTIALS: v.credentials || '',
-      PROVIDER_ADDRESS: v.address || v.practiceAddress || '',
-      PROVIDER_PHONE: v.phone || v.practicePhone || '',
-      PROVIDER_EMAIL: v.email || v.practiceEmail || ''
+      PROVIDER_ADDRESS: v.practiceAddress || v.address || '',
+      PROVIDER_PHONE: v.practicePhone || v.phone || '',
+      PROVIDER_EMAIL: v.practiceEmail || v.email || '',
+      PROVIDER_FAX: v.practiceFax || v.fax || '',
+      PROVIDER_NPI: v.npi1 || v.npi || '',
+      PROVIDER_LICENSE: v.licenseNum ? (v.licenseNum + (v.licenseState ? ' (' + v.licenseState + ')' : '')) : '',
+      PRACTICE_NAME: v.practiceName || ''
     };
     return map[key] || '';
   } catch (e) { return ''; }
@@ -1810,8 +1836,8 @@ function libRenderFillScreen() {
     '<div class="lib-spec-row"><div class="lib-spec-label">Primary goal</div><div class="lib-spec-value">' + libEsc(spec.primary_goal || '') + '</div></div>' +
     '<span class="lib-spec-toggle" onclick="document.getElementById(\'lib-spec-details\').classList.toggle(\'open\')">Show what this letter does and doesn\'t include &rarr;</span>' +
     '<div class="lib-spec-details" id="lib-spec-details">' +
-      (spec.should_include && spec.should_include.length ? '<div class="lib-label">Should include</div><ul>' + spec.should_include.map(function(i){return '<li>'+libEsc(i)+'</li>';}).join('') + '</ul>' : '') +
-      (spec.should_avoid && spec.should_avoid.length ? '<div class="lib-label">Should avoid</div><ul>' + spec.should_avoid.map(function(i){return '<li>'+libEsc(i)+'</li>';}).join('') + '</ul>' : '') +
+      (spec.should_include && spec.should_include.length ? '<div class="lib-label">Necessary disclosures</div><ul>' + spec.should_include.map(function(i){return '<li>'+libEsc(i)+'</li>';}).join('') + '</ul>' : '') +
+      (spec.should_avoid && spec.should_avoid.length ? '<div class="lib-label">Unnecessary disclosures</div><ul>' + spec.should_avoid.map(function(i){return '<li>'+libEsc(i)+'</li>';}).join('') + '</ul>' : '') +
       (spec.failure_modes && spec.failure_modes.length ? '<div class="lib-label">Failure modes this guards against</div><ul>' + spec.failure_modes.map(function(i){return '<li>'+libEsc(i)+'</li>';}).join('') + '</ul>' : '') +
     '</div>';
   document.getElementById('lib-spec-summary').innerHTML = specHtml;
@@ -1890,29 +1916,43 @@ function libSetToggle(key, value) {
 }
 
 // Template rendering engine — substitutes {{PLACEHOLDER}} and processes {{#IF toggle=value}}...{{/IF}}
-function libRenderTemplate(template, placeholders, toggles) {
+function libRenderTemplate(template, placeholders, toggles, placeholderDefs) {
   if (!template) return '';
   var output = template;
-  // Process conditional blocks first
+
+  // Process {{#IF toggle=value}}...{{/IF}} conditional blocks first
   var ifPattern = /\{\{#IF ([a-zA-Z_]+)=([a-zA-Z_]+)\}\}([\s\S]*?)\{\{\/IF\}\}/g;
   output = output.replace(ifPattern, function(match, toggleKey, value, content) {
     return toggles[toggleKey] === value ? content : '';
   });
+
+  // Build a required-lookup from placeholder definitions so optional empties don't show warnings
+  var requiredMap = {};
+  if (placeholderDefs && Array.isArray(placeholderDefs)) {
+    placeholderDefs.forEach(function(p) { requiredMap[p.key] = !!p.required; });
+  }
+
   // Process placeholder substitutions
   output = output.replace(/\{\{([A-Z_]+)\}\}/g, function(match, key) {
     var val = placeholders[key];
     if (val !== undefined && val !== null && val !== '') return val;
-    return '[' + key + ' - needs input]';
+    // Empty value: warn only if required; quietly drop optional empties (like an empty fax)
+    if (requiredMap[key]) return '[' + key + ' - needs input]';
+    return '';
   });
-  // Collapse multiple consecutive newlines
-  output = output.replace(/\n{3,}/g, '\n\n');
+
+  // Cleanup: handle empty PROVIDER_CREDENTIALS leaving ", \n" trailing commas, then tidy whitespace
+  output = output.replace(/,[ \t]+\n/g, '\n');     // ", \n" -> "\n"
+  output = output.replace(/^[ \t]+\n/gm, '\n');     // whitespace-only lines -> blank
+  output = output.replace(/\n{3,}/g, '\n\n');       // max 2 consecutive newlines
+
   return output;
 }
 
 function libUpdatePreview() {
   var std = LIB.selectedStandard;
   if (!std) return;
-  var rendered = libRenderTemplate(std.body_template, LIB.placeholderValues, LIB.toggleValues);
+  var rendered = libRenderTemplate(std.body_template, LIB.placeholderValues, LIB.toggleValues, std.placeholders);
   var preview = document.getElementById('lib-live-preview');
   var html = libEsc(rendered).replace(/\[([A-Z_]+) - needs input\]/g,
     '<span class="lib-placeholder-warn">[$1 - needs input]</span>');
@@ -1931,10 +1971,18 @@ function libGenerateFinal() {
     alert('Please fill in the required fields:\n\n' + missing.map(function(p) { return '• ' + p.label; }).join('\n'));
     return;
   }
-  var finalText = libRenderTemplate(std.body_template, LIB.placeholderValues, LIB.toggleValues);
+  var finalText = libRenderTemplate(std.body_template, LIB.placeholderValues, LIB.toggleValues, std.placeholders);
   document.getElementById('lib-output-letter').textContent = finalText;
   document.getElementById('lib-output-subtitle').textContent =
     std.category_label + (std.variant_label ? ' — ' + std.variant_label : '') + ' | TBP Standard v' + std.version;
+
+  // Update the PDF button label depending on whether the user has a letterhead in their Vault
+  var vault = libGetVaultData() || {};
+  var hasLetterhead = typeof vault.letterhead === 'string' && vault.letterhead.indexOf('data:application/pdf') === 0;
+  var noteEl = document.getElementById('lib-download-pdf-note');
+  if (noteEl) {
+    noteEl.textContent = hasLetterhead ? 'on your letterhead' : 'with clean header (no letterhead in Vault)';
+  }
 
   // Track usage (silent fail)
   libTrackUsage(std);
@@ -1957,6 +2005,179 @@ function libTrackUsage(std) {
       })
     });
   } catch (e) { /* silent */ }
+}
+
+// ─── PDF GENERATION (letterhead overlay or plain header) ────────────────────
+//
+// Renders the letter as a PDF. If the user has a letterhead PDF in their Vault,
+// the letter text overlays the first page of that letterhead in a safe text zone
+// (configurable margins). If no letterhead exists, generates a clean PDF with a
+// plain-text provider header at the top. Multi-page overflow handled gracefully.
+
+async function libDownloadAsPDF() {
+  if (!window.PDFLib) {
+    // pdf-lib didn't load (CDN issue, offline, blocked, etc.); fall back to .txt
+    alert('PDF library is not available. Falling back to text download.');
+    libDownloadText();
+    return;
+  }
+
+  var std = LIB.selectedStandard;
+  if (!std) return;
+  var letterText = document.getElementById('lib-output-letter').textContent || '';
+  var filename = std.standard_key + '_' + std.variant_key + '_' + new Date().toISOString().slice(0, 10) + '.pdf';
+
+  try {
+    var vault = libGetVaultData() || {};
+    var letterheadData = vault.letterhead || '';
+    var hasLetterhead = typeof letterheadData === 'string'
+      && letterheadData.indexOf('data:application/pdf') === 0;
+
+    var PDFLib_ = window.PDFLib;
+    var pdfDoc;
+    var firstPage;
+    var pageWidth, pageHeight;
+
+    if (hasLetterhead) {
+      var base64 = letterheadData.split(',')[1] || '';
+      var bytes = libBase64ToBytes(base64);
+      pdfDoc = await PDFLib_.PDFDocument.load(bytes);
+      // Use the first page of the letterhead PDF as our canvas
+      firstPage = pdfDoc.getPage(0);
+      pageWidth = firstPage.getWidth();
+      pageHeight = firstPage.getHeight();
+    } else {
+      pdfDoc = await PDFLib_.PDFDocument.create();
+      // US Letter in points (8.5 x 11 inch * 72 pt/inch)
+      pageWidth = 612;
+      pageHeight = 792;
+      firstPage = pdfDoc.addPage([pageWidth, pageHeight]);
+    }
+
+    var font = await pdfDoc.embedFont(PDFLib_.StandardFonts.TimesRoman);
+
+    // Safe text area defaults. These work for most professional letterheads:
+    //   - 2.0 inch top margin clears typical centered logos (incl. COR's tree icon)
+    //   - 1.5 inch bottom margin clears typical contact bands or footer logos
+    //   - 1.0 inch side margins are standard
+    // Future: Vault should let clinicians override these per-letterhead with a live preview.
+    var letterheadConfig = vault.letterheadConfig || {};
+    var marginTop = (letterheadConfig.marginTopInches || 2.0) * 72;
+    var marginBottom = (letterheadConfig.marginBottomInches || 1.5) * 72;
+    var marginLeft = (letterheadConfig.marginLeftInches || 1.0) * 72;
+    var marginRight = (letterheadConfig.marginRightInches || 1.0) * 72;
+
+    // For plain-page (no-letterhead) output, use less aggressive top margin since there's no logo
+    if (!hasLetterhead) {
+      marginTop = 0.75 * 72;  // 0.75" — enough room for the Vault-rendered header at top
+    }
+
+    var fontSize = 11;
+    var lineHeight = fontSize * 1.4;  // 1.4x leading for readable body text
+    var textWidth = pageWidth - marginLeft - marginRight;
+
+    // When letterhead is in use, strip the Vault-generated text header from the rendered
+    // letter so contact info doesn't appear twice (once on the letterhead, once typed above date).
+    var bodyText = hasLetterhead ? libStripVaultHeaderFromText(letterText) : letterText;
+
+    // Word-wrap into lines that fit the text width
+    var lines = libWrapTextLines(bodyText, font, fontSize, textWidth);
+
+    var y = pageHeight - marginTop;
+    var minY = marginBottom;
+    var currentPage = firstPage;
+
+    for (var i = 0; i < lines.length; i++) {
+      if (y - lineHeight < minY) {
+        // Overflow: add a continuation page. Continuation pages are always plain
+        // (no letterhead duplication), since most letterheads have visible-on-first-page-only elements.
+        currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
+        y = pageHeight - (0.75 * 72);
+      }
+      currentPage.drawText(lines[i], {
+        x: marginLeft,
+        y: y - fontSize,
+        size: fontSize,
+        font: font,
+        color: PDFLib_.rgb(0, 0, 0)
+      });
+      y -= lineHeight;
+    }
+
+    var pdfBytes = await pdfDoc.save();
+    libTriggerDownload(pdfBytes, filename, 'application/pdf');
+    libFlash(hasLetterhead ? 'Letter downloaded on your letterhead' : 'Letter downloaded as PDF');
+  } catch (e) {
+    console.error('[lib-pdf] generation failed:', e);
+    alert('Could not generate PDF: ' + (e.message || e) + '\n\nFalling back to text download.');
+    libDownloadText();
+  }
+}
+
+function libBase64ToBytes(b64) {
+  var binary = atob(b64);
+  var bytes = new Uint8Array(binary.length);
+  for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function libTriggerDownload(bytes, filename, mimeType) {
+  var blob = new Blob([bytes], { type: mimeType });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function() { URL.revokeObjectURL(url); }, 1000);
+}
+
+function libStripVaultHeaderFromText(text) {
+  // The rendered letter starts with provider header lines (name, address, phone, email)
+  // from the Vault, followed by a blank line and the letter date. When a real letterhead
+  // is in use, we want to skip those header lines so the letterhead's contact info doesn't
+  // duplicate with typed contact info. Strategy: find the first date-looking line and start there.
+  var lines = text.split('\n');
+  var dateRegex = /^(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}\s*$/i;
+  for (var i = 0; i < Math.min(lines.length, 20); i++) {
+    if (dateRegex.test(lines[i].trim())) {
+      return lines.slice(i).join('\n');
+    }
+  }
+  // No recognizable date line found; return text as-is rather than risk dropping content
+  return text;
+}
+
+function libWrapTextLines(text, font, fontSize, maxWidth) {
+  // Word-wrap, respecting hard newlines in the source. Returns an array of lines
+  // that all fit within maxWidth when rendered at fontSize.
+  var paragraphs = text.split('\n');
+  var lines = [];
+  for (var p = 0; p < paragraphs.length; p++) {
+    var para = paragraphs[p];
+    if (para.length === 0) {
+      lines.push('');
+      continue;
+    }
+    var words = para.split(' ');
+    var currentLine = '';
+    for (var w = 0; w < words.length; w++) {
+      var word = words[w];
+      var testLine = currentLine ? currentLine + ' ' + word : word;
+      var testWidth = 0;
+      try { testWidth = font.widthOfTextAtSize(testLine, fontSize); }
+      catch (e) { testWidth = testLine.length * fontSize * 0.5; }
+      if (testWidth > maxWidth && currentLine) {
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+  }
+  return lines;
 }
 
 function libCopyText() {
@@ -1993,6 +2214,7 @@ function libGenerateAnother() {
   LIB.toggleValues = {};
   LIB._lastMatch = null;
   LIB._pendingMatch = null;
+  LIB._vaultCache = null;  // Force re-read in case Vault was updated mid-session
   var smartInput = document.getElementById('lib-smart-input');
   if (smartInput) smartInput.value = '';
   var smartResult = document.getElementById('lib-smart-result');
