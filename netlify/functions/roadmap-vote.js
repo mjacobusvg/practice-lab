@@ -3,6 +3,8 @@
 // and lets the admin add roadmap items. Same env vars as the other functions:
 //   SUPABASE_URL, SUPABASE_SERVICE_KEY
 
+const { verifyToken } = require('./_lib/session');
+
 const ADMIN_EMAILS = ['michael@thinkbeyondpsych.com'];
 
 exports.handler = async function (event) {
@@ -30,10 +32,18 @@ exports.handler = async function (event) {
   try { p = JSON.parse(event.body || '{}'); }
   catch (e) { return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Invalid JSON' }) }; }
 
+  // Identity from signed token (body.token or Authorization: Bearer), never client email.
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const sessionToken = (p.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+  const session = verifyToken(sessionToken);
+  if (!session.valid) return { statusCode: 401, headers, body: JSON.stringify({ ok: false, error: 'Sign in first' }) };
+  if (session.claims.scope !== 'member') return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Members only' }) };
+  const tokenEmail = String(session.claims.email || '').trim().toLowerCase();
+
   try {
     if (p.action === 'vote') {
       const itemId = String(p.item_id || '').trim();
-      const email = String(p.email || '').trim().toLowerCase();
+      const email = tokenEmail;
       if (!itemId || !email || email.indexOf('@') === -1) {
         return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Sign in to vote' }) };
       }
@@ -50,7 +60,7 @@ exports.handler = async function (event) {
     }
 
     if (p.action === 'add') {
-      const email = String(p.email || '').toLowerCase().trim();
+      const email = tokenEmail;
       if (ADMIN_EMAILS.indexOf(email) === -1) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Not authorized' }) };
       const title = String(p.title || '').trim();
       const description = String(p.description || '').trim();
