@@ -21,6 +21,38 @@
 const https = require('https');
 const { verifyToken } = require('./_lib/session');
 
+const TRIAL_DAYS = 7;
+
+// READ-ONLY check: does this member have an unexpired trial row? Used to let a
+// forum-tier member through the full-tier clinical gate DURING their trial.
+// Must never create a trial (that side effect belongs to trial-check.mjs only) —
+// this only SELECTs. Both trial tools share one clock (trial_version 'v1').
+async function hasActiveTrial(cmid, email) {
+  var SUPABASE_URL = process.env.SUPABASE_URL;
+  var SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+  if (!SUPABASE_URL || !SERVICE_KEY) return false;
+  var keyId = (cmid != null && String(cmid).trim()) ? String(cmid).trim() : (email || '').toString().trim().toLowerCase();
+  if (!keyId) return false;
+  try {
+    var res = await fetch(
+      SUPABASE_URL + '/rest/v1/note_builder_trials?community_member_id=eq.' +
+      encodeURIComponent(keyId) + '&select=started_at',
+      { headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY } }
+    );
+    if (!res.ok) return false;
+    var rows = await res.json();
+    if (!Array.isArray(rows) || !rows.length) return false;
+    var msInDay = 24 * 60 * 60 * 1000;
+    for (var i = 0; i < rows.length; i++) {
+      var started = new Date(rows[i].started_at).getTime();
+      if (!isNaN(started) && (Date.now() - started) / msInDay < TRIAL_DAYS) return true;
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
 // Models this proxy is permitted to call. Locks out caller-chosen expensive models.
 const ALLOWED_MODELS = ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'];
 const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
@@ -63,17 +95,24 @@ exports.handler = async function (event, context) {
     };
   }
 
-  // AUTH: clinical tools are full-tier. Require a valid signed token with tier 'full'.
-  // Identity is not used for anything except gating here (no PHI logged), but the gate
-  // closes the open-proxy credit-burn hole.
+  // AUTH: clinical tools are full-tier OR a forum member with a live 7-day trial.
+  // Identity is not used for anything except gating here (no PHI logged). The gate
+  // closes the open-proxy credit-burn hole while keeping trial users working.
   const authHeader = event.headers.authorization || event.headers.Authorization || '';
   const sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
   const session = verifyToken(sessionToken);
   if (!session.valid) {
     return { statusCode: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'Invalid or expired session.' }) };
   }
-  if (!(session.claims.scope === 'member' && session.claims.tier === 'full')) {
+  if (session.claims.scope !== 'member') {
     return { statusCode: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'This tool requires the full Think Beyond Practice membership.' }) };
+  }
+  if (session.claims.tier !== 'full') {
+    // Forum-tier: allow only if a live trial exists (shared 7-day clock).
+    const trialOk = await hasActiveTrial(session.claims.cmid, session.claims.email);
+    if (!trialOk) {
+      return { statusCode: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'This tool requires the full Think Beyond Practice membership.' }) };
+    }
   }
 
   const requestPayload = {
