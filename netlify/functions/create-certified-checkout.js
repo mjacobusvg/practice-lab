@@ -19,6 +19,8 @@
 // Optional:
 //   CERTIFIED_MAIL_TEST_MODE=true    (marks the job test_mode; vendor send must honor it)
 
+var { verifyToken } = require('./_lib/session');
+
 exports.handler = async function(event) {
   var headers = {
     'Access-Control-Allow-Origin': '*',
@@ -47,6 +49,21 @@ exports.handler = async function(event) {
 
   try {
     var body = JSON.parse(event.body || '{}');
+
+    // AUTH: certified mail is a full-tier clinical action and stores the rendered
+    // letter (likely PHI). Require a signed token with tier 'full'; the clinician
+    // identity comes from the token, never from the client.
+    var authHeader = event.headers.authorization || event.headers.Authorization || '';
+    var sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+    var session = verifyToken(sessionToken);
+    if (!session.valid) {
+      return { statusCode: 401, headers: headers, body: JSON.stringify({ error: 'Invalid or expired session.' }) };
+    }
+    if (!(session.claims.scope === 'member' && session.claims.tier === 'full')) {
+      return { statusCode: 403, headers: headers, body: JSON.stringify({ error: 'This tool requires the full Think Beyond Practice membership.' }) };
+    }
+    var clinicianEmail = (session.claims.email || '').toLowerCase().trim() || null;
+
     var letterText = body.letterText || '';
     if (!letterText || !body.toAddress || !body.fromAddress) {
       return { statusCode: 400, headers: headers, body: JSON.stringify({ error: 'Missing letter text or addresses.' }) };
@@ -64,7 +81,7 @@ exports.handler = async function(event) {
         'Prefer': 'return=representation'
       },
       body: JSON.stringify({
-        clinician_email: (body.clinicianEmail || '').toLowerCase().trim() || null,
+        clinician_email: clinicianEmail,
         letter_text: letterText,
         to_name: body.toName || null,
         to_address: body.toAddress,
@@ -94,7 +111,7 @@ exports.handler = async function(event) {
       metadata: { certified_mail_job_id: jobId },
       success_url: base + '/termination?cm_job=' + jobId + '&cm_status=paid',
       cancel_url: base + '/termination?cm_job=' + jobId + '&cm_status=canceled',
-      customer_email: (body.clinicianEmail || '').toLowerCase().trim() || undefined
+      customer_email: clinicianEmail || undefined
     });
 
     // Store session id on the job for webhook reconciliation
