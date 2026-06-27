@@ -2,6 +2,8 @@
 // Admin-only. Actions: list (queue + manifest gaps), publish (intake -> library), dismiss.
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY
 
+const { verifyToken } = require('./_lib/session');
+
 const ADMIN_EMAILS = ['michael@thinkbeyondpsych.com'];
 
 exports.handler = async function (event) {
@@ -18,7 +20,11 @@ exports.handler = async function (event) {
   if (!URL || !KEY) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'Missing env' }) };
 
   let p; try { p = JSON.parse(event.body || '{}'); } catch (e) { return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Bad JSON' }) }; }
-  const email = String(p.email || '').toLowerCase().trim();
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const sessionToken = (p.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+  const session = verifyToken(sessionToken);
+  if (!session.valid) return { statusCode: 401, headers, body: JSON.stringify({ ok: false, error: 'Invalid or expired session.' }) };
+  const email = String(session.claims.email || '').toLowerCase().trim();
   if (ADMIN_EMAILS.indexOf(email) === -1) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Not authorized' }) };
 
   const h = { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json' };
