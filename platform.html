@@ -1446,6 +1446,7 @@ var S = { user: null, isMember: false, view: 'home', space: null };
 // Identity comes from the Supabase session + the accounts row (tier, admin).
 // No client-side allowlists: tier and admin are read from the database.
 function isAdmin() { return !!(S.user && S.user.is_admin); }
+function getAuthToken() { try { return S.authToken || localStorage.getItem('tbp_auth_token') || ''; } catch(e) { return ''; } }
 function tierRank() { var t = (S.user && S.user.tier) || 'free'; return { free:0, forum:1, full:2 }[t] || 0; }
 function isFullMember() { return tierRank() >= 2; }
 function isPaidMember() { return tierRank() >= 1; }
@@ -1537,13 +1538,33 @@ async function signOut() {
 // Bridge to the legacy tool gate (auth-gate.js): write the same localStorage keys
 // it checks, so same-domain tools recognize a platform-authenticated member for 4h.
 // Cross-subdomain tools (e.g. credentialing.thinkbeyondpractice.com) can't read these.
-function writeToolSession(email) {
+async function writeToolSession(email) {
+  // Mint a REAL signed session token from the verified Supabase session, so the
+  // gated backend functions (which require a signed token) accept platform calls.
+  // The raw email is NEVER used as the token anymore (that was forgeable).
   try {
     var FOUR_HOURS = 4 * 60 * 60 * 1000;
-    localStorage.setItem('tbp_auth_token', email);
-    localStorage.setItem('tbp_auth_expiry', (Date.now() + FOUR_HOURS).toString());
-    localStorage.setItem('tbp_verified_email', (email||'').toLowerCase());
-  } catch(e) {}
+    var sess = await SB.auth.getSession();
+    var accessToken = sess && sess.data && sess.data.session && sess.data.session.access_token;
+    if (accessToken) {
+      var res = await fetch('/.netlify/functions/platform-auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: accessToken })
+      });
+      var data = await res.json();
+      if (data && data.verified && data.token) {
+        localStorage.setItem('tbp_auth_token', data.token);
+        localStorage.setItem('tbp_auth_expiry', (Date.now() + FOUR_HOURS).toString());
+        localStorage.setItem('tbp_verified_email', (data.email || email || '').toLowerCase());
+        if (data.tier) localStorage.setItem('tbp_tier', data.tier);
+        S.authToken = data.token;
+        return;
+      }
+    }
+  } catch(e) { console.error('writeToolSession mint failed:', e); }
+  // If minting failed, do NOT write a fake token. Tools will require re-auth.
+  S.authToken = '';
 }
 
 // Resolve the signed-in identity from the database (tier, admin, profile).
@@ -1557,7 +1578,7 @@ async function loadIdentity() {
     if (acct) {
       S.user = { id: acct.id, email: acct.email, name: acct.name, avatar_url: acct.avatar_url,
                  tier: acct.tier, is_admin: acct.is_admin, practice_type: acct.practice_type };
-      writeToolSession(acct.email);
+      await writeToolSession(acct.email);
     } else {
       // Session exists but no linked account yet (trigger runs on insert); fall back to session email as free.
       var su = sessionData.session.user;
@@ -1912,7 +1933,7 @@ async function voteRoadmap(itemId) {
     var res = await fetch('/.netlify/functions/roadmap-vote', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'vote', item_id: itemId, email: S.user.email })
+      body: JSON.stringify({ token: getAuthToken(), action: 'vote', item_id: itemId, email: S.user.email })
     });
     var data = await res.json();
     if (data.ok) {
@@ -1937,7 +1958,7 @@ async function addRoadmapItem() {
     var res = await fetch('/.netlify/functions/roadmap-vote', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'add', email: S.user.email, title: title, description: description, item_type: itemType.trim().toLowerCase() })
+      body: JSON.stringify({ token: getAuthToken(), action: 'add', email: S.user.email, title: title, description: description, item_type: itemType.trim().toLowerCase() })
     });
     var data = await res.json();
     if (data.ok) loadRoadmap();
@@ -2517,7 +2538,7 @@ async function downloadTemplate(id) {
   try {
     var res = await fetch('/.netlify/functions/template-download', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: S.user ? S.user.email : '', template_id: id })
+      body: JSON.stringify({ token: getAuthToken(), email: S.user ? S.user.email : '', template_id: id })
     });
     var data = await res.json();
     if (data.ok && data.url) { window.open(data.url, '_blank'); }
@@ -2534,7 +2555,7 @@ function openTemplateAdd() {
   var file_url = prompt('File URL (downloadable link):') || '';
   fetch('/.netlify/functions/template-admin', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'add', email: S.user.email, title: title, description: description, category: category.trim().toLowerCase(), min_tier: min_tier.trim().toLowerCase(), file_url: file_url })
+    body: JSON.stringify({ token: getAuthToken(), action: 'add', email: S.user.email, title: title, description: description, category: category.trim().toLowerCase(), min_tier: min_tier.trim().toLowerCase(), file_url: file_url })
   }).then(function(r){ return r.json(); }).then(function(d){
     if (d.ok) { libData = null; showLibrary(); } else { alert(d.error || 'Add failed'); }
   }).catch(function(){ alert('Add failed'); });
@@ -2626,7 +2647,7 @@ async function fetchSaved() {
   try {
     var res = await fetch('/.netlify/functions/bookmarks', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'list', email: S.user.email })
+      body: JSON.stringify({ token: getAuthToken(), action: 'list', email: S.user.email })
     });
     var data = await res.json();
     savedCache = (data.ok && data.bookmarks) ? data.bookmarks : [];
@@ -2641,7 +2662,7 @@ async function toggleSave(postId) {
   try {
     var res = await fetch('/.netlify/functions/bookmarks', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'toggle', email: S.user.email, post_id: postId })
+      body: JSON.stringify({ token: getAuthToken(), action: 'toggle', email: S.user.email, post_id: postId })
     });
     var data = await res.json();
     if (data.ok) {
@@ -2718,7 +2739,7 @@ async function moveSaved(index, dir) {
   try {
     await fetch('/.netlify/functions/bookmarks', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'reorder', email: S.user.email, ids: savedCache.map(function(b){ return b.id; }) })
+      body: JSON.stringify({ token: getAuthToken(), action: 'reorder', email: S.user.email, ids: savedCache.map(function(b){ return b.id; }) })
     });
   } catch(e) { console.error('moveSaved:', e); }
 }
@@ -2727,7 +2748,7 @@ async function removeSaved(postId) {
   try {
     var res = await fetch('/.netlify/functions/bookmarks', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'toggle', email: S.user.email, post_id: postId })
+      body: JSON.stringify({ token: getAuthToken(), action: 'toggle', email: S.user.email, post_id: postId })
     });
     var data = await res.json();
     if (data.ok) { await fetchSaved(); renderSaved(); }
@@ -2773,6 +2794,7 @@ async function submitRequest() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        token: getAuthToken(),
         type: REQUEST_TYPE,
         text: text,
         name: S.user ? S.user.name : '',
@@ -2842,6 +2864,7 @@ async function submitComposer() {
   var btn = document.getElementById('cp-submit');
   status.className = 'composer-status';
   var payload = {
+    token: getAuthToken(),
     email: S.user ? S.user.email : '',
     synthesis: document.getElementById('cp-synthesis').value.trim(),
     ce_candidate: document.getElementById('cp-ce').checked
@@ -2882,7 +2905,7 @@ async function toggleCE() {
     var res = await fetch('/.netlify/functions/create-post', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'synthesis', email: S.user.email, post_id: p.id, synthesis: p.canonical_synthesis || '', ce_candidate: !p.ce_candidate })
+      body: JSON.stringify({ token: getAuthToken(), action: 'synthesis', email: S.user.email, post_id: p.id, synthesis: p.canonical_synthesis || '', ce_candidate: !p.ce_candidate })
     });
     var data = await res.json();
     if (data.ok) viewPost(p.id);
