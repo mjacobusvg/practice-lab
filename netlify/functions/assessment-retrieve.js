@@ -71,7 +71,7 @@ exports.handler = async (event) => {
   // Load the assessment and confirm ownership.
   const { data: assessment, error: aErr } = await sb
     .from('assessments')
-    .select('id, provider_email, patient_name, instrument_set, status, completed_at, purged_at')
+    .select('id, provider_email, patient_name, instrument_set, status, completed_at, purged_at, reason_sent')
     .eq('id', assessmentId)
     .maybeSingle();
 
@@ -168,7 +168,7 @@ exports.handler = async (event) => {
   let screenerReviewBlurb = '';
   let hpiSymptomBlurb = '';
   try {
-    screenerReviewBlurb = instruments.screenerReviewBlurb(battery);
+    screenerReviewBlurb = instruments.screenerReviewBlurb(battery, assessment.reason_sent);
     hpiSymptomBlurb = instruments.hpiSymptomBlurb(battery, result.responses || {});
   } catch (e) {
     console.error('assessment-retrieve blurb generation failed (non-fatal):', e);
