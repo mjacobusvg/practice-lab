@@ -14,6 +14,14 @@
 // Response: text/event-stream (Anthropic SSE passed through verbatim). The
 // browser is responsible for reassembling the text from content_block_delta events.
 
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const { verifyToken } = require('./_lib/session.js');
+
+// Models this proxy may call (locks out caller-chosen expensive models).
+const ALLOWED_MODELS = ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'];
+const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
+
 export default async function handler(request) {
   const cors = {
     'Access-Control-Allow-Origin': '*',
@@ -44,8 +52,24 @@ export default async function handler(request) {
     });
   }
 
+  // AUTH: clinical streaming proxy is full-tier only. Identity from signed token
+  // (body.token or Authorization: Bearer). Closes the open credit-burn hole.
+  const authHeader = request.headers.get('authorization') || '';
+  const sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+  const session = verifyToken(sessionToken);
+  if (!session.valid) {
+    return new Response(JSON.stringify({ error: 'Invalid or expired session.' }), {
+      status: 401, headers: { ...cors, 'Content-Type': 'application/json' }
+    });
+  }
+  if (!(session.claims.scope === 'member' && session.claims.tier === 'full')) {
+    return new Response(JSON.stringify({ error: 'This tool requires the full Think Beyond Practice membership.' }), {
+      status: 403, headers: { ...cors, 'Content-Type': 'application/json' }
+    });
+  }
+
   const payload = {
-    model: body.model || 'claude-haiku-4-5-20251001',
+    model: (ALLOWED_MODELS.indexOf(body.model) !== -1 ? body.model : DEFAULT_MODEL),
     max_tokens: body.max_tokens || 1000,
     system: body.system || '',
     messages: body.messages || [],
