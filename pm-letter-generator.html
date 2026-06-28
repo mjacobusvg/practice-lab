@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/auth-gate.js"></script>
+<script>function _lgTok(){try{return (window._lgAuthToken!==undefined&&window._lgAuthToken)|| localStorage.getItem('tbp_auth_token')||'';}catch(e){return '';}}</script>
 <style>
 :root{--navy:#0b1120;--navy-mid:#111c30;--navy-light:#1a2d47;--navy-card:#152238;--teal:#2aabb8;--teal-dim:#1d7d88;--teal-glow:rgba(42,171,184,0.12);--cream:#e8e2d6;--cream-dim:#b0aa9e;--white:#f5f4f2;--green:#34d399;--amber:#fbbf24;--red:#f87171;--purple:#a78bfa;--blue:#60a5fa;--rule:rgba(42,171,184,0.15);--radius:10px;--font-display:'DM Serif Display',serif;--font-body:'Plus Jakarta Sans',sans-serif}
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
@@ -507,15 +508,18 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
   <!-- Auth -->
   <script>
   var _lgUserEmail = '';
+  var _lgAuthToken = '';
   // Defer protect() until the full document (including the later script block
   // that defines loadVault) has parsed. Otherwise a fast/cached verify fires
   // onVerified before loadVault exists -> "loadVault is not defined".
   document.addEventListener('DOMContentLoaded', function() {
     TBPAuth.protect({
       toolName: 'Letter Generator',
+      requireFull: true,
       onVerified: function() {
         document.getElementById('app-root').style.display = 'block';
         try { _lgUserEmail = localStorage.getItem('tbp_verified_email') || ''; } catch(e) {}
+        try { _lgAuthToken = localStorage.getItem('tbp_auth_token') || ''; } catch(e) {}
         loadVault();
         // Initialize the new wizard flow (populates diagnosis/status dropdowns, progress bar)
         if (typeof initWizard === 'function') initWizard();
@@ -1077,8 +1081,8 @@ function loadVault() {
   if (!_lgUserEmail) return;
   fetch('/.netlify/functions/user-tool-data', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: _lgUserEmail, toolId: 'vault_profile', action: 'load' })
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
+    body: JSON.stringify({ token: _lgTok(), email: _lgUserEmail, toolId: 'vault_profile', action: 'load' })
   })
   .then(function(r) { return r.json(); })
   .then(function(data) {
@@ -1146,8 +1150,8 @@ function saveVault() {
   if (_lgUserEmail) {
     fetch('/.netlify/functions/user-tool-data', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: _lgUserEmail, toolId: 'vault_profile', action: 'save', data: profile })
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
+      body: JSON.stringify({ token: _lgTok(), email: _lgUserEmail, toolId: 'vault_profile', action: 'save', data: profile })
     }).catch(function() {});
   }
   applyVaultToUI();
@@ -1471,8 +1475,9 @@ async function libSmartIntake() {
 
     var response = await fetch('/.netlify/functions/clinical-proxy', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
       body: JSON.stringify({
+        token: _lgTok(),
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 2000,
         messages: [{ role: 'user', content: fullPrompt }]
@@ -1705,7 +1710,7 @@ async function libLoadStandards() {
   var grid = document.getElementById('lib-category-grid');
   if (grid) grid.innerHTML = '<div style="grid-column:1/-1;padding:40px 20px;text-align:center;color:var(--cream-muted)">Loading standards...</div>';
   try {
-    var response = await fetch('/.netlify/functions/get-letter-standards');
+    var response = await fetch('/.netlify/functions/get-letter-standards?token=' + encodeURIComponent(_lgTok()), { headers: { 'Authorization': 'Bearer ' + _lgTok() } });
     if (!response.ok) throw new Error('HTTP ' + response.status);
     var data = await response.json();
     LIB.standards = data.standards || [];
@@ -1995,8 +2000,9 @@ function libTrackUsage(std) {
     try { var v = JSON.parse(localStorage.getItem('tbp_vault') || '{}'); email = v.email || ''; } catch(e){}
     fetch('/.netlify/functions/track-letter-usage', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
       body: JSON.stringify({
+        token: _lgTok(),
         standard_id: std.id,
         standard_key: std.standard_key,
         variant_key: std.variant_key,
@@ -2551,8 +2557,9 @@ async function wizParseDescription() {
 
     var response = await fetch('/.netlify/functions/clinical-proxy', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
       body: JSON.stringify({
+        token: _lgTok(),
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 2500,
         messages: [{ role: 'user', content: parsePrompt }]
@@ -2585,8 +2592,9 @@ async function wizParseDescription() {
 
     var reviewRes = await fetch('/.netlify/functions/clinical-proxy', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
       body: JSON.stringify({
+        token: _lgTok(),
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 1500,
         messages: [{ role: 'user', content: reviewPrompt }]
@@ -2975,8 +2983,9 @@ async function generateBridgeForExpress() {
   try {
     var response = await fetch('/.netlify/functions/clinical-proxy', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
       body: JSON.stringify({
+        token: _lgTok(),
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 400,
         messages: [{ role: 'user', content: bridgePrompt }]
@@ -3368,8 +3377,9 @@ async function generateBridgeNow() {
   try {
     var response = await fetch('/.netlify/functions/clinical-proxy', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
       body: JSON.stringify({
+        token: _lgTok(),
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 400,
         messages: [{ role: 'user', content: bridgePrompt }]
@@ -4016,8 +4026,9 @@ async function wizGenerateLetter() {
   try {
     var response = await fetch('/.netlify/functions/clinical-proxy', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
       body: JSON.stringify({
+        token: _lgTok(),
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 2500,
         system: sysPrompt,
@@ -4300,8 +4311,9 @@ async function extractDenialFromContent(text, base64, mediaType) {
   try {
     var response = await fetch('/.netlify/functions/clinical-proxy', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
       body: JSON.stringify({
+        token: _lgTok(),
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 500,
         messages: [{ role: 'user', content: userContent }]
@@ -4388,8 +4400,9 @@ async function suggestClinicalLanguage() {
   try {
     var response = await fetch('/.netlify/functions/clinical-proxy', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
       body: JSON.stringify({
+        token: _lgTok(),
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 1500,
         messages: [{ role: 'user', content: prompt }]
@@ -4435,8 +4448,8 @@ async function suggestESALanguage() {
 
   try {
     var response = await fetch('/.netlify/functions/clinical-proxy', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 800, messages: [{ role: 'user', content: prompt }] })
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
+      body: JSON.stringify({ token: _lgTok(), model: 'claude-haiku-4-5-20251001', max_tokens: 800, messages: [{ role: 'user', content: prompt }] })
     });
     var data = await response.json();
     var raw = data.content.map(function(b) { return b.text || ''; }).join('');
@@ -4480,8 +4493,8 @@ async function suggestSupportLanguage() {
 
   try {
     var response = await fetch('/.netlify/functions/clinical-proxy', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'claude-haiku-4-5-20251001', max_tokens: 800, messages: [{ role: 'user', content: prompt }] })
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
+      body: JSON.stringify({ token: _lgTok(), model: 'claude-haiku-4-5-20251001', max_tokens: 800, messages: [{ role: 'user', content: prompt }] })
     });
     var data = await response.json();
     var raw = data.content.map(function(b) { return b.text || ''; }).join('');
@@ -4619,8 +4632,9 @@ async function generateLetter() {
   try {
     var response = await fetch('/.netlify/functions/clinical-proxy', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
       body: JSON.stringify({
+        token: _lgTok(),
         model: 'claude-sonnet-4-6',
         max_tokens: 4000,
         system: sysPrompt,
@@ -4813,8 +4827,9 @@ async function sendEmail() {
   try {
     var res = await fetch('/.netlify/functions/send-document', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
       body: JSON.stringify({
+        token: _lgTok(),
         to: to,
         subject: subject,
         body: letterText,
@@ -4880,8 +4895,9 @@ async function sendFax() {
   try {
     var res = await fetch('/.netlify/functions/send-fax', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
       body: JSON.stringify({
+        token: _lgTok(),
         to: to,
         content: letterText,
         toName: toName,
