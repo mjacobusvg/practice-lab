@@ -711,6 +711,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
           <button onclick="libCopyText()">📋 Copy letter text</button>
           <button onclick="libDownloadText()">📄 Download as plain text (.txt)</button>
           <button onclick="libPrintLetter()">🖨 Print</button>
+          <button onclick="openSentLog()">🗂 Sent letters</button>
           <button onclick="libGenerateAnother()">＋ Generate another letter</button>
         </div>
       </div>
@@ -1050,19 +1051,59 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
         <input type="text" id="send-preview-to" placeholder="">
         <div id="send-preview-extra" style="margin-top:8px;display:none">
           <label>Recipient name / office (optional, for fax cover page)</label>
-          <input type="text" id="send-preview-toname" placeholder="e.g., Dr. Smith's Office, Premera Appeals Dept">
+          <input type="text" id="send-preview-toname" placeholder="e.g., Dr. Smith's Office, Premera Appeals Dept" oninput="scheduleFaxPreviewRebuild()">
         </div>
         <div id="send-preview-subjectrow" style="margin-top:8px;display:none">
           <label>Subject line</label>
           <input type="text" id="send-preview-subject" placeholder="Will be auto-filled from letter type">
         </div>
+        <div style="margin-top:8px">
+          <label id="send-preview-msg-label">Message to recipient</label>
+          <textarea id="send-preview-message" rows="3" style="width:100%;resize:vertical" placeholder="A short note to the recipient. The letter itself is the attachment." oninput="scheduleFaxPreviewRebuild()"></textarea>
+          <div style="font-size:.7rem;color:var(--cream-muted);margin-top:3px">A HIPAA confidentiality notice is appended automatically. Do not include clinical detail here; the letter is attached.</div>
+        </div>
       </div>
 
-      <div class="send-actions" style="margin-top:14px">
-        <button class="send-btn" id="send-preview-send-btn" onclick="confirmSendFromPreview()">Send</button>
+      <label style="display:flex;align-items:flex-start;gap:8px;font-size:.82rem;color:var(--cream-dim);cursor:pointer;margin:14px 0 0;line-height:1.4">
+        <input type="checkbox" id="send-preview-reviewed" style="margin-top:2px;flex:0 0 auto" onchange="_spUpdateSendEnabled()">
+        <span>I have reviewed this document and confirm it is accurate and ready to send.</span>
+      </label>
+
+      <div style="margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <label style="margin:0;font-size:.8rem;color:var(--cream-dim)">Keep a copy of the sent PDF for</label>
+        <select id="send-preview-retention" class="field-select" style="width:auto;padding:6px 28px 6px 10px;font-size:.82rem">
+          <option value="0">Don't store a copy</option>
+          <option value="7">7 days</option>
+          <option value="14" selected>14 days</option>
+          <option value="30">30 days</option>
+          <option value="90">90 days</option>
+        </select>
+        <span style="font-size:.7rem;color:var(--cream-muted)">Auto-deletes after the window. You can delete it sooner from Sent letters.</span>
+      </div>
+
+      <div class="send-actions" style="margin-top:14px;flex-wrap:wrap">
+        <button class="send-btn" id="send-preview-send-btn" onclick="confirmSendFromPreview()" disabled>Send</button>
+        <button class="send-cancel" onclick="downloadFromPreview()">Download PDF</button>
+        <button class="send-cancel" onclick="copyMessageFromPreview()">Copy message</button>
         <button class="send-cancel" onclick="closeSendPreview()">Cancel</button>
       </div>
       <div class="send-status" id="send-preview-status"></div>
+    </div>
+  </div>
+
+  <!-- Sent Letters log modal -->
+  <div class="send-overlay" id="sent-log-overlay" onclick="if(event.target===this)closeSentLog()">
+    <div class="send-dialog" style="max-width:720px;width:94%;max-height:90vh;display:flex;flex-direction:column">
+      <h3>🗂 Sent letters</h3>
+      <p style="margin-bottom:10px">Delivery record of letters you have emailed or faxed. Stored PDFs auto-delete after their retention window; you can also delete a stored PDF now. Metadata (type, date, masked recipient) is kept as a permanent record and contains no patient identifiers.</p>
+      <div id="sent-log-body" style="flex:1 1 auto;overflow:auto;min-height:120px">
+        <div id="sent-log-loading" style="padding:24px;text-align:center;color:var(--cream-dim)">Loading…</div>
+        <div id="sent-log-list"></div>
+        <div id="sent-log-empty" style="display:none;padding:24px;text-align:center;color:var(--cream-dim)">No sent letters yet.</div>
+      </div>
+      <div class="send-actions" style="margin-top:12px">
+        <button class="send-cancel" onclick="closeSentLog()">Close</button>
+      </div>
     </div>
   </div>
 
@@ -5224,6 +5265,8 @@ async function openSendPreview(mode) {
     extra.style.display = 'none';
     subjectRow.style.display = 'block';
     document.getElementById('send-preview-subject').value = getLetterSubject();
+    document.getElementById('send-preview-message').value = _spDefaultMessage('email', vault);
+    document.getElementById('send-preview-msg-label').textContent = 'Message to recipient (email body)';
     sendBtn.textContent = 'Send email';
   } else {
     title.textContent = '📠 Fax letter';
@@ -5235,13 +5278,165 @@ async function openSendPreview(mode) {
     extra.style.display = 'block';
     document.getElementById('send-preview-toname').value = '';
     subjectRow.style.display = 'none';
+    document.getElementById('send-preview-message').value = _spDefaultMessage('fax', vault);
+    document.getElementById('send-preview-msg-label').textContent = 'Note for fax cover page';
     sendBtn.textContent = 'Send fax';
   }
 
+  // Require an explicit review before sending. Reset on every open.
+  var reviewed = document.getElementById('send-preview-reviewed');
+  if (reviewed) reviewed.checked = false;
+
   _spSetStatus('');
-  sendBtn.disabled = false;
+  _spUpdateSendEnabled();
   overlay.classList.add('active');
   await rebuildSendPreview();
+}
+
+function _spDefaultMessage(mode, vault) {
+  vault = vault || {};
+  var who = (vault.legalName || vault.practiceName || 'my office');
+  if (vault.credentials && vault.legalName) who = vault.legalName + ', ' + vault.credentials;
+  if (mode === 'email') {
+    return 'Please find the attached letter from ' + who + '.';
+  }
+  return 'Please see the attached letter from ' + who + '.';
+}
+
+function _spUpdateSendEnabled() {
+  var reviewed = document.getElementById('send-preview-reviewed');
+  var sendBtn = document.getElementById('send-preview-send-btn');
+  if (sendBtn) sendBtn.disabled = !(reviewed && reviewed.checked);
+}
+
+function downloadFromPreview() {
+  if (!_sendPreview.pdfBytes) { _spSetStatus('Preview not ready yet.', 'error'); return; }
+  libTriggerDownload(_sendPreview.pdfBytes, _sendPreview.filename || 'letter.pdf', 'application/pdf');
+}
+
+function copyMessageFromPreview() {
+  var msg = document.getElementById('send-preview-message').value || '';
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(msg).then(function () { _spSetStatus('Message copied.', 'success'); })
+      .catch(function () { _spSetStatus('Could not copy.', 'error'); });
+  }
+}
+
+function _logLetterSend(info) {
+  // PHI-aware send log. Always records the delivery metadata (type, channel, masked
+  // recipient, subject, status). Optionally stores the exact PDF that was sent, for a
+  // retention window, so the clinician can retrieve/prove what went out. The PDF is
+  // auto-purged after the window (pg_cron) and can be deleted early from the sent log.
+  try {
+    var std = (window.LIB && LIB.selectedStandard) || {};
+    var letterType = std.category_label
+      ? std.category_label + (std.variant_label ? ' — ' + std.variant_label : '')
+      : 'Clinical Letter';
+    var to = info.to || '';
+    var maskedTo;
+    if (info.channel === 'email') {
+      var at = to.indexOf('@');
+      maskedTo = at !== -1 ? '@' + to.slice(at + 1) : 'email';
+    } else {
+      var digits = to.replace(/\D/g, '');
+      maskedTo = digits.length >= 4 ? '••••' + digits.slice(-4) : 'fax';
+    }
+    var body = {
+      token: _lgTok(),
+      action: 'log',
+      letterType: letterType,
+      channel: info.channel,
+      recipientMasked: maskedTo,
+      subject: info.subject || '',
+      status: info.status || 'sent'
+    };
+    if (info.pdfBase64) {
+      body.pdfBase64 = info.pdfBase64;
+      body.pdfFilename = info.pdfFilename || (_sendPreview.filename || 'letter.pdf');
+      body.retentionDays = info.retentionDays || 14;
+    }
+    fetch('/.netlify/functions/letter-log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
+      body: JSON.stringify(body)
+    }).catch(function () {});
+  } catch (e) { /* logging must never block or break a successful send */ }
+}
+
+// ── SENT LETTERS LOG ──
+function openSentLog() {
+  document.getElementById('sent-log-overlay').classList.add('active');
+  document.getElementById('sent-log-loading').style.display = 'block';
+  document.getElementById('sent-log-list').innerHTML = '';
+  document.getElementById('sent-log-empty').style.display = 'none';
+  fetch('/.netlify/functions/letter-log', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
+    body: JSON.stringify({ token: _lgTok(), action: 'list' })
+  })
+  .then(function (r) { return r.json(); })
+  .then(function (data) {
+    document.getElementById('sent-log-loading').style.display = 'none';
+    var rows = (data && data.records) || [];
+    if (!rows.length) { document.getElementById('sent-log-empty').style.display = 'block'; return; }
+    _renderSentLog(rows);
+  })
+  .catch(function () {
+    document.getElementById('sent-log-loading').style.display = 'none';
+    document.getElementById('sent-log-list').innerHTML = '<div style="padding:16px;color:var(--cream-dim)">Could not load the sent log.</div>';
+  });
+}
+
+function closeSentLog() {
+  document.getElementById('sent-log-overlay').classList.remove('active');
+}
+
+function _renderSentLog(rows) {
+  var html = '';
+  rows.forEach(function (r) {
+    var when = '';
+    try { when = new Date(r.created_at).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch (e) { when = r.created_at; }
+    var channelIcon = r.channel === 'fax' ? '📠' : '✉';
+    var retention;
+    if (r.pdf_retained && r.expires_at) {
+      var exp = '';
+      try { exp = new Date(r.expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); } catch (e) { exp = r.expires_at; }
+      retention = '<span style="color:var(--teal)">PDF stored until ' + libEsc(exp) + '</span>';
+    } else if (r.pdf_purged_at) {
+      retention = '<span style="color:var(--cream-muted)">PDF deleted</span>';
+    } else {
+      retention = '<span style="color:var(--cream-muted)">No PDF stored</span>';
+    }
+    var delBtn = (r.pdf_retained)
+      ? '<button class="send-cancel" style="padding:5px 12px;font-size:.76rem" onclick="deleteSentPdf(\'' + r.id + '\', this)">Delete PDF now</button>'
+      : '';
+    html += '<div style="border:1px solid rgba(245,235,217,0.12);border-radius:6px;padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap">' +
+      '<div style="flex:1 1 auto;min-width:200px">' +
+        '<div style="font-weight:600;color:var(--cream)">' + channelIcon + ' ' + libEsc(r.letter_type || 'Letter') + '</div>' +
+        '<div style="font-size:.8rem;color:var(--cream-dim);margin-top:3px">' + libEsc(when) + ' · to ' + libEsc(r.recipient_masked || '') + ' · ' + libEsc(r.status || '') + '</div>' +
+        (r.subject ? '<div style="font-size:.78rem;color:var(--cream-muted);margin-top:2px">' + libEsc(r.subject) + '</div>' : '') +
+        '<div style="font-size:.74rem;margin-top:4px">' + retention + '</div>' +
+      '</div>' +
+      '<div>' + delBtn + '</div>' +
+    '</div>';
+  });
+  document.getElementById('sent-log-list').innerHTML = html;
+}
+
+function deleteSentPdf(id, btn) {
+  if (!confirm('Delete the stored PDF for this letter now? The delivery record (type, date, recipient) is kept; only the stored PDF is removed. This cannot be undone.')) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
+  fetch('/.netlify/functions/letter-log', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
+    body: JSON.stringify({ token: _lgTok(), action: 'delete', id: id })
+  })
+  .then(function (r) { return r.json(); })
+  .then(function (data) {
+    if (data && data.ok) { openSentLog(); }
+    else if (btn) { btn.disabled = false; btn.textContent = 'Delete PDF now'; alert('Could not delete: ' + ((data && data.detail) || 'unknown error')); }
+  })
+  .catch(function () { if (btn) { btn.disabled = false; btn.textContent = 'Delete PDF now'; alert('Network error.'); } });
 }
 
 async function rebuildSendPreview() {
@@ -5254,11 +5449,33 @@ async function rebuildSendPreview() {
   loading.style.display = 'block';
   try {
     var out = await libBuildLetterPDF({ sign: !!(signChk && signChk.checked) });
-    _sendPreview.pdfBytes = out.bytes;
+    // letterBytes = the letter alone (email attachment + stored log copy use this).
+    _sendPreview.letterBytes = out.bytes;
     _sendPreview.filename = out.filename;
-    // Revoke any prior blob URL before creating a new one.
+
+    var previewBytes = out.bytes;
+    if (_sendPreview.mode === 'fax') {
+      // Fax sends a generated cover sheet prepended to the letter. Preview shows the
+      // exact faxed document (cover + letter), so WYSIWYG holds for fax too.
+      var vault = libGetVaultData() || {};
+      var coverNote = (document.getElementById('send-preview-message').value || '').trim();
+      var toName = (document.getElementById('send-preview-toname').value || '').trim();
+      var coverBytes = await libBuildFaxCoverSheet({
+        toName: toName,
+        fromName: vault.legalName || '',
+        fromCredentials: vault.credentials || '',
+        fromPractice: vault.practiceName || '',
+        fromPhone: vault.practicePhone || vault.phone || '',
+        fromFax: vault.practiceFax || vault.fax || '',
+        subject: getLetterSubject(),
+        note: coverNote
+      });
+      previewBytes = await libPrependCoverSheet(coverBytes, out.bytes);
+    }
+    _sendPreview.pdfBytes = previewBytes;
+
     if (_sendPreview.blobUrl) { try { URL.revokeObjectURL(_sendPreview.blobUrl); } catch (e) {} }
-    var blob = new Blob([out.bytes], { type: 'application/pdf' });
+    var blob = new Blob([previewBytes], { type: 'application/pdf' });
     _sendPreview.blobUrl = URL.createObjectURL(blob);
     frame.src = _sendPreview.blobUrl;
     frame.style.display = 'block';
@@ -5270,6 +5487,105 @@ async function rebuildSendPreview() {
     _sendPreview.building = false;
   }
 }
+
+// Debounced re-render for fax cover-note / recipient edits so the preview tracks edits.
+var _spRebuildTimer = null;
+function scheduleFaxPreviewRebuild() {
+  if (_sendPreview.mode !== 'fax') return;
+  if (_spRebuildTimer) clearTimeout(_spRebuildTimer);
+  _spRebuildTimer = setTimeout(function () { rebuildSendPreview(); }, 600);
+}
+
+// Builds a one-page fax cover sheet PDF (US Letter).
+async function libBuildFaxCoverSheet(o) {
+  o = o || {};
+  var P = window.PDFLib;
+  var doc = await P.PDFDocument.create();
+  var page = doc.addPage([612, 792]);
+  var bold = await doc.embedFont(P.StandardFonts.HelveticaBold);
+  var reg = await doc.embedFont(P.StandardFonts.Helvetica);
+  var black = P.rgb(0.07, 0.07, 0.07);
+  var gray = P.rgb(0.4, 0.4, 0.4);
+  var M = 72;            // 1" margins
+  var y = 792 - M;
+
+  function line(text, font, size, color, gap) {
+    page.drawText(text || '', { x: M, y: y, size: size, font: font, color: color || black });
+    y -= (gap || size + 6);
+  }
+  function wrap(text, font, size, color, maxWidth, gap) {
+    var words = String(text || '').split(/\s+/);
+    var cur = '';
+    for (var i = 0; i < words.length; i++) {
+      var test = cur ? cur + ' ' + words[i] : words[i];
+      if (font.widthOfTextAtSize(test, size) > maxWidth && cur) {
+        line(cur, font, size, color, gap); cur = words[i];
+      } else { cur = test; }
+    }
+    if (cur) line(cur, font, size, color, gap);
+  }
+
+  line('FAX', bold, 22, black, 30);
+
+  var fromLine = (o.fromName || '') + (o.fromCredentials ? ', ' + o.fromCredentials : '');
+  line('FROM:', bold, 10, gray, 16);
+  if (fromLine.trim()) line(fromLine, reg, 12, black, 16);
+  if (o.fromPractice) line(o.fromPractice, reg, 11, black, 15);
+  var contact = [];
+  if (o.fromPhone) contact.push('Phone: ' + o.fromPhone);
+  if (o.fromFax) contact.push('Fax: ' + o.fromFax);
+  if (contact.length) line(contact.join('   '), reg, 10, gray, 22);
+
+  line('TO:', bold, 10, gray, 16);
+  line(o.toName || 'Recipient', reg, 12, black, 22);
+
+  line('DATE:', bold, 10, gray, 16);
+  line(new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }), reg, 11, black, 22);
+
+  if (o.subject) {
+    line('RE:', bold, 10, gray, 16);
+    wrap(o.subject, reg, 12, black, 612 - 2 * M, 16);
+    y -= 8;
+  }
+
+  // Divider
+  page.drawLine({ start: { x: M, y: y }, end: { x: 612 - M, y: y }, thickness: 1, color: gray });
+  y -= 22;
+
+  if (o.note) {
+    wrap(o.note, reg, 11, black, 612 - 2 * M, 16);
+    y -= 10;
+  }
+
+  // HIPAA footer near the bottom
+  var footY = M + 40;
+  page.drawLine({ start: { x: M, y: footY + 14 }, end: { x: 612 - M, y: footY + 14 }, thickness: 0.5, color: gray });
+  var footer = 'CONFIDENTIAL: This fax contains Protected Health Information (PHI) intended solely for the named recipient. If received in error, notify the sender immediately and destroy all copies. Unauthorized disclosure is prohibited under HIPAA.';
+  var fwords = footer.split(/\s+/), fcur = '', fy = footY;
+  for (var i = 0; i < fwords.length; i++) {
+    var ftest = fcur ? fcur + ' ' + fwords[i] : fwords[i];
+    if (reg.widthOfTextAtSize(ftest, 8) > 612 - 2 * M && fcur) {
+      page.drawText(fcur, { x: M, y: fy, size: 8, font: reg, color: gray }); fy -= 11; fcur = fwords[i];
+    } else { fcur = ftest; }
+  }
+  if (fcur) page.drawText(fcur, { x: M, y: fy, size: 8, font: reg, color: gray });
+
+  return await doc.save();
+}
+
+// Merges a cover-sheet PDF in front of the letter PDF, returns combined bytes.
+async function libPrependCoverSheet(coverBytes, letterBytes) {
+  var P = window.PDFLib;
+  var merged = await P.PDFDocument.create();
+  var cover = await P.PDFDocument.load(coverBytes);
+  var letter = await P.PDFDocument.load(letterBytes);
+  var cp = await merged.copyPages(cover, cover.getPageIndices());
+  cp.forEach(function (p) { merged.addPage(p); });
+  var lp = await merged.copyPages(letter, letter.getPageIndices());
+  lp.forEach(function (p) { merged.addPage(p); });
+  return await merged.save();
+}
+
 
 function closeSendPreview() {
   var overlay = document.getElementById('send-preview-overlay');
@@ -5296,6 +5612,9 @@ async function confirmSendFromPreview() {
 
   if (!_sendPreview.pdfBytes) { _spSetStatus('Preview not ready yet. One moment.', 'error'); return; }
 
+  var reviewed = document.getElementById('send-preview-reviewed');
+  if (!reviewed || !reviewed.checked) { _spSetStatus('Please confirm you have reviewed the document before sending.', 'error'); return; }
+
   if (mode === 'email') {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) { _spSetStatus('Please enter a valid email address.', 'error'); return; }
   } else {
@@ -5305,23 +5624,22 @@ async function confirmSendFromPreview() {
   sendBtn.disabled = true;
   _spSetStatus(mode === 'email' ? 'Sending…' : 'Preparing and sending fax… This may take 30-60 seconds.', 'sending');
 
-  var pdfBase64 = _bytesToBase64(_sendPreview.pdfBytes);
+  var pdfBase64 = _bytesToBase64(_sendPreview.letterBytes || _sendPreview.pdfBytes);
   var vault = libGetVaultData() || {};
 
   try {
     if (mode === 'email') {
       var subject = document.getElementById('send-preview-subject').value.trim() || getLetterSubject();
-      var practice = vault.practiceName || 'Think Beyond Practice';
-      var coverText = 'Please find the attached letter from ' + (vault.legalName || practice) +
-        (vault.credentials ? ', ' + vault.credentials : '') + '.\n\n' +
-        'This message contains Protected Health Information (PHI) intended solely for the named recipient. ' +
+      var userMsg = (document.getElementById('send-preview-message').value || '').trim();
+      if (!userMsg) userMsg = _spDefaultMessage('email', vault);
+      var hipaa = 'This message contains Protected Health Information (PHI) intended solely for the named recipient. ' +
         'If received in error, notify the sender immediately. Unauthorized disclosure is prohibited under HIPAA.';
+      var coverText = userMsg + '\n\n' + hipaa;
+      // Render the user message as paragraphs, escaped, preserving line breaks.
+      var msgHtml = esc(userMsg).replace(/\n{2,}/g, '</p><p>').replace(/\n/g, '<br>');
       var coverHtml = '<div style="font-family:Georgia,serif;max-width:620px;color:#111;line-height:1.6;font-size:14px">' +
-        '<p>Please find the attached letter from ' + esc(vault.legalName || practice) +
-        (vault.credentials ? ', ' + esc(vault.credentials) : '') + '.</p>' +
-        '<p style="margin-top:24px;padding-top:12px;border-top:1px solid #ccc;font-size:11px;color:#666">' +
-        'This message contains Protected Health Information (PHI) intended solely for the named recipient. ' +
-        'If received in error, notify the sender immediately. Unauthorized disclosure is prohibited under HIPAA.</p></div>';
+        '<p>' + msgHtml + '</p>' +
+        '<p style="margin-top:24px;padding-top:12px;border-top:1px solid #ccc;font-size:11px;color:#666">' + esc(hipaa) + '</p></div>';
 
       var res = await fetch('/.netlify/functions/send-document', {
         method: 'POST',
@@ -5342,19 +5660,25 @@ async function confirmSendFromPreview() {
       var result = await res.json();
       if (result.success) {
         _spSetStatus('Email sent to ' + to + '.', 'success');
+        var _ret = parseInt((document.getElementById('send-preview-retention') || {}).value, 10);
+        _logLetterSend({ channel: 'email', to: to, subject: subject, status: 'sent',
+          pdfBase64: _ret > 0 ? pdfBase64 : null, pdfFilename: _sendPreview.filename, retentionDays: _ret });
       } else {
         _spSetStatus('Failed to send: ' + (result.error || 'Unknown error'), 'error');
         sendBtn.disabled = false;
       }
     } else {
       var toName = document.getElementById('send-preview-toname').value.trim();
+      // _sendPreview.pdfBytes already includes the generated cover sheet (built in
+      // rebuildSendPreview for fax mode), so we fax exactly what was previewed.
+      var faxBase64 = _bytesToBase64(_sendPreview.pdfBytes);
       var res2 = await fetch('/.netlify/functions/send-fax', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
         body: JSON.stringify({
           token: _lgTok(),
           to: to,
-          pdfBase64: pdfBase64,
+          pdfBase64: faxBase64,
           toName: toName,
           fromName: vault.legalName || '',
           fromPractice: vault.practiceName || '',
@@ -5366,6 +5690,9 @@ async function confirmSendFromPreview() {
       var result2 = await res2.json();
       if (result2.success) {
         _spSetStatus('Fax queued for delivery to ' + to + '. You will be emailed if it fails to deliver.', 'success');
+        var _retF = parseInt((document.getElementById('send-preview-retention') || {}).value, 10);
+        _logLetterSend({ channel: 'fax', to: to, subject: getLetterSubject(), status: 'queued',
+          pdfBase64: _retF > 0 ? faxBase64 : null, pdfFilename: _sendPreview.filename, retentionDays: _retF });
       } else {
         _spSetStatus('Failed to send fax: ' + (result2.error || 'Unknown error'), 'error');
         sendBtn.disabled = false;
