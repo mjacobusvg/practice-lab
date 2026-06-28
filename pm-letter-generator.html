@@ -573,6 +573,18 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
         <button class="btn btn-sm btn-secondary" onclick="removeLetterhead()">Remove</button>
       </div>
     </div>
+    <div class="sig-pad-block" style="margin-top:16px">
+      <label>Signature (optional)</label>
+      <p class="field-hint" style="margin-top:4px;margin-bottom:8px">Draw your signature once. It is stored in your Vault and composited onto signed letters at the PDF stage. Leave the "Sign this letter" box off to produce unsigned drafts.</p>
+      <canvas id="sig-pad" width="600" height="180" style="width:100%;max-width:340px;height:auto;background:#fff;border:1px solid var(--rule);border-radius:6px;touch-action:none;cursor:crosshair;display:block"></canvas>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+        <button class="btn btn-sm btn-secondary" type="button" onclick="sigPadClear()">Clear</button>
+        <button class="btn btn-sm btn-primary" type="button" onclick="sigPadSave()">Save signature</button>
+        <button class="btn btn-sm btn-secondary" type="button" id="sig-remove-btn" onclick="sigPadRemove()" style="display:none">Remove saved</button>
+        <span id="sig-status" style="font-size:.78rem;color:var(--cream-dim)"></span>
+      </div>
+      <img id="sig-saved-preview" alt="Saved signature" style="display:none;max-width:240px;max-height:80px;margin-top:8px;background:#fff;border:1px solid var(--rule);border-radius:6px;padding:4px">
+    </div>
     <button class="btn btn-primary" onclick="saveVault()">Save Provider Info</button>
   </div>
 
@@ -689,6 +701,10 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
       <div class="lib-output-sidebar">
         <div class="lib-output-actions">
           <h4>Actions</h4>
+          <label id="lib-sign-row" style="display:flex;align-items:flex-start;gap:8px;font-size:.8rem;color:var(--cream-dim);margin-bottom:10px;cursor:pointer;line-height:1.4">
+            <input type="checkbox" id="lib-sign-letter" style="margin-top:2px;flex:0 0 auto">
+            <span>Sign this letter<span id="lib-sign-note" style="display:block;font-size:.72rem;color:var(--cream-muted);margin-top:2px">Composites your saved signature onto the PDF. Leave off to produce an unsigned draft for review.</span></span>
+          </label>
           <button onclick="libDownloadAsPDF()" id="lib-download-pdf-btn" style="background: rgba(42,171,184,0.18); border-color: var(--teal); color: var(--cream); font-weight: 600;">⬇ Download as PDF<span id="lib-download-pdf-note" style="display:block;font-size:.72rem;color:var(--cream-muted);margin-top:3px;font-weight:400">on your letterhead</span></button>
           <button onclick="libCopyText()">📋 Copy letter text</button>
           <button onclick="libDownloadText()">📄 Download as plain text (.txt)</button>
@@ -1182,6 +1198,133 @@ document.getElementById('v-letterhead').addEventListener('change', function(e) {
   };
   reader.readAsDataURL(file);
 });
+
+// ─── SIGNATURE PAD ──────────────────────────────────────────────────────────
+// Captures a handwritten signature on a transparent canvas and stores it as a
+// transparent PNG in the Vault (tbp_vault.signature), synced to Supabase under
+// the vault_profile tool id. The PDF pipeline composites it only when "Sign this
+// letter" is checked. Strokes are drawn dark on a never-filled canvas, so the
+// exported PNG background is transparent natively.
+var _sigCtx = null, _sigDrawing = false, _sigDirty = false, _sigLastX = 0, _sigLastY = 0;
+
+function _sigInit() {
+  var c = document.getElementById('sig-pad');
+  if (!c || _sigCtx) return;
+  _sigCtx = c.getContext('2d');
+  _sigCtx.lineWidth = 2.2;
+  _sigCtx.lineCap = 'round';
+  _sigCtx.lineJoin = 'round';
+  _sigCtx.strokeStyle = '#101010';
+
+  function pos(e) {
+    var r = c.getBoundingClientRect();
+    var t = (e.touches && e.touches[0]) ? e.touches[0] : e;
+    // Map CSS pixels to the canvas's internal coordinate space
+    var sx = c.width / r.width, sy = c.height / r.height;
+    return { x: (t.clientX - r.left) * sx, y: (t.clientY - r.top) * sy };
+  }
+  function start(e) { e.preventDefault(); _sigDrawing = true; var p = pos(e); _sigLastX = p.x; _sigLastY = p.y; }
+  function move(e) {
+    if (!_sigDrawing) return;
+    e.preventDefault();
+    var p = pos(e);
+    _sigCtx.beginPath();
+    _sigCtx.moveTo(_sigLastX, _sigLastY);
+    _sigCtx.lineTo(p.x, p.y);
+    _sigCtx.stroke();
+    _sigLastX = p.x; _sigLastY = p.y; _sigDirty = true;
+  }
+  function end(e) { if (e) e.preventDefault(); _sigDrawing = false; }
+
+  c.addEventListener('mousedown', start);
+  c.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', end);
+  c.addEventListener('touchstart', start, { passive: false });
+  c.addEventListener('touchmove', move, { passive: false });
+  c.addEventListener('touchend', end, { passive: false });
+}
+
+function sigPadClear() {
+  _sigInit();
+  var c = document.getElementById('sig-pad');
+  if (_sigCtx) _sigCtx.clearRect(0, 0, c.width, c.height);
+  _sigDirty = false;
+  var st = document.getElementById('sig-status');
+  if (st) st.textContent = '';
+}
+
+function sigPadSave() {
+  _sigInit();
+  if (!_sigDirty) { var s0 = document.getElementById('sig-status'); if (s0) s0.textContent = 'Draw a signature first.'; return; }
+  var c = document.getElementById('sig-pad');
+  var dataUrl = c.toDataURL('image/png');  // transparent background preserved
+
+  // Write into the canonical Vault object (tbp_vault) and sync to Supabase.
+  var v = {};
+  try { v = JSON.parse(localStorage.getItem('tbp_vault') || '{}'); } catch (e) { v = {}; }
+  v.signature = dataUrl;
+  localStorage.setItem('tbp_vault', JSON.stringify(v));
+  // Keep the in-page profile + Library cache in sync so the PDF builder sees it immediately.
+  if (typeof profile === 'object' && profile) { profile.signature = dataUrl; }
+  if (window.LIB) LIB._vaultCache = null;
+
+  if (typeof _lgUserEmail !== 'undefined' && _lgUserEmail) {
+    fetch('/.netlify/functions/user-tool-data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
+      body: JSON.stringify({ token: _lgTok(), email: _lgUserEmail, toolId: 'vault_profile', action: 'save', data: v })
+    }).catch(function() {});
+  }
+
+  _sigShowSaved(dataUrl);
+  var st = document.getElementById('sig-status');
+  if (st) st.textContent = 'Signature saved.';
+}
+
+function sigPadRemove() {
+  var v = {};
+  try { v = JSON.parse(localStorage.getItem('tbp_vault') || '{}'); } catch (e) { v = {}; }
+  delete v.signature;
+  localStorage.setItem('tbp_vault', JSON.stringify(v));
+  if (typeof profile === 'object' && profile) { delete profile.signature; }
+  if (window.LIB) LIB._vaultCache = null;
+
+  if (typeof _lgUserEmail !== 'undefined' && _lgUserEmail) {
+    fetch('/.netlify/functions/user-tool-data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
+      body: JSON.stringify({ token: _lgTok(), email: _lgUserEmail, toolId: 'vault_profile', action: 'save', data: v })
+    }).catch(function() {});
+  }
+
+  sigPadClear();
+  _sigShowSaved(null);
+  var st = document.getElementById('sig-status');
+  if (st) st.textContent = 'Saved signature removed.';
+}
+
+function _sigShowSaved(dataUrl) {
+  var img = document.getElementById('sig-saved-preview');
+  var rm = document.getElementById('sig-remove-btn');
+  if (!img) return;
+  if (dataUrl) {
+    img.src = dataUrl; img.style.display = 'block';
+    if (rm) rm.style.display = 'inline-block';
+  } else {
+    img.removeAttribute('src'); img.style.display = 'none';
+    if (rm) rm.style.display = 'none';
+  }
+}
+
+function _sigLoadSaved() {
+  _sigInit();
+  var v = {};
+  try { v = JSON.parse(localStorage.getItem('tbp_vault') || '{}'); } catch (e) { v = {}; }
+  if (typeof v.signature === 'string' && v.signature.indexOf('data:image/png') === 0) {
+    _sigShowSaved(v.signature);
+  }
+}
+document.addEventListener('DOMContentLoaded', _sigLoadSaved);
 
 function esc(s) { if (!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
@@ -1989,6 +2132,20 @@ function libGenerateFinal() {
     noteEl.textContent = hasLetterhead ? 'on your letterhead' : 'with clean header (no letterhead in Vault)';
   }
 
+  // Sign-this-letter control: enable only when a signature PNG exists in the Vault.
+  var hasSig = typeof vault.signature === 'string' && vault.signature.indexOf('data:image/png') === 0;
+  var signBox = document.getElementById('lib-sign-letter');
+  var signNote = document.getElementById('lib-sign-note');
+  if (signBox) {
+    signBox.disabled = !hasSig;
+    if (!hasSig) signBox.checked = false;
+  }
+  if (signNote) {
+    signNote.textContent = hasSig
+      ? 'Composites your saved signature onto the PDF. Leave off to produce an unsigned draft for review.'
+      : 'No signature saved in your Vault yet. Add one in the Vault or provider panel to enable signing.';
+  }
+
   // Track usage (silent fail)
   libTrackUsage(std);
   libShowView('output');
@@ -2086,6 +2243,40 @@ async function libDownloadAsPDF() {
     // letter so contact info doesn't appear twice (once on the letterhead, once typed above date).
     var bodyText = hasLetterhead ? libStripVaultHeaderFromText(letterText) : letterText;
 
+    // Determine whether to composite a handwritten signature image. Gated: only when
+    // the "Sign this letter" checkbox is on AND a signature PNG exists in the Vault.
+    var signCheckbox = document.getElementById('lib-sign-letter');
+    var wantSignature = !!(signCheckbox && signCheckbox.checked);
+    var sigData = vault.signature || '';
+    var hasSignature = wantSignature
+      && typeof sigData === 'string'
+      && sigData.indexOf('data:image/png') === 0;
+
+    var sigImage = null;
+    var sigDrawWidth = 0, sigDrawHeight = 0;
+    if (hasSignature) {
+      try {
+        var sigBytes = libBase64ToBytes(sigData.split(',')[1] || '');
+        sigImage = await pdfDoc.embedPng(sigBytes);
+        // Scale to ~1.8 inch wide, preserve aspect ratio
+        sigDrawWidth = 1.8 * 72;
+        sigDrawHeight = sigImage.height * (sigDrawWidth / sigImage.width);
+      } catch (sigErr) {
+        console.error('[lib-pdf] signature embed failed, rendering unsigned:', sigErr);
+        hasSignature = false;
+      }
+    }
+
+    var SIG_GAP = 6;  // points of breathing room above/below the signature image
+
+    // Inject the [SIGNATURE] anchor only when actually signing. The anchor is placed on
+    // its own line directly above the typed provider-name line in the closing block, so the
+    // wet signature sits between the closing ("Sincerely,") and the typed name. The token is
+    // never shown on screen or sent by email/fax; it exists only in this PDF-render copy.
+    if (hasSignature) {
+      bodyText = libInjectSignatureAnchor(bodyText, vault);
+    }
+
     // Word-wrap into lines that fit the text width
     var lines = libWrapTextLines(bodyText, font, fontSize, textWidth);
 
@@ -2094,13 +2285,40 @@ async function libDownloadAsPDF() {
     var currentPage = firstPage;
 
     for (var i = 0; i < lines.length; i++) {
+      var rawLine = lines[i];
+
+      // Signature anchor handling
+      if (rawLine.trim() === '[SIGNATURE]') {
+        if (hasSignature && sigImage) {
+          // Reserve vertical space for the image. Page-break if it won't fit.
+          var needed = sigDrawHeight + SIG_GAP * 2;
+          if (y - needed < minY) {
+            currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
+            y = pageHeight - (0.75 * 72);
+          }
+          var sigTop = y - SIG_GAP;
+          currentPage.drawImage(sigImage, {
+            x: marginLeft,
+            y: sigTop - sigDrawHeight,
+            width: sigDrawWidth,
+            height: sigDrawHeight
+          });
+          y -= (sigDrawHeight + SIG_GAP * 2);
+        } else {
+          // Unsigned: consume the token as a single blank line so the typed
+          // name still sits a line below the closing with normal spacing.
+          y -= lineHeight;
+        }
+        continue;
+      }
+
       if (y - lineHeight < minY) {
         // Overflow: add a continuation page. Continuation pages are always plain
         // (no letterhead duplication), since most letterheads have visible-on-first-page-only elements.
         currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
         y = pageHeight - (0.75 * 72);
       }
-      currentPage.drawText(lines[i], {
+      currentPage.drawText(rawLine, {
         x: marginLeft,
         y: y - fontSize,
         size: fontSize,
@@ -2125,6 +2343,57 @@ function libBase64ToBytes(b64) {
   var bytes = new Uint8Array(binary.length);
   for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes;
+}
+
+function libInjectSignatureAnchor(text, vault) {
+  // Inserts a [SIGNATURE] token on its own line directly above the typed provider-name
+  // line in the closing block, so the composited signature lands between the closing
+  // ("Sincerely,") and the typed name. Returns text unchanged-plus-anchor; if the name
+  // line can't be located, appends the anchor at the end as a safe fallback so signing
+  // never silently no-ops.
+  if (!text) return text;
+  if (text.indexOf('[SIGNATURE]') !== -1) return text;  // idempotent
+
+  var name = (vault && (vault.legalName || vault.providerName || vault.name) || '').trim();
+  var lines = text.split('\n');
+
+  function normalize(s) { return s.replace(/\s+/g, ' ').trim().toLowerCase(); }
+
+  var targetIdx = -1;
+  if (name) {
+    var nName = normalize(name);
+    // Search from the bottom up; the signature block is at the end of the letter.
+    for (var i = lines.length - 1; i >= 0; i--) {
+      var ln = normalize(lines[i]);
+      if (!ln) continue;
+      // Match the name line even if credentials trail it on the same line
+      // (e.g. "Michael Van Gelder, M.S., M.N., PMHNP-BC").
+      if (ln === nName || ln.indexOf(nName) === 0) { targetIdx = i; break; }
+    }
+  }
+
+  if (targetIdx === -1) {
+    // Fallback: anchor after a trailing "Sincerely,"-style closing, else at the very end.
+    var closingRe = /^(sincerely|respectfully|regards|best regards|warm regards|thank you)[,.]?$/i;
+    for (var j = lines.length - 1; j >= 0; j--) {
+      if (closingRe.test(lines[j].trim())) { targetIdx = j + 1; break; }
+    }
+  }
+
+  if (targetIdx === -1) {
+    // Last resort: append at end with a separating blank line.
+    lines.push('');
+    lines.push('[SIGNATURE]');
+    return lines.join('\n');
+  }
+
+  // Insert the anchor on its own line above the name line, with a blank line of
+  // separation above it if the preceding line isn't already blank.
+  var insertAt = targetIdx;
+  var prevBlank = insertAt > 0 && lines[insertAt - 1].trim() === '';
+  var block = prevBlank ? ['[SIGNATURE]'] : ['', '[SIGNATURE]'];
+  lines.splice.apply(lines, [insertAt, 0].concat(block));
+  return lines.join('\n');
 }
 
 function libTriggerDownload(bytes, filename, mimeType) {
