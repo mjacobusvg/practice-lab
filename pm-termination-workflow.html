@@ -119,13 +119,16 @@ textarea{resize:vertical;min-height:70px}
 
   <script>
   var _userEmail = '';
+  var _authToken = '';
   // Defer protect() until the document (and loadVault) has parsed.
   document.addEventListener('DOMContentLoaded', function() {
     TBPAuth.protect({
       toolName: 'Termination Workflow',
+      requireFull: true,
       onVerified: function() {
         document.getElementById('app-root').style.display = 'block';
         try { _userEmail = localStorage.getItem('tbp_verified_email') || ''; } catch(e) {}
+        try { _authToken = localStorage.getItem('tbp_auth_token') || ''; } catch(e) {}
         loadVault();
         checkCertifiedReturn();
       }
@@ -441,8 +444,8 @@ function loadVault() {
   if (!_userEmail) return;
   fetch('/.netlify/functions/user-tool-data', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: _userEmail, toolId: 'vault_profile', action: 'load' })
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _authToken },
+    body: JSON.stringify({ token: _authToken, email: _userEmail, toolId: 'vault_profile', action: 'load' })
   })
   .then(function(r) { return r.json(); })
   .then(function(data) {
@@ -498,8 +501,8 @@ function saveVault() {
   if (_userEmail) {
     fetch('/.netlify/functions/user-tool-data', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: _userEmail, toolId: 'vault_profile', action: 'save', data: profile })
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _authToken },
+      body: JSON.stringify({ token: _authToken, email: _userEmail, toolId: 'vault_profile', action: 'save', data: profile })
     }).catch(function() {});
   }
   applyVaultToUI();
@@ -1541,8 +1544,9 @@ async function generate() {
   try {
     var response = await fetch('/.netlify/functions/clinical-proxy', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _authToken },
       body: JSON.stringify({
+        token: _authToken,
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 2000,
         system: sysPrompt,
@@ -1672,8 +1676,9 @@ async function sendCertified() {
   try {
     var res = await fetch('/.netlify/functions/create-certified-checkout', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _authToken },
       body: JSON.stringify({
+        token: _authToken,
         letterText: letterText,
         toName: toName, toAddress: toAddr,
         fromName: fromName, fromAddress: fromAddr,
@@ -1796,8 +1801,9 @@ async function sendEmail() {
   try {
     var res = await fetch('/.netlify/functions/send-document', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _authToken },
       body: JSON.stringify({
+        token: _authToken,
         to: to, subject: subject, body: bodyText, htmlBody: htmlBody,
         replyTo: profile.email || _userEmail || '', tool: 'Termination Workflow'
       })
