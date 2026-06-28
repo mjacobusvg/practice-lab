@@ -1179,6 +1179,21 @@ function toggleVaultSetup() {
   populateVaultFields();
 }
 
+function libOpenSignatureSetup() {
+  // Open the provider panel (if collapsed) and scroll the signature pad into view.
+  // Called from the "Add signature" link on the output screen so users aren't expected
+  // to know the pad lives behind "Edit Provider Info."
+  var panel = document.getElementById('vault-setup');
+  if (panel && panel.classList.contains('hidden')) {
+    panel.classList.remove('hidden');
+    populateVaultFields();
+  }
+  var block = document.getElementById('sig-pad') || panel;
+  if (block && block.scrollIntoView) {
+    block.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+}
+
 function removeLetterhead() {
   localStorage.removeItem(LETTERHEAD_KEY);
   document.getElementById('letterhead-preview').style.display = 'none';
@@ -1279,6 +1294,30 @@ function sigPadSave() {
   _sigShowSaved(dataUrl);
   var st = document.getElementById('sig-status');
   if (st) st.textContent = 'Signature saved.';
+  _sigRefreshSignControl();
+}
+
+function _sigRefreshSignControl() {
+  // Live-update the output screen's "Sign this letter" control to match whether a
+  // signature now exists, so saving/removing reflects immediately without regenerating.
+  var v = {};
+  try { v = JSON.parse(localStorage.getItem('tbp_vault') || '{}'); } catch (e) { v = {}; }
+  var hasSig = typeof v.signature === 'string' && v.signature.indexOf('data:image/png') === 0;
+  var box = document.getElementById('lib-sign-letter');
+  var note = document.getElementById('lib-sign-note');
+  if (box) {
+    box.disabled = !hasSig;
+    if (!hasSig) box.checked = false;
+  }
+  if (note) {
+    if (hasSig) {
+      note.textContent = 'Composites your saved signature onto the PDF. Leave off to produce an unsigned draft for review.';
+    } else {
+      note.innerHTML = 'No signature saved yet. '
+        + '<a href="#" onclick="libOpenSignatureSetup();return false;" style="color:var(--teal);text-decoration:underline;cursor:pointer">Add your signature</a> '
+        + 'to enable signing.';
+    }
+  }
 }
 
 function sigPadRemove() {
@@ -1301,6 +1340,7 @@ function sigPadRemove() {
   _sigShowSaved(null);
   var st = document.getElementById('sig-status');
   if (st) st.textContent = 'Saved signature removed.';
+  _sigRefreshSignControl();
 }
 
 function _sigShowSaved(dataUrl) {
@@ -2141,9 +2181,13 @@ function libGenerateFinal() {
     if (!hasSig) signBox.checked = false;
   }
   if (signNote) {
-    signNote.textContent = hasSig
-      ? 'Composites your saved signature onto the PDF. Leave off to produce an unsigned draft for review.'
-      : 'No signature saved in your Vault yet. Add one in the Vault or provider panel to enable signing.';
+    if (hasSig) {
+      signNote.textContent = 'Composites your saved signature onto the PDF. Leave off to produce an unsigned draft for review.';
+    } else {
+      signNote.innerHTML = 'No signature saved yet. '
+        + '<a href="#" onclick="libOpenSignatureSetup();return false;" style="color:var(--teal);text-decoration:underline;cursor:pointer">Add your signature</a> '
+        + 'to enable signing.';
+    }
   }
 
   // Track usage (silent fail)
