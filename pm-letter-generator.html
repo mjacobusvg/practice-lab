@@ -1119,13 +1119,42 @@ function applyVaultToUI() {
     document.getElementById('vault-info').innerHTML = '<strong>' + esc(profile.legalName) + '</strong> | ' + (profile.practiceName || '') + ' | NPI: ' + (profile.npi1 || 'Not set');
     populateVaultFields();
   }
-  // Load letterhead
-  var lh = localStorage.getItem(LETTERHEAD_KEY);
+  // Load letterhead from the Vault (profile.letterhead lives in tbp_vault, the same
+  // object the PDF pipeline reads). Branch the preview: image letterheads render in the
+  // <img>; PDF letterheads can't display in an <img>, so show a label instead.
+  var lh = profile.letterhead || '';
+  var lhImg = document.getElementById('letterhead-preview');
+  var lhActions = document.getElementById('letterhead-actions');
   if (lh) {
-    document.getElementById('letterhead-preview').src = lh;
-    document.getElementById('letterhead-preview').style.display = 'block';
-    document.getElementById('letterhead-actions').style.display = 'flex';
+    var lhIsPdf = lh.indexOf('data:application/pdf') === 0;
+    if (lhIsPdf) {
+      lhImg.removeAttribute('src');
+      lhImg.style.display = 'none';
+    } else {
+      lhImg.src = lh;
+      lhImg.style.display = 'block';
+    }
+    if (lhActions) lhActions.style.display = 'flex';
+    _setLetterheadLabel(lhIsPdf ? 'Letterhead loaded (PDF)' : 'Letterhead loaded (image)');
+  } else {
+    if (lhImg) lhImg.style.display = 'none';
+    if (lhActions) lhActions.style.display = 'none';
+    _setLetterheadLabel('');
   }
+}
+
+function _setLetterheadLabel(text) {
+  // Show a small status line for PDF letterheads that can't render in the <img> preview.
+  var el = document.getElementById('letterhead-status');
+  if (!el) {
+    var actions = document.getElementById('letterhead-actions');
+    if (!actions || !actions.parentNode) return;
+    el = document.createElement('span');
+    el.id = 'letterhead-status';
+    el.style.cssText = 'font-size:.78rem;color:var(--cream-dim);margin-left:8px';
+    actions.appendChild(el);
+  }
+  el.textContent = text || '';
 }
 
 function populateVaultFields() {
@@ -1143,33 +1172,68 @@ function populateVaultFields() {
   document.getElementById('v-email').value = profile.practiceEmail || profile.email || '';
 }
 
-function saveVault() {
-  // Write to Vault's canonical field names so other Practice Manager tools
-  // and the central Vault read the same data. Do not write to legacy aliases.
-  profile.legalName = document.getElementById('v-name').value.trim();
-  profile.credentials = document.getElementById('v-creds').value.trim();
-  profile.practiceName = document.getElementById('v-practice').value.trim();
-  profile.npi1 = document.getElementById('v-npi').value.trim();
-  profile.licenseNum = document.getElementById('v-license').value.trim();
-  profile.licenseState = document.getElementById('v-state').value.trim();
-  profile.practiceAddress = document.getElementById('v-address').value.trim();
-  profile.practicePhone = document.getElementById('v-phone').value.trim();
-  profile.practiceFax = document.getElementById('v-fax').value.trim();
-  profile.practiceEmail = document.getElementById('v-email').value.trim();
-  // Clean up any legacy aliases so we don't keep stale data around
-  delete profile.licenseNumber;
-  delete profile.phone;
-  delete profile.fax;
-  delete profile.email;
-  localStorage.setItem(VAULT_KEY, JSON.stringify(profile));
-  // Sync to Supabase
+function _vaultMergeSave(patch, deleteKeys) {
+  // Read-merge-write: re-read the freshest tbp_vault, overlay only the changed keys,
+  // persist the merged object, and sync that merged object to Supabase. This prevents
+  // the generator's partial view (10 fields) from ever clobbering the ~70 Vault fields
+  // that vault.html owns, regardless of whether the Supabase load has returned yet.
+  var fresh = {};
+  try {
+    var raw = localStorage.getItem(VAULT_KEY);
+    if (raw) fresh = JSON.parse(raw) || {};
+  } catch (e) { fresh = {}; }
+
+  // Start from the freshest stored object, not the in-memory profile, so out-of-band
+  // edits from vault.html in another tab are preserved.
+  var merged = {};
+  for (var k in fresh) { if (Object.prototype.hasOwnProperty.call(fresh, k)) merged[k] = fresh[k]; }
+  // Also fold in any in-memory profile keys not yet flushed to storage.
+  if (typeof profile === 'object' && profile) {
+    for (var pk in profile) {
+      if (Object.prototype.hasOwnProperty.call(profile, pk) && merged[pk] === undefined) merged[pk] = profile[pk];
+    }
+  }
+  if (patch) {
+    for (var key in patch) {
+      if (Object.prototype.hasOwnProperty.call(patch, key)) merged[key] = patch[key];
+    }
+  }
+  if (deleteKeys && deleteKeys.length) {
+    for (var i = 0; i < deleteKeys.length; i++) delete merged[deleteKeys[i]];
+  }
+
+  profile = merged;
+  try { localStorage.setItem(VAULT_KEY, JSON.stringify(merged)); } catch (e) {}
+  if (window.LIB) LIB._vaultCache = null;
+
   if (_lgUserEmail) {
     fetch('/.netlify/functions/user-tool-data', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
-      body: JSON.stringify({ token: _lgTok(), email: _lgUserEmail, toolId: 'vault_profile', action: 'save', data: profile })
+      body: JSON.stringify({ token: _lgTok(), email: _lgUserEmail, toolId: 'vault_profile', action: 'save', data: merged })
     }).catch(function() {});
   }
+  return merged;
+}
+
+function saveVault() {
+  // Write to Vault's canonical field names so other Practice Manager tools
+  // and the central Vault read the same data. Do not write to legacy aliases.
+  var patch = {
+    legalName: document.getElementById('v-name').value.trim(),
+    credentials: document.getElementById('v-creds').value.trim(),
+    practiceName: document.getElementById('v-practice').value.trim(),
+    npi1: document.getElementById('v-npi').value.trim(),
+    licenseNum: document.getElementById('v-license').value.trim(),
+    licenseState: document.getElementById('v-state').value.trim(),
+    practiceAddress: document.getElementById('v-address').value.trim(),
+    practicePhone: document.getElementById('v-phone').value.trim(),
+    practiceFax: document.getElementById('v-fax').value.trim(),
+    practiceEmail: document.getElementById('v-email').value.trim()
+  };
+  // Merge only these keys; preserves the ~60 advanced Vault fields owned by vault.html.
+  // Also strip legacy aliases so stale duplicates don't linger.
+  _vaultMergeSave(patch, ['licenseNumber', 'phone', 'fax', 'email']);
   applyVaultToUI();
 }
 
@@ -1195,21 +1259,33 @@ function libOpenSignatureSetup() {
 }
 
 function removeLetterhead() {
-  localStorage.removeItem(LETTERHEAD_KEY);
+  _vaultMergeSave(null, ['letterhead']);
   document.getElementById('letterhead-preview').style.display = 'none';
   document.getElementById('letterhead-actions').style.display = 'none';
   document.getElementById('v-letterhead').value = '';
+  _setLetterheadLabel('');
 }
 
 document.getElementById('v-letterhead').addEventListener('change', function(e) {
   var file = e.target.files[0];
   if (!file) return;
+  if (file.size > 600000) { alert('Letterhead must be under 600KB.'); e.target.value = ''; return; }
   var reader = new FileReader();
   reader.onload = function(ev) {
-    localStorage.setItem(LETTERHEAD_KEY, ev.target.result);
-    document.getElementById('letterhead-preview').src = ev.target.result;
-    document.getElementById('letterhead-preview').style.display = 'block';
+    var data = ev.target.result;
+    var isPdf = data.indexOf('data:application/pdf') === 0;
+    // Merge only the letterhead key so advanced Vault fields are never clobbered.
+    _vaultMergeSave({ letterhead: data });
+    var img = document.getElementById('letterhead-preview');
+    if (isPdf) {
+      img.removeAttribute('src');
+      img.style.display = 'none';
+    } else {
+      img.src = data;
+      img.style.display = 'block';
+    }
     document.getElementById('letterhead-actions').style.display = 'flex';
+    _setLetterheadLabel(isPdf ? 'Letterhead loaded (PDF)' : 'Letterhead loaded (image)');
   };
   reader.readAsDataURL(file);
 });
@@ -1274,22 +1350,8 @@ function sigPadSave() {
   var c = document.getElementById('sig-pad');
   var dataUrl = c.toDataURL('image/png');  // transparent background preserved
 
-  // Write into the canonical Vault object (tbp_vault) and sync to Supabase.
-  var v = {};
-  try { v = JSON.parse(localStorage.getItem('tbp_vault') || '{}'); } catch (e) { v = {}; }
-  v.signature = dataUrl;
-  localStorage.setItem('tbp_vault', JSON.stringify(v));
-  // Keep the in-page profile + Library cache in sync so the PDF builder sees it immediately.
-  if (typeof profile === 'object' && profile) { profile.signature = dataUrl; }
-  if (window.LIB) LIB._vaultCache = null;
-
-  if (typeof _lgUserEmail !== 'undefined' && _lgUserEmail) {
-    fetch('/.netlify/functions/user-tool-data', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
-      body: JSON.stringify({ token: _lgTok(), email: _lgUserEmail, toolId: 'vault_profile', action: 'save', data: v })
-    }).catch(function() {});
-  }
+  // Merge only the signature key so advanced Vault fields are never clobbered.
+  _vaultMergeSave({ signature: dataUrl });
 
   _sigShowSaved(dataUrl);
   var st = document.getElementById('sig-status');
@@ -1321,21 +1383,7 @@ function _sigRefreshSignControl() {
 }
 
 function sigPadRemove() {
-  var v = {};
-  try { v = JSON.parse(localStorage.getItem('tbp_vault') || '{}'); } catch (e) { v = {}; }
-  delete v.signature;
-  localStorage.setItem('tbp_vault', JSON.stringify(v));
-  if (typeof profile === 'object' && profile) { delete profile.signature; }
-  if (window.LIB) LIB._vaultCache = null;
-
-  if (typeof _lgUserEmail !== 'undefined' && _lgUserEmail) {
-    fetch('/.netlify/functions/user-tool-data', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
-      body: JSON.stringify({ token: _lgTok(), email: _lgUserEmail, toolId: 'vault_profile', action: 'save', data: v })
-    }).catch(function() {});
-  }
-
+  _vaultMergeSave(null, ['signature']);
   sigPadClear();
   _sigShowSaved(null);
   var st = document.getElementById('sig-status');
@@ -5011,9 +5059,10 @@ function downloadPDF() {
   // For now, trigger print dialog which allows Save as PDF
   var letterContent = document.getElementById('letter-output').textContent;
   var w = window.open('', '_blank');
-  var lh = localStorage.getItem(LETTERHEAD_KEY);
+  var lh = profile.letterhead || '';
+  var lhIsImage = lh && lh.indexOf('data:image') === 0;
   var headerHtml = '';
-  if (lh) {
+  if (lhIsImage) {
     headerHtml = '<img src="' + lh + '" style="max-width:100%;max-height:120px;margin-bottom:20px;display:block">';
   } else if (profile.legalName) {
     headerHtml = '<div style="margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #2aabb8">';
