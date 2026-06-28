@@ -189,10 +189,12 @@ async function sendEmail() {
   status.textContent = 'Sending email...';
 
   try {
+    var _suTok=''; try{_suTok=localStorage.getItem('tbp_auth_token')||'';}catch(e){}
     var resp = await fetch('/.netlify/functions/send-document', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _suTok },
       body: JSON.stringify({
+        token: _suTok,
         to: to,
         subject: subject,
         body: body,
@@ -256,10 +258,12 @@ async function sendFax() {
   status.textContent = 'Preparing and sending fax. This may take up to 30 seconds...';
 
   try {
+    var _suFaxTok=''; try{_suFaxTok=localStorage.getItem('tbp_auth_token')||'';}catch(e){}
     var resp = await fetch('/.netlify/functions/send-fax', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _suFaxTok },
       body: JSON.stringify({
+        token: _suFaxTok,
         to: faxNum,
         content: faxContent,
         toName: toName,
