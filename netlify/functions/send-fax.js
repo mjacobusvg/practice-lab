@@ -57,6 +57,7 @@ exports.handler = async function(event) {
 
     var to = payload.to;
     var content = payload.content;
+    var pdfBase64 = payload.pdfBase64 || '';
     var toName = payload.toName || '';
     var fromName = payload.fromName || '';
     var fromPractice = payload.fromPractice || '';
@@ -64,11 +65,11 @@ exports.handler = async function(event) {
     var tool = payload.tool || 'Practice Manager';
     var clinicianEmail = payload.clinicianEmail || '';
 
-    if (!to || !content) {
+    if (!to || (!content && !pdfBase64)) {
       return {
         statusCode: 400,
         headers: headers,
-        body: JSON.stringify({ error: 'Missing required fields: to (fax number) and content' })
+        body: JSON.stringify({ error: 'Missing required fields: to (fax number) and content or pdfBase64' })
       };
     }
 
@@ -79,28 +80,34 @@ exports.handler = async function(event) {
       cleanNumber = '+1' + cleanNumber.replace(/^1/, '');
     }
 
-    // Build a simple HTML document for the fax content
-    var htmlContent = '<!DOCTYPE html><html><head><style>';
-    htmlContent += 'body{font-family:Arial,sans-serif;margin:40px;color:#111;line-height:1.6;font-size:12pt}';
-    htmlContent += 'h1{font-size:16pt;margin-bottom:8px}';
-    htmlContent += '.header{border-bottom:2px solid #111;padding-bottom:12px;margin-bottom:24px}';
-    htmlContent += '.meta{font-size:10pt;color:#444;margin-bottom:4px}';
-    htmlContent += '.content{white-space:pre-wrap}';
-    htmlContent += '.footer{margin-top:40px;padding-top:12px;border-top:1px solid #ccc;font-size:8pt;color:#666}';
-    htmlContent += '</style></head><body>';
-    htmlContent += '<div class="header">';
-    if (fromPractice) htmlContent += '<h1>' + escHtml(fromPractice) + '</h1>';
-    if (fromName) htmlContent += '<div class="meta">From: ' + escHtml(fromName) + '</div>';
-    if (toName) htmlContent += '<div class="meta">To: ' + escHtml(toName) + '</div>';
-    if (subject) htmlContent += '<div class="meta">Re: ' + escHtml(subject) + '</div>';
-    htmlContent += '<div class="meta">Date: ' + new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) + '</div>';
-    htmlContent += '</div>';
-    htmlContent += '<div class="content">' + escHtml(content) + '</div>';
-    htmlContent += '<div class="footer">CONFIDENTIAL: This fax contains Protected Health Information (PHI) intended solely for the named recipient. If received in error, notify the sender immediately and destroy all copies. Unauthorized disclosure is prohibited under HIPAA.</div>';
-    htmlContent += '</body></html>';
-
-    // Convert HTML to base64
-    var base64Doc = Buffer.from(htmlContent).toString('base64');
+    // Determine the document to fax: prefer the pre-composited PDF (letterhead + signature,
+    // exactly what the clinician previewed). Fall back to building HTML from plain text.
+    var base64Doc, convContentType;
+    if (pdfBase64) {
+      base64Doc = pdfBase64;
+      convContentType = 'application/pdf';
+    } else {
+      var htmlContent = '<!DOCTYPE html><html><head><style>';
+      htmlContent += 'body{font-family:Arial,sans-serif;margin:40px;color:#111;line-height:1.6;font-size:12pt}';
+      htmlContent += 'h1{font-size:16pt;margin-bottom:8px}';
+      htmlContent += '.header{border-bottom:2px solid #111;padding-bottom:12px;margin-bottom:24px}';
+      htmlContent += '.meta{font-size:10pt;color:#444;margin-bottom:4px}';
+      htmlContent += '.content{white-space:pre-wrap}';
+      htmlContent += '.footer{margin-top:40px;padding-top:12px;border-top:1px solid #ccc;font-size:8pt;color:#666}';
+      htmlContent += '</style></head><body>';
+      htmlContent += '<div class="header">';
+      if (fromPractice) htmlContent += '<h1>' + escHtml(fromPractice) + '</h1>';
+      if (fromName) htmlContent += '<div class="meta">From: ' + escHtml(fromName) + '</div>';
+      if (toName) htmlContent += '<div class="meta">To: ' + escHtml(toName) + '</div>';
+      if (subject) htmlContent += '<div class="meta">Re: ' + escHtml(subject) + '</div>';
+      htmlContent += '<div class="meta">Date: ' + new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) + '</div>';
+      htmlContent += '</div>';
+      htmlContent += '<div class="content">' + escHtml(content) + '</div>';
+      htmlContent += '<div class="footer">CONFIDENTIAL: This fax contains Protected Health Information (PHI) intended solely for the named recipient. If received in error, notify the sender immediately and destroy all copies. Unauthorized disclosure is prohibited under HIPAA.</div>';
+      htmlContent += '</body></html>';
+      base64Doc = Buffer.from(htmlContent).toString('base64');
+      convContentType = 'text/html';
+    }
 
     // Step 1: Upload document for conversion
     var uploadRes = await fetch('https://api.notifyre.com/fax/send/conversion', {
@@ -111,7 +118,7 @@ exports.handler = async function(event) {
       },
       body: JSON.stringify({
         base64Str: base64Doc,
-        contentType: 'text/html'
+        contentType: convContentType
       })
     });
 
