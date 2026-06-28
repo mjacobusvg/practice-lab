@@ -33,8 +33,6 @@
         .baa-document h3 { font-size: 1rem; font-weight: 600; color: var(--navy); margin: 20px 0 8px 0; }
         .baa-document p { margin-bottom: 12px; }
         .baa-document .version-note { background: var(--light-gray); padding: 12px 16px; border-radius: 6px; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 20px; }
-        .scroll-indicator { text-align: center; padding: 12px; background: var(--light-gray); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 32px; font-size: 0.85rem; color: var(--text-muted); display: none; }
-        .scroll-indicator.visible { display: block; }
         .signature-form { background: var(--white); border: 1px solid var(--border); border-radius: 8px; padding: 32px 40px; margin-bottom: 32px; }
         .signature-form h2 { font-family: 'DM Serif Display', serif; font-size: 1.3rem; color: var(--navy); margin-bottom: 24px; }
         .form-group { margin-bottom: 20px; }
@@ -100,11 +98,10 @@
                         style="width:100%;height:500px;border:0;display:block"></iframe>
             </div>
             <p style="font-size:0.8rem;color:var(--text-muted);margin:8px 2px 0">
-                Trouble viewing the agreement?
+                Prefer to read it full-screen?
                 <a href="/baa-template.pdf" target="_blank" rel="noopener" id="baaOpenLink">Open the BAA in a new tab</a>.
             </p>
 
-            <div class="scroll-indicator" id="scrollIndicator">Please scroll to the bottom of the agreement before signing.</div>
             <div class="status-message" id="statusMessage"></div>
 
             <div class="signature-form" id="signatureForm">
@@ -136,6 +133,7 @@
                     <label for="agreeCheckbox">I have read the Business Associate Agreement above. I have the authority to bind the Covered Entity named above to this Agreement. By typing my name and clicking &ldquo;Sign Agreement,&rdquo; I am executing this Agreement electronically, which I understand has the same legal effect as a handwritten signature.</label>
                 </div>
                 <button class="submit-btn" id="submitBtn" disabled>Sign Agreement</button>
+                <div class="submit-hint" id="submitHint" style="font-size:0.82rem;color:var(--text-muted);text-align:center;margin-top:10px"></div>
             </div>
         </div>
 
@@ -160,7 +158,6 @@
     <script>
         const BAA_VERSION = '3.0';
         const baaDocument = document.getElementById('baaDocument');
-        const scrollIndicator = document.getElementById('scrollIndicator');
         const signerName = document.getElementById('signerName');
         const signerEmail = document.getElementById('signerEmail');
         const entityName = document.getElementById('entityName');
@@ -171,29 +168,13 @@
         const signingView = document.getElementById('signingView');
         const confirmationView = document.getElementById('confirmationView');
         // The agreement is shown from the canonical PDF (single source of truth: displayed ==
-        // signed). An embedded PDF viewer does not expose reliable scroll position, so the
-        // "you reviewed it" gate is an explicit, deliberate act: the signer must open the full
-        // PDF in a new tab. That click is a stronger consent signal than scroll detection.
-        let hasReviewed = false;
+        // signed). The attestation checkbox below is the review gate: checking it is the legal
+        // act of confirming the signer has read the agreement.
         const baaOpenLink = document.getElementById('baaOpenLink');
 
         // Pre-fill email from URL param (from gate redirect)
         const urlParams = new URLSearchParams(window.location.search);
         if (urlParams.get('email')) signerEmail.value = urlParams.get('email');
-
-        if (scrollIndicator) {
-            scrollIndicator.textContent = 'Please open and review the complete agreement before signing.';
-            scrollIndicator.classList.add('visible');
-        }
-
-        function markReviewed() {
-            hasReviewed = true;
-            if (scrollIndicator) scrollIndicator.classList.remove('visible');
-            updateSubmitState();
-        }
-
-        // Opening the full PDF in a new tab satisfies the review gate.
-        if (baaOpenLink) baaOpenLink.addEventListener('click', markReviewed);
 
         function validateEmail(email) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email); }
 
@@ -202,9 +183,20 @@
                 && validateEmail(signerEmail.value.trim())
                 && entityName.value.trim().length >= 2
                 && signerTitle.value.trim().length >= 2
-                && agreeCheckbox.checked
-                && hasReviewed;
+                && agreeCheckbox.checked;
             submitBtn.disabled = !valid;
+
+            // Tell the signer exactly why the button is disabled (the #1 trial drop-off).
+            var hint = document.getElementById('submitHint');
+            if (hint) {
+                if (valid) {
+                    hint.textContent = '';
+                } else if (!agreeCheckbox.checked) {
+                    hint.textContent = 'To enable signing: check the confirmation box above.';
+                } else {
+                    hint.textContent = 'To enable signing: complete your name, email, practice name, and title above.';
+                }
+            }
         }
 
         [signerName, signerEmail, entityName, signerTitle].forEach(i => i.addEventListener('input', updateSubmitState));
