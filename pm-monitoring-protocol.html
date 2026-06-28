@@ -955,10 +955,12 @@ async function generate() {
   var userPrompt = 'PATIENT CONTEXT:\n' + ctxText + '\n\nGenerate the monitoring handout and chart blurb now.';
 
   try {
+    var mpAuth=''; try{mpAuth=localStorage.getItem('tbp_auth_token')||'';}catch(e){}
     var response = await fetch("/.netlify/functions/clinical-proxy", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Authorization": "Bearer " + mpAuth },
       body: JSON.stringify({
+        token: mpAuth,
         model: "claude-sonnet-4-6",
         max_tokens: 1500,
         system: sysPrompt,
@@ -1035,7 +1037,9 @@ async function sendHandout() {
   btn.innerHTML = '<span class="spinner"></span>Sending...';
 
   var medName = (REFS[selectedKey] && REFS[selectedKey].name) || 'your medication';
+  var mpDocAuth=''; try{mpDocAuth=localStorage.getItem('tbp_auth_token')||'';}catch(e){}
   var payload = {
+    token: mpDocAuth,
     to: to,
     subject: 'Your monitoring plan for ' + medName,
     body: handout,
@@ -1046,7 +1050,7 @@ async function sendHandout() {
   try {
     var res = await fetch('/.netlify/functions/send-document', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (payload.token||'') },
       body: JSON.stringify(payload)
     });
     var data = await res.json();
@@ -1080,7 +1084,7 @@ function checkUrlParams() {
 TBPAuth.protect({
   toolName: 'Monitoring Protocol Reference',
   skipPHIGate: true,
-  spaceId: 2546298,
+  requireFull: true,
   onVerified: function() {
     // Defensively undo any layout the auth gate left on <body>
     document.body.classList.remove('tbp-gate-active');
