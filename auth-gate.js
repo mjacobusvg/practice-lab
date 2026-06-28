@@ -7,7 +7,7 @@
  *   <script>
  *     TBPAuth.protect({
  *       toolName: 'Practice Lab',         // Display name shown on gate screen
- *       spaceId: 2546298,                 // Optional — pass to restrict to a specific tier/space
+ *       requireFull: true,                // Optional — require Full-tier ($119) membership
  *                                         // Omit for community-wide access (any active member)
  *       onVerified: function() { ... }    // Called when member is verified — load your tool here
  *     });
@@ -78,7 +78,7 @@
     } catch(e) {}
   }
 
-  function renderGate(toolName, spaceId, onVerified) {
+  function renderGate(toolName, requireFull, onVerified) {
     document.body.style.overflow = 'hidden';
     document.body.classList.add('tbp-gate-active');
 
@@ -147,7 +147,7 @@
       setLoading(true);
 
       var requestBody = { email: email };
-      if (spaceId) requestBody.spaceId = spaceId;
+      if (requireFull) requestBody.requireFull = true;
 
       fetch('/.netlify/functions/circle-auth', {
         method: 'POST',
@@ -200,7 +200,13 @@
   window.TBPAuth = {
     protect: function(options) {
       var toolName = options.toolName || 'Think Beyond Practice';
-      var spaceId = options.spaceId || null;
+      // Canonical full-tier flag is requireFull:true. Legacy pages pass
+      // spaceId:2546298 (the old Circle full-space id) to mean the same thing;
+      // both are honored so nothing has to change in lockstep. This is purely a
+      // "require full tier" marker now — tier comes from the signed token claim,
+      // not a live Circle lookup, so it survives the platform migration unchanged.
+      var FULL_SPACE_ID = 2546298;
+      var requireFull = (options.requireFull === true) || (Number(options.spaceId) === FULL_SPACE_ID);
       var onVerified = options.onVerified || function() {};
       var skipPHIGate = options.skipPHIGate === true;
       var termsVersion = options.termsVersion || 'interim_v1';
@@ -219,19 +225,19 @@
         };
       }
 
-      // If spaceId is required, always verify against the API to check tier access.
-      // Only skip verification for community-wide access (no spaceId).
-      if (!spaceId && getSessionToken()) {
+      // If full tier is required, always verify against the API to check the tier
+      // claim. Only skip verification for community-wide (any-member) access.
+      if (!requireFull && getSessionToken()) {
         onVerified();
         return;
       }
 
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function() {
-          renderGate(toolName, spaceId, onVerified);
+          renderGate(toolName, requireFull, onVerified);
         });
       } else {
-        renderGate(toolName, spaceId, onVerified);
+        renderGate(toolName, requireFull, onVerified);
       }
     },
 
