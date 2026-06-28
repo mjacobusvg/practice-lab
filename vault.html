@@ -730,7 +730,7 @@ textarea.field-input{resize:vertical;min-height:60px}
 <div class="vault-section" id="sec-output">
   <div class="section-header">
     <h2>Letterhead & Branding</h2>
-    <p>Upload your letterhead image for professional document output. Used by the Letter Generator, Treatment Plan Generator, and other document-producing tools.</p>
+    <p>Upload your letterhead (PDF, PNG, or JPG) for professional document output. Used by the Letter Generator, Treatment Plan Generator, and other document-producing tools.</p>
   </div>
   <div class="field-group">
     <label class="field-label">Letterhead Image</label>
@@ -738,10 +738,22 @@ textarea.field-input{resize:vertical;min-height:60px}
     <div class="letterhead-upload">
       <span class="upload-btn" onclick="document.getElementById('letterhead-file').click()">Choose File</span>
       <span id="letterhead-filename" style="font-size:.8rem;color:var(--cream-dim)">No file selected</span>
-      <input type="file" id="letterhead-file" accept="image/png,image/jpeg" onchange="handleLetterheadUpload(event)">
+      <input type="file" id="letterhead-file" accept="image/png,image/jpeg,application/pdf" onchange="handleLetterheadUpload(event)">
     </div>
     <img id="letterhead-preview" class="letterhead-preview" style="display:none">
     <button id="letterhead-remove" class="btn btn-danger" style="display:none;margin-top:8px;padding:6px 14px;font-size:.78rem" onclick="removeLetterhead()">Remove letterhead</button>
+  </div>
+  <div class="field-group" style="margin-top:20px">
+    <label class="field-label">Signature</label>
+    <div class="field-hint">Draw your signature once. It is stored in your Vault and composited onto signed letters at the PDF stage by the Letter Generator. Letters are unsigned by default; signing is an explicit per-letter choice.</div>
+    <canvas id="sig-pad" width="600" height="180" style="width:100%;max-width:340px;height:auto;background:#fff;border:1px solid var(--rule);border-radius:6px;touch-action:none;cursor:crosshair;display:block;margin-top:8px"></canvas>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+      <button class="btn btn-secondary" type="button" onclick="sigPadClear()" style="padding:6px 14px;font-size:.78rem">Clear</button>
+      <button class="btn btn-primary" type="button" onclick="sigPadSave()" style="padding:6px 14px;font-size:.78rem">Save signature</button>
+      <button class="btn btn-danger" type="button" id="sig-remove-btn" onclick="sigPadRemove()" style="display:none;padding:6px 14px;font-size:.78rem">Remove saved</button>
+      <span id="sig-status" style="font-size:.78rem;color:var(--cream-dim)"></span>
+    </div>
+    <img id="sig-saved-preview" alt="Saved signature" style="display:none;max-width:240px;max-height:80px;margin-top:8px;background:#fff;border:1px solid var(--rule);border-radius:6px;padding:4px">
   </div>
 </div>
 
@@ -910,12 +922,22 @@ function applyVaultToForm() {
   if (vault.letterhead || localStorage.getItem('tbp_letterhead')) {
     var lh = vault.letterhead || localStorage.getItem('tbp_letterhead');
     if (lh) {
-      document.getElementById('letterhead-preview').src = lh;
-      document.getElementById('letterhead-preview').style.display = 'block';
+      var isPdf = lh.indexOf('data:application/pdf') === 0;
+      var img = document.getElementById('letterhead-preview');
+      if (isPdf) {
+        img.removeAttribute('src');
+        img.style.display = 'none';
+      } else {
+        img.src = lh;
+        img.style.display = 'block';
+      }
       document.getElementById('letterhead-remove').style.display = 'inline-block';
-      document.getElementById('letterhead-filename').textContent = 'Letterhead loaded';
+      document.getElementById('letterhead-filename').textContent = isPdf ? 'Letterhead loaded (PDF)' : 'Letterhead loaded';
     }
   }
+
+  // Signature
+  if (typeof _sigLoadSaved === 'function') _sigLoadSaved();
 
   updateCompletion();
 }
@@ -1168,14 +1190,21 @@ function updateCompletion() {
 function handleLetterheadUpload(e) {
   var file = e.target.files[0];
   if (!file) return;
-  if (file.size > 500000) { alert('Letterhead image must be under 500KB.'); return; }
+  if (file.size > 600000) { alert('Letterhead must be under 600KB.'); return; }
   var reader = new FileReader();
   reader.onload = function(evt) {
     var b64 = evt.target.result;
+    var isPdf = b64.indexOf('data:application/pdf') === 0;
     localStorage.setItem('tbp_letterhead', b64);
     vault.letterhead = b64;
-    document.getElementById('letterhead-preview').src = b64;
-    document.getElementById('letterhead-preview').style.display = 'block';
+    var img = document.getElementById('letterhead-preview');
+    if (isPdf) {
+      img.removeAttribute('src');
+      img.style.display = 'none';
+    } else {
+      img.src = b64;
+      img.style.display = 'block';
+    }
     document.getElementById('letterhead-remove').style.display = 'inline-block';
     document.getElementById('letterhead-filename').textContent = file.name;
     updateCompletion();
@@ -1191,6 +1220,118 @@ function removeLetterhead() {
   document.getElementById('letterhead-filename').textContent = 'No file selected';
   document.getElementById('letterhead-file').value = '';
   updateCompletion();
+}
+
+// ── SIGNATURE PAD ──
+// Captures a handwritten signature on a transparent canvas, stores it as a
+// transparent PNG in vault.signature (synced to Supabase under vault_profile).
+// Strokes are drawn dark on a never-filled canvas, so the PNG background is
+// transparent natively. The Letter Generator composites it only on signed PDFs.
+var _sigCtx = null, _sigDrawing = false, _sigDirty = false, _sigLastX = 0, _sigLastY = 0;
+
+function _sigInit() {
+  var c = document.getElementById('sig-pad');
+  if (!c || _sigCtx) return;
+  _sigCtx = c.getContext('2d');
+  _sigCtx.lineWidth = 2.2;
+  _sigCtx.lineCap = 'round';
+  _sigCtx.lineJoin = 'round';
+  _sigCtx.strokeStyle = '#101010';
+
+  function pos(e) {
+    var r = c.getBoundingClientRect();
+    var t = (e.touches && e.touches[0]) ? e.touches[0] : e;
+    var sx = c.width / r.width, sy = c.height / r.height;
+    return { x: (t.clientX - r.left) * sx, y: (t.clientY - r.top) * sy };
+  }
+  function start(e) { e.preventDefault(); _sigDrawing = true; var p = pos(e); _sigLastX = p.x; _sigLastY = p.y; }
+  function move(e) {
+    if (!_sigDrawing) return;
+    e.preventDefault();
+    var p = pos(e);
+    _sigCtx.beginPath();
+    _sigCtx.moveTo(_sigLastX, _sigLastY);
+    _sigCtx.lineTo(p.x, p.y);
+    _sigCtx.stroke();
+    _sigLastX = p.x; _sigLastY = p.y; _sigDirty = true;
+  }
+  function end(e) { if (e) e.preventDefault(); _sigDrawing = false; }
+
+  c.addEventListener('mousedown', start);
+  c.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', end);
+  c.addEventListener('touchstart', start, { passive: false });
+  c.addEventListener('touchmove', move, { passive: false });
+  c.addEventListener('touchend', end, { passive: false });
+}
+
+function sigPadClear() {
+  _sigInit();
+  var c = document.getElementById('sig-pad');
+  if (_sigCtx) _sigCtx.clearRect(0, 0, c.width, c.height);
+  _sigDirty = false;
+  var st = document.getElementById('sig-status');
+  if (st) st.textContent = '';
+}
+
+function sigPadSave() {
+  _sigInit();
+  if (!_sigDirty) { var s0 = document.getElementById('sig-status'); if (s0) s0.textContent = 'Draw a signature first.'; return; }
+  var c = document.getElementById('sig-pad');
+  var dataUrl = c.toDataURL('image/png');  // transparent background preserved
+  vault.signature = dataUrl;
+  saveVaultToStorage();
+
+  if (userEmail) {
+    fetch('/.netlify/functions/user-tool-data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + vaultAuthToken },
+      body: JSON.stringify({ token: vaultAuthToken, email: userEmail, toolId: 'vault_profile', action: 'save', data: vault })
+    }).catch(function() {});
+  }
+
+  _sigShowSaved(dataUrl);
+  var st = document.getElementById('sig-status');
+  if (st) st.textContent = 'Signature saved.';
+  if (typeof updateCompletion === 'function') updateCompletion();
+}
+
+function sigPadRemove() {
+  delete vault.signature;
+  saveVaultToStorage();
+  if (userEmail) {
+    fetch('/.netlify/functions/user-tool-data', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + vaultAuthToken },
+      body: JSON.stringify({ token: vaultAuthToken, email: userEmail, toolId: 'vault_profile', action: 'save', data: vault })
+    }).catch(function() {});
+  }
+  sigPadClear();
+  _sigShowSaved(null);
+  var st = document.getElementById('sig-status');
+  if (st) st.textContent = 'Saved signature removed.';
+  if (typeof updateCompletion === 'function') updateCompletion();
+}
+
+function _sigShowSaved(dataUrl) {
+  var img = document.getElementById('sig-saved-preview');
+  var rm = document.getElementById('sig-remove-btn');
+  if (!img) return;
+  if (dataUrl) {
+    img.src = dataUrl; img.style.display = 'block';
+    if (rm) rm.style.display = 'inline-block';
+  } else {
+    img.removeAttribute('src'); img.style.display = 'none';
+    if (rm) rm.style.display = 'none';
+  }
+}
+
+function _sigLoadSaved() {
+  _sigInit();
+  if (typeof vault === 'object' && vault && typeof vault.signature === 'string'
+      && vault.signature.indexOf('data:image/png') === 0) {
+    _sigShowSaved(vault.signature);
+  }
 }
 
 // ── EXPORT / IMPORT ──
