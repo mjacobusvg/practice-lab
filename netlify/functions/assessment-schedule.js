@@ -17,6 +17,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
 const instruments = require('./assessment-instruments.js');
+const { verifyToken } = require('./_lib/session');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -33,18 +34,6 @@ function addCadence(date, cadence) {
   return d;
 }
 
-async function verifyMember(email, siteUrl) {
-  try {
-    const res = await fetch(siteUrl.replace(/\/$/, '') + '/.netlify/functions/circle-auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: email })
-    });
-    const data = await res.json().catch(() => ({}));
-    return !!data.verified;
-  } catch (e) { return false; }
-}
-
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
   if (event.httpMethod !== 'POST') {
@@ -53,7 +42,6 @@ exports.handler = async (event) => {
 
   const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ubcrrrapedaxkguxniwv.supabase.co';
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-  const SITE_URL = process.env.SITE_URL || 'https://thinkbeyondpractice.com';
   if (!SERVICE_KEY) {
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Server not configured' }) };
   }
@@ -62,16 +50,22 @@ exports.handler = async (event) => {
   try { body = JSON.parse(event.body || '{}'); }
   catch (e) { return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Invalid JSON' }) }; }
 
-  const providerEmail = (body.providerEmail || '').trim().toLowerCase();
-  const action = (body.action || 'list').trim();
+  // Identity from signed token (body.token or Authorization: Bearer) — NOT a
+  // client-supplied providerEmail. Assessment Suite is a full-member tool.
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+  const session = verifyToken(sessionToken);
+  if (!session.valid) {
+    return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Invalid or expired session.', reason: session.reason }) };
+  }
+  if (!(session.claims.scope === 'member' && session.claims.tier === 'full')) {
+    return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'This tool requires the full Think Beyond Practice membership.' }) };
+  }
+  const providerEmail = (session.claims.email || '').trim().toLowerCase();
   if (!providerEmail) {
-    return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'providerEmail required' }) };
+    return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Session missing identity.' }) };
   }
-
-  const verified = await verifyMember(providerEmail, SITE_URL);
-  if (!verified) {
-    return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'No active membership found.' }) };
-  }
+  const action = (body.action || 'list').trim();
 
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
 
