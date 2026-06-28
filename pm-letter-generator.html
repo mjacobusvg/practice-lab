@@ -706,8 +706,8 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
             <span>Sign this letter<span id="lib-sign-note" style="display:block;font-size:.72rem;color:var(--cream-muted);margin-top:2px">Composites your saved signature onto the PDF. Leave off to produce an unsigned draft for review.</span></span>
           </label>
           <button onclick="libDownloadAsPDF()" id="lib-download-pdf-btn" style="background: rgba(42,171,184,0.18); border-color: var(--teal); color: var(--cream); font-weight: 600;">⬇ Download as PDF<span id="lib-download-pdf-note" style="display:block;font-size:.72rem;color:var(--cream-muted);margin-top:3px;font-weight:400">on your letterhead</span></button>
-          <button onclick="showEmailDialog()">✉ Email to recipient</button>
-          <button onclick="showFaxDialog()">📠 Fax to recipient</button>
+          <button onclick="openSendPreview('email')">✉ Email to recipient</button>
+          <button onclick="openSendPreview('fax')">📠 Fax to recipient</button>
           <button onclick="libCopyText()">📋 Copy letter text</button>
           <button onclick="libDownloadText()">📄 Download as plain text (.txt)</button>
           <button onclick="libPrintLetter()">🖨 Print</button>
@@ -1021,6 +1021,48 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
     <div style="margin-top:8px;font-size:.76rem;color:var(--cream-dim);line-height:1.5">PDF renders on your uploaded letterhead. Email and fax send directly from the tool. Templates auto-strip patient identifiers for reuse.</div>
     <div style="margin-top:12px">
       <button class="btn btn-secondary" onclick="resetForm()" style="font-size:.82rem;padding:8px 18px;opacity:.7">&#x2190; New Letter</button>
+    </div>
+  </div>
+
+  <!-- Send Preview Modal (library path): renders the composited PDF, lets the
+       clinician verify and toggle signing, then sends as a PDF attachment (email)
+       or PDF fax. Nothing transmits until the clinician sees the PDF and clicks send. -->
+  <div class="send-overlay" id="send-preview-overlay" onclick="if(event.target===this)closeSendPreview()">
+    <div class="send-dialog" style="max-width:760px;width:94%;max-height:92vh;display:flex;flex-direction:column">
+      <h3 id="send-preview-title">Preview &amp; Send</h3>
+      <p id="send-preview-sub" style="margin-bottom:10px">Review the exact document below before sending. This is what the recipient receives.</p>
+
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
+        <label style="display:flex;align-items:center;gap:7px;font-size:.84rem;color:var(--cream-dim);cursor:pointer;margin:0">
+          <input type="checkbox" id="send-preview-sign" onchange="rebuildSendPreview()">
+          <span>Sign this document</span>
+        </label>
+        <span id="send-preview-sign-note" style="font-size:.72rem;color:var(--cream-muted)"></span>
+      </div>
+
+      <div style="flex:1 1 auto;min-height:320px;border:1px solid rgba(245,235,217,0.14);border-radius:6px;overflow:hidden;background:#525659">
+        <iframe id="send-preview-frame" title="Letter PDF preview" style="width:100%;height:46vh;border:0;display:block"></iframe>
+        <div id="send-preview-loading" style="display:none;padding:40px;text-align:center;color:#ddd;font-size:.9rem">Rendering preview…</div>
+      </div>
+
+      <div style="margin-top:12px">
+        <label id="send-preview-to-label">Recipient</label>
+        <input type="text" id="send-preview-to" placeholder="">
+        <div id="send-preview-extra" style="margin-top:8px;display:none">
+          <label>Recipient name / office (optional, for fax cover page)</label>
+          <input type="text" id="send-preview-toname" placeholder="e.g., Dr. Smith's Office, Premera Appeals Dept">
+        </div>
+        <div id="send-preview-subjectrow" style="margin-top:8px;display:none">
+          <label>Subject line</label>
+          <input type="text" id="send-preview-subject" placeholder="Will be auto-filled from letter type">
+        </div>
+      </div>
+
+      <div class="send-actions" style="margin-top:14px">
+        <button class="send-btn" id="send-preview-send-btn" onclick="confirmSendFromPreview()">Send</button>
+        <button class="send-cancel" onclick="closeSendPreview()">Cancel</button>
+      </div>
+      <div class="send-status" id="send-preview-status"></div>
     </div>
   </div>
 
@@ -2271,160 +2313,137 @@ function libTrackUsage(std) {
 // (configurable margins). If no letterhead exists, generates a clean PDF with a
 // plain-text provider header at the top. Multi-page overflow handled gracefully.
 
+async function libBuildLetterPDF(opts) {
+  // Single source of truth for the composited letter PDF. Returns
+  // { bytes: Uint8Array, filename: string, hasLetterhead: bool }.
+  // opts.sign (bool) overrides the output-screen checkbox so callers (modal preview,
+  // email, fax) can decide signing independently. If opts.sign is undefined, the
+  // "Sign this letter" checkbox state is used.
+  opts = opts || {};
+  if (!window.PDFLib) throw new Error('PDF library not available');
+
+  var std = LIB.selectedStandard;
+  if (!std) throw new Error('No letter selected');
+  var letterText = document.getElementById('lib-output-letter').textContent || '';
+  var filename = std.standard_key + '_' + std.variant_key + '_' + new Date().toISOString().slice(0, 10) + '.pdf';
+
+  var vault = libGetVaultData() || {};
+  var letterheadData = vault.letterhead || '';
+  var hasLetterhead = typeof letterheadData === 'string'
+    && letterheadData.indexOf('data:application/pdf') === 0;
+
+  var PDFLib_ = window.PDFLib;
+  var pdfDoc, firstPage, pageWidth, pageHeight;
+
+  if (hasLetterhead) {
+    var base64 = letterheadData.split(',')[1] || '';
+    var bytes = libBase64ToBytes(base64);
+    pdfDoc = await PDFLib_.PDFDocument.load(bytes);
+    firstPage = pdfDoc.getPage(0);
+    pageWidth = firstPage.getWidth();
+    pageHeight = firstPage.getHeight();
+  } else {
+    pdfDoc = await PDFLib_.PDFDocument.create();
+    pageWidth = 612; pageHeight = 792;  // US Letter
+    firstPage = pdfDoc.addPage([pageWidth, pageHeight]);
+  }
+
+  var font = await pdfDoc.embedFont(PDFLib_.StandardFonts.TimesRoman);
+
+  var letterheadConfig = vault.letterheadConfig || {};
+  var marginTop = (letterheadConfig.marginTopInches || 2.0) * 72;
+  var marginBottom = (letterheadConfig.marginBottomInches || 1.5) * 72;
+  var marginLeft = (letterheadConfig.marginLeftInches || 1.0) * 72;
+  var marginRight = (letterheadConfig.marginRightInches || 1.0) * 72;
+  if (!hasLetterhead) marginTop = 0.75 * 72;
+
+  var fontSize = 11;
+  var lineHeight = fontSize * 1.4;
+  var textWidth = pageWidth - marginLeft - marginRight;
+
+  var bodyText = hasLetterhead ? libStripVaultHeaderFromText(letterText) : letterText;
+
+  // Signing: explicit opt override, else the output-screen checkbox.
+  var wantSignature;
+  if (typeof opts.sign === 'boolean') {
+    wantSignature = opts.sign;
+  } else {
+    var signCheckbox = document.getElementById('lib-sign-letter');
+    wantSignature = !!(signCheckbox && signCheckbox.checked);
+  }
+  var sigData = vault.signature || '';
+  var hasSignature = wantSignature
+    && typeof sigData === 'string'
+    && sigData.indexOf('data:image/png') === 0;
+
+  var sigImage = null, sigDrawWidth = 0, sigDrawHeight = 0;
+  if (hasSignature) {
+    try {
+      var sigBytes = libBase64ToBytes(sigData.split(',')[1] || '');
+      sigImage = await pdfDoc.embedPng(sigBytes);
+      sigDrawWidth = 1.8 * 72;
+      sigDrawHeight = sigImage.height * (sigDrawWidth / sigImage.width);
+    } catch (sigErr) {
+      console.error('[lib-pdf] signature embed failed, rendering unsigned:', sigErr);
+      hasSignature = false;
+    }
+  }
+
+  var SIG_GAP = 6;
+  if (hasSignature) bodyText = libInjectSignatureAnchor(bodyText, vault);
+
+  var lines = libWrapTextLines(bodyText, font, fontSize, textWidth);
+
+  var y = pageHeight - marginTop;
+  var minY = marginBottom;
+  var currentPage = firstPage;
+
+  for (var i = 0; i < lines.length; i++) {
+    var rawLine = lines[i];
+    if (rawLine.trim() === '[SIGNATURE]') {
+      if (hasSignature && sigImage) {
+        var needed = sigDrawHeight + SIG_GAP * 2;
+        if (y - needed < minY) {
+          currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
+          y = pageHeight - (0.75 * 72);
+        }
+        var sigTop = y - SIG_GAP;
+        currentPage.drawImage(sigImage, {
+          x: marginLeft, y: sigTop - sigDrawHeight,
+          width: sigDrawWidth, height: sigDrawHeight
+        });
+        y -= (sigDrawHeight + SIG_GAP * 2);
+      } else {
+        y -= lineHeight;
+      }
+      continue;
+    }
+    if (y - lineHeight < minY) {
+      currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
+      y = pageHeight - (0.75 * 72);
+    }
+    currentPage.drawText(rawLine, {
+      x: marginLeft, y: y - fontSize, size: fontSize, font: font,
+      color: PDFLib_.rgb(0, 0, 0)
+    });
+    y -= lineHeight;
+  }
+
+  var pdfBytes = await pdfDoc.save();
+  return { bytes: pdfBytes, filename: filename, hasLetterhead: hasLetterhead };
+}
+
+// Renders the letter as a PDF and downloads it. Thin wrapper over libBuildLetterPDF.
 async function libDownloadAsPDF() {
   if (!window.PDFLib) {
-    // pdf-lib didn't load (CDN issue, offline, blocked, etc.); fall back to .txt
     alert('PDF library is not available. Falling back to text download.');
     libDownloadText();
     return;
   }
-
-  var std = LIB.selectedStandard;
-  if (!std) return;
-  var letterText = document.getElementById('lib-output-letter').textContent || '';
-  var filename = std.standard_key + '_' + std.variant_key + '_' + new Date().toISOString().slice(0, 10) + '.pdf';
-
   try {
-    var vault = libGetVaultData() || {};
-    var letterheadData = vault.letterhead || '';
-    var hasLetterhead = typeof letterheadData === 'string'
-      && letterheadData.indexOf('data:application/pdf') === 0;
-
-    var PDFLib_ = window.PDFLib;
-    var pdfDoc;
-    var firstPage;
-    var pageWidth, pageHeight;
-
-    if (hasLetterhead) {
-      var base64 = letterheadData.split(',')[1] || '';
-      var bytes = libBase64ToBytes(base64);
-      pdfDoc = await PDFLib_.PDFDocument.load(bytes);
-      // Use the first page of the letterhead PDF as our canvas
-      firstPage = pdfDoc.getPage(0);
-      pageWidth = firstPage.getWidth();
-      pageHeight = firstPage.getHeight();
-    } else {
-      pdfDoc = await PDFLib_.PDFDocument.create();
-      // US Letter in points (8.5 x 11 inch * 72 pt/inch)
-      pageWidth = 612;
-      pageHeight = 792;
-      firstPage = pdfDoc.addPage([pageWidth, pageHeight]);
-    }
-
-    var font = await pdfDoc.embedFont(PDFLib_.StandardFonts.TimesRoman);
-
-    // Safe text area defaults. These work for most professional letterheads:
-    //   - 2.0 inch top margin clears typical centered logos (incl. COR's tree icon)
-    //   - 1.5 inch bottom margin clears typical contact bands or footer logos
-    //   - 1.0 inch side margins are standard
-    // Future: Vault should let clinicians override these per-letterhead with a live preview.
-    var letterheadConfig = vault.letterheadConfig || {};
-    var marginTop = (letterheadConfig.marginTopInches || 2.0) * 72;
-    var marginBottom = (letterheadConfig.marginBottomInches || 1.5) * 72;
-    var marginLeft = (letterheadConfig.marginLeftInches || 1.0) * 72;
-    var marginRight = (letterheadConfig.marginRightInches || 1.0) * 72;
-
-    // For plain-page (no-letterhead) output, use less aggressive top margin since there's no logo
-    if (!hasLetterhead) {
-      marginTop = 0.75 * 72;  // 0.75" — enough room for the Vault-rendered header at top
-    }
-
-    var fontSize = 11;
-    var lineHeight = fontSize * 1.4;  // 1.4x leading for readable body text
-    var textWidth = pageWidth - marginLeft - marginRight;
-
-    // When letterhead is in use, strip the Vault-generated text header from the rendered
-    // letter so contact info doesn't appear twice (once on the letterhead, once typed above date).
-    var bodyText = hasLetterhead ? libStripVaultHeaderFromText(letterText) : letterText;
-
-    // Determine whether to composite a handwritten signature image. Gated: only when
-    // the "Sign this letter" checkbox is on AND a signature PNG exists in the Vault.
-    var signCheckbox = document.getElementById('lib-sign-letter');
-    var wantSignature = !!(signCheckbox && signCheckbox.checked);
-    var sigData = vault.signature || '';
-    var hasSignature = wantSignature
-      && typeof sigData === 'string'
-      && sigData.indexOf('data:image/png') === 0;
-
-    var sigImage = null;
-    var sigDrawWidth = 0, sigDrawHeight = 0;
-    if (hasSignature) {
-      try {
-        var sigBytes = libBase64ToBytes(sigData.split(',')[1] || '');
-        sigImage = await pdfDoc.embedPng(sigBytes);
-        // Scale to ~1.8 inch wide, preserve aspect ratio
-        sigDrawWidth = 1.8 * 72;
-        sigDrawHeight = sigImage.height * (sigDrawWidth / sigImage.width);
-      } catch (sigErr) {
-        console.error('[lib-pdf] signature embed failed, rendering unsigned:', sigErr);
-        hasSignature = false;
-      }
-    }
-
-    var SIG_GAP = 6;  // points of breathing room above/below the signature image
-
-    // Inject the [SIGNATURE] anchor only when actually signing. The anchor is placed on
-    // its own line directly above the typed provider-name line in the closing block, so the
-    // wet signature sits between the closing ("Sincerely,") and the typed name. The token is
-    // never shown on screen or sent by email/fax; it exists only in this PDF-render copy.
-    if (hasSignature) {
-      bodyText = libInjectSignatureAnchor(bodyText, vault);
-    }
-
-    // Word-wrap into lines that fit the text width
-    var lines = libWrapTextLines(bodyText, font, fontSize, textWidth);
-
-    var y = pageHeight - marginTop;
-    var minY = marginBottom;
-    var currentPage = firstPage;
-
-    for (var i = 0; i < lines.length; i++) {
-      var rawLine = lines[i];
-
-      // Signature anchor handling
-      if (rawLine.trim() === '[SIGNATURE]') {
-        if (hasSignature && sigImage) {
-          // Reserve vertical space for the image. Page-break if it won't fit.
-          var needed = sigDrawHeight + SIG_GAP * 2;
-          if (y - needed < minY) {
-            currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
-            y = pageHeight - (0.75 * 72);
-          }
-          var sigTop = y - SIG_GAP;
-          currentPage.drawImage(sigImage, {
-            x: marginLeft,
-            y: sigTop - sigDrawHeight,
-            width: sigDrawWidth,
-            height: sigDrawHeight
-          });
-          y -= (sigDrawHeight + SIG_GAP * 2);
-        } else {
-          // Unsigned: consume the token as a single blank line so the typed
-          // name still sits a line below the closing with normal spacing.
-          y -= lineHeight;
-        }
-        continue;
-      }
-
-      if (y - lineHeight < minY) {
-        // Overflow: add a continuation page. Continuation pages are always plain
-        // (no letterhead duplication), since most letterheads have visible-on-first-page-only elements.
-        currentPage = pdfDoc.addPage([pageWidth, pageHeight]);
-        y = pageHeight - (0.75 * 72);
-      }
-      currentPage.drawText(rawLine, {
-        x: marginLeft,
-        y: y - fontSize,
-        size: fontSize,
-        font: font,
-        color: PDFLib_.rgb(0, 0, 0)
-      });
-      y -= lineHeight;
-    }
-
-    var pdfBytes = await pdfDoc.save();
-    libTriggerDownload(pdfBytes, filename, 'application/pdf');
-    libFlash(hasLetterhead ? 'Letter downloaded on your letterhead' : 'Letter downloaded as PDF');
+    var out = await libBuildLetterPDF();
+    libTriggerDownload(out.bytes, out.filename, 'application/pdf');
+    libFlash(out.hasLetterhead ? 'Letter downloaded on your letterhead' : 'Letter downloaded as PDF');
   } catch (e) {
     console.error('[lib-pdf] generation failed:', e);
     alert('Could not generate PDF: ' + (e.message || e) + '\n\nFalling back to text download.');
@@ -5157,6 +5176,205 @@ function _getActiveLetterText() {
   // Remove a standalone [SIGNATURE] line plus any blank line it leaves behind.
   text = text.replace(/^[ \t]*\[SIGNATURE\][ \t]*\r?\n?/gm, '');
   return text;
+}
+
+// ══════════════════════════════════════════════
+// SEND PREVIEW MODAL (library path: preview-before-send for email & fax)
+// ══════════════════════════════════════════════
+var _sendPreview = { mode: null, pdfBytes: null, filename: null, blobUrl: null, building: false };
+
+function _spSetStatus(msg, kind) {
+  var el = document.getElementById('send-preview-status');
+  if (!el) return;
+  el.className = 'send-status' + (kind ? ' ' + kind : '');
+  el.textContent = msg || '';
+}
+
+async function openSendPreview(mode) {
+  if (!window.PDFLib) { alert('PDF library is not available, cannot preview. Try Download as plain text.'); return; }
+  _sendPreview.mode = mode;
+
+  var overlay = document.getElementById('send-preview-overlay');
+  var title = document.getElementById('send-preview-title');
+  var sub = document.getElementById('send-preview-sub');
+  var toLabel = document.getElementById('send-preview-to-label');
+  var toInput = document.getElementById('send-preview-to');
+  var extra = document.getElementById('send-preview-extra');
+  var subjectRow = document.getElementById('send-preview-subjectrow');
+  var sendBtn = document.getElementById('send-preview-send-btn');
+
+  // Seed the sign toggle from the output-screen checkbox so preview matches intent.
+  var outChk = document.getElementById('lib-sign-letter');
+  var signChk = document.getElementById('send-preview-sign');
+  var vault = libGetVaultData() || {};
+  var hasSig = typeof vault.signature === 'string' && vault.signature.indexOf('data:image/png') === 0;
+  signChk.disabled = !hasSig;
+  signChk.checked = hasSig && !!(outChk && outChk.checked);
+  document.getElementById('send-preview-sign-note').textContent = hasSig
+    ? 'Applies your saved signature to this document.'
+    : 'No signature saved in your Vault.';
+
+  if (mode === 'email') {
+    title.textContent = '✉ Email letter';
+    sub.textContent = 'Review the attached PDF below. The letter is sent as a PDF attachment with a short cover note; your email is the reply-to address.';
+    toLabel.textContent = 'Recipient email';
+    toInput.type = 'email';
+    toInput.placeholder = 'recipient@example.com';
+    toInput.value = '';
+    extra.style.display = 'none';
+    subjectRow.style.display = 'block';
+    document.getElementById('send-preview-subject').value = getLetterSubject();
+    sendBtn.textContent = 'Send email';
+  } else {
+    title.textContent = '📠 Fax letter';
+    sub.textContent = 'Review the PDF below. It is faxed exactly as shown, on your letterhead. You will be emailed if delivery fails.';
+    toLabel.textContent = 'Recipient fax number';
+    toInput.type = 'tel';
+    toInput.placeholder = '(555) 123-4567';
+    toInput.value = '';
+    extra.style.display = 'block';
+    document.getElementById('send-preview-toname').value = '';
+    subjectRow.style.display = 'none';
+    sendBtn.textContent = 'Send fax';
+  }
+
+  _spSetStatus('');
+  sendBtn.disabled = false;
+  overlay.classList.add('active');
+  await rebuildSendPreview();
+}
+
+async function rebuildSendPreview() {
+  if (_sendPreview.building) return;
+  _sendPreview.building = true;
+  var frame = document.getElementById('send-preview-frame');
+  var loading = document.getElementById('send-preview-loading');
+  var signChk = document.getElementById('send-preview-sign');
+  frame.style.display = 'none';
+  loading.style.display = 'block';
+  try {
+    var out = await libBuildLetterPDF({ sign: !!(signChk && signChk.checked) });
+    _sendPreview.pdfBytes = out.bytes;
+    _sendPreview.filename = out.filename;
+    // Revoke any prior blob URL before creating a new one.
+    if (_sendPreview.blobUrl) { try { URL.revokeObjectURL(_sendPreview.blobUrl); } catch (e) {} }
+    var blob = new Blob([out.bytes], { type: 'application/pdf' });
+    _sendPreview.blobUrl = URL.createObjectURL(blob);
+    frame.src = _sendPreview.blobUrl;
+    frame.style.display = 'block';
+  } catch (e) {
+    console.error('[send-preview] build failed:', e);
+    _spSetStatus('Could not render preview: ' + (e.message || e), 'error');
+  } finally {
+    loading.style.display = 'none';
+    _sendPreview.building = false;
+  }
+}
+
+function closeSendPreview() {
+  var overlay = document.getElementById('send-preview-overlay');
+  overlay.classList.remove('active');
+  if (_sendPreview.blobUrl) { try { URL.revokeObjectURL(_sendPreview.blobUrl); } catch (e) {} }
+  _sendPreview.blobUrl = null;
+  _sendPreview.pdfBytes = null;
+  document.getElementById('send-preview-frame').src = 'about:blank';
+}
+
+function _bytesToBase64(bytes) {
+  var binary = '';
+  var chunk = 0x8000;
+  for (var i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+async function confirmSendFromPreview() {
+  var mode = _sendPreview.mode;
+  var sendBtn = document.getElementById('send-preview-send-btn');
+  var to = document.getElementById('send-preview-to').value.trim();
+
+  if (!_sendPreview.pdfBytes) { _spSetStatus('Preview not ready yet. One moment.', 'error'); return; }
+
+  if (mode === 'email') {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) { _spSetStatus('Please enter a valid email address.', 'error'); return; }
+  } else {
+    if (to.replace(/\D/g, '').length < 10) { _spSetStatus('Please enter a valid fax number (at least 10 digits).', 'error'); return; }
+  }
+
+  sendBtn.disabled = true;
+  _spSetStatus(mode === 'email' ? 'Sending…' : 'Preparing and sending fax… This may take 30-60 seconds.', 'sending');
+
+  var pdfBase64 = _bytesToBase64(_sendPreview.pdfBytes);
+  var vault = libGetVaultData() || {};
+
+  try {
+    if (mode === 'email') {
+      var subject = document.getElementById('send-preview-subject').value.trim() || getLetterSubject();
+      var practice = vault.practiceName || 'Think Beyond Practice';
+      var coverText = 'Please find the attached letter from ' + (vault.legalName || practice) +
+        (vault.credentials ? ', ' + vault.credentials : '') + '.\n\n' +
+        'This message contains Protected Health Information (PHI) intended solely for the named recipient. ' +
+        'If received in error, notify the sender immediately. Unauthorized disclosure is prohibited under HIPAA.';
+      var coverHtml = '<div style="font-family:Georgia,serif;max-width:620px;color:#111;line-height:1.6;font-size:14px">' +
+        '<p>Please find the attached letter from ' + esc(vault.legalName || practice) +
+        (vault.credentials ? ', ' + esc(vault.credentials) : '') + '.</p>' +
+        '<p style="margin-top:24px;padding-top:12px;border-top:1px solid #ccc;font-size:11px;color:#666">' +
+        'This message contains Protected Health Information (PHI) intended solely for the named recipient. ' +
+        'If received in error, notify the sender immediately. Unauthorized disclosure is prohibited under HIPAA.</p></div>';
+
+      var res = await fetch('/.netlify/functions/send-document', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
+        body: JSON.stringify({
+          token: _lgTok(),
+          to: to,
+          subject: subject,
+          body: coverText,
+          htmlBody: coverHtml,
+          attachmentBase64: pdfBase64,
+          attachmentFilename: _sendPreview.filename || 'letter.pdf',
+          attachmentContentType: 'application/pdf',
+          replyTo: vault.practiceEmail || vault.email || _lgUserEmail || '',
+          tool: 'Letter Generator'
+        })
+      });
+      var result = await res.json();
+      if (result.success) {
+        _spSetStatus('Email sent to ' + to + '.', 'success');
+      } else {
+        _spSetStatus('Failed to send: ' + (result.error || 'Unknown error'), 'error');
+        sendBtn.disabled = false;
+      }
+    } else {
+      var toName = document.getElementById('send-preview-toname').value.trim();
+      var res2 = await fetch('/.netlify/functions/send-fax', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
+        body: JSON.stringify({
+          token: _lgTok(),
+          to: to,
+          pdfBase64: pdfBase64,
+          toName: toName,
+          fromName: vault.legalName || '',
+          fromPractice: vault.practiceName || '',
+          subject: getLetterSubject(),
+          tool: 'Letter Generator',
+          clinicianEmail: vault.practiceEmail || vault.email || _lgUserEmail || ''
+        })
+      });
+      var result2 = await res2.json();
+      if (result2.success) {
+        _spSetStatus('Fax queued for delivery to ' + to + '. You will be emailed if it fails to deliver.', 'success');
+      } else {
+        _spSetStatus('Failed to send fax: ' + (result2.error || 'Unknown error'), 'error');
+        sendBtn.disabled = false;
+      }
+    }
+  } catch (err) {
+    _spSetStatus('Network error. Check your connection and try again.', 'error');
+    sendBtn.disabled = false;
+  }
 }
 
 function showEmailDialog() {
