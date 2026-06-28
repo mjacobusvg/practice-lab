@@ -1525,8 +1525,21 @@ TBPAuth.protect({
       method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+tcAuth},
       body: JSON.stringify({ token: tcAuth, trialVersion: TRIAL_VERSION })
     })
-    .then(function(r){ return r.json(); })
+    .then(function(r){
+      return r.text().then(function(body){
+        var data = null;
+        try { data = JSON.parse(body); } catch (e) {}
+        if (!data) {
+          // Non-JSON response (routing error, timeout, platform error page).
+          // Surface enough to diagnose instead of a generic "connection error".
+          showTrialError('The trial service returned an unexpected response (HTTP ' + r.status + '). Please try again in a moment, or contact support if it persists.');
+          return null;
+        }
+        return data;
+      });
+    })
     .then(function(data){
+      if (data === null) return;
       if(data && data.status==='active'){ showTrialActive(typeof data.daysLeft==='number'?data.daysLeft:7); }
       else if(data && data.status==='expired'){ showTrialExpired(); }
       else { showTrialError(data && data.message ? data.message : 'Unexpected response. Please try again.'); }
