@@ -3066,6 +3066,35 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-heig
 </div>
 
 <script>
+/* ── Auth token injector ───────────────────────────────────────────────
+   Practice Lab billing makes many anthropic-proxy calls (and one circle-comment).
+   All gated backends now require the signed session token. Rather than edit each
+   call site, wrap fetch once: for our own /.netlify/functions/ endpoints, add the
+   Authorization: Bearer header and merge token into the JSON body. */
+(function(){
+  function _plTok(){ try { return localStorage.getItem('tbp_auth_token') || ''; } catch(e){ return ''; } }
+  var _origFetch = window.fetch.bind(window);
+  window.fetch = function(input, init){
+    try {
+      var url = (typeof input === 'string') ? input : (input && input.url) || '';
+      if (url.indexOf('/.netlify/functions/') !== -1) {
+        var tok = _plTok();
+        init = init || {};
+        var h = init.headers || {};
+        if (h instanceof Headers) { var o={}; h.forEach(function(v,k){o[k]=v;}); h = o; }
+        h['Authorization'] = 'Bearer ' + tok;
+        init.headers = h;
+        if (typeof init.body === 'string' && init.body.charAt(0) === '{') {
+          try { var b = JSON.parse(init.body); if (b && typeof b === 'object' && b.token === undefined) { b.token = tok; init.body = JSON.stringify(b); } } catch(e){}
+        }
+      }
+    } catch(e){}
+    return _origFetch(input, init);
+  };
+})();
+</script>
+
+<script>
 var RATES = {"premera":{"90833":70,"90836":105,"90838":140,"99202":93,"99203":136,"99204":176,"99205":211,"99212":62,"99213":82,"99214":98,"99215":115,"99417":38},"united":{"90833":68,"90836":101,"90838":135,"99202":89,"99203":130,"99204":168,"99205":202,"99212":58,"99213":79,"99214":95,"99215":110,"99417":36},"uhc":{"90833":68,"90836":101,"90838":135,"99202":89,"99203":130,"99204":168,"99205":202,"99212":58,"99213":79,"99214":95,"99215":110,"99417":36},"regence":{"90833":69,"90836":103,"90838":138,"99202":91,"99203":133,"99204":172,"99205":207,"99212":60,"99213":80,"99214":96,"99215":112,"99417":37},"kaiser":{"90833":79,"90836":118,"90838":158,"99202":98,"99203":144,"99204":186,"99205":224,"99212":65,"99213":98,"99214":118,"99215":148,"99417":44}};
 var CODE_DESCS = {"90833":"Psych add-on, 16-37 min","90836":"Psych add-on, 38-52 min","90838":"Psych add-on, 53+ min","99202":"E/M new pt, straightforward","99203":"E/M new pt, low MDM / 30-44 min","99204":"E/M new pt, moderate MDM / 45-59 min","99205":"E/M new pt, high MDM / 60-74 min","99212":"E/M est. pt, straightforward","99213":"E/M est. pt, low MDM / 20-29 min","99214":"E/M est. pt, moderate MDM / 30-39 min","99215":"E/M est. pt, high MDM / 40-54 min","99417":"Prolonged E/M, per 15 min"};
 var FEE_CODES = ["99202","99203","99204","99205","99212","99213","99214","99215","90833","90836","90838","99417"];
@@ -12102,7 +12131,7 @@ async function runGLGapAnalysis(spotCheck) {
     if (hasSession) {
       launchApp();
     } else if (typeof TBPAuth !== 'undefined') {
-      TBPAuth.protect({ toolName: 'Billing & Coding Lab', skipPHIGate: true, spaceId: 2546298, onVerified: launchApp });
+      TBPAuth.protect({ toolName: 'Billing & Coding Lab', skipPHIGate: true, requireFull: true, onVerified: launchApp });
     } else {
       console.warn('auth-gate.js not loaded — launching without auth gate');
       launchApp();
