@@ -14,9 +14,54 @@
 // Response: text/event-stream (Anthropic SSE passed through verbatim). The
 // browser is responsible for reassembling the text from content_block_delta events.
 
-import { createRequire } from 'module';
-const require = createRequire(import.meta.url);
-const { verifyToken } = require('./_lib/session.js');
+import crypto from 'crypto';
+
+// ── Inlined token verification ──────────────────────────────────────────────
+// verifyToken() from _lib/session.js, inlined. Netlify's ESM (.mjs) bundler does
+// not trace a createRequire('./_lib/session.js') dependency into the bundle, so the
+// relative require throws "Cannot find module './_lib/session.js'" at runtime and
+// the function 502s. Inlining (crypto is a Node built-in) removes that failure mode.
+// Algorithm MUST stay identical to _lib/session.js so tokens verify everywhere.
+const SECRET = process.env.SESSION_SIGNING_SECRET || '';
+
+function b64urlDecode(str) {
+  str = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (str.length % 4) str += '=';
+  return Buffer.from(str, 'base64').toString('utf8');
+}
+function b64url(buf) {
+  return Buffer.from(buf).toString('base64')
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function signPayload(payloadJson) {
+  return b64url(crypto.createHmac('sha256', SECRET).update(payloadJson).digest());
+}
+function verifyToken(token) {
+  if (!SECRET) return { valid: false, reason: 'server_misconfigured' };
+  if (!token || typeof token !== 'string' || token.indexOf('.') === -1) {
+    return { valid: false, reason: 'malformed' };
+  }
+  const parts = token.split('.');
+  if (parts.length !== 2) return { valid: false, reason: 'malformed' };
+  const [payloadB64, sigB64] = parts;
+  let payloadJson;
+  try { payloadJson = b64urlDecode(payloadB64); }
+  catch (e) { return { valid: false, reason: 'malformed' }; }
+  const expectedSig = signPayload(payloadJson);
+  const a = Buffer.from(sigB64);
+  const b = Buffer.from(expectedSig);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    return { valid: false, reason: 'bad_signature' };
+  }
+  let claims;
+  try { claims = JSON.parse(payloadJson); }
+  catch (e) { return { valid: false, reason: 'malformed' }; }
+  if (!claims.exp || Date.now() > claims.exp) {
+    return { valid: false, reason: 'expired' };
+  }
+  return { valid: true, claims };
+}
+// ────────────────────────────────────────────────────────────────────────────
 
 // Models this proxy may call (locks out caller-chosen expensive models).
 const ALLOWED_MODELS = ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'];
