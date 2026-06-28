@@ -10,13 +10,6 @@ consent table shape, the tool classification, or a send/job pattern changes,
 update this file in the SAME commit. Same discipline as MODEL-REGISTRY.md.
 
 Last verified against live code and Supabase schema: June 2026.
-Last content revision: June 2026 (shipped Assessment Suite: added it to the tool
-classification, documented the assessment.html public token-route exception, the
-assessment_consents table, the three assessment_* structural tables, and a new
-Section 9 covering the token-based patient-facing PHI lifecycle; earlier this
-revision added PHI data-classification principle, de-identification standard,
-planned BAA 3.0 bump note, audio recording-consent stub, email-only/no-SMS
-delivery decision).
 
 ---
 
@@ -44,30 +37,6 @@ When building a new tool, work through this:
    the `user_tool_data` table. Do not create a new table per tool unless the
    data is genuinely structural. See Section 5.
 8. Tier scope: which membership tier can use this? See Section 6.
-
-### Governing principle: PHI data classification (what needs counsel, what does not)
-
-New tools do NOT each require a counsel engagement. The documents (BAA + Terms)
-were deliberately scoped to permit the roadmap. Classify the tool's data and
-proceed accordingly:
-
-- NO PHI (reference tools, marketing site, forum, CE, practice-data-only tools):
-  build freely. Pass `skipPHIGate: true`. No counsel needed.
-- TRANSIENT PHI (processed then deleted, not stored; e.g. note builder, screener
-  scoring, letter generator): already covered by the BAA. Build under the
-  standard safeguards (PHI gate on, delete after delivery, de-identification
-  standard below where output is shared/AI-processed). No counsel needed.
-- STORED PHI (PHI persisted over time, e.g. longitudinal assessment tracking):
-  PERMITTED. This is NOT blocked and does NOT require re-papering the BAA, the
-  documents already allow it under appropriate safeguards. It is a RISK decision,
-  not a contract decision: storing PHI increases breach surface and adds
-  retention/disposal/access duties you must actually run, so turn it on
-  deliberately when the clinical value justifies carrying that risk. The only
-  optional counsel touch at that point is confirming safeguards are adequate, not
-  re-opening the BAA. Do not treat storage as forbidden.
-
-Default for v1 of any PHI tool: transient. Move to stored only as a deliberate,
-safeguarded choice.
 
 ---
 
@@ -132,18 +101,6 @@ When the BAA or Terms version is bumped, change it in BOTH the gate defaults and
 the recording function, force re-acceptance is automatic because the check is an
 exact-version match, and update this section.
 
-PLANNED BUMP (not yet live): BAA **2.0** is the current LIVE/gating version and
-must stay 2.0 until the bump is executed. A substantially revised BAA is in
-finalization with outside counsel (Joel Schwarz): three-hub Platform definition
-(Practice Hub, Credentialing Hub, Community and Education Hub), Washington
-Addendum incorporated as Exhibit A, AI-training restrictions, and expanded
-definitions. That document will become live version **3.0** once counsel
-delivers the FINAL (the gating Exhibit A still outstanding). NOTE ON NUMBERING:
-the working drafts exchanged with counsel carry their own sequence (currently
-"v6"); that is the counsel-side draft number, NOT the live gate version. Do not
-set the gate to any "v#" number. The live gate goes 2.0 -> 3.0, and only when
-the final is signed off. Until then, leave 2.0 in place everywhere.
-
 KNOWN INCONSISTENCY TO BE AWARE OF: the `baa_signatures` table column
 `baa_version` still DEFAULTS to `'1.0'` at the database level. The signing flow
 must write the current version (2.0) explicitly on insert; never rely on the
@@ -160,26 +117,14 @@ column default. If you build or touch the BAA-signing function, confirm it passe
 
 PHI-GATED (default, no skip flag):
 pm-clinical-note-builder, note-builder-trial, chart-coder-trial, pm-chart-coder,
-pm-letter-generator, pm-termination-workflow, pm-crisis-safety-plan,
-pm-assessment-suite. Any new clinical-content tool joins this list by default.
+pm-letter-generator, pm-termination-workflow, pm-crisis-safety-plan. Any new
+clinical-content tool joins this list by default.
 
 EXEMPT (`skipPHIGate: true`, non-PHI):
 pm-interaction-checker, pm-monitoring-protocol, pm-lai, pm-hipaa-hub,
 pm-compliance-tracker, vault, ask-archive, practice-manager hub,
 practice-lab-hub and sub-pages, members, index.html (Credentialing Hub),
 and the public marketing/demo pages (e.g. ai-scribe-demo.html).
-
-PUBLIC PATIENT-FACING (no auth-gate.js at all — documented exception):
-`assessment.html` is the patient-facing form for the Assessment Suite. It is the
-first and currently only NON-member surface in the stack, so it deliberately does
-NOT include auth-gate.js and is NOT a member-protected page. Access is gated
-solely by an unguessable per-assessment token in the URL (`?t=...`,
-crypto.randomBytes(24).base64url, single-use, 14-day completion TTL). The page
-exposes no member functionality and no provider PII; it only renders the
-instrument items for that token and posts responses back. This is the one
-intentional exception to "every protected page includes auth-gate.js" — it is not
-a protected page. The PROVIDER half of the tool (`pm-assessment-suite.html`) is
-fully PHI-gated in the normal way. See Section 9 for the full lifecycle.
 
 When you add a tool, add it to the correct list here.
 
@@ -217,14 +162,6 @@ the real client IP and user-agent. The canonical example is
   pdf_storage_path, circle_member_id, created_at.
 - `loa_signatures` (credentialing letter-of-authorization): id, email,
   signed_name, signed_at, ip_address, user_agent.
-- `assessment_consents` (Assessment Suite patient acknowledgment): id,
-  assessment_id (fk to assessments, on delete set null), token, consent_version
-  (default `assessment_v1`; code-side constant `CURRENT_ASSESSMENT_CONSENT_VERSION`
-  in `assessment-submit.js`), accepted_at, ip_address, user_agent, created_at.
-  Captured at patient form submission by `assessment-submit.js`, which captures
-  IP/user-agent server-side the same way record-terms-acceptance does. NOTE: this
-  is a patient (non-member) consent, so the natural key is the submission itself,
-  not (member_email, version); it is not upserted on a member identity. RLS on.
 
 ### Building a new consent type (e.g. patient recording-consent)
 
@@ -236,62 +173,6 @@ natural key. If it needs a new table, give it: id (uuid pk), the identity column
 `CURRENT_*_VERSION` constant, accepted_at/signed_at timestamptz default now(),
 ip_address, user_agent, created_at. Enable RLS on the new table (service-key
 writes bypass RLS; see Section 7). Then document the new table here.
-
-### PLANNED consent type: Audio Recording / Ambient Documentation
-
-For the ambient AI scribe (records the visit, transcribes, then deletes audio).
-Scoped but NOT yet built. Build it following the pattern above. Key decisions
-already made, do not re-derive:
-
-- The PROVIDER is solely responsible for obtaining the patient's recording
-  consent, including Washington's all-party consent requirement. The platform
-  supplies the tooling only; the BAA's Audio Recording and Ambient Documentation
-  clause allocates this to the Covered Entity.
-- Consent model: a standalone recording-consent form signed ONCE at intake, PLUS
-  a documented verbal confirmation each session. Consent is REVOCABLE; a
-  revocation must stop recording for that patient going forward.
-- Audio is transcribed then deleted; no audio retained. STT vendor must be under
-  BAA (AWS Transcribe under the existing AWS BAA is the path of least resistance).
-- When built: create `record-recording-consent.js` and a
-  `recording_consents` table (identity column, `consent_version` with a
-  `CURRENT_RECORDING_CONSENT_VERSION` constant, signed_at, ip_address,
-  user_agent, plus a per-session verbal-confirmation log or a revoked_at column
-  as the design requires). Add the STT vendor row to MODEL-REGISTRY.md. Update
-  this section and the tool classification in Section 1. Optional only: a quick
-  counsel wording spot-check on the consent form once drafted; building it does
-  not require counsel sign-off.
-
----
-
-## 2A. De-identification standard (clinical-content output)
-
-Applies to any tool that takes clinical content and produces output that is
-shared, displayed beyond the treating clinician, or sent to an AI model in a form
-that could carry patient identity (e.g. case presentation generator, anything
-that turns a real patient encounter into shareable/teaching/aggregated text).
-
-The agreed standard is layered, do not drop layers:
-
-1. Safe Harbor: strip the 18 HIPAA Safe Harbor identifiers.
-2. Narrative generalization: generalize free-text specifics that could
-   re-identify even after Safe Harbor (rare-condition + location combos, unusual
-   dates/sequences, employer, distinctive verbatim details). Safe Harbor alone is
-   not enough for narrative clinical text.
-3. Refusal: the tool should refuse / flag rather than emit output when content
-   cannot be adequately de-identified.
-4. Member review: the clinician reviews the de-identified output before it leaves
-   the tool. Human-in-the-loop is part of the standard, not optional polish.
-
-UNDECIDED (do not assume): expert-determination de-identification (a formal
-statistical determination by a qualified expert) is NOT currently part of the
-standard and may never be. It is under consideration only, leaning against,
-because it adds time and cost and is not necessarily needed given the layered
-approach above. Do not build toward an expert-determination requirement unless
-that decision is explicitly made and recorded here.
-
-STANDING RULE: revisit this standard whenever an algorithm/output is REUSED for a
-new purpose (especially anything aggregating across patients or feeding model
-development). Reuse is the trigger to re-check adequacy.
 
 ---
 
@@ -328,16 +209,6 @@ Notes:
 - SMS exists (`send-sms.js`) but is OFF by default. Do not add an SMS send branch
   to a new tool unless explicitly decided. The `providers.notify_sms` column and
   `notifications.channel = 'sms'` support it for later.
-- DECISION (current): patient-facing delivery is EMAIL ONLY. Nothing is sent via
-  SMS to anyone at this time. This includes the Assessment Tool / screener-sender
-  (patient gets the screener link by email; they can open it on a phone if they
-  want). Rationale: email is not subject to TCPA, so email-only sidesteps the
-  texting-consent question entirely. SMS is a possible FUTURE feature, deferred as
-  a deliberate scoped build. Open question to resolve with counsel before any SMS
-  ships: can we rely on the clinician obtaining TCPA consent from the patient
-  (BAA requiring the clinician to represent they did), or must the platform
-  capture that consent itself. Until that is answered and SMS is deliberately
-  turned on, do not wire any tool to send SMS.
 
 ---
 
@@ -378,24 +249,6 @@ Do not create a new table per tool unless the data is genuinely relational.
   updated_at. Upsert on conflict (email, tool_id). RLS enabled; the function uses
   the service key.
 - Reads `email` from the client's `tbp_verified_email`.
-
-### Structural-table exception: Assessment Suite
-
-The Assessment Suite does NOT use `user_tool_data`. Its data is genuinely
-relational with distinct lifecycles, so it has three dedicated tables (this is
-the "genuinely structural" carve-out the rule above allows):
-
-- `assessments`: id (uuid pk), token (unique), provider_email, patient_name
-  (PHI; nulled on purge), instrument_set (jsonb), status
-  (pending|completed|retrieved|expired), deidentified_meta (jsonb; survives
-  purge), created_at, expires_at, completed_at, retrieved_at, purged_at. RLS on;
-  service-key only.
-- `assessment_results`: id, assessment_id (fk, on delete cascade), responses
-  (jsonb; PHI item-level), scores (jsonb), flags (jsonb), created_at. THE
-  PHI-BEARING ROW; deleted by the retention purge. RLS on.
-- `assessment_consents`: see Section 2.
-
-Full lifecycle in Section 9.
 
 ---
 
@@ -452,6 +305,16 @@ key need an explicit policy first. This needs a deliberate per-table pass:
 classify service-key-only vs anon-read, then enable RLS with the right policy per
 table. Tracked here so it is not forgotten.
 
+NOTE on the Assessment Suite trend store (`assessment_score_series`): this table
+is PSEUDONYMIZED PHI, not de-identified. It holds scores + dates under a one-way
+hash of name+DOB (no name, no item responses). Because the key is derived from
+patient identifiers, it does not meet HIPAA Safe Harbor de-identification and
+should be treated as PHI: access-controlled, RLS-protected, and covered by the
+BAA. Do not describe it as "de-identified" in member-facing or marketing copy;
+the accurate phrasing is "scores and dates under a one-way key, no name and no
+responses." The raw responses + patient name in `assessment_results` hard-delete
+30 days after completion; the score-series persists to power progress trends.
+
 ---
 
 ## 8. Cross-references
@@ -460,68 +323,3 @@ table. Tracked here so it is not forgotten.
   Update in the same commit when a tool gains, loses, or changes a model.
 - Per-tool QA checklists (e.g. qa-termination-test.md) with a pointer comment in
   the tool's HTML.
-
----
-
-## 9. Token-based patient-facing PHI lifecycle (Assessment Suite)
-
-The Assessment Suite is the canonical pattern for a tool that collects PHI from a
-NON-member patient via a tokenized link, scores it server-side, returns results
-to the provider, and auto-deletes the PHI on a fixed clock. Build future
-patient-facing collectors (intake forms, outcome-measure trackers) to this shape.
-
-Surfaces and files:
-- `pm-assessment-suite.html` — provider tool, PHI-gated (Section 1), default gate.
-- `assessment.html` — PUBLIC patient form, token-gated only (Section 1 exception).
-- `assessment-instruments.js` — shared server-side instrument defs + scoring.
-- `assessment-create.js` — provider creates a tokenized assessment.
-- `assessment-fetch.js` — public; patient form loads instrument render-defs by token.
-- `assessment-submit.js` — public; scores, stores result, records consent.
-- `assessment-list.js` — provider dashboard list.
-- `assessment-retrieve.js` — provider pulls the scored report; also `expire` action.
-
-Decisions baked in (do not re-derive):
-
-- IDENTITY. Patients are not members. The per-assessment unguessable token is the
-  only credential to the patient form. Single-use (consumed on submit), 14-day
-  completion TTL (`expires_at`).
-- PATIENT NAME IS STORED, as PHI. `assessments.patient_name` holds the real name
-  so the provider can identify the returned result across devices. It is handled
-  as PHI: RLS on, service-key only, retrieval restricted to the creating provider
-  by `provider_email` match, and nulled by the purge. There is deliberately NO
-  "use initials / local-label" hybrid — that was rejected as clinician-hostile;
-  the storage risk is accepted because the dashboard's whole purpose is to tell
-  the clinician which patient each result belongs to.
-- NO PATIENT-FACING SCORES. The patient form shows only a neutral submission
-  confirmation plus 988 crisis language. All scores, bands, and interpretation go
-  ONLY to the provider via `assessment-retrieve.js`.
-- SCORING IS SERVER-SIDE AND ISOLATED. All item text, scoring, severity bands, and
-  chart language live in `assessment-instruments.js`. The patient form receives
-  only render-defs (item text + options) via `getRenderDef`; scoring logic never
-  reaches the client.
-- SUICIDE INSTRUMENTS EXCLUDED FROM PATIENT-SEND. C-SSRS and ASQ are NOT in the
-  patient-send allowlist (`PATIENT_SEND_IDS` in assessment-instruments.js) and are
-  re-validated server-side in assessment-create.js. They remain clinician-
-  administered in pm-crisis-safety-plan.html. PHQ-9 item 9 and EPDS item 10
-  endorsement raise a provider-facing risk flag on retrieval AND surface inline
-  crisis language on the patient form. MSI-BPD item 2 (self-harm/attempt history)
-  also flags for provider review.
-- RETENTION: uniform 30 days from `completed_at`, regardless of retrieval.
-  Retrieval stamps `retrieved_at` but does NOT change the clock. The purge
-  (`purge_assessment_phi()`) deletes the `assessment_results` row and nulls
-  `patient_name`, setting `purged_at`; the `assessments` row and its
-  `deidentified_meta` (instrument ids, totals, bands, flag types, timestamps — no
-  identifiers, no item-level responses) persist for longitudinal/QA signal. This
-  is a STORED-PHI tool by the Section 0 classification, turned on deliberately
-  with the retention safeguard actually running (below).
-- SCHEDULING IS LIVE. The purge is scheduled via pg_cron: extension `pg_cron`
-  enabled on the project, job `purge-assessment-phi` runs daily at 03:00 UTC
-  (`select cron.schedule('purge-assessment-phi','0 3 * * *','select
-  public.purge_assessment_phi()')`). Verify with `select * from cron.job`. If the
-  project is ever restored/migrated, re-confirm the extension and job survive, the
-  retention claim depends on this job existing.
-- SEND. The provider report reuses `openSendModal` (Section 3); email delivery of
-  the patient LINK reuses `send-document`. No new SES logic.
-- SMS: OFF, consistent with Section 3. Patient link goes by copy or email only.
-- NOT AN AI TOOL. Scoring is deterministic; no model is called. Recorded as a
-  no-model tool in MODEL-REGISTRY.md.
