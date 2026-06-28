@@ -62,6 +62,7 @@ exports.handler = async function(event) {
     var fromName = payload.fromName || '';
     var fromPractice = payload.fromPractice || '';
     var subject = payload.subject || '';
+    var coverNote = payload.coverNote || '';
     var tool = payload.tool || 'Practice Manager';
     var clinicianEmail = payload.clinicianEmail || '';
 
