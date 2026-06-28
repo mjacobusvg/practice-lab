@@ -187,19 +187,22 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
 <div class="container" id="app-root" style="display:none">
 <script>
 var _icUserEmail = '';
+var _icAuthToken = '';
 var _icVault = {};
 TBPAuth.protect({
   toolName: 'Interaction Interpreter',
   skipPHIGate: true,
+  requireFull: true,
   onVerified: function() {
     document.getElementById('app-root').style.display = 'block';
     try { _icUserEmail = localStorage.getItem('tbp_verified_email') || ''; } catch(e) {}
+    try { _icAuthToken = localStorage.getItem('tbp_auth_token') || ''; } catch(e) {}
     // Load Vault from Supabase for send modal
     if (_icUserEmail) {
       fetch('/.netlify/functions/user-tool-data', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: _icUserEmail, toolId: 'vault_profile', action: 'load' })
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _icAuthToken },
+        body: JSON.stringify({ token: _icAuthToken, email: _icUserEmail, toolId: 'vault_profile', action: 'load' })
       })
       .then(function(r) { return r.json(); })
       .then(function(data) { if (data.found && data.data) _icVault = data.data; })
@@ -9174,11 +9177,13 @@ function generatePatientExplanation(interactions) {
 
   var userPrompt = 'The patient is taking: ' + medNames + '\n\nThe clinician\'s interaction assessment found:\n\n' + interactionSummary + '\n\nWrite a patient-friendly explanation of these interactions. Match your tone to the risk level. Low-risk findings should be reassuring. High-risk findings should be clear and direct without being scary.';
 
+  var icAuth=''; try{icAuth=localStorage.getItem('tbp_auth_token')||'';}catch(e){}
   fetch('/.netlify/functions/anthropic-proxy', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + icAuth },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      token: icAuth,
+      model: 'claude-sonnet-4-6',
       max_tokens: 1000,
       system: systemPrompt,
       messages: [
@@ -9226,10 +9231,11 @@ function suggestMeds() {
   var btn = event.target;
 
   // Try logging to suggestion endpoint
+  var msAuth=''; try{msAuth=localStorage.getItem('tbp_auth_token')||'';}catch(e){}
   fetch('/.netlify/functions/med-suggestion', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ medications: medList, timestamp: new Date().toISOString() })
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + msAuth },
+    body: JSON.stringify({ token: msAuth, medications: medList, timestamp: new Date().toISOString() })
   }).then(function(r) {
     if (r.ok) {
       btn.textContent = 'Suggestion sent. Thank you!';
