@@ -624,6 +624,34 @@ h1 {
 
 <script src="/auth-gate.js"></script>
 <script>
+/* ── Auth token injector ───────────────────────────────────────────────
+   Fact Checker calls anthropic-proxy, which now requires a signed member token.
+   Wrap fetch once: for our own /.netlify/functions/ endpoints, add the
+   Authorization: Bearer header and merge token into the JSON body. Direct
+   Supabase REST calls (different origin/host) are left untouched. */
+(function(){
+  function _fcTok(){ try { return localStorage.getItem('tbp_auth_token') || ''; } catch(e){ return ''; } }
+  var _origFetch = window.fetch.bind(window);
+  window.fetch = function(input, init){
+    try {
+      var url = (typeof input === 'string') ? input : (input && input.url) || '';
+      if (url.indexOf('/.netlify/functions/') !== -1) {
+        var tok = _fcTok();
+        init = init || {};
+        var h = init.headers || {};
+        if (h instanceof Headers) { var o={}; h.forEach(function(v,k){o[k]=v;}); h = o; }
+        h['Authorization'] = 'Bearer ' + tok;
+        init.headers = h;
+        if (typeof init.body === 'string' && init.body.charAt(0) === '{') {
+          try { var b = JSON.parse(init.body); if (b && typeof b === 'object' && b.token === undefined) { b.token = tok; init.body = JSON.stringify(b); } } catch(e){}
+        }
+      }
+    } catch(e){}
+    return _origFetch(input, init);
+  };
+})();
+</script>
+<script>
   TBPAuth.protect({
     toolName: 'Archive Fact Checker',
     spaceId: 2152658,
@@ -838,7 +866,7 @@ ${(post.body || '').substring(0, 3000)}`;
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: 'claude-sonnet-4-6',
           max_tokens: 1200,
           tools: [{ type: 'web_search_20250305', name: 'web_search' }],
           system: SYSTEM_PROMPT + '\n\nYou have web search available. Use it to verify any uncertain regulatory or billing claims before scoring. Search for the most current guidance from DEA, CMS, AMA, or relevant state boards as needed.',
