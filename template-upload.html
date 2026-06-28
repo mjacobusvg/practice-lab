@@ -97,6 +97,7 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 var SB = supabase.createClient('https://ubcrrrapedaxkguxniwv.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InViY3JycmFwZWRheGtndXhuaXd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNjA2MTUsImV4cCI6MjA5MDkzNjYxNX0.CoS_t8EvCsgXJJA1dz4WXYWGsE8OMKEDeaWfsExQ1H0');
 var ADMIN_EMAIL='michael@thinkbeyondpsych.com', adminEmail='';
+function _taTok(){try{return localStorage.getItem('tbp_auth_token')||'';}catch(e){return '';}}
 
 function checkGate(){
   var e=document.getElementById('gate-email').value.trim().toLowerCase();
@@ -154,7 +155,7 @@ async function handleFiles(files){
       var ins=await SB.from('template_intake').insert({original_filename:f.name,storage_path:path,file_size:f.size,status:'uploaded'}).select().single();
       if(ins.error) throw ins.error;
       row.innerHTML='<span class="dot" style="background:var(--teal)"></span>'+f.name+' — analyzing…';
-      await fetch('/.netlify/functions/template-analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({intake_id:ins.data.id,filename:f.name,text:text})});
+      await fetch('/.netlify/functions/template-analyze',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_taTok()},body:JSON.stringify({token:_taTok(),intake_id:ins.data.id,filename:f.name,text:text})});
       row.innerHTML='<span class="dot" style="background:var(--green)"></span>'+f.name+' — done';
     }catch(e){ row.innerHTML='<span class="dot" style="background:#f87171"></span>'+f.name+' — '+(e.message||'failed'); }
   }
@@ -164,7 +165,7 @@ async function handleFiles(files){
 
 async function refresh(){
   try{
-    var res=await fetch('/.netlify/functions/template-intake',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'list',email:adminEmail})});
+    var res=await fetch('/.netlify/functions/template-intake',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_taTok()},body:JSON.stringify({token:_taTok(),action:'list',email:adminEmail})});
     var data=await res.json();
     if(!data.ok) throw new Error(data.error);
     renderQueue(data.queue); renderGaps(data.gaps);
@@ -204,21 +205,21 @@ function renderGaps(gaps){
 
 async function publishRow(id,matched){
   var card=document.querySelector('.card[data-id="'+id+'"]'); if(!card)return;
-  var body={action:'publish',email:adminEmail,id:id,
+  var body={token:_taTok(),action:'publish',email:adminEmail,id:id,
     title:card.querySelector('.f-title').value,
     description:card.querySelector('.f-desc').value,
     category:card.querySelector('.f-cat').value,
     tier:card.querySelector('.f-tier').value,
     matched_post:matched};
   try{
-    var res=await fetch('/.netlify/functions/template-intake',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    var res=await fetch('/.netlify/functions/template-intake',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_taTok()},body:JSON.stringify(body)});
     var data=await res.json(); if(!data.ok) throw new Error(data.error);
     refresh();
   }catch(e){ alert('Publish failed: '+(e.message||'')); }
 }
 async function dismissRow(id){
   if(!confirm('Dismiss this file? It will not be published.'))return;
-  await fetch('/.netlify/functions/template-intake',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'dismiss',email:adminEmail,id:id})});
+  await fetch('/.netlify/functions/template-intake',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_taTok()},body:JSON.stringify({token:_taTok(),action:'dismiss',email:adminEmail,id:id})});
   refresh();
 }
 </script>
