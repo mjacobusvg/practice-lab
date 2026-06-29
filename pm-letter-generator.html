@@ -291,9 +291,14 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .lib-judgment-result { margin-top: 12px; border: 1px solid rgba(149,128,255,0.45); border-radius: 6px; background: rgba(149,128,255,0.07); padding: 12px 13px; }
 .lib-judgment-result-text { font-size: 0.9rem; line-height: 1.55; color: var(--cream); }
 .lib-judgment-result-edit { width: 100%; background: var(--bg-input, #1c2138); border: 1px solid rgba(149,128,255,0.5); color: var(--cream); padding: 9px 11px; border-radius: 5px; font-family: inherit; font-size: 0.9rem; line-height: 1.5; min-height: 64px; resize: vertical; }
-.lib-judgment-result-actions { display: flex; gap: 8px; margin-top: 9px; }
+.lib-judgment-result-actions { display: flex; gap: 8px; margin-top: 9px; flex-wrap: wrap; align-items: center; }
 .lib-judgment-mini { background: rgba(149,128,255,0.14); color: #b3a4ff; border: 1px solid rgba(149,128,255,0.4); padding: 5px 12px; border-radius: 5px; font-size: 0.76rem; font-weight: 600; cursor: pointer; font-family: inherit; }
 .lib-judgment-mini:hover { background: rgba(149,128,255,0.24); }
+.lib-judgment-mini.ghost { background: transparent; border-color: rgba(245,235,217,0.22); color: var(--cream-dim); }
+.lib-judgment-mini.ghost:hover { border-color: rgba(149,128,255,0.5); color: #b3a4ff; background: transparent; }
+.lib-judgment-mini:disabled { opacity: 0.5; cursor: default; }
+.lib-judgment-len { display: inline-flex; gap: 6px; margin-left: auto; }
+.lib-judgment-result.busy { opacity: 0.7; }
 .lib-judgment-note { margin-top: 14px; }
 .lib-judgment-note-label { display: block; font-weight: 400; text-transform: none; letter-spacing: normal; color: var(--cream-dim); font-size: 0.78rem; margin-bottom: 4px; }
 .lib-admin-field { border-left: 2px solid rgba(232,130,90,0.4); padding-left: 14px; }
@@ -2296,7 +2301,8 @@ function libRenderJudgmentField(p) {
 
   // Result block: shown once a rationale has been generated. Edit reveals an inline
   // editor for that one paragraph; otherwise the text is read-only here (it is live
-  // in the preview, which is the canonical copy).
+  // in the preview, which is the canonical copy). Once a result exists, the standalone
+  // Generate button above is hidden and all controls live inside the card.
   var resultBlock = '';
   if (st.result) {
     if (st.editing) {
@@ -2305,25 +2311,29 @@ function libRenderJudgmentField(p) {
           '<textarea id="lib-ph-' + p.key + '" class="lib-judgment-result-edit" oninput="libUpdatePlaceholder(\'' + p.key + '\', this.value);libJudgmentSyncResult(\'' + p.key + '\', this.value)">' + libEsc(st.result) + '</textarea>' +
           '<div class="lib-judgment-result-actions">' +
             '<button type="button" class="lib-judgment-mini" onclick="libJudgmentDoneEditing(\'' + p.key + '\')">Done</button>' +
-            '<button type="button" class="lib-judgment-mini" onclick="libDraftRationale(\'' + p.key + '\')">&#x21bb; Regenerate</button>' +
           '</div>' +
         '</div>';
     } else {
+      var busy = (st.busy ? ' disabled' : '');
       resultBlock =
-        '<div class="lib-judgment-result">' +
+        '<div class="lib-judgment-result' + (st.busy ? ' busy' : '') + '">' +
           '<div class="lib-judgment-result-text">' + libEsc(st.result) + '</div>' +
           '<div class="lib-judgment-result-actions">' +
-            '<button type="button" class="lib-judgment-mini" onclick="libJudgmentEdit(\'' + p.key + '\')">&#x270e; Edit</button>' +
-            '<button type="button" class="lib-judgment-mini" onclick="libDraftRationale(\'' + p.key + '\')">&#x21bb; Regenerate</button>' +
+            '<button type="button" class="lib-judgment-mini" onclick="libJudgmentEdit(\'' + p.key + '\')"' + busy + '>&#x270e; Edit</button>' +
+            '<button type="button" class="lib-judgment-mini" onclick="libDraftRationale(\'' + p.key + '\')"' + busy + '>&#x21bb; Regenerate</button>' +
+            '<span class="lib-judgment-len">' +
+              '<button type="button" class="lib-judgment-mini ghost" onclick="libRationaleLength(\'' + p.key + '\',\'concise\')"' + busy + '>Concise</button>' +
+              '<button type="button" class="lib-judgment-mini ghost" onclick="libRationaleLength(\'' + p.key + '\',\'detailed\')"' + busy + '>More detail</button>' +
+            '</span>' +
           '</div>' +
         '</div>';
     }
   }
 
-  // Optional patient note sits BELOW the concerns/generate, so it does not interrupt
-  // the primary flow. Shown only when concerns exist (i.e., the clinician is engaged).
+  // Optional patient note. Declared on a single field (see DB); placing it on the LAST
+  // judgment field positions it after the primary flow instead of interrupting it.
   var noteBlock = '';
-  if (p.detail_label !== false) {
+  if (p.detail_label !== false && p.detail_label !== undefined) {
     noteBlock =
       '<div class="lib-judgment-note">' +
         '<label class="lib-judgment-note-label">' + libEsc(p.detail_label || 'Anything unique about this patient? (optional)') + '</label>' +
@@ -2331,14 +2341,17 @@ function libRenderJudgmentField(p) {
       '</div>';
   }
 
-  var btnLabel = st.result ? '&#x2728; Regenerate rationale' : '&#x2728; Generate rationale';
+  // The standalone Generate button only appears before the first result. After that,
+  // Regenerate lives inside the card (no duplicate button).
+  var generateBtn = st.result ? '' :
+    '<button type="button" class="lib-judgment-draft-btn" id="lib-judgment-btn-' + p.key + '" onclick="libDraftRationale(\'' + p.key + '\')">&#x2728; Generate rationale</button>';
 
   return '' +
     '<div class="lib-field-group lib-judgment-field">' +
       '<label>' + libEsc(q) + (p.required ? '<span class="lib-required-marker">*</span>' : '') +
         '<span class="lib-source-badge clinical_judgment">clinical judgment</span></label>' +
       '<div class="lib-judgment-concerns">' + boxes + '</div>' +
-      '<button type="button" class="lib-judgment-draft-btn" id="lib-judgment-btn-' + p.key + '" onclick="libDraftRationale(\'' + p.key + '\')">' + btnLabel + '</button>' +
+      generateBtn +
       '<div class="lib-judgment-status" id="lib-judgment-status-' + p.key + '"></div>' +
       resultBlock +
       noteBlock +
@@ -2375,19 +2388,27 @@ function libJudgmentSyncResult(key, val) {
   st.result = val; // keep state in sync while editing inline, no re-render
 }
 
-async function libDraftRationale(key) {
+function libRationaleLength(key, mode) {
+  // Concise / More detail: same generation path, with a length steer. Clinicians
+  // usually want shorter or longer, not different, so this beats blind regeneration.
+  libDraftRationale(key, mode);
+}
+
+async function libDraftRationale(key, lengthMode) {
   var std = LIB.selectedStandard; if (!std) return;
   var p = (std.placeholders || []).find(function(x){ return x.key === key; });
   var st = LIB._judgment[key]; if (!p || !st) return;
+  if (st.busy) return;
   if (!st.concerns.length) {
     var s0 = document.getElementById('lib-judgment-status-' + key);
     if (s0) s0.textContent = 'Select at least one clinical concern first.';
     return;
   }
+  st.busy = true;
   var btn = document.getElementById('lib-judgment-btn-' + key);
   var status = document.getElementById('lib-judgment-status-' + key);
   if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
-  if (status) status.textContent = '';
+  if (status) status.textContent = (lengthMode === 'concise' ? 'Shortening…' : (lengthMode === 'detailed' ? 'Expanding…' : 'Generating…'));
 
   // Send the full clinical phrase (rich meaning) to the AI, not the terse on-screen label.
   var concernPhrases = (p.concerns || [])
@@ -2401,11 +2422,19 @@ async function libDraftRationale(key) {
      'Do not name a diagnosis, medication, or specific symptom unless explicitly provided. ' +
      'One sentence, plain and defensible to an adversarial reader, minimally disclosing.');
 
+  var lengthSteer = '';
+  if (lengthMode === 'concise') {
+    lengthSteer = '\nMake it as concise as possible while keeping clinical meaning: one short sentence.';
+  } else if (lengthMode === 'detailed') {
+    lengthSteer = '\nGive a slightly fuller version (one to two sentences) that adds clinical weight without naming a diagnosis, medication, or specific symptom.';
+  }
+
   var fullPrompt = sysInstr + '\n\n' +
     'Letter type: ' + (std.category_label || '') + '\n' +
     'Clinical concerns: ' + concernPhrases.join('; ') + '\n' +
     (st.detail ? 'Clinician note (use sparingly, do not over-disclose): ' + st.detail + '\n' : '') +
-    '\nReturn ONLY the single sentence. No preamble, no quotes, no markdown, no list.';
+    lengthSteer +
+    '\nReturn ONLY the rationale text. No preamble, no quotes, no markdown, no list.';
 
   try {
     var res = await fetch('/.netlify/functions/clinical-proxy', {
@@ -2414,7 +2443,7 @@ async function libDraftRationale(key) {
       body: JSON.stringify({
         token: _lgTok(),
         model: 'claude-sonnet-4-6',
-        max_tokens: 300,
+        max_tokens: lengthMode === 'detailed' ? 400 : 300,
         messages: [{ role: 'user', content: fullPrompt }]
       })
     });
@@ -2425,9 +2454,11 @@ async function libDraftRationale(key) {
     if (!sentence) throw new Error('empty');
     st.result = sentence;
     st.editing = false;
+    st.busy = false;
     LIB.placeholderValues[key] = sentence;
     libRenderFillScreen();
   } catch (e) {
+    st.busy = false;
     if (status) status.textContent = 'Could not generate. Click Edit to type the rationale yourself.';
     // Never block the clinician: open an editable result they can fill in.
     st.result = st.result || '';
