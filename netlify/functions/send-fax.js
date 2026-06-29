@@ -126,6 +126,7 @@ exports.handler = async function(event) {
     var uploadResult = await uploadRes.json();
 
     if (!uploadRes.ok || !(uploadResult.success || uploadResult.Success)) {
+      console.log('[send-fax] upload failed', uploadRes.status, JSON.stringify(uploadResult));
       return {
         statusCode: 500,
         headers: headers,
@@ -167,6 +168,7 @@ exports.handler = async function(event) {
         docId = sp.id || sp.ID || fileID;
         break;
       } else if (docStatus === 'failed') {
+        console.log('[send-fax] conversion failed', JSON.stringify(statusResult));
         return {
           statusCode: 500,
           headers: headers,
@@ -184,6 +186,9 @@ exports.handler = async function(event) {
     }
 
     // Step 3: Send the fax
+    // Notifyre limits the page header to 22 characters; longer values are rejected
+    // with "Invalid request". Truncate the practice name (or fallback) to fit.
+    var faxHeader = (fromPractice || 'Think Beyond Practice').slice(0, 22);
     var faxPayload = {
       faxes: {
         recipients: [
@@ -195,7 +200,7 @@ exports.handler = async function(event) {
         files: [docId],
         clientReference: tool + ' - ' + subject + (clinicianEmail ? ' | ' + clinicianEmail : ''),
         isHighQuality: true,
-        header: fromPractice || 'Think Beyond Practice'
+        header: faxHeader
       }
     };
 
@@ -211,6 +216,7 @@ exports.handler = async function(event) {
     var sendResult = await sendRes.json();
 
     if (!sendRes.ok || !(sendResult.success || sendResult.Success)) {
+      console.log('[send-fax] send failed', sendRes.status, JSON.stringify(sendResult), 'payload:', JSON.stringify(faxPayload));
       return {
         statusCode: 500,
         headers: headers,
@@ -250,6 +256,7 @@ exports.handler = async function(event) {
     };
 
   } catch (err) {
+    console.log('[send-fax] exception', err && err.message, err && err.stack);
     return {
       statusCode: 500,
       headers: headers,
