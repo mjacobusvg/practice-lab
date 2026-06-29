@@ -585,6 +585,16 @@ function renderPreflight(pf) {
   preflightAnswers = {};
   preflightAnswers._preflight = pf;
 
+  // Deterministically drop any time-related question. Prompt instructions alone
+  // do not reliably suppress these, so filter them out before rendering.
+  if (pf.questions && pf.questions.length > 0) {
+    pf.questions = pf.questions.filter(function(q) {
+      var t = (q && q.text ? q.text : '').toLowerCase();
+      var timeish = /\bminute|\bmin\b|psychotherapy time|visit time|total time|e\/m time|time (was )?allocat|time split|breakdown of (the )?time|how (the )?(total )?(visit )?time/.test(t);
+      return !timeish;
+    });
+  }
+
   if (pf.questions && pf.questions.length > 0) {
     pf.questions.forEach(function(q, idx) {
       html += '<div class="pf-card" id="pf-q-' + idx + '"><div class="pf-label">Clinician Input</div>';
@@ -862,7 +872,18 @@ function renderResults(mdm, review) {
     var strengthen = docIssues.filter(function(i){ return tierOf(i)==='strengthen'; });
     var minor = docIssues.filter(function(i){ return tierOf(i)==='minor'; });
     var ptIssues = lastAudit.psychotherapy_issues || [];
-    var timeIssues = lastAudit.time_issues || [];
+    var rawTimeIssues = lastAudit.time_issues || [];
+    // Deterministically drop time "issues" that are really just total-vs-therapy
+    // subtraction or a short E/M remainder. These are correct documentation, not
+    // errors, and prompt instructions alone do not reliably suppress them. Keep a
+    // time issue only if it describes a genuine impossibility: psychotherapy time
+    // exceeding total time, or two conflicting psychotherapy-time numbers.
+    var timeIssues = rawTimeIssues.filter(function(i){
+      var d = ((i && (i.detail||i.text||i.description)) ? (i.detail||i.text||i.description) : '').toLowerCase();
+      var subtractionNoise = /remain|e\/m time|leftover|left over|only \d+ minute|5 minutes? (for|of) (the )?e\/m|short e\/m|insufficient time|enough time|too (little|few|short)|difference (is|of)|subtract/.test(d);
+      if (subtractionNoise) return false;
+      return true;
+    });
     // a low-severity psychotherapy nitpick (e.g. "could name the CBT technique") is not a must-fix
     function isActionable(i){ return String(i.severity||'').toLowerCase() !== 'low'; }
     var actionablePt = ptIssues.filter(isActionable);
@@ -909,9 +930,9 @@ function renderResults(mdm, review) {
     renderIssueGroup(strengthen, 'OPTIONAL — WOULD STRENGTHEN THE NOTE', 'var(--cream-dim)');
     renderIssueGroup(minor, 'MINOR — INFORMATIONAL', 'var(--cream-dim)');
 
-    if (lastAudit.time_issues && lastAudit.time_issues.length > 0) {
+    if (timeIssues && timeIssues.length > 0) {
       html += '<div style="font-size:.75rem;font-weight:600;color:' + auditColor + ';margin-bottom:6px;margin-top:10px">TIME DISCREPANCIES</div>';
-      lastAudit.time_issues.forEach(function(item) {
+      timeIssues.forEach(function(item) {
         var sevColor = String(item.severity||'').toLowerCase() === 'high' ? 'var(--red)' : String(item.severity||'').toLowerCase() === 'moderate' ? 'var(--amber)' : 'var(--cream-dim)';
         html += '<div style="background:' + auditBg + ';border:1px solid ' + auditBorder + ';border-radius:6px;padding:10px 14px;margin-bottom:8px">';
         html += '<div style="font-size:.78rem;color:' + sevColor + ';font-weight:600;margin-bottom:4px">' + esc(item.severity).toUpperCase() + '</div>';
