@@ -186,9 +186,10 @@ exports.handler = async function(event) {
     }
 
     // Step 3: Send the fax
-    // Notifyre limits the page header to 22 characters; longer values are rejected
-    // with "Invalid request". Truncate the practice name (or fallback) to fit.
-    var faxHeader = (fromPractice || 'Think Beyond Practice').slice(0, 22);
+    // Notifyre requires the page header to be STRICTLY LESS THAN 22 characters
+    // (i.e. 21 max); 22 is rejected with "Invalid request". Cap at 21 and trim any
+    // trailing space left by truncation.
+    var faxHeader = (fromPractice || 'Think Beyond Practice').slice(0, 21).trim();
     var faxPayload = {
       faxes: {
         recipients: [
