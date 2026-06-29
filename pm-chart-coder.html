@@ -444,7 +444,7 @@ Answer the AMA risk-category questions literally.
 - intensive_toxicity_monitoring_drug (boolean): is a drug requiring INTENSIVE monitoring for toxicity being managed (e.g. lithium, clozapine, an anticoagulant, a drug needing serial labs specifically to detect toxicity)? A standard SSRI/SNRI/most psychotropics are NOT intensive-toxicity-monitoring drugs. This is the AMA high-risk category, not general caution.
 - hospitalization_or_loc_decision (boolean): is there a documented decision regarding hospitalization or escalation/de-escalation of level of care at this visit?
 - threat_to_life_or_function_at_visit (boolean): is there a clinical decision about a condition posing a threat to life or bodily function at this visit?
-- controlled_substance_decision_with_risk (boolean): is a controlled substance being started/managed in a context that carries elevated decision risk (e.g. diagnostic uncertainty, competing risks, misuse concern)?
+- controlled_substance_decision_with_risk (boolean): TRUE only if a controlled substance is being managed AND the note documents at least one CURRENT, ACTIVE risk factor that materially shaped today's prescribing decision, from this list: (a) recent or active substance use (not remote/historical); (b) an abnormal, concerning, or aberrant PMP finding; (c) documented diversion, misuse, or early-refill concern; (d) an unstable or active substance use disorder; (e) starting/initiating a controlled substance under documented diagnostic uncertainty or competing risks; (f) an explicit documented decision to continue or prescribe DESPITE heightened misuse/diversion risk, with that risk reasoning shown in the note. If NONE of (a)-(f) is documented, this is FALSE. A REMOTE, stable substance history (e.g. last use years ago), denial of current use, a clean/unremarkable PMP, and a routine continuation at the same dose do NOT meet this — that is moderate-risk prescription drug management with a clinical monitoring consideration (capture it in clinical_risk_flags), NOT a high-risk decision. Being a Schedule II by itself does NOT make this TRUE. The test is whether documented CURRENT risk changed today's decision, not the patient's lifetime acuity or history.
 - prescription_drug_management (boolean): is prescription drug management occurring — any prescription medication started, stopped, changed, OR continued WITH documented patient-specific assessment (tolerability, side effects, monitoring, interaction assessment, PMP review, risk-benefit reasoning about continuing)? Routine interview alone (ROS/MSE/"how are you doing") without medication-specific evaluation is NOT prescription drug management.
 - otc_or_self_limited_only (boolean): only OTC/self-limited management, no prescription decisions.
 
@@ -454,8 +454,9 @@ Answer the AMA risk-category questions literally.
 - data_evidence (array of strings): specific data items from the note.
 - data_reasoning (string): brief paragraph.
 - risk_evidence (array of strings): specific risk factors from the note.
-- risk_reasoning (string): brief paragraph explaining the risk facts — explicitly note whether any high-risk AMA category is actually met, and if a historical risk factor (e.g. prior attempt) is present, state that it is historical and does not by itself meet a high category.
+- risk_reasoning (string): brief paragraph explaining the risk facts — explicitly note whether any high-risk AMA category is actually met, and if a historical risk factor (e.g. prior attempt) is present, state that it is historical and does not by itself meet a high category. If a controlled substance is present alongside only a REMOTE or historical substance-use pattern, explicitly state that the history is clinically relevant and flagged for monitoring but does NOT elevate the MDM risk axis, because the note documents no current/active risk factor (recent use, abnormal PMP, diversion concern, unstable use disorder, or an explicit continue-despite-risk decision) driving today's decision; and briefly state what additional documentation would support a high rating.
 - highest_stakes_decision (string): one sentence — the single clinical decision in this note where being wrong has the most serious consequences.
+- clinical_risk_flags (array of strings): clinically notable factors a prescriber should keep in view that are NOT necessarily part of the MDM coding-risk determination. These do NOT change the risk axis level. Examples: a Schedule II or other controlled substance being managed; a remote/historical substance-use history; an extended follow-up interval for a controlled substance; a PMP reviewed with result; a medication added that the patient is reluctant to take. This field exists so a clinically relevant issue (e.g. prior polysubstance history with a stimulant) is surfaced for monitoring even when it correctly does NOT elevate the MDM risk axis. Leave as an empty array if none apply.
 
 {
   "pathway1": true/false,
@@ -482,7 +483,8 @@ Answer the AMA risk-category questions literally.
   "data_reasoning": "",
   "risk_evidence": [],
   "risk_reasoning": "",
-  "highest_stakes_decision": ""
+  "highest_stakes_decision": "",
+  "clinical_risk_flags": []
 }`;
 
 var REVIEW_PROMPT = `You are a senior psychiatric coding reviewer. You receive the original chart note, the FACTS another coder extracted from it, and the code-computed MDM levels derived from those facts.
@@ -497,6 +499,7 @@ Be especially careful with these high-impact risk facts, because they drive the 
 - intensive_toxicity_monitoring_drug: TRUE only for drugs needing serial monitoring specifically to detect toxicity (lithium, clozapine, anticoagulants, etc.). Standard antidepressants/most psychotropics are FALSE.
 - pathway2 / threat_to_life_or_function_at_visit / hospitalization_or_loc_decision: require something happening AT THIS VISIT, not in the patient's history.
 - A historical suicide attempt with no current SI does NOT make any high-risk fact true by itself.
+- controlled_substance_decision_with_risk: VERIFY against the checklist, do not re-judge by impression. It is TRUE only if a controlled substance is managed AND the note documents at least one of: (a) recent/active substance use; (b) abnormal/concerning PMP; (c) diversion/misuse/early-refill concern; (d) unstable or active substance use disorder; (e) starting a controlled substance under documented diagnostic uncertainty/competing risks; (f) an explicit documented decision to continue despite heightened misuse/diversion risk. If the note shows only a REMOTE/historical substance history, denial of current use, a clean PMP, and a routine same-dose continuation, this fact is FALSE — correct it to false if Pass 1 marked it true. Do NOT flip this to true based on the patient's lifetime history or because a Schedule II is present; the trigger is documented CURRENT risk shaping today's decision. A clinically relevant but non-elevating factor belongs in clinical_risk_flags, not in this boolean.
 
 If every fact is supported by the note, return an empty corrected_facts object: "corrected_facts": {}.
 If any fact is wrong, return ONLY the corrected fields in corrected_facts, using the exact same field names and types as the extracted facts. The engine will re-compute levels from the corrected facts.
@@ -698,7 +701,7 @@ async function runCodingPasses() {
     var mdm = {
       problems: { level: pCls.level, basis: pCls.basis, evidence: facts.problems_evidence || [], reasoning: facts.problems_reasoning || '' },
       data: { level: dCls.level, basis: dCls.basis, evidence: facts.data_evidence || [], reasoning: facts.data_reasoning || '' },
-      risk: { level: rCls.level, basis: rCls.basis, evidence: facts.risk_evidence || [], reasoning: facts.risk_reasoning || '', highest_stakes_decision: facts.highest_stakes_decision || '' },
+      risk: { level: rCls.level, basis: rCls.basis, evidence: facts.risk_evidence || [], reasoning: facts.risk_reasoning || '', highest_stakes_decision: facts.highest_stakes_decision || '', clinical_risk_flags: facts.clinical_risk_flags || [] },
       _facts: facts
     };
 
@@ -720,6 +723,8 @@ async function runCodingPasses() {
       mdm.problems.level = pCls.level; mdm.problems.basis = pCls.basis;
       mdm.data.level = dCls.level; mdm.data.basis = dCls.basis;
       mdm.risk.level = rCls.level; mdm.risk.basis = rCls.basis;
+      if (mergedFacts.risk_reasoning) mdm.risk.reasoning = mergedFacts.risk_reasoning;
+      if (mergedFacts.clinical_risk_flags) mdm.risk.clinical_risk_flags = mergedFacts.clinical_risk_flags;
     }
 
     // E/M code is computed deterministically from the final code-derived levels.
@@ -1039,6 +1044,17 @@ function renderResults(mdm, review) {
     html += '<div style="font-size:.75rem;font-weight:600;color:var(--red);margin-bottom:2px">HIGHEST-STAKES DECISION IN THIS NOTE</div>';
     html += '<div style="font-size:.84rem;color:var(--cream)">' + esc(mdm.risk.highest_stakes_decision) + '</div>';
     html += '</div>';
+  }
+
+  // Clinical Risk Flags — clinically notable, NOT part of the MDM coding-risk axis
+  if (mdm && mdm.risk && Array.isArray(mdm.risk.clinical_risk_flags) && mdm.risk.clinical_risk_flags.length > 0) {
+    html += '<div style="margin-top:12px;padding:10px 14px;background:rgba(251,191,36,0.05);border:1px solid rgba(251,191,36,0.18);border-radius:6px">';
+    html += '<div style="font-size:.75rem;font-weight:600;color:var(--amber);margin-bottom:6px">CLINICAL RISK FLAGS <span style="font-weight:400;color:var(--cream-dim);text-transform:none;letter-spacing:0">— for monitoring; does not change the MDM code</span></div>';
+    html += '<ul style="margin:0;padding-left:18px">';
+    mdm.risk.clinical_risk_flags.forEach(function(flag) {
+      if (flag && flag.trim()) html += '<li style="font-size:.82rem;color:var(--cream);margin-bottom:3px">' + esc(flag) + '</li>';
+    });
+    html += '</ul></div>';
   }
 
   // Fact-verification notes (when the verification pass corrected an extracted fact)
