@@ -8,7 +8,6 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/auth-gate.js"></script>
-<script src="/phi-reminder.js"></script>
 <script>function _lgTok(){try{return (window._lgAuthToken!==undefined&&window._lgAuthToken)|| localStorage.getItem('tbp_auth_token')||'';}catch(e){return '';}}</script>
 <style>
 :root{--navy:#0b1120;--navy-mid:#111c30;--navy-light:#1a2d47;--navy-card:#152238;--teal:#2aabb8;--teal-dim:#1d7d88;--teal-glow:rgba(42,171,184,0.12);--cream:#e8e2d6;--cream-dim:#b0aa9e;--white:#f5f4f2;--green:#34d399;--amber:#fbbf24;--red:#f87171;--purple:#a78bfa;--blue:#60a5fa;--rule:rgba(42,171,184,0.15);--radius:10px;--font-display:'DM Serif Display',serif;--font-body:'Plus Jakarta Sans',sans-serif}
@@ -289,11 +288,14 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .lib-judgment-draft-btn:hover { background: rgba(149,128,255,0.22); }
 .lib-judgment-draft-btn:disabled { opacity: 0.6; cursor: default; }
 .lib-judgment-status { font-size: 0.76rem; color: var(--cream-muted); margin-top: 6px; min-height: 0; }
-.lib-judgment-options { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
-.lib-judgment-options-label { font-size: 0.76rem; color: var(--cream-muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
-.lib-judgment-option { padding: 11px 13px; border: 1px solid rgba(245,235,217,0.18); border-radius: 6px; font-size: 0.88rem; line-height: 1.5; color: var(--cream); cursor: pointer; transition: border-color 0.15s, background 0.15s; }
-.lib-judgment-option:hover { border-color: rgba(149,128,255,0.5); }
-.lib-judgment-option.selected { border-color: rgba(149,128,255,0.8); background: rgba(149,128,255,0.08); }
+.lib-judgment-result { margin-top: 12px; border: 1px solid rgba(149,128,255,0.45); border-radius: 6px; background: rgba(149,128,255,0.07); padding: 12px 13px; }
+.lib-judgment-result-text { font-size: 0.9rem; line-height: 1.55; color: var(--cream); }
+.lib-judgment-result-edit { width: 100%; background: var(--bg-input, #1c2138); border: 1px solid rgba(149,128,255,0.5); color: var(--cream); padding: 9px 11px; border-radius: 5px; font-family: inherit; font-size: 0.9rem; line-height: 1.5; min-height: 64px; resize: vertical; }
+.lib-judgment-result-actions { display: flex; gap: 8px; margin-top: 9px; }
+.lib-judgment-mini { background: rgba(149,128,255,0.14); color: #b3a4ff; border: 1px solid rgba(149,128,255,0.4); padding: 5px 12px; border-radius: 5px; font-size: 0.76rem; font-weight: 600; cursor: pointer; font-family: inherit; }
+.lib-judgment-mini:hover { background: rgba(149,128,255,0.24); }
+.lib-judgment-note { margin-top: 14px; }
+.lib-judgment-note-label { display: block; font-weight: 400; text-transform: none; letter-spacing: normal; color: var(--cream-dim); font-size: 0.78rem; margin-bottom: 4px; }
 .lib-admin-field { border-left: 2px solid rgba(232,130,90,0.4); padding-left: 14px; }
 .lib-admin-note { font-size: 0.78rem; color: var(--cream-dim); margin-bottom: 7px; line-height: 1.4; }
 
@@ -2271,16 +2273,19 @@ function libSetToggle(key, value) {
 }
 
 // ── CLINICAL-JUDGMENT FIELD ──
-// State per field key lives on LIB._judgment[key] = { concerns:Set, detail, options:[], chosen }
+// State per field key: LIB._judgment[key] = { concerns:[], detail, result, editing }
+// Interaction: select concerns -> Generate -> one rationale lands in the preview ->
+// Regenerate / Edit. The live preview is the single source of truth; there is no
+// separate "final wording" copy and no three-option comparison step.
 LIB._judgment = LIB._judgment || {};
 
 function libRenderJudgmentField(p) {
-  var st = LIB._judgment[p.key] || { concerns: [], detail: '', options: [], chosen: LIB.placeholderValues[p.key] || '' };
+  var st = LIB._judgment[p.key] || { concerns: [], detail: '', result: LIB.placeholderValues[p.key] || '', editing: false };
   LIB._judgment[p.key] = st;
   var concerns = p.concerns || [];
   var q = p.question || p.label || 'What is your clinical concern?';
 
-  var boxes = concerns.map(function(c, i) {
+  var boxes = concerns.map(function(c) {
     var checked = st.concerns.indexOf(c.value) !== -1;
     return '' +
       '<label class="lib-judgment-concern' + (checked ? ' checked' : '') + '">' +
@@ -2289,39 +2294,54 @@ function libRenderJudgmentField(p) {
       '</label>';
   }).join('');
 
-  var optionsHtml = '';
-  if (st.options && st.options.length) {
-    optionsHtml = '<div class="lib-judgment-options">' +
-      '<div class="lib-judgment-options-label">Select a phrasing (you can edit it after):</div>' +
-      st.options.map(function(opt, i) {
-        var sel = st.chosen === opt;
-        return '<div class="lib-judgment-option' + (sel ? ' selected' : '') + '" onclick="libChooseRationale(\'' + p.key + '\',' + i + ')">' + libEsc(opt) + '</div>';
-      }).join('') +
-    '</div>';
+  // Result block: shown once a rationale has been generated. Edit reveals an inline
+  // editor for that one paragraph; otherwise the text is read-only here (it is live
+  // in the preview, which is the canonical copy).
+  var resultBlock = '';
+  if (st.result) {
+    if (st.editing) {
+      resultBlock =
+        '<div class="lib-judgment-result">' +
+          '<textarea id="lib-ph-' + p.key + '" class="lib-judgment-result-edit" oninput="libUpdatePlaceholder(\'' + p.key + '\', this.value);libJudgmentSyncResult(\'' + p.key + '\', this.value)">' + libEsc(st.result) + '</textarea>' +
+          '<div class="lib-judgment-result-actions">' +
+            '<button type="button" class="lib-judgment-mini" onclick="libJudgmentDoneEditing(\'' + p.key + '\')">Done</button>' +
+            '<button type="button" class="lib-judgment-mini" onclick="libDraftRationale(\'' + p.key + '\')">&#x21bb; Regenerate</button>' +
+          '</div>' +
+        '</div>';
+    } else {
+      resultBlock =
+        '<div class="lib-judgment-result">' +
+          '<div class="lib-judgment-result-text">' + libEsc(st.result) + '</div>' +
+          '<div class="lib-judgment-result-actions">' +
+            '<button type="button" class="lib-judgment-mini" onclick="libJudgmentEdit(\'' + p.key + '\')">&#x270e; Edit</button>' +
+            '<button type="button" class="lib-judgment-mini" onclick="libDraftRationale(\'' + p.key + '\')">&#x21bb; Regenerate</button>' +
+          '</div>' +
+        '</div>';
+    }
   }
 
-  var chosenEditor = '';
-  if (st.chosen) {
-    chosenEditor = '<div class="lib-field-group" style="margin-top:10px">' +
-      '<label>Final wording (editable)</label>' +
-      '<textarea id="lib-ph-' + p.key + '" oninput="libUpdatePlaceholder(\'' + p.key + '\', this.value)">' + libEsc(st.chosen) + '</textarea>' +
-    '</div>';
+  // Optional patient note sits BELOW the concerns/generate, so it does not interrupt
+  // the primary flow. Shown only when concerns exist (i.e., the clinician is engaged).
+  var noteBlock = '';
+  if (p.detail_label !== false) {
+    noteBlock =
+      '<div class="lib-judgment-note">' +
+        '<label class="lib-judgment-note-label">' + libEsc(p.detail_label || 'Anything unique about this patient? (optional)') + '</label>' +
+        '<textarea id="lib-judgment-detail-' + p.key + '" rows="2" placeholder="' + libEsc(p.detail_hint || 'Optional. One short phrase. Do not add diagnosis or symptom detail you would not want a court to read.') + '" oninput="libJudgmentDetail(\'' + p.key + '\', this.value)">' + libEsc(st.detail || '') + '</textarea>' +
+      '</div>';
   }
+
+  var btnLabel = st.result ? '&#x2728; Regenerate rationale' : '&#x2728; Generate rationale';
 
   return '' +
     '<div class="lib-field-group lib-judgment-field">' +
       '<label>' + libEsc(q) + (p.required ? '<span class="lib-required-marker">*</span>' : '') +
         '<span class="lib-source-badge clinical_judgment">clinical judgment</span></label>' +
       '<div class="lib-judgment-concerns">' + boxes + '</div>' +
-      (p.detail_label !== false ?
-        '<div style="margin-top:8px"><label style="font-weight:400;text-transform:none;letter-spacing:normal;color:var(--cream-dim);font-size:.78rem">' +
-        libEsc(p.detail_label || 'Anything specific about this patient? (optional, stays minimal)') + '</label>' +
-        '<textarea id="lib-judgment-detail-' + p.key + '" rows="2" placeholder="' + libEsc(p.detail_hint || 'Optional. One short phrase. Do not add diagnosis or symptom detail you would not want a court or employer to read.') + '" oninput="libJudgmentDetail(\'' + p.key + '\', this.value)">' + libEsc(st.detail || '') + '</textarea></div>'
-        : '') +
-      '<button type="button" class="lib-judgment-draft-btn" id="lib-judgment-btn-' + p.key + '" onclick="libDraftRationale(\'' + p.key + '\')">&#x2728; Draft rationale options</button>' +
+      '<button type="button" class="lib-judgment-draft-btn" id="lib-judgment-btn-' + p.key + '" onclick="libDraftRationale(\'' + p.key + '\')">' + btnLabel + '</button>' +
       '<div class="lib-judgment-status" id="lib-judgment-status-' + p.key + '"></div>' +
-      optionsHtml +
-      chosenEditor +
+      resultBlock +
+      noteBlock +
     '</div>';
 }
 
@@ -2335,14 +2355,24 @@ function libToggleConcern(key, value, on) {
 
 function libJudgmentDetail(key, val) {
   var st = LIB._judgment[key]; if (!st) return;
-  st.detail = val;
+  st.detail = val; // no re-render: keep textarea focus
 }
 
-function libChooseRationale(key, i) {
+function libJudgmentEdit(key) {
   var st = LIB._judgment[key]; if (!st) return;
-  st.chosen = st.options[i];
-  LIB.placeholderValues[key] = st.chosen;
+  st.editing = true;
   libRenderFillScreen();
+}
+
+function libJudgmentDoneEditing(key) {
+  var st = LIB._judgment[key]; if (!st) return;
+  st.editing = false;
+  libRenderFillScreen();
+}
+
+function libJudgmentSyncResult(key, val) {
+  var st = LIB._judgment[key]; if (!st) return;
+  st.result = val; // keep state in sync while editing inline, no re-render
 }
 
 async function libDraftRationale(key) {
@@ -2350,30 +2380,32 @@ async function libDraftRationale(key) {
   var p = (std.placeholders || []).find(function(x){ return x.key === key; });
   var st = LIB._judgment[key]; if (!p || !st) return;
   if (!st.concerns.length) {
-    document.getElementById('lib-judgment-status-' + key).textContent = 'Select at least one clinical concern first.';
+    var s0 = document.getElementById('lib-judgment-status-' + key);
+    if (s0) s0.textContent = 'Select at least one clinical concern first.';
     return;
   }
   var btn = document.getElementById('lib-judgment-btn-' + key);
   var status = document.getElementById('lib-judgment-status-' + key);
-  if (btn) { btn.disabled = true; btn.textContent = 'Drafting…'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Generating…'; }
   if (status) status.textContent = '';
 
-  var concernLabels = (p.concerns || [])
+  // Send the full clinical phrase (rich meaning) to the AI, not the terse on-screen label.
+  var concernPhrases = (p.concerns || [])
     .filter(function(c){ return st.concerns.indexOf(c.value) !== -1; })
-    .map(function(c){ return c.label; });
+    .map(function(c){ return c.phrase || c.label; });
 
   var sysInstr = p.draft_system ||
-    ('You draft clinical-rationale sentences for a psychiatric letter. ' +
-     'Write in first-person clinician voice (for example, "In my clinical judgment, ..."). ' +
-     'Describe a present-day clinical assessment; do not predict the future or promise recovery by a date. ' +
+    ('You write one sentence of clinical rationale for a psychiatric letter, in the natural ' +
+     'voice of a treating PMHNP dictating, not the voice of an AI. Begin with "In my clinical judgment, ". ' +
+     'State a present-day assessment; never predict the future or promise recovery by a date. ' +
      'Do not name a diagnosis, medication, or specific symptom unless explicitly provided. ' +
-     'Each option is one sentence, defensible to an adversarial reader, minimally disclosing.');
+     'One sentence, plain and defensible to an adversarial reader, minimally disclosing.');
 
   var fullPrompt = sysInstr + '\n\n' +
     'Letter type: ' + (std.category_label || '') + '\n' +
-    'Clinical concerns selected: ' + concernLabels.join('; ') + '\n' +
+    'Clinical concerns: ' + concernPhrases.join('; ') + '\n' +
     (st.detail ? 'Clinician note (use sparingly, do not over-disclose): ' + st.detail + '\n' : '') +
-    '\nReturn ONLY a JSON array of 3 alternative one-sentence rationales. No preamble, no markdown, no keys. Example: ["sentence one", "sentence two", "sentence three"]';
+    '\nReturn ONLY the single sentence. No preamble, no quotes, no markdown, no list.';
 
   try {
     var res = await fetch('/.netlify/functions/clinical-proxy', {
@@ -2382,26 +2414,50 @@ async function libDraftRationale(key) {
       body: JSON.stringify({
         token: _lgTok(),
         model: 'claude-sonnet-4-6',
-        max_tokens: 600,
+        max_tokens: 300,
         messages: [{ role: 'user', content: fullPrompt }]
       })
     });
     if (!res.ok) throw new Error('proxy ' + res.status);
     var data = await res.json();
     var text = (data.content && data.content[0] && data.content[0].text) || libExtractProxyText(data);
-    var opts = libParseRationaleOptions(text);
-    if (!opts.length) throw new Error('No options returned');
-    st.options = opts;
+    var sentence = libCleanRationale(text);
+    if (!sentence) throw new Error('empty');
+    st.result = sentence;
+    st.editing = false;
+    LIB.placeholderValues[key] = sentence;
     libRenderFillScreen();
   } catch (e) {
-    if (status) status.textContent = 'Could not draft options. You can type the rationale directly below.';
-    // Fallback: give the clinician an editable box so they are never blocked.
-    st.chosen = st.chosen || '';
-    LIB.placeholderValues[key] = st.chosen;
+    if (status) status.textContent = 'Could not generate. Click Edit to type the rationale yourself.';
+    // Never block the clinician: open an editable result they can fill in.
+    st.result = st.result || '';
+    st.editing = true;
+    LIB.placeholderValues[key] = st.result;
     libRenderFillScreen();
   } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = '&#x2728; Draft rationale options'; }
+    if (btn) { btn.disabled = false; }
   }
+}
+
+// Cleans a single-sentence rationale: strips code fences, surrounding quotes, list
+// bullets, and accidental JSON-array wrapping, returning one plain sentence.
+function libCleanRationale(text) {
+  if (!text) return '';
+  var t = String(text).replace(/```json|```/g, '').trim();
+  // If the model returned a JSON array anyway, take the first element.
+  if (t.charAt(0) === '[') {
+    try { var arr = JSON.parse(t); if (Array.isArray(arr) && arr.length) t = String(arr[0]); } catch (e) {}
+  }
+  t = t.replace(/^[\s\-*\d.]+/, '').trim();          // leading bullet/number
+  t = t.replace(/^["'\u201c\u2018]+|["'\u201d\u2019]+$/g, '').trim(); // wrapping quotes
+  // If multiple lines came back, prefer a line that reads like the rationale sentence
+  // (contains the clinical-judgment opener or ends in a period) over a preamble label.
+  var lines = t.split(/\n+/).map(function(l){ return l.trim().replace(/^["'\u201c\u2018]+|["'\u201d\u2019]+$/g, ''); }).filter(Boolean);
+  if (lines.length > 1) {
+    var sentence = lines.find(function(l){ return /clinical judgment/i.test(l) || /\.$/.test(l); });
+    return sentence || lines[0];
+  }
+  return lines[0] || t;
 }
 
 function libExtractProxyText(data) {
@@ -2415,17 +2471,6 @@ function libExtractProxyText(data) {
     return data.message.content.filter(function(b){ return b && b.type === 'text'; }).map(function(b){ return b.text; }).join('\n');
   }
   return '';
-}
-
-function libParseRationaleOptions(text) {
-  if (!text) return [];
-  var t = String(text).replace(/```json|```/g, '').trim();
-  try {
-    var arr = JSON.parse(t);
-    if (Array.isArray(arr)) return arr.map(function(x){ return String(x).trim(); }).filter(Boolean).slice(0, 4);
-  } catch (e) {}
-  // Fallback: split into sentences/lines.
-  return t.split(/\n+/).map(function(l){ return l.replace(/^[-*\d.\s"]+/, '').replace(/"$/,'').trim(); }).filter(function(l){ return l.length > 10; }).slice(0, 4);
 }
 
 // ── ADMINISTRATIVE-REQUIREMENT FIELD ──
