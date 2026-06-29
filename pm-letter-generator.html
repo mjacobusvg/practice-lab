@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="/auth-gate.js"></script>
+<script src="/phi-reminder.js"></script>
 <script>function _lgTok(){try{return (window._lgAuthToken!==undefined&&window._lgAuthToken)|| localStorage.getItem('tbp_auth_token')||'';}catch(e){return '';}}</script>
 <style>
 :root{--navy:#0b1120;--navy-mid:#111c30;--navy-light:#1a2d47;--navy-card:#152238;--teal:#2aabb8;--teal-dim:#1d7d88;--teal-glow:rgba(42,171,184,0.12);--cream:#e8e2d6;--cream-dim:#b0aa9e;--white:#f5f4f2;--green:#34d399;--amber:#fbbf24;--red:#f87171;--purple:#a78bfa;--blue:#60a5fa;--rule:rgba(42,171,184,0.15);--radius:10px;--font-display:'DM Serif Display',serif;--font-body:'Plus Jakarta Sans',sans-serif}
@@ -275,6 +276,26 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .lib-source-badge.parsing { background: rgba(42,171,184,0.15); color: var(--teal); }
 .lib-source-badge.auto { background: rgba(110,197,167,0.15); color: #6ec5a7; }
 .lib-source-badge.user { background: rgba(245,235,217,0.1); color: var(--cream-muted); }
+.lib-source-badge.clinical_judgment { background: rgba(149,128,255,0.16); color: #b3a4ff; }
+.lib-source-badge.admin_requirement { background: rgba(232,130,90,0.16); color: #e8825a; }
+
+.lib-judgment-field { border-left: 2px solid rgba(149,128,255,0.4); padding-left: 14px; }
+.lib-judgment-concerns { display: flex; flex-direction: column; gap: 7px; margin: 4px 0; }
+.lib-judgment-concern { display: flex; align-items: flex-start; gap: 9px; font-size: 0.86rem; font-weight: 400; text-transform: none; letter-spacing: normal; color: var(--cream); cursor: pointer; padding: 9px 11px; border: 1px solid rgba(245,235,217,0.16); border-radius: 6px; line-height: 1.4; transition: border-color 0.15s, background 0.15s; }
+.lib-judgment-concern:hover { border-color: rgba(149,128,255,0.5); }
+.lib-judgment-concern.checked { border-color: rgba(149,128,255,0.7); background: rgba(149,128,255,0.07); }
+.lib-judgment-concern input { margin-top: 2px; flex: 0 0 auto; width: 15px; height: 15px; }
+.lib-judgment-draft-btn { margin-top: 10px; background: rgba(149,128,255,0.14); color: #b3a4ff; border: 1px solid rgba(149,128,255,0.4); padding: 8px 16px; border-radius: 6px; font-size: 0.82rem; font-weight: 600; cursor: pointer; font-family: inherit; }
+.lib-judgment-draft-btn:hover { background: rgba(149,128,255,0.22); }
+.lib-judgment-draft-btn:disabled { opacity: 0.6; cursor: default; }
+.lib-judgment-status { font-size: 0.76rem; color: var(--cream-muted); margin-top: 6px; min-height: 0; }
+.lib-judgment-options { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.lib-judgment-options-label { font-size: 0.76rem; color: var(--cream-muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; }
+.lib-judgment-option { padding: 11px 13px; border: 1px solid rgba(245,235,217,0.18); border-radius: 6px; font-size: 0.88rem; line-height: 1.5; color: var(--cream); cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.lib-judgment-option:hover { border-color: rgba(149,128,255,0.5); }
+.lib-judgment-option.selected { border-color: rgba(149,128,255,0.8); background: rgba(149,128,255,0.08); }
+.lib-admin-field { border-left: 2px solid rgba(232,130,90,0.4); padding-left: 14px; }
+.lib-admin-note { font-size: 0.78rem; color: var(--cream-dim); margin-bottom: 7px; line-height: 1.4; }
 
 .lib-toggle-section { margin-top: 26px; padding-top: 22px; border-top: 1px solid rgba(245,235,217,0.12); }
 .lib-toggle-section h4 { margin-bottom: 14px; font-size: 0.74rem; color: var(--cream-muted); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; font-family: 'Inter', sans-serif; }
@@ -2172,6 +2193,18 @@ function libRenderFillScreen() {
   });
 
   var fieldsHtml = placeholderFields.map(function(p) {
+    // Clinical-judgment field: concern selectors + optional detail + AI-drafted rationale options.
+    // The clinician makes the clinical judgment (checkboxes); the tool drafts the prose; the
+    // clinician picks or edits. The clinician owns every word that lands in the letter.
+    if (p.source === 'clinical_judgment') {
+      return libRenderJudgmentField(p);
+    }
+    // Administrative-requirement field: a fact the receiving agency demands (e.g., FMLA
+    // probable duration). Structured input with help text and an honest "unable to determine"
+    // path. Not AI; not a blank box pretending to be clinical reasoning.
+    if (p.source === 'admin_requirement') {
+      return libRenderAdminField(p);
+    }
     var val = LIB.placeholderValues[p.key] || '';
     var sourceBadge = p.source ? '<span class="lib-source-badge ' + p.source + '">' + p.source + '</span>' : '';
     var isLong = (p.hint && p.hint.length > 80) || (val && String(val).length > 80) ||
@@ -2237,6 +2270,332 @@ function libSetToggle(key, value) {
   libUpdatePreview();
 }
 
+// ── CLINICAL-JUDGMENT FIELD ──
+// State per field key lives on LIB._judgment[key] = { concerns:Set, detail, options:[], chosen }
+LIB._judgment = LIB._judgment || {};
+
+function libRenderJudgmentField(p) {
+  var st = LIB._judgment[p.key] || { concerns: [], detail: '', options: [], chosen: LIB.placeholderValues[p.key] || '' };
+  LIB._judgment[p.key] = st;
+  var concerns = p.concerns || [];
+  var q = p.question || p.label || 'What is your clinical concern?';
+
+  var boxes = concerns.map(function(c, i) {
+    var checked = st.concerns.indexOf(c.value) !== -1;
+    return '' +
+      '<label class="lib-judgment-concern' + (checked ? ' checked' : '') + '">' +
+        '<input type="checkbox" ' + (checked ? 'checked' : '') + ' onchange="libToggleConcern(\'' + p.key + '\',\'' + libEsc(c.value) + '\',this.checked)">' +
+        '<span>' + libEsc(c.label) + '</span>' +
+      '</label>';
+  }).join('');
+
+  var optionsHtml = '';
+  if (st.options && st.options.length) {
+    optionsHtml = '<div class="lib-judgment-options">' +
+      '<div class="lib-judgment-options-label">Select a phrasing (you can edit it after):</div>' +
+      st.options.map(function(opt, i) {
+        var sel = st.chosen === opt;
+        return '<div class="lib-judgment-option' + (sel ? ' selected' : '') + '" onclick="libChooseRationale(\'' + p.key + '\',' + i + ')">' + libEsc(opt) + '</div>';
+      }).join('') +
+    '</div>';
+  }
+
+  var chosenEditor = '';
+  if (st.chosen) {
+    chosenEditor = '<div class="lib-field-group" style="margin-top:10px">' +
+      '<label>Final wording (editable)</label>' +
+      '<textarea id="lib-ph-' + p.key + '" oninput="libUpdatePlaceholder(\'' + p.key + '\', this.value)">' + libEsc(st.chosen) + '</textarea>' +
+    '</div>';
+  }
+
+  return '' +
+    '<div class="lib-field-group lib-judgment-field">' +
+      '<label>' + libEsc(q) + (p.required ? '<span class="lib-required-marker">*</span>' : '') +
+        '<span class="lib-source-badge clinical_judgment">clinical judgment</span></label>' +
+      '<div class="lib-judgment-concerns">' + boxes + '</div>' +
+      (p.detail_label !== false ?
+        '<div style="margin-top:8px"><label style="font-weight:400;text-transform:none;letter-spacing:normal;color:var(--cream-dim);font-size:.78rem">' +
+        libEsc(p.detail_label || 'Anything specific about this patient? (optional, stays minimal)') + '</label>' +
+        '<textarea id="lib-judgment-detail-' + p.key + '" rows="2" placeholder="' + libEsc(p.detail_hint || 'Optional. One short phrase. Do not add diagnosis or symptom detail you would not want a court or employer to read.') + '" oninput="libJudgmentDetail(\'' + p.key + '\', this.value)">' + libEsc(st.detail || '') + '</textarea></div>'
+        : '') +
+      '<button type="button" class="lib-judgment-draft-btn" id="lib-judgment-btn-' + p.key + '" onclick="libDraftRationale(\'' + p.key + '\')">&#x2728; Draft rationale options</button>' +
+      '<div class="lib-judgment-status" id="lib-judgment-status-' + p.key + '"></div>' +
+      optionsHtml +
+      chosenEditor +
+    '</div>';
+}
+
+function libToggleConcern(key, value, on) {
+  var st = LIB._judgment[key]; if (!st) return;
+  var idx = st.concerns.indexOf(value);
+  if (on && idx === -1) st.concerns.push(value);
+  if (!on && idx !== -1) st.concerns.splice(idx, 1);
+  libRenderFillScreen();
+}
+
+function libJudgmentDetail(key, val) {
+  var st = LIB._judgment[key]; if (!st) return;
+  st.detail = val;
+}
+
+function libChooseRationale(key, i) {
+  var st = LIB._judgment[key]; if (!st) return;
+  st.chosen = st.options[i];
+  LIB.placeholderValues[key] = st.chosen;
+  libRenderFillScreen();
+}
+
+async function libDraftRationale(key) {
+  var std = LIB.selectedStandard; if (!std) return;
+  var p = (std.placeholders || []).find(function(x){ return x.key === key; });
+  var st = LIB._judgment[key]; if (!p || !st) return;
+  if (!st.concerns.length) {
+    document.getElementById('lib-judgment-status-' + key).textContent = 'Select at least one clinical concern first.';
+    return;
+  }
+  var btn = document.getElementById('lib-judgment-btn-' + key);
+  var status = document.getElementById('lib-judgment-status-' + key);
+  if (btn) { btn.disabled = true; btn.textContent = 'Drafting…'; }
+  if (status) status.textContent = '';
+
+  var concernLabels = (p.concerns || [])
+    .filter(function(c){ return st.concerns.indexOf(c.value) !== -1; })
+    .map(function(c){ return c.label; });
+
+  var sysInstr = p.draft_system ||
+    ('You draft clinical-rationale sentences for a psychiatric letter. ' +
+     'Write in first-person clinician voice (for example, "In my clinical judgment, ..."). ' +
+     'Describe a present-day clinical assessment; do not predict the future or promise recovery by a date. ' +
+     'Do not name a diagnosis, medication, or specific symptom unless explicitly provided. ' +
+     'Each option is one sentence, defensible to an adversarial reader, minimally disclosing.');
+
+  var fullPrompt = sysInstr + '\n\n' +
+    'Letter type: ' + (std.category_label || '') + '\n' +
+    'Clinical concerns selected: ' + concernLabels.join('; ') + '\n' +
+    (st.detail ? 'Clinician note (use sparingly, do not over-disclose): ' + st.detail + '\n' : '') +
+    '\nReturn ONLY a JSON array of 3 alternative one-sentence rationales. No preamble, no markdown, no keys. Example: ["sentence one", "sentence two", "sentence three"]';
+
+  try {
+    var res = await fetch('/.netlify/functions/clinical-proxy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
+      body: JSON.stringify({
+        token: _lgTok(),
+        model: 'claude-sonnet-4-6',
+        max_tokens: 600,
+        messages: [{ role: 'user', content: fullPrompt }]
+      })
+    });
+    if (!res.ok) throw new Error('proxy ' + res.status);
+    var data = await res.json();
+    var text = (data.content && data.content[0] && data.content[0].text) || libExtractProxyText(data);
+    var opts = libParseRationaleOptions(text);
+    if (!opts.length) throw new Error('No options returned');
+    st.options = opts;
+    libRenderFillScreen();
+  } catch (e) {
+    if (status) status.textContent = 'Could not draft options. You can type the rationale directly below.';
+    // Fallback: give the clinician an editable box so they are never blocked.
+    st.chosen = st.chosen || '';
+    LIB.placeholderValues[key] = st.chosen;
+    libRenderFillScreen();
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '&#x2728; Draft rationale options'; }
+  }
+}
+
+function libExtractProxyText(data) {
+  if (!data) return '';
+  if (typeof data.text === 'string') return data.text;
+  if (typeof data.completion === 'string') return data.completion;
+  if (Array.isArray(data.content)) {
+    return data.content.filter(function(b){ return b && b.type === 'text'; }).map(function(b){ return b.text; }).join('\n');
+  }
+  if (data.message && Array.isArray(data.message.content)) {
+    return data.message.content.filter(function(b){ return b && b.type === 'text'; }).map(function(b){ return b.text; }).join('\n');
+  }
+  return '';
+}
+
+function libParseRationaleOptions(text) {
+  if (!text) return [];
+  var t = String(text).replace(/```json|```/g, '').trim();
+  try {
+    var arr = JSON.parse(t);
+    if (Array.isArray(arr)) return arr.map(function(x){ return String(x).trim(); }).filter(Boolean).slice(0, 4);
+  } catch (e) {}
+  // Fallback: split into sentences/lines.
+  return t.split(/\n+/).map(function(l){ return l.replace(/^[-*\d.\s"]+/, '').replace(/"$/,'').trim(); }).filter(function(l){ return l.length > 10; }).slice(0, 4);
+}
+
+// ── ADMINISTRATIVE-REQUIREMENT FIELD ──
+// A fact the receiving agency requires that happens to be a forward estimate (FMLA
+// probable duration). Structured input + help text + an honest "unable to determine"
+// option, instead of a blank box or a forced false prediction.
+function libRenderAdminField(p) {
+  var val = LIB.placeholderValues[p.key] || '';
+  var undetermined = (val === (p.undetermined_value || 'Duration cannot be determined at this time'));
+  var inputDisabled = undetermined ? 'disabled' : '';
+  var checkboxId = 'lib-admin-undet-' + p.key;
+  return '' +
+    '<div class="lib-field-group lib-admin-field">' +
+      '<label>' + libEsc(p.label) + (p.required ? '<span class="lib-required-marker">*</span>' : '') +
+        '<span class="lib-source-badge admin_requirement">required by recipient</span></label>' +
+      (p.requirement_note ? '<div class="lib-admin-note">' + libEsc(p.requirement_note) + '</div>' : '') +
+      '<input type="text" id="lib-ph-' + p.key + '" value="' + libEsc(undetermined ? '' : val) + '" placeholder="' + libEsc(p.hint || 'e.g., approximately 3 months') + '" ' + inputDisabled + ' oninput="libUpdatePlaceholder(\'' + p.key + '\', this.value)">' +
+      '<label style="display:flex;align-items:center;gap:7px;font-weight:400;text-transform:none;letter-spacing:normal;color:var(--cream-dim);font-size:.78rem;margin-top:6px;cursor:pointer">' +
+        '<input type="checkbox" id="' + checkboxId + '" ' + (undetermined ? 'checked' : '') + ' onchange="libAdminUndetermined(\'' + p.key + '\', this.checked)">' +
+        '<span>' + libEsc(p.undetermined_label || 'Duration cannot be honestly determined at this time') + '</span>' +
+      '</label>' +
+      (p.hint ? '<div class="lib-hint">' + libEsc(p.hint) + '</div>' : '') +
+    '</div>';
+}
+
+function libAdminUndetermined(key, on) {
+  var std = LIB.selectedStandard;
+  var p = (std.placeholders || []).find(function(x){ return x.key === key; });
+  if (on) {
+    LIB.placeholderValues[key] = (p && p.undetermined_value) || 'Duration cannot be determined at this time';
+  } else {
+    LIB.placeholderValues[key] = '';
+  }
+  libRenderFillScreen();
+}
+
+// ── DETERMINISTIC FIELD NORMALIZATION ──
+// Runs at substitution time so it applies to hand-typed input, smart-intake parsed
+// values, and Vault values uniformly, in both the live preview and the final letter.
+// Pure formatting only (case, dates, punctuation, spacing). No semantic inference:
+// the renderer never expands meaning (it will not turn "dog charlie" into "the
+// patient's dog, Charlie") because that would put words in the clinician's mouth in
+// a legal document. Semantic expansion is a separate, visible, clinician-approved step.
+
+var LIB_MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+var LIB_MONTH_ABBR = { jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,sept:8,oct:9,nov:10,dec:11,
+  january:0,february:1,march:2,april:3,june:5,july:6,august:7,september:8,october:9,november:10,december:11 };
+
+// Words that should stay lowercase inside a title unless first/last.
+var LIB_TITLE_MINOR = { a:1,an:1,and:1,as:1,at:1,but:1,by:1,for:1,'in':1,nor:1,of:1,on:1,or:1,per:1,the:1,to:1,vs:1,via:1,'with':1 };
+// Tokens that should render uppercase (credential and common org acronyms).
+var LIB_UPPER = { llc:1,pllc:1,pc:1,pa:1,dba:1,ada:1,fmla:1,esa:1,hoa:1,hr:1,ein:1,npi:1,dea:1,usa:1,us:1,id:1,ii:1,iii:1,iv:1 };
+
+function _libTitleCaseWord(w, isFirst, isLast) {
+  if (!w) return w;
+  // Preserve tokens that contain digits or are already mixed-case intentionally (e.g., McDonald, iPhone).
+  var lower = w.toLowerCase();
+  if (LIB_UPPER[lower]) return lower.toUpperCase();
+  // Hyphenated: title-case each part.
+  if (w.indexOf('-') !== -1) {
+    return w.split('-').map(function(part){ return _libTitleCaseWord(part, true, true); }).join('-');
+  }
+  // Mc / Mac prefixes.
+  if (/^mc[a-z]/.test(lower)) return 'Mc' + lower.charAt(2).toUpperCase() + lower.slice(3);
+  if (/^o'[a-z]/.test(lower)) return "O'" + lower.charAt(2).toUpperCase() + lower.slice(3);
+  if (!isFirst && !isLast && LIB_TITLE_MINOR[lower]) return lower;
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}
+
+// Title-cases a string. Fixes ALL-CAPS and all-lowercase input. Leaves intentional
+// mixed-case tokens (already containing an interior capital) untouched.
+function libTitleCase(str) {
+  if (!str) return str;
+  var s = String(str).trim().replace(/\s+/g, ' ');
+  if (!s) return s;
+  // If a token already has an interior capital and isn't all-caps, treat the whole
+  // string as intentionally cased and leave it (covers "McDonald", "DeShawn", brand names).
+  var words = s.split(' ');
+  var allCaps = s === s.toUpperCase();
+  var allLower = s === s.toLowerCase();
+  if (!allCaps && !allLower) {
+    var hasIntentional = words.some(function(w){ return /[a-z][A-Z]/.test(w) || (/[A-Z]/.test(w.slice(1)) && !/^[A-Z]+$/.test(w)); });
+    if (hasIntentional) return s;
+  }
+  return words.map(function(w, i){ return _libTitleCaseWord(w, i === 0, i === words.length - 1); }).join(' ');
+}
+
+// Parses a wide range of date inputs and renders "Month D, YYYY". Returns null if it
+// cannot confidently parse (caller then leaves the original text untouched).
+function libNormalizeDate(input) {
+  if (input === undefined || input === null) return null;
+  var s = String(input).trim();
+  if (!s) return null;
+
+  // Already in "Month D, YYYY" or "Month YYYY" written form — normalize spacing/case.
+  var written = s.match(/^([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})$/);
+  if (written && LIB_MONTH_ABBR[written[1].toLowerCase()] !== undefined) {
+    var wm = LIB_MONTH_ABBR[written[1].toLowerCase()];
+    return LIB_MONTHS[wm] + ' ' + parseInt(written[2],10) + ', ' + written[3];
+  }
+  var monthYear = s.match(/^([A-Za-z]{3,9})\.?\s+(\d{4})$/);
+  if (monthYear && LIB_MONTH_ABBR[monthYear[1].toLowerCase()] !== undefined) {
+    return LIB_MONTHS[LIB_MONTH_ABBR[monthYear[1].toLowerCase()]] + ' ' + monthYear[2];
+  }
+
+  var mo, day, yr;
+
+  // ISO: YYYY-MM-DD or YYYY/MM/DD
+  var iso = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/);
+  if (iso) { yr = +iso[1]; mo = +iso[2]; day = +iso[3]; }
+
+  // US separated: M/D/YYYY or M-D-YYYY or M.D.YYYY (2- or 4-digit year)
+  if (mo === undefined) {
+    var us = s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2}|\d{4})$/);
+    if (us) { mo = +us[1]; day = +us[2]; yr = +us[3]; if (yr < 100) yr += (yr < 50 ? 2000 : 1900); }
+  }
+
+  // 8-digit no separator: MMDDYYYY (US locale assumption)
+  if (mo === undefined) {
+    var eight = s.match(/^(\d{2})(\d{2})(\d{4})$/);
+    if (eight) { mo = +eight[1]; day = +eight[2]; yr = +eight[3]; }
+  }
+  // 6-digit no separator: MMDDYY
+  if (mo === undefined) {
+    var six = s.match(/^(\d{2})(\d{2})(\d{2})$/);
+    if (six) { mo = +six[1]; day = +six[2]; yr = +six[3] + (+six[3] < 50 ? 2000 : 1900); }
+  }
+
+  if (mo === undefined || day === undefined || yr === undefined) return null;
+  if (mo < 1 || mo > 12 || day < 1 || day > 31 || yr < 1900 || yr > 2200) return null;
+  return LIB_MONTHS[mo - 1] + ' ' + day + ', ' + yr;
+}
+
+// Capitalize first letter of a sentence-ish string, collapse spacing, no other changes.
+function libSentenceCase(str) {
+  if (!str) return str;
+  var s = String(str).trim().replace(/\s+/g, ' ');
+  if (!s) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// Master normalizer. fmt is the placeholder's `format` hint; if absent, we infer a
+// safe format from the key name so existing standards benefit without DB edits.
+function libNormalizeValue(key, value, fmt) {
+  if (value === undefined || value === null) return value;
+  var raw = String(value);
+  if (!raw.trim()) return value;
+
+  if (!fmt) {
+    // Key-name heuristics (conservative).
+    if (/(_DATE|^DATE|_START$|_ON$)/.test(key) || key === 'TREATMENT_START' || key === 'JURY_DATE') fmt = 'date';
+    else if (/(NAME)$/.test(key) || key === 'PATIENT_NAME' || key === 'PATIENT_FIRST_NAME') fmt = 'name';
+    else fmt = 'none';
+  }
+
+  if (fmt === 'date') {
+    var d = libNormalizeDate(raw);
+    return d !== null ? d : value; // leave untouched if unparseable
+  }
+  if (fmt === 'name' || fmt === 'titlecase') {
+    return libTitleCase(raw);
+  }
+  if (fmt === 'sentence') {
+    return libSentenceCase(raw);
+  }
+  if (fmt === 'upper') return raw.trim().toUpperCase();
+  if (fmt === 'lower') return raw.trim().toLowerCase();
+  return value; // 'none' / unknown: untouched
+}
+
 // Template rendering engine — substitutes {{PLACEHOLDER}} and processes {{#IF toggle=value}}...{{/IF}}
 function libRenderTemplate(template, placeholders, toggles, placeholderDefs) {
   if (!template) return '';
@@ -2248,16 +2607,19 @@ function libRenderTemplate(template, placeholders, toggles, placeholderDefs) {
     return toggles[toggleKey] === value ? content : '';
   });
 
-  // Build a required-lookup from placeholder definitions so optional empties don't show warnings
+  // Build a required-lookup and format-lookup from placeholder definitions.
   var requiredMap = {};
+  var formatMap = {};
   if (placeholderDefs && Array.isArray(placeholderDefs)) {
-    placeholderDefs.forEach(function(p) { requiredMap[p.key] = !!p.required; });
+    placeholderDefs.forEach(function(p) { requiredMap[p.key] = !!p.required; formatMap[p.key] = p.format; });
   }
 
-  // Process placeholder substitutions
+  // Process placeholder substitutions (with deterministic normalization)
   output = output.replace(/\{\{([A-Z_]+)\}\}/g, function(match, key) {
     var val = placeholders[key];
-    if (val !== undefined && val !== null && val !== '') return val;
+    if (val !== undefined && val !== null && val !== '') {
+      return libNormalizeValue(key, val, formatMap[key]);
+    }
     // Empty value: warn only if required; quietly drop optional empties (like an empty fax)
     if (requiredMap[key]) return '[' + key + ' - needs input]';
     return '';
