@@ -72,6 +72,9 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
     <label for="plan" style="margin-top:16px">What are you doing this visit? <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(recommended)</span></label>
     <textarea id="plan" style="min-height:70px" placeholder="What you're doing today and why: changing a med (which, dose, rationale), continuing, augmenting, ordering labs, referring. The assessment integrates the reasoning behind these decisions."></textarea>
 
+    <label for="fornext" style="margin-top:16px">Last visit's "For Next Time" plan <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional)</span></label>
+    <textarea id="fornext" style="min-height:60px" placeholder="If you carried forward a planned focus from the last visit (the &quot;For Next Time&quot; block this tool generates), paste it here. The tool will check whether today's visit actually addressed it and ask you to confirm, before that work informs anything written. Leave blank if there's no prior plan to carry forward."></textarea>
+
     <div class="hint">PHI is processed transiently to generate your sections and is not retained.</div>
   </div>
 
@@ -188,6 +191,29 @@ Do not bounce the request back or explain why a modality is invalid. The provide
 Time bands: 16-37 min → 90833. 38-52 min → 90836. 53+ min → 90838.
 
 Output ONLY the psychotherapy add-on documentation as chart-ready text, using the five labeled sections above. Do not include a heading line naming the tool.`;
+
+const FORNEXT_SYS = `You are an experienced psychiatric prescriber helping a colleague set up the NEXT visit. Based on what was documented this visit, produce a short, FORWARD-LOOKING "For Next Time" plan: one or two concrete therapeutic foci to work on at the next appointment, each with a brief, practical how-to the provider can actually use.
+
+CRITICAL FRAMING — this is PROSPECTIVE PLANNING, not documentation of work done. Everything you write is about what COULD be focused on NEXT time. It must never read as a record of what happened this visit. Use future-oriented language ("next visit, consider...", "a focus could be..."). This block is meant to be placed in the PLAN section of the note, carried forward, and checked against the next visit's actual content before any of it informs future documentation.
+
+WHAT TO BASE IT ON: the drivers and unresolved threads in this visit's HPI and what the provider is doing. Pick foci that genuinely follow from the documented clinical picture. Do not invent issues not present in the source.
+
+FORMAT — output exactly this structure, plain text, no markdown headers beyond the label line:
+
+FOR NEXT TIME
+Focus: [one short phrase naming the focus, tied to a documented driver from this visit]
+- [Intervention option the provider could use, named by its modality, in one line] (how-to: [one practical sentence on how to actually do it])
+- [A second option, different modality or angle] (how-to: [one practical sentence])
+Optionally a second focus block if a clearly distinct second priority exists. Cap at two foci total.
+
+RULES:
+- Keep it short. One focus, two intervention options, is the default. Two foci maximum.
+- Tie each focus to something actually documented this visit (a stressor, a symptom pattern, an unresolved thread).
+- The intervention options are SUGGESTIONS to consider, framed as options, never directives. The provider chooses, adapts, or ignores.
+- The how-to is a concrete, teachable cue (what to actually say or do), not a vague aspiration. This is the teaching value.
+- Match interventions to the focus. If the focus is nighttime rumination, offer things like a brief mindfulness/awareness approach to noticing the pre-sleep spiral, or a focused behavioral wind-down, not a generic "supportive therapy."
+- No em dashes. No "X rather than Y" constructions. Plain clinical language.
+- Output ONLY the For Next Time block. No preamble, no explanation, no heading naming the tool.`;
 
 const ASSESS_SYS = `${VOICE}
 
@@ -320,6 +346,16 @@ Each question object: {"id": "short_id", "select": "single" | "multi", "text": "
 SELECT MODE — set this per card:
 - "single" for cards where exactly one answer applies: the time card, the modality card, and CARRY/DROP cards (you either carry, defer, or drop a thread — not several at once).
 - "multi" for CHARACTERIZATION and ATTRIBUTION cards. A symptom can have several simultaneous contributors, and the formulation should hold all the provider selects. The provider picks every option that applies. "Keep it plain" and "Other / enter my own" still appear; selecting "Keep it plain" means assign no label.
+
+=== CARRY-FORWARD CHECK — only when a "FOR NEXT TIME" PLAN from a prior visit is present in the input ===
+
+If, and ONLY if, the input contains a LAST VISIT'S "FOR NEXT TIME" PLAN, generate ONE card with id "carryfwd" as the FIRST card. Its job is to surface whether today's HPI actually shows the planned focus being addressed, and to hand the judgment to the provider. This is the safeguard against documenting planned work as though it occurred.
+- Read the planned focus from the prior "For Next Time" plan. Then read today's HPI and determine whether the documented visit content actually shows that focus being worked on.
+- The card text states the planned focus and what you found. Phrase it as a finding plus a question, e.g. "Last visit planned to focus on [X]. Today's HPI [shows / does not clearly show] this was addressed — how should today's documentation handle it?"
+- Options when the HPI DOES show it: ["Yes, this was addressed today — reflect it in the documentation", "Partially addressed — note what was actually covered", "Not actually addressed despite the plan — carry it forward again", "Other / enter my own"]
+- Options when the HPI does NOT show it: ["Not addressed today — carry it forward to next time", "It was addressed but I did not document it in the HPI — I will confirm what was done", "Drop this focus — no longer the priority", "Other / enter my own"]
+- The alternatives you offer must come from TODAY'S actual HPI content, never from what you assume should have happened. If the HPI shows different work than was planned, name the work the HPI actually contains.
+- This card is single-select. It appears regardless of which sections are being generated, because the planned focus may be clinical or therapeutic.
 
 === THERAPY CARDS — only when a therapy blurb is being generated ===
 
@@ -493,13 +529,15 @@ function gatherInput(){
   return {
     hpi: document.getElementById('hpi').value.trim(),
     dxprior: document.getElementById('dxprior').value.trim(),
-    plan: document.getElementById('plan').value.trim()
+    plan: document.getElementById('plan').value.trim(),
+    fornext: document.getElementById('fornext').value.trim()
   };
 }
 function contextBlock(inp){
   var s = 'HPI / visit narrative:\n\n' + inp.hpi;
   if(inp.dxprior) s += '\n\n---\n\nPrior assessment + diagnoses (for continuity and the diagnosis list):\n\n' + inp.dxprior;
   if(inp.plan) s += '\n\n---\n\nWhat the provider is doing this visit (integrate the reasoning, not the prescription mechanics):\n\n' + inp.plan;
+  if(inp.fornext) s += '\n\n---\n\nLAST VISIT\'S "FOR NEXT TIME" PLAN (a focus the provider planned to work on this visit). This is PROSPECTIVE context from a prior visit. It tells you what the provider INTENDED to focus on. It is NOT evidence that the work happened today. Use it only to inform what to check for in today\'s HPI. Do NOT write that this planned work occurred unless today\'s HPI actually shows it occurred:\n\n' + inp.fornext;
   return s;
 }
 
@@ -708,9 +746,9 @@ function startTips(){
   _tipTimer = setInterval(function(){
     idx = (idx + 1) % order.length;
     var el = document.getElementById('tip-text');
-    if(el){ el.style.opacity = '0'; setTimeout(function(){ el.textContent = order[idx]; el.style.opacity = '1'; }, 180); }
-    el && (el.style.transition = 'opacity .18s ease');
-  }, 3200);
+    if(el){ el.style.opacity = '0'; setTimeout(function(){ el.textContent = order[idx]; el.style.opacity = '1'; }, 220); }
+    el && (el.style.transition = 'opacity .22s ease');
+  }, 7000);
 }
 function stopTips(){
   if(_tipTimer){ clearInterval(_tipTimer); _tipTimer = null; }
@@ -727,7 +765,7 @@ async function runGenerate(inp){
   document.getElementById('handoff').style.display='none';
   startTips();
 
-  var code='90833', timeChoice='', modality='', clinicalDecisions=[], lengthChoice='';
+  var code='90833', timeChoice='', modality='', clinicalDecisions=[], lengthChoice='', carryfwdDecision='';
   preflightQuestions.forEach(function(q, qi){
     var val = selections[qi];
     if(q.id==='time' || /add-on code/i.test(q.text)){
@@ -735,6 +773,8 @@ async function runGenerate(inp){
       var m = timeChoice.match(/9083[0-9]/); if(m) code = m[0];
     } else if(q.id==='length'){
       lengthChoice = (typeof val==='string') ? val : '';
+    } else if(q.id==='carryfwd'){
+      carryfwdDecision = (typeof val==='string') ? val : '';
     } else if(q.id==='modality' || /modality/i.test(q.text)){
       modality = (typeof val==='string' ? val : '').split(' — ')[0].trim();
     } else if(/^clin_/.test(q.id||'')){
@@ -763,6 +803,20 @@ async function runGenerate(inp){
     ? '\n\n---\n\nPROVIDER CLINICAL DECISIONS (the provider made these calls in preflight — treat them as authored by the provider and write the assessment accordingly; do not override or second-guess them. Where the provider selected multiple factors for one item, the formulation must integrate ALL of them as a multi-factor differential, not pick one):\n- ' + clinicalDecisions.join('\n- ')
     : '';
 
+  // Carry-forward decision governs whether a prior planned focus may be written as having occurred.
+  var carryfwdBlock = '';
+  if(carryfwdDecision){
+    var didHappen = /^(yes|partially)/i.test(carryfwdDecision);
+    var notDoc = /did not document|addressed but/i.test(carryfwdDecision);
+    if(didHappen){
+      carryfwdBlock = '\n\n---\n\nCARRY-FORWARD CHECK — the provider confirmed that last visit\'s planned focus WAS addressed this visit: "' + carryfwdDecision + '". You MAY reflect this work in the documentation, but ONLY to the extent today\'s HPI actually supports it. If "partially," document only the part the HPI shows. Do not expand it beyond the documented content.';
+    } else if(notDoc){
+      carryfwdBlock = '\n\n---\n\nCARRY-FORWARD CHECK — the provider indicated the planned work occurred but was not captured in the HPI: "' + carryfwdDecision + '". Do NOT write the planned work as documented therapeutic content, because the HPI does not contain it. The provider will add it themselves if appropriate.';
+    } else {
+      carryfwdBlock = '\n\n---\n\nCARRY-FORWARD CHECK — the provider indicated last visit\'s planned focus was NOT addressed this visit (or is being dropped): "' + carryfwdDecision + '". Do NOT write any of that planned focus as though it occurred. Document only what today\'s visit actually contains.';
+    }
+  }
+
   // Provider-selected assessment length. This is an explicit instruction from the provider and
   // overrides the default calibration toward longer output; it does NOT license padding a simple
   // visit or dropping an active clinical question to hit a length.
@@ -778,9 +832,9 @@ async function runGenerate(inp){
   try{
     var html='';
     if(scope==='assessment' || scope==='both'){
-      var assessText = await callAPI(ASSESS_SYS, [{role:'user', content: contextBlock(inp) + clinBlock + lengthBlock}], 2000);
+      var assessText = await callAPI(ASSESS_SYS, [{role:'user', content: contextBlock(inp) + clinBlock + carryfwdBlock + lengthBlock}], 2000);
       // Hybrid review pass: silently corrects invented content/style drift, flags only genuine judgment calls
-      var reviewMsg = 'ORIGINAL SOURCE:\n\n' + contextBlock(inp) + clinBlock + lengthBlock +
+      var reviewMsg = 'ORIGINAL SOURCE:\n\n' + contextBlock(inp) + clinBlock + carryfwdBlock + lengthBlock +
         '\n\n---\n\nDRAFT ASSESSMENT:\n\n' + assessText;
       try{
         var reviewRaw = await callAPI(REVIEW_SYS, [{role:'user', content: reviewMsg}], 2000);
@@ -800,7 +854,7 @@ async function runGenerate(inp){
       document.getElementById('results').innerHTML = html;
     }
     if((scope==='therapy' || scope==='both') && !noTherapy){
-      var userMsg = contextBlock(inp) +
+      var userMsg = contextBlock(inp) + carryfwdBlock +
         '\n\n---\n\nModality selected by provider: ' + (modality||'Supportive psychotherapy') +
         '\nAdd-on code intended: ' + code +
         '\n\nGenerate the psychotherapy add-on documentation matched to this modality, using the five labeled sections. Infer the therapeutic focus from the modality and HPI.';
@@ -808,6 +862,19 @@ async function runGenerate(inp){
       html += outBlock('Psychotherapy add-on ('+code+')', 'out-therapy', therapyText);
       stopTips();
       document.getElementById('results').innerHTML = html;
+    }
+    // For Next Time — forward-looking plan with teaching, generated whenever an assessment or therapy note was produced
+    if(scope==='assessment' || scope==='therapy' || scope==='both'){
+      try{
+        var fnMsg = contextBlock(inp) +
+          (modality ? '\n\nModality worked this visit: ' + modality : '') +
+          '\n\nProduce the "For Next Time" forward-looking plan based on the documented drivers and unresolved threads in this visit.';
+        var fnText = await callAPI(FORNEXT_SYS, [{role:'user', content: fnMsg}], 900);
+        if(fnText && fnText.trim()){
+          html += outBlock('For Next Time (prospective, place in Plan)', 'out-fornext', fnText.trim());
+          document.getElementById('results').innerHTML = html;
+        }
+      }catch(e){ /* For Next Time is additive; never block the core note if it fails */ }
     }
     document.getElementById('handoff').style.display='block';
     document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
