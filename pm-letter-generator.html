@@ -741,6 +741,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
           <button onclick="libDownloadText()">📄 Download as plain text (.txt)</button>
           <button onclick="libPrintLetter()">🖨 Print</button>
           <button onclick="openSentLog()">🗂 Sent letters</button>
+          <button onclick="openScheduleModal()" id="lib-schedule-btn" style="display:none">🔁 Set up 90-day auto-send</button>
           <button onclick="libGenerateAnother()">＋ Generate another letter</button>
         </div>
       </div>
@@ -1132,6 +1133,45 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
       </div>
       <div class="send-actions" style="margin-top:12px">
         <button class="send-cancel" onclick="closeSentLog()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recurring auto-send schedule modal (Medicaid Private-Pay Acknowledgment) -->
+  <div class="send-overlay" id="schedule-overlay" onclick="if(event.target===this)closeScheduleModal()">
+    <div class="send-dialog" style="max-width:680px;width:94%;max-height:90vh;display:flex;flex-direction:column">
+      <h3>🔁 90-day auto-send</h3>
+      <p style="margin-bottom:6px">Automatically email this signed form to a patient on a recurring cycle so the agreement never lapses. The patient hand-completes their identifying fields and signature, then returns the signed form to your assistant. No patient name, DOB, or ProviderOne ID is stored here — only the email address and a label you choose.</p>
+      <p style="margin-bottom:14px;font-size:.8rem;color:var(--cream-muted)">The form is sent every <strong>80 days</strong> by default, 10 days before the 90-day expiration, leaving time for the patient to sign and return it. The patient gets a one-click opt-out link, and you can cancel any schedule below at any time (for example, if their coverage changes).</p>
+
+      <div id="schedule-form" style="border:1px solid rgba(245,235,217,0.12);border-radius:6px;padding:14px;margin-bottom:16px">
+        <label style="display:block;font-size:.8rem;color:var(--cream-dim);margin-bottom:3px">Patient email</label>
+        <input type="email" id="sched-patient-email" placeholder="patient@example.com" style="width:100%;margin-bottom:10px">
+        <label style="display:block;font-size:.8rem;color:var(--cream-dim);margin-bottom:3px">Your label for this patient (not sent to anyone)</label>
+        <input type="text" id="sched-patient-label" placeholder="e.g. J.D. — Tue follow-ups" style="width:100%;margin-bottom:10px">
+        <label style="display:block;font-size:.8rem;color:var(--cream-dim);margin-bottom:3px">Send every (days)</label>
+        <input type="number" id="sched-cadence" value="80" min="1" max="365" style="width:100%;margin-bottom:10px">
+        <label style="display:flex;align-items:flex-start;gap:8px;font-size:.8rem;color:var(--cream-dim);margin-bottom:10px;cursor:pointer">
+          <input type="checkbox" id="sched-sign" checked style="margin-top:2px;flex:0 0 auto">
+          <span>Composite my signature on each sent copy</span>
+        </label>
+        <label style="display:flex;align-items:flex-start;gap:8px;font-size:.8rem;color:var(--cream-dim);margin-bottom:12px;cursor:pointer">
+          <input type="checkbox" id="sched-first-now" style="margin-top:2px;flex:0 0 auto">
+          <span>Also send the first copy now (otherwise the first send is in 80 days)</span>
+        </label>
+        <div id="sched-status" style="font-size:.8rem;color:var(--cream-muted);min-height:1em;margin-bottom:8px"></div>
+        <button class="send-primary" id="sched-create-btn" onclick="createSchedule()" style="width:auto">Start auto-send</button>
+      </div>
+
+      <h4 style="font-size:.74rem;color:var(--cream-muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px">Active renewal schedules</h4>
+      <div id="schedule-list-body" style="flex:1 1 auto;overflow:auto;min-height:80px">
+        <div id="schedule-loading" style="padding:16px;text-align:center;color:var(--cream-dim)">Loading…</div>
+        <div id="schedule-list"></div>
+        <div id="schedule-empty" style="display:none;padding:16px;text-align:center;color:var(--cream-dim)">No active schedules.</div>
+      </div>
+
+      <div class="send-actions" style="margin-top:12px">
+        <button class="send-cancel" onclick="closeScheduleModal()">Close</button>
       </div>
     </div>
   </div>
@@ -2109,6 +2149,8 @@ function libSelectStandard(standardId, extractedValues) {
       LIB.placeholderValues[p.key] = extractedValues[p.key];
     } else if (p.source === 'auto' && p.default_value === 'today') {
       LIB.placeholderValues[p.key] = libFormatToday();
+    } else if (p.source === 'auto' && /^today\+\d+$/.test(p.default_value || '')) {
+      LIB.placeholderValues[p.key] = libFormatTodayPlus(p.default_value.split('+')[1]);
     } else if (p.source === 'vault') {
       LIB.placeholderValues[p.key] = libGetVaultValue(p.key);
     } else if (p.default_value) {
@@ -2166,6 +2208,15 @@ function libGetVaultValue(key) {
 function libFormatToday() {
   var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   var d = new Date();
+  return months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+}
+
+// Formats today plus N days, same long-date style. Used for expiry/effective-end dates
+// (for example, a 90-day agreement window). N is parsed from a "today+90" default_value.
+function libFormatTodayPlus(days) {
+  var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var d = new Date();
+  d.setDate(d.getDate() + (parseInt(days, 10) || 0));
   return months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
 }
 
@@ -2760,6 +2811,13 @@ function libGenerateFinal() {
         + '<a href="#" onclick="libOpenSignatureSetup();return false;" style="color:var(--teal);text-decoration:underline;cursor:pointer">Add your signature</a> '
         + 'to enable signing.';
     }
+  }
+
+  // Recurring auto-send is only offered for standards that support it (currently the
+  // Medicaid Private-Pay Acknowledgment, which is renewed on a fixed cycle).
+  var schedBtn = document.getElementById('lib-schedule-btn');
+  if (schedBtn) {
+    schedBtn.style.display = (std.standard_key === 'medicaid_private_pay') ? 'block' : 'none';
   }
 
   // Track usage (silent fail)
@@ -5878,6 +5936,123 @@ function deleteSentPdf(id, btn) {
   .catch(function () { if (btn) { btn.disabled = false; btn.textContent = 'Delete PDF now'; alert('Network error.'); } });
 }
 
+// ── Recurring auto-send schedule (Medicaid Private-Pay Acknowledgment) ──
+function openScheduleModal() {
+  document.getElementById('schedule-overlay').classList.add('active');
+  document.getElementById('sched-status').textContent = '';
+  document.getElementById('sched-patient-email').value = '';
+  document.getElementById('sched-patient-label').value = '';
+  document.getElementById('sched-cadence').value = '80';
+  document.getElementById('sched-sign').checked = true;
+  document.getElementById('sched-first-now').checked = false;
+  loadSchedules();
+}
+function closeScheduleModal() {
+  document.getElementById('schedule-overlay').classList.remove('active');
+}
+
+function loadSchedules() {
+  document.getElementById('schedule-loading').style.display = 'block';
+  document.getElementById('schedule-list').innerHTML = '';
+  document.getElementById('schedule-empty').style.display = 'none';
+  fetch('/.netlify/functions/letter-schedule', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
+    body: JSON.stringify({ token: _lgTok(), action: 'list' })
+  })
+  .then(function (r) { return r.json(); })
+  .then(function (data) {
+    document.getElementById('schedule-loading').style.display = 'none';
+    var rows = ((data && data.schedules) || []).filter(function (s) { return s.status === 'active'; });
+    if (!rows.length) { document.getElementById('schedule-empty').style.display = 'block'; return; }
+    _renderSchedules(rows);
+  })
+  .catch(function () {
+    document.getElementById('schedule-loading').style.display = 'none';
+    document.getElementById('schedule-list').innerHTML = '<div style="padding:14px;color:var(--cream-dim)">Could not load schedules.</div>';
+  });
+}
+
+function _renderSchedules(rows) {
+  var html = '';
+  rows.forEach(function (s) {
+    var next = '';
+    try { next = new Date(s.next_run_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); } catch (e) { next = s.next_run_at; }
+    var last = s.last_run_at ? (function () { try { return new Date(s.last_run_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); } catch (e) { return s.last_run_at; } })() : 'not yet sent';
+    var errLine = s.last_error ? '<div style="font-size:.74rem;color:var(--danger);margin-top:3px">Last attempt error: ' + libEsc(s.last_error) + '</div>' : '';
+    html += '<div style="border:1px solid rgba(245,235,217,0.12);border-radius:6px;padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap">' +
+      '<div style="flex:1 1 auto;min-width:200px">' +
+        '<div style="font-weight:600;color:var(--cream)">' + libEsc(s.patient_label || s.patient_email) + '</div>' +
+        '<div style="font-size:.8rem;color:var(--cream-dim);margin-top:3px">' + libEsc(s.patient_email) + ' · every ' + libEsc(String(s.cadence_days)) + ' days</div>' +
+        '<div style="font-size:.78rem;color:var(--cream-muted);margin-top:2px">Next: ' + libEsc(next) + ' · Last sent: ' + libEsc(last) + ' · ' + libEsc(String(s.sends_count || 0)) + ' sent</div>' +
+        errLine +
+      '</div>' +
+      '<div><button class="send-cancel" style="padding:5px 12px;font-size:.76rem" onclick="cancelSchedule(\'' + s.id + '\', this)">Cancel</button></div>' +
+    '</div>';
+  });
+  document.getElementById('schedule-list').innerHTML = html;
+}
+
+function createSchedule() {
+  var std = LIB.selectedStandard;
+  if (!std) { return; }
+  var email = (document.getElementById('sched-patient-email').value || '').trim();
+  var status = document.getElementById('sched-status');
+  if (!email || email.indexOf('@') === -1) { status.textContent = 'Enter a valid patient email.'; return; }
+  var btn = document.getElementById('sched-create-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Starting…'; }
+  status.textContent = '';
+  var firstNow = document.getElementById('sched-first-now').checked;
+  fetch('/.netlify/functions/letter-schedule', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
+    body: JSON.stringify({
+      token: _lgTok(), action: 'create',
+      standard_id: std.id,
+      patient_email: email,
+      patient_label: (document.getElementById('sched-patient-label').value || '').trim(),
+      toggles: LIB.toggleValues || {},
+      sign: document.getElementById('sched-sign').checked,
+      cadence_days: parseInt(document.getElementById('sched-cadence').value, 10) || 80,
+      first_send_in_days: firstNow ? 0 : (parseInt(document.getElementById('sched-cadence').value, 10) || 80)
+    })
+  })
+  .then(function (r) { return r.json(); })
+  .then(function (data) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Start auto-send'; }
+    if (data && data.ok) {
+      status.style.color = 'var(--teal)';
+      status.textContent = 'Auto-send started for ' + email + '.';
+      document.getElementById('sched-patient-email').value = '';
+      document.getElementById('sched-patient-label').value = '';
+      loadSchedules();
+    } else {
+      status.style.color = '';
+      status.textContent = 'Could not start: ' + ((data && data.error) || 'unknown error');
+    }
+  })
+  .catch(function () {
+    if (btn) { btn.disabled = false; btn.textContent = 'Start auto-send'; }
+    status.textContent = 'Network error.';
+  });
+}
+
+function cancelSchedule(id, btn) {
+  if (!confirm('Cancel this auto-send schedule? No further renewal forms will be sent to this patient. This does not affect forms already sent.')) return;
+  if (btn) { btn.disabled = true; btn.textContent = 'Cancelling…'; }
+  fetch('/.netlify/functions/letter-schedule', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
+    body: JSON.stringify({ token: _lgTok(), action: 'cancel', id: id })
+  })
+  .then(function (r) { return r.json(); })
+  .then(function (data) {
+    if (data && data.ok) { loadSchedules(); }
+    else if (btn) { btn.disabled = false; btn.textContent = 'Cancel'; alert('Could not cancel: ' + ((data && data.error) || 'unknown error')); }
+  })
+  .catch(function () { if (btn) { btn.disabled = false; btn.textContent = 'Cancel'; alert('Network error.'); } });
+}
+
 async function rebuildSendPreview() {
   if (_sendPreview.building) return;
   _sendPreview.building = true;
@@ -6123,7 +6298,8 @@ async function confirmSendFromPreview() {
           fromPractice: vault.practiceName || '',
           subject: getLetterSubject(),
           tool: 'Letter Generator',
-          clinicianEmail: vault.practiceEmail || vault.email || _lgUserEmail || ''
+          clinicianEmail: vault.practiceEmail || vault.email || _lgUserEmail || '',
+          practiceEmail: vault.practiceEmail || vault.email || ''
         })
       });
       var result2 = await res2.json();
