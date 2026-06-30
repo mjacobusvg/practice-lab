@@ -227,11 +227,14 @@ async function buildLetterPdf(args) {
   var placeholderDefs = args.placeholderDefs || [];
   var vault = args.vault || {};
   var sign = !!args.sign;
+  var forceNoLetterhead = !!args.noLetterhead;
 
   var letterText = libRenderTemplate(bodyTemplate, placeholders, toggles, placeholderDefs);
 
   var letterheadData = vault.letterhead || '';
-  var hasLetterhead = typeof letterheadData === 'string' && letterheadData.indexOf('data:application/pdf') === 0;
+  var hasLetterhead = !forceNoLetterhead
+    && typeof letterheadData === 'string'
+    && letterheadData.indexOf('data:application/pdf') === 0;
 
   var pdfDoc, firstPage, pageWidth, pageHeight;
   if (hasLetterhead) {
