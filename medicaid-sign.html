@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Private-Pay Acknowledgment</title>
+<style>
+  :root {
+    --navy:#1c2138; --teal:#2aabb8; --cream:#f5ebd9; --ink:#1a1a1a;
+    --muted:#5b6072; --border:#d8d3c6; --bg:#f3f1ec; --white:#fff; --danger:#b23b3b;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; line-height:1.55; }
+  .wrap { max-width:760px; margin:0 auto; padding:24px 18px 64px; }
+  h1 { font-size:1.4rem; color:var(--navy); margin:8px 0 4px; }
+  .sub { color:var(--muted); font-size:.92rem; margin-bottom:20px; }
+  .card { background:var(--white); border:1px solid var(--border); border-radius:10px;
+    padding:24px; margin-bottom:18px; box-shadow:0 1px 3px rgba(0,0,0,.05); }
+  .doc { background:#fdfaf1; border:1px solid var(--border); border-radius:8px; padding:24px;
+    font-family:Georgia,serif; font-size:.92rem; line-height:1.6; white-space:pre-wrap;
+    max-height:340px; overflow:auto; color:#22242c; }
+  label { display:block; font-size:.82rem; font-weight:600; color:var(--navy);
+    margin:14px 0 4px; letter-spacing:.01em; }
+  input[type=text], input[type=date] { width:100%; padding:11px 13px; font-size:1rem;
+    border:1px solid var(--border); border-radius:6px; background:var(--white); color:var(--ink); }
+  input:focus { outline:none; border-color:var(--teal); box-shadow:0 0 0 3px rgba(42,171,184,.15); }
+  .row { display:flex; gap:14px; flex-wrap:wrap; }
+  .row > div { flex:1 1 220px; }
+  .sig-row { display:flex; align-items:flex-start; gap:11px; margin:18px 0 6px;
+    padding:14px; background:#f7f5ef; border-radius:6px; }
+  .sig-row input { width:18px; height:18px; margin-top:3px; flex:0 0 auto; accent-color:var(--teal); }
+  .sig-row label { margin:0; font-weight:400; font-size:.88rem; color:#333; }
+  .signline { margin-top:14px; }
+  .signline input { font-family:'Segoe Script','Brush Script MT',cursive; font-size:1.3rem; }
+  button { margin-top:20px; width:100%; padding:14px; font-size:1rem; font-weight:600;
+    background:var(--teal); color:#06222a; border:none; border-radius:7px; cursor:pointer; }
+  button:disabled { background:#bcd6da; color:#5d7378; cursor:not-allowed; }
+  .msg { padding:14px 16px; border-radius:7px; font-size:.9rem; margin-bottom:16px; }
+  .msg.err { background:#fbeaea; color:var(--danger); border:1px solid #eccaca; }
+  .msg.ok { background:#e8f6ef; color:#1d7a4d; border:1px solid #c4e6d4; }
+  .center { text-align:center; padding:48px 20px; }
+  .center h1 { color:var(--navy); }
+  .hint { font-size:.78rem; color:var(--muted); margin-top:3px; }
+  .loading { text-align:center; color:var(--muted); padding:40px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div id="loading" class="loading">Loading your form…</div>
+
+  <div id="stateMsg" style="display:none"></div>
+
+  <div id="signApp" style="display:none">
+    <h1 id="formTitle">Private-Pay Acknowledgment</h1>
+    <div class="sub" id="formSub">Please review the agreement, complete your details, and sign at the bottom.</div>
+
+    <div class="card">
+      <div class="doc" id="docText"></div>
+    </div>
+
+    <div class="card">
+      <div id="formErr" class="msg err" style="display:none"></div>
+      <label for="pName">Full Name</label>
+      <input type="text" id="pName" autocomplete="name" placeholder="First and last name">
+
+      <div class="row">
+        <div>
+          <label for="pDob">Date of Birth</label>
+          <input type="text" id="pDob" placeholder="MM/DD/YYYY" autocomplete="bday">
+        </div>
+        <div>
+          <label for="pP1">ProviderOne Client ID Number</label>
+          <input type="text" id="pP1" placeholder="If you have it">
+          <div class="hint">Optional if you don't have it handy.</div>
+        </div>
+      </div>
+
+      <label for="pMco">Apple Health Managed Care Plan (if applicable)</label>
+      <input type="text" id="pMco" placeholder="e.g. Molina, CCW, Amerigroup — or leave blank">
+
+      <div class="signline">
+        <label for="pSign">Sign by typing your full legal name</label>
+        <input type="text" id="pSign" placeholder="Type your name to sign" autocomplete="off">
+      </div>
+
+      <div class="sig-row">
+        <input type="checkbox" id="pAttest">
+        <label for="pAttest">I have read the acknowledgment above. By typing my name and clicking Sign, I am signing this agreement electronically, which has the same legal effect as a handwritten signature.</label>
+      </div>
+
+      <button id="signBtn" disabled>Sign and submit</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var params = new URLSearchParams(location.search);
+  var token = params.get('t') || '';
+  var loading = document.getElementById('loading');
+  var stateMsg = document.getElementById('stateMsg');
+  var app = document.getElementById('signApp');
+
+  function showState(cls, msg) {
+    loading.style.display = 'none';
+    app.style.display = 'none';
+    stateMsg.style.display = 'block';
+    stateMsg.className = 'center';
+    stateMsg.innerHTML = '<h1>' + (cls === 'ok' ? 'Thank you' : 'Notice') + '</h1><p>' + msg + '</p>';
+  }
+
+  if (!token) { showState('err', 'This link is missing its code. Please use the link from your email.'); return; }
+
+  fetch('/.netlify/functions/letter-sign-info?t=' + encodeURIComponent(token))
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      if (d.status === 'signed') { showState('ok', d.message || 'This form has already been signed.'); return; }
+      if (d.status === 'expired') { showState('err', d.message || 'This link has expired.'); return; }
+      if (d.error || d.status !== 'pending') { showState('err', d.message || 'This signing link is not valid.'); return; }
+      loading.style.display = 'none';
+      app.style.display = 'block';
+      document.getElementById('formTitle').textContent = d.title || 'Private-Pay Acknowledgment';
+      if (d.practice_name) document.getElementById('formSub').textContent = 'From ' + d.practice_name + '. Please review, complete your details, and sign below.';
+      document.getElementById('docText').textContent = d.rendered_body || '';
+    })
+    .catch(function () { showState('err', 'We could not load your form. Please try again later.'); });
+
+  var name = document.getElementById('pName');
+  var dob = document.getElementById('pDob');
+  var sign = document.getElementById('pSign');
+  var attest = document.getElementById('pAttest');
+  var btn = document.getElementById('signBtn');
+  var err = document.getElementById('formErr');
+
+  function validate() {
+    var ok = name.value.trim().length >= 2 && dob.value.trim().length >= 4
+      && sign.value.trim().length >= 2 && attest.checked;
+    btn.disabled = !ok;
+  }
+  [name, dob, sign].forEach(function (el) { el.addEventListener('input', validate); });
+  attest.addEventListener('change', validate);
+
+  btn.addEventListener('click', function () {
+    err.style.display = 'none';
+    btn.disabled = true; btn.textContent = 'Submitting…';
+    fetch('/.netlify/functions/letter-sign-submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        token: token,
+        typed_name: sign.value.trim(),
+        attested: attest.checked,
+        fields: {
+          patient_name: name.value.trim(),
+          patient_dob: dob.value.trim(),
+          p1_id: document.getElementById('pP1').value.trim(),
+          mco_plan: document.getElementById('pMco').value.trim()
+        }
+      })
+    })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (res.ok && res.j.ok) {
+          showState('ok', 'Your signed form has been sent to your provider\u2019s office. You can close this page.');
+        } else {
+          btn.disabled = false; btn.textContent = 'Sign and submit';
+          err.style.display = 'block';
+          err.textContent = (res.j && res.j.error) || 'Something went wrong. Please try again.';
+        }
+      })
+      .catch(function () {
+        btn.disabled = false; btn.textContent = 'Sign and submit';
+        err.style.display = 'block';
+        err.textContent = 'Network error. Please try again.';
+      });
+  });
+})();
+</script>
+</body>
+</html>
