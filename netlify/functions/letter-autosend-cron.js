@@ -295,11 +295,29 @@ function buildCoverNote(returnEmail, optOutUrl) {
   ].join('\n');
 }
 
-// --- Raw MIME builder (multipart/mixed: text cover + base64 PDF attachment). ---
+// --- Raw MIME builder. With an attachment: multipart/mixed (text + base64 file).
+// Without one: a simple text/plain message (used for the e-sign link email). ---
 function buildRawMime(o) {
   const CRLF = '\r\n';
-  const mixed = 'mixed_' + Math.random().toString(36).slice(2);
   function header(name, val) { return name + ': ' + val + CRLF; }
+  const hasAttachment = !!(o.attachmentBase64 && o.attachmentFilename && o.attachmentContentType);
+
+  // No attachment: plain text email.
+  if (!hasAttachment) {
+    let m = '';
+    m += header('From', o.fromName + ' <' + o.fromAddress + '>');
+    m += header('To', o.to);
+    if (o.replyTo) m += header('Reply-To', o.replyTo);
+    m += header('Subject', mimeEncodeHeader(o.subject));
+    m += header('MIME-Version', '1.0');
+    m += header('Content-Type', 'text/plain; charset="UTF-8"');
+    m += header('Content-Transfer-Encoding', 'base64');
+    m += CRLF;
+    m += chunk76(Buffer.from(o.textBody, 'utf8').toString('base64')) + CRLF;
+    return m;
+  }
+
+  const mixed = 'mixed_' + Math.random().toString(36).slice(2);
   let msg = '';
   msg += header('From', o.fromName + ' <' + o.fromAddress + '>');
   msg += header('To', o.to);
