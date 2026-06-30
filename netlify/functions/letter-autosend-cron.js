@@ -82,10 +82,11 @@ exports.handler = async function (event) {
 
         // 1. Load the standard.
         const stdRes = await sb('tbp_letter_standards?id=eq.' + sch.standard_id +
-          '&select=body_template,placeholders,optional_toggles,category_label');
+          '&select=body_template,placeholders,optional_toggles,category_label,spec');
         const stdArr = await stdRes.json();
         const std = stdArr && stdArr[0];
         if (!std) throw new Error('standard not found: ' + sch.standard_id);
+        const noLetterhead = !!(std.spec && std.spec.no_letterhead);
 
         // Load the provider's vault profile (letterhead, signature, name, practice, npi).
         const vaultRes = await sb('user_tool_data?tool_id=eq.vault_profile&email=eq.' +
@@ -113,38 +114,75 @@ exports.handler = async function (event) {
         (std.optional_toggles || []).forEach(function (t) { toggles[t.key] = t.default_value; });
         Object.assign(toggles, sch.toggles || {});
 
-        // 2. Build the PDF.
-        const pdfBytes = await buildLetterPdf({
-          bodyTemplate: std.body_template,
-          placeholders: placeholders,
-          toggles: toggles,
-          placeholderDefs: defs,
-          vault: vault,
-          sign: sch.sign !== false
-        });
-        const pdfB64 = Buffer.from(pdfBytes).toString('base64');
-
-        // 3. Compose + send the patient email (attachment + cover note + opt-out).
+        const esign = !!(std.spec && std.spec.esign);
+        const returnEmail = sch.return_email || 'jesse@corspokane.com';
         const optOutUrl = BASE_URL + '/.netlify/functions/letter-schedule-optout?token=' +
           encodeURIComponent(sch.opt_out_token);
-        const returnEmail = sch.return_email || 'jesse@corspokane.com';
-        const subject = 'Action needed: Private-Pay Acknowledgment to review and sign';
-        const textBody = buildCoverNote(returnEmail, optOutUrl);
-        const filename = 'Private-Pay-Acknowledgment.pdf';
-        const rawMime = buildRawMime({
-          fromName: FROM_NAME, fromAddress: FROM_ADDRESS, to: sch.patient_email,
-          replyTo: returnEmail, subject: subject, textBody: textBody,
-          attachmentBase64: pdfB64, attachmentFilename: filename,
-          attachmentContentType: 'application/pdf'
-        });
-
         const ses = sesClient();
-        await ses.send(new SendEmailCommand({
-          FromEmailAddress: FROM_NAME + ' <' + FROM_ADDRESS + '>',
-          Destination: { ToAddresses: [sch.patient_email] },
-          ReplyToAddresses: [returnEmail],
-          Content: { Raw: { Data: Buffer.from(rawMime, 'utf8') } }
-        }));
+
+        if (esign) {
+          // E-SIGN (Flavor B): mint a single-use signing token and email the patient a link.
+          // No PDF is attached and no patient PHI is stored; the patient types their fields
+          // on the signing page, which builds the executed PDF in memory and sends it to Jesse.
+          const signToken = require('crypto').randomBytes(24).toString('hex');
+          const expires = new Date();
+          expires.setDate(expires.getDate() + 21); // 21-day signing window
+          const tokRes = await sb('letter_sign_tokens', {
+            method: 'POST', headers: { 'Prefer': 'return=minimal' },
+            body: JSON.stringify({
+              token: signToken,
+              schedule_id: sch.id,
+              standard_id: sch.standard_id,
+              provider_email: sch.provider_email,
+              toggles: toggles,
+              sign: sch.sign !== false,
+              return_email: returnEmail,
+              status: 'pending',
+              expires_at: expires.toISOString()
+            })
+          });
+          if (!tokRes.ok) { const t = await tokRes.text(); throw new Error('sign-token insert failed: ' + t); }
+
+          const signUrl = BASE_URL + '/medicaid-sign.html?t=' + encodeURIComponent(signToken);
+          const subject = 'Action needed: sign your Private-Pay Acknowledgment';
+          const textBody = buildSignLinkNote(signUrl, optOutUrl);
+          const rawMime = buildRawMime({
+            fromName: FROM_NAME, fromAddress: FROM_ADDRESS, to: sch.patient_email,
+            replyTo: returnEmail, subject: subject, textBody: textBody
+          });
+          await ses.send(new SendEmailCommand({
+            FromEmailAddress: FROM_NAME + ' <' + FROM_ADDRESS + '>',
+            Destination: { ToAddresses: [sch.patient_email] },
+            ReplyToAddresses: [returnEmail],
+            Content: { Raw: { Data: Buffer.from(rawMime, 'utf8') } }
+          }));
+        } else {
+          // Blank-PDF path (print, hand-fill, sign, return).
+          const pdfBytes = await buildLetterPdf({
+            bodyTemplate: std.body_template,
+            placeholders: placeholders,
+            toggles: toggles,
+            placeholderDefs: defs,
+            vault: vault,
+            sign: sch.sign !== false,
+            noLetterhead: noLetterhead
+          });
+          const pdfB64 = Buffer.from(pdfBytes).toString('base64');
+          const subject = 'Action needed: Private-Pay Acknowledgment to review and sign';
+          const textBody = buildCoverNote(returnEmail, optOutUrl);
+          const rawMime = buildRawMime({
+            fromName: FROM_NAME, fromAddress: FROM_ADDRESS, to: sch.patient_email,
+            replyTo: returnEmail, subject: subject, textBody: textBody,
+            attachmentBase64: pdfB64, attachmentFilename: 'Private-Pay-Acknowledgment.pdf',
+            attachmentContentType: 'application/pdf'
+          });
+          await ses.send(new SendEmailCommand({
+            FromEmailAddress: FROM_NAME + ' <' + FROM_ADDRESS + '>',
+            Destination: { ToAddresses: [sch.patient_email] },
+            ReplyToAddresses: [returnEmail],
+            Content: { Raw: { Data: Buffer.from(rawMime, 'utf8') } }
+          }));
+        }
 
         // 4. Advance schedule.
         const next = new Date();
@@ -208,6 +246,28 @@ function formatToday(offsetDays) {
   const d = new Date();
   d.setDate(d.getDate() + (offsetDays || 0));
   return months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+}
+
+function buildSignLinkNote(signUrl, optOutUrl) {
+  return [
+    'Hello,',
+    '',
+    'Your provider needs you to review and sign a Private-Pay Acknowledgment for your psychiatric care.',
+    '',
+    'You can complete and sign it online in about a minute here:',
+    '  ' + signUrl,
+    '',
+    'You will fill in your name, date of birth, ProviderOne Client ID, and managed care plan (if any),',
+    'then type your name to sign. A signed copy is sent to your provider\u2019s office automatically.',
+    '',
+    'This link is for you only and expires in 21 days.',
+    '',
+    'This agreement is renewed about every 90 days. If you no longer wish to receive these renewal',
+    'requests by email (for example, if your coverage or provider has changed), you can stop them here:',
+    '  ' + optOutUrl,
+    '',
+    'Think Beyond Practice'
+  ].join('\n');
 }
 
 function buildCoverNote(returnEmail, optOutUrl) {
