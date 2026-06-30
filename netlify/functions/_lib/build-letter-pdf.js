@@ -86,7 +86,7 @@ function libNormalizeValue(key, value, fmt) {
   var raw = String(value);
   if (!raw.trim()) return value;
   if (!fmt) {
-    if (/(_DATE|^DATE|_START$|_ON$)/.test(key) || key === 'TREATMENT_START' || key === 'JURY_DATE') fmt = 'date';
+    if (/(_DATE|^DATE|_DOB$|^DOB$|_START$|_ON$)/.test(key) || key === 'TREATMENT_START' || key === 'JURY_DATE' || key === 'PATIENT_DOB') fmt = 'date';
     else if (/(NAME)$/.test(key) || key === 'PATIENT_NAME' || key === 'PATIENT_FIRST_NAME') fmt = 'name';
     else fmt = 'none';
   }
