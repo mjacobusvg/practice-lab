@@ -142,7 +142,7 @@ The intervention section should make clear that the clinician and patient did co
 
 === MODALITY-MATCHED INTERVENTIONS ===
 
-The provider will specify which modality to use. Use ONLY interventions that belong to the named modality.
+The provider will specify which modality, or modalities, to use. Use ONLY interventions that belong to the named modality or modalities. If more than one modality is named, integrate interventions from each, drawing on the documented work that fits each one. Use exactly the modality or modalities named; do not substitute, drop, or default to a different modality.
 
 SUPPORTIVE PSYCHOTHERAPY: Reinforcing existing healthy coping, validating emotional experience, reality-testing distorted thinking without formal protocols, strengthening adaptive defenses, maintaining therapeutic alliance during stress. Even in supportive work, frame interventions actively: "Explored the patient's response to..." not "Provided support regarding..."
 
@@ -778,7 +778,16 @@ async function runGenerate(inp){
     } else if(q.id==='carryfwd'){
       carryfwdDecision = (typeof val==='string') ? val : '';
     } else if(q.id==='modality' || /modality/i.test(q.text)){
-      modality = (typeof val==='string' ? val : '').split(' — ')[0].trim();
+      var modVals;
+      if(Array.isArray(val)){
+        modVals = val.filter(function(x){ return x && x !== '(custom)'; });
+      } else if(typeof val==='string' && val){
+        modVals = [val];
+      } else {
+        modVals = [];
+      }
+      // Keep the modality name (text before the em-dash target description) for each selected modality.
+      modality = modVals.map(function(m){ return String(m).split(' — ')[0].trim(); }).filter(Boolean).join(' + ');
     } else if(/^clin_/.test(q.id||'')){
       var chosen;
       if(Array.isArray(val)){
@@ -856,10 +865,15 @@ async function runGenerate(inp){
       document.getElementById('results').innerHTML = html;
     }
     if((scope==='therapy' || scope==='both') && !noTherapy){
+      var modForPrompt = modality || 'Supportive psychotherapy';
+      var multiMod = modForPrompt.indexOf(' + ') !== -1;
       var userMsg = contextBlock(inp) + carryfwdBlock +
-        '\n\n---\n\nModality selected by provider: ' + (modality||'Supportive psychotherapy') +
+        '\n\n---\n\nModality selected by provider: ' + modForPrompt +
+        (multiMod
+          ? '\nThe provider selected MORE THAN ONE modality. Document the work as integrated, using interventions from each selected modality where the HPI supports them. Name the combination in the Modality line exactly as given (e.g. "Insight-oriented and supportive psychotherapy"). Do not drop or substitute a selected modality, and do not default to supportive unless supportive was actually one of the selections.'
+          : '\nUse this exact modality. Do not substitute it or default to a different one.') +
         '\nAdd-on code intended: ' + code +
-        '\n\nGenerate the psychotherapy add-on documentation matched to this modality, using the five labeled sections. Infer the therapeutic focus from the modality and HPI.';
+        '\n\nGenerate the psychotherapy add-on documentation matched to the selected modality (or modalities), using the five labeled sections. Infer the therapeutic focus from the modality and HPI.';
       var therapyText = await callAPI(THERAPY_SYS, [{role:'user', content: userMsg}], 2000);
       html += outBlock('Psychotherapy add-on ('+code+')', 'out-therapy', therapyText);
       stopTips();
