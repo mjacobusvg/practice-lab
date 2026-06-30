@@ -12,7 +12,7 @@
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, SES_AWS_*, PUBLIC_BASE_URL
 
 const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
-const { buildLetterPdf } = require('./_lib/build-letter-pdf');
+const { buildLetterPdf, _internals } = require('./_lib/build-letter-pdf');
 
 const FROM_NAME = 'Think Beyond Practice';
 const FROM_ADDRESS = 'support@thinkbeyondpractice.com';
@@ -44,6 +44,12 @@ exports.handler = async function (event) {
   if (!fields.patient_name || !fields.patient_dob) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'Name and date of birth are required.' }) };
   }
+
+  // Normalize the patient's DOB to a clean long date (e.g. "November 30, 1978") no matter
+  // how they typed it (11301978, 11/30/1978, 11-30-78, Nov 30 1978, etc). If it can't be
+  // parsed, keep what they typed rather than blanking it.
+  var normalizedDob = _internals.libNormalizeDate(fields.patient_dob);
+  fields.patient_dob = normalizedDob || fields.patient_dob;
 
   function sb(path, opts) {
     opts = opts || {};
