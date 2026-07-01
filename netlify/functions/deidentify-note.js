@@ -1,39 +1,58 @@
 // functions/deidentify-note.js
 //
-// Pure PHI de-identifier (platform tool).
+// Pure PHI de-identifier (platform tool). SELF-CONTAINED: the deterministic second
+// pass is inlined below so there is no _lib require for the Netlify bundler to miss.
 //
 // Flow:
 //   1. Verify HMAC session token (localStorage tbp_auth_token).
-//   2. Send the note to the AI through the BAA-covered path (Anthropic API under our BAA)
-//      with a strict de-identification instruction. The AI removes the SHAPELESS
-//      identifiers patterns can't catch: names, employers, schools, place names, and
-//      any free-text identifying detail.
-//   3. Run the deterministic scrub on the AI output as a guaranteeing second pass, so
-//      SHAPED identifiers (SSN, phone, MRN, ZIP, dates, addresses, ages 90+, IP, URL)
-//      are removed even if the model overlooked one.
-//   4. Return the de-identified note plus category counts.
+//   2. AI pass through the BAA-covered Anthropic API: removes SHAPELESS identifiers
+//      patterns can't catch (names, employers, schools, place names, free-text detail).
+//   3. Deterministic second pass (inlined): guarantees SHAPED identifiers (SSN, phone,
+//      MRN, ZIP, dates, addresses, ages 90+, IP, URL) are gone even if the AI missed one.
+//   4. Return de-identified note + category counts.
 //
-// PHI build rule: this function NEVER logs the raw note, the AI output, or any patient
-// text. It logs only category counts and a template-opened marker.
-//
-// Env required (Netlify): ANTHROPIC_API_KEY (BAA-covered account), SESSION_SIGNING_SECRET.
+// PHI build rule: NEVER logs raw note, AI output, or any patient text. Logs only counts.
+// Env required (Netlify): ANTHROPIC_API_KEY (BAA-covered), SESSION_SIGNING_SECRET.
 
 'use strict';
 
 const crypto = require('crypto');
-const { scrubDeterministic } = require('./_lib/deid-deterministic');
 
-// Proven model string only.
 const MODEL = 'claude-sonnet-4-6';
 
-// --- inline session verification (built-in crypto only; matches platform pattern) ---
+// ---------- inlined deterministic scrub (belt-and-suspenders second pass) ----------
+function scrubDeterministic(text) {
+  const log = [];
+  let out = String(text == null ? '' : text);
+  function rep(re, tag, label) { out = out.replace(re, () => { log.push(label); return tag; }); }
+
+  rep(/\b\d{3}-\d{2}-\d{4}\b/g, '[SSN]', 'ssn');
+  rep(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, '[EMAIL]', 'email');
+  rep(/\bhttps?:\/\/[^\s)]+/gi, '[URL]', 'url');
+  rep(/\b(0?[1-9]|1[0-2])[\/\-.](0?[1-9]|[12]\d|3[01])[\/\-.](\d{4}|\d{2})\b/g, '[DATE]', 'date');
+  rep(/\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?,?\s+\d{4}\b/gi, '[DATE]', 'date');
+  rep(/\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}\b/gi, '[DATE]', 'date');
+  rep(/\b(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/g, '[PHONE]', 'phone');
+  rep(/\b(?:MRN|Medical Record(?: Number)?|Acct(?:ount)?|Member(?:\s*ID)?|Policy|Subscriber|Chart|Claim)\s*#?:?\s*[A-Z0-9-]{4,}\b/gi, '[ID]', 'id');
+  rep(/\b[A-Z]{2,}\d{6,}\b/g, '[ID]', 'id');
+  rep(/\b\d{7,}\b/g, '[ID]', 'id');
+  rep(/\b\d{1,6}\s+([A-Z0-9][A-Za-z0-9.]*\s+){0,3}(Street|St|Avenue|Ave|Boulevard|Blvd|Road|Rd|Lane|Ln|Drive|Dr|Court|Ct|Way|Place|Pl|Terrace|Ter|Circle|Cir|Highway|Hwy)\b\.?(?:\s+(?:Ste|Suite|Apt|Unit)\s*#?\s*\w+)?/gi, '[ADDRESS]', 'address');
+  rep(/\b\d{5}(?:-\d{4})?\b/g, '[ZIP]', 'zip');
+  rep(/\b(9\d|1\d{2})\s*(?:years?\s*old|y\/?o|yo)\b/gi, '[AGE 90+]', 'age90plus');
+  rep(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/g, '[IP]', 'ip');
+
+  const counts = {};
+  for (const l of log) counts[l] = (counts[l] || 0) + 1;
+  return { text: out, counts, total: log.length };
+}
+
+// ---------- inline session verification (built-in crypto only) ----------
 function verifyToken(token, secret) {
   if (!token || !secret) return null;
   const parts = token.split('.');
   if (parts.length !== 2) return null;
   const [payloadB64, sig] = parts;
   const expected = crypto.createHmac('sha256', secret).update(payloadB64).digest('base64url');
-  // constant-time compare
   const a = Buffer.from(sig);
   const b = Buffer.from(expected);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
@@ -41,9 +60,7 @@ function verifyToken(token, secret) {
     const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
     if (payload.exp && Date.now() / 1000 > payload.exp) return null;
     return payload;
-  } catch (_) {
-    return null;
-  }
+  } catch (_) { return null; }
 }
 
 const SYSTEM_PROMPT = `You are a HIPAA de-identification pass. Your only job is to return the user's clinical text with every piece of Protected Health Information removed, replaced by neutral bracketed placeholders, while preserving all clinical meaning.
@@ -68,16 +85,12 @@ Rules:
 - When in doubt about whether something identifies the individual, replace it. Over-removal of identifiers is acceptable; leaving PHI in is not.`;
 
 exports.handler = async (event) => {
-  const headers = {
-    'Content-Type': 'application/json',
-    'Cache-Control': 'no-store'
-  };
+  const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
 
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
   }
 
-  // --- auth ---
   const auth = event.headers.authorization || event.headers.Authorization || '';
   const token = auth.replace(/^Bearer\s+/i, '').trim();
   const session = verifyToken(token, process.env.SESSION_SIGNING_SECRET);
@@ -85,7 +98,6 @@ exports.handler = async (event) => {
     return { statusCode: 401, headers, body: JSON.stringify({ error: 'Not authorized' }) };
   }
 
-  // --- parse input ---
   let note = '';
   try {
     const body = JSON.parse(event.body || '{}');
@@ -96,7 +108,6 @@ exports.handler = async (event) => {
   if (!note.trim()) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'No text provided' }) };
   }
-  // guardrail: cap size to keep it a single-note tool
   if (note.length > 20000) {
     return { statusCode: 413, headers, body: JSON.stringify({ error: 'Text too long. De-identify one note at a time (max ~20k characters).' }) };
   }
@@ -106,7 +117,6 @@ exports.handler = async (event) => {
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Service not configured' }) };
   }
 
-  // --- AI pass (BAA-covered) ---
   let aiText = '';
   try {
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -126,17 +136,12 @@ exports.handler = async (event) => {
     });
 
     if (!resp.ok) {
-      // do not include response body (could echo input); log status only
       console.error('deidentify-note: AI pass failed, status', resp.status);
       return { statusCode: 502, headers, body: JSON.stringify({ error: 'De-identification service error. Try again.' }) };
     }
 
     const data = await resp.json();
-    aiText = (data.content || [])
-      .filter((b) => b.type === 'text')
-      .map((b) => b.text)
-      .join('')
-      .trim();
+    aiText = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
   } catch (err) {
     console.error('deidentify-note: AI pass exception');
     return { statusCode: 502, headers, body: JSON.stringify({ error: 'De-identification service error. Try again.' }) };
@@ -146,10 +151,8 @@ exports.handler = async (event) => {
     return { statusCode: 502, headers, body: JSON.stringify({ error: 'No output produced. Try again.' }) };
   }
 
-  // --- deterministic guaranteeing second pass ---
   const scrub = scrubDeterministic(aiText);
 
-  // PHI build rule: log ONLY category counts + template-opened. Never the text.
   console.log('deidentify-note ok', JSON.stringify({
     template: 'deidentify-note',
     second_pass_hits: scrub.counts,
