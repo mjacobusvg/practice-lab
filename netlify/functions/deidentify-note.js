@@ -95,8 +95,8 @@ exports.handler = async (event) => {
   if (!note.trim()) {
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'No text provided' }) };
   }
-  if (note.length > 20000) {
-    return { statusCode: 413, headers, body: JSON.stringify({ error: 'Text too long. De-identify one note at a time (max ~20k characters).' }) };
+  if (note.length > 100000) {
+    return { statusCode: 413, headers, body: JSON.stringify({ error: 'Text too long. De-identify one note at a time (max ~100k characters).' }) };
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -115,7 +115,7 @@ exports.handler = async (event) => {
       },
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 8000,
+        max_tokens: 32000,
         temperature: 0,
         system: SYSTEM_PROMPT,
         messages: [{ role: 'user', content: note }]
