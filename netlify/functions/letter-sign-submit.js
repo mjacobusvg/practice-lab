@@ -102,7 +102,9 @@ exports.handler = async function (event) {
     // 3. Build the EXECUTED PDF in memory: start from the standard body, then overlay the
     // patient-typed fields and the typed-name patient signature into the patient block.
     // The provider signature is composited from vault as usual (sign flag from the token).
-    const filledBody = fillPatientBlock(std.body_template, fields, typedName);
+    // One signing moment, used consistently on the PDF (human-readable) and in the email/token (ISO).
+    const signedNow = new Date();
+    const filledBody = fillPatientBlock(std.body_template, fields, typedName, signedNow);
 
     const pdfBytes = await buildLetterPdf({
       bodyTemplate: filledBody,
@@ -126,7 +128,7 @@ exports.handler = async function (event) {
       '',
       'Patient: ' + fields.patient_name,
       'Signed (typed name): ' + typedName,
-      'Signed at: ' + new Date().toISOString(),
+      'Signed at: ' + signedNow.toISOString(),
       '',
       'This copy was generated at signing and is not retained by the platform.'
     ].join('\n');
@@ -148,7 +150,7 @@ exports.handler = async function (event) {
     // Mark token signed (no patient data recorded - just state + timestamp).
     await sb('letter_sign_tokens?id=eq.' + tok.id, {
       method: 'PATCH', headers: { 'Prefer': 'return=minimal' },
-      body: JSON.stringify({ status: 'signed', signed_at: new Date().toISOString() })
+      body: JSON.stringify({ status: 'signed', signed_at: signedNow.toISOString() })
     });
 
     return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
@@ -158,19 +160,48 @@ exports.handler = async function (event) {
 };
 
 // Replaces the blank patient lines in the form body with the patient's typed values, and
-// drops their typed name onto the "Patient/Legal Representative Signature" line. Operates on
-// the template text only; nothing is persisted.
-function fillPatientBlock(tpl, f, typedName) {
+// drops their typed name onto the "Patient/Legal Representative Signature" line, followed by
+// a signed-electronically attestation with the signing date/time and legal basis. This makes
+// the executed PDF self-contained as the signing record (nothing is stored server-side).
+function fillPatientBlock(tpl, f, typedName, signedNow) {
   let out = tpl;
+  var when = formatSignedTimestamp(signedNow || new Date());
+  var attestation = typedName + '  (signed electronically ' + when + ')';
   out = out.replace(/Patient Name: _+/, 'Patient Name: ' + (f.patient_name || ''));
   out = out.replace(/Date of Birth: _+/, 'Date of Birth: ' + (f.patient_dob || ''));
   out = out.replace(/ProviderOne Client ID Number: _+/, 'ProviderOne Client ID Number: ' + (f.p1_id || ''));
   out = out.replace(/Apple Health Managed Care Plan, if applicable: _+/, 'Apple Health Managed Care Plan, if applicable: ' + (f.mco_plan || ''));
-  out = out.replace(/Patient\/Legal Representative Signature: _+/, 'Patient/Legal Representative Signature: ' + typedName + '  (signed electronically)');
+  out = out.replace(/Patient\/Legal Representative Signature: _+/, 'Patient/Legal Representative Signature: ' + attestation);
   out = out.replace(/Printed Name: _+/, 'Printed Name: ' + (f.patient_name || ''));
-  // Patient "Date:" line directly after the printed-name line -> today.
-  out = out.replace(/(Patient\/Legal Representative Signature:[^\n]*\nPrinted Name:[^\n]*\nDate: )_+/, '$1' + formatToday(0));
+  // Patient "Date:" line directly after the printed-name line -> the signing date (same moment
+  // as the attestation timestamp, so they never drift across a midnight-UTC boundary).
+  var signDateStr = formatDateLong(signedNow || new Date());
+  out = out.replace(/(Patient\/Legal Representative Signature:[^\n]*\nPrinted Name:[^\n]*\nDate: )_+/, '$1' + signDateStr);
+  // Append the legal-basis line right after the patient Date line so the PDF carries the
+  // full E-SIGN/UETA attestation as the surviving record.
+  out = out.replace(
+    /(Patient\/Legal Representative Signature:[^\n]*\nPrinted Name:[^\n]*\nDate: [^\n]*)/,
+    '$1\nThis electronic signature is legally binding under the federal E-SIGN Act and the Washington Electronic Authentication Act.'
+  );
   return out;
+}
+
+// "June 30, 2026" from a Date, in UTC (matches formatSignedTimestamp's day).
+function formatDateLong(d) {
+  var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return months[d.getUTCMonth()] + ' ' + d.getUTCDate() + ', ' + d.getUTCFullYear();
+}
+
+// "June 30, 2026 at 2:15 PM UTC" - clean, human-readable, unambiguous timezone.
+function formatSignedTimestamp(d) {
+  var months = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  var hh = d.getUTCHours();
+  var mm = d.getUTCMinutes();
+  var ampm = hh >= 12 ? 'PM' : 'AM';
+  var h12 = hh % 12; if (h12 === 0) h12 = 12;
+  var mmStr = (mm < 10 ? '0' : '') + mm;
+  return 'on ' + months[d.getUTCMonth()] + ' ' + d.getUTCDate() + ', ' + d.getUTCFullYear() +
+    ' at ' + h12 + ':' + mmStr + ' ' + ampm + ' UTC';
 }
 
 function sesClient() {
