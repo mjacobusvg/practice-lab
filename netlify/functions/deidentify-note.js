@@ -16,7 +16,10 @@
 
 'use strict';
 
-const crypto = require('crypto');
+// Use the platform's canonical token verifier so this tool verifies IDENTICALLY
+// to every other .js function. This is a .js (CommonJS) function, so Netlify bundles
+// the relative _lib require normally (the bundling issue only affected .mjs functions).
+const { verifyToken } = require('./_lib/session.js');
 
 const MODEL = 'claude-sonnet-4-6';
 
@@ -46,22 +49,6 @@ function scrubDeterministic(text) {
   return { text: out, counts, total: log.length };
 }
 
-// ---------- inline session verification (built-in crypto only) ----------
-function verifyToken(token, secret) {
-  if (!token || !secret) return null;
-  const parts = token.split('.');
-  if (parts.length !== 2) return null;
-  const [payloadB64, sig] = parts;
-  const expected = crypto.createHmac('sha256', secret).update(payloadB64).digest('base64url');
-  const a = Buffer.from(sig);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
-  try {
-    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf8'));
-    if (payload.exp && Date.now() / 1000 > payload.exp) return null;
-    return payload;
-  } catch (_) { return null; }
-}
 
 const SYSTEM_PROMPT = `You are a HIPAA de-identification pass. Your only job is to return the user's clinical text with every piece of Protected Health Information removed, replaced by neutral bracketed placeholders, while preserving all clinical meaning.
 
@@ -93,8 +80,8 @@ exports.handler = async (event) => {
 
   const auth = event.headers.authorization || event.headers.Authorization || '';
   const token = auth.replace(/^Bearer\s+/i, '').trim();
-  const session = verifyToken(token, process.env.SESSION_SIGNING_SECRET);
-  if (!session) {
+  const session = verifyToken(token); // reads SESSION_SIGNING_SECRET internally
+  if (!session || !session.valid) {
     return { statusCode: 401, headers, body: JSON.stringify({ error: 'Not authorized' }) };
   }
 
