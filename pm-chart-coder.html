@@ -1225,10 +1225,46 @@ async function callAPI(systemPrompt, userMessage, model, maxTokens) {
 
 function parseJSON(text) {
   if (!text) return null;
+  var cleaned = text.replace(/```json/g, '').replace(/```/g, '').trim();
+  // Fast path: well-formed output parses directly.
   try {
-    return JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim());
-  } catch(e) {
-    console.log('JSON parse error:', e.message, 'Raw:', text.substring(0, 300));
+    return JSON.parse(cleaned);
+  } catch (e) {
+    // Salvage path: the model sometimes returns a complete, valid JSON object
+    // and then appends extra content after it (a trailing note, a second
+    // fenced block, a stray character), which makes a whole-string JSON.parse
+    // throw "Unexpected non-whitespace character after JSON". It can also emit
+    // a short preamble before the object. Extract the first balanced top-level
+    // {...} object and parse only that. Brace counting ignores braces that
+    // appear inside strings and escaped characters, so it is not fooled by
+    // JSON string values containing { or }.
+    var start = cleaned.indexOf('{');
+    if (start === -1) {
+      console.log('JSON parse error (no object found):', e.message, 'Raw:', cleaned.substring(0, 300));
+      return null;
+    }
+    var depth = 0, inStr = false, esc = false;
+    for (var i = start; i < cleaned.length; i++) {
+      var ch = cleaned[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (ch === '"') { inStr = !inStr; continue; }
+      if (inStr) continue;
+      if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) {
+          var candidate = cleaned.slice(start, i + 1);
+          try {
+            return JSON.parse(candidate);
+          } catch (e2) {
+            console.log('JSON parse error (salvage failed):', e2.message, 'Raw:', cleaned.substring(0, 300));
+            return null;
+          }
+        }
+      }
+    }
+    console.log('JSON parse error (unbalanced):', e.message, 'Raw:', cleaned.substring(0, 300));
     return null;
   }
 }
