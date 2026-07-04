@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chart Audit + Coder — Interactive Demo</title>
+<style>
+:root {
+  --navy: #0b1120; --navy-mid: #111c30; --navy-light: #1a2d47; --navy-card: #152238;
+  --teal: #2aabb8; --teal-dim: #1d7d88; --teal-glow: rgba(42,171,184,0.12);
+  --cream: #e8e2d6; --cream-dim: #b0aa9e; --white: #f5f2ec; --rule: #243450;
+  --amber: #fbbf24; --red: #f87171; --green: #34d399; --blue: #60a5fa;
+  --radius: 10px;
+  --font-display: 'Georgia', serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin:0; background:var(--navy); color:var(--cream); font-family:var(--font-body); line-height:1.6; padding:32px 20px; }
+.demo-panel { max-width:820px; margin:0 auto; padding:20px 0; }
+.demo-section { background:var(--navy-card); border:1px solid var(--rule); border-radius:var(--radius); padding:20px 24px; margin-bottom:16px; }
+.demo-section h4 { font-family:var(--font-display); color:var(--white); font-size:.98rem; margin:0 0 12px; }
+.demo-item { padding:12px 16px; background:var(--navy-mid); border:1px solid var(--rule); border-radius:8px; margin-bottom:10px; font-size:.84rem; color:var(--cream); line-height:1.55; }
+.demo-note-out { font-size:.86rem; color:var(--cream); line-height:1.7; white-space:pre-wrap; }
+.demo-badge { display:inline-block; font-size:.68rem; padding:2px 9px; border-radius:8px; font-weight:700; letter-spacing:.3px; }
+.demo-badge-amber { background:rgba(251,191,36,0.12); color:var(--amber); }
+.demo-badge-red { background:rgba(248,113,113,0.12); color:var(--red); }
+.demo-badge-dim { background:rgba(232,226,214,0.1); color:var(--cream-dim); }
+
+.anim-bar { max-width:820px; margin:0 auto 10px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.anim-bar h1 { font-family:var(--font-display); font-size:1.55rem; color:var(--white); margin:0 0 2px; }
+.anim-bar h1 span { color:var(--teal); }
+.anim-bar p { font-size:.8rem; color:var(--cream-dim); margin:0; }
+.restart-btn { background:none; color:var(--cream-dim); border:1px solid var(--rule); padding:7px 16px; border-radius:6px; font-size:.78rem; cursor:pointer; font-family:var(--font-body); transition:all .2s; white-space:nowrap; }
+.restart-btn:hover { border-color:var(--teal); color:var(--teal); }
+
+.intro-blurb { max-width:820px; margin:0 auto 18px; font-size:.85rem; color:var(--cream-dim); line-height:1.6; background:var(--navy-mid); border:1px solid var(--rule); border-left:3px solid var(--teal); border-radius:8px; padding:12px 16px; }
+
+.input-label { font-size:.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.5px; color:var(--cream-dim); margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; }
+.input-label .wc { font-weight:400; text-transform:none; letter-spacing:0; color:var(--teal); }
+.note-input { background:var(--navy-mid); border:1px solid var(--rule); border-radius:8px; padding:14px 16px; font-size:.76rem; color:var(--cream); line-height:1.6; max-height:230px; overflow-y:auto; white-space:pre-wrap; }
+.note-input.typing::after { content:'▋'; color:var(--teal); animation:blink .9s steps(1) infinite; margin-left:1px; }
+@keyframes blink { 50% { opacity:0; } }
+.frame-line { font-size:.78rem; color:var(--teal); font-style:italic; margin:8px 0 0; }
+
+.action-row { text-align:center; margin:10px 0 22px; }
+.action-btn { background:var(--teal); color:#fff; border:none; padding:11px 30px; border-radius:6px; font-weight:600; font-size:.9rem; cursor:pointer; font-family:var(--font-body); transition:background .2s, transform .1s; opacity:0; transform:translateY(6px); }
+.action-btn.shown { opacity:1; transform:translateY(0); transition:opacity .35s ease, transform .35s ease; }
+.action-btn:hover { background:var(--teal-dim); }
+.action-btn:active { transform:scale(.97); }
+
+.processing { display:flex; align-items:center; gap:12px; padding:14px 16px; background:var(--navy-mid); border:1px solid rgba(42,171,184,0.25); border-radius:8px; margin-bottom:16px; font-size:.85rem; color:var(--teal); }
+.spinner { width:16px; height:16px; border:2px solid rgba(42,171,184,0.25); border-top-color:var(--teal); border-radius:50%; animation:spin .7s linear infinite; flex-shrink:0; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.pass-tag { font-size:.68rem; font-weight:700; text-transform:uppercase; letter-spacing:.5px; padding:2px 8px; border-radius:6px; background:rgba(42,171,184,0.12); color:var(--teal); }
+
+.reveal { opacity:0; transform:translateY(10px); transition:opacity .45s ease, transform .45s ease; }
+.reveal.shown { opacity:1; transform:translateY(0); }
+
+.code-card { text-align:center; padding:26px 24px; }
+.code-big { font-family:var(--font-display); font-size:2.6rem; color:var(--teal); display:inline-block; transform:scale(.7); opacity:0; transition:transform .5s cubic-bezier(.34,1.56,.64,1), opacity .4s ease; }
+.code-big.pop { transform:scale(1); opacity:1; }
+.code-chip { display:inline-block; padding:4px 14px; border-radius:14px; background:rgba(42,171,184,0.12); border:1px solid var(--teal); color:var(--teal); font-size:.78rem; font-weight:600; margin:4px 4px 0; }
+
+.axis-head { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.axis-head strong { color:var(--white); font-size:.92rem; }
+.flag-box { margin-top:6px; padding:12px 16px; background:rgba(251,191,36,0.05); border:1px solid rgba(251,191,36,0.18); border-radius:8px; }
+.flag-box .flag-h { font-size:.72rem; font-weight:700; color:var(--amber); letter-spacing:.4px; margin-bottom:8px; }
+.flag-box .flag-h span { font-weight:400; color:var(--cream-dim); text-transform:none; letter-spacing:0; }
+.flag-box ul { margin:0; padding-left:18px; }
+.flag-box li { font-size:.82rem; color:var(--cream); margin-bottom:5px; }
+
+.verify-line { font-size:.82rem; color:var(--cream); line-height:1.6; padding:8px 0; border-bottom:1px solid var(--rule); }
+.verify-line:last-child { border-bottom:none; }
+.verify-line .ck { color:var(--green); font-weight:700; margin-right:6px; }
+
+.step-hint { text-align:center; font-size:.74rem; color:var(--cream-dim); margin:-6px 0 14px; font-style:italic; }
+.headline { font-family:var(--font-display); font-size:1.05rem; color:var(--amber); margin-bottom:4px; }
+.sub { font-size:.8rem; color:var(--cream-dim); margin-bottom:14px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal, .action-btn { transition:none; opacity:1; transform:none; }
+  .code-big { transition:none; transform:scale(1); opacity:1; }
+  .spinner, .note-input.typing::after { animation:none; }
+}
+</style>
+</head>
+<body>
+
+<div class="anim-bar">
+  <div>
+    <h1>Chart Audit + <span>Coder</span></h1>
+    <p>Interactive walkthrough — you set the pace</p>
+  </div>
+  <button class="restart-btn" id="restartBtn" onclick="initDemo()" style="display:none">↻ Start over</button>
+</div>
+
+<div class="intro-blurb">
+  This is a fictional patient note. Click through to see how the tool reads a completed psychiatric follow-up: it audits the documentation for contradictions, then computes the E/M and psychotherapy codes from the medical decision making.
+</div>
+
+<div class="demo-panel" id="panel"></div>
+
+<script>
+var SAMPLE_NOTE =
+"S: Established pt, telehealth f/u for ADHD + GAD. No medication changes last visit.\n" +
+"Provider in office; patient at home in WA. Verbal consent for telehealth obtained.\n" +
+"Start Time: 10:30am   End Time: 10:56am\n\n" +
+"HPI: \"I am doing alright. Got a new job as an inventory coordinator at a distribution warehouse, starting in person next month.\" School on back burner after a workers' comp shoulder injury delayed medical clearance past the program deadline.\n" +
+"Continues fluoxetine 40mg: \"still nauseous, getting used to it. Definitely not like it was at first. I think it is still worth it.\" Kidney stone ~1 month ago may be contributing to nausea.\n" +
+"Adderall XR 40mg QAM (2 x 20mg caps): \"it has been good, some supply chain issues but nothing major.\" Focus/concentration okay.\n" +
+"Propranolol PRN: uses 2-3x/month, prophylactically before crowds, finds it helpful.\n" +
+"Historical: last felt down \"last year when dealing with a parent's passing.\" Daytime anxiety, panic attacks much improved since prior therapy. Crowds without an exit are stressful.\n" +
+"Trauma: witnessed a violent assault in a prior city; a companion was injured. Took about a month to settle. Childhood with a parent's substance use.\n" +
+"Sleep: 6-8 hrs, improved on fluoxetine, fewer nightmares. Still not using trazodone: \"for some reason it scares me. I'm afraid of sleep medications for fear of bad dreams, so I didn't really use it much.\"\n" +
+"Substance use: alcohol 2 drinks 2x/week. Denies current marijuana/tobacco/illicit. Prior LSD, mushrooms, cocaine, last use ~4 years ago. Caffeine 1 cup coffee/day.\n" +
+"Denies SI/HI. No A/V hallucinations.\n\n" +
+"Psychotherapy: Motivational Interviewing. Explored ambivalence around exercise and self-care; examined barriers from injury recovery and anxiety about returning to the gym; identified small realistic next steps. Patient engaged and reflective, increased readiness for gradual change.\n" +
+"Time spent on psychotherapy services only: 21 minutes.\n\n" +
+"PMHx: Depression, Anxiety, PTSD, Asthma, ADHD.\n" +
+"Soc Hx: Several siblings, never married, no children, currently living with family. Applying to allied-health programs. Endorses trauma history. Alcohol 2 drinks 2x/week. Prior LSD/mushrooms/cocaine ~4 yrs ago. Caffeine 3 cups coffee/day.\n\n" +
+"Medications: propranolol 10mg PRN 1-3 tabs; dextroamphetamine-amphetamine ER 20mg, 2 caps PO QAM; fluoxetine 40mg cap QAM; trazodone 50mg QHS PRN; ondansetron 4mg ODT PRN nausea.\n\n" +
+"ROS — Psychiatric: (+)depression, (+)anxiety, (+)sleep disturbance, (-)SI, (-)delusions, (-)hallucinations.\n\n" +
+"MSE: Cooperative, good eye contact, mildly restless. Mood somewhat labile/anxious, full range affect. Thought process coherent, goal directed. Oriented x4. Insight/judgment good.\n\n" +
+"Assessment: ADHD (F90.2) and GAD (F41.1). ADHD is the primary organizing issue; anxiety worsens when executive function is poorly controlled. Adderall XR provides meaningful benefit, tolerated aside from mild appetite suppression. Current stress is largely external (injury recovery, school delays, relocation, new job). Fluoxetine remains helpful for anxiety, motivation, sleep; nausea persists but is less intense and likely partly fluoxetine, partly recent kidney stone, so changing it risks destabilization. Trauma history clinically relevant (crowds, exit, nightmares, hypervigilance) but falls short of formal PTSD, fitting better as trauma-related symptoms layered on GAD. No current major depressive episode, psychosis, or safety concern; denies SI/HI/AVH. I reviewed WA PMP prior to appointment. No issues or concerns. I spent a total of 26 minutes with them today.\n\n" +
+"Plan: Fluoxetine 40mg renewed 90 days, 1 refill. Added trazodone to med list as she has been taking it PRN for sleep; prescribed by another prescriber. Propranolol renewed. Adderall XR 20mg renewed, no refills, 3-month supply once pharmacy confirmed; financial barriers, follows up 6 months. No medications changed today. Continue counseling, frequency per counselor. PARQ discussed.";
+
+var REDUCED = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+var panel, restartBtn;
+
+function el(html){ var d=document.createElement('div'); d.innerHTML=html.trim(); return d.firstChild; }
+function sleep(ms){ return new Promise(function(r){ setTimeout(r, REDUCED?Math.min(ms,90):ms); }); }
+function show(node){ return new Promise(function(r){ requestAnimationFrame(function(){ node.classList.add('shown'); setTimeout(r, REDUCED?40:150); }); }); }
+
+async function typeInto(node, text, fastAfter){
+  if (REDUCED){ node.textContent = text; return; }
+  node.classList.add('typing');
+  var i=0;
+  // type the first chunk visibly, then fill the rest fast (the point is "paste the whole note", not watching every keystroke)
+  while(i<text.length){
+    var step = i < fastAfter ? 4 : 40;
+    node.textContent = text.slice(0, i+step);
+    node.scrollTop = node.scrollHeight;
+    i+=step;
+    await sleep(i < fastAfter ? 12 : 8);
+  }
+  node.textContent = text;
+  node.scrollTop = 0;
+  node.classList.remove('typing');
+}
+
+function waitForClick(label){
+  return new Promise(function(resolve){
+    var row = el('<div class="action-row"></div>');
+    var btn = el('<button class="action-btn">'+label+'</button>');
+    row.appendChild(btn); panel.appendChild(row);
+    requestAnimationFrame(function(){ btn.classList.add('shown'); });
+    btn.scrollIntoView({behavior:'smooth', block:'center'});
+    btn.addEventListener('click', function(){ row.remove(); resolve(); }, {once:true});
+  });
+}
+
+async function processingBeat(){
+  var proc = el('<div class="processing"><div class="spinner"></div><span class="pass-tag">Pass 1</span><span class="proc-msg">Reading the note the way an auditor would…</span></div>');
+  panel.appendChild(proc);
+  proc.scrollIntoView({behavior:'smooth', block:'center'});
+  await sleep(1000);
+  proc.querySelector('.pass-tag').textContent = 'Pass 2';
+  proc.querySelector('.proc-msg').textContent = 'Verifying every finding — deterministic, no guessing…';
+  await sleep(1000);
+  proc.remove();
+}
+
+async function revealItems(section){
+  panel.appendChild(section);
+  await show(section);
+  var items = section.querySelectorAll('.reveal-item');
+  for (var i=0;i<items.length;i++){ await show(items[i]); await sleep(170); }
+}
+
+// ───────────── STAGE BUILDERS (real matched output) ─────────────
+
+function auditStage(){
+  var s = el('<div class="demo-section"><div class="headline">⚠ Documentation Audit — 2 to fix before signing</div><div class="sub">Internal contradictions weaken a note in an audit regardless of how good the coding is. These two were caught by comparing what each section of the note actually says.</div><div id="auditItems"></div></div>');
+  return s;
+}
+function auditItems(host){
+  var items = [
+    '<div class="demo-item reveal reveal-item" style="border-left:3px solid var(--red)"><span class="demo-badge demo-badge-red">MUST FIX</span> &nbsp;<strong style="color:var(--white)">ROS vs Assessment</strong><br><span>ROS marks <strong>(+)depression</strong> and <strong>(+)anxiety</strong> as current, but the Assessment says there is <strong>no current evidence of a major depressive episode</strong> and describes anxiety as reactive and situational. The note does not clarify whether the (+) marks are active symptoms today or carried-forward chronic diagnoses.</span><br><span style="font-size:.78rem;color:var(--cream-dim);font-style:italic;display:block;margin-top:6px">Why it matters: an auditor could read the ROS as active symptoms being treated today, which conflicts with the Assessment.</span></div>',
+    '<div class="demo-item reveal reveal-item" style="border-left:3px solid var(--amber)"><span class="demo-badge demo-badge-amber">MUST FIX</span> &nbsp;<strong style="color:var(--white)">Caffeine: HPI vs Social History</strong><br><span>HPI documents <strong>1 cup of coffee per day</strong>. Social History documents <strong>3 cups per day</strong>. Two different numbers for the same thing at the same visit — the classic carried-forward history field that never got updated.</span><br><span style="font-size:.78rem;color:var(--cream-dim);font-style:italic;display:block;margin-top:6px">Why it matters: a factual inconsistency auditors flag as a data-integrity issue.</span></div>',
+    '<div class="demo-item reveal reveal-item" style="border-left:3px solid var(--cream-dim)"><span class="demo-badge demo-badge-dim">OPTIONAL</span> &nbsp;<strong style="color:var(--white)">Trazodone added despite documented fear</strong><br><span>The Plan adds trazodone to the active med list, but the HPI documents the patient is afraid of it and not using it, with no recorded discussion of that concern. Adding a feared medication without documented shared decision-making is worth a note.</span></div>'
+  ];
+  host.innerHTML = items.join('');
+}
+
+function codeStage(){
+  return el('<div class="demo-section code-card">'
+    + '<div class="code-big" id="codeBig">99214</div>'
+    + '<div style="color:var(--cream);font-size:.92rem;margin:6px 0 2px">Established patient visit, moderate complexity MDM</div>'
+    + '<div style="color:var(--cream-dim);font-size:.82rem;margin-bottom:12px">2-of-3 rule: Problems moderate, Data limited, Risk moderate → moderate</div>'
+    + '<span class="code-chip">90833 · 21 min psychotherapy</span><span class="code-chip">Modifier 25</span><span class="code-chip">Modifier 95</span>'
+    + '</div>');
+}
+
+function mdmStage(){
+  var s = el('<div class="demo-section"><h4>Medical Decision Making Analysis</h4><div id="mdmAxes"></div></div>');
+  return s;
+}
+function mdmItems(host){
+  var axes = [
+    '<div class="demo-item reveal reveal-item"><div class="axis-head"><strong>Problems</strong><span class="demo-badge demo-badge-amber">MODERATE</span></div><span>Two chronic conditions actively managed — ADHD (F90.2) and GAD (F41.1) — each with medication-specific reasoning, tolerability review, and an explicit hold-steady decision on fluoxetine despite nausea (kidney stone weighed as a competing contributor).</span></div>',
+    '<div class="demo-item reveal reveal-item"><div class="axis-head"><strong>Data</strong><span class="demo-badge demo-badge-dim">LIMITED</span></div><span>One qualifying source: the WA PMP, reviewed prior to the visit with a documented result. No external records, no tests ordered or independently interpreted.</span></div>',
+    '<div class="demo-item reveal reveal-item"><div class="axis-head"><strong>Risk</strong><span class="demo-badge demo-badge-amber">MODERATE</span></div><span>Prescription drug management of multiple medications with documented tolerability and benefit-risk reasoning. The Schedule II stimulant is renewed with a clean PMP, remote substance history (~4 yrs), no active use, no diversion concern — a routine continuation. This does <strong>not</strong> meet the high-risk controlled-substance threshold; it would need a current/active risk factor documented to do so.</span></div>'
+  ];
+  host.innerHTML = axes.join('');
+}
+
+function flagsStage(){
+  var flags = [
+    'Schedule II controlled substance (Adderall XR 40mg QAM) managed and renewed',
+    'WA PMP reviewed prior to visit — documented as no issues or concerns',
+    'Remote polysubstance history (~4 years ago); patient denies current use — relevant for longitudinal monitoring',
+    'Extended 6-month follow-up interval for a Schedule II stimulant, noted due to financial barriers',
+    'Trazodone added from an outside prescriber — cross-provider coordination',
+    'Persistent fluoxetine nausea held steady with documented reasoning — ongoing monitoring'
+  ].map(function(f){ return '<li>'+f+'</li>'; }).join('');
+  return el('<div class="demo-section reveal"><h4>Clinical Risk Flags</h4>'
+    + '<div class="sub" style="margin-bottom:0">Things worth keeping in view clinically — these do <strong>not</strong> change the code. The tool surfaces them so the clinical picture is never buried by the coding math.</div>'
+    + '<div class="flag-box" style="margin-top:12px"><ul>'+flags+'</ul></div></div>');
+}
+
+function verifyStage(){
+  var s = el('<div class="demo-section"><h4>Fact Verification — the tool checking its own work</h4><div class="sub">A second pass re-checks each finding from the first pass, so a wrong call gets corrected before you see the code.</div><div id="verifyLines"></div></div>');
+  return s;
+}
+function verifyItems(host){
+  var lines = [
+    '<strong>controlled_substance_decision_with_risk</strong> → correctly <strong>FALSE</strong>. PMP clean, prior use remote (~4 yrs) with denial of current use, no active SUD, no diversion, routine same-dose continuation. Does not meet the high-risk threshold.',
+    '<strong>intensive_toxicity_monitoring_drug</strong> → correctly <strong>FALSE</strong>. No lithium, clozapine, anticoagulant, or equivalent in the regimen.',
+    '<strong>chronic_actively_managed_count</strong> → <strong>2</strong> (ADHD, GAD). Supported.',
+    '<strong>unique_sources_reviewed</strong> → <strong>1</strong> (WA PMP). The med-list review is part of the interview, not a separate qualifying source.',
+    '<strong>pathway2 / threat-to-life / hospitalization</strong> → correctly <strong>FALSE</strong>. SI denied, no crisis; historical trauma and remote substance use do not activate these.'
+  ];
+  host.innerHTML = lines.map(function(l){ return '<div class="verify-line reveal reveal-item"><span class="ck">✓</span>'+l+'</div>'; }).join('');
+}
+
+function attestationStage(){
+  var txt = "Established patient follow-up (99214) was determined by moderate complexity medical decision making based on: (1) moderate problems — two chronic conditions actively managed, ADHD (F90.2) and GAD (F41.1), with documented tolerability review and benefit-risk reasoning for holding fluoxetine despite persistent nausea attributed in part to a recent kidney stone; (2) limited data — WA PMP reviewed prior to visit with documented result of no concerns; (3) moderate risk — prescription drug management of multiple medications including a Schedule II stimulant (Adderall XR 40mg QAM) with PMP review and patient-specific tolerability assessment. Two of three MDM elements at moderate satisfy the 2-of-3 rule. Psychotherapy add-on 90833 for 21 minutes of Motivational Interviewing, documented separately from the E/M service; E/M level based on MDM per CPT 2025 combined-service rules. Modifiers: 25 (significant, separately identifiable E/M service); 95 (synchronous telehealth, audio-video).";
+  return el('<div class="demo-section reveal"><h4>Chart-Ready Attestation</h4><div class="demo-note-out" style="background:var(--navy-mid);padding:14px;border-radius:6px;border:1px solid var(--rule)">'+txt+'</div></div>');
+}
+
+// ───────────── ORCHESTRATION ─────────────
+async function initDemo(){
+  panel.innerHTML = '';
+  restartBtn.style.display = 'none';
+
+  // Stage 1 — note fills in (fast), framing line teaches "paste the whole note"
+  var stage = el('<div><div class="input-label">Completed chart note <span class="wc" id="wc"></span></div><div class="note-input" id="noteInput"></div><p class="frame-line">Paste the complete note — the more documentation it has to work with, the deeper the audit.</p></div>');
+  panel.appendChild(stage);
+  document.getElementById('wc').textContent = '(' + SAMPLE_NOTE.split(/\s+/).length + ' words)';
+  await sleep(250);
+  await typeInto(document.getElementById('noteInput'), SAMPLE_NOTE, 320);
+  await sleep(200);
+  panel.appendChild(el('<div class="step-hint">Read as much as you like — nothing runs until you click.</div>'));
+  await waitForClick('Run the audit →');
+
+  // Stage 2 — processing → Documentation Audit (HERO)
+  await processingBeat();
+  var audit = auditStage(); panel.appendChild(audit); await show(audit);
+  auditItems(audit.querySelector('#auditItems'));
+  var aItems = audit.querySelectorAll('.reveal-item');
+  for (var i=0;i<aItems.length;i++){ await show(aItems[i]); await sleep(200); }
+  await waitForClick('See the code →');
+
+  // Stage 3 — code card
+  var code = codeStage(); panel.appendChild(code); await show(code);
+  await sleep(100); document.getElementById('codeBig').classList.add('pop'); await sleep(500);
+  await waitForClick('Show the reasoning →');
+
+  // Stage 4 — MDM axes
+  var mdm = mdmStage(); panel.appendChild(mdm); await show(mdm);
+  mdmItems(mdm.querySelector('#mdmAxes'));
+  var mItems = mdm.querySelectorAll('.reveal-item');
+  for (var j=0;j<mItems.length;j++){ await show(mItems[j]); await sleep(180); }
+  await waitForClick('Show clinical flags →');
+
+  // Stage 5 — Clinical Risk Flags
+  var flags = flagsStage(); panel.appendChild(flags); await show(flags);
+  await waitForClick('Check its own work →');
+
+  // Stage 6 — Fact Verification (own gated stage)
+  var verify = verifyStage(); panel.appendChild(verify); await show(verify);
+  verifyItems(verify.querySelector('#verifyLines'));
+  var vItems = verify.querySelectorAll('.reveal-item');
+  for (var k=0;k<vItems.length;k++){ await show(vItems[k]); await sleep(140); }
+  await waitForClick('Get the attestation →');
+
+  // Stage 7 — Attestation
+  var att = attestationStage(); panel.appendChild(att); await show(att);
+  await sleep(200);
+  panel.appendChild(el('<div class="step-hint">That\'s the full pass — audit, code, reasoning, clinical flags, self-check, and a chart-ready attestation.</div>'));
+  restartBtn.style.display = '';
+  restartBtn.scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+window.addEventListener('load', function(){
+  panel = document.getElementById('panel');
+  restartBtn = document.getElementById('restartBtn');
+  initDemo();
+});
+</script>
+</body>
+</html>
