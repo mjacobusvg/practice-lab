@@ -16,11 +16,13 @@
 // WITHOUT writing anything. Nothing here ever creates, cancels, or charges a
 // Stripe subscription; it only reads Stripe and writes our own tables.
 //
-// Access tier is NOT invented here: for a matched member we trust the existing
-// accounts.tier as the source of truth for access, and only record the Stripe
-// product/amount for provenance plus an is_grandfathered flag. Rows whose
-// product-derived tier disagrees with accounts.tier are reported, never
-// auto-changed. Members with no account row are reported, never auto-created.
+// Each subscription row records the tier THAT subscription grants (derived from
+// the Stripe product), plus an is_grandfathered flag and the Stripe customer.
+// A member's ACCESS tier is the highest active tier across their subscriptions;
+// this backfill does NOT rewrite accounts.tier. Rows whose granted tier differs
+// from the current accounts.tier are reported (expected for merged multi-sub
+// members and comps), never auto-changed. Members with no account row are
+// reported, never auto-created.
 //
 // POST body: { secret, dry_run (default true), include_canceled (default false) }
 // Env (practice-lab Netlify site): STRIPE_SECRET_KEY, SUPABASE_URL,
@@ -31,16 +33,27 @@
 const CURRENT_MONTHLY_CENTS = 11900; // $119/mo
 const CURRENT_ANNUAL_CENTS = 114000; // $1,140/yr
 
-// Stripe product -> the access tier that product was sold as. Used only to
-// DETECT drift against accounts.tier, not to overwrite it. Extend if new
-// membership products appear in Stripe.
+// Stripe product -> the access tier that product grants. This is the tier
+// written on each subscription row (a member's ACCESS is the highest active
+// tier they hold). Extend if new membership products appear in Stripe.
 const PRODUCT_TIER = {
   prod_SnR5gmEzqzf4QY: 'forum', // Full Forum Access ($50/$525)
   prod_TVA3ySjsPUYqFu: 'forum', // 7-Day Trial -> $50 forum
   prod_TItCoEzHwGexN3: 'forum', // Toolkit Buyers trial -> $50 forum
   prod_UG0R8KspOn5vFe: 'full',  // Full Access ($119/$1,140)
-  prod_Tync5rANzosLJR: 'full',  // Member Upgrade to $89 (Full CE Access)
-  prod_Typ4Rae4Jdk2fY: 'full'   // $89 with CEs
+  prod_Tync5rANzosLJR: 'full',  // Member Upgrade to $89 (Full CE Access, grandfathered)
+  prod_Typ4Rae4Jdk2fY: 'full'   // $89 with CEs (grandfathered)
+};
+
+// Members who transact under more than one Stripe identity. Circle privacy-relay
+// emails mint a separate customer per checkout, so one human can appear as two
+// customers with two subscriptions. Map the extra customer id to the canonical
+// account's circle_member_id so BOTH subscriptions land on ONE account; access
+// then resolves to the highest active tier. Elijah Miller: $119 full bought under
+// a second masked email, merged onto his original $50 forum account (Michael,
+// 2026-07). Remind Elijah of this consolidation at the Circle cutover.
+const CUSTOMER_ALIAS_CMID = {
+  cus_UZntPvjoQPMmyI: '43513695'
 };
 
 exports.handler = async function (event) {
@@ -124,15 +137,24 @@ exports.handler = async function (event) {
       const cmid = (customer.metadata && customer.metadata.community_member_id)
         || (s.metadata && s.metadata.community_member_id) || null;
 
-      const account = acctByEmail.get(email) || (cmid ? acctByCmid.get(String(cmid)) : null);
+      // Alias (merged multi-identity member) wins, then email, then Circle ID.
+      const aliasCmid = customer.id ? CUSTOMER_ALIAS_CMID[customer.id] : null;
+      const account = (aliasCmid ? acctByCmid.get(aliasCmid) : null)
+        || acctByEmail.get(email)
+        || (cmid ? acctByCmid.get(String(cmid)) : null);
 
       if (!account) {
         unmatched.push({ stripe_subscription_id: s.id, email, cmid, amount_cents: amount, product: productId, status: s.status });
         continue;
       }
 
-      const soldTier = PRODUCT_TIER[productId] || null;
-      if (soldTier && soldTier !== account.tier) {
+      // Tier this subscription grants (product-derived). Fall back to the account
+      // tier only if the product is unknown, so we never invent access.
+      const soldTier = PRODUCT_TIER[productId] || account.tier;
+      // Informational: the account tier differs from what this single sub grants.
+      // Expected for merged multi-sub members (a $50 row under a full account) and
+      // for comped accounts; surfaced, never auto-changed.
+      if (soldTier !== account.tier) {
         mismatches.push({ email, account_tier: account.tier, product_tier: soldTier, amount_cents: amount, product: productId });
       }
 
@@ -148,10 +170,11 @@ exports.handler = async function (event) {
       plan.push({
         account_id: account.id,
         product: productId,
-        tier: account.tier,               // access truth = existing account tier
+        tier: soldTier,                   // tier THIS subscription grants
         status: s.status,
         is_grandfathered: isGrandfathered,
         stripe_subscription_id: s.id,
+        stripe_customer_id: customer.id || null,
         current_period_start: toIso(periodStart),
         current_period_end: toIso(periodEnd),
         canceled_at: toIso(s.canceled_at),
