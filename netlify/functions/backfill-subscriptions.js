@@ -28,33 +28,13 @@
 // Env (practice-lab Netlify site): STRIPE_SECRET_KEY, SUPABASE_URL,
 //   SUPABASE_SERVICE_KEY, BACKFILL_SECRET
 
-// Current standard rate. Anything a member pays BELOW this is a grandfathered
-// rate we are honoring (the $50 forum-forever and $89 closed-cohort deals).
-const CURRENT_MONTHLY_CENTS = 11900; // $119/mo
-const CURRENT_ANNUAL_CENTS = 114000; // $1,140/yr
-
-// Stripe product -> the access tier that product grants. This is the tier
-// written on each subscription row (a member's ACCESS is the highest active
-// tier they hold). Extend if new membership products appear in Stripe.
-const PRODUCT_TIER = {
-  prod_SnR5gmEzqzf4QY: 'forum', // Full Forum Access ($50/$525)
-  prod_TVA3ySjsPUYqFu: 'forum', // 7-Day Trial -> $50 forum
-  prod_TItCoEzHwGexN3: 'forum', // Toolkit Buyers trial -> $50 forum
-  prod_UG0R8KspOn5vFe: 'full',  // Full Access ($119/$1,140)
-  prod_Tync5rANzosLJR: 'full',  // Member Upgrade to $89 (Full CE Access, grandfathered)
-  prod_Typ4Rae4Jdk2fY: 'full'   // $89 with CEs (grandfathered)
-};
-
-// Members who transact under more than one Stripe identity. Circle privacy-relay
-// emails mint a separate customer per checkout, so one human can appear as two
-// customers with two subscriptions. Map the extra customer id to the canonical
-// account's circle_member_id so BOTH subscriptions land on ONE account; access
-// then resolves to the highest active tier. Elijah Miller: $119 full bought under
-// a second masked email, merged onto his original $50 forum account (Michael,
-// 2026-07). Remind Elijah of this consolidation at the Circle cutover.
-const CUSTOMER_ALIAS_CMID = {
-  cus_UZntPvjoQPMmyI: '43513695'
-};
+// Product -> tier map, merged-identity alias, and grandfathered/grouping logic
+// are shared with stripe-webhook.js so the two can never diverge.
+const {
+  CUSTOMER_ALIAS_CMID,
+  tierForProduct,
+  isGrandfathered
+} = require('./_lib/subscription-tier');
 
 exports.handler = async function (event) {
   const CORS = {
@@ -150,7 +130,7 @@ exports.handler = async function (event) {
 
       // Tier this subscription grants (product-derived). Fall back to the account
       // tier only if the product is unknown, so we never invent access.
-      const soldTier = PRODUCT_TIER[productId] || account.tier;
+      const soldTier = tierForProduct(productId, account.tier);
       // Informational: the account tier differs from what this single sub grants.
       // Expected for merged multi-sub members (a $50 row under a full account) and
       // for comped accounts; surfaced, never auto-changed.
@@ -159,8 +139,7 @@ exports.handler = async function (event) {
       }
 
       // Grandfathered = paying below the current standard rate for their cadence.
-      const standard = interval === 'year' ? CURRENT_ANNUAL_CENTS : CURRENT_MONTHLY_CENTS;
-      const isGrandfathered = amount != null && amount < standard;
+      const grandfathered = isGrandfathered(amount, interval);
 
       // current_period_* live on the subscription item in newer API versions.
       const periodStart = (item && item.current_period_start) || s.current_period_start || null;
@@ -172,7 +151,7 @@ exports.handler = async function (event) {
         product: productId,
         tier: soldTier,                   // tier THIS subscription grants
         status: s.status,
-        is_grandfathered: isGrandfathered,
+        is_grandfathered: grandfathered,
         stripe_subscription_id: s.id,
         stripe_customer_id: customer.id || null,
         current_period_start: toIso(periodStart),
