@@ -154,7 +154,7 @@ body{background:var(--navy);color:var(--cream);font-family:var(--font-body);min-
 <script src="/theme-toggle.js"></script>
 </head>
 <body>
-<div class="container">
+<div class="container" id="cc-container" style="display:none">
 
   <div class="tool-header">
     <a href="/practice-manager" class="back-link">&larr; Hub</a>
@@ -265,6 +265,38 @@ var lastReview = null;
 var lastAudit = null;
 var followUpMessages = [];
 
+// ══════════════════════════════════════════════════════════════
+// MEDICARE REFERENCE RATES (relative-comparison reference only)
+// Source: practice fee schedule at 100% of Medicare, non-facility.
+// These are a DIRECTIONAL reference for "which method reimburses
+// more," NOT a payment prediction. Update annually from the current
+// Medicare Physician Fee Schedule / your own fee schedule.
+// Commercial and NP rates commonly differ (often lower).
+// ══════════════════════════════════════════════════════════════
+var MEDICARE_REF = {
+  '99202': 73.97, '99203': 120.10, '99204': 180.94, '99205': 241.18,
+  '99212': 61.08, '99213': 97.62, '99214': 138.86, '99215': 196.80,
+  '99417': 32.56,   // commercial prolonged (per unit)
+  'G2212': 34.57,   // Medicare prolonged (per unit)
+  '90833': 82.85, '90836': 105.00, '90838': 138.86, '90785': 15.03
+};
+// 99202 reference not on the captured fee sheet; estimated and unused
+// in the new-patient comparison (comparison starts at 99204 vs 99205).
+// User-entered custom rates (optional) override MEDICARE_REF at compare time.
+var customRates = {};
+
+function refRate(code) {
+  if (!code) return null;
+  var c = String(code).toUpperCase();
+  if (customRates[c] != null && !isNaN(customRates[c])) return customRates[c];
+  return (MEDICARE_REF[c] != null) ? MEDICARE_REF[c] : null;
+}
+
+function fmtUSD(n) {
+  if (n == null || isNaN(n)) return '—';
+  return '$' + Number(n).toFixed(2);
+}
+
 function selectVisitType(el) {
   document.querySelectorAll('.visit-opt[data-val="established"],.visit-opt[data-val="new"]').forEach(function(o) { o.classList.remove('active'); });
   el.classList.add('active');
@@ -299,22 +331,44 @@ Rules:
 - higher_care_discussed: true if PHP, IOP, inpatient, or higher level of care was discussed, offered, considered, or declined
 - active_si_hi: true if active suicidal ideation, homicidal ideation, or self-harm is documented
 - medication_safety_decisions: describe any decision NOT to prescribe, NOT to escalate, or to discontinue FOR SAFETY with reasoning
-- questions: 0-3 questions about genuinely ambiguous items that would change coding. Do NOT ask about obvious things.`;
+- questions: 0-3 questions about genuinely ambiguous items that would change coding. Do NOT ask about obvious things.
 
-var AUDIT_PROMPT = `You are a psychiatric chart documentation auditor. Your job is to find internal inconsistencies, contradictions, and documentation gaps in a completed psychiatric note BEFORE it is coded. You are NOT coding the note. You are checking whether the note is internally consistent and audit-ready.
+NEVER ask about any of the following — these are NOT ambiguities and asking about them is wrong:
+- Psychotherapy time versus total visit time. These are DIFFERENT, COMPLEMENTARY values that normally coexist. "20 minutes psychotherapy" and "25 minutes total" is correct and expected: the 20 is the therapy time, the 25 is the whole visit, the difference is E/M time. This is never a conflict and must never be raised as a question.
+- Whether the provider has an "ongoing psychotherapy relationship." A prescriber's brief psychotherapy during a med-management visit is independently billable; this is irrelevant to add-on eligibility and must never be asked.
+- Which time to "use" for the E/M when a psychotherapy add-on is present. When an add-on is billed, E/M is set by MDM, not time, so there is no time-selection decision to ask about.`;
 
-Read the entire note carefully. Compare every section against every other section. Flag any of the following:
+var AUDIT_PROMPT = `You are a psychiatric chart documentation auditor. Your job is to find documentation issues — contradictions, gaps, and AI-scribe error patterns — in a completed psychiatric note BEFORE it is coded. You are NOT coding the note. You are checking whether the note is internally consistent and audit-ready.
 
-INCONSISTENCIES (statements in one section that contradict another):
-- HPI symptom reports that contradict ROS (e.g. patient reports insomnia in HPI but ROS says sleep disturbance negative)
-- Medication doses or names in HPI that don't match the Medications list
-- Assessment discusses a medication change but Plan says something different
-- HPI says one dose, Plan says a different dose
-- MSE findings that contradict HPI or Assessment (e.g. MSE says euthymic but Assessment says depressed)
-- Diagnosis in Assessment not reflected in the problem list, or vice versa
-- Patient reports substance use in HPI but substance use section says denies
+Read the entire note carefully. Compare every section against every other section. Produce ONE consolidated list of documentation issues (do not split contradictions and gaps into separate lists — they overlap and a single finding must appear only ONCE). Each issue is tagged with a "kind":
 
-TIME DISCREPANCIES (VERY NARROW SCOPE — most notes will have ZERO time issues):
+- "contradiction" — two statements in the note disagree about the SAME point in time (both present, genuinely conflicting). Examples: HPI symptom contradicts ROS; MSE contradicts Assessment; diagnosis in Assessment not on problem list or vice versa; substance use reported in HPI but denied in substance section; the Plan and the medication list disagree about today's post-change regimen. NOTE: a dose in the HPI differing from a dose in the Plan OR the medication list is NOT a contradiction — the HPI is the pre-visit baseline and the Plan/med list reflect today's change. See the TEMPORAL STRUCTURE rule below before flagging any dose difference.
+- "gap" — something that should be documented is ABSENT. Examples: medication changed but no rationale documented; safety assessment missing when clinical content suggests it (e.g. hopelessness mentioned but no SI screening); psychotherapy intervention documented but no time stated; a clinical claim in the Assessment with no supporting HPI content.
+- "scribe_pattern" — AI-scribe hallucination patterns that weaken defensibility: symptoms in ROS/Assessment never in HPI (fabricated); denials never actually asked (inferred negatives); findings stated with more certainty than HPI supports; meds with wrong names/doses/frequencies vs. the list at the SAME point in time; mental health content in HPI absent from Assessment; complexity inflated by assessment language overstating the visit; consent/disclosure language that reads auto-generated.
+
+TEMPORAL STRUCTURE OF A FOLLOW-UP NOTE (read this before flagging ANY medication or dose difference):
+A follow-up note is sequential in time. The HPI documents the patient's status and regimen AS THEY PRESENT — what they are on BEFORE any change made today. The Assessment may describe a contemplated or recommended change. The Plan documents the actions TAKEN at this visit, including dose changes made today. The MEDICATION LIST in a live EHR updates the moment a new prescription is written, so it reflects TODAY'S POST-CHANGE regimen — the same point in time as the Plan, NOT the HPI's baseline. These sections describe DIFFERENT POINTS IN TIME and are SUPPOSED to differ when a change was made.
+
+NEVER flag the following — they are correct documentation, not contradictions:
+- HPI states the pre-visit dose (e.g. "ziprasidone 40 mg BID") and the Plan OR the Medication list shows a different post-change dose made today (e.g. "20 mg AM / 40 mg PM"). This is a dose change, not a conflict — the HPI is the baseline the patient presented on; the Plan and the med list reflect what was prescribed today. A med-change visit is SUPPOSED to show the old dose in the HPI and the new dose in the Plan/med list. This is the single most common false positive — do not flag it.
+- HPI total daily dose differing from the med-list total daily dose when a change was made today (e.g. HPI "40 mg BID" = 80 mg, med list "20 mg AM + 40 mg PM" = 60 mg). The HPI describes the pre-visit regimen and the med list describes the post-change regimen; the difference IS the documented reduction, not a discrepancy.
+- The Assessment recommends/justifies a change AND the Plan or med list shows that change was made today. That is alignment, not contradiction.
+- Plan notation recording the action with refill tracking (e.g. "X mg decreased 6/16/26 w/2 refills, due 9/16/26"; "Y mg renewed 6/16/26"). Dated medication-action notation is normal record-keeping; "decreased"/"renewed" are normal terms for what was done.
+- "No other medications were changed today" alongside a documented change to one medication — standard correct closer meaning the OTHER meds were continued unchanged.
+- Brand and generic names used interchangeably (Geodon/ziprasidone, Lamictal/lamotrigine) — normal, not a discrepancy worth flagging.
+
+A medication difference is ONLY a contradiction when it is internally inconsistent ABOUT THE SAME POINT IN TIME. Because the Plan and the medication list BOTH reflect today's post-change state, a real contradiction is when THOSE TWO disagree with each other — e.g. the Plan says "decreased to 20 mg AM" but the med list shows 40 mg AM. The HPI is the prior point in time; a difference between the HPI and either the Plan or the med list is never, by itself, a contradiction. When you see an HPI dose that differs from the med list, assume a dose change was made today and do NOT flag it unless the Plan and med list ALSO disagree with each other.
+
+CRITICAL DEDUPLICATION RULE: A single underlying problem appears as exactly ONE issue, even if it could be described multiple ways. For example, "Assessment recommends a dose reduction but Plan says no medication changes" is ONE issue (kind: contradiction) — do NOT also list it as a gap ("Plan fails to document the change") or a scribe pattern. Pick the single most accurate kind and the highest applicable severity, and list it once. Likewise, "Plan references prazosin found nowhere else in the note" is ONE issue, not two. Never report the same finding under more than one entry.
+
+ROS DENIALS vs. DIAGNOSES vs. MONITORING (read before flagging any ROS conflict):
+A ROS symptom denial (e.g. "(-)depression," "(-)anxiety") is a statement about the patient's CURRENT symptom status TODAY. It does NOT conflict with, and you must NOT flag it against, either of the following — these are normal, correct psychiatric documentation:
+- AN ACTIVE DIAGNOSIS ON THE PROBLEM LIST. Chronic and recurrent conditions (recurrent major depression, unspecified mood disorder, GAD, PTSD) remain on the problem list during well/euthymic periods. A patient is not symptom-free of the diagnosis; the diagnosis is the standing condition. "(-)depression" in ROS alongside "major depressive disorder, recurrent" on the problem list is CORRECT — you do not remove a recurrent diagnosis because the patient is asymptomatic today. Never flag this as a contradiction.
+- A PROSPECTIVE MONITORING TARGET OR RED FLAG. When the Assessment says it will "monitor for worsening depression" or names "depressive deepening" as a reason to pause a taper, that is forward-looking — what to watch for IF a change destabilizes the patient. It is NOT a statement that the symptom is present today. "(-)depression" in ROS alongside "monitor for worsening depression during the taper" is CORRECT and consistent. Never flag this.
+
+A ROS symptom denial is ONLY a contradiction when another section asserts that SAME symptom is PRESENT TODAY — e.g. ROS says "(-)depression" but the HPI or MSE describes the patient as currently tearful, hopeless, or actively depressed at this visit. Only that same-time-point, current-symptom conflict is flaggable. Carried diagnoses and monitoring plans are never in conflict with a current ROS denial.
+
+TIME (VERY NARROW SCOPE — most notes will have ZERO time issues):
 The ONLY time issue worth flagging is when the note contains two DIFFERENT numbers for PSYCHOTHERAPY time specifically. Example: "Time: 18 minutes" in one place and "Time spent on psychotherapy services only: 17 minutes" in another place. Those are two claims about the SAME thing that disagree.
 
 EVERYTHING ELSE ABOUT TIME IS NORMAL AND MUST NOT BE FLAGGED:
@@ -325,38 +379,49 @@ EVERYTHING ELSE ABOUT TIME IS NORMAL AND MUST NOT BE FLAGGED:
 
 If you cannot identify two conflicting statements about psychotherapy time, return an empty time_issues array.
 
-DOCUMENTATION GAPS THAT AFFECT AUDIT DEFENSIBILITY:
-- Plan references a medication not discussed anywhere in HPI or Assessment
-- Assessment makes clinical claims not supported by any HPI content
-- Psychotherapy intervention documented but no time stated
-- Medication changed but no rationale documented
-- Safety assessment missing when clinical content suggests it should be present (e.g. patient mentions hopelessness but no SI screening documented)
+PSYCHOTHERAPY ADD-ON SUFFICIENCY (only evaluate this if the note appears to bill or document a psychotherapy add-on — 90833/90836/90838 — or contains a psychotherapy section):
+A psychotherapy add-on is one of the most audited and most often denied elements in psychiatric billing. The central failure is documentation that is actually MEDICATION MANAGEMENT COUNSELING (already bundled into and paid by the E/M code) being presented as billable psychotherapy. Apply this test rigorously and flag gaps.
 
-AI SCRIBE HALLUCINATION PATTERNS (flag these specifically):
-Many clinicians use AI scribes that generate draft notes. These tools commonly introduce errors that weaken audit defensibility. Watch for:
-- Symptoms documented in ROS or Assessment that were never mentioned in HPI (fabricated symptoms)
-- Denials documented that were never actually asked about (inferred negatives from silence)
-- Findings stated with more clinical certainty than the HPI content supports (e.g. "patient reports significant improvement" when HPI says "doing okay")
-- Treatment recommendations or clinical decisions in the Assessment that are not reflected in the Plan (or vice versa)
-- Medications captured with wrong names, wrong doses, or wrong frequencies compared to the medication list
-- Mental health content discussed in HPI that is absent from the Assessment (AI scribes miss mental health details at high rates)
-- MDM complexity inflated by assessment language that overstates what actually happened in the visit (e.g. "comprehensive evaluation" for a routine follow-up, or listing clinical reasoning the note doesn't actually support)
-- Consent or disclosure language that appears auto-generated rather than clinician-written (e.g. "patient was advised of and consented to" without corresponding documentation of that conversation)
+THE BUNDLING DISTINCTION (the most important check):
+- BUNDLED INTO E/M, NOT billable psychotherapy: teaching how to take the medication, what side effects to watch for, lab/BP/vitals monitoring, dosing timing, substance avoidance counseling, adherence counseling, follow-up planning, and discussion of the medication plan. These are medication management counseling and do NOT support a psychotherapy add-on no matter how much time is spent.
+- BILLABLE PSYCHOTHERAPY: active therapeutic work targeting the psychiatric condition or its symptoms/behaviors — e.g. teaching about the disorder itself (neurobiology, course, prognosis) with the target being the patient's understanding of and engagement with their illness, cognitive restructuring, processing, skills work, exploring ambivalence, emotional regulation work. Psychoeducation IS a recognized modality, but only when it addresses the psychiatric condition, not the mechanics of medication-taking.
+- THE PRACTICAL TEST: would the note still describe a therapeutic encounter if the medication-management content were removed? If no, what is documented is E/M-only and a psychotherapy add-on is not defensible. Flag this explicitly.
 
-DO NOT flag:
-- Stylistic preferences or formatting
-- Missing sections that are optional
-- Things that are clinically reasonable even if not explicitly stated
-- Boilerplate or template language that is clearly intentional (e.g. crisis line information, standard plan language)
+THE FIVE REQUIRED ELEMENTS (flag each that is missing or invalid):
+1. Modality — must be named AND tied to actual therapeutic work, not medication counseling. "Talk therapy," "counseling," or bare "psychotherapy" are too vague. "Individual psychotherapy via telehealth" names delivery format, not modality.
+2. Intervention — the specific active therapeutic technique inside the modality must be documented. Content topics alone are not an intervention. Flag when interventions read as passive/educational ("provided psychoeducation," "discussed," "advised") rather than active therapeutic work, OR when the documented intervention is actually medication counseling.
+3. Focus — must be a psychiatric symptom or behavior being therapeutically addressed (e.g. illness-related avoidance, executive-function challenges, emotional regulation, illness beliefs). Flag when the stated focus is medication-management topics (adherence, monitoring, affordability, side-effect tracking).
+4. Patient response — must be a response to a THERAPEUTIC intervention, not agreement with the medication plan. Flag "patient agreed with plan" / "engaged" when it responds to med management rather than therapy.
+5. Time — psychotherapy-only minutes, documented separately from the E/M. Flag if missing.
+
+When flagging psychotherapy issues, name which of the five elements fail and whether the deeper problem is that the content is medication management rather than psychotherapy.
+
+DO NOT flag (these are normal and must NOT generate issues):
+- Stylistic preferences or formatting.
+- Missing sections that are optional.
+- Things that are clinically reasonable even if not explicitly stated (e.g. a clear rationale for not changing a stable medication does not have to be spelled out as a patient-encounter quote).
+- Intentional boilerplate or standard template language: crisis-line/ER instructions, PARQ ("Procedures, Alternatives, Risks, Questions discussed and agreed to"), standard integrative-care/therapy psychoeducation paragraphs, return-precaution language. These are deliberate standard-of-care inclusions. Do NOT flag them as "auto-generated," "not individualized," or "padding." Their presence STRENGTHENS the note.
+- Safety assessment: if the note documents ANY of crisis-line information, ER/return precautions for SI, a PARQ statement, or an SI/HI denial in ROS or MSE, then a safety assessment IS documented. Do NOT flag "missing safety assessment" or "no suicide screening" when these are present. Only flag a safety gap when there is explicit acute risk content (stated hopelessness, SI, self-harm) with NO corresponding screening or response anywhere in the note.
+- Brand/generic name interchange (Geodon/ziprasidone, Lamictal/lamotrigine) and dated medication-action notation with refill tracking.
+- Pre-change vs. post-change dose differences between HPI and Plan (see TEMPORAL STRUCTURE rule above).
+
+TIER — assign every issue a tier so the provider knows what actually requires action versus what is optional:
+- "must_fix": a genuine error that would confuse a covering provider, misrepresent what the patient is taking or what was done, or read as a real inconsistency to an auditor. Examples: two sections disagreeing about the CURRENT regimen, a fabricated symptom, a diagnosis billed that the note does not support, an acute-risk statement with no screening anywhere. These should be corrected before signing. Most notes have ZERO or ONE.
+- "strengthen": the note is correct and defensible as written, but adding something would make it harder to challenge in an aggressive audit (e.g. formally noting an external record was reviewed, restating a monitoring plan in the Plan). Purely optional; the provider can reasonably skip these.
+- "minor": a small documentation nicety with negligible real-world impact (naming a specific CBT technique, wording polish). Informational only.
+
+Be conservative about must_fix; do NOT inflate. If an issue is a documentation-quality nicety rather than something that makes the note wrong or misleading, it is "strengthen" or "minor," never "must_fix." The goal is that a clean, well-documented note shows zero must_fix items so the provider is not made to feel the note is full of errors when it is fine. When unsure between tiers, choose the LOWER tier.
 
 Respond ONLY with JSON. No markdown, no backticks.
 
 {
-  "inconsistencies": [
+  "documentation_issues": [
     {
-      "type": "hpi_vs_ros" or "hpi_vs_plan" or "hpi_vs_meds" or "assessment_vs_plan" or "mse_vs_assessment" or "diagnosis_mismatch" or "substance_use_mismatch" or "fabricated_symptom" or "inferred_denial" or "overstated_finding" or "missing_mental_health_content" or "inflated_complexity" or "other",
+      "kind": "contradiction" or "gap" or "scribe_pattern",
+      "tier": "must_fix" or "strengthen" or "minor",
+      "type": "hpi_vs_ros" or "hpi_vs_plan" or "hpi_vs_meds" or "assessment_vs_plan" or "mse_vs_assessment" or "diagnosis_mismatch" or "substance_use_mismatch" or "fabricated_symptom" or "inferred_denial" or "overstated_finding" or "missing_mental_health_content" or "inflated_complexity" or "unsupported_plan_reference" or "missing_rationale" or "missing_safety_assessment" or "other",
       "sections": ["section 1", "section 2"],
-      "detail": "Specific description of the contradiction with quotes from the note",
+      "detail": "Specific description with quotes from the note",
       "severity": "high" or "moderate" or "low",
       "audit_impact": "One sentence on how this could affect an audit"
     }
@@ -367,155 +432,134 @@ Respond ONLY with JSON. No markdown, no backticks.
       "severity": "high" or "moderate" or "low"
     }
   ],
-  "documentation_gaps": [
+  "psychotherapy_issues": [
     {
-      "detail": "Specific gap description",
+      "elements_failed": ["modality" and/or "intervention" and/or "focus" and/or "patient_response" and/or "time"],
+      "is_actually_em_only": true or false,
+      "detail": "Specific description: which elements fail, and whether the content is medication management rather than psychotherapy, with quotes from the note",
       "severity": "high" or "moderate" or "low",
-      "audit_impact": "One sentence on how this could affect an audit"
+      "audit_impact": "One sentence on the add-on denial / takeback risk"
     }
   ],
   "clean": true or false
 }
 
-If the note has no issues, return {"inconsistencies":[],"time_issues":[],"documentation_gaps":[],"clean":true}.
+If the note has no issues, return {"documentation_issues":[],"time_issues":[],"psychotherapy_issues":[],"clean":true}.
 Be thorough but precise. Only flag real problems, not nitpicks.`;
 
-var MDM_EVAL_PROMPT = `You are an expert psychiatric E/M coder evaluating Medical Decision Making under the 2021/2025 guidelines.
+var MDM_EVAL_PROMPT = `You are an expert psychiatric E/M coder extracting the DETERMINATE FACTS needed to classify Medical Decision Making under the 2021/2025 AMA guidelines.
 
-Read this chart note. Evaluate all three MDM axes: Problems, Data, and Risk.
+You do NOT assign the axis levels. You report the specific facts present in the note. Code will map your facts to levels using the AMA MDM table. Your only job is to read the note accurately and answer each factual question. Be conservative and literal: report what the note actually documents, not what the patient's lifetime acuity suggests.
 
-You already know the MDM framework. Apply it accurately. Do not undercode, but do not overcode either. Code what this visit actually is, not what the patient's lifetime acuity suggests.
+Read the chart note and extract the following facts. Respond ONLY with JSON. No markdown.
 
-For Problems: Evaluate what is happening at THIS visit, not the patient's full diagnostic history.
+=== PROBLEMS FACTS ===
+Count and characterize the problems being addressed AT THIS VISIT (not the full diagnostic history). Separate ICD codes = separate problems; do not collapse related conditions.
 
-PROBLEMS COUNTING RULES:
-- Count each diagnosis on the problem list that is being actively addressed in the visit
-- Separate ICD codes = separate problems for MDM purposes, regardless of pathophysiological relationship
-- Do NOT collapse related conditions (e.g. depression + anxiety + insomnia) into "one complex" — count each diagnosis being managed
-- If there are separate medications, separate clinical reasoning, or separate diagnostic codes being addressed, they are separate problems
-- Focus on what the clinician is documenting and managing, not theoretical diagnostic relationships
-- A patient with depression (F33.1), GAD (F41.1), and insomnia (G47.00) each with active medications and assessment discussion has THREE problems, not one
+- pathway1 (boolean): HIGH-complexity decision-making is present. TRUE only if the note documents a NEW diagnosis being established that requires an immediate high-risk treatment decision, OR starting a controlled substance or genuinely high-risk medication in the context of diagnostic uncertainty or competing risks, OR complex medication management with multiple simultaneous adjustments alongside safety considerations. A routine new medication start (e.g. a standard SSRI) is NOT by itself pathway1 unless paired with diagnostic uncertainty or competing high-risk factors.
+- pathway2 (boolean): SEVERE exacerbation present. TRUE only if the note documents active suicidal ideation (passive or active) AT THIS VISIT, a recent psychiatric ER visit, self-discontinuation of critical medication with emerging destabilization, psychotic symptoms with safety concerns, acute functional deterioration, or a higher level of care discussed/offered/declined. A HISTORICAL event (e.g. a suicide attempt years ago) with no current crisis is NOT pathway2.
+- pathway3 (boolean): A condition posing a direct threat to life or bodily function AT THIS VISIT.
+- chronic_actively_managed_count (integer): number of chronic illnesses being ACTIVELY managed this visit (active medication management, documented monitoring, risk-benefit reasoning, or documented clinical reasoning about how conditions interact). Count each separately coded condition the clinician is actually reasoning about.
+- chronic_with_exacerbation (boolean): at least one chronic illness with a mild exacerbation requiring attention beyond routine renewal.
+- undiagnosed_new_problem (boolean): an undiagnosed new problem with uncertain prognosis is being worked up.
+- stable_chronic_count (integer): number of stable chronic illnesses being managed without change.
+- self_limited_count (integer): number of self-limited or minor problems.
 
-Low: 1 stable chronic illness being managed without change, OR 2 or more self-limited problems. A stable follow-up where one condition is well-controlled, the patient reports improvement or stability, and the clinician renews medications without changes IS low. "Deciding not to change a working regimen" for a single stable condition is routine management, not a complex clinical decision. Do not count medications managed by other providers (e.g. PCP-managed antihypertensives) as adding psychiatric complexity.
+=== DATA FACTS ===
+- unique_sources_reviewed (integer): count of qualifying Category 1 data activities documented — review of external records (e.g. PCP note, prior therapist notes), each unique test ordered/reviewed, an independent historian. Count distinct documented sources.
+- independent_interpretation (boolean): the clinician independently interpreted a test/tracing/image performed by another (Category 2).
+- external_discussion (boolean): documented discussion of management with an external physician/QHP/appropriate source (Category 3).
+- ordered_or_reviewed_tests (integer): count of diagnostic tests ordered or reviewed.
 
-Moderate: 2 or more stable chronic illnesses, OR 1 or more chronic illnesses with mild exacerbation, OR 1 undiagnosed new problem. The distinction from Low is: either multiple conditions are being actively managed, or one condition is showing worsening that requires clinical attention beyond routine renewal. "Actively managed" does NOT require a medication change. It includes: documented monitoring of a condition that interacts with treatment decisions for another condition (e.g. substance use disorders being monitored in the context of stimulant prescribing), documented risk-benefit analysis about continuing a treatment given another condition, and clinical reasoning about how multiple diagnoses affect each other at this visit. Count the diagnoses the clinician is actually reasoning about in the assessment, not just the ones with medication changes.
+=== RISK FACTS ===
+Answer the AMA risk-category questions literally.
+- intensive_toxicity_monitoring_drug (boolean): is a drug requiring INTENSIVE monitoring for toxicity being managed (e.g. lithium, clozapine, an anticoagulant, a drug needing serial labs specifically to detect toxicity)? A standard SSRI/SNRI/most psychotropics are NOT intensive-toxicity-monitoring drugs. This is the AMA high-risk category, not general caution.
+- hospitalization_or_loc_decision (boolean): is there a documented decision regarding hospitalization or escalation/de-escalation of level of care at this visit?
+- threat_to_life_or_function_at_visit (boolean): is there a clinical decision about a condition posing a threat to life or bodily function at this visit?
+- controlled_substance_decision_with_risk (boolean): TRUE only if a controlled substance is being managed AND the note documents at least one CURRENT, ACTIVE risk factor that materially shaped today's prescribing decision, from this list: (a) recent or active substance use (not remote/historical); (b) an abnormal, concerning, or aberrant PMP finding; (c) documented diversion, misuse, or early-refill concern; (d) an unstable or active substance use disorder; (e) starting/initiating a controlled substance under documented diagnostic uncertainty or competing risks; (f) an explicit documented decision to continue or prescribe DESPITE heightened misuse/diversion risk, with that risk reasoning shown in the note. If NONE of (a)-(f) is documented, this is FALSE. A REMOTE, stable substance history (e.g. last use years ago), denial of current use, a clean/unremarkable PMP, and a routine continuation at the same dose do NOT meet this — that is moderate-risk prescription drug management with a clinical monitoring consideration (capture it in clinical_risk_flags), NOT a high-risk decision. Being a Schedule II by itself does NOT make this TRUE. The test is whether documented CURRENT risk changed today's decision, not the patient's lifetime acuity or history.
+- prescription_drug_management (boolean): is prescription drug management occurring — any prescription medication started, stopped, changed, OR continued WITH documented patient-specific assessment (tolerability, side effects, monitoring, interaction assessment, PMP review, risk-benefit reasoning about continuing)? Routine interview alone (ROS/MSE/"how are you doing") without medication-specific evaluation is NOT prescription drug management.
+- otc_or_self_limited_only (boolean): only OTC/self-limited management, no prescription decisions.
 
-High: Determined by ANY of the following three pathways:
-
-PATHWAY 1 — HIGH-COMPLEXITY DECISION-MAKING: New diagnoses being established that require immediate high-risk treatment decisions. Starting controlled substances or high-risk medications in the context of diagnostic uncertainty (e.g. stimulant trial with unresolved bipolar concerns). Treatment decisions requiring extensive clinical reasoning due to competing risks. Complex medication management with multiple simultaneous adjustments, new starts, or dose changes alongside safety considerations. If the clinician documents substantial decision-making around diagnostic uncertainty, medication risks, new diagnoses, or complex treatment decisions, Problems is HIGH.
-
-PATHWAY 2 — SEVERE EXACERBATION: Active suicidal ideation (passive or active), recent psychiatric ER visit, self-discontinuation of critical medications with emerging destabilization, psychotic symptoms with safety concerns, acute functional deterioration, medication-induced adverse events requiring immediate management changes, or clinical situations where higher level of care was discussed, offered, or declined.
-
-PATHWAY 3 — THREAT TO LIFE OR FUNCTION: A condition that poses a direct threat to life or bodily function at this visit.
-
-High Problems is about the decision-making burden and clinical judgment required, not just crisis severity. Do not deflate to moderate simply because conditions appear "stable" or there is "no severe exacerbation" when Pathway 1 is clearly met.
-
-Do not inflate stable single-condition visits to high just because the patient carries multiple diagnoses or has a complex history. But do not deflate genuinely complex decision-making visits to moderate just because there is no acute crisis.
-
-For Risk: "If any clinical decision documented in this note turned out to be wrong, what is the worst plausible outcome for the patient?" That determines the risk level. This applies to decisions to prescribe, decisions NOT to prescribe, decisions about level of care, safety assessments, and any other clinical judgment documented in the note.
-
-CRITICAL RULE — Prescription Drug Management: Per the AMA MDM table, "prescription drug management" is an example of moderate risk. This does NOT require starting, stopping, or changing a medication. Continuing a prescription medication IS prescription drug management when the note documents patient-specific medication assessment and a treatment decision — not merely sending a refill. Moderate-risk indicators: PMP review, cardiac monitoring, substance use screening, drug interaction assessment, explicit risk-benefit analysis about continuing given comorbidities, or documented assessment of tolerability/side effects/adherence that informs the decision to continue. The standard psychiatric interview (ROS, MSE, "how are you doing") does NOT by itself constitute prescription drug management. The question is: did the clinician document specific medication evaluation work beyond the routine interview that informed the decision to continue?
-
-Psychiatric visits are systematically undercoded on the Risk axis because coders miss that outpatient crisis management, medication safety decisions, and declined escalations of care are themselves high-risk clinical judgments. Do not make that mistake.
-
-Respond ONLY with JSON. No markdown.
+=== SUPPORTING NARRATIVE (for display and audit, not for level assignment) ===
+- problems_evidence (array of strings): specific findings from the note supporting the problems facts.
+- problems_reasoning (string): brief paragraph explaining what is being managed this visit.
+- data_evidence (array of strings): specific data items from the note.
+- data_reasoning (string): brief paragraph.
+- risk_evidence (array of strings): specific risk factors from the note.
+- risk_reasoning (string): brief paragraph explaining the risk facts — explicitly note whether any high-risk AMA category is actually met, and if a historical risk factor (e.g. prior attempt) is present, state that it is historical and does not by itself meet a high category. If a controlled substance is present alongside only a REMOTE or historical substance-use pattern, explicitly state that the history is clinically relevant and flagged for monitoring but does NOT elevate the MDM risk axis, because the note documents no current/active risk factor (recent use, abnormal PMP, diversion concern, unstable use disorder, or an explicit continue-despite-risk decision) driving today's decision; and briefly state what additional documentation would support a high rating.
+- highest_stakes_decision (string): one sentence — the single clinical decision in this note where being wrong has the most serious consequences.
+- clinical_risk_flags (array of strings): clinically notable factors a prescriber should keep in view that are NOT necessarily part of the MDM coding-risk determination. These do NOT change the risk axis level. Examples: a Schedule II or other controlled substance being managed; a remote/historical substance-use history; an extended follow-up interval for a controlled substance; a PMP reviewed with result; a medication added that the patient is reluctant to take. This field exists so a clinically relevant issue (e.g. prior polysubstance history with a stimulant) is surfaced for monitoring even when it correctly does NOT elevate the MDM risk axis. Leave as an empty array if none apply.
 
 {
-  "problems": {
-    "level": "minimal" or "low" or "moderate" or "high",
-    "evidence": ["specific finding from note"],
-    "reasoning": "paragraph explaining determination"
-  },
-  "data": {
-    "level": "minimal" or "limited" or "moderate" or "extensive",
-    "evidence": ["specific data item from note"],
-    "reasoning": "paragraph explaining determination"
-  },
-  "risk": {
-    "level": "minimal" or "low" or "moderate" or "high",
-    "evidence": ["specific risk factor from note"],
-    "reasoning": "paragraph explaining determination",
-    "highest_stakes_decision": "one sentence: the single clinical decision in this note where being wrong has the most serious consequences"
-  }
+  "pathway1": true/false,
+  "pathway2": true/false,
+  "pathway3": true/false,
+  "chronic_actively_managed_count": 0,
+  "chronic_with_exacerbation": true/false,
+  "undiagnosed_new_problem": true/false,
+  "stable_chronic_count": 0,
+  "self_limited_count": 0,
+  "unique_sources_reviewed": 0,
+  "independent_interpretation": true/false,
+  "external_discussion": true/false,
+  "ordered_or_reviewed_tests": 0,
+  "intensive_toxicity_monitoring_drug": true/false,
+  "hospitalization_or_loc_decision": true/false,
+  "threat_to_life_or_function_at_visit": true/false,
+  "controlled_substance_decision_with_risk": true/false,
+  "prescription_drug_management": true/false,
+  "otc_or_self_limited_only": true/false,
+  "problems_evidence": [],
+  "problems_reasoning": "",
+  "data_evidence": [],
+  "data_reasoning": "",
+  "risk_evidence": [],
+  "risk_reasoning": "",
+  "highest_stakes_decision": "",
+  "clinical_risk_flags": []
 }`;
 
-var REVIEW_PROMPT = `You are a senior psychiatric coding reviewer. You receive the original chart note and an initial MDM evaluation from another coder.
+var REVIEW_PROMPT = `You are a senior psychiatric coding reviewer. You receive the original chart note, the FACTS another coder extracted from it, and the code-computed MDM levels derived from those facts.
 
-YOUR JOB IS VERIFICATION, NOT RE-CODING. For each axis, ask:
-1. Does Pass 1's reasoning cite real evidence from the note? (not fabricated or assumed)
-2. Does that evidence actually support the level Pass 1 chose?
-3. Is the logic sound given the MDM definitions below?
+YOUR JOB IS FACT VERIFICATION, NOT LEVEL ASSIGNMENT. The axis levels and the E/M code are computed by a deterministic engine from the facts below. You do not choose levels or codes. You check whether each extracted FACT is actually supported by the note, and you correct any fact that was read wrong.
 
-If the answer to all three is YES: confirm the rating.
-If any answer is NO: correct it, citing the specific evidence or logic error.
+For each fact, ask: does the note actually document this? Two failure modes to catch:
+1. A fact marked TRUE that the note does not support (e.g. intensive_toxicity_monitoring_drug=true when the only drug is a standard SSRI; pathway2=true based on a HISTORICAL suicide attempt rather than a current crisis; controlled_substance_decision_with_risk=true when no controlled substance is involved).
+2. A fact marked FALSE that the note clearly supports (e.g. prescription_drug_management=false when the note documents a medication start with assessment; an external record review missed in unique_sources_reviewed).
 
-Do NOT form your own independent opinion and override. Do NOT search for reasons to disagree. Your role is peer review: check the work, confirm if defensible, correct if wrong.
+Be especially careful with these high-impact risk facts, because they drive the risk level:
+- intensive_toxicity_monitoring_drug: TRUE only for drugs needing serial monitoring specifically to detect toxicity (lithium, clozapine, anticoagulants, etc.). Standard antidepressants/most psychotropics are FALSE.
+- pathway2 / threat_to_life_or_function_at_visit / hospitalization_or_loc_decision: require something happening AT THIS VISIT, not in the patient's history.
+- A historical suicide attempt with no current SI does NOT make any high-risk fact true by itself.
+- controlled_substance_decision_with_risk: VERIFY against the checklist, do not re-judge by impression. It is TRUE only if a controlled substance is managed AND the note documents at least one of: (a) recent/active substance use; (b) abnormal/concerning PMP; (c) diversion/misuse/early-refill concern; (d) unstable or active substance use disorder; (e) starting a controlled substance under documented diagnostic uncertainty/competing risks; (f) an explicit documented decision to continue despite heightened misuse/diversion risk. If the note shows only a REMOTE/historical substance history, denial of current use, a clean PMP, and a routine same-dose continuation, this fact is FALSE — correct it to false if Pass 1 marked it true. Do NOT flip this to true based on the patient's lifetime history or because a Schedule II is present; the trigger is documented CURRENT risk shaping today's decision. A clinically relevant but non-elevating factor belongs in clinical_risk_flags, not in this boolean.
 
-=== REFERENCE DEFINITIONS (use these to verify Pass 1's logic) ===
+If every fact is supported by the note, return an empty corrected_facts object: "corrected_facts": {}.
+If any fact is wrong, return ONLY the corrected fields in corrected_facts, using the exact same field names and types as the extracted facts. The engine will re-compute levels from the corrected facts.
 
-PROBLEMS COUNTING RULES:
-- Count each diagnosis on the problem list that is addressed in the assessment or has active medication management
-- Separate ICD codes = separate problems, regardless of pathophysiological relationship
-- Do NOT collapse related psychiatric conditions into "one interconnected complex"
-- Respect the clinician's diagnostic framework
+Do NOT correct a fact merely because you would characterize the visit differently. Correct only clear read errors against the note text.
 
-Low: 1 stable chronic illness being managed without change, OR 2 or more self-limited problems. One condition, routine renewal, no changes, patient doing well.
-
-Moderate: 2 or more stable chronic illnesses being actively managed, OR 1 or more chronic illnesses with mild exacerbation, OR 1 undiagnosed new problem. "Actively managed" includes documented monitoring, risk-benefit analysis, and clinical reasoning about how conditions interact — not just medication changes.
-
-High: Determined by ANY of the following three pathways:
-
-PATHWAY 1 — HIGH-COMPLEXITY DECISION-MAKING: New diagnoses requiring high-risk treatment decisions. Starting controlled substances or high-risk medications with diagnostic uncertainty or competing risks. Complex medication management with multiple simultaneous adjustments. Substantial documented clinical reasoning around diagnostic uncertainty, medication risks, or complex treatment decisions.
-
-PATHWAY 2 — SEVERE EXACERBATION: Active suicidal ideation, recent ER visit, medication-induced adverse events requiring immediate changes, psychotic symptoms, acute functional deterioration, or higher level of care discussed/declined.
-
-PATHWAY 3 — THREAT TO LIFE OR FUNCTION: A condition posing direct threat to life or bodily function at this visit.
-
-VERIFICATION RULE FOR PROBLEMS: If Pass 1 rated Problems at a level and cited evidence that fits the definition above, confirm it. If Pass 1 rated high and cited Pathway 1 evidence (new diagnosis, controlled substance start, diagnostic uncertainty, multiple med changes), and that evidence exists in the note, the rating is correct. Do not override it because the patient "seems stable" or because you would characterize the complexity differently. The question is: is Pass 1's reasoning defensible given the note content?
-
-For Data: Verify that the data sources Pass 1 cited actually appear in the note. Re-count if needed.
-
-For Risk: Verify that the clinical decisions Pass 1 cited are documented in the note and that the risk characterization is defensible.
-
-CRITICAL RULE — Prescription Drug Management: Per the AMA MDM table, "prescription drug management" is an example of moderate risk. Continuing a medication IS prescription drug management when the note documents patient-specific assessment (tolerability, side effects, safety monitoring, clinical reasoning about continuing). The standard interview alone (ROS, MSE, symptom check) is NOT prescription drug management. Documented medication-specific evaluation with clinical reasoning IS moderate risk.
-
-After verification, apply the 2-of-3 rule.
+You also produce the supporting coding outputs that do not depend on level judgment: the psychotherapy add-on determination, modifiers, documentation gaps, suggested language, defensibility assessment, and the chart-ready attestation. For these, use the code-computed levels you were given (do not restate or second-guess them).
 
 === CPT 2025 CRITICAL RULE ===
-When a psychotherapy add-on code (90833, 90836, 90838) is billed alongside an E/M code, TIME CANNOT BE USED as the basis for E/M level selection. E/M level MUST be determined by MDM complexity alone. (CPT 2025, p. 766)
+When a psychotherapy add-on code (90833, 90836, 90838) is billed alongside an E/M code, TIME CANNOT BE USED as the basis for E/M level selection. E/M level is determined by MDM complexity alone. (CPT 2025, p. 766)
 
-=== E/M CODE MAPPING (Established Patient) ===
-99212: straightforward MDM (2 of 3 at minimal/low)
-99213: low MDM (2 of 3 at low)
-99214: moderate MDM (2 of 3 at moderate)
-99215: high MDM (2 of 3 at high)
-
-=== E/M CODE MAPPING (New Patient) ===
-99202: straightforward MDM
-99203: low MDM
-99204: moderate MDM
-99205: high MDM
+Add-on selection by documented psychotherapy time: 16-37 min = 90833, 38-52 min = 90836, 53+ min = 90838, none if no separately documented psychotherapy.
 
 Respond ONLY with JSON. No markdown.
 
 {
-  "corrections": [{"axis": "problems/data/risk", "from": "original level", "to": "corrected level", "reason": "specific evidence or logic error in Pass 1 that necessitates correction"}],
-  "final_problems": "level",
-  "final_data": "level",
-  "final_risk": "level",
-  "em_code": "99XXX",
-  "em_description": "brief description",
-  "two_of_three": "which two axes and at what level determined the code",
+  "corrected_facts": {},
+  "fact_verification_notes": ["brief note on any fact corrected and why, or empty if none"],
   "addon_code": "90833 or 90836 or 90838 or none",
-  "addon_time": "documented time or null",
+  "addon_time": "documented psychotherapy time or null",
   "modifiers": ["25", "95"],
   "coding_support": "Strong or Moderate or Weak",
   "coding_support_reason": "one sentence",
   "audit_defensibility": "Strong or Moderate or Weak",
   "audit_reason": "one sentence",
-  "documentation_gaps": ["gap 1 that could weaken the code", "gap 2"],
+  "documentation_gaps": ["CODING-SPECIFIC gaps only — documentation that, if added, would strengthen THIS code's defensibility (e.g. an MDM data source referenced but not formally noted, a monitoring plan not specified, medical necessity context not stated). Do NOT repeat note-integrity problems (internal contradictions, unsupported references, missing safety assessment, scribe errors) — those are handled by the separate documentation audit and must not be duplicated here. If a finding is a contradiction or a note-consistency issue rather than a code-defensibility gap, omit it from this list."],
   "suggested_language": ["specific language to add to strengthen documentation"],
-  "attestation": "A chart-ready MDM attestation for audit defensibility. Use this exact structure: '[Visit type] ([code]) was determined by [level] complexity medical decision making based on: (1) [level] problems — [one sentence with specific clinical content]; (2) [level] data — [one sentence]; (3) [level] risk — [one sentence with specific clinical content]. [2-of-3 rule statement]. Psychotherapy add-on [code] for [X] minutes of [modality]. Modifiers: [list with descriptions].' Do NOT write a visit narrative. Do NOT describe what happened during the visit. This is a structured coding justification, not a progress note summary. For established patients say 'established patient follow-up visit,' for new patients say 'new patient evaluation.'"
+  "attestation": "A chart-ready MDM attestation for audit defensibility. Use this exact structure: '[Visit type] ([code]) was determined by [level] complexity medical decision making based on: (1) [level] problems — [one sentence with specific clinical content]; (2) [level] data — [one sentence]; (3) [level] risk — [one sentence with specific clinical content]. [2-of-3 rule statement]. Psychotherapy add-on [code] for [X] minutes of [modality]. Modifiers: [list with descriptions].' Use the code-computed levels and E/M code you were given. Do NOT write a visit narrative. For established patients say 'established patient follow-up visit,' for new patients say 'new patient evaluation.'"
 }`;
 
 // ══════════════════════════════════════════════════════════════
@@ -533,7 +577,7 @@ async function startCoding() {
   document.getElementById('code-btn').textContent = 'Reading note...';
 
   try {
-    var pfResult = await callAPI(PREFLIGHT_PROMPT, 'Chart note for coding evaluation:\n\nVisit type: ' + visitType + '\n\n' + noteText);
+    var pfResult = await callAPI(PREFLIGHT_PROMPT, 'Chart note for coding evaluation:\n\nVisit type: ' + visitType + '\n\n' + noteText, 'claude-haiku-4-5-20251001', 1500);
     var pf = parseJSON(pfResult);
 
     if (pf) {
@@ -572,6 +616,16 @@ function renderPreflight(pf) {
 
   preflightAnswers = {};
   preflightAnswers._preflight = pf;
+
+  // Deterministically drop any time-related question. Prompt instructions alone
+  // do not reliably suppress these, so filter them out before rendering.
+  if (pf.questions && pf.questions.length > 0) {
+    pf.questions = pf.questions.filter(function(q) {
+      var t = (q && q.text ? q.text : '').toLowerCase();
+      var timeish = /\bminute|\bmin\b|psychotherapy time|visit time|total time|e\/m time|time (was )?allocat|time split|breakdown of (the )?time|how (the )?(total )?(visit )?time/.test(t);
+      return !timeish;
+    });
+  }
 
   if (pf.questions && pf.questions.length > 0) {
     pf.questions.forEach(function(q, idx) {
@@ -652,22 +706,79 @@ async function runCodingPasses() {
   var userMsg = 'Visit type: ' + visitType + '\n\nChart note:\n\n' + noteText + pfContext;
 
   try {
-    // Documentation Audit
-    updateProgress(1, 'Auditing note for inconsistencies...');
-    var auditRaw = await callAPI(AUDIT_PROMPT, 'Chart note to audit:\n\n' + noteText);
-    var audit = parseJSON(auditRaw);
+    // Audit and MDM fact-extraction are independent (audit reads noteText only,
+    // MDM reads userMsg only). Run them concurrently to cut one call off the
+    // critical path. The audit's try/catch lives INSIDE its own promise so a
+    // failed/empty audit resolves to null instead of rejecting Promise.all and
+    // taking the MDM call down with it.
+    updateProgress(1, 'Auditing note and evaluating MDM...');
+    var auditPromise = (async function() {
+      try {
+        var raw = await callAPI(AUDIT_PROMPT, 'Chart note to audit:\n\n' + noteText, 'claude-haiku-4-5-20251001', 5000);
+        return parseJSON(raw);
+      } catch (e) {
+        console.log('Audit pass failed, continuing without it:', e.message);
+        return null;
+      }
+    })();
+    var mdmPromise = callAPI(MDM_EVAL_PROMPT, userMsg, 'claude-sonnet-4-6', 2500);
+
+    var auditAndMdm = await Promise.all([auditPromise, mdmPromise]);
+    var audit = auditAndMdm[0];
+    var mdmRaw = auditAndMdm[1];
     lastAudit = audit;
 
-    // Pass 1: Full MDM Evaluation (all three axes)
+    // Pass 1: Fact extraction (model reports determinate facts, NOT levels)
     updateProgress(2, 'Evaluating Medical Decision Making (all three axes)...');
-    var mdmRaw = await callAPI(MDM_EVAL_PROMPT, userMsg);
-    var mdm = parseJSON(mdmRaw);
+    var facts = parseJSON(mdmRaw);
+    if (!facts) throw new Error('Could not parse the MDM fact extraction. Please try again.');
 
-    // Pass 2: Adversarial Review + Synthesis
-    updateProgress(3, 'Adversarial review: checking for undercoding...');
-    var reviewInput = userMsg + '\n\nINITIAL MDM EVALUATION:\n' + JSON.stringify(mdm, null, 2);
-    var reviewRaw = await callAPI(REVIEW_PROMPT, reviewInput);
+    // Deterministic classification: code maps facts -> levels via the AMA MDM table.
+    // Same facts always produce the same level (removes run-to-run drift).
+    var pCls = classifyProblems(facts);
+    var dCls = classifyData(facts);
+    var rCls = classifyRisk(facts);
+
+    // Build the mdm object in the shape the rest of the flow + render expect.
+    var mdm = {
+      problems: { level: pCls.level, basis: pCls.basis, evidence: facts.problems_evidence || [], reasoning: facts.problems_reasoning || '' },
+      data: { level: dCls.level, basis: dCls.basis, evidence: facts.data_evidence || [], reasoning: facts.data_reasoning || '' },
+      risk: { level: rCls.level, basis: rCls.basis, evidence: facts.risk_evidence || [], reasoning: facts.risk_reasoning || '', highest_stakes_decision: facts.highest_stakes_decision || '', clinical_risk_flags: facts.clinical_risk_flags || [] },
+      _facts: facts
+    };
+
+    // Pass 2: Fact verification (does the note actually support each extracted fact?)
+    updateProgress(3, 'Verifying facts and finalizing codes...');
+    var reviewInput = userMsg + '\n\nEXTRACTED FACTS (Pass 1):\n' + JSON.stringify(facts, null, 2) + '\n\nCODE-COMPUTED LEVELS (from those facts):\nProblems: ' + pCls.level + ' (' + pCls.basis + ')\nData: ' + dCls.level + ' (' + dCls.basis + ')\nRisk: ' + rCls.level + ' (' + rCls.basis + ')';
+    var reviewRaw = await callAPI(REVIEW_PROMPT, reviewInput, 'claude-sonnet-4-6', 2500);
     var review = parseJSON(reviewRaw);
+    if (!review) throw new Error('Could not parse the verification pass. Please try again.');
+
+    // If verification corrected any FACT, re-run the deterministic classifier on the
+    // corrected facts so the levels and E/M stay consistent with the table.
+    if (review.corrected_facts && typeof review.corrected_facts === 'object') {
+      var mergedFacts = Object.assign({}, facts, review.corrected_facts);
+      mdm._facts = mergedFacts;
+      pCls = classifyProblems(mergedFacts);
+      dCls = classifyData(mergedFacts);
+      rCls = classifyRisk(mergedFacts);
+      mdm.problems.level = pCls.level; mdm.problems.basis = pCls.basis;
+      mdm.data.level = dCls.level; mdm.data.basis = dCls.basis;
+      mdm.risk.level = rCls.level; mdm.risk.basis = rCls.basis;
+      if (mergedFacts.risk_reasoning) mdm.risk.reasoning = mergedFacts.risk_reasoning;
+      if (mergedFacts.clinical_risk_flags) mdm.risk.clinical_risk_flags = mergedFacts.clinical_risk_flags;
+    }
+
+    // E/M code is computed deterministically from the final code-derived levels.
+    var emResult = emFromAxes(mdm.problems.level, mdm.data.level, mdm.risk.level, visitType);
+    review.final_problems = mdm.problems.level;
+    review.final_data = mdm.data.level;
+    review.final_risk = mdm.risk.level;
+    review.em_code = emResult.code;
+    var emLevelDesc = { straightforward: 'straightforward', low: 'low', moderate: 'moderate', high: 'high' }[emResult.level] || emResult.level;
+    var visitDesc = (visitType === 'new') ? 'New patient visit' : 'Established patient visit';
+    review.em_description = visitDesc + ', ' + emLevelDesc + ' complexity MDM';
+    review.two_of_three = 'Code-computed: the E/M level is the highest level reached by at least two of the three axes. Problems ' + mdm.problems.level + ', Data ' + mdm.data.level + ', Risk ' + mdm.risk.level + ' yields ' + emResult.level + ' (' + emResult.code + ').';
 
     // Done
     updateProgress(4, 'Complete.');
@@ -749,6 +860,124 @@ function calculateTimeCode() {
   return result;
 }
 
+// ══════════════════════════════════════════════════════════════
+// REIMBURSEMENT COMPARISON PANEL (new patients)
+// Presentation only. Reads values already computed elsewhere:
+//   - timeResult from calculateTimeCode()
+//   - review.em_code / review.addon_code from the MDM analysis
+// Compares the two LEGITIMATELY-SUPPORTED billing methods at Medicare
+// reference rates and shows which reimburses more. Does not alter any
+// coding logic or reasoning.
+// ══════════════════════════════════════════════════════════════
+function buildComparisonPanel(review, timeResult, hasTherapyAddon, noteHasTherapy) {
+  // Only meaningful for new patients with entered time.
+  if (visitType !== 'new' || !timeResult || timeResult.total <= 0) return '';
+
+  var h = '';
+
+  // ---- Time-path total (at reference) ----
+  var timeCode = timeResult.code;
+  var timeTotal = refRate(timeCode);
+  var timeUnits = timeResult.prolonged || 0;
+  var timeProlongedRate = refRate('99417');
+  if (timeTotal != null && timeUnits > 0 && timeProlongedRate != null) {
+    timeTotal += timeUnits * timeProlongedRate;
+  }
+
+  // ---- MDM-path total (at reference) ----
+  var mdmCode = review.em_code;
+  var mdmTotal = refRate(mdmCode);
+  var addonCode = (review.addon_code && review.addon_code !== 'none') ? review.addon_code : null;
+  var addonRate = addonCode ? refRate(addonCode) : null;
+  var mdmWithAddon = (mdmTotal != null && addonRate != null) ? (mdmTotal + addonRate) : null;
+
+  h += '<div class="section-card" style="border-color:rgba(45,212,191,0.35)">';
+  h += '<h3 style="color:var(--teal)">Reimbursement Comparison</h3>';
+  h += '<div style="font-size:.78rem;color:var(--cream-dim);margin-bottom:14px">Directional comparison at Medicare reference rates, to show which method reimburses more for the same visit. Not a payment prediction. Commercial and NP rates commonly differ, often lower. Confirm against your own fee schedule.</div>';
+
+  // ---- Side-by-side, when both methods are legal to compare (no therapy in note) ----
+  if (!noteHasTherapy) {
+    // Method 1: time-based E/M
+    h += '<div style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:8px">';
+    h += compareCard('Time-based E/M',
+        timeCode + (timeUnits > 0 ? ' + 99417 x' + timeUnits : ''),
+        timeTotal,
+        'Coded by total time (' + timeResult.total + ' min). No complexity or psychotherapy to defend.');
+    // Method 2: MDM-based E/M (no add-on)
+    h += compareCard('MDM-based E/M',
+        mdmCode,
+        mdmTotal,
+        'Coded by documented complexity (2-of-3). No psychotherapy add-on.');
+    h += '</div>';
+
+    // Verdict
+    if (timeTotal != null && mdmTotal != null) {
+      var diff = timeTotal - mdmTotal;
+      var pct = mdmTotal ? Math.round(Math.abs(diff) / mdmTotal * 100) : 0;
+      var verdict;
+      if (Math.abs(diff) < 0.01) {
+        verdict = 'The two methods reimburse the same here. Choose time — it is simpler to defend.';
+      } else if (diff > 0) {
+        verdict = 'Time-based reimburses about ' + fmtUSD(diff) + ' more (~' + pct + '%) here, and is easier to defend. If your time supports it, bill by time.';
+      } else {
+        verdict = 'MDM-based reimburses about ' + fmtUSD(-diff) + ' more (~' + pct + '%) here — but only if the note truly supports that complexity level.';
+      }
+      h += '<div style="font-size:.84rem;color:var(--cream);background:rgba(45,212,191,0.06);border:1px solid rgba(45,212,191,0.2);border-radius:6px;padding:10px 14px;margin-bottom:6px">' + esc(verdict) + '</div>';
+    }
+
+    // State A: 90833 what-if box (no therapy documented in note)
+    if (mdmTotal != null && refRate('90833') != null) {
+      var aWith = mdmTotal + refRate('90833');
+      h += '<div style="font-size:.8rem;color:var(--cream-dim);background:var(--navy-mid);border:1px solid var(--rule);border-radius:6px;padding:10px 14px;margin-top:8px">';
+      h += '<strong style="color:var(--teal)">If you also performed billable psychotherapy:</strong> you could add 90833 to the MDM path (' + mdmCode + ' + 90833 ≈ ' + fmtUSD(aWith) + ' reference). Adding 90833 forces MDM coding and takes time-based coding (and 99417) off the table for this visit — it is one lane or the other, not both. Only add 90833 if a distinct psychotherapy service actually occurred and is separately documented.';
+      h += '</div>';
+    }
+  } else {
+    // State B: psychotherapy blurb IS in the note. Real decision.
+    h += '<div style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:8px">';
+    h += compareCard('Keep therapy (MDM + 90833)',
+        mdmCode + (addonCode ? ' + ' + addonCode : ''),
+        mdmWithAddon,
+        'Your note includes psychotherapy. Billed by MDM with the add-on.');
+    h += compareCard('Drop therapy, bill by time',
+        timeCode + (timeUnits > 0 ? ' + 99417 x' + timeUnits : ''),
+        timeTotal,
+        'Remove the psychotherapy piece and code the whole visit by total time (' + timeResult.total + ' min).');
+    h += '</div>';
+
+    if (mdmWithAddon != null && timeTotal != null) {
+      var d2 = timeTotal - mdmWithAddon;
+      var p2 = mdmWithAddon ? Math.round(Math.abs(d2) / mdmWithAddon * 100) : 0;
+      var v2;
+      if (Math.abs(d2) < 0.01) v2 = 'The two lanes reimburse about the same here. Time is simpler to defend; keeping 90833 requires defending a distinct therapy service.';
+      else if (d2 > 0) v2 = 'Billing by time reimburses about ' + fmtUSD(d2) + ' more (~' + p2 + '%) here and is easier to defend.';
+      else v2 = 'Keeping MDM + 90833 reimburses about ' + fmtUSD(-d2) + ' more (~' + p2 + '%) here — valid only if the psychotherapy was truly separate and documented.';
+      h += '<div style="font-size:.84rem;color:var(--cream);background:rgba(45,212,191,0.06);border:1px solid rgba(45,212,191,0.2);border-radius:6px;padding:10px 14px;margin-bottom:6px">' + esc(v2) + '</div>';
+    }
+
+    h += '<div style="font-size:.8rem;color:var(--amber);background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.22);border-radius:6px;padding:10px 14px;margin-top:8px">&#9888; You cannot do both. Leaving the psychotherapy narrative in the note while coding by time is contradictory documentation that undermines you on audit. Pick one lane: keep the therapy and bill MDM + 90833, or remove the psychotherapy piece and bill by time.</div>';
+  }
+
+  // Payer note (99417 vs G2212)
+  if (timeUnits > 0) {
+    h += '<div style="font-size:.76rem;color:var(--cream-dim);margin-top:10px">Prolonged-services note: the estimate above uses commercial 99417 (first unit at 75 min). Medicare uses G2212 instead, which does not begin until 89 min (a full 15 min past the 74-min ceiling), so a Medicare visit under 89 min earns no prolonged unit.</div>';
+  }
+
+  h += '</div>';
+  return h;
+}
+
+function compareCard(label, codes, total, sub) {
+  var c = '';
+  c += '<div style="flex:1 1 220px;min-width:200px;background:var(--navy-mid);border:1px solid var(--rule);border-radius:8px;padding:12px 14px">';
+  c += '<div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--cream-dim);margin-bottom:6px">' + esc(label) + '</div>';
+  c += '<div style="font-size:1.05rem;font-weight:600;color:var(--cream)">' + esc(codes) + '</div>';
+  c += '<div style="font-size:.95rem;color:var(--teal);margin-top:2px">' + fmtUSD(total) + ' <span style="font-size:.7rem;color:var(--cream-dim)">ref</span></div>';
+  if (sub) c += '<div style="font-size:.74rem;color:var(--cream-dim);margin-top:6px">' + esc(sub) + '</div>';
+  c += '</div>';
+  return c;
+}
+
 function renderResults(mdm, review) {
   var el = document.getElementById('results');
   var html = '';
@@ -766,36 +995,101 @@ function renderResults(mdm, review) {
 
   // ── DOCUMENTATION AUDIT RESULTS ──
   if (lastAudit && !lastAudit.clean) {
-    var totalIssues = (lastAudit.inconsistencies || []).length + (lastAudit.time_issues || []).length + (lastAudit.documentation_gaps || []).length;
-    var hasHigh = false;
-    (lastAudit.inconsistencies || []).forEach(function(i) { if (i.severity === 'high') hasHigh = true; });
-    (lastAudit.time_issues || []).forEach(function(i) { if (i.severity === 'high') hasHigh = true; });
-    (lastAudit.documentation_gaps || []).forEach(function(i) { if (i.severity === 'high') hasHigh = true; });
+    // back-compat: if an older audit returned split lists, merge them
+    var docIssues = lastAudit.documentation_issues || [];
+    if (!docIssues.length && ((lastAudit.inconsistencies||[]).length || (lastAudit.documentation_gaps||[]).length)) {
+      docIssues = (lastAudit.inconsistencies||[]).map(function(i){ i.kind = i.kind || 'contradiction'; return i; })
+        .concat((lastAudit.documentation_gaps||[]).map(function(g){ g.kind = g.kind || 'gap'; return g; }));
+    }
+    // severity sort: high → moderate → low (case-insensitive; guard against the 0-is-falsy trap)
+    function sevRankOf(s){
+      var k = String(s || '').toLowerCase();
+      if (k === 'high') return 0;
+      if (k === 'moderate') return 1;
+      if (k === 'low') return 2;
+      return 3;
+    }
+    docIssues = docIssues.slice().sort(function(a, b){ return sevRankOf(a.severity) - sevRankOf(b.severity); });
+
+    // tier helper + grouping (back-compat: items with no tier inferred from severity)
+    function tierOf(i){
+      var t = String(i.tier||'').toLowerCase();
+      if (t === 'must_fix' || t === 'strengthen' || t === 'minor') return t;
+      var s = String(i.severity||'').toLowerCase();
+      return s === 'high' ? 'must_fix' : s === 'moderate' ? 'strengthen' : 'minor';
+    }
+    var mustFix = docIssues.filter(function(i){ return tierOf(i)==='must_fix'; });
+    var strengthen = docIssues.filter(function(i){ return tierOf(i)==='strengthen'; });
+    var minor = docIssues.filter(function(i){ return tierOf(i)==='minor'; });
+    var ptIssues = lastAudit.psychotherapy_issues || [];
+    var rawTimeIssues = lastAudit.time_issues || [];
+    // Deterministically drop time "issues" that are really just total-vs-therapy
+    // subtraction or a short E/M remainder. These are correct documentation, not
+    // errors, and prompt instructions alone do not reliably suppress them. Keep a
+    // time issue only if it describes a genuine impossibility: psychotherapy time
+    // exceeding total time, or two conflicting psychotherapy-time numbers.
+    var timeIssues = rawTimeIssues.filter(function(i){
+      var d = ((i && (i.detail||i.text||i.description)) ? (i.detail||i.text||i.description) : '').toLowerCase();
+      var subtractionNoise = /remain|e\/m time|leftover|left over|only \d+ minute|5 minutes? (for|of) (the )?e\/m|short e\/m|insufficient time|enough time|too (little|few|short)|difference (is|of)|subtract/.test(d);
+      if (subtractionNoise) return false;
+      // Drop items that conclude there is no actual discrepancy (e.g. "No time
+      // discrepancy", "is appropriate and consistent", "no discrepancy"). These
+      // are confirmations, not findings, and should not render under a
+      // "TIME DISCREPANCIES" header.
+      var noConflict = /no (time )?discrepanc|is appropriate|appropriate and consistent|consistent with|no conflict|no issue|correct documentation|not a discrepanc/.test(d);
+      if (noConflict) return false;
+      return true;
+    });
+    // a low-severity psychotherapy nitpick (e.g. "could name the CBT technique") is not a must-fix
+    function isActionable(i){ return String(i.severity||'').toLowerCase() !== 'low'; }
+    var actionablePt = ptIssues.filter(isActionable);
+    var actionableTime = timeIssues.filter(isActionable);
+
+    // must-fix count drives the headline
+    var mustFixCount = mustFix.length + actionableTime.length + actionablePt.length;
+    var optionalCount = strengthen.length + minor.length + (ptIssues.length - actionablePt.length) + (timeIssues.length - actionableTime.length);
+    var hasHigh = mustFixCount > 0;
 
     var auditColor = hasHigh ? 'var(--red)' : 'var(--amber)';
     var auditBg = hasHigh ? 'rgba(248,113,113,0.06)' : 'rgba(251,191,36,0.06)';
     var auditBorder = hasHigh ? 'rgba(248,113,113,0.25)' : 'rgba(251,191,36,0.25)';
+    // if there is nothing must-fix and only optional polish, present calmly (amber/neutral, not alarm)
+    if (!hasHigh) { auditColor = 'var(--cream-dim)'; auditBorder = 'rgba(148,168,179,0.25)'; auditBg = 'rgba(148,168,179,0.05)'; }
 
     html += '<div class="section-card" style="border-color:' + auditBorder + '">';
-    html += '<h3 style="color:' + auditColor + '">&#9888; Documentation Audit — ' + totalIssues + ' Issue' + (totalIssues > 1 ? 's' : '') + ' Found</h3>';
-    html += '<div style="font-size:.8rem;color:var(--cream-dim);margin-bottom:12px">Review these before relying on the coding analysis below. Internal inconsistencies weaken audit defensibility regardless of code accuracy.</div>';
+    if (hasHigh) {
+      html += '<h3 style="color:' + auditColor + '">&#9888; Documentation Audit — ' + mustFixCount + ' to address before signing</h3>';
+      html += '<div style="font-size:.8rem;color:var(--cream-dim);margin-bottom:12px">' + mustFixCount + ' item' + (mustFixCount>1?'s':'') + ' should be corrected before signing' + (optionalCount? '. ' + optionalCount + ' optional suggestion' + (optionalCount>1?'s':'') + ' below.' : '.') + '</div>';
+    } else {
+      html += '<h3 style="color:var(--green)">&#10003; Documentation Audit — Nothing to fix before signing</h3>';
+      html += '<div style="font-size:.8rem;color:var(--cream-dim);margin-bottom:12px">The note is internally consistent and defensible as written.' + (optionalCount? ' ' + optionalCount + ' optional suggestion' + (optionalCount>1?'s':'') + ' below — purely to strengthen the note, not required.' : '') + '</div>';
+    }
 
-    if (lastAudit.inconsistencies && lastAudit.inconsistencies.length > 0) {
-      html += '<div style="font-size:.75rem;font-weight:600;color:' + auditColor + ';margin-bottom:6px;margin-top:10px">INCONSISTENCIES</div>';
-      lastAudit.inconsistencies.forEach(function(item) {
-        var sevColor = item.severity === 'high' ? 'var(--red)' : item.severity === 'moderate' ? 'var(--amber)' : 'var(--cream-dim)';
-        html += '<div style="background:' + auditBg + ';border:1px solid ' + auditBorder + ';border-radius:6px;padding:10px 14px;margin-bottom:8px">';
-        html += '<div style="font-size:.78rem;color:' + sevColor + ';font-weight:600;margin-bottom:4px">' + esc(item.severity).toUpperCase() + ' — ' + esc(item.type.replace(/_/g, ' ')) + '</div>';
+    var kindLabel = { contradiction: 'Contradiction', gap: 'Gap', scribe_pattern: 'Scribe pattern' };
+    function renderIssueGroup(items, headerText, headerColor){
+      if (!items.length) return;
+      html += '<div style="font-size:.75rem;font-weight:600;color:' + headerColor + ';margin-bottom:6px;margin-top:14px">' + headerText + '</div>';
+      items.forEach(function(item){
+        var sl = String(item.severity||'').toLowerCase();
+        var sevColor = sl === 'high' ? 'var(--red)' : sl === 'moderate' ? 'var(--amber)' : 'var(--cream-dim)';
+        var tag = kindLabel[item.kind] || 'Issue';
+        var rowBg = (tierOf(item)==='must_fix') ? 'rgba(248,113,113,0.06)' : 'rgba(148,168,179,0.05)';
+        var rowBorder = (tierOf(item)==='must_fix') ? 'rgba(248,113,113,0.25)' : 'rgba(148,168,179,0.22)';
+        html += '<div style="background:' + rowBg + ';border:1px solid ' + rowBorder + ';border-radius:6px;padding:10px 14px;margin-bottom:8px">';
+        html += '<div style="font-size:.78rem;color:' + sevColor + ';font-weight:600;margin-bottom:4px">' + esc(tag) + (item.type ? ' (' + esc(String(item.type).replace(/_/g, ' ')) + ')' : '') + '</div>';
         html += '<div style="font-size:.82rem;color:var(--cream);margin-bottom:4px">' + esc(item.detail) + '</div>';
         if (item.audit_impact) html += '<div style="font-size:.78rem;color:var(--cream-dim)">Audit impact: ' + esc(item.audit_impact) + '</div>';
         html += '</div>';
       });
     }
+    renderIssueGroup(mustFix, 'MUST FIX BEFORE SIGNING', 'var(--red)');
+    renderIssueGroup(strengthen, 'OPTIONAL — WOULD STRENGTHEN THE NOTE', 'var(--cream-dim)');
+    renderIssueGroup(minor, 'MINOR — INFORMATIONAL', 'var(--cream-dim)');
 
-    if (lastAudit.time_issues && lastAudit.time_issues.length > 0) {
+    if (timeIssues && timeIssues.length > 0) {
       html += '<div style="font-size:.75rem;font-weight:600;color:' + auditColor + ';margin-bottom:6px;margin-top:10px">TIME DISCREPANCIES</div>';
-      lastAudit.time_issues.forEach(function(item) {
-        var sevColor = item.severity === 'high' ? 'var(--red)' : item.severity === 'moderate' ? 'var(--amber)' : 'var(--cream-dim)';
+      timeIssues.forEach(function(item) {
+        var sevColor = String(item.severity||'').toLowerCase() === 'high' ? 'var(--red)' : String(item.severity||'').toLowerCase() === 'moderate' ? 'var(--amber)' : 'var(--cream-dim)';
         html += '<div style="background:' + auditBg + ';border:1px solid ' + auditBorder + ';border-radius:6px;padding:10px 14px;margin-bottom:8px">';
         html += '<div style="font-size:.78rem;color:' + sevColor + ';font-weight:600;margin-bottom:4px">' + esc(item.severity).toUpperCase() + '</div>';
         html += '<div style="font-size:.82rem;color:var(--cream)">' + esc(item.detail) + '</div>';
@@ -803,12 +1097,15 @@ function renderResults(mdm, review) {
       });
     }
 
-    if (lastAudit.documentation_gaps && lastAudit.documentation_gaps.length > 0) {
-      html += '<div style="font-size:.75rem;font-weight:600;color:' + auditColor + ';margin-bottom:6px;margin-top:10px">DOCUMENTATION GAPS</div>';
-      lastAudit.documentation_gaps.forEach(function(item) {
-        var sevColor = item.severity === 'high' ? 'var(--red)' : item.severity === 'moderate' ? 'var(--amber)' : 'var(--cream-dim)';
+    if (lastAudit.psychotherapy_issues && lastAudit.psychotherapy_issues.length > 0) {
+      html += '<div style="font-size:.75rem;font-weight:600;color:' + auditColor + ';margin-bottom:6px;margin-top:10px">PSYCHOTHERAPY ADD-ON SUFFICIENCY</div>';
+      lastAudit.psychotherapy_issues.forEach(function(item) {
+        var sevColor = String(item.severity||'').toLowerCase() === 'high' ? 'var(--red)' : String(item.severity||'').toLowerCase() === 'moderate' ? 'var(--amber)' : 'var(--cream-dim)';
         html += '<div style="background:' + auditBg + ';border:1px solid ' + auditBorder + ';border-radius:6px;padding:10px 14px;margin-bottom:8px">';
-        html += '<div style="font-size:.78rem;color:' + sevColor + ';font-weight:600;margin-bottom:4px">' + esc(item.severity).toUpperCase() + '</div>';
+        html += '<div style="font-size:.78rem;color:' + sevColor + ';font-weight:600;margin-bottom:4px">' + esc(item.severity).toUpperCase();
+        if (item.is_actually_em_only) html += ' — CONTENT READS AS E/M-ONLY';
+        html += '</div>';
+        if (item.elements_failed && item.elements_failed.length > 0) html += '<div style="font-size:.76rem;color:var(--cream-dim);margin-bottom:4px">Elements failing: ' + esc(item.elements_failed.join(', ')) + '</div>';
         html += '<div style="font-size:.82rem;color:var(--cream);margin-bottom:4px">' + esc(item.detail) + '</div>';
         if (item.audit_impact) html += '<div style="font-size:.78rem;color:var(--cream-dim)">Audit impact: ' + esc(item.audit_impact) + '</div>';
         html += '</div>';
@@ -820,6 +1117,11 @@ function renderResults(mdm, review) {
     html += '<div class="section-card" style="border-color:rgba(52,211,153,0.25)">';
     html += '<h3 style="color:var(--green)">&#10003; Documentation Audit — No Issues Found</h3>';
     html += '<div style="font-size:.82rem;color:var(--cream-dim)">Note is internally consistent. No contradictions, time discrepancies, or documentation gaps detected.</div>';
+    html += '</div>';
+  } else {
+    html += '<div class="section-card" style="border-color:rgba(251,191,36,0.4)">';
+    html += '<h3 style="color:var(--amber)">&#9888; Documentation Audit — Not Available</h3>';
+    html += '<div style="font-size:.82rem;color:var(--cream-dim)">The documentation audit did not return a usable result for this note. The coding analysis below is unaffected. Re-running the analysis usually resolves this.</div>';
     html += '</div>';
   }
 
@@ -894,6 +1196,11 @@ function renderResults(mdm, review) {
   }
   html += '</div></div>';
 
+  // ── REIMBURSEMENT COMPARISON PANEL (new patients only) ──
+  // noteHasTherapy: the model recommended a psychotherapy add-on, i.e.
+  // the note documents a psychotherapy service. Drives State A vs State B.
+  html += buildComparisonPanel(review, timeResult, hasTherapyAddon, hasTherapyAddon);
+
   // MDM Table
   var axes = [
     { name: 'Problems', key: 'problems', final: review.final_problems },
@@ -905,24 +1212,11 @@ function renderResults(mdm, review) {
   axes.forEach(function(ax) {
     var orig = mdm && mdm[ax.key] ? mdm[ax.key] : {};
     var level = ax.final || orig.level || 'unknown';
-    var correction = null;
-    if (review.corrections) {
-      review.corrections.forEach(function(c) {
-        if (c.axis === ax.key) correction = c;
-      });
-    }
-
-    html += '<div class="mdm-row"><div class="mdm-axis">' + ax.name;
-    if (correction) {
-      var wasActuallyChanged = correction.from !== correction.to;
-      if (wasActuallyChanged) {
-        html += ' <span style="color:var(--amber);font-size:.7rem">&#9888; corrected</span>';
-      } else {
-        html += ' <span style="color:var(--green);font-size:.7rem">&#10003; confirmed</span>';
-      }
-    }
-    html += '</div><div class="mdm-level level-' + level + '">' + esc(level) + '</div>';
-    html += '<div class="mdm-evidence">' + esc(correction ? correction.reason : (orig.reasoning || '')) + '</div>';
+    html += '<div class="mdm-row"><div class="mdm-axis">' + ax.name + '</div>';
+    html += '<div class="mdm-level level-' + level + '">' + esc(level) + '</div>';
+    var detail = orig.reasoning || '';
+    if (orig.basis) detail += (detail ? ' ' : '') + '(Basis: ' + orig.basis + '.)';
+    html += '<div class="mdm-evidence">' + esc(detail) + '</div>';
     html += '</div>';
   });
 
@@ -934,31 +1228,25 @@ function renderResults(mdm, review) {
     html += '</div>';
   }
 
-  // Corrections and confirmations
-  if (review.corrections && review.corrections.length > 0) {
-    var actualCorrections = review.corrections.filter(function(c) { return c.from !== c.to; });
-    var confirmations = review.corrections.filter(function(c) { return c.from === c.to; });
+  // Clinical Risk Flags — clinically notable, NOT part of the MDM coding-risk axis
+  if (mdm && mdm.risk && Array.isArray(mdm.risk.clinical_risk_flags) && mdm.risk.clinical_risk_flags.length > 0) {
+    html += '<div style="margin-top:12px;padding:10px 14px;background:rgba(251,191,36,0.05);border:1px solid rgba(251,191,36,0.18);border-radius:6px">';
+    html += '<div style="font-size:.75rem;font-weight:600;color:var(--amber);margin-bottom:6px">CLINICAL RISK FLAGS <span style="font-weight:400;color:var(--cream-dim);text-transform:none;letter-spacing:0">— for monitoring; does not change the MDM code</span></div>';
+    html += '<ul style="margin:0;padding-left:18px">';
+    mdm.risk.clinical_risk_flags.forEach(function(flag) {
+      if (flag && flag.trim()) html += '<li style="font-size:.82rem;color:var(--cream);margin-bottom:3px">' + esc(flag) + '</li>';
+    });
+    html += '</ul></div>';
+  }
 
-    if (actualCorrections.length > 0) {
+  // Fact-verification notes (when the verification pass corrected an extracted fact)
+  if (review.fact_verification_notes && review.fact_verification_notes.length > 0) {
+    var realNotes = review.fact_verification_notes.filter(function(n) { return n && n.trim() && n.trim().toLowerCase() !== 'none'; });
+    if (realNotes.length > 0) {
       html += '<div style="margin-top:12px;padding:10px 14px;background:rgba(52,211,153,0.06);border:1px solid rgba(52,211,153,0.2);border-radius:6px">';
-      html += '<div style="font-size:.75rem;font-weight:600;color:var(--green);margin-bottom:4px">ADVERSARIAL REVIEW CORRECTIONS</div>';
-      actualCorrections.forEach(function(c) {
-        html += '<div style="font-size:.82rem;color:var(--cream);padding:2px 0"><strong>' + esc(c.axis) + ':</strong> ' + esc(c.from) + ' &rarr; ' + esc(c.to) + '</div>';
-        var origReasoning = mdm && mdm[c.axis] && mdm[c.axis].reasoning ? mdm[c.axis].reasoning : '';
-        if (origReasoning) {
-          html += '<div style="font-size:.78rem;color:var(--cream-dim);margin-left:12px;margin-bottom:4px"><strong>Initial assessment (' + esc(c.from) + '):</strong> ' + esc(origReasoning) + '</div>';
-        }
-        html += '<div style="font-size:.78rem;color:var(--cream-dim);margin-left:12px;margin-bottom:4px"><strong>Corrected (' + esc(c.to) + '):</strong> ' + esc(c.reason) + '</div>';
-      });
-      html += '</div>';
-    }
-
-    if (confirmations.length > 0) {
-      html += '<div style="margin-top:12px;padding:10px 14px;background:rgba(42,171,184,0.06);border:1px solid rgba(42,171,184,0.15);border-radius:6px">';
-      html += '<div style="font-size:.75rem;font-weight:600;color:var(--teal);margin-bottom:4px">ADVERSARIAL REVIEW CONFIRMATIONS</div>';
-      confirmations.forEach(function(c) {
-        html += '<div style="font-size:.82rem;color:var(--cream);padding:2px 0"><strong>' + esc(c.axis) + ':</strong> ' + esc(c.from) + ' confirmed</div>';
-        html += '<div style="font-size:.78rem;color:var(--cream-dim);margin-left:12px;margin-bottom:4px">' + esc(c.reason) + '</div>';
+      html += '<div style="font-size:.75rem;font-weight:600;color:var(--green);margin-bottom:4px">FACT VERIFICATION</div>';
+      realNotes.forEach(function(n) {
+        html += '<div style="font-size:.8rem;color:var(--cream-dim);padding:2px 0">' + esc(n) + '</div>';
       });
       html += '</div>';
     }
@@ -1033,34 +1321,223 @@ function renderResults(mdm, review) {
 // API / UTILITIES
 // ══════════════════════════════════════════════════════════════
 
-async function callAPI(systemPrompt, userMessage) {
-  var response = await fetch('/.netlify/functions/anthropic-proxy', {
+async function callAPI(systemPrompt, userMessage, model, maxTokens) {
+  var authToken = '';
+  try { authToken = localStorage.getItem('tbp_auth_token') || ''; } catch(e){}
+  var response = await fetch('/.netlify/functions/clinical-proxy-stream', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
+      token: authToken,
+      model: model || 'claude-sonnet-4-6',
+      max_tokens: maxTokens || 2000,
       system: systemPrompt,
       messages: [{ role: 'user', content: userMessage }]
     })
   });
-  var data = await response.json();
-  if (data.error) throw new Error(data.error);
+
+  if (!response.ok) {
+    var errBody = '';
+    try { errBody = await response.text(); } catch (e) {}
+    throw new Error('Proxy error (HTTP ' + response.status + '): ' + errBody.substring(0, 300));
+  }
+
+  // Read the streamed Server-Sent Events and reassemble the assistant text.
+  // Streaming keeps the connection active so the proxy never trips the idle timeout.
+  var reader = response.body.getReader();
+  var decoder = new TextDecoder();
+  var buffer = '';
   var text = '';
-  if (data.content) {
-    data.content.forEach(function(c) { if (c.type === 'text') text += c.text; });
+  while (true) {
+    var chunk = await reader.read();
+    if (chunk.done) break;
+    buffer += decoder.decode(chunk.value, { stream: true });
+    var idx;
+    while ((idx = buffer.indexOf('\n\n')) !== -1) {
+      var rawEvent = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      var lines = rawEvent.split('\n');
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i];
+        if (line.indexOf('data:') !== 0) continue;
+        var dataStr = line.slice(5).trim();
+        if (!dataStr || dataStr === '[DONE]') continue;
+        try {
+          var evt = JSON.parse(dataStr);
+          if (evt.type === 'content_block_delta' && evt.delta && typeof evt.delta.text === 'string') {
+            text += evt.delta.text;
+          } else if (evt.type === 'error') {
+            throw new Error('Stream error: ' + (evt.error ? (evt.error.message || 'unknown') : 'unknown'));
+          }
+        } catch (e) {
+          // ignore keep-alive / non-JSON lines (e.g. ping events)
+        }
+      }
+    }
   }
   return text;
 }
 
 function parseJSON(text) {
   if (!text) return null;
+  var cleaned = text.replace(/```json/g, '').replace(/```/g, '').trim();
+  // Fast path: well-formed output parses directly.
   try {
-    return JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim());
-  } catch(e) {
-    console.log('JSON parse error:', e.message, 'Raw:', text.substring(0, 300));
+    return JSON.parse(cleaned);
+  } catch (e) {
+    // Salvage path: the model sometimes returns a complete, valid JSON object
+    // and then appends extra content after it (a trailing note, a second
+    // fenced block, a stray character), which makes a whole-string JSON.parse
+    // throw "Unexpected non-whitespace character after JSON". It can also emit
+    // a short preamble before the object. Extract the first balanced top-level
+    // {...} object and parse only that. Brace counting ignores braces that
+    // appear inside strings and escaped characters, so it is not fooled by
+    // JSON string values containing { or }.
+    var start = cleaned.indexOf('{');
+    if (start === -1) {
+      console.log('JSON parse error (no object found):', e.message, 'Raw:', cleaned.substring(0, 300));
+      return null;
+    }
+    var depth = 0, inStr = false, esc = false;
+    for (var i = start; i < cleaned.length; i++) {
+      var ch = cleaned[i];
+      if (esc) { esc = false; continue; }
+      if (ch === '\\') { esc = true; continue; }
+      if (ch === '"') { inStr = !inStr; continue; }
+      if (inStr) continue;
+      if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) {
+          var candidate = cleaned.slice(start, i + 1);
+          try {
+            return JSON.parse(candidate);
+          } catch (e2) {
+            console.log('JSON parse error (salvage failed):', e2.message, 'Raw:', cleaned.substring(0, 300));
+            return null;
+          }
+        }
+      }
+    }
+    console.log('JSON parse error (unbalanced):', e.message, 'Raw:', cleaned.substring(0, 300));
     return null;
   }
+}
+
+// ===== DETERMINISTIC MDM CLASSIFIER (facts -> levels via AMA table) =====
+// ============================================================================
+// DETERMINISTIC MDM AXIS CLASSIFIER
+// Maps extracted FACTS (from the model) to axis LEVELS (in code), using the
+// exact AMA MDM criteria already vetted in this tool's prompts. The model does
+// NOT choose levels; it reports facts. Code computes levels. Same facts ->
+// same level, every run. This removes run-to-run non-determinism at its source.
+//
+// AMA criteria encoded here are taken verbatim-in-substance from the tool's
+// existing MDM_EVAL_PROMPT / REVIEW_PROMPT reference definitions.
+// ============================================================================
+
+// ---- PROBLEMS ----
+// Low: 1 stable chronic illness managed w/o change, OR 2+ self-limited problems
+// Moderate: 2+ stable chronic illnesses actively managed, OR 1+ chronic w/ mild
+//           exacerbation, OR 1 undiagnosed new problem
+// High: Pathway 1 (new dx requiring high-risk tx decision / controlled or high-risk
+//       med start w/ uncertainty / complex multi-adjustment w/ competing risks),
+//       Pathway 2 (severe exacerbation: active SI, recent ER, destabilization,
+//       psychosis w/ safety concern, acute deterioration, LOC discussed/declined),
+//       Pathway 3 (threat to life/function at this visit)
+function classifyProblems(f) {
+  // f: { pathway1, pathway2, pathway3, chronic_actively_managed_count,
+  //      chronic_with_exacerbation, undiagnosed_new_problem,
+  //      stable_chronic_count, self_limited_count }
+  if (f.pathway1 || f.pathway2 || f.pathway3) {
+    return { level: 'high', basis: 'Pathway ' +
+      [f.pathway1 ? '1 (high-complexity decision-making)' : null,
+       f.pathway2 ? '2 (severe exacerbation)' : null,
+       f.pathway3 ? '3 (threat to life or function)' : null]
+      .filter(Boolean).join(' + ') };
+  }
+  if ((f.chronic_actively_managed_count >= 2) || f.chronic_with_exacerbation || f.undiagnosed_new_problem) {
+    var bases = [];
+    if (f.chronic_actively_managed_count >= 2) bases.push(f.chronic_actively_managed_count + ' chronic illnesses actively managed');
+    if (f.chronic_with_exacerbation) bases.push('chronic illness with mild exacerbation');
+    if (f.undiagnosed_new_problem) bases.push('undiagnosed new problem');
+    return { level: 'moderate', basis: bases.join('; ') };
+  }
+  if (f.stable_chronic_count >= 1 || f.self_limited_count >= 2) {
+    return { level: 'low', basis: (f.stable_chronic_count >= 1 ? '1 stable chronic illness managed without change' : (f.self_limited_count + ' self-limited problems')) };
+  }
+  return { level: 'minimal', basis: 'No qualifying problems documented' };
+}
+
+// ---- DATA ----
+// Category 1: review of external records / independent historian / each unique test
+// Category 2: independent interpretation of a test performed by another
+// Category 3: discussion of management with external physician/QHP
+// Moderate: any 1 category met (combination per AMA: e.g. 2 from Cat1, or independent
+//           interpretation, or external discussion). Extensive: 2+ categories.
+function classifyData(f) {
+  // f: { unique_sources_reviewed (count: ext records, each unique test, ext hx),
+  //      independent_interpretation (bool), external_discussion (bool),
+  //      ordered_or_reviewed_tests (count) }
+  var categoriesMet = 0;
+  if ((f.unique_sources_reviewed || 0) >= 1) categoriesMet++; // Category 1 activity present
+  if (f.independent_interpretation) categoriesMet++;          // Category 2
+  if (f.external_discussion) categoriesMet++;                 // Category 3
+  // Moderate requires meaningful data work; Extensive requires 2+ categories
+  if (categoriesMet >= 2) return { level: 'extensive', basis: categoriesMet + ' data categories met' };
+  // Within Category 1, AMA moderate (for established/moderate MDM) needs review of
+  // external notes/independent historian/tests sufficient to qualify; treat >=1
+  // qualifying Cat-1 source OR any single higher category as moderate.
+  if (categoriesMet === 1) {
+    // Distinguish limited vs moderate: a single trivial source is limited; a
+    // qualifying external-records/independent-interpretation/external-discussion is moderate.
+    if (f.independent_interpretation || f.external_discussion || (f.unique_sources_reviewed || 0) >= 2) {
+      return { level: 'moderate', basis: 'qualifying data category met' };
+    }
+    return { level: 'limited', basis: 'single data source reviewed' };
+  }
+  return { level: 'minimal', basis: 'minimal or no external data reviewed' };
+}
+
+// ---- RISK ----
+// Minimal/Low: OTC/self-limited management
+// Moderate: prescription drug management (incl. documented continuation w/ assessment)
+// High: drug therapy requiring INTENSIVE monitoring for toxicity; decision re:
+//       hospitalization / escalation of care; decision re: parenteral controlled
+//       substances; OR an AMA high-risk category actually met. Patient history
+//       (e.g. remote suicide attempt) and a non-controlled SSRI start do NOT, by
+//       themselves, meet a high category.
+function classifyRisk(f) {
+  // f: { intensive_toxicity_monitoring_drug (bool),
+  //      hospitalization_or_loc_decision (bool),
+  //      threat_to_life_or_function_at_visit (bool),
+  //      controlled_substance_decision_with_risk (bool),  // e.g. CII start w/ uncertainty
+  //      prescription_drug_management (bool),
+  //      otc_or_self_limited_only (bool) }
+  var highReasons = [];
+  if (f.intensive_toxicity_monitoring_drug) highReasons.push('drug therapy requiring intensive toxicity monitoring');
+  if (f.hospitalization_or_loc_decision) highReasons.push('decision regarding hospitalization / escalation of care');
+  if (f.threat_to_life_or_function_at_visit) highReasons.push('threat to life or bodily function at this visit');
+  if (f.controlled_substance_decision_with_risk) highReasons.push('controlled-substance decision under diagnostic uncertainty/competing risk');
+  if (highReasons.length > 0) return { level: 'high', basis: highReasons.join('; ') };
+  if (f.prescription_drug_management) return { level: 'moderate', basis: 'prescription drug management' };
+  if (f.otc_or_self_limited_only) return { level: 'low', basis: 'OTC / self-limited management only' };
+  return { level: 'minimal', basis: 'no qualifying risk factors documented' };
+}
+
+// ---- 2-of-3 E/M MAPPING ----
+var RANK = { minimal: 0, low: 1, limited: 1, moderate: 2, extensive: 3, high: 3 };
+function emFromAxes(problemsLevel, dataLevel, riskLevel, visitType) {
+  // Normalize data's "limited"->low-rank, "extensive"->high-rank for the 2-of-3 grid
+  var p = RANK[problemsLevel], d = RANK[dataLevel], r = RANK[riskLevel];
+  var ranks = [p, d, r].sort(function(a,b){ return b-a; });
+  // highest level reached by at least two axes = the 2nd-highest rank
+  var twoOfThree = ranks[1];
+  var levelName = twoOfThree === 3 ? 'high' : twoOfThree === 2 ? 'moderate' : twoOfThree === 1 ? 'low' : 'straightforward';
+  var estMap = { straightforward: '99212', low: '99213', moderate: '99214', high: '99215' };
+  var newMap = { straightforward: '99202', low: '99203', moderate: '99204', high: '99205' };
+  var code = (visitType === 'new' ? newMap : estMap)[levelName];
+  return { code: code, level: levelName, twoOfThreeRank: twoOfThree };
 }
 
 function esc(s) {
@@ -1084,7 +1561,7 @@ YOUR SCOPE (strictly enforced):
 - Explain WHY any axis (Problems, Data, Risk) was rated at a specific level
 - Explain how the 2-of-3 rule determined the final E/M code
 - Explain what documentation elements would raise or lower a specific axis (e.g. "To support high Risk, your note would need to document X"). This is coding guidance, not note writing. You may describe what needs to be present but you do not write it for them.
-- Explain the adversarial review corrections and why they were made
+- Explain the fact verification and why any extracted fact was corrected
 - Explain psychotherapy add-on code selection and modifier application
 - Answer questions about CPT 2025 rules as they apply to THIS note
 - Clarify audit defensibility concerns or documentation gaps
@@ -1128,22 +1605,50 @@ async function sendFollowUp() {
   messages.push({ role: 'user', content: question });
 
   try {
-    var response = await fetch('/.netlify/functions/anthropic-proxy', {
+    var fuToken = '';
+    try { fuToken = localStorage.getItem('tbp_auth_token') || ''; } catch(e){}
+    var response = await fetch('/.netlify/functions/clinical-proxy-stream', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + fuToken },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
+        token: fuToken,
+        model: 'claude-sonnet-4-6',
         max_tokens: 1500,
         system: FOLLOWUP_PROMPT,
         messages: messages
       })
     });
-    var data = await response.json();
-    if (data.error) throw new Error(data.error);
+    if (!response.ok) {
+      var fErr = '';
+      try { fErr = await response.text(); } catch (e) {}
+      throw new Error('Proxy error (HTTP ' + response.status + '): ' + fErr.substring(0, 200));
+    }
 
+    var fReader = response.body.getReader();
+    var fDecoder = new TextDecoder();
+    var fBuffer = '';
     var answer = '';
-    if (data.content) {
-      data.content.forEach(function(c) { if (c.type === 'text') answer += c.text; });
+    while (true) {
+      var fChunk = await fReader.read();
+      if (fChunk.done) break;
+      fBuffer += fDecoder.decode(fChunk.value, { stream: true });
+      var fIdx;
+      while ((fIdx = fBuffer.indexOf('\n\n')) !== -1) {
+        var fRaw = fBuffer.slice(0, fIdx);
+        fBuffer = fBuffer.slice(fIdx + 2);
+        var fLines = fRaw.split('\n');
+        for (var fi = 0; fi < fLines.length; fi++) {
+          if (fLines[fi].indexOf('data:') !== 0) continue;
+          var fData = fLines[fi].slice(5).trim();
+          if (!fData || fData === '[DONE]') continue;
+          try {
+            var fEvt = JSON.parse(fData);
+            if (fEvt.type === 'content_block_delta' && fEvt.delta && typeof fEvt.delta.text === 'string') {
+              answer += fEvt.delta.text;
+            }
+          } catch (e) {}
+        }
+      }
     }
 
     // Store in history
@@ -1189,6 +1694,23 @@ function clearAll() {
   document.getElementById('new-analysis-btn').style.display = 'none';
   document.getElementById('chat-messages').innerHTML = '';
 }
+</script>
+
+<!-- Auth + PHI gate (BAA + Terms enforced by default via auth-gate.js opt-out) -->
+<script src="/auth-gate.js"></script>
+<script>
+TBPAuth.protect({
+  toolName: 'Chart Audit + Coder',
+  requireFull: true,
+  termsVersion: 'interim_v1',
+  onVerified: function(){
+    document.body.classList.remove('tbp-gate-active');
+    document.body.style.display = 'block';
+    document.body.style.overflow = '';
+    var c = document.getElementById('cc-container');
+    if (c) c.style.display = 'block';
+  }
+});
 </script>
 </body>
 </html>
