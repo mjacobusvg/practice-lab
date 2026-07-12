@@ -1361,7 +1361,8 @@ a { color: inherit; text-decoration: none; }
       <strong>Membership includes:</strong>
       Forum &middot; Practice Lab simulations &middot; Practice Manager tools &middot; Credentialing Hub &middot; Ask the Archive &middot; CE courses (when accredited)
     </div>
-    <a href="https://community.thinkbeyondpractice.com/checkout/think-beyond-practice-full-access" class="btn-primary">Join Think Beyond Practice -- $119/mo</a>
+    <button class="btn-primary" onclick="startCheckout('full_monthly_119')">Join Think Beyond Practice for $119/mo</button>
+    <button class="btn-primary" onclick="startCheckout('full_annual_1190')" style="margin-top:8px;background:transparent;border:1px solid var(--teal);color:var(--teal)">Or $1,190/yr (2 months free)</button>
     <button class="dismiss" onclick="closeJoin()">Continue browsing</button>
   </div>
 </div>
@@ -1615,6 +1616,9 @@ function updateTopbar() {
     '<button class="btn-ghost" onclick="location.href=\'/\'">Home</button>' +
     '<div class="acct-wrap"><div class="user-avatar" title="'+esc(nm)+'" onclick="toggleAcctMenu()">'+esc(ini)+'</div>' +
     '<div class="acct-menu" id="acct-menu"><div class="acct-head">'+esc(nm)+'<span class="acct-tier">'+tierLabel+'</span></div>' +
+    (isPaidMember()
+      ? '<button onclick="openBillingPortal()">Manage billing</button>'
+      : '<button onclick="startCheckout(\'full_monthly_119\')">Upgrade to Full</button>') +
     '<button onclick="signOut()">Sign out</button></div></div>';
 }
 function toggleAcctMenu() {
@@ -3046,6 +3050,53 @@ function showJoin(key) {
 }
 function closeJoin() { document.getElementById('join-modal').classList.remove('active'); }
 document.getElementById('join-modal').addEventListener('click', function(e) { if(e.target===this) closeJoin(); });
+
+// ════════════════════════════════════════
+// STRIPE CHECKOUT + BILLING PORTAL (own billing, replaces Circle checkout)
+// ════════════════════════════════════════
+// Start a Stripe Checkout for a membership plan. Requires a signed session, so
+// the member must be logged in (checkout derives identity from the token). A
+// logged-out visitor is sent to sign in first.
+async function startCheckout(plan) {
+  var token = getAuthToken();
+  if (!token) {
+    closeJoin();
+    var gate = document.getElementById('gate');
+    if (gate) gate.classList.remove('hidden');
+    alert('Create your free account or sign in first, then upgrade.');
+    return;
+  }
+  try {
+    var res = await fetch('/.netlify/functions/create-membership-checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({
+        plan: plan,
+        success_url: window.location.origin + '/platform?joined=1',
+        cancel_url: window.location.origin + '/platform'
+      })
+    });
+    var data = await res.json();
+    if (data && data.url) { window.location.href = data.url; return; }
+    alert((data && data.error) ? data.error : 'Could not start checkout. Please try again.');
+  } catch(e) { alert('Could not start checkout. Please try again.'); }
+}
+
+// Open Stripe's hosted billing portal so a member can manage/cancel/switch.
+async function openBillingPortal() {
+  var token = getAuthToken();
+  if (!token) return;
+  try {
+    var res = await fetch('/.netlify/functions/create-billing-portal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ return_url: window.location.origin + '/platform' })
+    });
+    var data = await res.json();
+    if (data && data.url) { window.location.href = data.url; return; }
+    alert((data && data.error) ? data.error : 'Could not open billing. Please try again.');
+  } catch(e) { alert('Could not open billing. Please try again.'); }
+}
 
 // ════════════════════════════════════════
 // HELPERS
