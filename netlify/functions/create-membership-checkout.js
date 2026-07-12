@@ -19,7 +19,7 @@
 const { verifyToken } = require('./_lib/session');
 
 // New-member purchasable plans (Stripe Price lookup_keys). Enforced allowlist.
-const PURCHASABLE = ['full_monthly_119', 'full_annual_1140'];
+const PURCHASABLE = ['full_monthly_119', 'full_annual_1190'];
 
 exports.handler = async function (event) {
   const CORS = {
