@@ -265,38 +265,6 @@ var lastReview = null;
 var lastAudit = null;
 var followUpMessages = [];
 
-// ══════════════════════════════════════════════════════════════
-// MEDICARE REFERENCE RATES (relative-comparison reference only)
-// Source: practice fee schedule at 100% of Medicare, non-facility.
-// These are a DIRECTIONAL reference for "which method reimburses
-// more," NOT a payment prediction. Update annually from the current
-// Medicare Physician Fee Schedule / your own fee schedule.
-// Commercial and NP rates commonly differ (often lower).
-// ══════════════════════════════════════════════════════════════
-var MEDICARE_REF = {
-  '99202': 73.97, '99203': 120.10, '99204': 180.94, '99205': 241.18,
-  '99212': 61.08, '99213': 97.62, '99214': 138.86, '99215': 196.80,
-  '99417': 32.56,   // commercial prolonged (per unit)
-  'G2212': 34.57,   // Medicare prolonged (per unit)
-  '90833': 82.85, '90836': 105.00, '90838': 138.86, '90785': 15.03
-};
-// 99202 reference not on the captured fee sheet; estimated and unused
-// in the new-patient comparison (comparison starts at 99204 vs 99205).
-// User-entered custom rates (optional) override MEDICARE_REF at compare time.
-var customRates = {};
-
-function refRate(code) {
-  if (!code) return null;
-  var c = String(code).toUpperCase();
-  if (customRates[c] != null && !isNaN(customRates[c])) return customRates[c];
-  return (MEDICARE_REF[c] != null) ? MEDICARE_REF[c] : null;
-}
-
-function fmtUSD(n) {
-  if (n == null || isNaN(n)) return '—';
-  return '$' + Number(n).toFixed(2);
-}
-
 function selectVisitType(el) {
   document.querySelectorAll('.visit-opt[data-val="established"],.visit-opt[data-val="new"]').forEach(function(o) { o.classList.remove('active'); });
   el.classList.add('active');
@@ -721,7 +689,7 @@ async function runCodingPasses() {
         return null;
       }
     })();
-    var mdmPromise = callAPI(MDM_EVAL_PROMPT, userMsg, 'claude-sonnet-4-6', 5000);
+    var mdmPromise = callAPI(MDM_EVAL_PROMPT, userMsg, 'claude-sonnet-4-6', 2500);
 
     var auditAndMdm = await Promise.all([auditPromise, mdmPromise]);
     var audit = auditAndMdm[0];
@@ -750,7 +718,7 @@ async function runCodingPasses() {
     // Pass 2: Fact verification (does the note actually support each extracted fact?)
     updateProgress(3, 'Verifying facts and finalizing codes...');
     var reviewInput = userMsg + '\n\nEXTRACTED FACTS (Pass 1):\n' + JSON.stringify(facts, null, 2) + '\n\nCODE-COMPUTED LEVELS (from those facts):\nProblems: ' + pCls.level + ' (' + pCls.basis + ')\nData: ' + dCls.level + ' (' + dCls.basis + ')\nRisk: ' + rCls.level + ' (' + rCls.basis + ')';
-    var reviewRaw = await callAPI(REVIEW_PROMPT, reviewInput, 'claude-sonnet-4-6', 5000);
+    var reviewRaw = await callAPI(REVIEW_PROMPT, reviewInput, 'claude-sonnet-4-6', 2500);
     var review = parseJSON(reviewRaw);
     if (!review) throw new Error('Could not parse the verification pass. Please try again.');
 
@@ -858,124 +826,6 @@ function calculateTimeCode() {
   }
 
   return result;
-}
-
-// ══════════════════════════════════════════════════════════════
-// REIMBURSEMENT COMPARISON PANEL (new patients)
-// Presentation only. Reads values already computed elsewhere:
-//   - timeResult from calculateTimeCode()
-//   - review.em_code / review.addon_code from the MDM analysis
-// Compares the two LEGITIMATELY-SUPPORTED billing methods at Medicare
-// reference rates and shows which reimburses more. Does not alter any
-// coding logic or reasoning.
-// ══════════════════════════════════════════════════════════════
-function buildComparisonPanel(review, timeResult, hasTherapyAddon, noteHasTherapy) {
-  // Only meaningful for new patients with entered time.
-  if (visitType !== 'new' || !timeResult || timeResult.total <= 0) return '';
-
-  var h = '';
-
-  // ---- Time-path total (at reference) ----
-  var timeCode = timeResult.code;
-  var timeTotal = refRate(timeCode);
-  var timeUnits = timeResult.prolonged || 0;
-  var timeProlongedRate = refRate('99417');
-  if (timeTotal != null && timeUnits > 0 && timeProlongedRate != null) {
-    timeTotal += timeUnits * timeProlongedRate;
-  }
-
-  // ---- MDM-path total (at reference) ----
-  var mdmCode = review.em_code;
-  var mdmTotal = refRate(mdmCode);
-  var addonCode = (review.addon_code && review.addon_code !== 'none') ? review.addon_code : null;
-  var addonRate = addonCode ? refRate(addonCode) : null;
-  var mdmWithAddon = (mdmTotal != null && addonRate != null) ? (mdmTotal + addonRate) : null;
-
-  h += '<div class="section-card" style="border-color:rgba(45,212,191,0.35)">';
-  h += '<h3 style="color:var(--teal)">Reimbursement Comparison</h3>';
-  h += '<div style="font-size:.78rem;color:var(--cream-dim);margin-bottom:14px">Directional comparison at Medicare reference rates, to show which method reimburses more for the same visit. Not a payment prediction. Commercial and NP rates commonly differ, often lower. Confirm against your own fee schedule.</div>';
-
-  // ---- Side-by-side, when both methods are legal to compare (no therapy in note) ----
-  if (!noteHasTherapy) {
-    // Method 1: time-based E/M
-    h += '<div style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:8px">';
-    h += compareCard('Time-based E/M',
-        timeCode + (timeUnits > 0 ? ' + 99417 x' + timeUnits : ''),
-        timeTotal,
-        'Coded by total time (' + timeResult.total + ' min). No complexity or psychotherapy to defend.');
-    // Method 2: MDM-based E/M (no add-on)
-    h += compareCard('MDM-based E/M',
-        mdmCode,
-        mdmTotal,
-        'Coded by documented complexity (2-of-3). No psychotherapy add-on.');
-    h += '</div>';
-
-    // Verdict
-    if (timeTotal != null && mdmTotal != null) {
-      var diff = timeTotal - mdmTotal;
-      var pct = mdmTotal ? Math.round(Math.abs(diff) / mdmTotal * 100) : 0;
-      var verdict;
-      if (Math.abs(diff) < 0.01) {
-        verdict = 'The two methods reimburse the same here. Choose time — it is simpler to defend.';
-      } else if (diff > 0) {
-        verdict = 'Time-based reimburses about ' + fmtUSD(diff) + ' more (~' + pct + '%) here, and is easier to defend. If your time supports it, bill by time.';
-      } else {
-        verdict = 'MDM-based reimburses about ' + fmtUSD(-diff) + ' more (~' + pct + '%) here — but only if the note truly supports that complexity level.';
-      }
-      h += '<div style="font-size:.84rem;color:var(--cream);background:rgba(45,212,191,0.06);border:1px solid rgba(45,212,191,0.2);border-radius:6px;padding:10px 14px;margin-bottom:6px">' + esc(verdict) + '</div>';
-    }
-
-    // State A: 90833 what-if box (no therapy documented in note)
-    if (mdmTotal != null && refRate('90833') != null) {
-      var aWith = mdmTotal + refRate('90833');
-      h += '<div style="font-size:.8rem;color:var(--cream-dim);background:var(--navy-mid);border:1px solid var(--rule);border-radius:6px;padding:10px 14px;margin-top:8px">';
-      h += '<strong style="color:var(--teal)">If you also performed billable psychotherapy:</strong> you could add 90833 to the MDM path (' + mdmCode + ' + 90833 ≈ ' + fmtUSD(aWith) + ' reference). Adding 90833 forces MDM coding and takes time-based coding (and 99417) off the table for this visit — it is one lane or the other, not both. Only add 90833 if a distinct psychotherapy service actually occurred and is separately documented.';
-      h += '</div>';
-    }
-  } else {
-    // State B: psychotherapy blurb IS in the note. Real decision.
-    h += '<div style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:8px">';
-    h += compareCard('Keep therapy (MDM + 90833)',
-        mdmCode + (addonCode ? ' + ' + addonCode : ''),
-        mdmWithAddon,
-        'Your note includes psychotherapy. Billed by MDM with the add-on.');
-    h += compareCard('Drop therapy, bill by time',
-        timeCode + (timeUnits > 0 ? ' + 99417 x' + timeUnits : ''),
-        timeTotal,
-        'Remove the psychotherapy piece and code the whole visit by total time (' + timeResult.total + ' min).');
-    h += '</div>';
-
-    if (mdmWithAddon != null && timeTotal != null) {
-      var d2 = timeTotal - mdmWithAddon;
-      var p2 = mdmWithAddon ? Math.round(Math.abs(d2) / mdmWithAddon * 100) : 0;
-      var v2;
-      if (Math.abs(d2) < 0.01) v2 = 'The two lanes reimburse about the same here. Time is simpler to defend; keeping 90833 requires defending a distinct therapy service.';
-      else if (d2 > 0) v2 = 'Billing by time reimburses about ' + fmtUSD(d2) + ' more (~' + p2 + '%) here and is easier to defend.';
-      else v2 = 'Keeping MDM + 90833 reimburses about ' + fmtUSD(-d2) + ' more (~' + p2 + '%) here — valid only if the psychotherapy was truly separate and documented.';
-      h += '<div style="font-size:.84rem;color:var(--cream);background:rgba(45,212,191,0.06);border:1px solid rgba(45,212,191,0.2);border-radius:6px;padding:10px 14px;margin-bottom:6px">' + esc(v2) + '</div>';
-    }
-
-    h += '<div style="font-size:.8rem;color:var(--amber);background:rgba(251,191,36,0.06);border:1px solid rgba(251,191,36,0.22);border-radius:6px;padding:10px 14px;margin-top:8px">&#9888; You cannot do both. Leaving the psychotherapy narrative in the note while coding by time is contradictory documentation that undermines you on audit. Pick one lane: keep the therapy and bill MDM + 90833, or remove the psychotherapy piece and bill by time.</div>';
-  }
-
-  // Payer note (99417 vs G2212)
-  if (timeUnits > 0) {
-    h += '<div style="font-size:.76rem;color:var(--cream-dim);margin-top:10px">Prolonged-services note: the estimate above uses commercial 99417 (first unit at 75 min). Medicare uses G2212 instead, which does not begin until 89 min (a full 15 min past the 74-min ceiling), so a Medicare visit under 89 min earns no prolonged unit.</div>';
-  }
-
-  h += '</div>';
-  return h;
-}
-
-function compareCard(label, codes, total, sub) {
-  var c = '';
-  c += '<div style="flex:1 1 220px;min-width:200px;background:var(--navy-mid);border:1px solid var(--rule);border-radius:8px;padding:12px 14px">';
-  c += '<div style="font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--cream-dim);margin-bottom:6px">' + esc(label) + '</div>';
-  c += '<div style="font-size:1.05rem;font-weight:600;color:var(--cream)">' + esc(codes) + '</div>';
-  c += '<div style="font-size:.95rem;color:var(--teal);margin-top:2px">' + fmtUSD(total) + ' <span style="font-size:.7rem;color:var(--cream-dim)">ref</span></div>';
-  if (sub) c += '<div style="font-size:.74rem;color:var(--cream-dim);margin-top:6px">' + esc(sub) + '</div>';
-  c += '</div>';
-  return c;
 }
 
 function renderResults(mdm, review) {
@@ -1195,11 +1045,6 @@ function renderResults(mdm, review) {
     html += '<span class="code-addon">Modifier 95</span>';
   }
   html += '</div></div>';
-
-  // ── REIMBURSEMENT COMPARISON PANEL (new patients only) ──
-  // noteHasTherapy: the model recommended a psychotherapy add-on, i.e.
-  // the note documents a psychotherapy service. Drives State A vs State B.
-  html += buildComparisonPanel(review, timeResult, hasTherapyAddon, hasTherapyAddon);
 
   // MDM Table
   var axes = [
