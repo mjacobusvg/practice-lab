@@ -92,6 +92,11 @@ async function notifyNewComment(post, commenter) {
     const idset = {};
     if (post.author_id) idset[post.author_id] = true;
     (priors || []).forEach(function (c) { if (c.author_id) idset[c.author_id] = true; });
+    // Thread followers get comment notifications even if they never commented.
+    try {
+      const followers = await sb('follows?target_type=eq.post&target_id=eq.' + post.id + '&select=account_id', 'GET');
+      (followers || []).forEach(function (f) { if (f.account_id) idset[f.account_id] = true; });
+    } catch (e) { /* following is best-effort */ }
     delete idset[commenterId];
     const ids = Object.keys(idset);
     if (!ids.length) return;

@@ -1016,6 +1016,9 @@ a { color: inherit; text-decoration: none; }
 .mp-poll-remove:hover { border-color:#c0392b; color:#c0392b; }
 #mp-poll-builder input { width:100%; margin-bottom:8px; }
 #mp-poll-opts .mp-poll-opt { display:block; }
+/* Following view */
+.following-section { margin-bottom:22px; }
+.following-h { font-size:0.78rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-secondary); margin-bottom:10px; }
 /* Profile page */
 .profile-head { display:flex; gap:18px; align-items:flex-start; margin-bottom:20px; flex-wrap:wrap; }
 .profile-avatar { width:88px; height:88px; border-radius:50%; overflow:hidden; flex-shrink:0; border:2px solid var(--border); display:inline-flex; align-items:center; justify-content:center; background:var(--bg-card); }
@@ -1829,6 +1832,7 @@ function init() {
 function buildSidebar() {
   var h = '<div class="sb-item" data-key="home" onclick="showHome()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#127968;</span> Home</div>';
   h += '<div class="sb-item" data-key="saved" onclick="showSaved()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128278;</span> Saved</div>';
+  h += '<div class="sb-item" data-key="following" onclick="showFollowing()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128220;</span> Following</div>';
   h += '<div class="sb-item" data-key="library" onclick="showLibrary()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128196;</span> Template Library</div>';
   h += '<div class="sb-item" data-key="directory" onclick="showDirectory()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128101;</span> Member Directory</div>';
   h += '<div class="sb-item" data-key="messages" onclick="showMessages()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#9993;</span> Messages<span id="dm-badge" class="dm-badge" style="display:none"></span></div>';
@@ -2462,13 +2466,22 @@ async function viewPost(postId) {
       } catch (e) {}
     }
 
+    // Follow state for the Follow-thread button (cached after first load).
+    if (isPaidMember()) { try { await fetchFollows(); } catch (e) {} }
+
     var h = '';
     // Back button
     h += '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px">';
     h += '<div class="post-full-back" onclick="' + (post.spaces ? 'go(\''+post.spaces.slug+'\')' : 'showHome()') + '">&larr; Back to ' + esc(post.spaces ? post.spaces.name : 'Home') + '</div>';
     if (S.isMember) {
       var isSaved = getSavedIds().indexOf(post.id) !== -1;
+      h += '<div style="display:flex;gap:8px;align-items:center">';
+      if (isPaidMember()) {
+        var following = isFollowingPost(post.id);
+        h += '<button class="save-btn' + (following ? ' on' : '') + '" id="follow-btn" onclick="toggleFollow(\'post\',\'' + post.id + '\',\'follow-btn\')">' + (following ? '&#10003; Following' : '+ Follow thread') + '</button>';
+      }
       h += '<button class="save-btn' + (isSaved ? ' on' : '') + '" id="save-btn" onclick="toggleSave(\'' + post.id + '\')">' + (isSaved ? '&#128278; Saved' : '&#128278; Save') + '</button>';
+      h += '</div>';
     }
     h += '</div>';
 
@@ -3205,9 +3218,15 @@ async function showTopic(tagName) {
   var center = document.getElementById('center');
   center.innerHTML = '<div class="skel skel-h"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
   window.scrollTo(0, 0);
+  if (isPaidMember()) { try { await fetchFollows(); } catch (e) {} }
   var h = '<div class="space-head"><div class="space-accent" style="background:var(--teal)"></div>';
   h += '<h1>' + esc(tagName) + '</h1>';
-  h += '<p class="space-tagline">Every post tagged ' + esc(tagName) + ', across all spaces.</p></div>';
+  h += '<p class="space-tagline">Every post tagged ' + esc(tagName) + ', across all spaces.</p>';
+  if (isPaidMember()) {
+    var tf = isFollowingTag(tagName);
+    h += '<div style="margin-top:10px"><button class="save-btn' + (tf ? ' on' : '') + '" id="follow-topic-btn" onclick="toggleFollow(\'tag\',\'' + tagName.replace(/\x27/g, "\\x27") + '\',\'follow-topic-btn\')">' + (tf ? '&#10003; Following topic' : '+ Follow topic') + '</button></div>';
+  }
+  h += '</div>';
   try {
     var { data, error } = await SB
       .from('forum_posts')
@@ -4002,6 +4021,119 @@ async function removeSaved(postId) {
     var data = await res.json();
     if (data.ok) { await fetchSaved(); renderSaved(); }
   } catch(e) { console.error('removeSaved:', e); }
+}
+
+// ════════════════════════════════════════
+// FOLLOWING (threads + topics)
+// ════════════════════════════════════════
+var followsCache = null; // { posts:[ids], tags:[names] }
+
+async function fetchFollows(force) {
+  if (followsCache && !force) return followsCache;
+  if (!isPaidMember()) { followsCache = { posts: [], tags: [] }; return followsCache; }
+  try {
+    var res = await fetch('/.netlify/functions/follow', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), action: 'list' })
+    });
+    var data = await res.json();
+    followsCache = (data && data.ok) ? { posts: data.posts || [], tags: data.tags || [] } : { posts: [], tags: [] };
+  } catch (e) { followsCache = followsCache || { posts: [], tags: [] }; }
+  return followsCache;
+}
+
+function isFollowingPost(id) { return !!(followsCache && followsCache.posts && followsCache.posts.indexOf(id) !== -1); }
+function isFollowingTag(name) { return !!(followsCache && followsCache.tags && followsCache.tags.indexOf(name) !== -1); }
+
+// Follow / unfollow, then update the button in place (and the cache).
+async function toggleFollow(type, id, btnId) {
+  if (!isPaidMember()) { showJoin(''); return; }
+  var btn = btnId ? document.getElementById(btnId) : null;
+  if (btn) btn.disabled = true;
+  try {
+    var res = await fetch('/.netlify/functions/follow', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), action: 'toggle', target_type: type, target_id: id })
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not update.');
+    // Keep the cache honest.
+    await fetchFollows(true);
+    if (btn) {
+      var on = data.following;
+      btn.classList.toggle('on', on);
+      if (type === 'post') btn.innerHTML = on ? '&#10003; Following' : '+ Follow thread';
+      else btn.innerHTML = on ? '&#10003; Following topic' : '+ Follow topic';
+    }
+  } catch (e) { console.error('toggleFollow:', e); }
+  finally { if (btn) btn.disabled = false; }
+}
+
+async function showFollowing() {
+  closeSidebar(); closeRail();
+  S.view = 'following'; S.space = null;
+  logView('/platform/following');
+  clearActive();
+  var side = document.querySelector('.sb-item[data-key="following"]'); if (side) side.classList.add('active');
+  var center = document.getElementById('center');
+  center.innerHTML = '<div class="skel skel-h"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
+  window.scrollTo(0, 0);
+
+  if (!isPaidMember()) { showJoin(''); return; }
+  await fetchFollows(true);
+  var f = followsCache || { posts: [], tags: [] };
+
+  var h = '<div class="space-head"><div class="space-accent" style="background:var(--teal)"></div>';
+  h += '<h1>Following</h1>';
+  h += '<p class="space-tagline">Threads and topics you follow. New comments on a followed thread notify you.</p></div>';
+
+  try {
+    // Followed topics: chips that open the cross-space topic view.
+    if (f.tags && f.tags.length) {
+      h += '<div class="following-section"><div class="following-h">Topics</div><div class="post-tags">';
+      f.tags.forEach(function(nm) {
+        h += '<span class="tagpill on" onclick="showTopic(\'' + nm.replace(/\x27/g, "\\x27") + '\')">' + esc(nm) + '</span>';
+      });
+      h += '</div></div>';
+    }
+
+    // Followed threads: fetch those posts and list them.
+    if (f.posts && f.posts.length) {
+      var r = await SB.from('forum_posts')
+        .select('id, title, excerpt, comment_count, created_at, spaces(name, slug), accounts(name, avatar_url)')
+        .in('id', f.posts)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      var posts = (r && r.data) || [];
+      h += '<div class="following-section"><div class="following-h">Threads</div>';
+      if (!posts.length) {
+        h += '<div style="padding:14px;color:var(--text-secondary);font-size:0.84rem">No followed threads yet.</div>';
+      } else {
+        h += '<div class="post-list">';
+        posts.forEach(function(p) {
+          var authorName = (p.accounts && p.accounts.name) ? p.accounts.name : '';
+          var dot = SPACE_DOTS[p.spaces ? p.spaces.slug : ''] || '#60a5fa';
+          h += '<div class="post-row" onclick="viewPost(\'' + p.id + '\')">';
+          if (p.accounts && p.accounts.avatar_url) h += '<span class="row-avatar" style="border-color:' + dot + '"><img src="' + esc(p.accounts.avatar_url) + '" alt="" loading="lazy"></span>';
+          else h += '<span class="row-avatar" style="border-color:' + dot + '">' + esc(initials(authorName)) + '</span>';
+          h += '<div class="post-body"><div class="post-title">' + esc(p.title) + '</div>';
+          h += '<div class="post-meta">' + esc(authorName) + (p.spaces ? ' &middot; ' + esc(p.spaces.name) : '') + ' &middot; ' + (p.comment_count || 0) + ' comment' + ((p.comment_count === 1) ? '' : 's') + '</div>';
+          h += '</div></div>';
+        });
+        h += '</div>';
+      }
+      h += '</div>';
+    }
+
+    if ((!f.tags || !f.tags.length) && (!f.posts || !f.posts.length)) {
+      h += '<div style="padding:28px;border:1px dashed var(--border);border-radius:var(--radius-lg);color:var(--text-secondary);font-size:0.85rem;text-align:center">You are not following anything yet. Open a thread and hit <strong style="color:var(--text-primary)">Follow</strong>, or follow a topic from any tag.</div>';
+    }
+    center.innerHTML = h;
+    window.scrollTo(0, 0);
+  } catch (e) {
+    console.error('showFollowing:', e);
+    center.innerHTML = h + '<div style="padding:20px;color:var(--text-secondary)">Could not load everything.</div>';
+  }
 }
 
 // ════════════════════════════════════════
