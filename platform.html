@@ -1247,31 +1247,44 @@ a { color: inherit; text-decoration: none; }
   padding: 4px;
   line-height: 1;
 }
-.sidebar-overlay {
+.sidebar-overlay, .rail-overlay {
   display: none;
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,0.5);
   z-index: 149;
 }
-.sidebar-overlay.active { display: block; }
+.sidebar-overlay.active, .rail-overlay.active { display: block; }
+/* Right-column toggle (mirrors the hamburger); only shown when the rail is a drawer. */
+.rail-toggle {
+  display: none;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 4px 6px;
+  line-height: 0;
+  align-items: center;
+}
 
 @media (max-width: 1080px) {
   .layout { grid-template-columns: 220px 1fr; }
-  /* Rail can't sit in a column here, so stack it full-width below the feed
-     (static, not the sticky 100vh pane) so its content — Browse by Topic tags,
-     Quick Reference, Community, Recently Asked — stays reachable on tablet/mobile. */
+  .rail-toggle { display: inline-flex; }
+  /* Right column becomes an off-canvas drawer from the right (mirrors the left
+     hamburger menu), opened by the top-bar panel button, so its content — Browse
+     by Topic tags, Quick Reference, Community, Recently Asked — stays reachable. */
   .rail {
-    grid-column: 1 / -1;
-    position: static;
+    position: fixed;
+    top: 52px; right: 0; bottom: 0;
+    width: 300px; max-width: 85vw;
     height: auto;
-    overflow: visible;
-    border-left: none;
-    border-top: 1px solid var(--border);
-    width: 100%;
-    max-width: 760px;
-    margin: 0 auto;
+    transform: translateX(100%);
+    transition: transform 0.2s ease;
+    z-index: 150;
+    background: var(--bg-sidebar);
+    box-shadow: -4px 0 16px rgba(0,0,0,0.3);
   }
+  .rail.open { transform: translateX(0); }
 }
 @media (max-width: 768px) {
   .hamburger { display: block; }
@@ -1309,7 +1322,7 @@ a { color: inherit; text-decoration: none; }
       <span class="ico-dark">&#9790;</span>
       <span class="ico-light">&#9728;</span>
     </button>
-    <button class="btn-ghost" onclick="window.location.href='/'">Home</button>
+    <button class="rail-toggle" id="rail-toggle" onclick="toggleRail()" title="Topics & more" aria-label="Open topics panel"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><line x1="14" y1="4" x2="14" y2="20"></line></svg></button>
     <a href="https://community.thinkbeyondpractice.com/checkout/think-beyond-practice-full-access" class="btn-primary">Join -- $119/mo</a>
   </div>
 </div>
@@ -1323,6 +1336,7 @@ a { color: inherit; text-decoration: none; }
     <div id="sb-nav"></div>
   </nav>
   <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+  <div class="rail-overlay" id="rail-overlay" onclick="closeRail()"></div>
 
   <!-- ── Center ── -->
   <main class="center" id="center"></main>
@@ -1507,6 +1521,15 @@ function closeSidebar() {
   document.getElementById('sidebar').classList.remove('open');
   document.getElementById('sidebar-overlay').classList.remove('active');
 }
+// Right-column drawer (topics, quick reference, community, recently asked).
+function toggleRail() {
+  document.getElementById('rail').classList.toggle('open');
+  document.getElementById('rail-overlay').classList.toggle('active');
+}
+function closeRail() {
+  var r = document.getElementById('rail'); if (r) r.classList.remove('open');
+  var o = document.getElementById('rail-overlay'); if (o) o.classList.remove('active');
+}
 
 // ════════════════════════════════════════
 // THEME
@@ -1649,7 +1672,7 @@ function updateTopbar() {
   document.getElementById('topbar-right').innerHTML =
     (isAdmin() ? '<button class="btn-primary" id="new-post-btn" onclick="openComposer()">+ New Post</button>' : '') +
     '<button class="theme-btn" onclick="toggleTheme()" title="Toggle theme" style="position:relative"><span class="ico-dark">&#9790;</span><span class="ico-light">&#9728;</span></button>' +
-    '<button class="btn-ghost" onclick="location.href=\'/\'">Home</button>' +
+    '<button class="rail-toggle" id="rail-toggle" onclick="toggleRail()" title="Topics & more" aria-label="Open topics panel"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><line x1="14" y1="4" x2="14" y2="20"></line></svg></button>' +
     '<div class="acct-wrap"><div class="user-avatar" title="'+esc(nm)+'" onclick="toggleAcctMenu()">'+esc(ini)+'</div>' +
     '<div class="acct-menu" id="acct-menu"><div class="acct-head">'+esc(nm)+'<span class="acct-tier">'+tierLabel+'</span></div>' +
     (isPaidMember()
@@ -2564,6 +2587,7 @@ async function submitMemberPost() {
 // cross-space discovery layer so good threads do not get lost inside one space.
 async function showTopic(tagName) {
   closeSidebar();
+  closeRail();
   S.view = 'topic'; S.space = null;
   logView('/platform/topic/' + encodeURIComponent(tagName));
   clearActive();
