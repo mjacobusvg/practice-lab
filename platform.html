@@ -1019,6 +1019,17 @@ a { color: inherit; text-decoration: none; }
 /* Following view */
 .following-section { margin-bottom:22px; }
 .following-h { font-size:0.78rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-secondary); margin-bottom:10px; }
+/* What you missed banner */
+.whatsnew-card { position:relative; margin:16px 0 8px; padding:16px 18px; border:1px solid var(--teal); border-radius:12px; background:var(--teal-glow); }
+.whatsnew-x { position:absolute; top:10px; right:12px; background:none; border:none; color:var(--text-secondary); cursor:pointer; font-size:18px; line-height:1; }
+.whatsnew-title { font-weight:700; color:var(--text-heading); font-size:0.95rem; }
+.whatsnew-sub { color:var(--text-secondary); font-size:0.82rem; margin-top:2px; }
+.whatsnew-list { margin-top:12px; display:flex; flex-direction:column; gap:6px; }
+.whatsnew-item { display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:8px; background:var(--bg-card); cursor:pointer; font-size:0.84rem; }
+.whatsnew-item:hover { background:var(--bg-page); }
+.whatsnew-dot { width:6px; height:6px; border-radius:50%; background:var(--teal); flex-shrink:0; }
+.whatsnew-item-title { color:var(--text-primary); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.whatsnew-item-space { color:var(--text-secondary); font-size:0.72rem; flex-shrink:0; }
 /* Profile page */
 .profile-head { display:flex; gap:18px; align-items:flex-start; margin-bottom:20px; flex-wrap:wrap; }
 .profile-avatar { width:88px; height:88px; border-radius:50%; overflow:hidden; flex-shrink:0; border:2px solid var(--border); display:inline-flex; align-items:center; justify-content:center; background:var(--bg-card); }
@@ -1947,6 +1958,9 @@ function showHome() {
   h += '<button onclick="askArchive()">Ask &rarr;</button>';
   h += '</div></div>';
 
+  // "What you missed" since last visit (fills in async, once per session)
+  h += '<div id="whats-new"></div>';
+
   // Recent activity feed (readable cards — replaces the one-line ticker)
   h += '<div id="home-feed"></div>';
 
@@ -1994,6 +2008,48 @@ function showHome() {
   loadRoadmap();
   loadFeed('recent');
   if (savedCache === null) fetchSaved();
+  loadWhatsNew();
+}
+
+// "What you missed" banner: one lightweight check per session. Advances the
+// member's last-seen watermark, so it only surfaces genuinely new activity.
+async function loadWhatsNew() {
+  if (!isPaidMember() || S.whatsNewChecked) return;
+  S.whatsNewChecked = true;
+  try {
+    var res = await fetch('/.netlify/functions/whats-new', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken() })
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) return;
+    if (!data.new_posts) return;
+    S.whatsNewData = data;
+    renderWhatsNew(data);
+  } catch (e) {}
+}
+
+function renderWhatsNew(data) {
+  var el = document.getElementById('whats-new');
+  if (!el) return;
+  var n = data.new_posts || 0;
+  var h = '<div class="whatsnew-card"><button class="whatsnew-x" onclick="dismissWhatsNew()" title="Dismiss">&times;</button>';
+  h += '<div class="whatsnew-title">&#128075; Welcome back</div>';
+  h += '<div class="whatsnew-sub">' + n + ' new post' + (n === 1 ? '' : 's') + ' since your last visit.</div>';
+  var recent = data.recent || [];
+  if (recent.length) {
+    h += '<div class="whatsnew-list">';
+    recent.forEach(function(r) {
+      h += '<div class="whatsnew-item" onclick="viewPost(\'' + r.id + '\')"><span class="whatsnew-dot"></span><span class="whatsnew-item-title">' + esc(r.title || 'Untitled') + '</span>' + (r.space ? '<span class="whatsnew-item-space">' + esc(r.space) + '</span>' : '') + '</div>';
+    });
+    h += '</div>';
+  }
+  el.innerHTML = h;
+}
+
+function dismissWhatsNew() {
+  var el = document.getElementById('whats-new');
+  if (el) el.innerHTML = '';
 }
 
 function votedKey() { return 'tbp_roadmap_voted'; }
