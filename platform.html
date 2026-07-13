@@ -1063,6 +1063,10 @@ a { color: inherit; text-decoration: none; }
   word-wrap: break-word;
   overflow-wrap: break-word;
 }
+.teaser-fade { -webkit-mask-image: linear-gradient(to bottom, #000 55%, transparent 100%); mask-image: linear-gradient(to bottom, #000 55%, transparent 100%); }
+.teaser-gate { border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); padding: 22px 24px; text-align: center; margin-top: 10px; }
+.teaser-gate .tg-title { font-family: var(--font-heading); font-size: 1.05rem; color: var(--text-heading); margin-bottom: 6px; }
+.teaser-gate .tg-sub { font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 14px; line-height: 1.5; }
 .post-prose h1 { font-family: var(--font-heading); font-size: 1.3rem; color: var(--text-heading); margin: 24px 0 12px; line-height: 1.3; }
 .post-prose h2 { font-family: var(--font-heading); font-size: 1.15rem; color: var(--text-heading); margin: 22px 0 10px; line-height: 1.3; }
 .post-prose h3 { font-family: var(--font-heading); font-size: 1.02rem; color: var(--text-heading); margin: 18px 0 8px; line-height: 1.3; }
@@ -1985,7 +1989,7 @@ async function loadHomeTicker() {
       var name = (c.accounts && c.accounts.name) ? c.accounts.name.split(' ')[0] : 'A member';
       var title = c.forum_posts ? c.forum_posts.title : '';
       if (title.length > 48) title = title.slice(0, 46) + '\u2026';
-      var open = S.isMember ? 'viewPost(\''+c.post_id+'\')' : 'showJoin(\'\')';
+      var open = 'viewPost(\''+c.post_id+'\')';
       return '<span class="ticker-item" onclick="'+open+'"><span class="t-name">'+esc(name)+'</span> commented on <span class="t-post">'+esc(title)+'</span> &middot; '+timeAgo(c.created_at)+'</span>';
     });
     var track = items.join('') + items.join('');
@@ -2013,7 +2017,7 @@ async function loadHomeFeed() {
       var who = (p.accounts && p.accounts.name) ? p.accounts.name : 'A member';
       var space = p.spaces ? p.spaces.name : '';
       var dot = SPACE_DOTS[p.spaces ? p.spaces.slug : ''] || '#60a5fa';
-      var open = S.isMember ? 'viewPost(\''+p.id+'\')' : 'showJoin(\'\')';
+      var open = 'viewPost(\''+p.id+'\')';
       return '<div class="feed-card" onclick="'+open+'">'
         + '<span class="feed-dot" style="background:'+dot+'"></span>'
         + '<div class="feed-card-body">'
@@ -2226,7 +2230,7 @@ function showToast(msg) {
 }
 
 function postRow(p) {
-  var onclick = S.isMember ? 'viewPost(\''+esc(p.id||'')+'\')' : 'showJoin(\''+esc(p.slug||'')+'\')';
+  var onclick = 'viewPost(\''+esc(p.id||'')+'\')';
   var h = '<div class="post-row" onclick="'+onclick+'">';
   if (p.avatar) {
     h += '<span class="row-avatar" style="border-color:'+p.dot+'"><img src="'+esc(p.avatar)+'" alt="" loading="lazy"></span>';
@@ -2296,6 +2300,18 @@ async function viewPost(postId) {
     if (post.spaces) h += ' &middot; ' + esc(post.spaces.name);
     h += '</div></div>';
 
+    // Non-members: excerpt teaser + join gate instead of the full thread.
+    // (First few paragraphs prove the answer is good, then convert.)
+    if (!isPaidMember()) {
+      h += '<div class="post-prose teaser-fade">' + teaserHtml(post) + '</div>';
+      h += '<div class="teaser-gate">';
+      h += '<div class="tg-title">Keep reading</div>';
+      h += '<p class="tg-sub">This is a members’ thread. Join to read the full post' + (post.comment_count ? ' and all ' + post.comment_count + ' ' + (post.comment_count === 1 ? 'reply' : 'replies') : '') + '.</p>';
+      h += '<button class="btn-primary" onclick="showJoin(\'' + (post.spaces ? post.spaces.slug : '') + '\')">Join Think Beyond Practice</button>';
+      h += '</div>';
+      center.innerHTML = h; window.scrollTo(0, 0); return;
+    }
+
     // Body
     h += '<div class="post-prose">';
     h += post.body_html || esc(post.body_plain || post.excerpt || '');
@@ -2347,6 +2363,17 @@ async function viewPost(postId) {
     console.error('viewPost:', e);
     center.innerHTML = '<div style="padding:28px;color:var(--text-secondary)">Error loading post.</div>';
   }
+}
+
+// First up-to-3 paragraphs of a post as the non-member teaser; falls back to
+// the plain excerpt. (Forum content is already public at the API; this is the
+// conversion UX, not a hard gate.)
+function teaserHtml(post) {
+  var html = post.body_html || '';
+  var ps = html.match(/<p[\s\S]*?<\/p>/gi);
+  if (ps && ps.length) return ps.slice(0, 3).join('');
+  var plain = (post.body_plain || post.excerpt || '').slice(0, 450);
+  return plain ? '<p>' + esc(plain) + '</p>' : '';
 }
 
 // ════════════════════════════════════════
@@ -2434,7 +2461,7 @@ async function loadSpaceTicker(slug) {
       var name = (c.accounts && c.accounts.name) ? c.accounts.name.split(' ')[0] : 'A member';
       var title = c.forum_posts ? c.forum_posts.title : '';
       if (title.length > 48) title = title.slice(0, 46) + '\u2026';
-      var open = S.isMember ? 'viewPost(\''+c.post_id+'\')' : 'showJoin(\''+slug+'\')';
+      var open = 'viewPost(\''+c.post_id+'\')';
       return '<span class="ticker-item" onclick="'+open+'"><span class="t-name">'+esc(name)+'</span> commented on <span class="t-post">'+esc(title)+'</span> &middot; '+timeAgo(c.created_at)+'</span>';
     });
     // duplicate the items so the -50% scroll loops seamlessly
@@ -2925,7 +2952,7 @@ function initials(name) {
 
 function renderPostRow(p, spaceDef, slug) {
   var isPinned = p.is_pinned;
-  var onclick = S.isMember ? 'viewPost(\''+p.id+'\')' : 'showJoin(\''+slug+'\')';
+  var onclick = 'viewPost(\''+p.id+'\')';
   var dot = spaceDef ? spaceDef.dot : '#60a5fa';
   var authorName = p.accounts ? p.accounts.name : '';
   var avatar;
