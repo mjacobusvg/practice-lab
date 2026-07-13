@@ -964,6 +964,19 @@ a { color: inherit; text-decoration: none; }
 .tagpill.on { background:var(--teal); border-color:var(--teal); color:var(--text-inverse); }
 .tagpicker { display:flex; flex-wrap:wrap; gap:6px; margin-top:2px; }
 .post-tags { display:flex; flex-wrap:wrap; gap:6px; margin:14px 0 4px; }
+/* Reactions + reply actions */
+.react-bar { display:inline-flex; gap:6px; margin:12px 0 2px; flex-wrap:wrap; }
+.react-btn { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:999px; border:1px solid var(--border); background:transparent; color:var(--text-secondary); cursor:pointer; font-size:0.82rem; line-height:1; transition:all 0.15s; }
+.react-btn:hover { border-color:var(--teal); background:var(--teal-glow); }
+.react-btn.on { border-color:var(--teal); background:var(--teal-glow); color:var(--teal); }
+.react-btn .re-emoji { font-size:0.95rem; }
+.react-btn .re-count { font-size:0.76rem; font-weight:600; }
+.comment-actions { display:flex; align-items:center; gap:12px; margin-top:8px; flex-wrap:wrap; }
+.comment-actions .react-bar { margin:0; }
+.reply-link { background:none; border:none; color:var(--text-secondary); cursor:pointer; font-size:0.76rem; font-weight:600; padding:4px 2px; }
+.reply-link:hover { color:var(--teal); }
+.reply-cancel { background:none; border:1px solid var(--border); color:var(--text-secondary); cursor:pointer; font-size:0.78rem; border-radius:6px; padding:6px 12px; }
+.reply-cancel:hover { border-color:var(--teal); color:var(--teal); }
 /* Profile page */
 .profile-head { display:flex; gap:18px; align-items:flex-start; margin-bottom:20px; flex-wrap:wrap; }
 .profile-avatar { width:88px; height:88px; border-radius:50%; overflow:hidden; flex-shrink:0; border:2px solid var(--border); display:inline-flex; align-items:center; justify-content:center; background:var(--bg-card); }
@@ -2379,19 +2392,36 @@ async function viewPost(postId) {
     // Load post
     var { data: post, error } = await SB
       .from('forum_posts')
-      .select('id, author_id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, canonical_synthesis, ce_candidate, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name))')
+      .select('id, author_id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, is_locked, canonical_synthesis, ce_candidate, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name))')
       .eq('id', postId)
       .single();
     if (error) throw error;
 
-    // Load comments
+    // Load comments (parent_comment_id drives the threaded tree below)
     var { data: comments, error: cErr } = await SB
       .from('forum_comments')
-      .select('id, author_id, body_html, body_plain, created_at, accounts(name, avatar_url)')
+      .select('id, author_id, parent_comment_id, body_html, body_plain, created_at, accounts(name, avatar_url)')
       .eq('post_id', postId)
       .order('created_at', { ascending: true })
-      .limit(100);
+      .limit(200);
     if (cErr) throw cErr;
+
+    // Load reactions for the post and every loaded comment in two small reads
+    // (reactions has a public SELECT policy; writes go through the endpoint).
+    var myId = (S.user && S.user.id) || null;
+    var commentIds = (comments || []).map(function(c) { return c.id; });
+    var postReacts = [];
+    try {
+      var prR = await SB.from('reactions').select('reaction_type, account_id').eq('post_id', postId);
+      postReacts = prR.data || [];
+    } catch (e) {}
+    var commentReacts = [];
+    if (commentIds.length) {
+      try {
+        var crR = await SB.from('reactions').select('reaction_type, account_id, comment_id').in('comment_id', commentIds);
+        commentReacts = crR.data || [];
+      } catch (e) {}
+    }
 
     var h = '';
     // Back button
@@ -2443,6 +2473,9 @@ async function viewPost(postId) {
     h += post.body_html || esc(post.body_plain || post.excerpt || '');
     h += '</div>';
 
+    // Reactions on the post itself (heart / helpful / insight)
+    h += reactionBarHtml('post', post.id, aggregateReactions(postReacts, myId));
+
     // Admin tools: inline synthesis editing + CE candidate marker
     if (isAdmin()) {
       window.__currentPost = post;
@@ -2465,32 +2498,66 @@ async function viewPost(postId) {
 
     // Comments + composer (paid members only; the non-member teaser returned above)
     var cCount = (comments && comments.length) || 0;
-    var myId = (S.user && S.user.id) || null;
+
+    // Per-comment reaction aggregates, keyed by comment id.
+    var cReactMap = {};
+    (comments || []).forEach(function(c) { cReactMap[c.id] = { heart: 0, helpful: 0, insight: 0, mine: null }; });
+    (commentReacts || []).forEach(function(r) {
+      var m = cReactMap[r.comment_id]; if (!m) return;
+      if (m[r.reaction_type] !== undefined) m[r.reaction_type]++;
+      if (myId && r.account_id === myId) m.mine = r.reaction_type;
+    });
+
+    // Build the threaded tree: replies nest under their parent via
+    // parent_comment_id. A reply whose parent isn't in the loaded set is shown
+    // at the top level so it's never lost.
+    var loadedIds = {};
+    (comments || []).forEach(function(c) { loadedIds[c.id] = true; });
+    var childrenMap = {};
+    var topLevel = [];
+    (comments || []).forEach(function(c) {
+      if (c.parent_comment_id && loadedIds[c.parent_comment_id]) {
+        (childrenMap[c.parent_comment_id] = childrenMap[c.parent_comment_id] || []).push(c);
+      } else {
+        topLevel.push(c);
+      }
+    });
+
+    function renderCommentNode(c, depth) {
+      var cName = c.accounts ? c.accounts.name : 'Unknown';
+      var cIni = cName.split(' ').map(function(w){return w[0]}).join('').toUpperCase().substring(0,2);
+      var colors = ['#2aabb8','#c084fc','#fbbf24','#34d399','#fb923c','#60a5fa'];
+      var color = colors[cName.length % colors.length];
+      var canDelete = (myId && c.author_id === myId) || isAdmin();
+      var cPic = (c.accounts && c.accounts.avatar_url)
+        ? '<span style="width:28px;height:28px;border-radius:50%;overflow:hidden;flex-shrink:0;display:inline-block"><img src="' + esc(c.accounts.avatar_url) + '" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover"></span>'
+        : '<div style="width:28px;height:28px;border-radius:50%;background:'+color+';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--text-inverse)">' + cIni + '</div>';
+      var indent = depth > 0 ? 'margin-left:' + Math.min(depth, 4) * 20 + 'px;' : '';
+      var out = '<div class="comment-node" style="' + indent + 'padding:14px 16px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;margin-bottom:8px">';
+      out += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
+      out += cPic;
+      var cNameHtml = c.author_id
+        ? '<strong class="clickable-author" style="color:var(--text-primary)" onclick="viewProfile(\'' + c.author_id + '\')">' + esc(cName) + '</strong>'
+        : '<strong style="color:var(--text-primary)">' + esc(cName) + '</strong>';
+      out += '<div style="font-size:0.75rem;color:var(--text-secondary);flex:1">' + cNameHtml + ' &middot; ' + formatDate(c.created_at) + '</div>';
+      if (canDelete) out += '<button onclick="deleteComment(\'' + c.id + '\',\'' + post.id + '\')" title="Delete" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:0.72rem;padding:2px 4px">Delete</button>';
+      out += '</div>';
+      out += '<div style="font-size:0.84rem;color:var(--text-primary);line-height:1.6;word-wrap:break-word">' + (c.body_html || esc(c.body_plain || '')) + '</div>';
+      // Reaction bar + Reply action row
+      out += '<div class="comment-actions">';
+      out += reactionBarHtml('comment', c.id, cReactMap[c.id] || { heart: 0, helpful: 0, insight: 0, mine: null });
+      if (!post.is_locked) out += '<button type="button" class="reply-link" onclick="toggleReplyBox(\'' + c.id + '\',\'' + post.id + '\')">Reply</button>';
+      out += '</div>';
+      out += '<div class="reply-box" id="reply-box-' + c.id + '"></div>';
+      var kids = childrenMap[c.id] || [];
+      kids.forEach(function(k) { out += renderCommentNode(k, depth + 1); });
+      out += '</div>';
+      return out;
+    }
+
     h += '<div style="margin-top:24px;border-top:1px solid var(--border);padding-top:20px">';
     h += '<div style="font-size:0.85rem;font-weight:600;color:var(--text-primary);margin-bottom:16px">' + cCount + ' Comment' + (cCount !== 1 ? 's' : '') + '</div>';
-    if (comments && comments.length) {
-      comments.forEach(function(c) {
-        var cName = c.accounts ? c.accounts.name : 'Unknown';
-        var cIni = cName.split(' ').map(function(w){return w[0]}).join('').toUpperCase().substring(0,2);
-        var colors = ['#2aabb8','#c084fc','#fbbf24','#34d399','#fb923c','#60a5fa'];
-        var color = colors[cName.length % colors.length];
-        var canDelete = (myId && c.author_id === myId) || isAdmin();
-        var cPic = (c.accounts && c.accounts.avatar_url)
-          ? '<span style="width:28px;height:28px;border-radius:50%;overflow:hidden;flex-shrink:0;display:inline-block"><img src="' + esc(c.accounts.avatar_url) + '" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover"></span>'
-          : '<div style="width:28px;height:28px;border-radius:50%;background:'+color+';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--text-inverse)">' + cIni + '</div>';
-        h += '<div style="padding:14px 16px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;margin-bottom:8px">';
-        h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
-        h += cPic;
-        var cNameHtml = c.author_id
-          ? '<strong class="clickable-author" style="color:var(--text-primary)" onclick="viewProfile(\'' + c.author_id + '\')">' + esc(cName) + '</strong>'
-          : '<strong style="color:var(--text-primary)">' + esc(cName) + '</strong>';
-        h += '<div style="font-size:0.75rem;color:var(--text-secondary);flex:1">' + cNameHtml + ' &middot; ' + formatDate(c.created_at) + '</div>';
-        if (canDelete) h += '<button onclick="deleteComment(\'' + c.id + '\',\'' + post.id + '\')" title="Delete" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:0.72rem;padding:2px 4px">Delete</button>';
-        h += '</div>';
-        h += '<div style="font-size:0.84rem;color:var(--text-primary);line-height:1.6;word-wrap:break-word">' + (c.body_html || esc(c.body_plain || '')) + '</div>';
-        h += '</div>';
-      });
-    }
+    topLevel.forEach(function(c) { h += renderCommentNode(c, 0); });
     // Composer — open to any member (forum or full); locked threads hide it.
     if (!post.is_locked) {
       h += '<div style="margin-top:16px">';
@@ -2564,6 +2631,116 @@ async function deleteComment(commentId, postId) {
     await viewPost(postId);
   } catch (e) {
     alert(e.message);
+  }
+}
+
+// ════════════════════════════════════════
+// REACTIONS (post + comments)
+// ════════════════════════════════════════
+// One reaction per member per target; picking a second kind switches it, picking
+// the same kind removes it. Server (reactions.js) enforces that; here we render
+// the bar and refresh it in place after a toggle.
+var REACTION_KINDS = [
+  { key: 'heart',   emoji: '❤️', label: 'Heart' },
+  { key: 'helpful', emoji: '🙌', label: 'Helpful' },
+  { key: 'insight', emoji: '💡', label: 'Insight' }
+];
+
+// Roll a list of reaction rows into { heart, helpful, insight, mine }.
+function aggregateReactions(rows, myId) {
+  var agg = { heart: 0, helpful: 0, insight: 0, mine: null };
+  (rows || []).forEach(function(r) {
+    if (agg[r.reaction_type] !== undefined) agg[r.reaction_type]++;
+    if (myId && r.account_id === myId) agg.mine = r.reaction_type;
+  });
+  return agg;
+}
+
+function reactionBarHtml(targetType, targetId, agg) {
+  var barId = 'rbar-' + targetType + '-' + targetId;
+  var inner = REACTION_KINDS.map(function(k) {
+    var n = agg[k.key] || 0;
+    var on = agg.mine === k.key;
+    return '<button type="button" class="react-btn' + (on ? ' on' : '') + '" title="' + k.label + '"'
+      + ' onclick="toggleReaction(\'' + targetType + '\',\'' + targetId + '\',\'' + k.key + '\')">'
+      + '<span class="re-emoji">' + k.emoji + '</span>'
+      + (n ? '<span class="re-count">' + n + '</span>' : '')
+      + '</button>';
+  }).join('');
+  return '<div class="react-bar" id="' + barId + '">' + inner + '</div>';
+}
+
+// Toggle a reaction, then re-read just that target and re-render its bar.
+async function toggleReaction(targetType, targetId, kind) {
+  if (!isPaidMember()) { showJoin(''); return; }
+  try {
+    var res = await fetch('/.netlify/functions/reactions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), action: 'toggle', target_type: targetType, target_id: targetId, kind: kind })
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not react.');
+    await refreshReactionBar(targetType, targetId);
+  } catch (e) {
+    console.error('toggleReaction:', e);
+  }
+}
+
+async function refreshReactionBar(targetType, targetId) {
+  var el = document.getElementById('rbar-' + targetType + '-' + targetId);
+  if (!el) return;
+  var col = targetType === 'post' ? 'post_id' : 'comment_id';
+  var agg = { heart: 0, helpful: 0, insight: 0, mine: null };
+  try {
+    var q = await SB.from('reactions').select('reaction_type, account_id').eq(col, targetId);
+    agg = aggregateReactions(q.data || [], (S.user && S.user.id) || null);
+  } catch (e) {}
+  el.outerHTML = reactionBarHtml(targetType, targetId, agg);
+}
+
+// ════════════════════════════════════════
+// THREADED REPLIES
+// ════════════════════════════════════════
+// Inline reply composer beneath a comment; posts with parent_comment_id so the
+// server nests it (create-comment.js validates the parent belongs to the post).
+function toggleReplyBox(commentId, postId) {
+  var box = document.getElementById('reply-box-' + commentId);
+  if (!box) return;
+  if (box.innerHTML) { box.innerHTML = ''; return; }
+  var ta = 'reply-input-' + commentId;
+  box.innerHTML =
+    '<textarea id="' + ta + '" placeholder="Write a reply..." maxlength="8000" style="width:100%;min-height:64px;margin-top:8px;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-page);color:var(--text-primary);font-family:inherit;font-size:0.84rem;line-height:1.5;resize:vertical"></textarea>'
+    + '<div id="reply-error-' + commentId + '" style="display:none;color:#c0392b;font-size:0.76rem;margin-top:4px"></div>'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">'
+    + '<button class="reply-cancel" onclick="toggleReplyBox(\'' + commentId + '\',\'' + postId + '\')">Cancel</button>'
+    + '<button class="btn-primary" id="reply-submit-' + commentId + '" onclick="submitReply(\'' + commentId + '\',\'' + postId + '\')">Reply</button>'
+    + '</div>';
+  var input = document.getElementById(ta);
+  if (input) input.focus();
+}
+
+async function submitReply(commentId, postId) {
+  var ta = document.getElementById('reply-input-' + commentId);
+  var btn = document.getElementById('reply-submit-' + commentId);
+  var errEl = document.getElementById('reply-error-' + commentId);
+  if (!ta) return;
+  var body = ta.value.trim();
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+  if (!body) { if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Write something first.'; } return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Posting...'; }
+  try {
+    var res = await fetch('/.netlify/functions/create-comment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), action: 'create', post_id: postId, parent_comment_id: commentId, body: body })
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not post reply.');
+    await viewPost(postId);
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Reply'; }
+    if (errEl) { errEl.style.display = 'block'; errEl.textContent = e.message; }
   }
 }
 
