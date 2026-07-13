@@ -867,6 +867,19 @@ a { color: inherit; text-decoration: none; }
 .tpl-btn:hover { background: var(--teal); color: var(--text-inverse); }
 .tpl-btn.locked { border-color: var(--border); color: var(--text-secondary); }
 .tpl-btn.locked:hover { border-color: var(--copper); color: var(--copper); background: transparent; }
+.tpl-desc-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* Template detail */
+.tpl-detail { margin-top: 10px; }
+.tpl-detail-head { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 14px; }
+.tpl-detail-icon { font-size: 2rem; flex-shrink: 0; }
+.tpl-detail-title { font-family: var(--font-heading); font-size: 1.4rem; color: var(--text-heading); line-height: 1.25; margin: 0; }
+.tpl-detail-meta { font-size: 0.75rem; color: var(--text-secondary); margin-top: 6px; }
+.tpl-detail-desc { font-size: 0.92rem; color: var(--text-primary); line-height: 1.6; margin-bottom: 18px; }
+.tpl-preview { border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; background: var(--bg-card); margin-bottom: 18px; }
+.tpl-detail-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+.tpl-gate { border: 1px solid var(--copper); background: var(--copper-glow); border-radius: 12px; padding: 20px; }
+.tpl-gate-title { font-weight: 700; color: var(--text-heading); font-size: 1rem; }
+.tpl-gate-sub { color: var(--text-secondary); font-size: 0.86rem; margin: 6px 0 14px; line-height: 1.5; }
 
 /* Member directory */
 .dir-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
@@ -3690,28 +3703,22 @@ function renderLibrary() {
 
   h += '<div class="post-list">';
   items.forEach(function(t) {
-    var locked = userTierRank() < (TIER_RANK[t.min_tier] || 2);
-    h += '<div class="tpl-row">';
-    h += '<span class="tpl-icon">&#128196;</span>';
+    var access = templateAccessible(t);
+    var hasFile = !!(t.file_url || t.storage_path);
+    h += '<div class="tpl-row" onclick="viewTemplate(\'' + t.id + '\')" style="cursor:pointer">';
+    h += '<span class="tpl-icon">' + (hasFile ? '&#128196;' : '&#128221;') + '</span>';
     h += '<div class="post-body">';
     h += '<div class="post-title">' + esc(t.title);
-    if (t.is_paid) h += '<span class="tpl-tag tpl-paid">$' + ((t.price_cents||0)/100).toFixed(0) + '</span>';
-    else if (t.min_tier === 'full') h += '<span class="tpl-tag">Full</span>';
-    else if (t.min_tier === 'forum') h += '<span class="tpl-tag">Member</span>';
+    h += templateBadge(t);
     h += '</div>';
-    if (t.description) h += '<div class="post-meta">' + esc(t.description) + '</div>';
-    var hasFile = !!(t.file_url || t.storage_path);
-    if (!hasFile && t.source_post_id && isPaidMember()) {
-      var srcTitle = (t.forum_posts && t.forum_posts.title) ? t.forum_posts.title : 'the full post';
-      h += '<div class="tpl-source" onclick="event.stopPropagation();viewPost(\'' + t.source_post_id + '\')">&#128196; ' + esc(srcTitle) + ' &rarr;</div>';
-    }
+    if (t.description) h += '<div class="post-meta tpl-desc-clamp">' + esc(t.description) + '</div>';
     h += '</div>';
-    if (locked) {
-      h += '<button class="tpl-btn locked" onclick="showJoin(\'\')">&#128274; ' + (t.is_paid ? 'Buy' : 'Unlock') + '</button>';
+    if (!access) {
+      h += '<button class="tpl-btn locked" onclick="event.stopPropagation();viewTemplate(\'' + t.id + '\')">&#128274; ' + (t.is_paid ? 'Unlock' : 'Unlock') + '</button>';
     } else if (hasFile) {
-      h += '<button class="tpl-btn" onclick="downloadTemplate(\'' + t.id + '\')">Download</button>';
-    } else if (t.source_post_id) {
-      h += '<button class="tpl-btn" onclick="viewPost(\'' + t.source_post_id + '\')">Open</button>';
+      h += '<button class="tpl-btn" onclick="event.stopPropagation();downloadTemplate(\'' + t.id + '\')">Download</button>';
+    } else {
+      h += '<button class="tpl-btn" onclick="event.stopPropagation();viewTemplate(\'' + t.id + '\')">View</button>';
     }
     h += '</div>';
   });
@@ -3720,6 +3727,67 @@ function renderLibrary() {
 }
 
 function libSetCat(k) { libCat = k; renderLibrary(); }
+
+// Access mirrors the server (template-download.js): paid -> Full tier only;
+// otherwise the member's tier must meet min_tier.
+function templateAccessible(t) {
+  var tier = (S.user && S.user.tier) || 'free';
+  if (t.is_paid) return tier === 'full';
+  return (TIER_RANK[tier] || 0) >= (TIER_RANK[t.min_tier] || 2);
+}
+function templateBadge(t) {
+  if (t.is_paid) return '<span class="tpl-tag tpl-paid">$' + ((t.price_cents || 0) / 100).toFixed(0) + '</span>';
+  if (t.min_tier === 'full') return '<span class="tpl-tag">Full</span>';
+  if (t.min_tier === 'forum') return '<span class="tpl-tag">Member</span>';
+  return '';
+}
+
+// Template detail: the template itself (description + preview + download/view),
+// plus a link to the post it came from. Gated views get an upgrade CTA.
+function viewTemplate(id) {
+  var t = (libData || []).filter(function(x){ return x.id === id; })[0];
+  if (!t) { showLibrary(); return; }
+  S.view = 'template';
+  logView('/platform/template/' + id);
+  var center = document.getElementById('center');
+  var access = templateAccessible(t);
+  var hasFile = !!(t.file_url || t.storage_path);
+  var catLabel = (TEMPLATE_CATS.filter(function(c){ return c.key === t.category; })[0] || {}).label || '';
+
+  var h = '<div class="post-full-back" onclick="showLibrary()">&larr; Back to Template Library</div>';
+  h += '<div class="tpl-detail">';
+  h += '<div class="tpl-detail-head">';
+  h += '<span class="tpl-detail-icon">' + (hasFile ? '&#128196;' : '&#128221;') + '</span>';
+  h += '<div><h1 class="tpl-detail-title">' + esc(t.title) + '</h1>';
+  h += '<div class="tpl-detail-meta">' + (catLabel ? esc(catLabel) : '') + ' ' + templateBadge(t) + '</div></div>';
+  h += '</div>';
+
+  if (t.description) h += '<div class="tpl-detail-desc">' + esc(t.description) + '</div>';
+
+  if (access) {
+    // Full access: the template content/file + optional source-post link.
+    if (t.preview) h += '<div class="tpl-preview post-prose">' + t.preview + '</div>';
+    h += '<div class="tpl-detail-actions">';
+    if (hasFile) h += '<button class="btn-primary" onclick="downloadTemplate(\'' + t.id + '\')">&#11015; Download template</button>';
+    if (t.source_post_id) {
+      var srcTitle = (t.forum_posts && t.forum_posts.title) ? t.forum_posts.title : 'the discussion it came from';
+      h += '<button class="btn-ghost" onclick="viewPost(\'' + t.source_post_id + '\')">Open the post: ' + esc(srcTitle) + ' &rarr;</button>';
+    }
+    h += '</div>';
+    if (!hasFile && !t.source_post_id) h += '<div style="color:var(--text-secondary);font-size:0.85rem">No file attached yet.</div>';
+  } else {
+    // Gated: show a teaser of the description and a clear path to unlock.
+    h += '<div class="tpl-gate">';
+    h += '<div class="tpl-gate-title">&#128274; Included with membership</div>';
+    h += '<p class="tpl-gate-sub">Members get every template in the library. ' + (t.is_paid ? 'This one is also available on its own.' : 'Join to unlock this and all other templates.') + '</p>';
+    h += '<div class="tpl-detail-actions">';
+    if (isPaidMember()) h += '<button class="btn-primary" onclick="startCheckout(\'full_monthly_119\')">Upgrade to Full</button>';
+    else h += '<button class="btn-primary" onclick="showJoin(\'\')">Join to unlock all templates</button>';
+    h += '</div></div>';
+  }
+  h += '</div>';
+  center.innerHTML = h; window.scrollTo(0, 0);
+}
 
 async function downloadTemplate(id) {
   try {
