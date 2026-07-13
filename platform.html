@@ -964,6 +964,21 @@ a { color: inherit; text-decoration: none; }
 .tagpill.on { background:var(--teal); border-color:var(--teal); color:var(--text-inverse); }
 .tagpicker { display:flex; flex-wrap:wrap; gap:6px; margin-top:2px; }
 .post-tags { display:flex; flex-wrap:wrap; gap:6px; margin:14px 0 4px; }
+/* Profile page */
+.profile-head { display:flex; gap:18px; align-items:flex-start; margin-bottom:20px; flex-wrap:wrap; }
+.profile-avatar { width:88px; height:88px; border-radius:50%; overflow:hidden; flex-shrink:0; border:2px solid var(--border); display:inline-flex; align-items:center; justify-content:center; background:var(--bg-card); }
+.profile-avatar img { width:100%; height:100%; object-fit:cover; }
+.profile-initials { font-size:1.6rem; font-weight:700; color:var(--teal); }
+.profile-avatar-sm { width:56px; height:56px; }
+.profile-avatar-sm .profile-initials, .profile-avatar-sm.profile-initials { font-size:1.1rem; }
+.profile-info { min-width:0; flex:1; }
+.profile-name { font-family:'DM Serif Display',serif; font-size:1.5rem; color:var(--text-heading); margin:0 0 2px; }
+.profile-creds { font-size:0.82rem; color:var(--teal); font-weight:600; }
+.profile-meta { font-size:0.78rem; color:var(--text-secondary); margin-top:6px; }
+.profile-headline { font-size:0.9rem; color:var(--text-primary); margin-top:10px; line-height:1.5; }
+.profile-section-title { font-size:0.85rem; font-weight:700; color:var(--text-primary); margin:8px 0 12px; border-top:1px solid var(--border); padding-top:16px; }
+.clickable-author { cursor:pointer; }
+.clickable-author:hover .post-author-name, .clickable-author:hover { text-decoration:underline; }
 .admin-post-tools { display: flex; gap: 8px; margin: 14px 0 4px; flex-wrap: wrap; }
 .admin-post-tools button {
   background: transparent; border: 1px solid rgba(42,171,184,0.4); color: var(--teal);
@@ -1675,6 +1690,7 @@ function updateTopbar() {
     '<button class="rail-toggle" id="rail-toggle" onclick="toggleRail()" title="Topics & more" aria-label="Open topics panel"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"></rect><line x1="14" y1="4" x2="14" y2="20"></line></svg></button>' +
     '<div class="acct-wrap"><div class="user-avatar" title="'+esc(nm)+'" onclick="toggleAcctMenu()">'+esc(ini)+'</div>' +
     '<div class="acct-menu" id="acct-menu"><div class="acct-head">'+esc(nm)+'<span class="acct-tier">'+tierLabel+'</span></div>' +
+    '<button onclick="toggleAcctMenu();viewProfile(\''+S.user.id+'\')">Your profile</button>' +
     (isPaidMember()
       ? '<button onclick="openBillingPortal()">Manage billing</button>'
       : '<button onclick="startCheckout(\'full_monthly_119\')">Upgrade to Full</button>') +
@@ -2305,7 +2321,7 @@ async function viewPost(postId) {
     // Load post
     var { data: post, error } = await SB
       .from('forum_posts')
-      .select('id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, canonical_synthesis, ce_candidate, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name))')
+      .select('id, author_id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, canonical_synthesis, ce_candidate, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name))')
       .eq('id', postId)
       .single();
     if (error) throw error;
@@ -2336,7 +2352,8 @@ async function viewPost(postId) {
     var authorName = post.accounts ? post.accounts.name : 'Unknown';
     var authorInitials = authorName.split(' ').map(function(w){return w[0]}).join('').toUpperCase().substring(0,2);
     var authorCreds = post.accounts && post.accounts.credentials ? post.accounts.credentials : '';
-    h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">';
+    var authorClick = post.author_id ? ' class="clickable-author" onclick="viewProfile(\'' + post.author_id + '\')"' : '';
+    h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px"' + authorClick + '>';
     h += '<div style="width:36px;height:36px;border-radius:50%;background:var(--teal);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--text-inverse)">' + authorInitials + '</div>';
     h += '<div style="font-size:0.8rem;color:var(--text-secondary)"><strong style="color:var(--text-primary)">' + esc(authorName) + '</strong>';
     if (authorCreds) h += ' <span style="font-size:0.7rem;opacity:0.7">' + esc(authorCreds) + '</span>';
@@ -2400,7 +2417,10 @@ async function viewPost(postId) {
         h += '<div style="padding:14px 16px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;margin-bottom:8px">';
         h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
         h += '<div style="width:28px;height:28px;border-radius:50%;background:'+color+';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--text-inverse)">' + cIni + '</div>';
-        h += '<div style="font-size:0.75rem;color:var(--text-secondary);flex:1"><strong style="color:var(--text-primary)">' + esc(cName) + '</strong> &middot; ' + formatDate(c.created_at) + '</div>';
+        var cNameHtml = c.author_id
+          ? '<strong class="clickable-author" style="color:var(--text-primary)" onclick="viewProfile(\'' + c.author_id + '\')">' + esc(cName) + '</strong>'
+          : '<strong style="color:var(--text-primary)">' + esc(cName) + '</strong>';
+        h += '<div style="font-size:0.75rem;color:var(--text-secondary);flex:1">' + cNameHtml + ' &middot; ' + formatDate(c.created_at) + '</div>';
         if (canDelete) h += '<button onclick="deleteComment(\'' + c.id + '\',\'' + post.id + '\')" title="Delete" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:0.72rem;padding:2px 4px">Delete</button>';
         h += '</div>';
         h += '<div style="font-size:0.84rem;color:var(--text-primary);line-height:1.6;word-wrap:break-word">' + (c.body_html || esc(c.body_plain || '')) + '</div>';
@@ -2861,7 +2881,7 @@ async function showDirectory() {
     try {
       var { data, error } = await SB
         .from('accounts')
-        .select('name, avatar_url, credentials, headline, location, practice_type')
+        .select('id, name, avatar_url, credentials, headline, location, practice_type')
         .eq('directory_visible', true)
         .not('practice_type', 'is', null)
         .order('name', { ascending: true });
@@ -2894,7 +2914,7 @@ function renderDirectory() {
 
   h += '<div class="dir-grid">';
   members.forEach(function(m) {
-    h += '<div class="dir-card">';
+    h += '<div class="dir-card" style="cursor:pointer" onclick="viewProfile(\'' + m.id + '\')">';
     if (m.avatar_url) h += '<span class="dir-avatar"><img src="' + esc(m.avatar_url) + '" alt="" loading="lazy"></span>';
     else h += '<span class="dir-avatar dir-initials">' + esc(initials(m.name)) + '</span>';
     h += '<div class="dir-name">' + esc(m.name || 'Member') + '</div>';
@@ -2909,6 +2929,167 @@ function renderDirectory() {
 }
 
 function dirSetFilter(k) { dirFilter = k; renderDirectory(); }
+
+// ════════════════════════════════════════
+// MEMBER PROFILE
+// ════════════════════════════════════════
+async function viewProfile(accountId) {
+  if (!accountId) return;
+  closeSidebar(); closeRail();
+  S.view = 'profile'; S.space = null;
+  logView('/platform/profile/' + accountId);
+  clearActive();
+  var center = document.getElementById('center');
+  center.innerHTML = '<div class="skel skel-h"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
+  window.scrollTo(0, 0);
+  try {
+    var { data: acct, error } = await SB
+      .from('accounts')
+      .select('id, name, avatar_url, credentials, headline, location, practice_type, tier, created_at')
+      .eq('id', accountId)
+      .single();
+    if (error) throw error;
+
+    var { data: posts } = await SB
+      .from('forum_posts')
+      .select('id, title, excerpt, created_at, comment_count, reaction_count, is_pinned, accounts(name, avatar_url), spaces(name, slug)')
+      .eq('author_id', accountId)
+      .order('created_at', { ascending: false })
+      .limit(20);
+
+    var isMe = S.user && S.user.id === acct.id;
+    var h = '<div class="profile-head">';
+    if (acct.avatar_url) h += '<span class="profile-avatar"><img src="' + esc(acct.avatar_url) + '" alt="" loading="lazy"></span>';
+    else h += '<span class="profile-avatar profile-initials">' + esc(initials(acct.name)) + '</span>';
+    h += '<div class="profile-info">';
+    h += '<h1 class="profile-name">' + esc(acct.name || 'Member') + '</h1>';
+    if (acct.credentials) h += '<div class="profile-creds">' + esc(acct.credentials) + '</div>';
+    var meta = [];
+    if (acct.practice_type && PRACTICE_LABELS[acct.practice_type]) meta.push(esc(PRACTICE_LABELS[acct.practice_type]));
+    if (acct.location) meta.push(esc(acct.location));
+    if (acct.created_at) meta.push('Member since ' + formatDate(acct.created_at));
+    if (meta.length) h += '<div class="profile-meta">' + meta.join(' &middot; ') + '</div>';
+    if (acct.headline) h += '<div class="profile-headline">' + esc(acct.headline) + '</div>';
+    if (isMe) h += '<button class="rm-add-btn" style="margin-top:12px" onclick="openProfileEdit()">Edit profile</button>';
+    h += '</div></div>';
+
+    h += '<div class="profile-section-title">' + (isMe ? 'Your posts' : 'Posts') + '</div>';
+    h += '<div class="post-list">';
+    if (posts && posts.length) posts.forEach(function(pp) { h += renderPostRow(pp); });
+    else h += '<div style="padding:18px;color:var(--text-secondary);font-size:0.85rem">No posts yet.</div>';
+    h += '</div>';
+
+    center.innerHTML = h;
+    window.scrollTo(0, 0);
+  } catch (e) {
+    console.error('viewProfile:', e);
+    center.innerHTML = '<div style="padding:28px;color:var(--text-secondary)">Could not load this profile.</div>';
+  }
+}
+
+async function openProfileEdit() {
+  if (!S.user) return;
+  var st = document.getElementById('pe-status'); if (st) { st.textContent = ''; st.className = 'composer-status'; }
+  var as = document.getElementById('pe-avatar-status'); if (as) as.textContent = '';
+  // Practice dropdown (once)
+  var sel = document.getElementById('pe-practice');
+  if (sel && !sel.options.length) {
+    var o0 = document.createElement('option'); o0.value = ''; o0.textContent = '— Not listed —'; sel.appendChild(o0);
+    Object.keys(PRACTICE_LABELS).forEach(function(k) {
+      var o = document.createElement('option'); o.value = k; o.textContent = PRACTICE_LABELS[k]; sel.appendChild(o);
+    });
+  }
+  // Prefill from the current account row.
+  try {
+    var { data: a } = await SB
+      .from('accounts')
+      .select('name, credentials, headline, location, practice_type, directory_visible, avatar_url')
+      .eq('id', S.user.id)
+      .single();
+    a = a || {};
+    document.getElementById('pe-name').value = a.name || '';
+    document.getElementById('pe-credentials').value = a.credentials || '';
+    document.getElementById('pe-headline').value = a.headline || '';
+    document.getElementById('pe-location').value = a.location || '';
+    document.getElementById('pe-practice').value = a.practice_type || '';
+    document.getElementById('pe-visible').checked = a.directory_visible !== false;
+    renderAvatarPreview(a.avatar_url, a.name);
+  } catch (e) { /* open with whatever we have */ }
+  document.getElementById('profile-overlay').classList.add('open');
+}
+
+function closeProfileEdit() {
+  document.getElementById('profile-overlay').classList.remove('open');
+}
+
+function renderAvatarPreview(url, name) {
+  var el = document.getElementById('pe-avatar-preview');
+  if (!el) return;
+  if (url) { el.className = 'profile-avatar profile-avatar-sm'; el.innerHTML = '<img src="' + esc(url) + '" alt="">'; }
+  else { el.className = 'profile-avatar profile-avatar-sm profile-initials'; el.innerHTML = esc(initials(name || (S.user && S.user.name) || '')); }
+}
+
+async function saveProfile() {
+  var st = document.getElementById('pe-status'); st.className = 'composer-status';
+  var btn = document.getElementById('pe-save');
+  var payload = {
+    token: getAuthToken(),
+    action: 'save',
+    name: document.getElementById('pe-name').value,
+    credentials: document.getElementById('pe-credentials').value,
+    headline: document.getElementById('pe-headline').value,
+    location: document.getElementById('pe-location').value,
+    practice_type: document.getElementById('pe-practice').value,
+    directory_visible: document.getElementById('pe-visible').checked
+  };
+  if (!payload.name.trim()) { st.textContent = 'Name is required.'; st.className = 'composer-status err'; return; }
+  btn.disabled = true; st.textContent = 'Saving…';
+  try {
+    var res = await fetch('/.netlify/functions/update-profile', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not save.');
+    if (data.account && S.user) {
+      S.user.name = data.account.name || S.user.name;
+      S.user.avatar_url = data.account.avatar_url || S.user.avatar_url;
+      updateTopbar();
+    }
+    dirData = null; // directory listing may have changed
+    closeProfileEdit();
+    viewProfile(S.user.id);
+  } catch (e) {
+    st.textContent = e.message; st.className = 'composer-status err';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function uploadAvatar(input) {
+  var file = input && input.files && input.files[0];
+  if (!file) return;
+  var as = document.getElementById('pe-avatar-status');
+  if (file.size > 3 * 1024 * 1024) { if (as) { as.textContent = 'Image too large (max 3 MB).'; as.style.color = '#c0392b'; } return; }
+  if (as) { as.style.color = 'var(--text-secondary)'; as.textContent = 'Uploading…'; }
+  var reader = new FileReader();
+  reader.onload = async function() {
+    try {
+      var res = await fetch('/.netlify/functions/update-profile', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: getAuthToken(), action: 'avatar', data: reader.result, content_type: file.type })
+      });
+      var data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Upload failed.');
+      if (S.user) { S.user.avatar_url = data.avatar_url; updateTopbar(); }
+      renderAvatarPreview(data.avatar_url, S.user && S.user.name);
+      dirData = null;
+      if (as) as.textContent = 'Photo updated.';
+    } catch (e) {
+      if (as) { as.textContent = e.message; as.style.color = '#c0392b'; }
+    }
+  };
+  reader.readAsDataURL(file);
+}
 
 // ════════════════════════════════════════
 // SAVED POSTS (bookmarks)
@@ -3440,6 +3621,38 @@ checkAuth();
       <span class="composer-status" id="mp-status"></span>
       <button class="btn-ghost" onclick="closeMemberComposer()">Cancel</button>
       <button class="btn-primary" id="mp-submit" onclick="submitMemberPost()">Post</button>
+    </div>
+  </div>
+</div>
+
+<div class="composer-overlay" id="profile-overlay" onclick="if(event.target===this)closeProfileEdit()">
+  <div class="composer">
+    <h3>Edit profile</h3>
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px">
+      <span class="profile-avatar profile-avatar-sm profile-initials" id="pe-avatar-preview"></span>
+      <div>
+        <input type="file" id="pe-avatar-file" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none" onchange="uploadAvatar(this)">
+        <button class="btn-ghost" onclick="document.getElementById('pe-avatar-file').click()">Change photo</button>
+        <div id="pe-avatar-status" style="font-size:0.72rem;color:var(--text-secondary);margin-top:4px"></div>
+      </div>
+    </div>
+    <label>Name</label>
+    <input type="text" id="pe-name" maxlength="100" placeholder="Your name">
+    <label>Credentials</label>
+    <input type="text" id="pe-credentials" maxlength="100" placeholder="e.g. PMHNP-BC">
+    <label>Headline</label>
+    <input type="text" id="pe-headline" maxlength="160" placeholder="One line about your practice or interests">
+    <label>Location</label>
+    <input type="text" id="pe-location" maxlength="100" placeholder="City, State">
+    <label>Practice setting</label>
+    <select id="pe-practice"></select>
+    <div class="composer-row">
+      <label class="composer-check"><input type="checkbox" id="pe-visible"> List me in the Member Directory</label>
+    </div>
+    <div class="composer-actions">
+      <span class="composer-status" id="pe-status"></span>
+      <button class="btn-ghost" onclick="closeProfileEdit()">Cancel</button>
+      <button class="btn-primary" id="pe-save" onclick="saveProfile()">Save</button>
     </div>
   </div>
 </div>
