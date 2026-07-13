@@ -975,7 +975,11 @@ a { color: inherit; text-decoration: none; }
 .profile-name { font-family:'DM Serif Display',serif; font-size:1.5rem; color:var(--text-heading); margin:0 0 2px; }
 .profile-creds { font-size:0.82rem; color:var(--teal); font-weight:600; }
 .profile-meta { font-size:0.78rem; color:var(--text-secondary); margin-top:6px; }
-.profile-headline { font-size:0.9rem; color:var(--text-primary); margin-top:10px; line-height:1.5; }
+.profile-headline { font-size:0.9rem; color:var(--text-primary); margin-top:10px; line-height:1.5; font-weight:600; }
+.profile-bio { font-size:0.88rem; color:var(--text-primary); line-height:1.6; margin:2px 0 10px; }
+.profile-links { display:flex; gap:14px; margin-top:8px; flex-wrap:wrap; }
+.profile-links a { font-size:0.8rem; color:var(--teal); text-decoration:none; font-weight:600; }
+.profile-links a:hover { text-decoration:underline; }
 .profile-section-title { font-size:0.85rem; font-weight:700; color:var(--text-primary); margin:8px 0 12px; border-top:1px solid var(--border); padding-top:16px; }
 .clickable-author { cursor:pointer; }
 .clickable-author:hover .post-author-name, .clickable-author:hover { text-decoration:underline; }
@@ -2353,8 +2357,11 @@ async function viewPost(postId) {
     var authorInitials = authorName.split(' ').map(function(w){return w[0]}).join('').toUpperCase().substring(0,2);
     var authorCreds = post.accounts && post.accounts.credentials ? post.accounts.credentials : '';
     var authorClick = post.author_id ? ' class="clickable-author" onclick="viewProfile(\'' + post.author_id + '\')"' : '';
+    var authorPic = (post.accounts && post.accounts.avatar_url)
+      ? '<span style="width:36px;height:36px;border-radius:50%;overflow:hidden;flex-shrink:0;display:inline-block;border:1px solid var(--border)"><img src="' + esc(post.accounts.avatar_url) + '" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover"></span>'
+      : '<div style="width:36px;height:36px;border-radius:50%;background:var(--teal);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--text-inverse)">' + authorInitials + '</div>';
     h += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:20px"' + authorClick + '>';
-    h += '<div style="width:36px;height:36px;border-radius:50%;background:var(--teal);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--text-inverse)">' + authorInitials + '</div>';
+    h += authorPic;
     h += '<div style="font-size:0.8rem;color:var(--text-secondary)"><strong style="color:var(--text-primary)">' + esc(authorName) + '</strong>';
     if (authorCreds) h += ' <span style="font-size:0.7rem;opacity:0.7">' + esc(authorCreds) + '</span>';
     h += '<br>' + formatDate(post.created_at);
@@ -2414,9 +2421,12 @@ async function viewPost(postId) {
         var colors = ['#2aabb8','#c084fc','#fbbf24','#34d399','#fb923c','#60a5fa'];
         var color = colors[cName.length % colors.length];
         var canDelete = (myId && c.author_id === myId) || isAdmin();
+        var cPic = (c.accounts && c.accounts.avatar_url)
+          ? '<span style="width:28px;height:28px;border-radius:50%;overflow:hidden;flex-shrink:0;display:inline-block"><img src="' + esc(c.accounts.avatar_url) + '" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover"></span>'
+          : '<div style="width:28px;height:28px;border-radius:50%;background:'+color+';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--text-inverse)">' + cIni + '</div>';
         h += '<div style="padding:14px 16px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;margin-bottom:8px">';
         h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
-        h += '<div style="width:28px;height:28px;border-radius:50%;background:'+color+';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--text-inverse)">' + cIni + '</div>';
+        h += cPic;
         var cNameHtml = c.author_id
           ? '<strong class="clickable-author" style="color:var(--text-primary)" onclick="viewProfile(\'' + c.author_id + '\')">' + esc(cName) + '</strong>'
           : '<strong style="color:var(--text-primary)">' + esc(cName) + '</strong>';
@@ -2945,7 +2955,7 @@ async function viewProfile(accountId) {
   try {
     var { data: acct, error } = await SB
       .from('accounts')
-      .select('id, name, avatar_url, credentials, headline, location, practice_type, tier, created_at')
+      .select('id, name, avatar_url, credentials, headline, location, practice_type, tier, created_at, bio, website, linkedin_url')
       .eq('id', accountId)
       .single();
     if (error) throw error;
@@ -2970,8 +2980,13 @@ async function viewProfile(accountId) {
     if (acct.created_at) meta.push('Member since ' + formatDate(acct.created_at));
     if (meta.length) h += '<div class="profile-meta">' + meta.join(' &middot; ') + '</div>';
     if (acct.headline) h += '<div class="profile-headline">' + esc(acct.headline) + '</div>';
+    var links = [];
+    if (acct.website) links.push('<a href="' + esc(acct.website) + '" target="_blank" rel="noopener nofollow">Website</a>');
+    if (acct.linkedin_url) links.push('<a href="' + esc(acct.linkedin_url) + '" target="_blank" rel="noopener nofollow">LinkedIn</a>');
+    if (links.length) h += '<div class="profile-links">' + links.join('') + '</div>';
     if (isMe) h += '<button class="rm-add-btn" style="margin-top:12px" onclick="openProfileEdit()">Edit profile</button>';
     h += '</div></div>';
+    if (acct.bio) h += '<div class="profile-bio">' + esc(acct.bio).replace(/\n/g, '<br>') + '</div>';
 
     h += '<div class="profile-section-title">' + (isMe ? 'Your posts' : 'Posts') + '</div>';
     h += '<div class="post-list">';
@@ -3003,14 +3018,17 @@ async function openProfileEdit() {
   try {
     var { data: a } = await SB
       .from('accounts')
-      .select('name, credentials, headline, location, practice_type, directory_visible, avatar_url')
+      .select('name, credentials, headline, location, practice_type, directory_visible, avatar_url, bio, website, linkedin_url')
       .eq('id', S.user.id)
       .single();
     a = a || {};
     document.getElementById('pe-name').value = a.name || '';
     document.getElementById('pe-credentials').value = a.credentials || '';
     document.getElementById('pe-headline').value = a.headline || '';
+    document.getElementById('pe-bio').value = a.bio || '';
     document.getElementById('pe-location').value = a.location || '';
+    document.getElementById('pe-website').value = a.website || '';
+    document.getElementById('pe-linkedin').value = a.linkedin_url || '';
     document.getElementById('pe-practice').value = a.practice_type || '';
     document.getElementById('pe-visible').checked = a.directory_visible !== false;
     renderAvatarPreview(a.avatar_url, a.name);
@@ -3038,7 +3056,10 @@ async function saveProfile() {
     name: document.getElementById('pe-name').value,
     credentials: document.getElementById('pe-credentials').value,
     headline: document.getElementById('pe-headline').value,
+    bio: document.getElementById('pe-bio').value,
     location: document.getElementById('pe-location').value,
+    website: document.getElementById('pe-website').value,
+    linkedin_url: document.getElementById('pe-linkedin').value,
     practice_type: document.getElementById('pe-practice').value,
     directory_visible: document.getElementById('pe-visible').checked
   };
@@ -3642,8 +3663,14 @@ checkAuth();
     <input type="text" id="pe-credentials" maxlength="100" placeholder="e.g. PMHNP-BC">
     <label>Headline</label>
     <input type="text" id="pe-headline" maxlength="160" placeholder="One line about your practice or interests">
+    <label>Bio</label>
+    <textarea id="pe-bio" rows="4" maxlength="1500" placeholder="A short bio: your background, interests, what you work on."></textarea>
     <label>Location</label>
     <input type="text" id="pe-location" maxlength="100" placeholder="City, State">
+    <label>Website</label>
+    <input type="text" id="pe-website" maxlength="300" placeholder="https://yourpractice.com">
+    <label>LinkedIn</label>
+    <input type="text" id="pe-linkedin" maxlength="300" placeholder="https://linkedin.com/in/you">
     <label>Practice setting</label>
     <select id="pe-practice"></select>
     <div class="composer-row">

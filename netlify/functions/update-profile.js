@@ -14,7 +14,17 @@
 const { verifyToken } = require('./_lib/session');
 
 const PRACTICE_TYPES = ['solo', 'group_owner', 'group_member', 'employed', 'locums', 'other'];
-const LIMITS = { name: 100, credentials: 100, headline: 160, location: 100 };
+const LIMITS = { name: 100, credentials: 100, headline: 160, location: 100, bio: 1500 };
+
+// A link field must be an http(s) URL or empty (blocks javascript: and other
+// schemes, since these render as href attributes).
+function cleanUrl(v) {
+  var s = String(v == null ? '' : v).trim().slice(0, 300);
+  if (!s) return null;
+  if (!/^https?:\/\//i.test(s)) s = 'https://' + s;
+  if (!/^https?:\/\/[^\s]+\.[^\s]+/i.test(s)) return null;
+  return s;
+}
 const MAX_AVATAR_BYTES = 3 * 1024 * 1024; // 3 MB
 
 function extFromContentType(ct) {
@@ -76,11 +86,15 @@ exports.handler = async function (event) {
     if (p.action === 'save') {
       const patch = {};
       // Text fields: trim + length-cap. Empty string clears the field (-> null).
-      ['name', 'credentials', 'headline', 'location'].forEach(function (f) {
+      ['name', 'credentials', 'headline', 'location', 'bio'].forEach(function (f) {
         if (Object.prototype.hasOwnProperty.call(p, f)) {
           const v = String(p[f] == null ? '' : p[f]).trim().slice(0, LIMITS[f]);
           patch[f] = v.length ? v : null;
         }
+      });
+      // Link fields: validated to http(s) or null.
+      ['website', 'linkedin_url'].forEach(function (f) {
+        if (Object.prototype.hasOwnProperty.call(p, f)) patch[f] = cleanUrl(p[f]);
       });
       if (Object.prototype.hasOwnProperty.call(p, 'practice_type')) {
         const pt = String(p.practice_type || '').trim();
@@ -97,7 +111,7 @@ exports.handler = async function (event) {
       }
       patch.updated_at = new Date().toISOString();
 
-      const updated = await sb('accounts?' + emailFilter + '&select=id,name,credentials,headline,location,practice_type,directory_visible,avatar_url,tier', 'PATCH', patch);
+      const updated = await sb('accounts?' + emailFilter + '&select=id,name,credentials,headline,location,practice_type,directory_visible,avatar_url,tier,bio,website,linkedin_url', 'PATCH', patch);
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, account: (updated && updated[0]) || null }) };
     }
 
