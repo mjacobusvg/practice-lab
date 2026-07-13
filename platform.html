@@ -1036,6 +1036,19 @@ a.file-chip:hover { border-color:var(--teal); }
 /* Following view */
 .following-section { margin-bottom:22px; }
 .following-h { font-size:0.78rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-secondary); margin-bottom:10px; }
+/* First-time welcome modal */
+.welcome-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:9000; display:none; align-items:center; justify-content:center; padding:20px; }
+.welcome-overlay.open { display:flex; }
+.welcome-card { position:relative; width:100%; max-width:440px; background:var(--bg-card); border:1px solid var(--border); border-radius:16px; padding:32px 28px 24px; text-align:center; box-shadow:0 20px 60px rgba(0,0,0,0.3); }
+.welcome-x { position:absolute; top:12px; right:14px; background:none; border:none; color:var(--text-secondary); cursor:pointer; font-size:22px; line-height:1; }
+.welcome-icon { font-size:2.6rem; margin-bottom:12px; }
+.welcome-title { font-family:var(--font-heading); font-size:1.35rem; color:var(--text-heading); margin-bottom:10px; }
+.welcome-body { font-size:0.9rem; color:var(--text-secondary); line-height:1.6; }
+.welcome-dots { display:flex; gap:6px; justify-content:center; margin:20px 0 18px; }
+.welcome-dot { width:7px; height:7px; border-radius:50%; background:var(--border); transition:background 0.2s; }
+.welcome-dot.on { background:var(--teal); }
+.welcome-actions { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.welcome-actions .btn-ghost { min-width:52px; }
 /* What you missed banner */
 .whatsnew-card { position:relative; margin:16px 0 8px; padding:16px 18px; border:1px solid var(--teal); border-radius:12px; background:var(--teal-glow); }
 .whatsnew-x { position:absolute; top:10px; right:12px; background:none; border:none; color:var(--text-secondary); cursor:pointer; font-size:18px; line-height:1; }
@@ -1826,6 +1839,7 @@ async function checkAuth() {
   if (ok && S.user) {
     document.getElementById('gate').classList.add('hidden');
     checkMember(); updateTopbar(); init();
+    maybeShowWelcome();
   } else {
     gateMode('login'); // default returning-member view
   }
@@ -1850,6 +1864,7 @@ function updateTopbar() {
     '<div class="acct-wrap"><div class="user-avatar" title="'+esc(nm)+'" onclick="toggleAcctMenu()">'+esc(ini)+'</div>' +
     '<div class="acct-menu" id="acct-menu"><div class="acct-head">'+esc(nm)+'<span class="acct-tier">'+tierLabel+'</span></div>' +
     '<button onclick="toggleAcctMenu();viewProfile(\''+S.user.id+'\')">Your profile</button>' +
+    '<button onclick="toggleAcctMenu();openWelcomeTour()">Take the tour</button>' +
     (isPaidMember()
       ? '<button onclick="openBillingPortal()">Manage billing</button>'
       : '<button onclick="startCheckout(\'full_monthly_119\')">Upgrade to Full</button>') +
@@ -4772,6 +4787,64 @@ async function promptInstall() {
 }
 
 // ════════════════════════════════════════
+// FIRST-TIME WELCOME + WALKTHROUGH
+// ════════════════════════════════════════
+var WELCOME_KEY = 'tbp_welcomed_v1';
+var WELCOME_SLIDES = [
+  { icon: '&#128075;', title: 'Welcome to your new Home', body: 'Welcome to your new Home for all things Think Beyond Practice. The community, the tools, and the archive now live together in one place. Here is a 30-second tour.' },
+  { icon: '&#128172;', title: 'Join the conversation', body: 'Ask questions, share cases, and reply in the Feed. React, @mention colleagues, follow threads and topics, and format posts with headings, images, files, and polls.' },
+  { icon: '&#128269;', title: 'Ask the Archive', body: 'Get a synthesized answer drawn from 400+ posts by practicing prescribers, with the source posts and templates. Start from the search box at the top of Home.' },
+  { icon: '&#129513;', title: 'Your tools', body: 'The Practice Lab, Practice Manager, and Credentialing Hub are one click away from Home. Everything you use in a week, in one place.' },
+  { icon: '&#128276;', title: 'Stay in the loop', body: 'The bell shows new posts, comments, mentions, and messages. You are opted into email updates by default, and you can turn any of them off any time in your profile.' },
+  { icon: '&#128241;', title: 'Install the app', body: 'Add Think Beyond Practice to your phone home screen or desktop for one-tap access. Look for "Install app" in the left menu when your browser offers it.' }
+];
+var welcomeIdx = 0;
+
+function maybeShowWelcome() {
+  try { if (localStorage.getItem(WELCOME_KEY)) return; } catch (e) { return; }
+  if (!S.user) return;
+  // Let the app paint first.
+  setTimeout(function () { welcomeIdx = 0; renderWelcome(); document.getElementById('welcome-overlay').classList.add('open'); }, 600);
+}
+
+function renderWelcome() {
+  var card = document.getElementById('welcome-card');
+  if (!card) return;
+  var s = WELCOME_SLIDES[welcomeIdx];
+  var last = welcomeIdx === WELCOME_SLIDES.length - 1;
+  var dots = WELCOME_SLIDES.map(function (x, i) { return '<span class="welcome-dot' + (i === welcomeIdx ? ' on' : '') + '"></span>'; }).join('');
+  var h = '<button class="welcome-x" onclick="closeWelcome()" title="Close">&times;</button>';
+  h += '<div class="welcome-icon">' + s.icon + '</div>';
+  h += '<div class="welcome-title">' + s.title + '</div>';
+  h += '<div class="welcome-body">' + s.body + '</div>';
+  h += '<div class="welcome-dots">' + dots + '</div>';
+  h += '<div class="welcome-actions">';
+  h += '<button class="btn-ghost" onclick="closeWelcome()">' + (last ? '' : 'Skip') + '</button>';
+  h += '<div style="display:flex;gap:8px">';
+  if (welcomeIdx > 0) h += '<button class="btn-ghost" onclick="welcomeGo(-1)">Back</button>';
+  h += '<button class="btn-primary" onclick="' + (last ? 'closeWelcome()' : 'welcomeGo(1)') + '">' + (last ? 'Get started' : 'Next') + '</button>';
+  h += '</div></div>';
+  card.innerHTML = h;
+}
+
+function welcomeGo(dir) {
+  welcomeIdx = Math.max(0, Math.min(WELCOME_SLIDES.length - 1, welcomeIdx + dir));
+  renderWelcome();
+}
+
+function closeWelcome() {
+  var o = document.getElementById('welcome-overlay');
+  if (o) o.classList.remove('open');
+  try { localStorage.setItem(WELCOME_KEY, '1'); } catch (e) {}
+}
+
+// Lets members re-open the tour from anywhere (e.g. a help link).
+function openWelcomeTour() {
+  welcomeIdx = 0; renderWelcome();
+  var o = document.getElementById('welcome-overlay'); if (o) o.classList.add('open');
+}
+
+// ════════════════════════════════════════
 // BOOT
 // ════════════════════════════════════════
 checkAuth();
@@ -4912,6 +4985,10 @@ checkAuth();
       <button class="btn-primary" id="pe-save" onclick="saveProfile()">Save</button>
     </div>
   </div>
+</div>
+
+<div class="welcome-overlay" id="welcome-overlay">
+  <div class="welcome-card" id="welcome-card"></div>
 </div>
 
 </body>
