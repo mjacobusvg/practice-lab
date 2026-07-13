@@ -48,6 +48,24 @@ exports.handler = async function (event) {
 
   const authHeaders = { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY };
 
+  // Diagnostic log to a table we can read (background functions discard their
+  // return value and run async, so the trigger page cannot report real results).
+  async function logRow(tag, detail) {
+    try {
+      await fetch(SUPABASE_URL + '/rest/v1/migration_log', {
+        method: 'POST',
+        headers: Object.assign({}, authHeaders, { 'Content-Type': 'application/json', 'Prefer': 'return=minimal' }),
+        body: JSON.stringify({ tag: tag, detail: detail })
+      });
+    } catch (e) { /* logging is best-effort */ }
+  }
+
+  // Some CDNs (incl. Circle) reject server-side fetches with no browser headers.
+  const FETCH_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (compatible; TBP-avatar-migrate/1.0)',
+    'Accept': 'image/avif,image/webp,image/png,image/jpeg,*/*'
+  };
+
   // Accounts whose avatar is still hosted on Circle.
   let accounts;
   try {
@@ -59,12 +77,15 @@ exports.handler = async function (event) {
     accounts = await res.json();
   } catch (e) {
     console.error('avatar-migrate: cannot load accounts:', e.message);
+    await logRow('avatar-migrate-error', { stage: 'load-accounts', message: e.message });
     return { statusCode: 500, body: 'Load failed' };
   }
 
   console.log('avatar-migrate: ' + accounts.length + ' Circle-hosted avatars to move');
+  await logRow('avatar-migrate-start', { candidates: accounts.length });
 
   const stats = { total: accounts.length, migrated: 0, skipped: 0, errors: 0 };
+  const failures = [];
 
   for (let i = 0; i < accounts.length; i++) {
     if (Date.now() - started > TIME_BUDGET_MS) {
@@ -74,16 +95,18 @@ exports.handler = async function (event) {
     const acct = accounts[i];
     try {
       // 1. Fetch the image from Circle (follows the Rails redirect to the blob).
-      const imgRes = await fetch(acct.avatar_url, { redirect: 'follow' });
+      const imgRes = await fetch(acct.avatar_url, { redirect: 'follow', headers: FETCH_HEADERS });
       const ct = imgRes.headers.get('content-type') || '';
       if (!imgRes.ok || ct.indexOf('image/') !== 0) {
         console.log('avatar-migrate: skip ' + acct.id + ' (' + acct.name + ') status=' + imgRes.status + ' ct=' + ct);
+        failures.push({ id: acct.id, name: acct.name, reason: 'fetch', status: imgRes.status, ct: ct });
         stats.skipped++;
         continue;
       }
       const ext = extFromContentType(ct);
       if (!ext) {
         console.log('avatar-migrate: skip ' + acct.id + ' unsupported ct=' + ct);
+        failures.push({ id: acct.id, name: acct.name, reason: 'unsupported-ct', ct: ct });
         stats.skipped++;
         continue;
       }
@@ -98,7 +121,9 @@ exports.handler = async function (event) {
         body: bytes
       });
       if (!upRes.ok) {
-        console.error('avatar-migrate: upload failed ' + acct.id + ' ' + upRes.status + ': ' + (await upRes.text()).slice(0, 200));
+        const upErr = (await upRes.text()).slice(0, 200);
+        console.error('avatar-migrate: upload failed ' + acct.id + ' ' + upRes.status + ': ' + upErr);
+        failures.push({ id: acct.id, name: acct.name, reason: 'upload', status: upRes.status, err: upErr });
         stats.errors++;
         continue;
       }
@@ -111,7 +136,9 @@ exports.handler = async function (event) {
         body: JSON.stringify({ avatar_url: publicUrl })
       });
       if (!patchRes.ok) {
-        console.error('avatar-migrate: repoint failed ' + acct.id + ' ' + patchRes.status + ': ' + (await patchRes.text()).slice(0, 200));
+        const pErr = (await patchRes.text()).slice(0, 200);
+        console.error('avatar-migrate: repoint failed ' + acct.id + ' ' + patchRes.status + ': ' + pErr);
+        failures.push({ id: acct.id, name: acct.name, reason: 'repoint', status: patchRes.status, err: pErr });
         stats.errors++;
         continue;
       }
@@ -120,10 +147,12 @@ exports.handler = async function (event) {
       console.log('avatar-migrate: moved ' + acct.name + ' -> ' + objectPath);
     } catch (e) {
       console.error('avatar-migrate: error ' + acct.id + ': ' + e.message);
+      failures.push({ id: acct.id, name: acct.name, reason: 'exception', message: e.message });
       stats.errors++;
     }
   }
 
   console.log('avatar-migrate DONE: ' + JSON.stringify(stats));
+  await logRow('avatar-migrate-done', { stats: stats, failures: failures.slice(0, 25) });
   return { statusCode: 202, body: JSON.stringify(stats) };
 };
