@@ -25,6 +25,17 @@ const MEMBER_POSTABLE_SPACES = ['quick-q', 'member-threads', 'case-discussions',
 const MAX_TITLE_CHARS = 200;
 const MAX_BODY_CHARS = 20000;
 const MAX_TAGS = 5;
+const MAX_IMAGES = 6;
+
+// Only accept image URLs that point at our own public post-images bucket, so a
+// client cannot inject an arbitrary (or javascript:) URL into stored HTML.
+function cleanImageUrls(urls) {
+  const base = String(process.env.SUPABASE_URL || '').replace(/\/+$/, '') + '/storage/v1/object/public/post-images/';
+  return (Array.isArray(urls) ? urls : [])
+    .map(function (u) { return String(u || '').trim(); })
+    .filter(function (u) { return u.indexOf(base) === 0 && u.length < 500; })
+    .slice(0, MAX_IMAGES);
+}
 
 function esc(s) {
   return String(s)
@@ -116,6 +127,8 @@ exports.handler = async function (event) {
     const mentioned = await resolveMentions(p.mention_ids);
     const bodyHtml = linkifyMentions(toHtml(rawBody), mentioned);
 
+    const imageUrls = cleanImageUrls(p.image_urls);
+
     const excerpt = rawBody.replace(/\s+/g, ' ').slice(0, 200);
     const row = {
       space_id: spaceId,
@@ -124,6 +137,7 @@ exports.handler = async function (event) {
       body_plain: rawBody,
       body_html: bodyHtml,
       excerpt: excerpt,
+      image_urls: imageUrls,
       comment_count: 0,
       reaction_count: 0,
       post_type: 'discussion',

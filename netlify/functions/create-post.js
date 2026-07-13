@@ -21,6 +21,17 @@ const VALID_SPACES = [
   'clinical-insights','modalities'
 ];
 
+const MAX_IMAGES = 6;
+
+// Only accept image URLs from our own public post-images bucket.
+function cleanImageUrls(urls) {
+  const base = String(process.env.SUPABASE_URL || '').replace(/\/+$/, '') + '/storage/v1/object/public/post-images/';
+  return (Array.isArray(urls) ? urls : [])
+    .map(function (u) { return String(u || '').trim(); })
+    .filter(function (u) { return u.indexOf(base) === 0 && u.length < 500; })
+    .slice(0, MAX_IMAGES);
+}
+
 function esc(s) {
   return String(s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -103,6 +114,8 @@ exports.handler = async function (event) {
       const mentioned = await resolveMentions(p.mention_ids);
       const bodyHtml = linkifyMentions(toHtml(body), mentioned);
 
+      const imageUrls = cleanImageUrls(p.image_urls);
+
       const excerpt = body.replace(/\s+/g, ' ').slice(0, 200);
       const row = {
         space_id: spaces[0].id,
@@ -111,6 +124,7 @@ exports.handler = async function (event) {
         body_plain: body,
         body_html: bodyHtml,
         excerpt: excerpt,
+        image_urls: imageUrls,
         comment_count: 0,
         reaction_count: 0,
         canonical_synthesis: p.synthesis ? String(p.synthesis).trim() || null : null,
