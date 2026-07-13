@@ -983,6 +983,36 @@ a { color: inherit; text-decoration: none; }
 .profile-section-title { font-size:0.85rem; font-weight:700; color:var(--text-primary); margin:8px 0 12px; border-top:1px solid var(--border); padding-top:16px; }
 .clickable-author { cursor:pointer; }
 .clickable-author:hover .post-author-name, .clickable-author:hover { text-decoration:underline; }
+/* Direct messages */
+.dm-badge { display:inline-block; min-width:16px; height:16px; padding:0 4px; margin-left:6px; border-radius:8px; background:var(--teal); color:var(--text-inverse); font-size:0.62rem; font-weight:700; line-height:16px; text-align:center; vertical-align:middle; }
+.dm-list { display:flex; flex-direction:column; }
+.dm-conv { display:flex; align-items:center; gap:12px; padding:12px 10px; border-bottom:1px solid var(--border); cursor:pointer; }
+.dm-conv:hover { background:var(--bg-card); }
+.dm-avatar { width:42px; height:42px; border-radius:50%; overflow:hidden; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; background:var(--teal); color:var(--text-inverse); font-weight:700; font-size:0.9rem; }
+.dm-avatar img { width:100%; height:100%; object-fit:cover; }
+.dm-avatar-sm { width:32px; height:32px; font-size:0.72rem; }
+.dm-conv-body { min-width:0; flex:1; }
+.dm-conv-top { display:flex; justify-content:space-between; gap:8px; }
+.dm-conv-name { font-size:0.88rem; font-weight:600; color:var(--text-primary); }
+.dm-conv-time { font-size:0.72rem; color:var(--text-secondary); flex-shrink:0; }
+.dm-conv-preview { font-size:0.8rem; color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px; }
+.dm-conv.unread .dm-conv-name, .dm-conv.unread .dm-conv-preview { color:var(--text-primary); font-weight:600; }
+.dm-unread-dot { width:9px; height:9px; border-radius:50%; background:var(--teal); flex-shrink:0; }
+.dm-thread-head { display:flex; align-items:center; gap:14px; margin-bottom:14px; flex-wrap:wrap; }
+.dm-thread-peer { display:flex; align-items:center; gap:8px; }
+.dm-thread-name { font-size:0.95rem; font-weight:700; color:var(--text-heading); }
+.dm-messages { display:flex; flex-direction:column; gap:8px; max-height:calc(100vh - 260px); overflow-y:auto; padding:6px 2px; }
+.dm-msg { display:flex; flex-direction:column; max-width:78%; }
+.dm-msg.mine { align-self:flex-end; align-items:flex-end; }
+.dm-msg.theirs { align-self:flex-start; align-items:flex-start; }
+.dm-bubble { padding:9px 13px; border-radius:14px; font-size:0.86rem; line-height:1.5; word-wrap:break-word; }
+.dm-msg.mine .dm-bubble { background:var(--teal); color:var(--text-inverse); border-bottom-right-radius:4px; }
+.dm-msg.theirs .dm-bubble { background:var(--bg-card); border:1px solid var(--border); color:var(--text-primary); border-bottom-left-radius:4px; }
+.dm-bubble p { margin:0 0 6px; } .dm-bubble p:last-child { margin:0; }
+.dm-msg-time { font-size:0.66rem; color:var(--text-secondary); margin:2px 4px 0; }
+.dm-compose { display:flex; gap:8px; align-items:flex-end; margin-top:14px; border-top:1px solid var(--border); padding-top:12px; }
+.dm-compose textarea { flex:1; min-height:42px; max-height:140px; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:var(--bg-card); color:var(--text-primary); font-family:inherit; font-size:0.86rem; line-height:1.4; resize:vertical; }
+.dm-compose .btn-primary { flex-shrink:0; }
 .admin-post-tools { display: flex; gap: 8px; margin: 14px 0 4px; flex-wrap: wrap; }
 .admin-post-tools button {
   background: transparent; border: 1px solid rgba(42,171,184,0.4); color: var(--teal);
@@ -1699,6 +1729,8 @@ function updateTopbar() {
       ? '<button onclick="openBillingPortal()">Manage billing</button>'
       : '<button onclick="startCheckout(\'full_monthly_119\')">Upgrade to Full</button>') +
     '<button onclick="signOut()">Sign out</button></div></div>';
+  refreshUnread();
+  if (!window.__dmPoll) { window.__dmPoll = setInterval(refreshUnread, 60000); }
 }
 function toggleAcctMenu() {
   var m = document.getElementById('acct-menu');
@@ -1726,6 +1758,7 @@ function buildSidebar() {
   h += '<div class="sb-item" data-key="saved" onclick="showSaved()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128278;</span> Saved</div>';
   h += '<div class="sb-item" data-key="library" onclick="showLibrary()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128196;</span> Template Library</div>';
   h += '<div class="sb-item" data-key="directory" onclick="showDirectory()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128101;</span> Member Directory</div>';
+  h += '<div class="sb-item" data-key="messages" onclick="showMessages()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#9993;</span> Messages<span id="dm-badge" class="dm-badge" style="display:none"></span></div>';
   GROUPS.forEach(function(g) {
     h += '<div class="sb-group-title">' + g.name + '</div>';
     g.spaces.forEach(function(sp) {
@@ -2985,6 +3018,7 @@ async function viewProfile(accountId) {
     if (acct.linkedin_url) links.push('<a href="' + esc(acct.linkedin_url) + '" target="_blank" rel="noopener nofollow">LinkedIn</a>');
     if (links.length) h += '<div class="profile-links">' + links.join('') + '</div>';
     if (isMe) h += '<button class="rm-add-btn" style="margin-top:12px" onclick="openProfileEdit()">Edit profile</button>';
+    else if (S.user) h += '<button class="rm-add-btn" style="margin-top:12px" onclick="openThread(\'' + acct.id + '\')">&#9993; Message</button>';
     h += '</div></div>';
     if (acct.bio) h += '<div class="profile-bio">' + esc(acct.bio).replace(/\n/g, '<br>') + '</div>';
 
@@ -3110,6 +3144,127 @@ function uploadAvatar(input) {
     }
   };
   reader.readAsDataURL(file);
+}
+
+// ════════════════════════════════════════
+// DIRECT MESSAGES
+// ════════════════════════════════════════
+async function refreshUnread() {
+  try {
+    var token = getAuthToken(); if (!token) return;
+    var res = await fetch('/.netlify/functions/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: token, action: 'unread_count' }) });
+    var data = await res.json();
+    var badge = document.getElementById('dm-badge');
+    if (badge) {
+      if (data && data.ok && data.count > 0) { badge.textContent = data.count > 99 ? '99+' : String(data.count); badge.style.display = ''; }
+      else { badge.style.display = 'none'; }
+    }
+  } catch (e) {}
+}
+
+async function showMessages() {
+  closeSidebar(); closeRail();
+  S.view = 'messages'; S.space = null;
+  logView('/platform/messages');
+  clearActive();
+  var side = document.querySelector('.sb-item[data-key="messages"]'); if (side) side.classList.add('active');
+  var center = document.getElementById('center');
+  center.innerHTML = '<div class="skel skel-h"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
+  try {
+    var res = await fetch('/.netlify/functions/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: getAuthToken(), action: 'list_conversations' }) });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not load messages');
+    var convs = data.conversations || [];
+    var h = '<div class="space-head"><div class="space-accent" style="background:var(--teal)"></div><h1>Messages</h1>';
+    h += '<p class="space-tagline">Private messages with members and Michael.</p></div>';
+    if (!convs.length) {
+      h += '<div style="padding:20px;color:var(--text-secondary);font-size:0.85rem">No conversations yet. Open a member’s profile and tap Message to start one.</div>';
+    } else {
+      h += '<div class="dm-list">';
+      convs.forEach(function (c) {
+        var o = c.other;
+        var av = o.avatar_url ? '<span class="dm-avatar"><img src="' + esc(o.avatar_url) + '" alt="" loading="lazy"></span>' : '<span class="dm-avatar dm-initials">' + esc(initials(o.name)) + '</span>';
+        var prefix = (c.last_sender_id && S.user && c.last_sender_id === S.user.id) ? 'You: ' : '';
+        h += '<div class="dm-conv' + (c.unread > 0 ? ' unread' : '') + '" onclick="openThread(\'' + o.id + '\')">';
+        h += av;
+        h += '<div class="dm-conv-body"><div class="dm-conv-top"><span class="dm-conv-name">' + esc(o.name || 'Member') + '</span><span class="dm-conv-time">' + (c.last_message_at ? timeAgo(c.last_message_at) : '') + '</span></div>';
+        h += '<div class="dm-conv-preview">' + esc(prefix + (c.last_message_preview || '')) + '</div></div>';
+        if (c.unread > 0) h += '<span class="dm-unread-dot"></span>';
+        h += '</div>';
+      });
+      h += '</div>';
+    }
+    center.innerHTML = h; window.scrollTo(0, 0);
+    refreshUnread();
+  } catch (e) {
+    console.error('showMessages:', e);
+    center.innerHTML = '<div style="padding:28px;color:var(--text-secondary)">Could not load messages.</div>';
+  }
+}
+
+async function openThread(otherId) {
+  if (!otherId) return;
+  if (S.user && otherId === S.user.id) { showMessages(); return; }
+  closeSidebar(); closeRail();
+  S.view = 'thread'; S.threadWith = otherId;
+  logView('/platform/messages/thread');
+  clearActive();
+  var center = document.getElementById('center');
+  center.innerHTML = '<div class="skel skel-h"></div><div class="skel skel-row"></div>';
+  try {
+    var res = await fetch('/.netlify/functions/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: getAuthToken(), action: 'get_thread', with_id: otherId }) });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not load conversation');
+    renderThread(data);
+    refreshUnread();
+  } catch (e) {
+    console.error('openThread:', e);
+    center.innerHTML = '<div style="padding:28px;color:var(--text-secondary)">Could not load conversation.</div>';
+  }
+}
+
+function renderThread(data) {
+  var center = document.getElementById('center');
+  var o = data.other; var myId = S.user && S.user.id;
+  var h = '<div class="dm-thread-head">';
+  h += '<button class="post-full-back" onclick="showMessages()">&larr; Messages</button>';
+  h += '<div class="dm-thread-peer" onclick="viewProfile(\'' + o.id + '\')" style="cursor:pointer">';
+  h += (o.avatar_url ? '<span class="dm-avatar dm-avatar-sm"><img src="' + esc(o.avatar_url) + '" alt=""></span>' : '<span class="dm-avatar dm-avatar-sm dm-initials">' + esc(initials(o.name)) + '</span>');
+  h += '<span class="dm-thread-name">' + esc(o.name || 'Member') + '</span></div></div>';
+  h += '<div class="dm-messages" id="dm-messages">';
+  if (!data.messages || !data.messages.length) {
+    h += '<div style="padding:16px;color:var(--text-secondary);font-size:0.85rem;text-align:center">No messages yet. Say hello.</div>';
+  } else {
+    data.messages.forEach(function (m) {
+      var mine = m.sender_id === myId;
+      h += '<div class="dm-msg ' + (mine ? 'mine' : 'theirs') + '"><div class="dm-bubble">' + (m.body_html || '') + '</div><div class="dm-msg-time">' + timeAgo(m.created_at) + '</div></div>';
+    });
+  }
+  h += '</div>';
+  h += '<div class="dm-compose"><textarea id="dm-input" rows="2" maxlength="5000" placeholder="Write a message..." onkeydown="dmKey(event)"></textarea><button class="btn-primary" id="dm-send" onclick="sendMessage()">Send</button></div>';
+  h += '<div id="dm-error" style="display:none;color:#c0392b;font-size:0.78rem;margin-top:6px"></div>';
+  center.innerHTML = h;
+  var mc = document.getElementById('dm-messages'); if (mc) mc.scrollTop = mc.scrollHeight;
+}
+
+function dmKey(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }
+
+async function sendMessage() {
+  var ta = document.getElementById('dm-input'); if (!ta) return;
+  var body = ta.value.trim();
+  var errEl = document.getElementById('dm-error'); if (errEl) errEl.style.display = 'none';
+  if (!body) return;
+  var btn = document.getElementById('dm-send'); if (btn) btn.disabled = true;
+  try {
+    var res = await fetch('/.netlify/functions/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: getAuthToken(), action: 'send', to_id: S.threadWith, body: body }) });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not send');
+    ta.value = '';
+    await openThread(S.threadWith);
+  } catch (e) {
+    if (btn) btn.disabled = false;
+    if (errEl) { errEl.style.display = 'block'; errEl.textContent = e.message; }
+  }
 }
 
 // ════════════════════════════════════════
