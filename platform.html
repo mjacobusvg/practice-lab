@@ -998,6 +998,24 @@ a { color: inherit; text-decoration: none; }
 .mp-thumb { position:relative; width:72px; height:72px; border-radius:8px; overflow:hidden; border:1px solid var(--border); }
 .mp-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
 .mp-thumb-x { position:absolute; top:2px; right:2px; width:20px; height:20px; border:none; border-radius:50%; background:rgba(0,0,0,0.6); color:#fff; cursor:pointer; font-size:14px; line-height:1; display:flex; align-items:center; justify-content:center; }
+/* Poll (ballot in post detail) */
+.poll { margin:16px 0 4px; padding:16px; border:1px solid var(--border); border-radius:10px; background:var(--bg-card); }
+.poll-q { font-weight:600; color:var(--text-heading); font-size:0.92rem; margin-bottom:12px; }
+.poll-opts { display:flex; flex-direction:column; gap:8px; }
+.poll-opt { position:relative; display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; text-align:left; padding:11px 14px; border:1px solid var(--border); border-radius:8px; background:var(--bg-page); color:var(--text-primary); cursor:pointer; font-size:0.85rem; overflow:hidden; }
+.poll-opt:hover { border-color:var(--teal); }
+.poll-opt.mine { border-color:var(--teal); }
+.poll-fill { position:absolute; left:0; top:0; bottom:0; width:0; background:var(--teal-glow); z-index:0; transition:width 0.35s ease; }
+.poll-opt-label, .poll-opt-pct { position:relative; z-index:1; }
+.poll-opt-pct { font-weight:700; color:var(--teal); font-size:0.8rem; }
+.poll-check { color:var(--teal); font-weight:700; }
+.poll-foot { margin-top:10px; font-size:0.74rem; color:var(--text-secondary); }
+/* Poll builder (composer) */
+.mp-poll-add-opt, .mp-poll-remove { background:none; border:1px solid var(--border); color:var(--text-secondary); border-radius:6px; padding:6px 12px; cursor:pointer; font-size:0.78rem; margin-top:8px; margin-right:8px; }
+.mp-poll-add-opt:hover { border-color:var(--teal); color:var(--teal); }
+.mp-poll-remove:hover { border-color:#c0392b; color:#c0392b; }
+#mp-poll-builder input { width:100%; margin-bottom:8px; }
+#mp-poll-opts .mp-poll-opt { display:block; }
 /* Profile page */
 .profile-head { display:flex; gap:18px; align-items:flex-start; margin-bottom:20px; flex-wrap:wrap; }
 .profile-avatar { width:88px; height:88px; border-radius:50%; overflow:hidden; flex-shrink:0; border:2px solid var(--border); display:inline-flex; align-items:center; justify-content:center; background:var(--bg-card); }
@@ -2413,7 +2431,7 @@ async function viewPost(postId) {
     // Load post
     var { data: post, error } = await SB
       .from('forum_posts')
-      .select('id, author_id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, is_locked, image_urls, canonical_synthesis, ce_candidate, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name))')
+      .select('id, author_id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, is_locked, image_urls, poll, canonical_synthesis, ce_candidate, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name))')
       .eq('id', postId)
       .single();
     if (error) throw error;
@@ -2502,6 +2520,13 @@ async function viewPost(postId) {
         h += '<a class="post-gallery-item" href="' + esc(u) + '" target="_blank" rel="noopener"><img src="' + esc(u) + '" alt="" loading="lazy"></a>';
       });
       h += '</div>';
+    }
+
+    // Poll (renders as an unvoted ballot; fetchPollResults fills in tallies).
+    if (post.poll && Array.isArray(post.poll.options) && post.poll.options.length) {
+      window.__pollDefs = window.__pollDefs || {};
+      window.__pollDefs[post.id] = post.poll;
+      h += '<div class="poll" id="poll-' + post.id + '" data-post="' + post.id + '">' + pollHtml(post.id, post.poll, null, {}, 0) + '</div>';
     }
 
     // Reactions on the post itself (heart / helpful / insight)
@@ -2605,6 +2630,7 @@ async function viewPost(postId) {
 
     center.innerHTML = h;
     mentionSetup(document.getElementById('comment-input'));
+    if (post.poll && Array.isArray(post.poll.options) && post.poll.options.length) fetchPollResults(post.id, post.poll);
     window.scrollTo(0,0);
   } catch(e) {
     console.error('viewPost:', e);
@@ -2729,6 +2755,63 @@ async function refreshReactionBar(targetType, targetId) {
     agg = aggregateReactions(q.data || [], (S.user && S.user.id) || null);
   } catch (e) {}
   el.outerHTML = reactionBarHtml(targetType, targetId, agg);
+}
+
+// ════════════════════════════════════════
+// POLLS
+// ════════════════════════════════════════
+// Render a poll ballot. Each option is a clickable row with a result bar behind
+// it; before results load (total 0), the bars are empty and it reads as a ballot.
+function pollHtml(postId, poll, myOption, counts, total) {
+  counts = counts || {};
+  total = total || 0;
+  var out = '<div class="poll-q">' + esc(poll.question || 'Poll') + '</div>';
+  out += '<div class="poll-opts">';
+  (poll.options || []).forEach(function (o) {
+    var n = counts[o.id] || 0;
+    var pct = total > 0 ? Math.round((n / total) * 100) : 0;
+    var mine = myOption === o.id;
+    out += '<button type="button" class="poll-opt' + (mine ? ' mine' : '') + '" onclick="votePoll(\'' + postId + '\',\'' + o.id + '\')">';
+    out += '<span class="poll-fill" style="width:' + pct + '%"></span>';
+    out += '<span class="poll-opt-label">' + esc(o.text || '') + (mine ? ' <span class="poll-check">&#10003;</span>' : '') + '</span>';
+    if (total > 0) out += '<span class="poll-opt-pct">' + pct + '%</span>';
+    out += '</button>';
+  });
+  out += '</div>';
+  out += '<div class="poll-foot">' + (total > 0 ? (total + ' vote' + (total !== 1 ? 's' : '') + (myOption ? ' &middot; tap to change' : '')) : 'Tap an option to vote') + '</div>';
+  return out;
+}
+
+// Preload the tallies (+ whether this member already voted) and re-render.
+async function fetchPollResults(postId, poll) {
+  try {
+    var res = await fetch('/.netlify/functions/poll-vote', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), action: 'results', post_id: postId })
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) return;
+    var el = document.getElementById('poll-' + postId);
+    if (el) el.innerHTML = pollHtml(postId, poll, data.my_option, data.counts || {}, data.total || 0);
+  } catch (e) {}
+}
+
+// Cast / change a vote, then re-render with fresh tallies. Poll definition is
+// read back off the post row we already have, via the ballot in the DOM.
+async function votePoll(postId, optionId) {
+  if (!isPaidMember()) { showJoin(''); return; }
+  try {
+    var res = await fetch('/.netlify/functions/poll-vote', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), action: 'vote', post_id: postId, option_id: optionId })
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not vote.');
+    var el = document.getElementById('poll-' + postId);
+    if (el && window.__pollDefs && window.__pollDefs[postId]) {
+      el.innerHTML = pollHtml(postId, window.__pollDefs[postId], data.my_option, data.counts || {}, data.total || 0);
+    }
+  } catch (e) { console.error('votePoll:', e); }
 }
 
 // ════════════════════════════════════════
@@ -2949,6 +3032,7 @@ function openMemberComposer(spaceKey) {
   var mpi = document.getElementById('mp-image-input'); if (mpi) mpi.value = '';
   renderMemberImagePreviews();
   var mis = document.getElementById('mp-image-status'); if (mis) mis.textContent = '';
+  resetMemberPoll();
   var st = document.getElementById('mp-status'); st.textContent = ''; st.className = 'composer-status';
   renderPostTagChips();
   mentionSetup(document.getElementById('mp-body'));
@@ -2987,7 +3071,7 @@ async function submitMemberPost() {
     var res = await fetch('/.netlify/functions/create-member-post', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: getAuthToken(), space: space, title: title, body: body, tags: S.newPostTags || [], mention_ids: mentionGetIds(document.getElementById('mp-body')), image_urls: (S.newPostImages || []).map(function(im){ return im.url; }) })
+      body: JSON.stringify({ token: getAuthToken(), space: space, title: title, body: body, tags: S.newPostTags || [], mention_ids: mentionGetIds(document.getElementById('mp-body')), image_urls: (S.newPostImages || []).map(function(im){ return im.url; }), poll: collectMemberPoll() })
     });
     var data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Could not post.');
@@ -3059,6 +3143,55 @@ function readFileAsDataURL(file) {
     r.onerror = function() { reject(new Error('Could not read the file.')); };
     r.readAsDataURL(file);
   });
+}
+
+// ── Poll builder (composer) ──────────────────────────────────────────────────
+function resetMemberPoll() {
+  S.newPostPoll = false;
+  var b = document.getElementById('mp-poll-builder'); if (b) b.style.display = 'none';
+  var t = document.getElementById('mp-poll-toggle'); if (t) t.style.display = 'inline-block';
+  var q = document.getElementById('mp-poll-q'); if (q) q.value = '';
+  var opts = document.getElementById('mp-poll-opts');
+  if (opts) opts.innerHTML = '<input type="text" class="mp-poll-opt" maxlength="120" placeholder="Option 1"><input type="text" class="mp-poll-opt" maxlength="120" placeholder="Option 2">';
+}
+
+function toggleMemberPoll() {
+  var b = document.getElementById('mp-poll-builder');
+  var t = document.getElementById('mp-poll-toggle');
+  if (!b) return;
+  if (b.style.display === 'none' || !b.style.display) {
+    // Ensure the option inputs exist (openMemberComposer seeds them too).
+    var opts = document.getElementById('mp-poll-opts');
+    if (opts && !opts.children.length) {
+      opts.innerHTML = '<input type="text" class="mp-poll-opt" maxlength="120" placeholder="Option 1"><input type="text" class="mp-poll-opt" maxlength="120" placeholder="Option 2">';
+    }
+    b.style.display = 'block'; if (t) t.style.display = 'none'; S.newPostPoll = true;
+  } else {
+    resetMemberPoll();
+  }
+}
+
+function addPollOption() {
+  var opts = document.getElementById('mp-poll-opts');
+  if (!opts) return;
+  if (opts.children.length >= 6) return;
+  var inp = document.createElement('input');
+  inp.type = 'text'; inp.className = 'mp-poll-opt'; inp.maxLength = 120;
+  inp.placeholder = 'Option ' + (opts.children.length + 1);
+  opts.appendChild(inp);
+}
+
+// Collect the composer poll into { question, options:[{text}] }, or null if the
+// builder is closed / incomplete (the server validates again either way).
+function collectMemberPoll() {
+  if (!S.newPostPoll) return null;
+  var qEl = document.getElementById('mp-poll-q');
+  var q = qEl ? qEl.value.trim() : '';
+  if (!q) return null;
+  var texts = Array.prototype.slice.call(document.querySelectorAll('#mp-poll-opts .mp-poll-opt'))
+    .map(function(i){ return i.value.trim(); }).filter(Boolean);
+  if (texts.length < 2) return null;
+  return { question: q, options: texts.slice(0, 6).map(function(t){ return { text: t }; }) };
 }
 
 // Topic view: every post carrying a given tag, across all spaces. This is the
@@ -4280,6 +4413,16 @@ checkAuth();
       <span class="mp-image-status" id="mp-image-status"></span>
     </div>
     <div class="mp-image-previews" id="mp-image-previews"></div>
+    <label>Poll (optional)</label>
+    <div class="mp-poll">
+      <button type="button" class="mp-add-image" id="mp-poll-toggle" onclick="toggleMemberPoll()">+ Add a poll</button>
+      <div id="mp-poll-builder" style="display:none">
+        <input type="text" id="mp-poll-q" maxlength="200" placeholder="Poll question">
+        <div id="mp-poll-opts"></div>
+        <button type="button" class="mp-poll-add-opt" onclick="addPollOption()">+ Add option</button>
+        <button type="button" class="mp-poll-remove" onclick="toggleMemberPoll()">Remove poll</button>
+      </div>
+    </div>
     <label>Topics (optional, up to 5)</label>
     <div class="tagpicker" id="mp-tags"></div>
     <div class="composer-actions">

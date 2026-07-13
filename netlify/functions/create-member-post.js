@@ -37,6 +37,22 @@ function cleanImageUrls(urls) {
     .slice(0, MAX_IMAGES);
 }
 
+// Validate a poll from the composer. Server assigns option ids (o1..oN) so the
+// client cannot inject ids; needs a question and 2-6 non-empty options.
+function cleanPoll(poll) {
+  if (!poll || typeof poll !== 'object') return null;
+  const q = String(poll.question || '').trim().slice(0, 200);
+  if (!q) return null;
+  const opts = Array.isArray(poll.options) ? poll.options : [];
+  const cleaned = [];
+  opts.forEach(function (o) {
+    const text = String((o && (o.text != null ? o.text : o)) || '').trim().slice(0, 120);
+    if (text) cleaned.push(text);
+  });
+  if (cleaned.length < 2) return null;
+  return { question: q, options: cleaned.slice(0, 6).map(function (t, i) { return { id: 'o' + (i + 1), text: t }; }) };
+}
+
 function esc(s) {
   return String(s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -128,6 +144,7 @@ exports.handler = async function (event) {
     const bodyHtml = linkifyMentions(toHtml(rawBody), mentioned);
 
     const imageUrls = cleanImageUrls(p.image_urls);
+    const poll = cleanPoll(p.poll);
 
     const excerpt = rawBody.replace(/\s+/g, ' ').slice(0, 200);
     const row = {
@@ -138,6 +155,7 @@ exports.handler = async function (event) {
       body_html: bodyHtml,
       excerpt: excerpt,
       image_urls: imageUrls,
+      poll: poll,
       comment_count: 0,
       reaction_count: 0,
       post_type: 'discussion',
