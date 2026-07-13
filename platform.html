@@ -2284,7 +2284,7 @@ async function viewPost(postId) {
     // Load comments
     var { data: comments, error: cErr } = await SB
       .from('forum_comments')
-      .select('id, body_html, body_plain, created_at, accounts(name, avatar_url)')
+      .select('id, author_id, body_html, body_plain, created_at, accounts(name, avatar_url)')
       .eq('post_id', postId)
       .order('created_at', { ascending: true })
       .limit(100);
@@ -2352,25 +2352,41 @@ async function viewPost(postId) {
       h += '</div>';
     }
 
-    // Comments
-    if (comments && comments.length > 0) {
-      h += '<div style="margin-top:24px;border-top:1px solid var(--border);padding-top:20px">';
-      h += '<div style="font-size:0.85rem;font-weight:600;color:var(--text-primary);margin-bottom:16px">' + comments.length + ' Comment' + (comments.length !== 1 ? 's' : '') + '</div>';
+    // Comments + composer (paid members only; the non-member teaser returned above)
+    var cCount = (comments && comments.length) || 0;
+    var myId = (S.user && S.user.id) || null;
+    h += '<div style="margin-top:24px;border-top:1px solid var(--border);padding-top:20px">';
+    h += '<div style="font-size:0.85rem;font-weight:600;color:var(--text-primary);margin-bottom:16px">' + cCount + ' Comment' + (cCount !== 1 ? 's' : '') + '</div>';
+    if (comments && comments.length) {
       comments.forEach(function(c) {
         var cName = c.accounts ? c.accounts.name : 'Unknown';
         var cIni = cName.split(' ').map(function(w){return w[0]}).join('').toUpperCase().substring(0,2);
         var colors = ['#2aabb8','#c084fc','#fbbf24','#34d399','#fb923c','#60a5fa'];
         var color = colors[cName.length % colors.length];
+        var canDelete = (myId && c.author_id === myId) || isAdmin();
         h += '<div style="padding:14px 16px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;margin-bottom:8px">';
         h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">';
         h += '<div style="width:28px;height:28px;border-radius:50%;background:'+color+';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--text-inverse)">' + cIni + '</div>';
-        h += '<div style="font-size:0.75rem;color:var(--text-secondary)"><strong style="color:var(--text-primary)">' + esc(cName) + '</strong> &middot; ' + formatDate(c.created_at) + '</div>';
+        h += '<div style="font-size:0.75rem;color:var(--text-secondary);flex:1"><strong style="color:var(--text-primary)">' + esc(cName) + '</strong> &middot; ' + formatDate(c.created_at) + '</div>';
+        if (canDelete) h += '<button onclick="deleteComment(\'' + c.id + '\',\'' + post.id + '\')" title="Delete" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:0.72rem;padding:2px 4px">Delete</button>';
         h += '</div>';
         h += '<div style="font-size:0.84rem;color:var(--text-primary);line-height:1.6;word-wrap:break-word">' + (c.body_html || esc(c.body_plain || '')) + '</div>';
         h += '</div>';
       });
-      h += '</div>';
     }
+    // Composer — open to any member (forum or full); locked threads hide it.
+    if (!post.is_locked) {
+      h += '<div style="margin-top:16px">';
+      h += '<textarea id="comment-input" placeholder="Share your thoughts or add to the discussion..." maxlength="8000" style="width:100%;min-height:84px;padding:12px 14px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:0.86rem;line-height:1.5;resize:vertical"></textarea>';
+      h += '<div id="comment-error" style="display:none;color:#c0392b;font-size:0.78rem;margin-top:6px"></div>';
+      h += '<div style="display:flex;justify-content:flex-end;margin-top:8px">';
+      h += '<button class="btn-primary" id="comment-submit" onclick="submitComment(\'' + post.id + '\')">Post comment</button>';
+      h += '</div>';
+      h += '</div>';
+    } else {
+      h += '<div style="font-size:0.78rem;color:var(--text-secondary);font-style:italic;margin-top:8px">This thread is locked. New comments are closed.</div>';
+    }
+    h += '</div>';
 
     center.innerHTML = h;
     window.scrollTo(0,0);
@@ -2389,6 +2405,49 @@ function teaserHtml(post) {
   if (ps && ps.length) return ps.slice(0, 3).join('');
   var plain = (post.body_plain || post.excerpt || '').slice(0, 450);
   return plain ? '<p>' + esc(plain) + '</p>' : '';
+}
+
+// Post a member comment, then reload the thread so it renders with the new
+// comment and an updated count. Body is escaped server-side (create-comment.js).
+async function submitComment(postId) {
+  var ta = document.getElementById('comment-input');
+  var btn = document.getElementById('comment-submit');
+  var errEl = document.getElementById('comment-error');
+  if (!ta) return;
+  var body = ta.value.trim();
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+  if (!body) { if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Write something first.'; } return; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Posting...'; }
+  try {
+    var res = await fetch('/.netlify/functions/create-comment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), action: 'create', post_id: postId, body: body })
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not post comment.');
+    await viewPost(postId);
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Post comment'; }
+    if (errEl) { errEl.style.display = 'block'; errEl.textContent = e.message; }
+  }
+}
+
+// Delete a comment (author or admin). Reloads the thread on success.
+async function deleteComment(commentId, postId) {
+  if (!window.confirm('Delete this comment?')) return;
+  try {
+    var res = await fetch('/.netlify/functions/create-comment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), action: 'delete', comment_id: commentId })
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not delete comment.');
+    await viewPost(postId);
+  } catch (e) {
+    alert(e.message);
+  }
 }
 
 // ════════════════════════════════════════
