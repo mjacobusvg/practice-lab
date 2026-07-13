@@ -1229,6 +1229,29 @@ a { color: inherit; text-decoration: none; }
 .post-prose img { max-width: 100%; border-radius: 6px; margin: 12px 0; }
 .post-prose pre, .post-prose code { background: var(--bg-main); padding: 2px 6px; border-radius: 4px; font-size: 0.85em; }
 .post-prose pre { padding: 14px; overflow-x: auto; margin: 12px 0; }
+.post-prose h4 { font-family: var(--font-heading); font-size: 0.95rem; color: var(--text-heading); margin: 16px 0 8px; line-height: 1.3; }
+/* Rich formatting inside comment/reply bodies (scaled down from post-prose) */
+.rich-body h2, .rich-body h3, .rich-body h4 { font-family: var(--font-heading); color: var(--text-heading); line-height: 1.3; margin: 12px 0 6px; }
+.rich-body h2 { font-size: 1rem; } .rich-body h3 { font-size: 0.92rem; } .rich-body h4 { font-size: 0.86rem; }
+.rich-body p { margin: 0 0 8px; } .rich-body p:last-child { margin-bottom: 0; }
+.rich-body strong { color: var(--text-heading); font-weight: 700; }
+.rich-body em { font-style: italic; }
+.rich-body a { color: var(--teal); text-decoration: underline; }
+.rich-body ul, .rich-body ol { margin: 6px 0 8px; padding-left: 22px; }
+.rich-body li { margin-bottom: 4px; }
+.rich-body hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+.rich-body blockquote { border-left: 3px solid var(--teal); padding: 4px 12px; margin: 8px 0; color: var(--text-secondary); }
+.rich-body code { background: var(--bg-main); padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
+.rich-body img { max-width: 100%; border-radius: 6px; margin: 8px 0; }
+/* Composer formatting toolbar + emoji picker */
+.md-toolbar { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; position: relative; }
+.md-btn { min-width: 30px; height: 30px; padding: 0 8px; border: 1px solid var(--border); background: var(--bg-card); color: var(--text-primary); border-radius: 6px; cursor: pointer; font-size: 0.82rem; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.md-btn:hover { border-color: var(--teal); color: var(--teal); }
+.md-btn b { font-weight: 800; } .md-btn i { font-style: italic; }
+.emoji-pop { position: absolute; z-index: 50; top: 34px; right: 0; width: 244px; max-height: 200px; overflow-y: auto; background: var(--bg-card); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.18); padding: 8px; display: none; grid-template-columns: repeat(8, 1fr); gap: 2px; }
+.emoji-pop.open { display: grid; }
+.emoji-pop button { border: none; background: none; cursor: pointer; font-size: 1.15rem; padding: 4px; border-radius: 6px; }
+.emoji-pop button:hover { background: var(--teal-glow); }
 
 /* ══════════════════════════════════════════
    SKELETON
@@ -2675,7 +2698,7 @@ async function viewPost(postId) {
       out += '<div style="font-size:0.75rem;color:var(--text-secondary);flex:1">' + cNameHtml + ' &middot; ' + formatDate(c.created_at) + '</div>';
       if (canDelete) out += '<button onclick="deleteComment(\'' + c.id + '\',\'' + post.id + '\')" title="Delete" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:0.72rem;padding:2px 4px">Delete</button>';
       out += '</div>';
-      out += '<div style="font-size:0.84rem;color:var(--text-primary);line-height:1.6;word-wrap:break-word">' + (c.body_html || esc(c.body_plain || '')) + '</div>';
+      out += '<div class="rich-body" style="font-size:0.84rem;color:var(--text-primary);line-height:1.6;word-wrap:break-word">' + (c.body_html || esc(c.body_plain || '')) + '</div>';
       // Reaction bar + Reply action row
       out += '<div class="comment-actions">';
       out += reactionBarHtml('comment', c.id, cReactMap[c.id] || { heart: 0, helpful: 0, insight: 0, mine: null });
@@ -3220,6 +3243,81 @@ function readFileAsDataURL(file) {
     r.onerror = function() { reject(new Error('Could not read the file.')); };
     r.readAsDataURL(file);
   });
+}
+
+// ── Formatting toolbar (Markdown helpers) ────────────────────────────────────
+// The server renders a safe subset of Markdown (richtext.js); these buttons just
+// insert that syntax around the selection. Emoji are plain unicode.
+function mdSurround(taId, before, after) {
+  var ta = document.getElementById(taId); if (!ta) return;
+  var s = ta.selectionStart, e = ta.selectionEnd;
+  var sel = ta.value.slice(s, e);
+  ta.value = ta.value.slice(0, s) + before + sel + after + ta.value.slice(e);
+  if (sel) { ta.selectionStart = s + before.length; ta.selectionEnd = s + before.length + sel.length; }
+  else { ta.selectionStart = ta.selectionEnd = s + before.length; }
+  ta.focus();
+}
+function mdLinePrefix(taId, prefix) {
+  var ta = document.getElementById(taId); if (!ta) return;
+  var s = ta.selectionStart, e = ta.selectionEnd;
+  var start = ta.value.lastIndexOf('\n', s - 1) + 1;
+  var end = ta.value.indexOf('\n', e); if (end === -1) end = ta.value.length;
+  var block = ta.value.slice(start, end);
+  var newBlock = block.split('\n').map(function (l) { return prefix + l; }).join('\n');
+  ta.value = ta.value.slice(0, start) + newBlock + ta.value.slice(end);
+  ta.selectionStart = ta.selectionEnd = start + newBlock.length;
+  ta.focus();
+}
+function mdInsert(taId, str) {
+  var ta = document.getElementById(taId); if (!ta) return;
+  var s = ta.selectionStart;
+  ta.value = ta.value.slice(0, s) + str + ta.value.slice(ta.selectionEnd);
+  ta.selectionStart = ta.selectionEnd = s + str.length;
+  ta.focus();
+}
+function mdLink(taId) {
+  var ta = document.getElementById(taId); if (!ta) return;
+  var s = ta.selectionStart, e = ta.selectionEnd;
+  var sel = ta.value.slice(s, e) || 'text';
+  var ins = '[' + sel + '](https://)';
+  ta.value = ta.value.slice(0, s) + ins + ta.value.slice(e);
+  var pos = s + ins.length - 1; // cursor just before the closing paren
+  ta.selectionStart = ta.selectionEnd = pos;
+  ta.focus();
+}
+
+var EMOJI_SET = ['😀','😄','😉','🙂','😊','😍','🤔','😮',
+  '😢','😭','😠','😱','🙅','🙌','👍','👎',
+  '👏','🙏','💪','🤝','❤️','🔥','⭐','✨',
+  '✅','❌','⚠️','💡','📌','📊','📈','📝',
+  '📅','⏰','🚀','🎉','👋','🙋','🧠','💊',
+  '🩺','🧑‍⚕️','🏥','💰','💸','💳','📞','📧'];
+
+function toggleEmojiPop(ev, taId) {
+  if (ev) ev.stopPropagation();
+  var popId = taId.split('-')[0] + '-emoji';
+  var pop = document.getElementById(popId);
+  if (!pop) return;
+  if (pop.classList.contains('open')) { pop.classList.remove('open'); return; }
+  if (!pop.dataset.filled) {
+    pop.innerHTML = EMOJI_SET.map(function (em) {
+      return '<button type="button" onclick="insertEmoji(event,\'' + taId + '\',\'' + popId + '\',\'' + em + '\')">' + em + '</button>';
+    }).join('');
+    pop.dataset.filled = '1';
+  }
+  pop.classList.add('open');
+  // Close on the next outside click.
+  setTimeout(function () {
+    document.addEventListener('click', function handler(e) {
+      if (!pop.contains(e.target)) { pop.classList.remove('open'); document.removeEventListener('click', handler); }
+    });
+  }, 0);
+}
+function insertEmoji(ev, taId, popId, em) {
+  if (ev) ev.stopPropagation();
+  mdInsert(taId, em);
+  var pop = document.getElementById(popId);
+  if (pop) pop.classList.remove('open');
 }
 
 // ── Poll builder (composer) ──────────────────────────────────────────────────
@@ -4631,7 +4729,19 @@ checkAuth();
     <label>Title</label>
     <input type="text" id="mp-title" maxlength="200" placeholder="What's your question or topic?">
     <label>Body</label>
-    <textarea id="mp-body" rows="9" maxlength="20000" placeholder="Write in plain text. Blank lines become paragraph breaks."></textarea>
+    <div class="md-toolbar" id="mp-toolbar">
+      <button type="button" class="md-btn" title="Bold" onclick="mdSurround('mp-body','**','**')"><b>B</b></button>
+      <button type="button" class="md-btn" title="Italic" onclick="mdSurround('mp-body','*','*')"><i>I</i></button>
+      <button type="button" class="md-btn" title="Heading" onclick="mdLinePrefix('mp-body','## ')">H</button>
+      <button type="button" class="md-btn" title="Bulleted list" onclick="mdLinePrefix('mp-body','- ')">&#8226; List</button>
+      <button type="button" class="md-btn" title="Numbered list" onclick="mdLinePrefix('mp-body','1. ')">1. List</button>
+      <button type="button" class="md-btn" title="Quote" onclick="mdLinePrefix('mp-body','&gt; ')">&#8220; Quote</button>
+      <button type="button" class="md-btn" title="Link" onclick="mdLink('mp-body')">&#128279; Link</button>
+      <button type="button" class="md-btn" title="Divider" onclick="mdInsert('mp-body','\n\n---\n\n')">&#8213; Divider</button>
+      <button type="button" class="md-btn" title="Emoji" onclick="toggleEmojiPop(event,'mp-body')">&#128512;</button>
+      <div class="emoji-pop" id="mp-emoji"></div>
+    </div>
+    <textarea id="mp-body" rows="9" maxlength="20000" placeholder="Write here. Use the toolbar for bold, italic, headings, lists, links, and emoji. Blank lines start new paragraphs."></textarea>
     <label>Images (optional, up to 6)</label>
     <div class="mp-image-row">
       <button type="button" class="mp-add-image" id="mp-add-image" onclick="document.getElementById('mp-image-input').click()">+ Add image</button>

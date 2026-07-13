@@ -9,6 +9,7 @@
 const { verifyToken } = require('./_lib/session');
 const { notifyNewPost } = require('./_lib/notify');
 const { resolveMentions, linkifyMentions, notifyMentions } = require('./_lib/mentions');
+const { toRichHtml } = require('./_lib/richtext');
 
 const ADMIN_EMAILS = ['michael@thinkbeyondpsych.com'];
 const MICHAEL_ACCOUNT_ID = '00000000-0000-0000-0000-000000000001';
@@ -45,20 +46,6 @@ function cleanPoll(poll) {
   });
   if (cleaned.length < 2) return null;
   return { question: q, options: cleaned.slice(0, 6).map(function (t, i) { return { id: 'o' + (i + 1), text: t }; }) };
-}
-
-function esc(s) {
-  return String(s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-// Plain text -> simple paragraph HTML (blank lines = paragraph breaks)
-function toHtml(plain) {
-  return plain
-    .split(/\n{2,}/)
-    .map(p => '<p>' + esc(p.trim()).replace(/\n/g, '<br>') + '</p>')
-    .join('\n');
 }
 
 async function sb(path, method, body, env) {
@@ -127,7 +114,7 @@ exports.handler = async function (event) {
 
       // Resolve @mentions and linkify the body.
       const mentioned = await resolveMentions(p.mention_ids);
-      const bodyHtml = linkifyMentions(toHtml(body), mentioned);
+      const bodyHtml = linkifyMentions(toRichHtml(body), mentioned);
 
       const imageUrls = cleanImageUrls(p.image_urls);
       const poll = cleanPoll(p.poll);

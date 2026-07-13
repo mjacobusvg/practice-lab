@@ -18,6 +18,7 @@
 const { verifyToken } = require('./_lib/session');
 const { notifyNewPost } = require('./_lib/notify');
 const { resolveMentions, linkifyMentions, notifyMentions } = require('./_lib/mentions');
+const { toRichHtml } = require('./_lib/richtext');
 
 // The only spaces members may START a thread in. Slugs must match public.spaces.
 const MEMBER_POSTABLE_SPACES = ['quick-q', 'member-threads', 'case-discussions', 'tool-feedback'];
@@ -51,24 +52,6 @@ function cleanPoll(poll) {
   });
   if (cleaned.length < 2) return null;
   return { question: q, options: cleaned.slice(0, 6).map(function (t, i) { return { id: 'o' + (i + 1), text: t }; }) };
-}
-
-function esc(s) {
-  return String(s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-// Plain text -> safe paragraph HTML. Everything is escaped first, so no member
-// markup survives; blank lines split paragraphs, single newlines become <br>.
-function toHtml(plain) {
-  return String(plain)
-    .replace(/\r\n/g, '\n')
-    .split(/\n{2,}/)
-    .map(function (p) { return p.trim(); })
-    .filter(function (p) { return p.length; })
-    .map(function (p) { return '<p>' + esc(p).replace(/\n/g, '<br>') + '</p>'; })
-    .join('\n');
 }
 
 exports.handler = async function (event) {
@@ -141,7 +124,7 @@ exports.handler = async function (event) {
 
     // Resolve @mentions (ids the composer collected) and linkify the body.
     const mentioned = await resolveMentions(p.mention_ids);
-    const bodyHtml = linkifyMentions(toHtml(rawBody), mentioned);
+    const bodyHtml = linkifyMentions(toRichHtml(rawBody), mentioned);
 
     const imageUrls = cleanImageUrls(p.image_urls);
     const poll = cleanPoll(p.poll);

@@ -18,26 +18,9 @@
 const { verifyToken } = require('./_lib/session');
 const { notifyNewComment } = require('./_lib/notify');
 const { resolveMentions, linkifyMentions, notifyMentions } = require('./_lib/mentions');
+const { toRichHtml } = require('./_lib/richtext');
 
 const MAX_COMMENT_CHARS = 8000;
-
-function esc(s) {
-  return String(s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-// Plain text -> safe paragraph HTML. Blank lines split paragraphs; single
-// newlines become <br>. Everything is escaped first, so no markup survives.
-function toHtml(plain) {
-  return String(plain)
-    .replace(/\r\n/g, '\n')
-    .split(/\n{2,}/)
-    .map(function (p) { return p.trim(); })
-    .filter(function (p) { return p.length; })
-    .map(function (p) { return '<p>' + esc(p).replace(/\n/g, '<br>') + '</p>'; })
-    .join('\n');
-}
 
 exports.handler = async function (event) {
   const headers = {
@@ -113,7 +96,7 @@ exports.handler = async function (event) {
 
       // Resolve @mentions (ids the composer collected) and linkify the body.
       const mentioned = await resolveMentions(p.mention_ids);
-      const bodyHtml = linkifyMentions(toHtml(raw), mentioned);
+      const bodyHtml = linkifyMentions(toRichHtml(raw), mentioned);
 
       const row = {
         post_id: postId,
