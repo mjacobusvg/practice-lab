@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trigger Forum Sync - Think Beyond Practice</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#F9F7F5;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+    .card{background:#fff;border:1px solid #E8E3DD;border-radius:16px;padding:40px 36px;width:100%;max-width:480px}
+    h1{font-size:18px;font-weight:700;color:#1A1714;margin-bottom:4px}
+    .sub{font-size:13px;color:#5C5650;margin-bottom:24px;line-height:1.5}
+    label{display:block;font-size:11px;font-weight:700;color:#9C958F;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+    input{width:100%;border:1.5px solid #E8E3DD;border-radius:8px;padding:11px 13px;font-size:14px;color:#1A1714;background:#fff;margin-bottom:14px}
+    input:focus{outline:none;border-color:#1D6FA4}
+    .row{display:flex;gap:10px;align-items:center;margin-bottom:16px;font-size:13px;color:#5C5650}
+    button{width:100%;padding:12px;background:#1D6FA4;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer}
+    button:hover{background:#185d8c}
+    button:disabled{background:#94a3b8;cursor:not-allowed}
+    .result{margin-top:18px;font-size:13px;line-height:1.5;padding:12px 14px;border-radius:8px;display:none}
+    .result.ok{display:block;background:#e7f5ec;color:#1c6b3e}
+    .result.err{display:block;background:#fce8e8;color:#9b2c2c}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Forum Content Sync</h1>
+    <p class="sub">Pulls Circle posts and comments into the platform's forum (forum_posts / forum_comments). Runs in the background for a few minutes. Safe to run repeatedly; it dedupes and continues where it left off.</p>
+
+    <label for="secret">Backfill Secret</label>
+    <input type="password" id="secret" placeholder="Enter secret" autocomplete="off">
+
+    <div class="row">
+      <input type="checkbox" id="full" style="width:auto;margin:0" checked>
+      <label for="full" style="margin:0;text-transform:none;font-size:13px;color:#1A1714;font-weight:500">Full backfill (uncheck for incremental / new posts only)</label>
+    </div>
+
+    <button id="runBtn" onclick="runSync()">Run forum sync</button>
+    <div class="result" id="result"></div>
+  </div>
+
+  <script>
+    async function runSync() {
+      var secret = document.getElementById('secret').value.trim();
+      var full = document.getElementById('full').checked;
+      var out = document.getElementById('result');
+      if (!secret) { out.className = 'result err'; out.textContent = 'Enter the backfill secret.'; return; }
+      var btn = document.getElementById('runBtn');
+      btn.disabled = true; btn.textContent = 'Starting...';
+      try {
+        var res = await fetch('/.netlify/functions/sync-forum-background', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ secret: secret, full: full })
+        });
+        // Background functions return 202 Accepted and run asynchronously.
+        if (res.status === 202 || res.ok) {
+          out.className = 'result ok';
+          out.innerHTML = 'Sync started. It runs in the background for a few minutes. ' +
+            'Refresh the platform forum shortly to see new posts. If a full backfill does not finish in one pass, just run it again.';
+        } else {
+          var t = await res.text();
+          out.className = 'result err';
+          out.textContent = 'Failed (' + res.status + '): ' + t.slice(0, 200);
+        }
+      } catch (e) {
+        out.className = 'result err'; out.textContent = 'Error: ' + e.message;
+      } finally {
+        btn.disabled = false; btn.textContent = 'Run forum sync';
+      }
+    }
+    document.getElementById('secret').addEventListener('keydown', function(e){ if(e.key==='Enter') runSync(); });
+  </script>
+</body>
+</html>
