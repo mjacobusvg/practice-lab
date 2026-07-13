@@ -2813,7 +2813,7 @@ async function showLibrary() {
     try {
       var { data, error } = await SB
         .from('template_library')
-        .select('id, title, description, category, min_tier, is_paid, price_cents, preview, source_post_id, forum_posts:source_post_id(id,title)')
+        .select('id, title, description, category, min_tier, is_paid, price_cents, preview, source_post_id, file_url, storage_path, forum_posts:source_post_id(id,title)')
         .eq('visible', true)
         .order('sort_order', { ascending: true })
         .order('created_at', { ascending: false });
@@ -2828,7 +2828,7 @@ function renderLibrary() {
   var center = document.getElementById('center');
   var h = '<div class="space-head"><div class="space-accent" style="background:var(--copper)"></div>';
   h += '<h1>Template Library</h1>';
-  h += '<p class="space-tagline">Ready-to-use letters, notes, policies, and forms. Download, adapt, done.</p>';
+  h += '<p class="space-tagline">Note templates, billing references, phrasing banks, and practice guides — open, adapt, done.</p>';
   h += (isAdmin() ? '<button class="rm-add-btn" style="margin-top:8px" onclick="openTemplateAdd()">+ Add template</button>' : '');
   h += '</div>';
 
@@ -2856,15 +2856,18 @@ function renderLibrary() {
     else if (t.min_tier === 'forum') h += '<span class="tpl-tag">Member</span>';
     h += '</div>';
     if (t.description) h += '<div class="post-meta">' + esc(t.description) + '</div>';
-    if (t.source_post_id && isPaidMember()) {
+    var hasFile = !!(t.file_url || t.storage_path);
+    if (!hasFile && t.source_post_id && isPaidMember()) {
       var srcTitle = (t.forum_posts && t.forum_posts.title) ? t.forum_posts.title : 'the full post';
-      h += '<div class="tpl-source" onclick="event.stopPropagation();viewPost(\'' + t.source_post_id + '\')">&#128196; Read the full post: ' + esc(srcTitle) + ' &rarr;</div>';
+      h += '<div class="tpl-source" onclick="event.stopPropagation();viewPost(\'' + t.source_post_id + '\')">&#128196; ' + esc(srcTitle) + ' &rarr;</div>';
     }
     h += '</div>';
     if (locked) {
       h += '<button class="tpl-btn locked" onclick="showJoin(\'\')">&#128274; ' + (t.is_paid ? 'Buy' : 'Unlock') + '</button>';
-    } else {
+    } else if (hasFile) {
       h += '<button class="tpl-btn" onclick="downloadTemplate(\'' + t.id + '\')">Download</button>';
+    } else if (t.source_post_id) {
+      h += '<button class="tpl-btn" onclick="viewPost(\'' + t.source_post_id + '\')">Open</button>';
     }
     h += '</div>';
   });
