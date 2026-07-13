@@ -13,6 +13,7 @@
 //   { token, action:'unread_count' }
 
 const { verifyToken } = require('./_lib/session');
+const { emailBcc } = require('./_lib/notify');
 
 const MAX_BODY = 5000;
 
@@ -100,7 +101,7 @@ exports.handler = async function (event) {
       if (!raw) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Message is empty' }) };
       if (raw.length > MAX_BODY) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Message is too long' }) };
 
-      const recRows = await sb('accounts?id=eq.' + encodeURIComponent(toId) + '&select=id,name,is_admin&limit=1', 'GET');
+      const recRows = await sb('accounts?id=eq.' + encodeURIComponent(toId) + '&select=id,name,is_admin,email,notify_email_dms&limit=1', 'GET');
       if (!recRows || !recRows.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'Recipient not found' }) };
       const rec = recRows[0];
 
@@ -125,7 +126,16 @@ exports.handler = async function (event) {
         last_message_at: msg.created_at, last_message_preview: preview, last_sender_id: me.id
       }, 'return=minimal');
 
-      if (rec.is_admin) { await notifyAdmin(me.name || 'A member', raw); }
+      // Email the recipient if they opted in (best-effort; never blocks send).
+      if (rec.notify_email_dms && rec.email) {
+        try {
+          var dmHtml = '<p><strong>' + esc(me.name || 'A member') + '</strong> sent you a message on Think Beyond Practice:</p>' +
+            '<blockquote>' + esc(String(raw).slice(0, 400)) + '</blockquote>' +
+            '<p><a href="https://thinkbeyondpractice.com/platform.html">Reply on the platform &rarr;</a></p>' +
+            '<p style="font-size:12px;color:#888">Manage email notifications in your profile.</p>';
+          await emailBcc([rec.email], 'New message from ' + (me.name || 'a member'), dmHtml);
+        } catch (e) { /* best-effort */ }
+      }
 
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, message: {
         id: msg.id, conversation_id: convId, sender_id: me.id, recipient_id: toId,

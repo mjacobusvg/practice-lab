@@ -16,6 +16,7 @@
 //   { action:'delete', token, comment_id }   (author of the comment, or an admin)
 
 const { verifyToken } = require('./_lib/session');
+const { notifyNewComment } = require('./_lib/notify');
 
 const MAX_COMMENT_CHARS = 8000;
 
@@ -94,7 +95,7 @@ exports.handler = async function (event) {
       if (raw.length > MAX_COMMENT_CHARS) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Comment is too long' }) };
 
       // Post must exist and be open to replies.
-      const posts = await sb('forum_posts?id=eq.' + encodeURIComponent(postId) + '&select=id,comment_count,is_locked&limit=1', 'GET');
+      const posts = await sb('forum_posts?id=eq.' + encodeURIComponent(postId) + '&select=id,title,author_id,comment_count,is_locked&limit=1', 'GET');
       if (!posts || !posts.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'Post not found' }) };
       if (posts[0].is_locked) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'This thread is locked' }) };
 
@@ -123,6 +124,14 @@ exports.handler = async function (event) {
       // Keep the denormalized counter honest.
       const nextCount = (Number(posts[0].comment_count) || 0) + 1;
       try { await sb('forum_posts?id=eq.' + encodeURIComponent(postId), 'PATCH', { comment_count: nextCount }); } catch (e) {}
+
+      // Notify the post author + prior commenters (in-app + email per preference).
+      try {
+        await notifyNewComment(
+          { id: postId, title: posts[0].title, author_id: posts[0].author_id },
+          { id: me.id, name: me.name }
+        );
+      } catch (e) { /* never block commenting */ }
 
       return {
         statusCode: 200, headers, body: JSON.stringify({

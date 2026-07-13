@@ -7,6 +7,7 @@
 //   SUPABASE_SERVICE_KEY   service_role key (never expose client-side)
 
 const { verifyToken } = require('./_lib/session');
+const { notifyNewPost } = require('./_lib/notify');
 
 const ADMIN_EMAILS = ['michael@thinkbeyondpsych.com'];
 const MICHAEL_ACCOUNT_ID = '00000000-0000-0000-0000-000000000001';
@@ -112,6 +113,14 @@ exports.handler = async function (event) {
         post_type: 'discussion'
       };
       const inserted = await sb('forum_posts', 'POST', row, env);
+      // Notify all members (in-app) and email opted-in members — admin post.
+      try {
+        await notifyNewPost(
+          { id: inserted[0].id, title: title, author_id: MICHAEL_ACCOUNT_ID },
+          { id: MICHAEL_ACCOUNT_ID, name: 'Michael Van Gelder' },
+          { emailBlast: true }
+        );
+      } catch (e) { /* never block posting */ }
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, post_id: inserted[0].id }) };
     }
 

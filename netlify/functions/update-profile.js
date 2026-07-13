@@ -83,6 +83,11 @@ exports.handler = async function (event) {
     }
     const accountId = accts[0].id;
 
+    if (p.action === 'get') {
+      const rows = await sb('accounts?' + emailFilter + '&select=name,credentials,headline,location,practice_type,directory_visible,avatar_url,bio,website,linkedin_url,notify_email_posts,notify_email_comments,notify_email_dms&limit=1', 'GET');
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, account: (rows && rows[0]) || {} }) };
+    }
+
     if (p.action === 'save') {
       const patch = {};
       // Text fields: trim + length-cap. Empty string clears the field (-> null).
@@ -103,6 +108,10 @@ exports.handler = async function (event) {
       if (Object.prototype.hasOwnProperty.call(p, 'directory_visible')) {
         patch.directory_visible = !!p.directory_visible;
       }
+      // Email notification preferences.
+      ['notify_email_posts', 'notify_email_comments', 'notify_email_dms'].forEach(function (f) {
+        if (Object.prototype.hasOwnProperty.call(p, f)) patch[f] = !!p[f];
+      });
       // Never allow name to be blanked to null (it anchors the identity everywhere).
       if (patch.name === null) delete patch.name;
 

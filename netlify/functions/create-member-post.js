@@ -16,6 +16,7 @@
 // Body: { token, space, title, body, tags?: string[] }   (tags = canonical names)
 
 const { verifyToken } = require('./_lib/session');
+const { notifyNewPost } = require('./_lib/notify');
 
 // The only spaces members may START a thread in. Slugs must match public.spaces.
 const MEMBER_POSTABLE_SPACES = ['quick-q', 'member-threads', 'case-discussions', 'tool-feedback'];
@@ -96,11 +97,12 @@ exports.handler = async function (event) {
 
   try {
     // Resolve the member's account. Every signed-in member has one.
-    const accts = await sb('accounts?email=eq.' + encodeURIComponent(email) + '&select=id&limit=1', 'GET');
+    const accts = await sb('accounts?email=eq.' + encodeURIComponent(email) + '&select=id,name&limit=1', 'GET');
     if (!accts || !accts.length) {
       return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'No account found for this session. Refresh and sign in again.' }) };
     }
     const authorId = accts[0].id;
+    const authorName = accts[0].name || 'A member';
 
     // Resolve the target space id.
     const spaces = await sb('spaces?slug=eq.' + encodeURIComponent(space) + '&select=id&limit=1', 'GET');
@@ -145,6 +147,15 @@ exports.handler = async function (event) {
         } catch (e) { /* tag linking is best-effort; the post still stands */ }
       }
     }
+
+    // Notify all other members in-app (no email blast for member posts).
+    try {
+      await notifyNewPost(
+        { id: post.id, title: title, author_id: authorId },
+        { id: authorId, name: authorName },
+        { emailBlast: false }
+      );
+    } catch (e) { /* never block posting */ }
 
     return { statusCode: 200, headers, body: JSON.stringify({ ok: true, post_id: post.id, tags: attachedTags }) };
   } catch (e) {
