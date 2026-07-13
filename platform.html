@@ -1452,6 +1452,19 @@ var S = { user: null, isMember: false, view: 'home', space: null };
 // No client-side allowlists: tier and admin are read from the database.
 function isAdmin() { return !!(S.user && S.user.is_admin); }
 function getAuthToken() { try { return S.authToken || localStorage.getItem('tbp_auth_token') || ''; } catch(e) { return ''; } }
+// Fire-and-forget page-view logging. Identity + tier come from the signed token
+// server-side (log-view.js); the browser only supplies the path. Never blocks UI.
+function logView(path) {
+  try {
+    var token = getAuthToken();
+    if (!token) return; // only members are attributable
+    fetch('/.netlify/functions/log-view', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: token, path: path || (location.pathname + location.hash) })
+    }).catch(function(){});
+  } catch (e) {}
+}
 function tierRank() { var t = (S.user && S.user.tier) || 'free'; return { free:0, forum:1, full:2 }[t] || 0; }
 function isFullMember() { return tierRank() >= 2; }
 function isPaidMember() { return tierRank() >= 1; }
@@ -1763,6 +1776,7 @@ async function loadRailStats() {
 function showHome() {
   S.view = 'home'; S.space = null;
   clearActive();
+  logView('/platform/home');
   var h = '';
 
   // Zone 1: Ask the Archive
@@ -2254,6 +2268,7 @@ async function viewPost(postId) {
   if (!postId) return;
   closeSidebar();
   S.view = 'post';
+  logView('/platform/post/' + postId);
   var center = document.getElementById('center');
   center.innerHTML = '<div class="skel skel-h"></div><div class="skel skel-p"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
 
@@ -2383,6 +2398,7 @@ function go(key) {
   closeSidebar();
   if (key === 'ask-archive') { window.location.href = '/ask-archive-public.html'; return; }
   S.view = 'space'; S.space = key;
+  logView('/platform/space/' + key);
   clearActive();
   var el = document.querySelector('[data-key="'+key+'"]');
   if (el) el.classList.add('active');

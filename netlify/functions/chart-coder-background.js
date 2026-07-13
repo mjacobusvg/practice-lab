@@ -13,6 +13,7 @@
 
 const https = require('https');
 const { verifyToken } = require('./_lib/session');
+const { logUsage } = require('./_lib/usage');
 
 // ── Prompts (verbatim from pm-chart-coder.html) ──────────────────────────────
 
@@ -291,7 +292,8 @@ function ccCallAnthropic(systemPrompt, userMessage, apiKey, maxTokens) {
           const parsed = JSON.parse(data);
           let text = '';
           if (parsed.content) parsed.content.forEach((b) => { if (b.type === 'text') text += b.text; });
-          resolve(text);
+          const u = parsed.usage || {};
+          resolve({ text: text, inputTokens: u.input_tokens, outputTokens: u.output_tokens });
         } catch (e) {
           reject(new Error('Invalid JSON from Anthropic: ' + data.substring(0, 200)));
         }
@@ -364,21 +366,46 @@ exports.handler = async function (event) {
   try {
     const userMsg = 'Visit type: ' + (visitType || '') + '\n\nChart note:\n\n' + noteText + (preflightContext || '');
 
+    // Sum token usage across the three Sonnet passes (all same model, so one row
+    // with the totals is cost-accurate). Content is never logged.
+    let ccIn = 0, ccOut = 0;
+    function tallyUsage(r) {
+      if (r && typeof r.inputTokens === 'number') ccIn += r.inputTokens;
+      if (r && typeof r.outputTokens === 'number') ccOut += r.outputTokens;
+    }
+
     console.log('CC audit start for job:', job_id);
-    const auditRaw = await ccCallAnthropic(CC_AUDIT_PROMPT, 'Chart note to audit:\n\n' + noteText, anthropicKey, 4000);
+    const auditRes = await ccCallAnthropic(CC_AUDIT_PROMPT, 'Chart note to audit:\n\n' + noteText, anthropicKey, 4000);
+    tallyUsage(auditRes);
+    const auditRaw = auditRes.text;
     const audit = ccParseJSON(auditRaw);
     console.log('CC audit parsed:', audit ? 'OK clean=' + audit.clean : 'NULL parse-failed raw-len ' + (auditRaw ? auditRaw.length : 0));
 
     console.log('CC mdm start for job:', job_id);
-    const mdmRaw = await ccCallAnthropic(CC_MDM_EVAL_PROMPT, userMsg, anthropicKey, 3000);
-    const mdm = ccParseJSON(mdmRaw);
+    const mdmRes = await ccCallAnthropic(CC_MDM_EVAL_PROMPT, userMsg, anthropicKey, 3000);
+    tallyUsage(mdmRes);
+    const mdm = ccParseJSON(mdmRes.text);
 
     console.log('CC review start for job:', job_id);
     const reviewInput = userMsg + '\n\nINITIAL MDM EVALUATION:\n' + JSON.stringify(mdm, null, 2);
-    const reviewRaw = await ccCallAnthropic(CC_REVIEW_PROMPT, reviewInput, anthropicKey, 3000);
-    const review = ccParseJSON(reviewRaw);
+    const reviewRes = await ccCallAnthropic(CC_REVIEW_PROMPT, reviewInput, anthropicKey, 3000);
+    tallyUsage(reviewRes);
+    const review = ccParseJSON(reviewRes.text);
 
     await saveResult(supabaseUrl, supabaseKey, job_id, 'complete', { audit: audit, mdm: mdm, review: review });
+
+    // Usage metadata only (no PHI): who ran Chart Coder, at what tier, tokens + cost.
+    logUsage({
+      tool: 'Chart Coder',
+      mode: 'audit+mdm+review',
+      event: 'interaction',
+      email: session.claims.email,
+      tier: session.claims.tier,
+      model: 'claude-sonnet-4-6',
+      inputTokens: ccIn,
+      outputTokens: ccOut
+    });
+
     console.log('Chart Coder background complete for job:', job_id);
   } catch (err) {
     console.error('Chart Coder background error:', err.message);

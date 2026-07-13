@@ -8,18 +8,21 @@
 // timeout is not tripped by long generations the way a single blocking request
 // is. The browser reassembles the streamed text.
 //
-// Does NOT log message content. Does NOT inspect or label traffic.
-// Covered by the Anthropic API BAA.
+// Does NOT log message content. It logs USAGE METADATA ONLY — tool label, model,
+// token COUNTS, cost, and the member's email/tier from their signed session.
+// Token counts are not PHI and message content never leaves this function, so
+// this stays consistent with the Anthropic API BAA.
 //
 // Environment variables:
 //   ANTHROPIC_API_KEY - Anthropic API key
 //
 // Request body: raw Anthropic /v1/messages payload
-//   { model, max_tokens, system?, messages, tools? }
+//   { model, max_tokens, system?, messages, tools?, tool? }   (tool = usage label)
 // Response: text/event-stream (Anthropic SSE passed through verbatim)
 
 const https = require('https');
 const { verifyToken } = require('./_lib/session');
+const { logUsage, toolFromReferer } = require('./_lib/usage');
 
 const TRIAL_DAYS = 7;
 
@@ -96,8 +99,8 @@ exports.handler = async function (event, context) {
   }
 
   // AUTH: clinical tools are full-tier OR a forum member with a live 7-day trial.
-  // Identity is not used for anything except gating here (no PHI logged). The gate
-  // closes the open-proxy credit-burn hole while keeping trial users working.
+  // The gate closes the open-proxy credit-burn hole while keeping trial users
+  // working. The verified claims also feed usage attribution below.
   const authHeader = event.headers.authorization || event.headers.Authorization || '';
   const sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
   const session = verifyToken(sessionToken);
@@ -127,13 +130,18 @@ exports.handler = async function (event, context) {
   }
   const requestBody = JSON.stringify(requestPayload);
 
+  // Usage-label inputs resolved before the call. Content is never captured.
+  const referer = event.headers.referer || event.headers.Referer || '';
+  const usageTool = body.tool || toolFromReferer(referer) || 'Clinical Tool';
+  const usageMode = body.mode || null;
+
   // Collect the streamed SSE from Anthropic. Because we read chunks as they
   // arrive, the underlying socket stays active throughout generation. We
-  // accumulate the assistant text and return it as a normal JSON response,
-  // matching the existing { content: [{ type:'text', text }] } shape so the
-  // browser callers need no change beyond pointing here.
+  // accumulate the assistant text and the token-usage counters (from the
+  // message_start / message_delta events), then return the text as a normal JSON
+  // response matching the existing { content: [{ type:'text', text }] } shape.
   try {
-    const fullText = await new Promise((resolve, reject) => {
+    const result = await new Promise((resolve, reject) => {
       const options = {
         hostname: 'api.anthropic.com',
         path: '/v1/messages',
@@ -150,6 +158,8 @@ exports.handler = async function (event, context) {
         let buffer = '';
         let assembled = '';
         let apiErr = null;
+        let inputTokens = null;
+        let outputTokens = null;
 
         res.setEncoding('utf8');
         res.on('data', (chunk) => {
@@ -168,6 +178,13 @@ exports.handler = async function (event, context) {
                 const evt = JSON.parse(dataStr);
                 if (evt.type === 'content_block_delta' && evt.delta && typeof evt.delta.text === 'string') {
                   assembled += evt.delta.text;
+                } else if (evt.type === 'message_start' && evt.message && evt.message.usage) {
+                  // input_tokens is final at message_start; output_tokens starts small.
+                  if (typeof evt.message.usage.input_tokens === 'number') inputTokens = evt.message.usage.input_tokens;
+                  if (typeof evt.message.usage.output_tokens === 'number') outputTokens = evt.message.usage.output_tokens;
+                } else if (evt.type === 'message_delta' && evt.usage && typeof evt.usage.output_tokens === 'number') {
+                  // Cumulative output token count; last one wins.
+                  outputTokens = evt.usage.output_tokens;
                 } else if (evt.type === 'error') {
                   apiErr = evt.error ? (evt.error.message || JSON.stringify(evt.error)) : 'stream error';
                 }
@@ -184,7 +201,7 @@ exports.handler = async function (event, context) {
           } else if (apiErr) {
             reject(new Error('Anthropic stream error: ' + apiErr));
           } else {
-            resolve(assembled);
+            resolve({ text: assembled, inputTokens: inputTokens, outputTokens: outputTokens });
           }
         });
       });
@@ -194,11 +211,23 @@ exports.handler = async function (event, context) {
       req.end();
     });
 
+    // Usage metadata only (no content). Attributed to the verified member.
+    logUsage({
+      tool: usageTool,
+      mode: usageMode,
+      event: 'interaction',
+      email: session.claims.email,
+      tier: session.claims.tier,
+      model: requestPayload.model,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens
+    });
+
     // Return in the same non-streaming shape the callers already parse.
     return {
       statusCode: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: [{ type: 'text', text: fullText }] })
+      body: JSON.stringify({ content: [{ type: 'text', text: result.text }] })
     };
 
   } catch (err) {

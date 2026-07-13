@@ -11,9 +11,14 @@
 // The authenticated proxy (anthropic-proxy.js, members only) is used by the real
 // in-product tools. This demo endpoint is ONLY for the public demo page.
 //
+// Usage tracking: logs one anonymous tool_usage row (no identity — these are
+// logged-out visitors) with real token counts + cost, so demo volume/cost is
+// visible alongside member usage.
+//
 // Env: ANTHROPIC_API_KEY (+ optional SUPABASE_URL/SUPABASE_SERVICE_KEY for usage log)
 
 const https = require('https');
+const { logUsage } = require('./_lib/usage');
 
 const DEMO_MODEL = 'claude-haiku-4-5-20251001'; // forced; demo already used this
 const DEMO_MAX_TOKENS = 1000;                    // hard cap
@@ -49,27 +54,6 @@ exports.handler = async function(event, context) {
     const body = JSON.parse(event.body);
     const systemPrompt = body.system || '';
     const messages = body.messages || [];
-
-    // Optional usage logging (best-effort)
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
-    if (supabaseUrl && supabaseKey) {
-      fetch(supabaseUrl + '/rest/v1/tool_usage', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': supabaseKey,
-          'Authorization': 'Bearer ' + supabaseKey,
-          'Prefer': 'return=minimal'
-        },
-        body: JSON.stringify({
-          tool: 'Practice Lab Demo',
-          mode: 'public_demo',
-          event: 'interaction',
-          created_at: new Date().toISOString()
-        })
-      }).catch(function(e) { console.log('Usage log error:', e.message); });
-    }
 
     // LOCKED payload: forced model, capped tokens, NO caller-supplied tools, and
     // max_tokens can only go DOWN from the cap, never up.
@@ -112,6 +96,19 @@ exports.handler = async function(event, context) {
       req.on('error', (e) => { reject(e); });
       req.write(requestBody);
       req.end();
+    });
+
+    // Anonymous usage row (logged-out visitors) with real token counts + cost.
+    const usage = (result && result.usage) || {};
+    logUsage({
+      tool: 'Practice Lab Demo',
+      mode: 'public_demo',
+      event: 'interaction',
+      email: null,
+      tier: null,
+      model: DEMO_MODEL,
+      inputTokens: usage.input_tokens,
+      outputTokens: usage.output_tokens
     });
 
     return { statusCode: 200, headers, body: JSON.stringify(result) };

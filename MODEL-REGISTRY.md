@@ -29,8 +29,25 @@
 
 | File | Default model | Notes |
 |---|---|---|
-| anthropic-proxy.js | claude-haiku-4-5-20251001 | Non-PHI (Practice Lab, Ask the Archive). Logs usage to Supabase. |
-| clinical-proxy.js | claude-haiku-4-5-20251001 | PHI tools (Letter Gen, Chart Coder, Interaction Checker). Pass-through, no content logging. Covered by Anthropic API BAA. |
+| anthropic-proxy.js | claude-haiku-4-5-20251001 | Non-PHI (Practice Lab, chat tools). Logs usage to `tool_usage` with account_email + tier (from the signed token), model, real token counts, and est cost. |
+| anthropic-proxy-demo.js | claude-haiku-4-5-20251001 | Public Practice Lab demo (unauthenticated). Logs anonymous usage rows with token counts + cost. |
+| clinical-proxy.js | claude-haiku-4-5-20251001 | PHI tools (Letter Gen, Note Builder, Termination, Monitoring). Streams from Anthropic; logs USAGE METADATA ONLY (counts + cost + email/tier), never content. Covered by Anthropic API BAA. |
+| clinical-proxy-stream.mjs | claude-haiku-4-5-20251001 | Streaming PHI proxy. Tees the passthrough stream to read token counts; logs usage metadata only (counts + cost + email/tier), never content. |
+
+## Usage tracking (tracking overhaul, 2026-07)
+
+All AI-calling surfaces log one row to `public.tool_usage` via `_lib/usage.js`
+(`logUsage`) — or an inlined mirror in the `.mjs` files, which cannot require
+`_lib`. Each row carries `account_email` + `tier` (from the caller's signed
+session, when present), `model`, `input_tokens`, `output_tokens`, and
+`est_cost_usd` (computed from a per-model price table in `_lib/usage.js`).
+The clinical proxies log token COUNTS only, never message content. Cost prices
+live in `MODEL_COST_PER_MTOK` in `_lib/usage.js` (and are duplicated inline in
+`clinical-proxy-stream.mjs` and `inngest-serve.mjs`); keep the three in sync.
+Page views are logged to `public.page_views` by `log-view.js` (email + tier +
+path from the signed token). Instrumented AI paths: the four proxies above,
+`chart-coder-background.js` (3 Sonnet passes, summed), and `inngest-serve.mjs`
+(Ask the Archive: query expansion + synthesis + source descriptions).
 
 ## Embeddings (separate lifecycle — not affected by Anthropic chat-model retirements)
 

@@ -8,9 +8,13 @@
 // continuously, the function never trips Netlify's idle/inactivity timeout that
 // kills a blocking (buffered) proxy on slow generations.
 //
-// Does NOT log message content. Covered by the Anthropic API BAA.
+// Does NOT log message content. It logs USAGE METADATA ONLY — tool label, model,
+// token COUNTS, cost, and the member's email/tier — by TEEing the passthrough
+// stream (the client still receives every byte unchanged) and reading the
+// message_start / message_delta usage events. Token counts are not PHI and no
+// content is captured, so this stays consistent with the Anthropic API BAA.
 //
-// Request body: raw Anthropic /v1/messages payload { model, max_tokens, system?, messages, tools? }
+// Request body: raw Anthropic /v1/messages payload { model, max_tokens, system?, messages, tools?, tool? }
 // Response: text/event-stream (Anthropic SSE passed through verbatim). The
 // browser is responsible for reassembling the text from content_block_delta events.
 
@@ -60,6 +64,77 @@ function verifyToken(token) {
     return { valid: false, reason: 'expired' };
   }
   return { valid: true, claims };
+}
+// ────────────────────────────────────────────────────────────────────────────
+
+// ── Inlined usage logging (mirror of _lib/usage.js; .mjs can't require _lib) ──
+// Keep MODEL_COST_PER_MTOK and the referer map in sync with _lib/usage.js.
+const MODEL_COST_PER_MTOK = {
+  'claude-haiku-4-5-20251001': { in: 1.0, out: 5.0 },
+  'claude-sonnet-4-6':         { in: 3.0, out: 15.0 },
+  'claude-sonnet-4-5':         { in: 3.0, out: 15.0 }
+};
+function estCostUsd(model, inputTokens, outputTokens) {
+  const price = MODEL_COST_PER_MTOK[model];
+  if (!price) return null;
+  const inTok = Number(inputTokens) || 0;
+  const outTok = Number(outputTokens) || 0;
+  return Math.round(((inTok * price.in + outTok * price.out) / 1e6) * 1e6) / 1e6;
+}
+const REFERER_TOOL_MAP = [
+  ['pm-letter-generator', 'Letter Generator'],
+  ['pm-chart-coder', 'Chart Coder'],
+  ['pm-clinical-note-builder', 'Clinical Note Builder'],
+  ['pm-interaction-checker', 'Interaction Checker'],
+  ['pm-termination-workflow', 'Termination Workflow'],
+  ['pm-monitoring-protocol', 'Monitoring Protocol'],
+  ['note-builder-trial', 'Note Builder (Trial)'],
+  ['chart-coder-trial', 'Chart Coder (Trial)']
+];
+function toolFromReferer(referer) {
+  if (!referer || typeof referer !== 'string') return null;
+  let path = referer;
+  try { path = new URL(referer).pathname; } catch (e) {}
+  path = path.toLowerCase();
+  for (let i = 0; i < REFERER_TOOL_MAP.length; i++) {
+    if (path.indexOf(REFERER_TOOL_MAP[i][0]) !== -1) return REFERER_TOOL_MAP[i][1];
+  }
+  return null;
+}
+async function logUsage(row) {
+  try {
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+    if (!SUPABASE_URL || !SERVICE_KEY) return;
+    const email = row.email ? String(row.email).toLowerCase().trim() : null;
+    const model = row.model || null;
+    const inputTokens = (row.inputTokens != null) ? Number(row.inputTokens) : null;
+    const outputTokens = (row.outputTokens != null) ? Number(row.outputTokens) : null;
+    const cost = model ? estCostUsd(model, inputTokens, outputTokens) : null;
+    await fetch(SUPABASE_URL + '/rest/v1/tool_usage', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SERVICE_KEY,
+        'Authorization': 'Bearer ' + SERVICE_KEY,
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({
+        tool: row.tool || 'Clinical Tool',
+        mode: row.mode || null,
+        event: row.event || 'interaction',
+        created_at: new Date().toISOString(),
+        account_email: email,
+        tier: row.tier || null,
+        model: model,
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        est_cost_usd: cost
+      })
+    });
+  } catch (e) {
+    console.log('tool_usage log error:', e && e.message);
+  }
 }
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -130,7 +205,8 @@ export default async function handler(request) {
 
   // AUTH: full-tier OR a forum member with a live 7-day trial (shared clock).
   // Identity from signed token (body.token or Authorization: Bearer). Closes the
-  // open credit-burn hole while keeping trial users working.
+  // open credit-burn hole while keeping trial users working. The claims also feed
+  // usage attribution below.
   const authHeader = request.headers.get('authorization') || '';
   const sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
   const session = verifyToken(sessionToken);
@@ -162,6 +238,11 @@ export default async function handler(request) {
   };
   if (body.tools && Array.isArray(body.tools)) payload.tools = body.tools;
 
+  // Usage-label inputs. Content is never captured — only counts + labels.
+  const referer = request.headers.get('referer') || '';
+  const usageTool = body.tool || toolFromReferer(referer) || 'Clinical Tool';
+  const usageMode = body.mode || null;
+
   const upstream = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -179,9 +260,60 @@ export default async function handler(request) {
     });
   }
 
-  // Pass the Anthropic SSE stream straight through to the browser.
-  // Bytes flow continuously, so the idle timeout never fires.
-  return new Response(upstream.body, {
+  // TEE the passthrough: every byte still flows to the browser unchanged, while a
+  // TransformStream reads the SSE usage events to capture token counts. On flush
+  // (upstream complete) we log one usage-metadata row for the member. No content
+  // is retained — only the numeric input/output token counts.
+  const decoder = new TextDecoder();
+  let sseBuf = '';
+  let inputTokens = null;
+  let outputTokens = null;
+
+  const meter = new TransformStream({
+    transform(chunk, controller) {
+      controller.enqueue(chunk); // passthrough, unchanged
+      try {
+        sseBuf += decoder.decode(chunk, { stream: true });
+        let idx;
+        while ((idx = sseBuf.indexOf('\n\n')) !== -1) {
+          const rawEvent = sseBuf.slice(0, idx);
+          sseBuf = sseBuf.slice(idx + 2);
+          const lines = rawEvent.split('\n');
+          for (const line of lines) {
+            if (!line.startsWith('data:')) continue;
+            const dataStr = line.slice(5).trim();
+            if (!dataStr || dataStr === '[DONE]') continue;
+            try {
+              const evt = JSON.parse(dataStr);
+              if (evt.type === 'message_start' && evt.message && evt.message.usage) {
+                if (typeof evt.message.usage.input_tokens === 'number') inputTokens = evt.message.usage.input_tokens;
+                if (typeof evt.message.usage.output_tokens === 'number') outputTokens = evt.message.usage.output_tokens;
+              } else if (evt.type === 'message_delta' && evt.usage && typeof evt.usage.output_tokens === 'number') {
+                outputTokens = evt.usage.output_tokens;
+              }
+            } catch (e) { /* keep-alive / non-JSON */ }
+          }
+        }
+      } catch (e) { /* metering must never disrupt passthrough */ }
+    },
+    async flush() {
+      await logUsage({
+        tool: usageTool,
+        mode: usageMode,
+        event: 'interaction',
+        email: session.claims.email,
+        tier: session.claims.tier,
+        model: payload.model,
+        inputTokens: inputTokens,
+        outputTokens: outputTokens
+      });
+    }
+  });
+
+  const metered = upstream.body.pipeThrough(meter);
+
+  // Pass the (metered) Anthropic SSE stream straight through to the browser.
+  return new Response(metered, {
     status: 200,
     headers: {
       ...cors,

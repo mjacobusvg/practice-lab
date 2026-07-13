@@ -7,6 +7,56 @@ import { Inngest } from 'inngest';
 import { serve } from 'inngest/lambda';
 import { SESv2Client, SendEmailCommand } from '@aws-sdk/client-sesv2';
 
+// ── USAGE LOGGING (inline mirror of _lib/usage.js; .mjs can't require _lib) ─────
+// Records one tool_usage row per AI call: tool label, model, token COUNTS, cost,
+// and (when the trigger forwarded it) the member's email/tier. Counts only — no
+// question text or content is written. Keep MODEL_COST in sync with _lib/usage.js.
+const USAGE_MODEL_COST_PER_MTOK = {
+  'claude-haiku-4-5-20251001': { in: 1.0, out: 5.0 },
+  'claude-sonnet-4-6':         { in: 3.0, out: 15.0 },
+  'claude-sonnet-4-5':         { in: 3.0, out: 15.0 },
+  'text-embedding-3-small':    { in: 0.02, out: 0.0 }
+};
+function usageEstCost(model, inTok, outTok) {
+  const price = USAGE_MODEL_COST_PER_MTOK[model];
+  if (!price) return null;
+  return Math.round((((Number(inTok) || 0) * price.in + (Number(outTok) || 0) * price.out) / 1e6) * 1e6) / 1e6;
+}
+async function logUsage(row) {
+  try {
+    const SUPABASE_URL = process.env.SUPABASE_URL;
+    const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+    if (!SUPABASE_URL || !SERVICE_KEY) return;
+    const email = row.email ? String(row.email).toLowerCase().trim() : null;
+    const model = row.model || null;
+    const inputTokens = (row.inputTokens != null) ? Number(row.inputTokens) : null;
+    const outputTokens = (row.outputTokens != null) ? Number(row.outputTokens) : null;
+    await fetch(`${SUPABASE_URL}/rest/v1/tool_usage`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SERVICE_KEY,
+        'Authorization': `Bearer ${SERVICE_KEY}`,
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify({
+        tool: row.tool || 'Unknown',
+        mode: row.mode || null,
+        event: row.event || 'interaction',
+        created_at: new Date().toISOString(),
+        account_email: email,
+        tier: row.tier || null,
+        model: model,
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        est_cost_usd: model ? usageEstCost(model, inputTokens, outputTokens) : null
+      })
+    });
+  } catch (e) {
+    console.log('tool_usage log error:', e && e.message);
+  }
+}
+
 // ── CONSTANTS ─────────────────────────────────────────────────────────────────
 
 const MATCH_THRESHOLD = 0.45;
@@ -318,8 +368,12 @@ const askArchivePipeline = inngest.createFunction(
   },
   { event: 'ask-archive/question.submitted' },
   async function({ event }) {
-    const { job_id, question, member_requested, conversation_history } = event.data;
+    const { job_id, question, member_requested, conversation_history, account_email, tier } = event.data;
     const conversationHistory = conversation_history || [];
+    // Identity is best-effort: Ask the Archive is a mostly-public tool, so these
+    // are null unless the trigger forwarded a verified token's claims.
+    const usageEmail = account_email || null;
+    const usageTier = tier || null;
     console.log('conversationHistory length:', conversationHistory.length, '| question:', question.substring(0, 50));
 
     const supabaseUrl = process.env.SUPABASE_URL;
@@ -373,6 +427,9 @@ const askArchivePipeline = inngest.createFunction(
         if (expansionRes.ok) {
           try {
             const expansionData = await expansionRes.json();
+            if (expansionData.usage) {
+              logUsage({ tool: 'Ask the Archive', mode: 'query_expansion', event: 'subcall', email: usageEmail, tier: usageTier, model: 'claude-haiku-4-5-20251001', inputTokens: expansionData.usage.input_tokens, outputTokens: expansionData.usage.output_tokens });
+            }
             const variants = JSON.parse(expansionData.content[0].text.replace(/```json|```/g, '').trim());
             if (Array.isArray(variants)) queryVariants = [question, ...variants].slice(0, 4);
           } catch(e) {}
@@ -596,6 +653,10 @@ Return ONLY the JSON object. Nothing before or after it.`;
       console.log('Claude synthesis complete, saving result...');
 
       const claudeData = await claudeRes.json();
+      // Synthesis is the actual answer — count it as the interaction. Token counts only.
+      if (claudeData.usage) {
+        logUsage({ tool: 'Ask the Archive', mode: 'synthesis', event: 'interaction', email: usageEmail, tier: usageTier, model: 'claude-sonnet-4-6', inputTokens: claudeData.usage.input_tokens, outputTokens: claudeData.usage.output_tokens });
+      }
       const parsed = JSON.parse(claudeData.content[0].text.replace(/```json|```/g, '').trim());
 
       if (parsed.status === 'unanswered') {
@@ -625,6 +686,9 @@ Return ONLY the JSON object. Nothing before or after it.`;
 
         if (descRes.ok) {
           const descData = await descRes.json();
+          if (descData.usage) {
+            logUsage({ tool: 'Ask the Archive', mode: 'source_descriptions', event: 'subcall', email: usageEmail, tier: usageTier, model: 'claude-haiku-4-5-20251001', inputTokens: descData.usage.input_tokens, outputTokens: descData.usage.output_tokens });
+          }
           const descParsed = JSON.parse(descData.content[0].text.replace(/```json|```/g, '').trim());
           if (Array.isArray(descParsed)) {
             descParsed.forEach(function(s) { sourceDescMap[s.index] = s.description; });

@@ -2,6 +2,7 @@
 // Lightweight dispatcher — creates job row in Supabase, sends event to Inngest, returns job_id immediately.
 
 const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
+const { verifyToken } = require('./_lib/session');
 
 // Internal notification email via Amazon SES (under the AWS BAA).
 // Replaces the previous Resend integration so all outbound mail runs through SES.
@@ -81,6 +82,19 @@ exports.handler = async function(event, context) {
   } catch(e) {
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Failed to create job' }) };
   }
+  // Best-effort identity for usage attribution. Ask the Archive is mostly public,
+  // so a token may not be present; when it is, forward the verified email + tier
+  // to the pipeline so its AI usage is attributed. Never gates the request.
+  let account_email = null, tier = null;
+  try {
+    const authHeader = event.headers.authorization || event.headers.Authorization || '';
+    const sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+    if (sessionToken) {
+      const session = verifyToken(sessionToken);
+      if (session.valid) { account_email = session.claims.email || null; tier = session.claims.tier || null; }
+    }
+  } catch (e) {}
+
   // Send event to Inngest
   try {
     const { Inngest } = await import('inngest');
@@ -91,7 +105,9 @@ exports.handler = async function(event, context) {
         job_id,
         question,
         member_requested: body.member_requested || false,
-        conversation_history: body.conversation_history || []
+        conversation_history: body.conversation_history || [],
+        account_email,
+        tier
       }
     });
   } catch(e) {

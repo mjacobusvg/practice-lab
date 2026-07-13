@@ -1,69 +1,75 @@
 // netlify/functions/log-view.js
-// Records which member opened which page.
-// Email comes from the verified token, never from the browser.
+// Records which member opened which page (page_views).
+// Identity comes from the verified signed token, never from the browser.
+//
+// NOTE: this previously used a local, INCORRECT copy of verifyToken (it HMACed
+// the base64 header instead of the decoded JSON payload, and treated `exp` as
+// seconds when the minter writes milliseconds). That rejected every real token,
+// so page_views stayed empty. It now uses the shared _lib/session verifier, so
+// the algorithm is guaranteed to match the minters (circle-auth / platform-auth).
 
-const crypto = require('crypto');
-const { createClient } = require('@supabase/supabase-js');
-
-function verifyToken(token) {
-  if (!token || typeof token !== 'string') return null;
-  const parts = token.split('.');
-  if (parts.length !== 2) return null;
-
-  const [payloadB64, sig] = parts;
-  const expected = crypto
-    .createHmac('sha256', process.env.SESSION_SIGNING_SECRET)
-    .update(payloadB64)
-    .digest('base64url');
-
-  if (sig !== expected) return null;
-
-  try {
-    const claims = JSON.parse(Buffer.from(payloadB64, 'base64url').toString());
-    if (claims.exp && Date.now() / 1000 > claims.exp) return null;
-    return claims;
-  } catch {
-    return null;
-  }
-}
+const { verifyToken } = require('./_lib/session');
 
 exports.handler = async (event) => {
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Content-Type': 'application/json'
+  };
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers, body: '' };
   if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, body: 'method not allowed' };
+    return { statusCode: 405, headers, body: JSON.stringify({ ok: false, error: 'method not allowed' }) };
   }
 
   let body;
   try {
     body = JSON.parse(event.body || '{}');
   } catch {
-    return { statusCode: 400, body: 'bad json' };
+    return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'bad json' }) };
   }
 
-  const token =
-    body.token ||
-    (event.headers.authorization || '').replace(/^Bearer\s+/i, '');
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const token = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
 
-  const claims = verifyToken(token);
-  if (!claims || !claims.email) {
-    return { statusCode: 401, body: 'unauthorized' };
+  const session = verifyToken(token);
+  if (!session.valid || !session.claims || !session.claims.email) {
+    return { statusCode: 401, headers, body: JSON.stringify({ ok: false, error: 'unauthorized' }) };
   }
 
-  const path = (body.path || '/').slice(0, 200);
-
-  const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_KEY
-  );
-
-  const { error } = await supabase.from('page_views').insert({
-    email: claims.email,
-    path
-  });
-
-  if (error) {
-    console.error('page_views insert failed:', error.message);
-    return { statusCode: 500, body: 'insert failed' };
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+  if (!SUPABASE_URL || !SERVICE_KEY) {
+    return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'server misconfigured' }) };
   }
 
-  return { statusCode: 200, body: 'ok' };
+  const path = String(body.path || '/').slice(0, 200);
+  const row = {
+    email: String(session.claims.email).toLowerCase().trim(),
+    tier: session.claims.tier || null,
+    path: path
+  };
+
+  try {
+    const res = await fetch(SUPABASE_URL + '/rest/v1/page_views', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SERVICE_KEY,
+        'Authorization': 'Bearer ' + SERVICE_KEY,
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify(row)
+    });
+    if (!res.ok) {
+      const t = await res.text();
+      console.error('page_views insert failed:', res.status, t.slice(0, 200));
+      return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'insert failed' }) };
+    }
+  } catch (e) {
+    console.error('page_views insert error:', e && e.message);
+    return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'insert error' }) };
+  }
+
+  return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
 };

@@ -1,4 +1,15 @@
+// netlify/functions/anthropic-proxy.js
+// Non-PHI Anthropic proxy (Practice Lab simulations, member chat tools).
+//
+// Usage tracking: after each generation we log ONE tool_usage row via
+// _lib/usage.logUsage — WHO (account_email + tier from the signed token, when the
+// caller sends one), which tool (from Referer / body.tool), the model, real token
+// counts from the Anthropic response, and the computed cost. Logging is
+// best-effort and never blocks or breaks the response.
+
 const https = require('https');
+const { verifyToken } = require('./_lib/session');
+const { logUsage, toolFromReferer, detectPracticeLabMode } = require('./_lib/usage');
 
 exports.handler = async function(event, context) {
   if (event.httpMethod === 'OPTIONS') {
@@ -36,41 +47,25 @@ exports.handler = async function(event, context) {
     const systemPrompt = body.system || '';
     const messages = body.messages || [];
 
-    // Detect Practice Lab mode from system prompt
-    function detectMode(prompt) {
-      const p = prompt.toLowerCase();
-      if (p.includes('billing simulator') || p.includes('era') || p.includes('remittance')) return 'Billing Simulator';
-      if (p.includes('denial drill') || p.includes('denial scenario')) return 'Denial Drills';
-      if (p.includes('chart coder') || p.includes('coding judgment')) return 'Chart Coder';
-      if (p.includes('mdm foundation') || p.includes('medical decision')) return 'MDM Foundations';
-      if (p.includes('psychotherapy') || p.includes('therapeutic')) return 'Psychotherapy Documentation';
-      if (p.includes('paper remittance')) return 'Paper Remittance';
-      if (p.includes('angela') || p.includes('insurance representative')) return 'Insurance Rep Chat';
-      return 'Practice Lab';
+    // Identity for attribution only — this endpoint is NOT gated (Practice Lab
+    // is open to members without a hard token requirement). If the caller sent a
+    // valid signed token, capture email + tier; otherwise the row is anonymous.
+    const authHeader = event.headers.authorization || event.headers.Authorization || '';
+    const sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+    let email = null, tier = null;
+    if (sessionToken) {
+      const session = verifyToken(sessionToken);
+      if (session.valid) {
+        email = session.claims.email || null;
+        tier = session.claims.tier || null;
+      }
     }
 
-    const mode = detectMode(systemPrompt);
-
-    // Log usage to Supabase asynchronously — don't block the response
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
-    if (supabaseUrl && supabaseKey) {
-      fetch(supabaseUrl + '/rest/v1/tool_usage', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': supabaseKey,
-          'Authorization': 'Bearer ' + supabaseKey,
-          'Prefer': 'return=minimal'
-        },
-        body: JSON.stringify({
-          tool: 'Practice Lab',
-          mode: mode,
-          event: 'interaction',
-          created_at: new Date().toISOString()
-        })
-      }).catch(function(e) { console.log('Usage log error:', e.message); });
-    }
+    // Tool label: explicit body.tool wins, then the calling page (Referer),
+    // then default to Practice Lab (this proxy's primary caller).
+    const referer = event.headers.referer || event.headers.Referer || '';
+    const tool = body.tool || toolFromReferer(referer) || 'Practice Lab';
+    const mode = body.mode || detectPracticeLabMode(systemPrompt) || null;
 
     const requestPayload = {
       model: body.model || 'claude-haiku-4-5-20251001',
@@ -114,6 +109,19 @@ exports.handler = async function(event, context) {
       req.on('error', (e) => { reject(e); });
       req.write(requestBody);
       req.end();
+    });
+
+    // Log AFTER the call so token counts and cost are real (from result.usage).
+    const usage = (result && result.usage) || {};
+    logUsage({
+      tool: tool,
+      mode: mode,
+      event: 'interaction',
+      email: email,
+      tier: tier,
+      model: requestPayload.model,
+      inputTokens: usage.input_tokens,
+      outputTokens: usage.output_tokens
     });
 
     return { statusCode: 200, headers, body: JSON.stringify(result) };
