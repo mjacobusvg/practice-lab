@@ -977,6 +977,15 @@ a { color: inherit; text-decoration: none; }
 .reply-link:hover { color:var(--teal); }
 .reply-cancel { background:none; border:1px solid var(--border); color:var(--text-secondary); cursor:pointer; font-size:0.78rem; border-radius:6px; padding:6px 12px; }
 .reply-cancel:hover { border-color:var(--teal); color:var(--teal); }
+/* @mention chip (in rendered bodies) + composer autocomplete */
+.mention { color:var(--teal); font-weight:600; cursor:pointer; }
+.mention:hover { text-decoration:underline; }
+.mention-dd { position:absolute; z-index:6000; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,0.18); overflow:hidden; max-height:240px; overflow-y:auto; }
+.mdd-item { display:flex; align-items:center; gap:8px; padding:8px 12px; cursor:pointer; font-size:0.84rem; color:var(--text-primary); }
+.mdd-item.active, .mdd-item:hover { background:var(--teal-glow); }
+.mdd-item img { width:24px; height:24px; border-radius:50%; object-fit:cover; flex-shrink:0; }
+.mdd-item .mdd-ini { width:24px; height:24px; border-radius:50%; background:var(--teal); color:var(--text-inverse); display:inline-flex; align-items:center; justify-content:center; font-size:0.7rem; font-weight:700; flex-shrink:0; }
+.mdd-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 /* Profile page */
 .profile-head { display:flex; gap:18px; align-items:flex-start; margin-bottom:20px; flex-wrap:wrap; }
 .profile-avatar { width:88px; height:88px; border-radius:50%; overflow:hidden; flex-shrink:0; border:2px solid var(--border); display:inline-flex; align-items:center; justify-content:center; background:var(--bg-card); }
@@ -2573,6 +2582,7 @@ async function viewPost(postId) {
     h += '</div>';
 
     center.innerHTML = h;
+    mentionSetup(document.getElementById('comment-input'));
     window.scrollTo(0,0);
   } catch(e) {
     console.error('viewPost:', e);
@@ -2606,7 +2616,7 @@ async function submitComment(postId) {
     var res = await fetch('/.netlify/functions/create-comment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: getAuthToken(), action: 'create', post_id: postId, body: body })
+      body: JSON.stringify({ token: getAuthToken(), action: 'create', post_id: postId, body: body, mention_ids: mentionGetIds(ta) })
     });
     var data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Could not post comment.');
@@ -2717,7 +2727,7 @@ function toggleReplyBox(commentId, postId) {
     + '<button class="btn-primary" id="reply-submit-' + commentId + '" onclick="submitReply(\'' + commentId + '\',\'' + postId + '\')">Reply</button>'
     + '</div>';
   var input = document.getElementById(ta);
-  if (input) input.focus();
+  if (input) { mentionSetup(input); input.focus(); }
 }
 
 async function submitReply(commentId, postId) {
@@ -2733,7 +2743,7 @@ async function submitReply(commentId, postId) {
     var res = await fetch('/.netlify/functions/create-comment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: getAuthToken(), action: 'create', post_id: postId, parent_comment_id: commentId, body: body })
+      body: JSON.stringify({ token: getAuthToken(), action: 'create', post_id: postId, parent_comment_id: commentId, body: body, mention_ids: mentionGetIds(ta) })
     });
     var data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Could not post reply.');
@@ -2742,6 +2752,125 @@ async function submitReply(commentId, postId) {
     if (btn) { btn.disabled = false; btn.textContent = 'Reply'; }
     if (errEl) { errEl.style.display = 'block'; errEl.textContent = e.message; }
   }
+}
+
+// ════════════════════════════════════════
+// @MENTION AUTOCOMPLETE (composers)
+// ════════════════════════════════════════
+// Attach to any textarea: typing "@name" pops a member picker; selecting inserts
+// "@Full Name " and records the account id on the element. On submit, callers pass
+// mentionGetIds(ta) so the server can notify + linkify. Names are read from the
+// public accounts columns (id/name/avatar_url) via the anon client.
+var _mdd = null, _mddTa = null, _mddItems = [], _mddIdx = -1, _mddTimer = null, _mddStart = -1;
+
+function mentionEnsureDD() {
+  if (_mdd) return _mdd;
+  _mdd = document.createElement('div');
+  _mdd.className = 'mention-dd';
+  _mdd.style.display = 'none';
+  document.body.appendChild(_mdd);
+  return _mdd;
+}
+function mentionHide() { if (_mdd) _mdd.style.display = 'none'; _mddItems = []; _mddIdx = -1; _mddStart = -1; _mddTa = null; }
+
+function mentionSetup(ta) {
+  if (!ta || ta._mentionReady) return;
+  ta._mentionReady = true;
+  ta._mentions = [];
+  ta.addEventListener('input', function () { mentionOnInput(ta); });
+  ta.addEventListener('keydown', function (e) { mentionOnKey(ta, e); });
+  ta.addEventListener('blur', function () { setTimeout(mentionHide, 150); });
+}
+
+// The "@query" ending exactly at the caret, or null. Requires a boundary before
+// "@" so email addresses (foo@bar) never trigger the picker.
+function mentionQueryAt(ta) {
+  var pos = ta.selectionStart;
+  var text = ta.value.slice(0, pos);
+  var m = text.match(/(?:^|[\s(])@([\w][\w .'\-]*)$/);
+  if (!m) return null;
+  var q = m[1];
+  if (q.length > 40) return null;
+  return { q: q, start: pos - q.length - 1, end: pos };
+}
+
+function mentionOnInput(ta) {
+  var qi = mentionQueryAt(ta);
+  if (!qi || qi.q.trim().length < 1) { mentionHide(); return; }
+  _mddTa = ta; _mddStart = qi.start;
+  clearTimeout(_mddTimer);
+  var query = qi.q, start = qi.start, end = qi.end;
+  _mddTimer = setTimeout(function () { mentionSearch(ta, query, start, end); }, 160);
+}
+
+async function mentionSearch(ta, query, start) {
+  try {
+    var q = query.trim();
+    if (!q) { mentionHide(); return; }
+    var r = await SB.from('accounts').select('id,name,avatar_url').ilike('name', '%' + q + '%').not('name', 'is', null).limit(6);
+    var myId = (S.user && S.user.id) || null;
+    var rows = (r.data || []).filter(function (a) { return a.name && a.id !== myId; });
+    if (!rows.length) { mentionHide(); return; }
+    mentionShow(ta, rows, start);
+  } catch (e) { mentionHide(); }
+}
+
+function mentionShow(ta, rows, start) {
+  var dd = mentionEnsureDD();
+  _mddTa = ta; _mddItems = rows; _mddIdx = 0; _mddStart = start;
+  var rect = ta.getBoundingClientRect();
+  dd.style.left = (rect.left + window.scrollX) + 'px';
+  dd.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+  dd.style.width = Math.max(200, Math.min(rect.width, 340)) + 'px';
+  dd.innerHTML = rows.map(function (a, i) {
+    var pic = a.avatar_url
+      ? '<img src="' + esc(a.avatar_url) + '" alt="">'
+      : '<span class="mdd-ini">' + esc((a.name[0] || '?').toUpperCase()) + '</span>';
+    return '<div class="mdd-item' + (i === 0 ? ' active' : '') + '" data-i="' + i + '" onmousedown="mentionPick(event,' + i + ')">' + pic + '<span class="mdd-name">' + esc(a.name) + '</span></div>';
+  }).join('');
+  dd.style.display = 'block';
+}
+
+function mentionHighlight() {
+  if (!_mdd) return;
+  Array.prototype.forEach.call(_mdd.querySelectorAll('.mdd-item'), function (el) {
+    el.classList.toggle('active', parseInt(el.getAttribute('data-i'), 10) === _mddIdx);
+  });
+}
+
+function mentionOnKey(ta, e) {
+  if (!_mdd || _mdd.style.display === 'none' || _mddTa !== ta) return;
+  if (e.key === 'ArrowDown') { e.preventDefault(); _mddIdx = Math.min(_mddIdx + 1, _mddItems.length - 1); mentionHighlight(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); _mddIdx = Math.max(_mddIdx - 1, 0); mentionHighlight(); }
+  else if (e.key === 'Enter' || e.key === 'Tab') { if (_mddItems.length) { e.preventDefault(); mentionPick(null, _mddIdx < 0 ? 0 : _mddIdx); } }
+  else if (e.key === 'Escape') { mentionHide(); }
+}
+
+function mentionPick(ev, i) {
+  if (ev) ev.preventDefault();
+  var ta = _mddTa; if (!ta) return;
+  var a = _mddItems[i]; if (!a) return;
+  var pos = ta.selectionStart;
+  var before = ta.value.slice(0, _mddStart);
+  var after = ta.value.slice(pos);
+  var insert = '@' + a.name + ' ';
+  ta.value = before + insert + after;
+  var newPos = (before + insert).length;
+  ta.selectionStart = ta.selectionEnd = newPos;
+  ta._mentions = ta._mentions || [];
+  if (!ta._mentions.some(function (m) { return m.id === a.id; })) ta._mentions.push({ id: a.id, name: a.name });
+  mentionHide();
+  ta.focus();
+}
+
+// Ids the member actually still references (their "@name" survives in the text).
+function mentionGetIds(ta) {
+  if (!ta || !ta._mentions) return [];
+  var text = ta.value;
+  return ta._mentions
+    .filter(function (m) { return text.indexOf('@' + m.name) !== -1; })
+    .map(function (m) { return m.id; })
+    .filter(function (v, i, a) { return a.indexOf(v) === i; });
 }
 
 // ════════════════════════════════════════
@@ -2793,9 +2922,10 @@ function openMemberComposer(spaceKey) {
   }
   if (spaceKey && MEMBER_POSTABLE.indexOf(spaceKey) !== -1) sel.value = spaceKey;
   document.getElementById('mp-title').value = '';
-  document.getElementById('mp-body').value = '';
+  var mpBody = document.getElementById('mp-body'); mpBody.value = ''; mpBody._mentions = [];
   var st = document.getElementById('mp-status'); st.textContent = ''; st.className = 'composer-status';
   renderPostTagChips();
+  mentionSetup(document.getElementById('mp-body'));
   document.getElementById('member-composer-overlay').classList.add('open');
 }
 
@@ -2831,7 +2961,7 @@ async function submitMemberPost() {
     var res = await fetch('/.netlify/functions/create-member-post', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: getAuthToken(), space: space, title: title, body: body, tags: S.newPostTags || [] })
+      body: JSON.stringify({ token: getAuthToken(), space: space, title: title, body: body, tags: S.newPostTags || [], mention_ids: mentionGetIds(document.getElementById('mp-body')) })
     });
     var data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Could not post.');
@@ -3392,11 +3522,12 @@ async function toggleNotifPanel() {
 
 function renderNotifPanel(data) {
   var panel = document.getElementById('notif-panel');
-  var s = S.notifSummary || { posts: 0, comments: 0, dms: data.dms || 0 };
+  var s = S.notifSummary || { posts: 0, comments: 0, mentions: 0, dms: data.dms || 0 };
   var h = '<div class="notif-head"><span>Notifications</span><button onclick="markAllNotifsRead()">Mark all read</button></div>';
   h += '<div class="notif-counts">';
   h += '<span><b>' + (s.posts || 0) + '</b>Posts</span>';
   h += '<span><b>' + (s.comments || 0) + '</b>Comments</span>';
+  h += '<span><b>' + (s.mentions || 0) + '</b>Mentions</span>';
   h += '<span onclick="closeNotifPanel();showMessages()" style="cursor:pointer"><b>' + (s.dms || 0) + '</b>Messages</span>';
   h += '</div>';
   var items = data.items || [];
@@ -3404,7 +3535,7 @@ function renderNotifPanel(data) {
     h += '<div class="notif-empty">Nothing new yet.</div>';
   } else {
     items.forEach(function (n) {
-      var verb = n.type === 'post' ? 'posted' : 'commented on';
+      var verb = n.type === 'post' ? 'posted' : (n.type === 'mention' ? 'mentioned you in' : 'commented on');
       h += '<div class="notif-item' + (n.read_at ? '' : ' unread') + '" onclick="openNotif(\'' + n.id + '\',\'' + (n.post_id || '') + '\')">';
       h += '<strong>' + esc(n.actor_name || 'Someone') + '</strong> ' + verb + ' <span class="notif-title">' + esc(n.title || '') + '</span>';
       h += '<div class="notif-time">' + timeAgo(n.created_at) + '</div></div>';

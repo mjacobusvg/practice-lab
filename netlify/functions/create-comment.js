@@ -17,6 +17,7 @@
 
 const { verifyToken } = require('./_lib/session');
 const { notifyNewComment } = require('./_lib/notify');
+const { resolveMentions, linkifyMentions, notifyMentions } = require('./_lib/mentions');
 
 const MAX_COMMENT_CHARS = 8000;
 
@@ -110,12 +111,16 @@ exports.handler = async function (event) {
         parentId = pid;
       }
 
+      // Resolve @mentions (ids the composer collected) and linkify the body.
+      const mentioned = await resolveMentions(p.mention_ids);
+      const bodyHtml = linkifyMentions(toHtml(raw), mentioned);
+
       const row = {
         post_id: postId,
         author_id: me.id,
         parent_comment_id: parentId,
         body_plain: raw,
-        body_html: toHtml(raw),
+        body_html: bodyHtml,
         reaction_count: 0
       };
       const inserted = await sb('forum_comments', 'POST', row);
@@ -131,6 +136,11 @@ exports.handler = async function (event) {
           { id: postId, title: posts[0].title, author_id: posts[0].author_id },
           { id: me.id, name: me.name }
         );
+      } catch (e) { /* never block commenting */ }
+
+      // Notify anyone @mentioned in the comment (in-app + opt-in email).
+      try {
+        await notifyMentions(mentioned, { id: me.id, name: me.name }, { title: posts[0].title || 'a thread', post_id: postId });
       } catch (e) { /* never block commenting */ }
 
       return {

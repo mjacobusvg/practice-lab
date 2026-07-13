@@ -14,6 +14,7 @@
 
 const { verifyToken } = require('./_lib/session');
 const { emailBcc } = require('./_lib/notify');
+const { linkifyMentions } = require('./_lib/mentions');
 
 const MAX_BODY = 5000;
 
@@ -116,9 +117,12 @@ exports.handler = async function (event) {
       }
 
       const preview = raw.replace(/\s+/g, ' ').slice(0, 140);
+      // In a 1:1 DM the only mentionable person is the recipient; linkify their
+      // name for visual consistency (no extra notification — they get the DM).
+      const dmBodyHtml = linkifyMentions(toHtml(raw), [{ id: rec.id, name: rec.name }]);
       const inserted = await sb('dm_messages', 'POST', {
         conversation_id: convId, sender_id: me.id, recipient_id: toId,
-        body_plain: raw, body_html: toHtml(raw)
+        body_plain: raw, body_html: dmBodyHtml
       });
       const msg = inserted[0];
 

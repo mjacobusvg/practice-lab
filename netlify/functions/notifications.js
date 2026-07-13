@@ -59,8 +59,9 @@ exports.handler = async function (event) {
     if (p.action === 'summary') {
       const posts = await countOf('member_notifications?user_id=eq.' + meId + '&type=eq.post&read_at=is.null&select=id');
       const comments = await countOf('member_notifications?user_id=eq.' + meId + '&type=eq.comment&read_at=is.null&select=id');
+      const mentions = await countOf('member_notifications?user_id=eq.' + meId + '&type=eq.mention&read_at=is.null&select=id');
       const dms = await countOf('dm_messages?recipient_id=eq.' + meId + '&read_at=is.null&select=id');
-      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, posts: posts, comments: comments, dms: dms, total: posts + comments + dms }) };
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, posts: posts, comments: comments, mentions: mentions, dms: dms, total: posts + comments + mentions + dms }) };
     }
 
     if (p.action === 'list') {

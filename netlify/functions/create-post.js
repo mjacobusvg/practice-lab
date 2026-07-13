@@ -8,6 +8,7 @@
 
 const { verifyToken } = require('./_lib/session');
 const { notifyNewPost } = require('./_lib/notify');
+const { resolveMentions, linkifyMentions, notifyMentions } = require('./_lib/mentions');
 
 const ADMIN_EMAILS = ['michael@thinkbeyondpsych.com'];
 const MICHAEL_ACCOUNT_ID = '00000000-0000-0000-0000-000000000001';
@@ -98,13 +99,17 @@ exports.handler = async function (event) {
       const spaces = await sb('spaces?slug=eq.' + encodeURIComponent(space) + '&select=id', 'GET', null, env);
       if (!spaces || !spaces.length) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Space not found' }) };
 
+      // Resolve @mentions and linkify the body.
+      const mentioned = await resolveMentions(p.mention_ids);
+      const bodyHtml = linkifyMentions(toHtml(body), mentioned);
+
       const excerpt = body.replace(/\s+/g, ' ').slice(0, 200);
       const row = {
         space_id: spaces[0].id,
         author_id: MICHAEL_ACCOUNT_ID,
         title: title,
         body_plain: body,
-        body_html: toHtml(body),
+        body_html: bodyHtml,
         excerpt: excerpt,
         comment_count: 0,
         reaction_count: 0,
@@ -120,6 +125,10 @@ exports.handler = async function (event) {
           { id: MICHAEL_ACCOUNT_ID, name: 'Michael Van Gelder' },
           { emailBlast: true }
         );
+      } catch (e) { /* never block posting */ }
+      // Notify anyone @mentioned (in-app + opt-in email).
+      try {
+        await notifyMentions(mentioned, { id: MICHAEL_ACCOUNT_ID, name: 'Michael Van Gelder' }, { title: title, post_id: inserted[0].id });
       } catch (e) { /* never block posting */ }
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, post_id: inserted[0].id }) };
     }

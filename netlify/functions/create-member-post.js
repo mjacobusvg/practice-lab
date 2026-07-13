@@ -17,6 +17,7 @@
 
 const { verifyToken } = require('./_lib/session');
 const { notifyNewPost } = require('./_lib/notify');
+const { resolveMentions, linkifyMentions, notifyMentions } = require('./_lib/mentions');
 
 // The only spaces members may START a thread in. Slugs must match public.spaces.
 const MEMBER_POSTABLE_SPACES = ['quick-q', 'member-threads', 'case-discussions', 'tool-feedback'];
@@ -111,13 +112,17 @@ exports.handler = async function (event) {
     }
     const spaceId = spaces[0].id;
 
+    // Resolve @mentions (ids the composer collected) and linkify the body.
+    const mentioned = await resolveMentions(p.mention_ids);
+    const bodyHtml = linkifyMentions(toHtml(rawBody), mentioned);
+
     const excerpt = rawBody.replace(/\s+/g, ' ').slice(0, 200);
     const row = {
       space_id: spaceId,
       author_id: authorId,
       title: title,
       body_plain: rawBody,
-      body_html: toHtml(rawBody),
+      body_html: bodyHtml,
       excerpt: excerpt,
       comment_count: 0,
       reaction_count: 0,
@@ -155,6 +160,11 @@ exports.handler = async function (event) {
         { id: authorId, name: authorName },
         { emailBlast: false }
       );
+    } catch (e) { /* never block posting */ }
+
+    // Notify anyone @mentioned (in-app + opt-in email).
+    try {
+      await notifyMentions(mentioned, { id: authorId, name: authorName }, { title: title, post_id: post.id });
     } catch (e) { /* never block posting */ }
 
     return { statusCode: 200, headers, body: JSON.stringify({ ok: true, post_id: post.id, tags: attachedTags }) };
