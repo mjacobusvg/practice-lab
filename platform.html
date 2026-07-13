@@ -958,6 +958,12 @@ a { color: inherit; text-decoration: none; }
 }
 .composer-status { font-size: 0.76rem; color: var(--text-secondary); margin-right: auto; align-self: center; }
 .composer-status.err { color: #f87171; }
+/* Topic tag pills (post detail, topic picker, browse-by-topic) */
+.tagpill { display:inline-flex; align-items:center; font-size:0.7rem; padding:4px 10px; border-radius:999px; border:1px solid var(--border); color:var(--text-secondary); background:transparent; cursor:pointer; transition:all 0.15s; white-space:nowrap; }
+.tagpill:hover { border-color:var(--teal); color:var(--teal); }
+.tagpill.on { background:var(--teal); border-color:var(--teal); color:var(--text-inverse); }
+.tagpicker { display:flex; flex-wrap:wrap; gap:6px; margin-top:2px; }
+.post-tags { display:flex; flex-wrap:wrap; gap:6px; margin:14px 0 4px; }
 .admin-post-tools { display: flex; gap: 8px; margin: 14px 0 4px; flex-wrap: wrap; }
 .admin-post-tools button {
   background: transparent; border: 1px solid rgba(42,171,184,0.4); color: var(--teal);
@@ -1691,24 +1697,11 @@ function buildRail() {
   // Browse by Topic
   h += '<div class="rail-section">';
   h += '<div class="rail-title">Browse by Topic</div>';
-  var topics = [
-    { name:'Billing & Coding', icon:'&#128176;', count:45 },
-    { name:'Documentation', icon:'&#128203;', count:38 },
-    { name:'ADHD', icon:'&#9889;', count:22 },
-    { name:'Credentialing', icon:'&#128196;', count:18 },
-    { name:'Telehealth', icon:'&#128187;', count:15 },
-    { name:'HIPAA & Compliance', icon:'&#128274;', count:14 },
-    { name:'Bipolar', icon:'&#127776;', count:19 },
-    { name:'Anxiety & Depression', icon:'&#128172;', count:24 },
-    { name:'Private Practice Setup', icon:'&#127968;', count:16 },
-    { name:'EHR & Workflow', icon:'&#9881;', count:12 },
-    { name:'Pharmacology', icon:'&#128138;', count:20 },
-    { name:'Ethics', icon:'&#9878;', count:8 },
-  ];
+  // Chips filter posts by tag (cross-space discovery), not an archive query.
   h += '<div style="display:flex;flex-wrap:wrap;gap:5px">';
-  topics.forEach(function(t) {
-    h += '<span onclick="askDirect(\''+esc(t.name)+'\')" style="font-size:0.7rem;padding:4px 9px;border-radius:4px;border:1px solid var(--border);color:var(--text-secondary);cursor:pointer;transition:all 0.15s;display:inline-flex;align-items:center;gap:4px" onmouseover="this.style.borderColor=\'var(--teal)\';this.style.color=\'var(--teal)\'" onmouseout="this.style.borderColor=\'var(--border)\';this.style.color=\'var(--text-secondary)\'">';
-    h += t.name;
+  TOPIC_TAGS.forEach(function(t) {
+    h += '<span class="tagpill" onclick="showTopic(\''+t.name.replace(/'/g, "\\'")+'\')">';
+    h += '<span style="margin-right:4px">'+t.icon+'</span>' + t.name;
     h += '</span>';
   });
   h += '</div></div>';
@@ -2276,7 +2269,7 @@ async function viewPost(postId) {
     // Load post
     var { data: post, error } = await SB
       .from('forum_posts')
-      .select('id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, canonical_synthesis, ce_candidate, spaces(name, slug), accounts(name, avatar_url, credentials)')
+      .select('id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, canonical_synthesis, ce_candidate, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name))')
       .eq('id', postId)
       .single();
     if (error) throw error;
@@ -2314,6 +2307,10 @@ async function viewPost(postId) {
     h += '<br>' + formatDate(post.created_at);
     if (post.spaces) h += ' &middot; ' + esc(post.spaces.name);
     h += '</div></div>';
+
+    // Topic tags (clickable -> cross-space topic view)
+    var postTags = (post.post_tags || []).map(function(pt) { return pt.tags; }).filter(Boolean);
+    h += postTagPillsHtml(postTags);
 
     // Non-members: excerpt teaser + join gate instead of the full thread.
     // (First few paragraphs prove the answer is good, then convert.)
@@ -2451,6 +2448,142 @@ async function deleteComment(commentId, postId) {
 }
 
 // ════════════════════════════════════════
+// MEMBER POSTS + TOPIC TAGS
+// ════════════════════════════════════════
+// Members may start threads only in these community spaces (server enforces the
+// same allowlist in create-member-post.js). Everywhere else stays Michael-only
+// for posts; members still comment everywhere.
+var MEMBER_POSTABLE = ['quick-q', 'member-threads', 'case-discussions', 'tool-feedback'];
+// Canonical topic tags — names MUST match public.tags (and the seeded set).
+var TOPIC_TAGS = [
+  { name: 'Billing & Coding',       icon: '&#128176;' },
+  { name: 'Documentation',          icon: '&#128203;' },
+  { name: 'ADHD',                   icon: '&#9889;' },
+  { name: 'Credentialing',          icon: '&#128196;' },
+  { name: 'Telehealth',             icon: '&#128187;' },
+  { name: 'HIPAA & Compliance',     icon: '&#128274;' },
+  { name: 'Bipolar',                icon: '&#127775;' },
+  { name: 'Anxiety & Depression',   icon: '&#128172;' },
+  { name: 'Private Practice Setup', icon: '&#127968;' },
+  { name: 'EHR & Workflow',         icon: '&#9881;' },
+  { name: 'Pharmacology',           icon: '&#128138;' },
+  { name: 'Ethics',                 icon: '&#9878;' }
+];
+
+function canMemberPost(spaceKey) {
+  return isPaidMember() && MEMBER_POSTABLE.indexOf(spaceKey) !== -1;
+}
+
+// Render tag pills for a post's tags array of { name }. Clickable -> topic view.
+function postTagPillsHtml(tags) {
+  if (!tags || !tags.length) return '';
+  return '<div class="post-tags">' + tags.map(function(t) {
+    var nm = t && t.name ? t.name : '';
+    if (!nm) return '';
+    return '<span class="tagpill" onclick="event.stopPropagation();showTopic(\'' + nm.replace(/'/g, "\\'") + '\')">' + esc(nm) + '</span>';
+  }).join('') + '</div>';
+}
+
+function openMemberComposer(spaceKey) {
+  if (!isPaidMember()) { showJoin(spaceKey || ''); return; }
+  S.newPostTags = [];
+  var sel = document.getElementById('mp-space');
+  if (!sel.options.length) {
+    MEMBER_POSTABLE.forEach(function(slug) {
+      var sp = findSpace(slug); if (!sp) return;
+      var o = document.createElement('option'); o.value = slug; o.textContent = sp.name; sel.appendChild(o);
+    });
+  }
+  if (spaceKey && MEMBER_POSTABLE.indexOf(spaceKey) !== -1) sel.value = spaceKey;
+  document.getElementById('mp-title').value = '';
+  document.getElementById('mp-body').value = '';
+  var st = document.getElementById('mp-status'); st.textContent = ''; st.className = 'composer-status';
+  renderPostTagChips();
+  document.getElementById('member-composer-overlay').classList.add('open');
+}
+
+function closeMemberComposer() {
+  document.getElementById('member-composer-overlay').classList.remove('open');
+}
+
+function renderPostTagChips() {
+  var wrap = document.getElementById('mp-tags');
+  if (!wrap) return;
+  wrap.innerHTML = TOPIC_TAGS.map(function(t) {
+    var on = S.newPostTags && S.newPostTags.indexOf(t.name) !== -1;
+    return '<span class="tagpill' + (on ? ' on' : '') + '" onclick="togglePostTag(\'' + t.name.replace(/'/g, "\\'") + '\')">' + t.name + '</span>';
+  }).join('');
+}
+
+function togglePostTag(name) {
+  if (!S.newPostTags) S.newPostTags = [];
+  var i = S.newPostTags.indexOf(name);
+  if (i === -1) { if (S.newPostTags.length >= 5) return; S.newPostTags.push(name); }
+  else { S.newPostTags.splice(i, 1); }
+  renderPostTagChips();
+}
+
+async function submitMemberPost() {
+  var st = document.getElementById('mp-status'); st.className = 'composer-status';
+  var space = document.getElementById('mp-space').value;
+  var title = document.getElementById('mp-title').value.trim();
+  var body = document.getElementById('mp-body').value.trim();
+  if (!title || !body) { st.textContent = 'Title and body are required.'; st.className = 'composer-status err'; return; }
+  var btn = document.getElementById('mp-submit'); btn.disabled = true; st.textContent = 'Posting…';
+  try {
+    var res = await fetch('/.netlify/functions/create-member-post', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), space: space, title: title, body: body, tags: S.newPostTags || [] })
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not post.');
+    closeMemberComposer();
+    viewPost(data.post_id);
+  } catch (e) {
+    st.textContent = e.message; st.className = 'composer-status err';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Topic view: every post carrying a given tag, across all spaces. This is the
+// cross-space discovery layer so good threads do not get lost inside one space.
+async function showTopic(tagName) {
+  closeSidebar();
+  S.view = 'topic'; S.space = null;
+  logView('/platform/topic/' + encodeURIComponent(tagName));
+  clearActive();
+  var center = document.getElementById('center');
+  center.innerHTML = '<div class="skel skel-h"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
+  window.scrollTo(0, 0);
+  var h = '<div class="space-head"><div class="space-accent" style="background:var(--teal)"></div>';
+  h += '<h1>' + esc(tagName) + '</h1>';
+  h += '<p class="space-tagline">Every post tagged ' + esc(tagName) + ', across all spaces.</p></div>';
+  try {
+    var { data, error } = await SB
+      .from('forum_posts')
+      .select('id, title, excerpt, created_at, comment_count, reaction_count, is_pinned, accounts(name, avatar_url), post_tags!inner(tags!inner(name))')
+      .eq('post_tags.tags.name', tagName)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    h += '<div class="post-list">';
+    if (!data || !data.length) {
+      h += '<div style="padding:20px;color:var(--text-secondary)">No posts tagged ' + esc(tagName) + ' yet.</div>';
+    } else {
+      data.forEach(function(p) { h += renderPostRow(p); });
+    }
+    h += '</div>';
+    center.innerHTML = h;
+    window.scrollTo(0, 0);
+  } catch (e) {
+    console.error('showTopic:', e);
+    center.innerHTML = '<div style="padding:28px;color:var(--text-secondary)">Error loading topic.</div>';
+  }
+}
+
+// ════════════════════════════════════════
 // SPACE VIEW
 // ════════════════════════════════════════
 function go(key) {
@@ -2468,6 +2601,7 @@ function go(key) {
   h += '<h1>'+sp.name+'</h1>';
   if (SPACE_TAGLINES[key]) h += '<p class="space-tagline">'+SPACE_TAGLINES[key]+'</p>';
   if (sp.vis === 'public') h += '<div class="space-meta"><span style="color:var(--green)">&#x1F513; Public space</span></div>';
+  if (canMemberPost(key)) h += '<button class="rm-add-btn" style="margin-top:10px" onclick="openMemberComposer(\''+key+'\')">+ New Post</button>';
   h += '</div>';
 
   h += '<div id="space-ticker"></div>';
@@ -3250,6 +3384,25 @@ checkAuth();
       <span class="composer-status" id="cp-status"></span>
       <button class="btn-ghost" onclick="closeComposer()">Cancel</button>
       <button class="btn-primary" id="cp-submit" onclick="submitComposer()">Publish</button>
+    </div>
+  </div>
+</div>
+
+<div class="composer-overlay" id="member-composer-overlay" onclick="if(event.target===this)closeMemberComposer()">
+  <div class="composer">
+    <h3>New Post</h3>
+    <label>Space</label>
+    <select id="mp-space"></select>
+    <label>Title</label>
+    <input type="text" id="mp-title" maxlength="200" placeholder="What's your question or topic?">
+    <label>Body</label>
+    <textarea id="mp-body" rows="9" maxlength="20000" placeholder="Write in plain text. Blank lines become paragraph breaks."></textarea>
+    <label>Topics (optional, up to 5)</label>
+    <div class="tagpicker" id="mp-tags"></div>
+    <div class="composer-actions">
+      <span class="composer-status" id="mp-status"></span>
+      <button class="btn-ghost" onclick="closeMemberComposer()">Cancel</button>
+      <button class="btn-primary" id="mp-submit" onclick="submitMemberPost()">Post</button>
     </div>
   </div>
 </div>
