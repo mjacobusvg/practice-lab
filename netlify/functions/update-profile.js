@@ -14,7 +14,9 @@
 const { verifyToken } = require('./_lib/session');
 
 const PRACTICE_TYPES = ['solo', 'group_owner', 'group_member', 'employed', 'locums', 'other'];
-const LIMITS = { name: 100, credentials: 100, headline: 160, location: 100, bio: 1500 };
+// US states + DC (2-letter). Directory filters on this.
+const US_STATES = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'];
+const LIMITS = { name: 100, credentials: 100, headline: 160, location: 100, bio: 1500, specialty: 80 };
 
 // A link field must be an http(s) URL or empty (blocks javascript: and other
 // schemes, since these render as href attributes).
@@ -84,19 +86,24 @@ exports.handler = async function (event) {
     const accountId = accts[0].id;
 
     if (p.action === 'get') {
-      const rows = await sb('accounts?' + emailFilter + '&select=name,credentials,headline,location,practice_type,directory_visible,avatar_url,bio,website,linkedin_url,notify_email_posts,notify_email_comments,notify_email_dms&limit=1', 'GET');
+      const rows = await sb('accounts?' + emailFilter + '&select=name,credentials,headline,location,state,specialty,practice_type,directory_visible,avatar_url,bio,website,linkedin_url,notify_email_posts,notify_email_comments,notify_email_dms&limit=1', 'GET');
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, account: (rows && rows[0]) || {} }) };
     }
 
     if (p.action === 'save') {
       const patch = {};
       // Text fields: trim + length-cap. Empty string clears the field (-> null).
-      ['name', 'credentials', 'headline', 'location', 'bio'].forEach(function (f) {
+      ['name', 'credentials', 'headline', 'location', 'bio', 'specialty'].forEach(function (f) {
         if (Object.prototype.hasOwnProperty.call(p, f)) {
           const v = String(p[f] == null ? '' : p[f]).trim().slice(0, LIMITS[f]);
           patch[f] = v.length ? v : null;
         }
       });
+      // State: a 2-letter US code or null.
+      if (Object.prototype.hasOwnProperty.call(p, 'state')) {
+        const st = String(p.state || '').trim().toUpperCase();
+        patch.state = US_STATES.indexOf(st) !== -1 ? st : null;
+      }
       // Link fields: validated to http(s) or null.
       ['website', 'linkedin_url'].forEach(function (f) {
         if (Object.prototype.hasOwnProperty.call(p, f)) patch[f] = cleanUrl(p[f]);
@@ -120,7 +127,7 @@ exports.handler = async function (event) {
       }
       patch.updated_at = new Date().toISOString();
 
-      const updated = await sb('accounts?' + emailFilter + '&select=id,name,credentials,headline,location,practice_type,directory_visible,avatar_url,tier,bio,website,linkedin_url', 'PATCH', patch);
+      const updated = await sb('accounts?' + emailFilter + '&select=id,name,credentials,headline,location,state,specialty,practice_type,directory_visible,avatar_url,tier,bio,website,linkedin_url', 'PATCH', patch);
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, account: (updated && updated[0]) || null }) };
     }
 

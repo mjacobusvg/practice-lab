@@ -880,6 +880,12 @@ a { color: inherit; text-decoration: none; }
 .dir-ptype { font-size: 0.7rem; color: var(--teal); margin-top: 6px; }
 .dir-loc { font-size: 0.68rem; color: var(--text-secondary); margin-top: 2px; }
 .dir-headline { font-size: 0.7rem; color: var(--text-secondary); margin-top: 6px; line-height: 1.4; font-style: italic; }
+.dir-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin: 4px 0 14px; }
+.dir-fl { display: flex; flex-direction: column; gap: 4px; font-size: 0.7rem; color: var(--text-secondary); }
+.dir-fl select { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-card); color: var(--text-primary); font-family: inherit; font-size: 0.82rem; min-width: 150px; }
+.dir-clear { align-self: flex-end; background: none; border: 1px solid var(--border); color: var(--text-secondary); border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: 0.78rem; }
+.dir-clear:hover { border-color: var(--teal); color: var(--teal); }
+.dir-count-line { font-size: 0.74rem; color: var(--text-secondary); margin-bottom: 12px; }
 
 .save-btn {
   background: transparent; border: 1px solid var(--border); border-radius: 6px;
@@ -3751,7 +3757,30 @@ var PRACTICE_LABELS = {
   locums: 'Locums', other: 'Other'
 };
 var dirData = null;
-var dirFilter = 'all';
+var dirFilter = 'all';       // practice type (legacy, still available)
+var dirStateFilter = 'all';
+var dirSpecFilter = 'all';
+
+// US state codes -> names, plus a lookup for parsing free-text locations.
+var STATE_NAMES = { AL:'Alabama',AK:'Alaska',AZ:'Arizona',AR:'Arkansas',CA:'California',CO:'Colorado',CT:'Connecticut',DE:'Delaware',FL:'Florida',GA:'Georgia',HI:'Hawaii',ID:'Idaho',IL:'Illinois',IN:'Indiana',IA:'Iowa',KS:'Kansas',KY:'Kentucky',LA:'Louisiana',ME:'Maine',MD:'Maryland',MA:'Massachusetts',MI:'Michigan',MN:'Minnesota',MS:'Mississippi',MO:'Missouri',MT:'Montana',NE:'Nebraska',NV:'Nevada',NH:'New Hampshire',NJ:'New Jersey',NM:'New Mexico',NY:'New York',NC:'North Carolina',ND:'North Dakota',OH:'Ohio',OK:'Oklahoma',OR:'Oregon',PA:'Pennsylvania',RI:'Rhode Island',SC:'South Carolina',SD:'South Dakota',TN:'Tennessee',TX:'Texas',UT:'Utah',VT:'Vermont',VA:'Virginia',WA:'Washington',WV:'West Virginia',WI:'Wisconsin',WY:'Wyoming',DC:'District of Columbia' };
+var SPECIALTY_OPTIONS = ['Adult','Child & Adolescent','Geriatric','Addiction / SUD','Forensic','Consultation-Liaison','Eating Disorders','Perinatal','Sleep','Psychotherapy-focused','Integrative / Functional','Other'];
+
+// Best-effort state detection from a free-text location like "Seattle, WA" or
+// "California". Returns a 2-letter code or ''.
+function parseStateFromLocation(loc) {
+  if (!loc) return '';
+  var s = String(loc).trim();
+  // Trailing 2-letter code after a comma or space.
+  var m = s.match(/[,\s]([A-Za-z]{2})\s*$/);
+  if (m) { var ab = m[1].toUpperCase(); if (STATE_NAMES[ab]) return ab; }
+  // Full state name anywhere in the string (longest names first).
+  var lower = s.toLowerCase();
+  var codes = Object.keys(STATE_NAMES).sort(function(a,b){ return STATE_NAMES[b].length - STATE_NAMES[a].length; });
+  for (var i = 0; i < codes.length; i++) {
+    if (lower.indexOf(STATE_NAMES[codes[i]].toLowerCase()) !== -1) return codes[i];
+  }
+  return '';
+}
 
 async function showDirectory() {
   closeSidebar();
@@ -3765,12 +3794,16 @@ async function showDirectory() {
     try {
       var { data, error } = await SB
         .from('accounts')
-        .select('id, name, avatar_url, credentials, headline, location, practice_type')
+        .select('id, name, avatar_url, credentials, headline, location, state, specialty, practice_type')
         .eq('directory_visible', true)
-        .not('practice_type', 'is', null)
         .order('name', { ascending: true });
       if (error) throw error;
-      dirData = data || [];
+      // Every directory-visible member shows. State comes from the structured
+      // field when set, else best-effort from their location text.
+      dirData = (data || []).map(function(m) {
+        m._state = m.state || parseStateFromLocation(m.location);
+        return m;
+      });
     } catch(e) { console.error('directory:', e); dirData = []; }
   }
   renderDirectory();
@@ -3778,21 +3811,52 @@ async function showDirectory() {
 
 function renderDirectory() {
   var center = document.getElementById('center');
+
+  // Apply the active filters.
+  var members = dirData.filter(function(m) {
+    if (dirStateFilter !== 'all' && (m._state || '') !== dirStateFilter) return false;
+    if (dirSpecFilter !== 'all' && (m.specialty || '') !== dirSpecFilter) return false;
+    if (dirFilter !== 'all' && m.practice_type !== dirFilter) return false;
+    return true;
+  });
+
   var h = '<div class="space-head"><div class="space-accent" style="background:#60a5fa"></div>';
   h += '<h1>Member Directory</h1>';
-  h += '<p class="space-tagline">Find peers by practice setting. ' + dirData.length + ' members listed.</p>';
+  h += '<p class="space-tagline">' + dirData.length + ' members. Filter by state, specialty, or practice setting.</p>';
   h += '</div>';
 
-  var filters = [{ key: 'all', label: 'All' }].concat(Object.keys(PRACTICE_LABELS).map(function(k){ return { key: k, label: PRACTICE_LABELS[k] }; }));
-  h += '<div class="rm-tabs">' + filters.map(function(f) {
-    var n = f.key === 'all' ? dirData.length : dirData.filter(function(m){ return m.practice_type === f.key; }).length;
-    if (f.key !== 'all' && !n) return '';
-    return '<button class="rm-tab' + (f.key === dirFilter ? ' on' : '') + '" onclick="dirSetFilter(\'' + f.key + '\')">' + f.label + (n ? ' <span class="rm-tab-n">' + n + '</span>' : '') + '</button>';
-  }).join('') + '</div>';
+  // Which states/specialties actually appear, sorted, with counts.
+  var stateCounts = {}, specCounts = {}, ptypeCounts = {};
+  dirData.forEach(function(m) {
+    if (m._state) stateCounts[m._state] = (stateCounts[m._state] || 0) + 1;
+    if (m.specialty) specCounts[m.specialty] = (specCounts[m.specialty] || 0) + 1;
+    if (m.practice_type) ptypeCounts[m.practice_type] = (ptypeCounts[m.practice_type] || 0) + 1;
+  });
 
-  var members = dirFilter === 'all' ? dirData : dirData.filter(function(m){ return m.practice_type === dirFilter; });
+  h += '<div class="dir-filters">';
+  // State dropdown.
+  var stateKeys = Object.keys(stateCounts).sort(function(a,b){ return (STATE_NAMES[a]||a).localeCompare(STATE_NAMES[b]||b); });
+  h += '<label class="dir-fl"><span>State</span><select onchange="dirSetState(this.value)"><option value="all"' + (dirStateFilter==='all'?' selected':'') + '>All states</option>' +
+    stateKeys.map(function(k){ return '<option value="' + k + '"' + (dirStateFilter===k?' selected':'') + '>' + esc(STATE_NAMES[k] || k) + ' (' + stateCounts[k] + ')</option>'; }).join('') + '</select></label>';
+  // Specialty dropdown (only shows values members have set).
+  var specKeys = Object.keys(specCounts).sort();
+  h += '<label class="dir-fl"><span>Specialty</span><select onchange="dirSetSpec(this.value)"' + (specKeys.length ? '' : ' disabled') + '><option value="all"' + (dirSpecFilter==='all'?' selected':'') + '>All specialties</option>' +
+    specKeys.map(function(k){ return '<option value="' + esc(k) + '"' + (dirSpecFilter===k?' selected':'') + '>' + esc(k) + ' (' + specCounts[k] + ')</option>'; }).join('') + '</select></label>';
+  // Practice setting dropdown (only if anyone has one).
+  var ptypeKeys = Object.keys(ptypeCounts);
+  if (ptypeKeys.length) {
+    h += '<label class="dir-fl"><span>Practice</span><select onchange="dirSetFilter(this.value)"><option value="all"' + (dirFilter==='all'?' selected':'') + '>All settings</option>' +
+      ptypeKeys.map(function(k){ return '<option value="' + k + '"' + (dirFilter===k?' selected':'') + '>' + esc(PRACTICE_LABELS[k] || k) + ' (' + ptypeCounts[k] + ')</option>'; }).join('') + '</select></label>';
+  }
+  if (dirStateFilter !== 'all' || dirSpecFilter !== 'all' || dirFilter !== 'all') {
+    h += '<button class="dir-clear" onclick="dirClearFilters()">Clear</button>';
+  }
+  h += '</div>';
+
+  h += '<div class="dir-count-line">' + members.length + ' shown</div>';
+
   if (!members.length) {
-    h += '<div style="padding:28px;border:1px dashed var(--border);border-radius:var(--radius-lg);color:var(--text-secondary);font-size:0.85rem;text-align:center">No members in this category yet.</div>';
+    h += '<div style="padding:28px;border:1px dashed var(--border);border-radius:var(--radius-lg);color:var(--text-secondary);font-size:0.85rem;text-align:center">No members match these filters.</div>';
     center.innerHTML = h; window.scrollTo(0,0); return;
   }
 
@@ -3803,8 +3867,10 @@ function renderDirectory() {
     else h += '<span class="dir-avatar dir-initials">' + esc(initials(m.name)) + '</span>';
     h += '<div class="dir-name">' + esc(m.name || 'Member') + '</div>';
     if (m.credentials) h += '<div class="dir-creds">' + esc(m.credentials) + '</div>';
-    h += '<div class="dir-ptype">' + esc(PRACTICE_LABELS[m.practice_type] || '') + '</div>';
-    if (m.location) h += '<div class="dir-loc">' + esc(m.location) + '</div>';
+    if (m.specialty) h += '<div class="dir-ptype">' + esc(m.specialty) + '</div>';
+    else if (m.practice_type) h += '<div class="dir-ptype">' + esc(PRACTICE_LABELS[m.practice_type] || '') + '</div>';
+    var locLabel = m.location || (m._state ? (STATE_NAMES[m._state] || m._state) : '');
+    if (locLabel) h += '<div class="dir-loc">' + esc(locLabel) + '</div>';
     if (m.headline) h += '<div class="dir-headline">' + esc(m.headline) + '</div>';
     h += '</div>';
   });
@@ -3813,6 +3879,9 @@ function renderDirectory() {
 }
 
 function dirSetFilter(k) { dirFilter = k; renderDirectory(); }
+function dirSetState(k) { dirStateFilter = k; renderDirectory(); }
+function dirSetSpec(k) { dirSpecFilter = k; renderDirectory(); }
+function dirClearFilters() { dirFilter = 'all'; dirStateFilter = 'all'; dirSpecFilter = 'all'; renderDirectory(); }
 
 // ════════════════════════════════════════
 // MEMBER PROFILE
@@ -3829,7 +3898,7 @@ async function viewProfile(accountId) {
   try {
     var { data: acct, error } = await SB
       .from('accounts')
-      .select('id, name, avatar_url, credentials, headline, location, practice_type, tier, created_at, bio, website, linkedin_url')
+      .select('id, name, avatar_url, credentials, headline, location, state, specialty, practice_type, tier, created_at, bio, website, linkedin_url')
       .eq('id', accountId)
       .single();
     if (error) throw error;
@@ -3849,8 +3918,10 @@ async function viewProfile(accountId) {
     h += '<h1 class="profile-name">' + esc(acct.name || 'Member') + '</h1>';
     if (acct.credentials) h += '<div class="profile-creds">' + esc(acct.credentials) + '</div>';
     var meta = [];
+    if (acct.specialty) meta.push(esc(acct.specialty));
     if (acct.practice_type && PRACTICE_LABELS[acct.practice_type]) meta.push(esc(PRACTICE_LABELS[acct.practice_type]));
-    if (acct.location) meta.push(esc(acct.location));
+    var profLoc = acct.location || (acct.state && STATE_NAMES[acct.state] ? STATE_NAMES[acct.state] : '');
+    if (profLoc) meta.push(esc(profLoc));
     if (acct.created_at) meta.push('Member since ' + formatDate(acct.created_at));
     if (meta.length) h += '<div class="profile-meta">' + meta.join(' &middot; ') + '</div>';
     if (acct.headline) h += '<div class="profile-headline">' + esc(acct.headline) + '</div>';
@@ -3884,9 +3955,25 @@ async function openProfileEdit() {
   // Practice dropdown (once)
   var sel = document.getElementById('pe-practice');
   if (sel && !sel.options.length) {
-    var o0 = document.createElement('option'); o0.value = ''; o0.textContent = '— Not listed —'; sel.appendChild(o0);
+    var o0 = document.createElement('option'); o0.value = ''; o0.textContent = 'Not listed'; sel.appendChild(o0);
     Object.keys(PRACTICE_LABELS).forEach(function(k) {
       var o = document.createElement('option'); o.value = k; o.textContent = PRACTICE_LABELS[k]; sel.appendChild(o);
+    });
+  }
+  // State dropdown (once)
+  var stSel = document.getElementById('pe-state');
+  if (stSel && !stSel.options.length) {
+    var so = document.createElement('option'); so.value = ''; so.textContent = 'Not set'; stSel.appendChild(so);
+    Object.keys(STATE_NAMES).sort(function(a,b){ return STATE_NAMES[a].localeCompare(STATE_NAMES[b]); }).forEach(function(k) {
+      var o = document.createElement('option'); o.value = k; o.textContent = STATE_NAMES[k]; stSel.appendChild(o);
+    });
+  }
+  // Specialty dropdown (once)
+  var spSel = document.getElementById('pe-specialty');
+  if (spSel && !spSel.options.length) {
+    var po = document.createElement('option'); po.value = ''; po.textContent = 'Not set'; spSel.appendChild(po);
+    SPECIALTY_OPTIONS.forEach(function(k) {
+      var o = document.createElement('option'); o.value = k; o.textContent = k; spSel.appendChild(o);
     });
   }
   // Prefill from the server (reads private prefs the client key can't).
@@ -3899,6 +3986,8 @@ async function openProfileEdit() {
     document.getElementById('pe-headline').value = a.headline || '';
     document.getElementById('pe-bio').value = a.bio || '';
     document.getElementById('pe-location').value = a.location || '';
+    document.getElementById('pe-state').value = a.state || '';
+    document.getElementById('pe-specialty').value = a.specialty || '';
     document.getElementById('pe-website').value = a.website || '';
     document.getElementById('pe-linkedin').value = a.linkedin_url || '';
     document.getElementById('pe-practice').value = a.practice_type || '';
@@ -3933,6 +4022,8 @@ async function saveProfile() {
     headline: document.getElementById('pe-headline').value,
     bio: document.getElementById('pe-bio').value,
     location: document.getElementById('pe-location').value,
+    state: document.getElementById('pe-state').value,
+    specialty: document.getElementById('pe-specialty').value,
     website: document.getElementById('pe-website').value,
     linkedin_url: document.getElementById('pe-linkedin').value,
     practice_type: document.getElementById('pe-practice').value,
@@ -4964,6 +5055,10 @@ checkAuth();
     <textarea id="pe-bio" rows="4" maxlength="1500" placeholder="A short bio: your background, interests, what you work on."></textarea>
     <label>Location</label>
     <input type="text" id="pe-location" maxlength="100" placeholder="City, State">
+    <label>State</label>
+    <select id="pe-state"></select>
+    <label>Specialty</label>
+    <select id="pe-specialty"></select>
     <label>Website</label>
     <input type="text" id="pe-website" maxlength="300" placeholder="https://yourpractice.com">
     <label>LinkedIn</label>
