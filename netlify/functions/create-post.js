@@ -33,6 +33,22 @@ function cleanImageUrls(urls) {
     .slice(0, MAX_IMAGES);
 }
 
+// Validate document attachments against our own post-files bucket.
+const MAX_ATTACHMENTS = 6;
+const ATTACH_EXT = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv'];
+function cleanAttachments(items) {
+  const base = String(process.env.SUPABASE_URL || '').replace(/\/+$/, '') + '/storage/v1/object/public/post-files/';
+  return (Array.isArray(items) ? items : []).map(function (a) {
+    if (!a || typeof a !== 'object') return null;
+    const url = String(a.url || '').trim();
+    if (url.indexOf(base) !== 0 || url.length > 500) return null;
+    const type = ATTACH_EXT.indexOf(String(a.type || '').toLowerCase()) !== -1 ? String(a.type).toLowerCase() : 'file';
+    const name = String(a.name || 'attachment').replace(/[\x00-\x1f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120) || 'attachment';
+    const size = Math.max(0, Math.min(Number(a.size) || 0, 26214400));
+    return { name: name, url: url, type: type, size: size };
+  }).filter(Boolean).slice(0, MAX_ATTACHMENTS);
+}
+
 // Validate a poll: server assigns option ids; needs a question + 2-6 options.
 function cleanPoll(poll) {
   if (!poll || typeof poll !== 'object') return null;
@@ -118,6 +134,7 @@ exports.handler = async function (event) {
 
       const imageUrls = cleanImageUrls(p.image_urls);
       const poll = cleanPoll(p.poll);
+      const attachments = cleanAttachments(p.attachments);
 
       const excerpt = body.replace(/\s+/g, ' ').slice(0, 200);
       const row = {
@@ -129,6 +146,7 @@ exports.handler = async function (event) {
         excerpt: excerpt,
         image_urls: imageUrls,
         poll: poll,
+        attachments: attachments,
         comment_count: 0,
         reaction_count: 0,
         canonical_synthesis: p.synthesis ? String(p.synthesis).trim() || null : null,

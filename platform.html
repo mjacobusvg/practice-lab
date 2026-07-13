@@ -1005,6 +1005,16 @@ a { color: inherit; text-decoration: none; }
 .mp-thumb { position:relative; width:72px; height:72px; border-radius:8px; overflow:hidden; border:1px solid var(--border); }
 .mp-thumb img { width:100%; height:100%; object-fit:cover; display:block; }
 .mp-thumb-x { position:absolute; top:2px; right:2px; width:20px; height:20px; border:none; border-radius:50%; background:rgba(0,0,0,0.6); color:#fff; cursor:pointer; font-size:14px; line-height:1; display:flex; align-items:center; justify-content:center; }
+/* Document attachments (post detail + composer chips) */
+.post-files { display:flex; flex-wrap:wrap; gap:8px; margin:14px 0 4px; }
+.mp-file-previews { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+.file-chip { display:inline-flex; align-items:center; gap:10px; padding:8px 12px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); text-decoration:none; color:var(--text-primary); position:relative; max-width:260px; }
+a.file-chip:hover { border-color:var(--teal); }
+.file-ico { font-size:1.2rem; flex-shrink:0; }
+.file-meta { display:flex; flex-direction:column; min-width:0; }
+.file-name { font-size:0.82rem; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.file-sub { font-size:0.7rem; color:var(--text-secondary); }
+.file-x { position:absolute; top:-6px; right:-6px; width:18px; height:18px; border:none; border-radius:50%; background:rgba(0,0,0,0.6); color:#fff; cursor:pointer; font-size:12px; line-height:1; display:flex; align-items:center; justify-content:center; }
 /* Poll (ballot in post detail) */
 .poll { margin:16px 0 4px; padding:16px; border:1px solid var(--border); border-radius:10px; background:var(--bg-card); }
 .poll-q { font-weight:600; color:var(--text-heading); font-size:0.92rem; margin-bottom:12px; }
@@ -2522,7 +2532,7 @@ async function viewPost(postId) {
     // Load post
     var { data: post, error } = await SB
       .from('forum_posts')
-      .select('id, author_id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, is_locked, image_urls, poll, canonical_synthesis, ce_candidate, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name))')
+      .select('id, author_id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, is_locked, image_urls, poll, attachments, canonical_synthesis, ce_candidate, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name))')
       .eq('id', postId)
       .single();
     if (error) throw error;
@@ -2618,6 +2628,20 @@ async function viewPost(postId) {
       h += '<div class="post-gallery">';
       postImages.forEach(function(u) {
         h += '<a class="post-gallery-item" href="' + esc(u) + '" target="_blank" rel="noopener"><img src="' + esc(u) + '" alt="" loading="lazy"></a>';
+      });
+      h += '</div>';
+    }
+
+    // Attachments (documents): download chips.
+    var postFiles = Array.isArray(post.attachments) ? post.attachments : [];
+    if (postFiles.length) {
+      h += '<div class="post-files">';
+      postFiles.forEach(function(a) {
+        if (!a || !a.url) return;
+        h += '<a class="file-chip" href="' + esc(a.url) + '" target="_blank" rel="noopener" download>' +
+          '<span class="file-ico">' + fileIcon(a.type) + '</span>' +
+          '<span class="file-meta"><span class="file-name">' + esc(a.name || 'Attachment') + '</span>' +
+          '<span class="file-sub">' + (a.type ? esc(String(a.type).toUpperCase()) : 'FILE') + (a.size ? ' &middot; ' + fmtBytes(a.size) : '') + '</span></span></a>';
       });
       h += '</div>';
     }
@@ -3132,6 +3156,10 @@ function openMemberComposer(spaceKey) {
   var mpi = document.getElementById('mp-image-input'); if (mpi) mpi.value = '';
   renderMemberImagePreviews();
   var mis = document.getElementById('mp-image-status'); if (mis) mis.textContent = '';
+  S.newPostFiles = [];
+  var mpf = document.getElementById('mp-file-input'); if (mpf) mpf.value = '';
+  renderMemberFilePreviews();
+  var mfs = document.getElementById('mp-file-status'); if (mfs) mfs.textContent = '';
   resetMemberPoll();
   var st = document.getElementById('mp-status'); st.textContent = ''; st.className = 'composer-status';
   renderPostTagChips();
@@ -3171,7 +3199,7 @@ async function submitMemberPost() {
     var res = await fetch('/.netlify/functions/create-member-post', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: getAuthToken(), space: space, title: title, body: body, tags: S.newPostTags || [], mention_ids: mentionGetIds(document.getElementById('mp-body')), image_urls: (S.newPostImages || []).map(function(im){ return im.url; }), poll: collectMemberPoll() })
+      body: JSON.stringify({ token: getAuthToken(), space: space, title: title, body: body, tags: S.newPostTags || [], mention_ids: mentionGetIds(document.getElementById('mp-body')), image_urls: (S.newPostImages || []).map(function(im){ return im.url; }), poll: collectMemberPoll(), attachments: S.newPostFiles || [] })
     });
     var data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Could not post.');
@@ -3243,6 +3271,72 @@ function readFileAsDataURL(file) {
     r.onerror = function() { reject(new Error('Could not read the file.')); };
     r.readAsDataURL(file);
   });
+}
+
+// ── Document attachments (composer) ──────────────────────────────────────────
+function fileIcon(type) {
+  var t = String(type || '').toLowerCase();
+  if (t === 'pdf') return '&#128213;';
+  if (t === 'doc' || t === 'docx') return '&#128216;';
+  if (t === 'xls' || t === 'xlsx' || t === 'csv') return '&#128215;';
+  if (t === 'ppt' || t === 'pptx') return '&#128217;';
+  if (t === 'txt') return '&#128196;';
+  return '&#128206;';
+}
+function fmtBytes(n) {
+  n = Number(n) || 0;
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return Math.round(n / 1024) + ' KB';
+  return (n / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+var MAX_POST_FILES = 6;
+var FILE_ACCEPT = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv';
+
+function renderMemberFilePreviews() {
+  var wrap = document.getElementById('mp-file-previews');
+  if (!wrap) return;
+  var files = S.newPostFiles || [];
+  wrap.innerHTML = files.map(function(a, i) {
+    return '<div class="file-chip"><span class="file-ico">' + fileIcon(a.type) + '</span>' +
+      '<span class="file-meta"><span class="file-name">' + esc(a.name) + '</span>' +
+      '<span class="file-sub">' + (a.type ? esc(a.type.toUpperCase()) : 'FILE') + (a.size ? ' &middot; ' + fmtBytes(a.size) : '') + '</span></span>' +
+      '<button type="button" class="file-x" title="Remove" onclick="removeMemberFile(' + i + ')">&times;</button></div>';
+  }).join('');
+}
+function removeMemberFile(i) {
+  if (!S.newPostFiles) return;
+  S.newPostFiles.splice(i, 1);
+  renderMemberFilePreviews();
+}
+async function onMemberFilePick(ev) {
+  var input = ev.target;
+  var files = Array.prototype.slice.call(input.files || []);
+  input.value = '';
+  if (!files.length) return;
+  if (!S.newPostFiles) S.newPostFiles = [];
+  var status = document.getElementById('mp-file-status');
+  for (var f = 0; f < files.length; f++) {
+    if (S.newPostFiles.length >= MAX_POST_FILES) { if (status) status.textContent = 'Up to ' + MAX_POST_FILES + ' files.'; break; }
+    var file = files[f];
+    if (file.size > 25 * 1024 * 1024) { if (status) status.textContent = '"' + file.name + '" is over 25 MB.'; continue; }
+    if (status) status.textContent = 'Uploading ' + file.name + '...';
+    try {
+      var dataUrl = await readFileAsDataURL(file);
+      var res = await fetch('/.netlify/functions/upload-post-file', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: getAuthToken(), data: dataUrl, content_type: file.type, filename: file.name })
+      });
+      var data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Upload failed');
+      S.newPostFiles.push({ url: data.url, name: data.name, type: data.type, size: data.size });
+      renderMemberFilePreviews();
+      if (status) status.textContent = '';
+    } catch (e) {
+      if (status) status.textContent = e.message;
+    }
+  }
 }
 
 // ── Formatting toolbar (Markdown helpers) ────────────────────────────────────
@@ -4749,6 +4843,13 @@ checkAuth();
       <span class="mp-image-status" id="mp-image-status"></span>
     </div>
     <div class="mp-image-previews" id="mp-image-previews"></div>
+    <label>Attachments (optional, up to 6: PDF, Word, Excel, PowerPoint, TXT, CSV)</label>
+    <div class="mp-image-row">
+      <button type="button" class="mp-add-image" id="mp-add-file" onclick="document.getElementById('mp-file-input').click()">+ Attach file</button>
+      <input type="file" id="mp-file-input" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv" multiple style="display:none" onchange="onMemberFilePick(event)">
+      <span class="mp-image-status" id="mp-file-status"></span>
+    </div>
+    <div class="mp-file-previews" id="mp-file-previews"></div>
     <label>Poll (optional)</label>
     <div class="mp-poll">
       <button type="button" class="mp-add-image" id="mp-poll-toggle" onclick="toggleMemberPoll()">+ Add a poll</button>
