@@ -109,22 +109,29 @@ Rules:
 
 ---
 
-## 4. Vault: per-clinician HPI templates
+## 4. Vault additions (clinician-editable)
 
-Add **two** template slots to the Vault so the HPI Generator can draft in each
-clinician's own structure/voice:
+Everything here lives **in the Vault the clinician self-edits** — the `vault_profile`
+record, surfaced as new editable fields in `vault.html` alongside the rest of their
+profile. The whole point of the Vault is that the clinician goes in and edits their own
+profile; none of this is a hidden, separate store. Two additions:
 
+**A. HPI templates/prompts** — so the HPI Generator drafts in each clinician's own
+structure/voice. Picked by `visitType`:
 - **New Patient Eval HPI Template / Prompt**
 - **Follow-up HPI Template / Prompt**
 
-Storage: these live **in the Vault the clinician self-edits** — the
-`vault_profile` record, surfaced as two new editable fields in `vault.html`
-alongside the rest of their profile. The whole point of the Vault is that the
-clinician goes in and edits their own profile, including these HPI
-templates/prompts; they are not a hidden, separate store. These are
-**style/structure templates and prompt guidance**, not clinical content — the HPI
-Generator uses them to shape output, never to invent facts. The HPI Generator picks
-the template by `visitType`.
+These are **style/structure/prompt guidance**, not clinical content — the HPI Generator
+uses them to shape output, never to invent facts.
+
+**B. Plan library** — the clinician's reusable Plan content the §6 Plan section pulls
+from:
+- **Area-specific numbers** (local crisis/ER lines, referral numbers).
+- **Standard/reused wording** (their habitual PARQ line, monitoring/return-timing,
+  refill/lab language, resource text).
+
+Stored once, reused every note — so consent and resource text come from the clinician's
+own stored wording, not from the model.
 
 ---
 
@@ -156,68 +163,70 @@ Compliance notes:
 
 ---
 
-## 6. Plan generation (in the Note Builder)
+## 6. Plan section (in the Note Builder)
 
-Per decision, **the Plan lives in the Note Builder**, not a separate tool.
+Per decision, **the Plan lives in the Note Builder**, not a separate tool. **Do NOT
+port the Dev Note Builder wholesale** — that branch is older in places. The Plan is a
+**new, distinct build** on the current (`main`) Note Builder.
 
-**Build on the Dev prototype.** The `Dev` branch's `pm-clinical-note-builder.html`
-already prototypes the forward-looking slice of the Plan — a **"For Next Time"**
-block plus a **carry-forward check** — and it is the right foundation:
+The Plan section is **retrospective + administrative** — it is NOT the forward-looking
+"For Next Time" guide (that is a separate, deferred item; see §7). It covers:
 
-- **`FORNEXT_SYS`** generates a short, explicitly *prospective* plan: 1-2 therapeutic
-  foci for the next visit, each offering both a modality-framed **Intervention** and a
-  portable **Teachable skill**. Future-tense by construction; placed in the Plan
-  section. Generated whenever an assessment or therapy note is produced.
-- **`#fornext` input** — the clinician pastes last visit's "For Next Time" block.
-- **`carryfwd` card** (fires first, only when a prior plan is present) — checks whether
-  today's HPI actually shows the planned focus was addressed and hands the judgment to
-  the provider, so planned work is never written as though it occurred. Downstream
-  `carryfwdBlock` guidance gates whether that work may be reflected in documentation.
+- **What was done this visit** — a factual account of the plan/actions from the visit,
+  traceable to source (same no-fabrication guards as the assessment).
+- **PARQ** — the informed-consent line (risks/benefits/alternatives/questions discussed)
+  and comparable standard consent/attestation wording.
+- **Standard administrative wording** the clinician reuses (return timing, monitoring,
+  refill/lab language, crisis-line/resource text, etc.).
 
-This gives a **cross-visit continuity loop** (For Next Time → next-visit input →
-carry-forward check) that pairs naturally with the shared note object in §3.
-
-**Scope nuance to confirm (see §8):** the Dev prototype covers only the
-*forward-looking therapeutic focus* portion of the Plan and deliberately still avoids
-the **administrative Plan** (refill dates, return timing, 988/PARQ boilerplate). We
-should decide whether "Plan in the Note Builder" means (a) keep it to this defensible
-forward-looking slice, or (b) extend to a fuller Plan section. Same source-fidelity +
-no-fabrication guards either way.
+**Vault-backed Plan library.** Much of the above is boilerplate a clinician reuses
+verbatim, and some of it is **area-specific numbers** (local crisis/ER lines, referral
+numbers) and **habitual wording**. So the Vault gains a **Plan library**: the clinician
+stores their standard numbers and reusable phrasings once, and the Plan section pulls
+from it — generated visit-specific content + the clinician's own stored wording, rather
+than the model inventing consent or resource text. (See §4 — the Vault now holds both
+the HPI templates and this Plan library.)
 
 ---
 
-## 7. Ambient (deferred)
+## 7. Deferred enhancements
 
-Ambient/audio capture is **deferred**, consistent with the State File's
-"ship the defensible pieces first" decision. Intended route: **AWS Transcribe** as an
-**input adapter** that feeds transcribed text into the *same* HPI Generator — built
-**after** the typed-input HPI tool is working and validated. AWS is transcription only;
-it does not enter the model path (the model registry's "no AWS/Bedrock in the path"
-statement stays true).
+**A. "For Next Time" forward-looking guide** — a *separate* feature from the Plan
+(§6). It generates 1-2 prospective therapeutic foci for the *next* visit, each with a
+modality-framed intervention and a portable teachable skill, to help clinicians
+actually do psychotherapy and know what to focus on. Its companion is the
+**carry-forward check** (the `carryfwd` card): next visit, it checks whether the
+planned focus was actually addressed before any of it is documented. A prototype
+already exists on the `Dev` Note Builder (`FORNEXT_SYS` + `#fornext` + `carryfwd`).
+**Plan:** bring this forward into the current Note Builder *eventually* — port the
+mechanism, do not merge the older Dev file. Not in the first build.
+
+**B. Ambient capture** — deferred, consistent with the State File's "ship the
+defensible pieces first" decision. Intended route: **AWS Transcribe** as an **input
+adapter** feeding transcribed text into the *same* HPI Generator — built **after** the
+typed-input HPI tool is working and validated. AWS is transcription only; it does not
+enter the model path (the model registry's "no AWS/Bedrock in the path" statement stays
+true).
 
 ---
 
 ## 8. Open questions / dependencies
 
-1. **Integration base branch — the big one.** The newest Note Builder work (the
-   "For Next Time" / carry-forward feature) lives on the **`Dev`** branch, which has
-   **diverged substantially from `main`** (Dev is missing many `main` files — e.g.
-   `MODEL-REGISTRY.md`, `index.html`, most `insights/` — renames `pm-chart-coder.html`
-   to `pm-chart-audit-coder.html`, and adds `content-generator.html`,
-   `letter-library.html`). This feature branch was cut from `main`. **We need to decide
-   the integration base** so we don't build on stale code or collide with Dev:
-   is `Dev` the source of truth for the note tools, does `main` get reconciled first,
-   or do we cherry-pick the Dev Note Builder onto this branch? *(Resolve before §9
-   step 5.)*
-2. **Plan scope** — forward-looking "For Next Time" slice only (Dev prototype), or a
-   fuller Plan section that also covers administrative items? (§6.)
-3. **Shared-object transport** — in-memory + `sessionStorage` hand-off vs. a query
+1. **Shared-object transport** — in-memory + `sessionStorage` hand-off vs. a query
    param payload for the one-button push. (Leaning: `sessionStorage`, PHI-safe,
    survives the page navigation.)
-4. **Joel/PHI sign-off** — confirm the new HPI PHI flow before member rollout.
+2. **Joel/PHI sign-off** — confirm the new HPI PHI flow before member rollout.
+3. **Production branch confirmation** — proceeding on the assumption that **`main`** is
+   the canonical/production line (it has the complete file set). Confirm.
 
-*Resolved:* Vault storage → the two HPI templates are editable fields in
-`vault.html`, stored in the `vault_profile` record the clinician self-edits (§4).
+*Resolved:*
+- **Integration base:** build on **`main`** (this branch was cut from it). **Do not
+  integrate the `Dev` Note Builder** — it is older in places. The "For Next Time"
+  mechanism gets ported forward later (§7A), not merged from Dev.
+- **Plan vs. For Next Time:** the Plan is retrospective/administrative (§6); "For Next
+  Time" is a separate, deferred forward-looking guide (§7A).
+- **Vault storage:** HPI templates *and* the Plan library are editable fields in
+  `vault.html`, stored in the `vault_profile` record the clinician self-edits (§4).
 
 ---
 
@@ -226,8 +235,10 @@ statement stays true).
 1. **Housekeeping** *(done in this branch)* — fix `MODEL-REGISTRY.md`; note the
    dormant chart-coder job trio.
 2. **Shared note object + one-button HPI→Note Builder push** (scaffolding).
-3. **HPI Generator tool** (typed input + Vault templates), Michael-only.
-4. **Vault: two HPI template slots.**
-5. **Plan section in the Note Builder** (after reviewing the Dev feature).
+3. **HPI Generator tool** (typed input + Vault HPI templates), Michael-only.
+4. **Vault additions** — two HPI template fields + the Plan library (numbers + wording).
+5. **Plan section in the Note Builder** — retrospective/administrative, Vault-backed
+   (§6). Built fresh on `main`, not ported from Dev.
 6. **Validate on Michael's own patients**, then member rollout (post Joel sign-off).
-7. **Later:** AWS Transcribe ambient adapter into the HPI Generator.
+7. **Later:** "For Next Time" forward-looking guide (§7A), then AWS Transcribe ambient
+   adapter into the HPI Generator (§7B).
