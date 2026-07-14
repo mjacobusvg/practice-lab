@@ -1070,6 +1070,14 @@ a.file-chip:hover { border-color:var(--teal); }
 .an-row:hover { border-color:var(--teal); }
 .an-row-title { font-size:0.86rem; font-weight:600; color:var(--text-primary); }
 .an-row-meta { font-size:0.72rem; color:var(--text-secondary); margin-top:2px; }
+/* Invite a colleague */
+.invite-hero { display:flex; gap:18px; align-items:center; background:var(--teal-glow); border:1px solid var(--teal); border-radius:14px; padding:20px; margin-top:6px; }
+.invite-reward { font-size:2.4rem; font-weight:800; color:var(--teal); line-height:1; flex-shrink:0; }
+.invite-how { font-size:0.86rem; color:var(--text-primary); line-height:1.55; }
+.invite-link-row { display:flex; gap:8px; }
+.invite-link-row input { flex:1; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text-primary); font-size:0.82rem; font-family:inherit; }
+.invite-form { display:flex; flex-direction:column; gap:8px; }
+.invite-form input, .invite-form textarea { width:100%; padding:10px 12px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); color:var(--text-primary); font-size:0.86rem; font-family:inherit; }
 /* First-time welcome modal */
 .welcome-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:9000; display:none; align-items:center; justify-content:center; padding:20px; }
 .welcome-overlay.open { display:flex; }
@@ -1899,6 +1907,7 @@ function updateTopbar() {
     '<div class="acct-wrap"><div class="user-avatar" title="'+esc(nm)+'" onclick="toggleAcctMenu()">'+esc(ini)+'</div>' +
     '<div class="acct-menu" id="acct-menu"><div class="acct-head">'+esc(nm)+'<span class="acct-tier">'+tierLabel+'</span></div>' +
     '<button onclick="toggleAcctMenu();viewProfile(\''+S.user.id+'\')">Your profile</button>' +
+    '<button onclick="toggleAcctMenu();showInvite()">Invite a colleague</button>' +
     '<button onclick="toggleAcctMenu();openWelcomeTour()">Take the tour</button>' +
     (isPaidMember()
       ? '<button onclick="openBillingPortal()">Manage billing</button>'
@@ -4668,6 +4677,94 @@ async function showFollowing() {
     console.error('showFollowing:', e);
     center.innerHTML = h + '<div style="padding:20px;color:var(--text-secondary)">Could not load everything.</div>';
   }
+}
+
+// ════════════════════════════════════════
+// INVITE A COLLEAGUE (referrals)
+// ════════════════════════════════════════
+async function showInvite() {
+  if (!S.user) { showJoin(''); return; }
+  closeSidebar(); closeRail();
+  S.view = 'invite'; clearActive();
+  var center = document.getElementById('center');
+  center.innerHTML = '<div class="skel skel-h"></div><div class="skel skel-row"></div>';
+  window.scrollTo(0, 0);
+  try {
+    var res = await fetch('/.netlify/functions/refer', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: getAuthToken(), action: 'list' })
+    });
+    var d = await res.json();
+    if (!res.ok || !d.ok) throw new Error(d.error || 'Could not load');
+    S.referralLink = d.referral_link || '';
+    var reward = d.reward_dollars || 75;
+    var refs = d.referrals || [];
+
+    var h = '<div class="space-head"><div class="space-accent" style="background:var(--teal)"></div><h1>Invite a colleague</h1>';
+    h += '<p class="space-tagline">Know a prescriber who would get value here? Invite them, and earn $' + reward + ' when they join and stay.</p></div>';
+
+    h += '<div class="invite-hero">';
+    h += '<div class="invite-reward">$' + reward + '</div>';
+    h += '<div class="invite-how">Send an invite below or share your personal link. When your colleague joins and stays past the trial window, you earn $' + reward + '. Track your invites at the bottom.</div>';
+    h += '</div>';
+
+    // Shareable link.
+    h += '<div class="an-section-h">Your invite link</div>';
+    h += '<div class="invite-link-row"><input type="text" id="ref-link" readonly value="' + esc(S.referralLink) + '"><button class="btn-primary" onclick="copyReferralLink()">Copy</button></div>';
+
+    // Email invite.
+    h += '<div class="an-section-h">Invite by email</div>';
+    h += '<div class="invite-form">';
+    h += '<input type="email" id="inv-email" placeholder="colleague@email.com">';
+    h += '<input type="text" id="inv-name" placeholder="Their name (optional)">';
+    h += '<textarea id="inv-note" rows="2" placeholder="Add a short personal note (optional)"></textarea>';
+    h += '<div id="inv-status" class="composer-status"></div>';
+    h += '<div style="display:flex;justify-content:flex-end"><button class="btn-primary" id="inv-send" onclick="sendInvite()">Send invite</button></div>';
+    h += '</div>';
+
+    // Their referrals.
+    h += '<div class="an-section-h">Your invites</div>';
+    if (!refs.length) {
+      h += '<div style="padding:16px;color:var(--text-secondary);font-size:0.84rem">No invites yet.</div>';
+    } else {
+      h += '<div class="an-list">';
+      refs.forEach(function(r) {
+        var status = r.payout_status === 'paid' ? 'Paid'
+          : (r.day_16_status === 'active' ? 'Qualified' : (r.day_16_status === 'refunded' ? 'Did not stay' : 'Pending'));
+        h += '<div class="an-row" style="cursor:default"><div class="an-row-title">' + esc(r.new_member_name || r.new_member_email) + '</div>' +
+          '<div class="an-row-meta">' + esc(status) + ' &middot; invited ' + formatDate(r.created_at) + '</div></div>';
+      });
+      h += '</div>';
+    }
+    center.innerHTML = h; window.scrollTo(0, 0);
+  } catch (e) {
+    center.innerHTML = '<div style="padding:28px;color:var(--text-secondary)">Could not load: ' + esc(e.message) + '</div>';
+  }
+}
+
+function copyReferralLink() {
+  var el = document.getElementById('ref-link');
+  if (!el) return;
+  el.select();
+  try { navigator.clipboard.writeText(el.value); } catch (e) { document.execCommand('copy'); }
+  var btn = el.nextElementSibling; if (btn) { var t = btn.textContent; btn.textContent = 'Copied'; setTimeout(function(){ btn.textContent = t; }, 1500); }
+}
+
+async function sendInvite() {
+  var em = document.getElementById('inv-email').value.trim();
+  var nm = document.getElementById('inv-name').value.trim();
+  var note = document.getElementById('inv-note').value.trim();
+  var st = document.getElementById('inv-status'); st.className = 'composer-status';
+  if (!em) { st.textContent = 'Enter their email.'; st.className = 'composer-status err'; return; }
+  var btn = document.getElementById('inv-send'); btn.disabled = true; st.textContent = 'Sending…';
+  try {
+    var res = await fetch('/.netlify/functions/refer', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), action: 'invite', to_email: em, to_name: nm, note: note })
+    });
+    var d = await res.json();
+    if (!res.ok || !d.ok) throw new Error(d.error || 'Could not send');
+    showInvite();
+  } catch (e) { st.textContent = e.message; st.className = 'composer-status err'; btn.disabled = false; }
 }
 
 // ════════════════════════════════════════
