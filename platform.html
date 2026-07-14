@@ -1055,6 +1055,21 @@ a.file-chip:hover { border-color:var(--teal); }
 /* Following view */
 .following-section { margin-bottom:22px; }
 .following-h { font-size:0.78rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-secondary); margin-bottom:10px; }
+/* Analytics */
+.an-section-h { font-size:0.78rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-secondary); margin:22px 0 10px; }
+.an-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; }
+.an-card { background:var(--bg-card); border:1px solid var(--border); border-radius:12px; padding:16px; }
+.an-value { font-size:1.7rem; font-weight:700; color:var(--text-heading); line-height:1.1; }
+.an-label { font-size:0.78rem; color:var(--text-secondary); margin-top:4px; }
+.an-sub { font-size:0.7rem; color:var(--teal); margin-top:4px; }
+.an-bars { display:flex; align-items:flex-end; gap:4px; height:90px; padding:8px 0; border-bottom:1px solid var(--border); }
+.an-bar-col { flex:1; height:100%; display:flex; align-items:flex-end; }
+.an-bar { width:100%; background:var(--teal); border-radius:3px 3px 0 0; min-height:2px; }
+.an-list { display:flex; flex-direction:column; gap:6px; }
+.an-row { padding:10px 14px; background:var(--bg-card); border:1px solid var(--border); border-radius:8px; cursor:pointer; }
+.an-row:hover { border-color:var(--teal); }
+.an-row-title { font-size:0.86rem; font-weight:600; color:var(--text-primary); }
+.an-row-meta { font-size:0.72rem; color:var(--text-secondary); margin-top:2px; }
 /* First-time welcome modal */
 .welcome-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:9000; display:none; align-items:center; justify-content:center; padding:20px; }
 .welcome-overlay.open { display:flex; }
@@ -1919,6 +1934,7 @@ function buildSidebar() {
   var h = '<div class="sb-item" data-key="home" onclick="showHome()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#127968;</span> Home</div>';
   h += '<div class="sb-item" data-key="saved" onclick="showSaved()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128278;</span> Saved</div>';
   h += '<div class="sb-item" data-key="following" onclick="showFollowing()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128220;</span> Following</div>';
+  if (isAdmin()) h += '<div class="sb-item" data-key="analytics" onclick="showAnalytics()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128202;</span> Analytics</div>';
   h += '<div class="sb-item" data-key="library" onclick="showLibrary()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128196;</span> Template Library</div>';
   h += '<div class="sb-item" data-key="directory" onclick="showDirectory()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128101;</span> Member Directory</div>';
   h += '<div class="sb-item" data-key="messages" onclick="showMessages()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#9993;</span> Messages<span id="dm-badge" class="dm-badge" style="display:none"></span></div>';
@@ -4652,6 +4668,99 @@ async function showFollowing() {
     console.error('showFollowing:', e);
     center.innerHTML = h + '<div style="padding:20px;color:var(--text-secondary)">Could not load everything.</div>';
   }
+}
+
+// ════════════════════════════════════════
+// ADMIN ANALYTICS
+// ════════════════════════════════════════
+async function showAnalytics() {
+  if (!isAdmin()) { showHome(); return; }
+  closeSidebar(); closeRail();
+  S.view = 'analytics'; S.space = null;
+  clearActive();
+  var side = document.querySelector('.sb-item[data-key="analytics"]'); if (side) side.classList.add('active');
+  var center = document.getElementById('center');
+  center.innerHTML = '<div class="skel skel-h"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
+  window.scrollTo(0, 0);
+  try {
+    var res = await fetch('/.netlify/functions/community-analytics', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: getAuthToken() })
+    });
+    var d = await res.json();
+    if (!res.ok || !d.ok) throw new Error(d.error || 'Could not load analytics');
+    renderAnalytics(d);
+  } catch (e) {
+    center.innerHTML = '<div style="padding:28px;color:var(--text-secondary)">Could not load analytics: ' + esc(e.message) + '</div>';
+  }
+}
+
+function statCard(label, value, sub) {
+  return '<div class="an-card"><div class="an-value">' + value + '</div><div class="an-label">' + esc(label) + '</div>' +
+    (sub ? '<div class="an-sub">' + esc(sub) + '</div>' : '') + '</div>';
+}
+
+function renderAnalytics(d) {
+  var center = document.getElementById('center');
+  var m = d.members || {}, a = d.activity || {}, c = d.content || {}, ai = d.ai || {};
+  var h = '<div class="space-head"><div class="space-accent" style="background:#60a5fa"></div><h1>Analytics</h1>';
+  h += '<p class="space-tagline">Community health at a glance. Refreshes each time you open it.</p></div>';
+
+  h += '<div class="an-section-h">Members</div><div class="an-grid">';
+  h += statCard('Total members', m.total || 0);
+  h += statCard('Full tier', m.full || 0);
+  h += statCard('Forum tier', m.forum || 0);
+  h += statCard('Free tier', m.free || 0);
+  h += statCard('New this week', m.new_7d || 0, (m.new_30d || 0) + ' in 30 days');
+  h += '</div>';
+
+  h += '<div class="an-section-h">Activity</div><div class="an-grid">';
+  h += statCard('Active this week', a.active_7d || 0, (a.active_30d || 0) + ' in 30 days');
+  h += statCard('Page views (7d)', a.views_7d || 0, (a.views_30d || 0) + ' in 30 days');
+  h += statCard('AI tool calls (7d)', ai.calls_7d || 0, (ai.calls_30d || 0) + ' in 30 days');
+  h += '</div>';
+
+  h += '<div class="an-section-h">Content &amp; engagement</div><div class="an-grid">';
+  h += statCard('Posts', c.posts_total || 0, '+' + (c.posts_7d || 0) + ' this week');
+  h += statCard('Comments', c.comments_total || 0, '+' + (c.comments_7d || 0) + ' this week');
+  h += statCard('Reactions', c.reactions_total || 0);
+  h += statCard('Messages (7d)', c.dms_7d || 0);
+  h += '</div>';
+
+  // New signups sparkline (simple bars).
+  var sd = d.signups_daily || [];
+  if (sd.length) {
+    var max = Math.max.apply(null, sd.map(function (x) { return x[1]; }).concat([1]));
+    h += '<div class="an-section-h">New signups (14 days)</div><div class="an-bars">';
+    sd.forEach(function (x) {
+      var pct = Math.round((x[1] / max) * 100);
+      h += '<div class="an-bar-col" title="' + x[0] + ': ' + x[1] + '"><div class="an-bar" style="height:' + Math.max(pct, 3) + '%"></div></div>';
+    });
+    h += '</div>';
+  }
+
+  // Top posts.
+  var tp = d.top_posts || [];
+  if (tp.length) {
+    h += '<div class="an-section-h">Top threads</div><div class="an-list">';
+    tp.forEach(function (t) {
+      h += '<div class="an-row" onclick="viewPost(\'' + t.id + '\')"><div class="an-row-title">' + esc(t.title || 'Untitled') + '</div>' +
+        '<div class="an-row-meta">' + (t.comment_count || 0) + ' comments &middot; ' + (t.reaction_count || 0) + ' reactions</div></div>';
+    });
+    h += '</div>';
+  }
+
+  // Newest members.
+  var nm = d.new_members || [];
+  if (nm.length) {
+    h += '<div class="an-section-h">Newest members</div><div class="an-list">';
+    nm.forEach(function (x) {
+      h += '<div class="an-row" style="cursor:default"><div class="an-row-title">' + esc(x.name || 'Member') + '</div>' +
+        '<div class="an-row-meta">' + esc({ free: 'Free', forum: 'Member', full: 'Full' }[x.tier] || x.tier || '') + ' &middot; ' + formatDate(x.created_at) + '</div></div>';
+    });
+    h += '</div>';
+  }
+
+  center.innerHTML = h; window.scrollTo(0, 0);
 }
 
 // ════════════════════════════════════════
