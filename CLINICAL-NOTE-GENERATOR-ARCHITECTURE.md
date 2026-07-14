@@ -133,6 +133,24 @@ from:
 Stored once, reused every note — so consent and resource text come from the clinician's
 own stored wording, not from the model.
 
+**C. How these get populated — the Setup wizard (do NOT rely on blank prompt boxes).**
+Handing a clinician an empty "write your HPI template/prompt" field is intimidating,
+produces bad prompts, and bad prompts produce bad output that kills trust. Instead, a
+guided **Setup** flow populates the Vault for them:
+- Asks a handful of questions (specialty, visit types, how they like the HPI structured,
+  quote handling, etc.).
+- **Ingests a sample note they already wrote** and reverse-engineers a template + prompt
+  that reproduces *their* style.
+- **Writes the result into their Vault fields** for them to review/approve/tweak — they
+  are never staring at a blank box.
+
+The same wizard pattern populates the **Plan library** (§4B): question them → generate
+their PARQ/standard wording + area numbers → write to Vault for approval. Learning from a
+real example is also the best test of fidelity, so the wizard doubles as onboarding *and*
+the fastest way to validate template-following. (Sequencing: the raw Vault fields + HPI
+MVP ship first so it is testable with a hand-entered template; the wizard follows — see
+§9.)
+
 ---
 
 ## 5. HPI Generator (new tool) — design
@@ -163,6 +181,13 @@ Pipeline of focused calls (the "reason better" pattern, kept):
 2. **Draft HPI** — `claude-sonnet-4-6`, drafts the HPI *strictly from the clinician's
    typed input*, shaped by their template. Anti-fabrication guard identical in spirit
    to the Note Builder's: no invented symptoms, dx, or timeline.
+   - **Quote fidelity rule (verbatim, with a spelling guardrail):** patient quotes are
+     preserved **verbatim in wording and meaning**, but with **orthographic
+     normalization only** — fix spelling, obvious typos, and capitalization; **never**
+     substitute words, paraphrase, or reinterpret. `"i feel anxous"` → `"I feel
+     anxious"` ✓; `"I feel down"` → `"I feel depressed"` ✗ (that is interpretation, not
+     spelling). Default to verbatim when the clinician's template is silent; the
+     template/prompt may direct more synthesis if they want it.
 3. **QA/verify pass (cost-gated)** — a second focused call that flags anything in the
    draft not traceable to the input (mirrors the Note Builder's existing review pass),
    surfacing flags rather than silently editing where clinically material. **This pass
@@ -260,11 +285,17 @@ true).
 
 1. **Housekeeping** *(done in this branch)* — fix `MODEL-REGISTRY.md`; note the
    dormant chart-coder job trio.
-2. **Shared note object + one-button HPI→Note Builder push** (scaffolding).
-3. **HPI Generator tool** (typed input + Vault HPI templates), Michael-only.
-4. **Vault additions** — two HPI template fields + the Plan library (numbers + wording).
-5. **Plan section in the Note Builder** — retrospective/administrative, Vault-backed
-   (§6). Built fresh on `main`, not ported from Dev.
+2. **Slice 1 — testable HPI loop (Michael-only):**
+   - Two HPI template fields (Eval + Follow-up) in `vault.html` → `vault_profile`.
+   - **HPI Generator MVP** (`pm-hpi-generator.html`): raw as-you-go input → drafts to the
+     clinician's Vault template, quote-verbatim with the spelling guardrail, "Used
+     Ambient?" toggle + opt-in Verify button. Lets Michael hand-enter his real templates
+     and test template-following now.
+3. **Slice 2 — one-button HPI→Note Builder push** + the shared note object (scaffolding).
+4. **Slice 3 — Setup wizard (§4C):** Q&A + sample-note ingest → generates the HPI
+   template/prompt → writes to Vault for approval. The real onboarding for all providers.
+5. **Slice 4 — Plan section in the Note Builder** (§6): retrospective/administrative,
+   Vault-backed; plus the Plan-library Setup wizard. Built fresh on `main`, not Dev.
 6. **Validate on Michael's own patients**, then member rollout (post Joel sign-off).
 7. **Later:** "For Next Time" forward-looking guide (§7A), then AWS Transcribe ambient
    adapter into the HPI Generator (§7B).
