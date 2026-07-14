@@ -13,7 +13,7 @@
 // hides the result from the browser). Re-running only touches rows not yet
 // extracted unless {force:true}.
 //
-// Auth: Michael's signed admin token (or EXTRACT_SECRET header) — it spends model
+// Auth: Michael's signed admin token (or EXTRACT_SECRET header) - it spends model
 // calls, so it must not be openly triggerable.
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, ANTHROPIC_API_KEY[, EXTRACT_SECRET]
@@ -100,9 +100,9 @@ exports.handler = async function (event) {
 
   try {
     // Rows that still point at a post but are not fully extracted yet (missing
-    // the inline preview OR the downloadable PDF).
-    let filter = 'template_library?source_post_id=not.is.null&visible=eq.true&select=id,title,source_post_id,storage_path,preview&order=sort_order.asc&limit=' + BATCH_CAP;
-    if (!force) filter += '&or=(storage_path.is.null,preview.is.null)';
+    // the clean markdown, the inline preview, OR the downloadable PDF).
+    let filter = 'template_library?source_post_id=not.is.null&visible=eq.true&select=id,title,source_post_id,storage_path,preview,body_markdown&order=sort_order.asc&limit=' + BATCH_CAP;
+    if (!force) filter += '&or=(storage_path.is.null,preview.is.null,body_markdown.is.null)';
     const rows = await sb(filter, 'GET');
     if (!rows || !rows.length) { await log('nothing to do'); return { statusCode: 200, headers, body: JSON.stringify({ ok: true, processed: 0 }) }; }
 
@@ -110,31 +110,45 @@ exports.handler = async function (event) {
     for (let i = 0; i < rows.length; i++) {
       const t = rows[i];
       try {
-        const posts = await sb('forum_posts?id=eq.' + encodeURIComponent(t.source_post_id) + '&select=title,body_plain&limit=1', 'GET');
-        const post = posts && posts[0];
-        if (!post || !post.body_plain) { failed++; await log('skip (no post body) ' + t.id); continue; }
+        let title = null, description = null, bodyMd = null;
 
-        const sys = 'You extract a clean, reusable TEMPLATE or reference from a community forum post written for psychiatric prescribers. The post often mixes commentary with the actual template/reference. Output ONLY the reusable content a clinician would copy and adapt: keep all substantive material (CPT codes, thresholds, phrasing, checklists, documentation structure, examples), but drop greetings, "here is how", and meta-commentary. NEVER invent facts, codes, or clinical content; use only what appears in the post.';
-        const usr = 'POST TITLE: ' + (post.title || '') + '\n\nPOST BODY:\n' + String(post.body_plain).slice(0, 12000) +
-          '\n\nReturn EXACTLY this format and nothing else:\nTITLE: <short clean template name, no emoji>\nDESCRIPTION: <one sentence under 160 chars>\n===\n<the template in clean Markdown: headings, bold, lists, tables as needed>';
+        // Deterministic rebuild path: if we already have curated markdown and
+        // this is not a forced re-extract, just re-render preview + PDF from it.
+        // No model call, so it never drifts from approved content.
+        if (t.body_markdown && !force) {
+          bodyMd = String(t.body_markdown).trim();
+          title = t.title || 'Template';
+        } else {
+          const posts = await sb('forum_posts?id=eq.' + encodeURIComponent(t.source_post_id) + '&select=title,body_plain&limit=1', 'GET');
+          const post = posts && posts[0];
+          if (!post || !post.body_plain) { failed++; await log('skip (no post body) ' + t.id); continue; }
 
-        const reply = await anthropic(AI, { model: MODEL, max_tokens: 6000, system: sys, messages: [{ role: 'user', content: usr }] });
-        const textOut = (reply.content && reply.content[0] && reply.content[0].text) || '';
-        const parsed = parseDelimited(textOut);
-        const bodyMd = String(parsed.body_markdown || textOut || '').trim();
-        if (!bodyMd) { failed++; await log('skip (empty extraction) ' + t.id); continue; }
+          const sys = 'You turn a community forum post (written for psychiatric prescribers) into a clean, standalone, reusable TEMPLATE or quick-reference document. The post mixes personal commentary with the actual reusable material. Output ONLY what a clinician would copy and adapt: keep every substantive detail (CPT codes, time thresholds, MDM criteria, exact phrasing, checklists, letter/note structure, examples), but strip greetings, "here is how I", storytelling, and meta-commentary. Where the post implies a fill-in document (a letter, a note, an appeal), format it as a template with clearly marked fill-in fields like [Patient Name] or [Date]. Use clean Markdown: ## / ### headings, bold, bullet/numbered lists, and GFM pipe tables for any tabular data (codes, thresholds, ranges). NEVER invent facts, codes, or clinical content; use only what appears in the post.';
+          const usr = 'POST TITLE: ' + (post.title || '') + '\n\nPOST BODY:\n' + String(post.body_plain).slice(0, 12000) +
+            '\n\nReturn EXACTLY this format and nothing else:\n' +
+            'TITLE: <name the ARTIFACT, not the article. A short noun phrase a clinician would file it under. NO emoji, NO "How to", NO clickbait. E.g. "E/M Time vs MDM Reference Card", "Payer Rate-Increase Request Letter", "90833 Add-On Documentation Checklist">\n' +
+            'DESCRIPTION: <one sentence, under 160 chars, saying what the document is and when to use it>\n' +
+            '===\n<the template/reference in clean Markdown as described above>';
 
-        // Inline copy-able template (safe HTML) + refreshed short description.
-        // Set these FIRST so a PDF hiccup never blocks the inline template.
-        const previewHtml = toRichHtml(bodyMd);
-        const description = String(parsed.description || '').replace(/\s+/g, ' ').trim().slice(0, 240) || null;
-        const prePatch = { preview: previewHtml };
+          const reply = await anthropic(AI, { model: MODEL, max_tokens: 6000, system: sys, messages: [{ role: 'user', content: usr }] });
+          const textOut = (reply.content && reply.content[0] && reply.content[0].text) || '';
+          const parsed = parseDelimited(textOut);
+          bodyMd = String(parsed.body_markdown || textOut || '').trim();
+          if (!bodyMd) { failed++; await log('skip (empty extraction) ' + t.id); continue; }
+          // Strip any leading emoji/symbols the model may still prepend.
+          title = String(parsed.title || '').replace(/^[^\w"'(]+/, '').trim().slice(0, 160) || t.title || 'Template';
+          description = String(parsed.description || '').replace(/\s+/g, ' ').trim().slice(0, 240) || null;
+        }
+
+        // Persist the clean markdown + rendered preview + title/description FIRST
+        // so a PDF hiccup never blocks the inline, readable template.
+        const prePatch = { body_markdown: bodyMd, preview: toRichHtml(bodyMd), title: title };
         if (description) prePatch.description = description;
         await sb('template_library?id=eq.' + encodeURIComponent(t.id), 'PATCH', prePatch, 'return=minimal');
 
         // Downloadable PDF into the private templates bucket (best-effort).
         try {
-          const pdf = await buildTextPdf(parsed.title || t.title || 'Template', bodyMd);
+          const pdf = await buildTextPdf(title, bodyMd);
           const objectPath = 'extracted/' + t.id + '.pdf';
           const upRes = await fetch(URL + '/storage/v1/object/' + BUCKET + '/' + objectPath, {
             method: 'POST',
