@@ -4851,6 +4851,10 @@ function openComposer(mode, post) {
       }); });
     }
     if (S.space) sel.value = S.space;
+    var w = document.getElementById('cp-when'); if (w) w.value = 'now';
+    var sa = document.getElementById('cp-schedule-at'); if (sa) { sa.value = ''; sa.style.display = 'none'; }
+    var ce = document.getElementById('cp-email'); if (ce) ce.checked = true;
+    var cpn = document.getElementById('cp-pin'); if (cpn) cpn.checked = false;
     document.getElementById('cp-submit').textContent = 'Publish';
   } else {
     document.getElementById('composer-title').textContent = 'Michael\u2019s Take \u00b7 ' + (post.title.length > 50 ? post.title.slice(0,48)+'\u2026' : post.title);
@@ -4865,6 +4869,49 @@ function openComposer(mode, post) {
 
 function closeComposer() {
   document.getElementById('composer-overlay').classList.remove('open');
+}
+
+// Admin: list + cancel scheduled posts.
+async function openScheduledList() {
+  if (!isAdmin()) return;
+  try {
+    var res = await fetch('/.netlify/functions/schedule-post', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: getAuthToken(), action: 'list' })
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not load');
+    closeComposer();
+    var center = document.getElementById('center');
+    S.view = 'scheduled'; clearActive();
+    var h = '<div class="post-full-back" onclick="showHome()">&larr; Back</div>';
+    h += '<div class="space-head"><div class="space-accent" style="background:var(--copper)"></div><h1>Scheduled posts</h1>';
+    h += '<p class="space-tagline">Announcements queued to publish and notify automatically.</p></div>';
+    var items = data.items || [];
+    if (!items.length) {
+      h += '<div style="padding:24px;border:1px dashed var(--border);border-radius:12px;color:var(--text-secondary);font-size:0.85rem;text-align:center">Nothing scheduled. Use + New Post and choose Schedule for later.</div>';
+    } else {
+      h += '<div class="an-list">';
+      items.forEach(function(s) {
+        h += '<div class="an-row" style="cursor:default"><div class="an-row-title">' + esc(s.title) + '</div>';
+        h += '<div class="an-row-meta">' + new Date(s.publish_at).toLocaleString() + ' &middot; ' + esc(s.space) + (s.email_blast ? ' &middot; emails members' : '') + (s.pin ? ' &middot; pinned' : '') + '</div>';
+        h += '<div style="margin-top:8px"><button class="tpl-btn locked" onclick="cancelScheduled(\'' + s.id + '\')">Cancel</button></div></div>';
+      });
+      h += '</div>';
+    }
+    center.innerHTML = h; window.scrollTo(0, 0);
+  } catch (e) { alert(e.message); }
+}
+
+async function cancelScheduled(id) {
+  if (!window.confirm('Cancel this scheduled post?')) return;
+  try {
+    var res = await fetch('/.netlify/functions/schedule-post', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: getAuthToken(), action: 'cancel', id: id })
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not cancel');
+    openScheduledList();
+  } catch (e) { alert(e.message); }
 }
 
 async function submitComposer() {
@@ -4883,6 +4930,29 @@ async function submitComposer() {
     payload.title = document.getElementById('cp-title').value.trim();
     payload.body = document.getElementById('cp-body').value.trim();
     if (!payload.title || !payload.body) { status.textContent = 'Title and body are required.'; status.className = 'composer-status err'; return; }
+
+    // Scheduled path: hand off to the scheduler instead of publishing now.
+    var whenSel = document.getElementById('cp-when');
+    if (whenSel && whenSel.value === 'schedule') {
+      var at = document.getElementById('cp-schedule-at').value;
+      if (!at) { status.textContent = 'Pick a date and time to schedule.'; status.className = 'composer-status err'; return; }
+      var when = new Date(at);
+      if (isNaN(when.getTime()) || when.getTime() < Date.now() + 60000) { status.textContent = 'Pick a time at least a minute from now.'; status.className = 'composer-status err'; return; }
+      btn.disabled = true; status.textContent = 'Scheduling\u2026';
+      try {
+        var sres = await fetch('/.netlify/functions/schedule-post', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: getAuthToken(), action: 'create', space: payload.space, title: payload.title, body: payload.body,
+            publish_at: when.toISOString(), email_blast: document.getElementById('cp-email').checked, pin: document.getElementById('cp-pin').checked })
+        });
+        var sdata = await sres.json();
+        if (!sres.ok || !sdata.ok) throw new Error(sdata.error || 'Could not schedule');
+        closeComposer();
+        alert('Scheduled for ' + when.toLocaleString() + '. It will publish and notify automatically.');
+      } catch (e) { status.textContent = e.message; status.className = 'composer-status err'; }
+      finally { btn.disabled = false; }
+      return;
+    }
   } else {
     payload.action = 'synthesis';
     payload.post_id = document.getElementById('cp-post-id').value;
@@ -5230,6 +5300,17 @@ checkAuth();
       <input type="text" id="cp-title" placeholder="Post title">
       <label>Body</label>
       <textarea id="cp-body" rows="10" placeholder="Write in plain text. Blank lines become paragraph breaks."></textarea>
+      <label>When</label>
+      <select id="cp-when" onchange="document.getElementById('cp-schedule-at').style.display = this.value==='schedule' ? '' : 'none'">
+        <option value="now">Publish now</option>
+        <option value="schedule">Schedule for later</option>
+      </select>
+      <input type="datetime-local" id="cp-schedule-at" style="display:none;margin-top:8px">
+      <div class="composer-row" style="flex-direction:column;align-items:flex-start;gap:8px;margin-top:8px">
+        <label class="composer-check"><input type="checkbox" id="cp-email" checked> Email all members when it goes live</label>
+        <label class="composer-check"><input type="checkbox" id="cp-pin"> Pin to the top of its space</label>
+      </div>
+      <div style="margin-top:6px"><a onclick="openScheduledList()" style="font-size:0.8rem;color:var(--teal);cursor:pointer">View scheduled posts &rarr;</a></div>
     </div>
     <label class="mt-label">Michael&rsquo;s Take (optional)</label>
     <textarea id="cp-synthesis" rows="4" placeholder="Canonical synthesis rendered in the teal block under the post."></textarea>
