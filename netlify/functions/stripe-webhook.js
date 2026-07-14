@@ -72,9 +72,13 @@ exports.handler = async function (event) {
       return { statusCode: 200, headers, body: JSON.stringify({ received: true, subscription: result }) };
     }
 
-    // --- Certified-mail checkout (unchanged) -------------------------------
+    // --- Checkout completed: template purchase, else certified mail --------
     if (stripeEvent.type === 'checkout.session.completed') {
-      return await handleCertifiedMailCheckout(stripeEvent.data.object, headers);
+      const s = stripeEvent.data.object;
+      if (s.metadata && s.metadata.tbp_purchase === 'template') {
+        return await handleTemplatePurchase(s, headers);
+      }
+      return await handleCertifiedMailCheckout(s, headers);
     }
 
     // Anything else: acknowledge and ignore.
@@ -88,6 +92,36 @@ exports.handler = async function (event) {
 };
 
 // ---------------------------------------------------------------------------
+
+// A free member bought a single template. Grant them access by recording the
+// purchase (idempotent on account+template). template-download.js checks this.
+async function handleTemplatePurchase(session, headers) {
+  try {
+    const email = (session.metadata && session.metadata.tbp_account_email || session.customer_email || '').toLowerCase().trim();
+    const templateId = session.metadata && session.metadata.template_id;
+    if (!email || !templateId) return { statusCode: 200, headers, body: JSON.stringify({ received: true, skipped: 'missing metadata' }) };
+
+    const accts = await sbGet('accounts?email=eq.' + encodeURIComponent(email) + '&select=id&limit=1');
+    if (!accts || !accts[0]) return { statusCode: 200, headers, body: JSON.stringify({ received: true, skipped: 'no account' }) };
+
+    const row = {
+      account_id: accts[0].id,
+      template_id: templateId,
+      amount_cents: session.amount_total || 0,
+      stripe_session_id: session.id
+    };
+    // resolution=merge-duplicates makes re-delivery of the event a no-op.
+    await sb('template_purchases?on_conflict=account_id,template_id', {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal,resolution=merge-duplicates' },
+      body: JSON.stringify(row)
+    });
+    return { statusCode: 200, headers, body: JSON.stringify({ received: true, template_purchase: true }) };
+  } catch (e) {
+    console.error('handleTemplatePurchase error:', e.message);
+    return { statusCode: 200, headers, body: JSON.stringify({ received: true, error: e.message }) };
+  }
+}
 
 async function handleSubscriptionEvent(sub, stripe) {
   const item = sub.items && sub.items.data && sub.items.data[0];

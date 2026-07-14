@@ -1859,6 +1859,7 @@ async function checkAuth() {
     document.getElementById('gate').classList.add('hidden');
     checkMember(); updateTopbar(); init();
     maybeShowWelcome();
+    handlePurchaseReturn();
   } else {
     gateMode('login'); // default returning-member view
   }
@@ -3678,6 +3679,7 @@ async function showLibrary() {
       libData = data || [];
     } catch(e) { console.error('library:', e); libData = []; }
   }
+  await loadOwnedTemplates();
   renderLibrary();
 }
 
@@ -3728,12 +3730,29 @@ function renderLibrary() {
 
 function libSetCat(k) { libCat = k; renderLibrary(); }
 
+// Templates the signed-in member has individually purchased.
+var ownedTemplateIds = null;
+async function loadOwnedTemplates(force) {
+  if (ownedTemplateIds && !force) return;
+  ownedTemplateIds = {};
+  if (!S.user) return;
+  try {
+    var res = await fetch('/.netlify/functions/my-templates', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken() })
+    });
+    var data = await res.json();
+    (data && data.ids ? data.ids : []).forEach(function(id){ ownedTemplateIds[id] = true; });
+  } catch (e) {}
+}
+
 // Access mirrors the server (template-download.js): every PAYING member (forum
-// or full) gets all templates; a free member gets only free/open ones (or any
-// they've individually purchased, which the server confirms at download time).
+// or full) gets all templates; a free member gets free/open ones plus any they
+// individually purchased.
 function templateAccessible(t) {
   var tier = (S.user && S.user.tier) || 'free';
   if (tier === 'forum' || tier === 'full') return true;
+  if (ownedTemplateIds && ownedTemplateIds[t.id]) return true;
   if (!t.is_paid && (TIER_RANK[tier] || 0) >= (TIER_RANK[t.min_tier] || 2)) return true;
   return false;
 }
@@ -3757,6 +3776,7 @@ function viewTemplate(id) {
   var catLabel = (TEMPLATE_CATS.filter(function(c){ return c.key === t.category; })[0] || {}).label || '';
 
   var h = '<div class="post-full-back" onclick="showLibrary()">&larr; Back to Template Library</div>';
+  if (isAdmin()) h += '<div style="text-align:right;margin-bottom:6px"><button class="rm-add-btn" onclick="openTemplateEdit(\'' + t.id + '\')">Edit template</button></div>';
   h += '<div class="tpl-detail">';
   h += '<div class="tpl-detail-head">';
   h += '<span class="tpl-detail-icon">' + (hasFile ? '&#128196;' : '&#128221;') + '</span>';
@@ -3778,17 +3798,83 @@ function viewTemplate(id) {
     h += '</div>';
     if (!hasFile && !t.source_post_id) h += '<div style="color:var(--text-secondary);font-size:0.85rem">No file attached yet.</div>';
   } else {
-    // Gated: show a teaser of the description and a clear path to unlock.
+    // Gated: show a clear path to unlock. A paid template can be bought on its
+    // own; otherwise the path is joining (or upgrading).
+    var buyable = t.is_paid && (t.price_cents > 0) && !isPaidMember();
     h += '<div class="tpl-gate">';
-    h += '<div class="tpl-gate-title">&#128274; Included with membership</div>';
-    h += '<p class="tpl-gate-sub">Members get every template in the library. ' + (t.is_paid ? 'This one is also available on its own.' : 'Join to unlock this and all other templates.') + '</p>';
+    h += '<div class="tpl-gate-title">&#128274; ' + (buyable ? 'Buy this template, or join to get them all' : 'Included with membership') + '</div>';
+    h += '<p class="tpl-gate-sub">Members get every template in the library. ' + (buyable ? 'Or buy just this one and keep it forever.' : 'Join to unlock this and all other templates.') + '</p>';
     h += '<div class="tpl-detail-actions">';
-    if (isPaidMember()) h += '<button class="btn-primary" onclick="startCheckout(\'full_monthly_119\')">Upgrade to Full</button>';
-    else h += '<button class="btn-primary" onclick="showJoin(\'\')">Join to unlock all templates</button>';
+    if (buyable) h += '<button class="btn-primary" onclick="buyTemplate(\'' + t.id + '\')">Buy for $' + ((t.price_cents || 0) / 100).toFixed(2).replace(/\.00$/, '') + '</button>';
+    if (isPaidMember()) h += '<button class="' + (buyable ? 'btn-ghost' : 'btn-primary') + '" onclick="startCheckout(\'full_monthly_119\')">Upgrade to Full</button>';
+    else h += '<button class="' + (buyable ? 'btn-ghost' : 'btn-primary') + '" onclick="showJoin(\'\')">Join to unlock all templates</button>';
     h += '</div></div>';
   }
   h += '</div>';
   center.innerHTML = h; window.scrollTo(0, 0);
+}
+
+// Free member buys a single template: start Stripe Checkout and redirect. On
+// return, the ?bought param triggers a refresh so the download unlocks.
+async function buyTemplate(id) {
+  if (!S.user) { showJoin(''); return; }
+  try {
+    var base = window.location.origin + '/platform.html';
+    var res = await fetch('/.netlify/functions/create-template-checkout', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), template_id: id, success_url: base + '?bought=' + id, cancel_url: base + '?tpl=' + id })
+    });
+    var data = await res.json();
+    if (data.already_owned) { await loadOwnedTemplates(true); viewTemplate(id); return; }
+    if (data.url) { window.location.href = data.url; return; }
+    alert(data.error || 'Could not start checkout.');
+  } catch (e) { alert('Could not start checkout.'); }
+}
+
+// Admin: edit a template's metadata, pricing, tier, and visibility.
+async function openTemplateEdit(id) {
+  if (!isAdmin()) return;
+  var t = (libData || []).filter(function(x){ return x.id === id; })[0];
+  if (!t) return;
+  var title = prompt('Title:', t.title || ''); if (title === null) return;
+  var description = prompt('Description:', t.description || ''); if (description === null) return;
+  var category = prompt('Category (documentation/billing/letters/policies/clinical/operations/general):', t.category || 'general'); if (category === null) return;
+  var min_tier = prompt('Included free for tier and up (free/forum/full):', t.min_tier || 'forum'); if (min_tier === null) return;
+  var paidYN = prompt('Sell individually to free members? (y/n):', t.is_paid ? 'y' : 'n'); if (paidYN === null) return;
+  var is_paid = /^y/i.test(paidYN.trim());
+  var price_cents = t.price_cents || 0;
+  if (is_paid) {
+    var dollars = prompt('Price in dollars (e.g. 9 or 12.50):', ((t.price_cents || 0) / 100).toString()); if (dollars === null) return;
+    price_cents = Math.round(parseFloat(dollars) * 100) || 0;
+    if (!price_cents) { alert('A paid template needs a price above 0.'); return; }
+  }
+  var visYN = prompt('Visible in the library? (y/n):', t.visible === false ? 'n' : 'y'); if (visYN === null) return;
+  try {
+    var res = await fetch('/.netlify/functions/template-admin', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), action: 'update', id: id,
+        title: title.trim(), description: description.trim(), category: category.trim().toLowerCase(),
+        min_tier: min_tier.trim().toLowerCase(), is_paid: is_paid, price_cents: price_cents, visible: /^y/i.test(visYN.trim()) })
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Update failed');
+    libData = null; await showLibrary();
+  } catch (e) { alert(e.message); }
+}
+
+// If we came back from a successful template purchase, confirm + unlock.
+async function handlePurchaseReturn() {
+  try {
+    var params = new URLSearchParams(window.location.search);
+    var bought = params.get('bought');
+    if (!bought) return;
+    // Clean the URL so a refresh doesn't repeat this.
+    if (window.history && window.history.replaceState) window.history.replaceState({}, document.title, window.location.pathname);
+    await loadOwnedTemplates(true);
+    libData = null;
+    await showLibrary();
+    viewTemplate(bought);
+  } catch (e) {}
 }
 
 async function downloadTemplate(id) {

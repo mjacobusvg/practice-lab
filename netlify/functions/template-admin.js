@@ -52,6 +52,31 @@ exports.handler = async function (event) {
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
     }
 
+    if (p.action === 'update') {
+      const id = String(p.id || '').trim();
+      if (!id) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'id required' }) };
+      const patch = {};
+      if (Object.prototype.hasOwnProperty.call(p, 'title')) { const t = String(p.title || '').trim(); if (t) patch.title = t; }
+      if (Object.prototype.hasOwnProperty.call(p, 'description')) patch.description = String(p.description || '').trim() || null;
+      if (Object.prototype.hasOwnProperty.call(p, 'category')) patch.category = VALID_CATS.indexOf(p.category) !== -1 ? p.category : 'general';
+      if (Object.prototype.hasOwnProperty.call(p, 'min_tier')) patch.min_tier = VALID_TIERS.indexOf(p.min_tier) !== -1 ? p.min_tier : 'full';
+      if (Object.prototype.hasOwnProperty.call(p, 'is_paid')) patch.is_paid = !!p.is_paid;
+      if (Object.prototype.hasOwnProperty.call(p, 'price_cents')) patch.price_cents = Math.max(0, Math.min(1000000, parseInt(p.price_cents, 10) || 0));
+      if (Object.prototype.hasOwnProperty.call(p, 'visible')) patch.visible = !!p.visible;
+      if (Object.prototype.hasOwnProperty.call(p, 'file_url')) patch.file_url = String(p.file_url || '').trim() || null;
+      if (Object.prototype.hasOwnProperty.call(p, 'storage_path')) patch.storage_path = String(p.storage_path || '').trim() || null;
+      // A template can't be both individually paid and priced at 0.
+      if (patch.is_paid === true && Object.prototype.hasOwnProperty.call(patch, 'price_cents') && !patch.price_cents) {
+        return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Set a price for a paid template.' }) };
+      }
+      if (!Object.keys(patch).length) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Nothing to update' }) };
+      const res = await fetch(URL + '/rest/v1/template_library?id=eq.' + encodeURIComponent(id), {
+        method: 'PATCH', headers: sbHeaders, body: JSON.stringify(patch)
+      });
+      if (!res.ok) throw new Error('Supabase ' + res.status + ': ' + (await res.text()).slice(0, 150));
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
+    }
+
     if (p.action === 'remove') {
       const id = String(p.id || '').trim();
       if (!id) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'id required' }) };
