@@ -7,7 +7,7 @@
  *   <script>
  *     TBPAuth.protect({
  *       toolName: 'Practice Lab',         // Display name shown on gate screen
- *       spaceId: 2546298,                 // Optional — pass to restrict to a specific tier/space
+ *       requireFull: true,                // Optional — require Full-tier ($119) membership
  *                                         // Omit for community-wide access (any active member)
  *       onVerified: function() { ... }    // Called when member is verified — load your tool here
  *     });
@@ -78,7 +78,7 @@
     } catch(e) {}
   }
 
-  function renderGate(toolName, spaceId, onVerified) {
+  function renderGate(toolName, requireFull, onVerified) {
     document.body.style.overflow = 'hidden';
     document.body.classList.add('tbp-gate-active');
 
@@ -134,7 +134,6 @@
       document.body.removeChild(gate);
       document.body.style.overflow = '';
       document.body.classList.remove('tbp-gate-active');
-      document.body.style.background = '#0b1120';
     }
 
     function verify() {
@@ -148,7 +147,7 @@
       setLoading(true);
 
       var requestBody = { email: email };
-      if (spaceId) requestBody.spaceId = spaceId;
+      if (requireFull) requestBody.requireFull = true;
 
       fetch('/.netlify/functions/circle-auth', {
         method: 'POST',
@@ -158,9 +157,13 @@
       .then(function(res) { return res.json(); })
       .then(function(data) {
         setLoading(false);
-        if (data.verified) {
-          setSessionToken(data.token || email);
+        if (data.verified && data.token) {
+          // Store ONLY the real signed token. No email fallback — an email is
+          // not a valid session token and the hardened backends would reject it.
+          setSessionToken(data.token);
           try {
+            localStorage.setItem('tbp_verified_email', email);
+            if (data.tier) localStorage.setItem('tbp_tier', data.tier);
             if (data.memberToken) localStorage.setItem('tbp_member_jwt', data.memberToken);
             if (data.communityMemberId) localStorage.setItem('tbp_member_id', String(data.communityMemberId));
           } catch(e) {}
@@ -182,31 +185,157 @@
       if (e.key === 'Enter') verify();
     });
     submitBtn.addEventListener('click', verify);
-    setTimeout(function() { emailInput.focus(); }, 100);
+    setTimeout(function() {
+      var storedEmail = '';
+      try { storedEmail = localStorage.getItem('tbp_verified_email') || ''; } catch(e) {}
+      if (storedEmail) {
+        emailInput.value = storedEmail;
+      } else {
+        emailInput.focus();
+      }
+    }, 100);
   }
 
   // Public API
   window.TBPAuth = {
     protect: function(options) {
       var toolName = options.toolName || 'Think Beyond Practice';
-      var spaceId = options.spaceId || null;
+      // Canonical full-tier flag is requireFull:true. Legacy pages pass
+      // spaceId:2546298 (the old Circle full-space id) to mean the same thing;
+      // both are honored so nothing has to change in lockstep. This is purely a
+      // "require full tier" marker now — tier comes from the signed token claim,
+      // not a live Circle lookup, so it survives the platform migration unchanged.
+      var FULL_SPACE_ID = 2546298;
+      var requireFull = (options.requireFull === true) || (Number(options.spaceId) === FULL_SPACE_ID);
       var onVerified = options.onVerified || function() {};
+      var skipPHIGate = options.skipPHIGate === true;
+      var termsVersion = options.termsVersion || 'interim_v1';
+      var baaVersion = options.baaVersion || '3.0';
 
-      if (getSessionToken()) {
+      // OPT-OUT PHI gate. The BAA + Terms gate runs by DEFAULT for every tool.
+      // A page only skips it by explicitly passing skipPHIGate:true (used for
+      // non-PHI reference tools, practice-data tools, the Practice Lab,
+      // Credentialing Hub, Ask the Archive, and the marketing/platform pages).
+      // This means a NEW tool is gated unless you deliberately exempt it: the
+      // safe failure mode. The gate fails CLOSED on any ambiguity or error.
+      if (!skipPHIGate) {
+        var realOnVerified = onVerified;
+        onVerified = function() {
+          runPHIGate(toolName, termsVersion, baaVersion, realOnVerified);
+        };
+      }
+
+      // If full tier is required, always verify against the API to check the tier
+      // claim. Only skip verification for community-wide (any-member) access.
+      if (!requireFull && getSessionToken()) {
         onVerified();
         return;
       }
 
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', function() {
-          renderGate(toolName, spaceId, onVerified);
+          renderGate(toolName, requireFull, onVerified);
         });
       } else {
-        renderGate(toolName, spaceId, onVerified);
+        renderGate(toolName, requireFull, onVerified);
       }
     },
 
     clearSession: clearSession
   };
+
+  // ── PHI gate: BAA then Terms, both required, fail closed ──
+  function getVerifiedEmail() {
+    try { return (localStorage.getItem('tbp_verified_email') || '').trim().toLowerCase(); } catch (e) { return ''; }
+  }
+
+  function phiOverlay(innerHTML) {
+    var o = document.createElement('div');
+    o.id = 'tbp-phi-gate';
+    o.style.cssText = 'position:fixed;inset:0;z-index:99998;background:var(--tbp-navy,#0b1120);display:flex;align-items:center;justify-content:center;padding:20px;font-family:-apple-system,"DM Sans",sans-serif;';
+    o.innerHTML = '<div style="max-width:460px;width:100%;background:var(--tbp-navy-mid,#111c30);border:1px solid var(--tbp-rule,rgba(42,171,184,0.2));border-top:2px solid var(--tbp-teal,#2aabb8);border-radius:8px;padding:36px 32px;color:var(--tbp-cream,#e8e2d6);">' + innerHTML + '</div>';
+    document.body.appendChild(o);
+    return o;
+  }
+  function removePhiOverlay() {
+    var o = document.getElementById('tbp-phi-gate');
+    if (o && o.parentNode) o.parentNode.removeChild(o);
+  }
+
+  function showBaaRequired(email) {
+    var redirect = encodeURIComponent(window.location.pathname + window.location.search);
+    phiOverlay(
+      '<div style="font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--tbp-teal,#2aabb8);margin-bottom:10px">Think Beyond Practice</div>' +
+      '<h1 style="font-size:19px;color:var(--tbp-white,#f5f4f2);margin:0 0 10px">Business Associate Agreement required</h1>' +
+      '<p style="font-size:14px;color:var(--tbp-cream-dim,#b0aa9e);line-height:1.6;margin:0 0 14px">This tool processes clinical content that may include protected health information. A current signed Business Associate Agreement is required before you can use it. It takes about a minute.</p>' +
+      '<p style="font-size:13px;color:var(--tbp-cream-dim,#b0aa9e);line-height:1.6;margin:0 0 22px;padding:10px 14px;background:rgba(245,200,66,0.10);border-left:3px solid #f5c842;border-radius:6px">If you have signed a BAA before, you may be asked to sign again. The agreement is updated periodically as new tools are added to the platform, and using the clinical tools requires your signature on the current version.</p>' +
+      '<a href="/baa-sign.html?email=' + encodeURIComponent(email) + '&redirect=' + redirect + '" style="display:inline-block;padding:13px 26px;background:var(--tbp-teal,#2aabb8);color:var(--tbp-navy,#0b1120);border-radius:6px;font-size:14px;font-weight:700;text-decoration:none">Review and sign the BAA</a>' +
+      '<p style="font-size:12px;color:var(--tbp-cream-dim,#b0aa9e);margin:18px 0 0">Questions? michael@thinkbeyondpractice.com</p>'
+    );
+  }
+
+  function showTermsRequired(email, termsVersion, proceed) {
+    var o = phiOverlay(
+      '<div style="font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--tbp-teal,#2aabb8);margin-bottom:10px">Think Beyond Practice</div>' +
+      '<h1 style="font-size:19px;color:var(--tbp-white,#f5f4f2);margin:0 0 10px">Terms of Use</h1>' +
+      '<p style="font-size:14px;color:var(--tbp-cream-dim,#b0aa9e);line-height:1.6;margin:0 0 16px">Before using this tool, please review and accept the <a href="/terms-of-service.html" target="_blank" style="color:var(--tbp-teal,#2aabb8)">Terms of Use</a>. They cover appropriate use, that the tool supports rather than replaces your clinical judgment, and your responsibilities when handling patient information.</p>' +
+      '<label style="display:flex;align-items:flex-start;gap:10px;font-size:13px;color:var(--tbp-cream,#e8e2d6);line-height:1.5;margin:0 0 16px;cursor:pointer"><input type="checkbox" id="tbp-terms-box" style="margin-top:3px;width:16px;height:16px;flex:none"><span>I have read and agree to the Think Beyond Practice Terms of Use.</span></label>' +
+      '<div id="tbp-terms-error" style="display:none;color:#f87171;font-size:13px;margin:0 0 12px"></div>' +
+      '<button id="tbp-terms-btn" style="width:100%;padding:13px;background:var(--tbp-teal,#2aabb8);color:var(--tbp-navy,#0b1120);border:none;border-radius:6px;font-size:14px;font-weight:700;cursor:pointer">Agree and continue</button>'
+    );
+    var box = o.querySelector('#tbp-terms-box');
+    var btn = o.querySelector('#tbp-terms-btn');
+    var err = o.querySelector('#tbp-terms-error');
+    btn.addEventListener('click', function() {
+      if (!box.checked) { err.textContent = 'Please check the box to continue.'; err.style.display = 'block'; return; }
+      err.style.display = 'none';
+      btn.disabled = true; btn.textContent = 'Saving...';
+      fetch('/.netlify/functions/record-terms-acceptance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + getSessionToken() },
+        body: JSON.stringify({ action: 'record', token: getSessionToken(), terms_version: termsVersion })
+      })
+      .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, d: d }; }); })
+      .then(function(res){
+        if (res.ok && res.d && res.d.ok) { removePhiOverlay(); proceed(); }
+        else { err.textContent = 'Could not record your acceptance. Please try again.'; err.style.display = 'block'; btn.disabled = false; btn.textContent = 'Agree and continue'; }
+      })
+      .catch(function(){ err.textContent = 'Could not record your acceptance. Please try again.'; err.style.display = 'block'; btn.disabled = false; btn.textContent = 'Agree and continue'; });
+    });
+  }
+
+  function runPHIGate(toolName, termsVersion, baaVersion, proceed) {
+    var email = getVerifiedEmail();
+    // Fail closed: if we cannot identify the member, require the BAA path.
+    if (!email) { showBaaRequired(''); return; }
+
+    // 1) BAA check (fail closed). Require the CURRENT version: a member who
+    // signed an older version (e.g. 1.0) does not satisfy 2.0 and is sent to re-sign.
+    // Identity is the SIGNED token; check-baa-status derives the email from it.
+    var authToken = getSessionToken();
+    fetch('/.netlify/functions/check-baa-status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+      body: JSON.stringify({ token: authToken })
+    })
+    .then(function(r){ return r.ok ? r.json() : { hasBaa: false }; })
+    .then(function(baa){
+      var signedCurrent = baa && baa.hasBaa === true &&
+        String(baa.baaVersion || '') === String(baaVersion);
+      if (!signedCurrent) { showBaaRequired(email); return; }
+      // 2) Terms check (fail closed: any error or non-accepted => show terms)
+      return fetch('/.netlify/functions/record-terms-acceptance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
+        body: JSON.stringify({ action: 'check', token: authToken, terms_version: termsVersion })
+      })
+      .then(function(r){ return r.ok ? r.json() : { accepted: false }; })
+      .then(function(terms){
+        if (terms && terms.accepted === true) { proceed(); }
+        else { showTermsRequired(email, termsVersion, proceed); }
+      });
+    })
+    .catch(function(){ showBaaRequired(email); });
+  }
 
 })();
