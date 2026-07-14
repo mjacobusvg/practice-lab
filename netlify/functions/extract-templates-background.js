@@ -47,14 +47,26 @@ function anthropic(apiKey, payload) {
   });
 }
 
-// Pull the JSON object out of a model reply (tolerates code fences / prose).
-function parseJsonReply(text) {
-  let t = String(text || '').trim();
-  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  if (fence) t = fence[1].trim();
-  const first = t.indexOf('{'), last = t.lastIndexOf('}');
-  if (first !== -1 && last > first) t = t.slice(first, last + 1);
-  return JSON.parse(t);
+// Parse the delimited reply (TITLE / DESCRIPTION / === / markdown body). This
+// format is far more robust than JSON: markdown bodies contain newlines and
+// quotes that routinely break JSON.parse, and a truncated body just loses its
+// tail instead of failing the whole parse.
+function parseDelimited(text) {
+  let t = String(text || '').replace(/```/g, '').trim();
+  const idx = t.indexOf('===');
+  const header = idx === -1 ? t : t.slice(0, idx);
+  let body = idx === -1 ? '' : t.slice(idx + 3);
+  const titleM = header.match(/TITLE:\s*(.+)/i);
+  const descM = header.match(/DESCRIPTION:\s*(.+)/i);
+  if (idx === -1) {
+    // No delimiter: strip the header lines and treat the rest as the body.
+    body = t.replace(/^\s*TITLE:.*$/im, '').replace(/^\s*DESCRIPTION:.*$/im, '').trim();
+  }
+  return {
+    title: (titleM ? titleM[1] : '').trim(),
+    description: (descM ? descM[1] : '').trim(),
+    body_markdown: body.trim()
+  };
 }
 
 exports.handler = async function (event) {
@@ -87,9 +99,10 @@ exports.handler = async function (event) {
   await log('start (force=' + force + ')');
 
   try {
-    // Rows that still point at a post but have no extracted file yet.
+    // Rows that still point at a post but are not fully extracted yet (missing
+    // the inline preview OR the downloadable PDF).
     let filter = 'template_library?source_post_id=not.is.null&visible=eq.true&select=id,title,source_post_id,storage_path,preview&order=sort_order.asc&limit=' + BATCH_CAP;
-    if (!force) filter += '&storage_path=is.null';
+    if (!force) filter += '&or=(storage_path.is.null,preview.is.null)';
     const rows = await sb(filter, 'GET');
     if (!rows || !rows.length) { await log('nothing to do'); return { statusCode: 200, headers, body: JSON.stringify({ ok: true, processed: 0 }) }; }
 
@@ -101,33 +114,36 @@ exports.handler = async function (event) {
         const post = posts && posts[0];
         if (!post || !post.body_plain) { failed++; await log('skip (no post body) ' + t.id); continue; }
 
-        const sys = 'You extract a clean, reusable TEMPLATE or reference from a community forum post written for psychiatric prescribers. The post often mixes commentary with the actual template/reference. Output ONLY the reusable content a clinician would copy and adapt: keep all substantive material (CPT codes, thresholds, phrasing, checklists, documentation structure, examples), but drop greetings, "here is how", and meta-commentary. NEVER invent facts, codes, or clinical content; use only what appears in the post. If the post is purely narrative, distill its key reference points into a structured summary. Return STRICT JSON only.';
+        const sys = 'You extract a clean, reusable TEMPLATE or reference from a community forum post written for psychiatric prescribers. The post often mixes commentary with the actual template/reference. Output ONLY the reusable content a clinician would copy and adapt: keep all substantive material (CPT codes, thresholds, phrasing, checklists, documentation structure, examples), but drop greetings, "here is how", and meta-commentary. NEVER invent facts, codes, or clinical content; use only what appears in the post.';
         const usr = 'POST TITLE: ' + (post.title || '') + '\n\nPOST BODY:\n' + String(post.body_plain).slice(0, 12000) +
-          '\n\nReturn JSON: {"title": short clean template name (no emoji), "description": one sentence under 160 chars, "body_markdown": the template in clean Markdown (headings, bold, lists, tables as needed)}.';
+          '\n\nReturn EXACTLY this format and nothing else:\nTITLE: <short clean template name, no emoji>\nDESCRIPTION: <one sentence under 160 chars>\n===\n<the template in clean Markdown: headings, bold, lists, tables as needed>';
 
-        const reply = await anthropic(AI, { model: MODEL, max_tokens: 4000, system: sys, messages: [{ role: 'user', content: usr }] });
+        const reply = await anthropic(AI, { model: MODEL, max_tokens: 6000, system: sys, messages: [{ role: 'user', content: usr }] });
         const textOut = (reply.content && reply.content[0] && reply.content[0].text) || '';
-        const parsed = parseJsonReply(textOut);
-        const bodyMd = String(parsed.body_markdown || '').trim();
+        const parsed = parseDelimited(textOut);
+        const bodyMd = String(parsed.body_markdown || textOut || '').trim();
         if (!bodyMd) { failed++; await log('skip (empty extraction) ' + t.id); continue; }
 
         // Inline copy-able template (safe HTML) + refreshed short description.
+        // Set these FIRST so a PDF hiccup never blocks the inline template.
         const previewHtml = toRichHtml(bodyMd);
         const description = String(parsed.description || '').replace(/\s+/g, ' ').trim().slice(0, 240) || null;
+        const prePatch = { preview: previewHtml };
+        if (description) prePatch.description = description;
+        await sb('template_library?id=eq.' + encodeURIComponent(t.id), 'PATCH', prePatch, 'return=minimal');
 
-        // Downloadable PDF into the private templates bucket.
-        const pdf = await buildTextPdf(parsed.title || t.title || 'Template', bodyMd);
-        const objectPath = 'extracted/' + t.id + '.pdf';
-        const upRes = await fetch(URL + '/storage/v1/object/' + BUCKET + '/' + objectPath, {
-          method: 'POST',
-          headers: { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/pdf', 'x-upsert': 'true' },
-          body: pdf
-        });
-        if (!upRes.ok) { failed++; await log('upload failed ' + t.id + ': ' + (await upRes.text()).slice(0, 120)); continue; }
-
-        const patch = { preview: previewHtml, storage_path: objectPath };
-        if (description) patch.description = description;
-        await sb('template_library?id=eq.' + encodeURIComponent(t.id), 'PATCH', patch, 'return=minimal');
+        // Downloadable PDF into the private templates bucket (best-effort).
+        try {
+          const pdf = await buildTextPdf(parsed.title || t.title || 'Template', bodyMd);
+          const objectPath = 'extracted/' + t.id + '.pdf';
+          const upRes = await fetch(URL + '/storage/v1/object/' + BUCKET + '/' + objectPath, {
+            method: 'POST',
+            headers: { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/pdf', 'x-upsert': 'true' },
+            body: pdf
+          });
+          if (upRes.ok) { await sb('template_library?id=eq.' + encodeURIComponent(t.id), 'PATCH', { storage_path: objectPath }, 'return=minimal'); }
+          else { await log('pdf upload failed ' + t.id + ': ' + (await upRes.text()).slice(0, 120)); }
+        } catch (pe) { await log('pdf error ' + t.id + ': ' + (pe && pe.message ? pe.message : pe)); }
         done++;
       } catch (e) {
         failed++;
