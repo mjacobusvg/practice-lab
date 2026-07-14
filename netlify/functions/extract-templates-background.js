@@ -133,11 +133,13 @@ exports.handler = async function (event) {
           const reply = await anthropic(AI, { model: MODEL, max_tokens: 6000, system: sys, messages: [{ role: 'user', content: usr }] });
           const textOut = (reply.content && reply.content[0] && reply.content[0].text) || '';
           const parsed = parseDelimited(textOut);
-          bodyMd = String(parsed.body_markdown || textOut || '').trim();
+          // Normalize em/en dashes to hyphens everywhere (house style: no em dashes).
+          var deDash = function (s) { return String(s == null ? '' : s).replace(/[—–]/g, '-'); };
+          bodyMd = deDash(parsed.body_markdown || textOut || '').trim();
           if (!bodyMd) { failed++; await log('skip (empty extraction) ' + t.id); continue; }
           // Strip any leading emoji/symbols the model may still prepend.
-          title = String(parsed.title || '').replace(/^[^\w"'(]+/, '').trim().slice(0, 160) || t.title || 'Template';
-          description = String(parsed.description || '').replace(/\s+/g, ' ').trim().slice(0, 240) || null;
+          title = deDash(parsed.title || '').replace(/^[^\w"'(]+/, '').trim().slice(0, 160) || t.title || 'Template';
+          description = deDash(parsed.description || '').replace(/\s+/g, ' ').trim().slice(0, 240) || null;
         }
 
         // Persist the clean markdown + rendered preview + title/description FIRST
