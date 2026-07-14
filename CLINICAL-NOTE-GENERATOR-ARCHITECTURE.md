@@ -141,6 +141,21 @@ A new PHI tool, own page (`pm-hpi-generator.html`, clean path `/hpi`), gated exa
 like the other clinical tools (`auth-gate.js`, `requireFull:true`, PHI/BAA gate),
 calling `clinical-proxy-stream`.
 
+**Design principle — the input contract is the whole ballgame.** The tool must accept
+the clinician's *raw, as-they-go capture* — running, chronological, question-order
+fragments with verbatim patient quotes — NOT a pre-structured draft. If a clinician
+feels they must tidy/structure the note before pasting it in, the tool has added a step
+instead of removing one, and it will not be used. Its value is exactly the
+reorganization the clinician currently does in their head: **take the messy running
+stream → produce the clinician's structured HPI (per their Vault template), stitching in
+connective clinical narrative, while preserving their verbatim quotes and inventing
+nothing.** The input UI must say so explicitly ("paste your notes exactly as you took
+them — fragments, shorthand, quotes; don't clean them up"). Corollary: typing-as-you-go
+is *manual ambient* — same input shape as an AWS transcript — so building for this raw
+input now is the on-ramp that makes ambient a drop-in later. Trust is earned by concrete
+levers: the verify pass proves only-what-you-typed was used; output follows the
+clinician's own template; verbatim quotes survive intact.
+
 Pipeline of focused calls (the "reason better" pattern, kept):
 
 1. **Structure/select** — load the clinician's `visitType` template from the Vault;
