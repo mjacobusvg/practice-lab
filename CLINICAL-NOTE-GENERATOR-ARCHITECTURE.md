@@ -148,9 +148,20 @@ Pipeline of focused calls (the "reason better" pattern, kept):
 2. **Draft HPI** — `claude-sonnet-4-6`, drafts the HPI *strictly from the clinician's
    typed input*, shaped by their template. Anti-fabrication guard identical in spirit
    to the Note Builder's: no invented symptoms, dx, or timeline.
-3. **QA/review pass** — a second focused call that flags anything not traceable to the
-   input (mirrors the Note Builder's existing review pass), surfacing flags rather than
-   silently editing where clinically material.
+3. **QA/verify pass (cost-gated)** — a second focused call that flags anything in the
+   draft not traceable to the input (mirrors the Note Builder's existing review pass),
+   surfacing flags rather than silently editing where clinically material. **This pass
+   is gated by a "Did you use Ambient?" toggle to avoid wasted spend:**
+   - **Typed input (toggle = No):** verify is **opt-in** — a one-tap "Verify against
+     what I entered" button, **off by default**. The clinician authored the source and
+     reads the draft, so the pass is largely redundant; only spend the call on request.
+   - **Ambient (toggle = Yes):** verify runs **automatically** — there is no
+     clinician-authored ground truth, so cross-checking every HPI statement against the
+     raw transcript is non-negotiable.
+   - When it runs, keep it on **`claude-sonnet-4-6`** — it is the fabrication-catching
+     safety net; control cost by frequency, not by downgrading the model.
+   The toggle + button ship **now** (defaulting to No, ambient not yet built); when
+   ambient lands it simply flips the default. This is the scaffold ambient plugs into.
 4. **Hand off** — populate `ClinicalNote.hpi` + context; enable the one-button push to
    the Note Builder.
 
