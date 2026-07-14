@@ -1,8 +1,23 @@
+// netlify/functions/circle-auth.js
+//
+// LAYER 1 — identity + entitlement. Confirms the email is a real Circle
+// community member, determines TIER (full vs forum) from space membership, and
+// mints a SIGNED session token via _lib/session.js (Layer 2). The old base64
+// token (email:timestamp, no signature) is gone — it was forgeable.
+//
+// TIER (confirmed via Circle API, June 27 2026):
+//   FULL_SPACE_ID 2546298  -> tier 'full' ($119: Practice Lab + clinical Practice Manager)
+//   community member, not in full space -> tier 'forum' ($50: forum + archive)
+// scope is always 'member' for a community member; tier is the gate for full-only tools.
+//
+// Env: CIRCLE_HEADLESS_TOKEN, CIRCLE_API_TOKEN, SESSION_SIGNING_SECRET
+
+const { mintToken } = require('./_lib/session');
+
 const CIRCLE_API_TOKEN = process.env.CIRCLE_API_TOKEN;
 const CIRCLE_HEADLESS_TOKEN = process.env.CIRCLE_HEADLESS_TOKEN;
 const CIRCLE_DOMAIN = 'think-beyond-practice.circle.so';
-const REDIRECT_URL = 'https://community.thinkbeyondpractice.com';
-const GATED_SPACE_ID = 2546298;
+const FULL_SPACE_ID = 2546298; // full-tier ($119) space
 
 exports.handler = async function(event, context) {
   const headers = {
@@ -15,10 +30,14 @@ exports.handler = async function(event, context) {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
   if (event.httpMethod !== 'POST') return { statusCode: 405, headers, body: JSON.stringify({ message: 'Method not allowed' }) };
 
-  let email;
+  let email, requireFull;
   try {
     const body = JSON.parse(event.body || '{}');
     email = (body.email || '').trim().toLowerCase();
+    // Optional: a caller can require full-tier access (Practice Lab path). If true
+    // and the member is forum-only, verification fails with an upgrade message.
+    // (Back-compat: a legacy spaceId === FULL_SPACE_ID is treated as requireFull.)
+    requireFull = body.requireFull === true || Number(body.spaceId) === FULL_SPACE_ID;
   } catch(e) {
     return { statusCode: 400, headers, body: JSON.stringify({ message: 'Invalid request' }) };
   }
@@ -27,86 +46,75 @@ exports.handler = async function(event, context) {
   if (!CIRCLE_HEADLESS_TOKEN || !CIRCLE_API_TOKEN) return { statusCode: 500, headers, body: JSON.stringify({ message: 'Server configuration error' }) };
 
   try {
-    // Step 1: Use Headless Auth API to get member JWT
-    // This confirms the email belongs to a real member
+    // Step 1: Headless auth confirms the email is a real community member.
     const authRes = await fetch(`https://${CIRCLE_DOMAIN}/api/v1/headless/auth_token`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${CIRCLE_HEADLESS_TOKEN}`,
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Authorization': `Bearer ${CIRCLE_HEADLESS_TOKEN}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ email })
     });
 
-    console.log('Headless auth status:', authRes.status);
-
     if (authRes.status === 404 || authRes.status === 422) {
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({ verified: false, message: 'No Think Beyond Practice account found for this email.' })
-      };
+      return { statusCode: 200, headers, body: JSON.stringify({ verified: false, message: 'No Think Beyond Practice account found for this email.' }) };
     }
-
     if (!authRes.ok) {
-      const t = await authRes.text();
-      console.log('Auth error:', t.substring(0, 200));
       return { statusCode: 200, headers, body: JSON.stringify({ verified: false, message: 'Unable to verify membership. Please try again.' }) };
     }
 
     const authData = await authRes.json();
-    console.log('Auth data keys:', Object.keys(authData));
-
     const memberToken = authData.access_token;
     const communityMemberId = authData.community_member_id;
-    console.log('Member ID from auth:', communityMemberId);
-
     if (!memberToken || !communityMemberId) {
       return { statusCode: 200, headers, body: JSON.stringify({ verified: false, message: 'Unable to verify membership. Please try again.' }) };
     }
 
-    // Step 2: Check space membership using admin API with the real member ID
-    const spaceUrl = `https://app.circle.so/api/v1/space_members?space_id=${GATED_SPACE_ID}&community_member_id=${communityMemberId}`;
-    console.log('Space check URL:', spaceUrl);
-
-    const spaceRes = await fetch(spaceUrl, {
-      headers: {
-        'Authorization': `Bearer ${CIRCLE_API_TOKEN}`,
-        'Content-Type': 'application/json'
+    // Step 2: Determine TIER by checking full-space membership (always, so the
+    // token always carries the correct tier).
+    let tier = 'forum';
+    try {
+      const spaceUrl = `https://app.circle.so/api/v1/space_members?space_id=${FULL_SPACE_ID}&community_member_id=${communityMemberId}`;
+      const spaceRes = await fetch(spaceUrl, {
+        headers: { 'Authorization': `Bearer ${CIRCLE_API_TOKEN}`, 'Content-Type': 'application/json' }
+      });
+      if (spaceRes.ok) {
+        const spaceData = await spaceRes.json();
+        const records = spaceData.records || [];
+        const isFull = records.some(r =>
+          Number(r.community_member_id) === Number(communityMemberId) && r.status === 'active');
+        if (isFull) tier = 'full';
       }
-    });
+    } catch (e) {
+      console.error('circle-auth tier check failed (defaulting to forum):', e.message);
+      // Fail closed on tier: if we can't confirm full, treat as forum (least privilege).
+    }
 
-    console.log('Space check status:', spaceRes.status);
-    const spaceData = await spaceRes.json();
-    console.log('Space count:', spaceData.count, 'records:', (spaceData.records || []).length);
-
-    const records = spaceData.records || [];
-    const hasAccess = records.some(r =>
-      Number(r.community_member_id) === Number(communityMemberId) &&
-      r.status === 'active'
-    );
-
-    console.log('hasAccess:', hasAccess, 'communityMemberId:', communityMemberId);
-
-    if (!hasAccess) {
+    // Step 3: If the caller requires full tier and this member is forum-only, reject.
+    if (requireFull && tier !== 'full') {
       return {
         statusCode: 200,
         headers,
         body: JSON.stringify({
           verified: false,
-          message: 'Practice Lab access requires the $89 or $119 Think Beyond Practice plan. Your current plan does not include Practice Lab access.'
+          tier: tier,
+          message: 'This tool requires the $119/month Think Beyond Practice plan. Your current plan does not include access.'
         })
       };
     }
 
-    const token = Buffer.from(email + ':' + Date.now()).toString('base64');
-    return { statusCode: 200, headers, body: JSON.stringify({ 
-      verified: true, 
-      token, 
-      memberToken,
-      communityMemberId,
-      message: 'Access verified' 
-    }) };
+    // Step 4: Mint the SIGNED token. scope 'member'; tier distinguishes full vs forum.
+    const token = mintToken({ email, scope: 'member', tier, communityMemberId });
+
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({
+        verified: true,
+        token,
+        tier,
+        memberToken,          // Circle JWT, still used by circle-comment for attribution
+        communityMemberId,
+        message: 'Access verified'
+      })
+    };
 
   } catch(err) {
     console.error('circle-auth error:', err.message);
