@@ -5314,11 +5314,11 @@ async function promptInstall() {
 // ════════════════════════════════════════
 var WELCOME_KEY = 'tbp_welcomed_v2';
 var WELCOME_SLIDES = [
-  { art: 'full', title: 'Welcome to your new Home', body: 'Welcome to your new Home for all things Think Beyond Practice. Everything lives in three places: the <b>menu</b> on the left, the <b>Feed</b> in the middle, and the <b>Topics</b> panel on the right. On a phone, the left menu is the <b>&#9776; button</b> (top-left) and the Topics panel is the <b>panel button</b> (top-right, next to the bell).' },
+  { art: 'full', title: 'Welcome to your new Home', body: 'Welcome to your new Home for all things Think Beyond Practice. Everything lives in three places: the <b>menu</b> on the left, the <b>Feed</b> in the middle, and the <b>Topics</b> panel on the right. {{WELCOME_HINT}}' },
   { art: 'center', title: 'The Feed', body: 'The <b>Feed</b> is the middle column on Home: the newest posts and replies from the community. Tap any post to read it, react, comment, @mention a colleague, or vote in a poll.' },
   { art: 'atap', title: 'Ask the Archive', body: 'Type any clinical, billing, or practice question into the <b>search box at the top of Home</b>. It shows you the posts that answer your question, plus any templates that apply.' },
-  { art: 'left', title: 'The left menu', body: 'The left menu (the <b>&#9776; button</b>, top-left on a phone) is how you get around: <b>Home</b>, the <b>Spaces</b>, the <b>Template Library</b>, <b>Saved</b> posts, threads you <b>Follow</b>, and <b>Messages</b>.' },
-  { art: 'right', title: 'The Topics panel', body: 'The panel on the right (the <b>panel button</b>, top-right on a phone) lets you <b>browse by topic tag</b>, open <b>Quick References</b>, and see what colleagues have recently asked.' },
+  { art: 'left', title: 'The left menu', body: 'Find your way around from {{LEFT}}: <b>Home</b>, the <b>Spaces</b>, the <b>Template Library</b>, <b>Saved</b> posts, threads you <b>Follow</b>, and <b>Messages</b>.' },
+  { art: 'right', title: 'The Topics panel', body: '{{RIGHT}} lets you <b>browse by topic tag</b>, open <b>Quick References</b>, and see what colleagues have recently asked.' },
   { icon: '&#128276;', title: 'Stay in the loop', body: 'The <b>bell</b> (top-right) shows new posts, comments, mentions, and messages. You are opted into email updates by default, and you can change or turn off any of them any time.' },
   { icon: '&#128241;', title: 'Install the app', body: 'Add Think Beyond Practice to your phone home screen or desktop for one-tap access. Look for <b>&ldquo;Install app&rdquo;</b> in the left menu when your browser offers it.' }
 ];
@@ -5355,16 +5355,33 @@ function maybeShowWelcome() {
   setTimeout(function () { welcomeIdx = 0; renderWelcome(); document.getElementById('welcome-overlay').classList.add('open'); }, 600);
 }
 
+// Location wording adapts to the layout state: the left menu becomes a
+// hamburger at <=768px, and the right panel becomes a button at <=1080px.
+function welcomeDeviceRefs() {
+  var w = window.innerWidth || 1200;
+  var leftCollapsed = w <= 768;
+  var rightCollapsed = w <= 1080;
+  return {
+    LEFT: leftCollapsed ? 'the <b>&#9776; menu button</b> (top-left)' : 'the <b>left column</b>',
+    RIGHT: rightCollapsed ? 'the <b>panel button</b> (top-right, next to the bell)' : 'the <b>right column</b>',
+    WELCOME_HINT: (leftCollapsed || rightCollapsed)
+      ? 'On this screen, open the menu with the <b>&#9776; button</b> (top-left)' + (rightCollapsed ? ' and the Topics panel with the <b>panel button</b> (top-right).' : '. The Topics panel is the right column.')
+      : 'On this screen all three are visible side by side.'
+  };
+}
+
 function renderWelcome() {
   var card = document.getElementById('welcome-card');
   if (!card) return;
   var s = WELCOME_SLIDES[welcomeIdx];
   var last = welcomeIdx === WELCOME_SLIDES.length - 1;
+  var refs = welcomeDeviceRefs();
+  var bodyText = String(s.body).replace(/\{\{LEFT\}\}/g, refs.LEFT).replace(/\{\{RIGHT\}\}/g, refs.RIGHT).replace(/\{\{WELCOME_HINT\}\}/g, refs.WELCOME_HINT);
   var dots = WELCOME_SLIDES.map(function (x, i) { return '<span class="welcome-dot' + (i === welcomeIdx ? ' on' : '') + '"></span>'; }).join('');
   var h = '<button class="welcome-x" onclick="closeWelcome()" title="Close">&times;</button>';
   h += '<div class="welcome-icon">' + (s.art ? welcomeArt(s.art) : s.icon) + '</div>';
   h += '<div class="welcome-title">' + s.title + '</div>';
-  h += '<div class="welcome-body">' + s.body + '</div>';
+  h += '<div class="welcome-body">' + bodyText + '</div>';
   h += '<div class="welcome-dots">' + dots + '</div>';
   h += '<div class="welcome-actions">';
   h += '<button class="btn-ghost" onclick="closeWelcome()">' + (last ? '' : 'Skip') + '</button>';
