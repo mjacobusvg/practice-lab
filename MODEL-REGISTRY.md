@@ -16,11 +16,11 @@
 
 | File | Endpoint | Model(s) | Purpose |
 |---|---|---|---|
-| pm-chart-coder.html | anthropic-proxy | claude-sonnet-4-6 (x2) | MDM coding + follow-up chat |
+| pm-chart-coder.html | clinical-proxy-stream | claude-sonnet-4-6 (x2: MDM extract + verify), claude-haiku-4-5-20251001 (x2: preflight + audit) | Documentation audit + E/M coding (LLM extracts facts, deterministic JS maps to MDM levels/code) + follow-up chat. PHI tool — full note is pasted in. |
 | pm-monitoring-protocol.html | clinical-proxy | claude-sonnet-4-6 | Monitoring counseling generation |
 | practice-lab-billing.html | anthropic-proxy | claude-sonnet-4-6 (x9), claude-haiku-4-5-20251001 (x3) | Billing sim, Angela rep, drills |
 | pm-interaction-checker.html | anthropic-proxy | claude-sonnet-4-6 | Interaction analysis |
-| pm-clinical-note-builder.html | clinical-proxy | claude-sonnet-4-6 | Psychotherapy add-on + assessment generation from pasted HPI (PHI tool) |
+| pm-clinical-note-builder.html | clinical-proxy-stream | claude-sonnet-4-6 (up to x4: preflight cards + assess draft + QA review + therapy blurb) | Psychotherapy add-on + assessment generation from pasted HPI (PHI tool). Does not generate HPI or Plan. |
 | pm-letter-generator.html | clinical-proxy | claude-haiku-4-5-20251001, claude-sonnet-4-6 | Letter generation |
 | pm-termination-workflow.html | clinical-proxy | claude-haiku-4-5-20251001 | Termination package (Haiku is intentional — stays under Netlify 26s timeout) |
 | inngest-serve.mjs | api.anthropic direct | claude-sonnet-4-6 (synthesis), claude-haiku-4-5-20251001 (query expansion) | Ask the Archive RAG pipeline |
