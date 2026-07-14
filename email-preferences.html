@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Email Preferences - Think Beyond Practice</title>
+  <style>
+    *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#F9F7F5;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;color:#1A1714}
+    .card{background:#fff;border:1px solid #E8E3DD;border-radius:16px;padding:36px 32px;width:100%;max-width:460px}
+    h1{font-size:19px;font-weight:700;margin-bottom:4px}
+    .sub{font-size:13px;color:#5C5650;margin-bottom:22px;line-height:1.5}
+    .row{display:flex;align-items:flex-start;gap:12px;padding:14px 0;border-top:1px solid #F0ECE7}
+    .row:first-of-type{border-top:none}
+    .row label{font-size:14.5px;font-weight:600;cursor:pointer}
+    .row .desc{font-size:12.5px;color:#7A736C;margin-top:2px;line-height:1.4}
+    .sw{position:relative;flex-shrink:0;width:44px;height:26px}
+    .sw input{opacity:0;width:0;height:0}
+    .slider{position:absolute;inset:0;background:#D6D0C9;border-radius:26px;transition:.2s;cursor:pointer}
+    .slider::before{content:"";position:absolute;height:20px;width:20px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+    .sw input:checked + .slider{background:#1D6FA4}
+    .sw input:checked + .slider::before{transform:translateX(18px)}
+    .grow{flex:1}
+    .actions{margin-top:24px;display:flex;gap:10px;align-items:center}
+    button{padding:11px 18px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;border:none}
+    .save{background:#1D6FA4;color:#fff}
+    .save:hover{background:#185d8c}
+    .save:disabled{background:#94a3b8;cursor:not-allowed}
+    .none{background:none;border:1px solid #E8E3DD;color:#5C5650}
+    .none:hover{border-color:#c0392b;color:#c0392b}
+    .msg{margin-top:16px;font-size:13px;padding:10px 12px;border-radius:8px;display:none}
+    .msg.ok{display:block;background:#e7f5ec;color:#1c6b3e}
+    .msg.err{display:block;background:#fce8e8;color:#9b2c2c}
+    .loading{font-size:14px;color:#5C5650}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Email preferences</h1>
+    <p class="sub" id="who">Choose exactly which emails you want from Think Beyond Practice. Changes save when you hit Save.</p>
+
+    <div id="form" style="display:none">
+      <div class="row">
+        <div class="grow"><label for="p-posts">New posts</label><div class="desc">When a new post goes up in the community.</div></div>
+        <span class="sw"><input type="checkbox" id="p-posts"><span class="slider" onclick="this.previousElementSibling.click()"></span></span>
+      </div>
+      <div class="row">
+        <div class="grow"><label for="p-comments">Comments &amp; mentions</label><div class="desc">Replies in threads you are part of, and when someone @mentions you.</div></div>
+        <span class="sw"><input type="checkbox" id="p-comments"><span class="slider" onclick="this.previousElementSibling.click()"></span></span>
+      </div>
+      <div class="row">
+        <div class="grow"><label for="p-dms">Direct messages</label><div class="desc">When another member sends you a private message.</div></div>
+        <span class="sw"><input type="checkbox" id="p-dms"><span class="slider" onclick="this.previousElementSibling.click()"></span></span>
+      </div>
+
+      <div class="actions">
+        <button class="save" id="saveBtn" onclick="save(false)">Save preferences</button>
+        <button class="none" onclick="save(true)">Unsubscribe from all</button>
+      </div>
+      <div class="msg" id="msg"></div>
+    </div>
+
+    <div class="loading" id="loading">Loading your preferences...</div>
+    <div class="msg err" id="fatal" style="display:none"></div>
+  </div>
+
+  <script>
+    var TOKEN = new URLSearchParams(window.location.search).get('t') || '';
+
+    function show(el, on){ el.style.display = on ? 'block' : 'none'; }
+
+    async function load() {
+      if (!TOKEN) { fail('This link is missing its token. Use the link from your email.'); return; }
+      try {
+        var res = await fetch('/.netlify/functions/email-prefs', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ t: TOKEN, action: 'get' })
+        });
+        var data = await res.json();
+        if (!res.ok || !data.ok) { fail(data.error || 'Could not load your preferences.'); return; }
+        document.getElementById('p-posts').checked = !!data.prefs.posts;
+        document.getElementById('p-comments').checked = !!data.prefs.comments;
+        document.getElementById('p-dms').checked = !!data.prefs.dms;
+        if (data.email) document.getElementById('who').textContent = 'Managing email preferences for ' + data.email + '. Toggle what you want, then Save.';
+        show(document.getElementById('loading'), false);
+        document.getElementById('form').style.display = 'block';
+      } catch (e) { fail('Could not load your preferences.'); }
+    }
+
+    function fail(m) {
+      show(document.getElementById('loading'), false);
+      var f = document.getElementById('fatal'); f.textContent = m; f.style.display = 'block';
+    }
+
+    async function save(allOff) {
+      var prefs = allOff
+        ? { posts: false, comments: false, dms: false }
+        : { posts: document.getElementById('p-posts').checked, comments: document.getElementById('p-comments').checked, dms: document.getElementById('p-dms').checked };
+      if (allOff) { document.getElementById('p-posts').checked = false; document.getElementById('p-comments').checked = false; document.getElementById('p-dms').checked = false; }
+      var btn = document.getElementById('saveBtn'); btn.disabled = true;
+      var msg = document.getElementById('msg'); msg.className = 'msg';
+      try {
+        var res = await fetch('/.netlify/functions/email-prefs', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ t: TOKEN, action: 'save', prefs: prefs })
+        });
+        var data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || 'Save failed');
+        msg.className = 'msg ok';
+        msg.textContent = allOff ? 'Done. You are unsubscribed from all emails. You can turn any back on here any time.' : 'Saved. Your email preferences are updated.';
+      } catch (e) {
+        msg.className = 'msg err'; msg.textContent = e.message;
+      } finally { btn.disabled = false; }
+    }
+
+    load();
+  </script>
+</body>
+</html>

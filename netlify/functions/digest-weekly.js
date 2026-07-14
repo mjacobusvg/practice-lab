@@ -11,7 +11,7 @@
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, SES_* (via _lib/notify), DIGEST_SECRET (optional)
 
-const { emailBcc } = require('./_lib/notify');
+const { emailEach, prefsFooter } = require('./_lib/notify');
 
 const PLATFORM_URL = 'https://thinkbeyondpractice.com/platform.html';
 const WINDOW_DAYS = 7;
@@ -80,16 +80,15 @@ exports.handler = async function (event) {
         '</li>';
     });
 
-    const html =
+    const bodyTop =
       '<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto">' +
       '<p style="font-size:16px"><strong>This week on Think Beyond Practice</strong></p>' +
       '<p style="font-size:13px;color:#555">The threads your peers have been discussing over the last ' + WINDOW_DAYS + ' days.</p>' +
       '<ul style="padding-left:18px;margin:16px 0">' + list + '</ul>' +
-      '<p><a href="' + PLATFORM_URL + '" style="display:inline-block;background:#0b7285;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-size:14px">Open the platform &rarr;</a></p>' +
-      '<p style="font-size:12px;color:#999;margin-top:20px">You are receiving this because post notifications are on in your profile. Turn them off any time in your profile settings.</p>' +
-      '</div>';
+      '<p><a href="' + PLATFORM_URL + '" style="display:inline-block;background:#0b7285;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-size:14px">Open the platform &rarr;</a></p>';
 
-    await emailBcc(emails, 'This week on Think Beyond Practice', html);
+    // One email per recipient so each carries its own preferences link.
+    await emailEach(emails, 'This week on Think Beyond Practice', function (email) { return bodyTop + prefsFooter(email) + '</div>'; });
     try { await sb('digest_sends', 'POST', { recipient_count: emails.length, post_count: posts.length }, 'return=minimal'); } catch (e) {}
 
     return { statusCode: 200, headers, body: JSON.stringify({ ok: true, recipients: emails.length, posts: posts.length }) };

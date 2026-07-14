@@ -28,23 +28,46 @@ function esc(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// Best-effort email to many recipients via SES, hidden via Bcc, chunked.
+const PLATFORM_URL = 'https://thinkbeyondpractice.com/platform.html';
+const PREFS_URL = 'https://thinkbeyondpractice.com/email-preferences.html';
+
+// Build the SES client (or null if not configured).
+function sesClient() {
+  const accessKeyId = process.env.SES_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.SES_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
+  if (!accessKeyId || !secretAccessKey) return null;
+  const region = process.env.SES_REGION || process.env.AWS_REGION || 'us-east-1';
+  const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
+  return {
+    client: new SESv2Client({ region, credentials: { accessKeyId, secretAccessKey } }),
+    SendEmailCommand: SendEmailCommand,
+    from: process.env.SES_FROM || 'Think Beyond Practice <noreply@thinkbeyondpractice.com>'
+  };
+}
+
+// A per-recipient footer with a no-login link to that member's email preferences
+// (choose exactly which emails to get, or unsubscribe from all).
+function prefsFooter(email) {
+  try {
+    const { mintPrefsToken } = require('./prefs-token');
+    const link = PREFS_URL + '?t=' + encodeURIComponent(mintPrefsToken(email));
+    return '<p style="font-size:12px;color:#888;margin-top:22px;border-top:1px solid #eee;padding-top:12px">' +
+      'Choose which emails you get, or unsubscribe: <a href="' + link + '">manage email preferences</a>.</p>';
+  } catch (e) { return ''; }
+}
+
+// Best-effort email to many recipients via Bcc (used only where per-recipient
+// personalization is not needed).
 async function emailBcc(toEmails, subject, html) {
   try {
     const list = (toEmails || []).filter(function (e) { return e && String(e).indexOf('@') !== -1; });
     if (!list.length) return;
-    const region = process.env.SES_REGION || process.env.AWS_REGION || 'us-east-1';
-    const accessKeyId = process.env.SES_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.SES_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
-    if (!accessKeyId || !secretAccessKey) return;
-    const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
-    const client = new SESv2Client({ region, credentials: { accessKeyId, secretAccessKey } });
-    const from = process.env.SES_FROM || 'Think Beyond Practice <noreply@thinkbeyondpractice.com>';
+    const ses = sesClient(); if (!ses) return;
     const to = process.env.NOTIFY_TO || 'noreply@thinkbeyondpractice.com';
     for (let i = 0; i < list.length; i += 45) {
       const chunk = list.slice(i, i + 45);
-      await client.send(new SendEmailCommand({
-        FromEmailAddress: from,
+      await ses.client.send(new ses.SendEmailCommand({
+        FromEmailAddress: ses.from,
         Destination: { ToAddresses: [to], BccAddresses: chunk },
         Content: { Simple: { Subject: { Data: subject, Charset: 'UTF-8' }, Body: { Html: { Data: html, Charset: 'UTF-8' } } } }
       }));
@@ -52,7 +75,26 @@ async function emailBcc(toEmails, subject, html) {
   } catch (e) { console.log('notify email error:', e && e.message); }
 }
 
-const PLATFORM_URL = 'https://thinkbeyondpractice.com/platform.html';
+// Per-recipient email: one message each, so the body can carry that member's own
+// preferences link. buildHtml(email) returns the full HTML for that recipient.
+async function emailEach(toEmails, subject, buildHtml) {
+  try {
+    const list = (toEmails || []).filter(function (e) { return e && String(e).indexOf('@') !== -1; });
+    if (!list.length) return;
+    const ses = sesClient(); if (!ses) return;
+    const CONC = 5;
+    for (let i = 0; i < list.length; i += CONC) {
+      const batch = list.slice(i, i + CONC);
+      await Promise.all(batch.map(function (email) {
+        return ses.client.send(new ses.SendEmailCommand({
+          FromEmailAddress: ses.from,
+          Destination: { ToAddresses: [email] },
+          Content: { Simple: { Subject: { Data: subject, Charset: 'UTF-8' }, Body: { Html: { Data: buildHtml(email), Charset: 'UTF-8' } } } }
+        })).catch(function (e) { console.log('emailEach error for one recipient:', e && e.message); });
+      }));
+    }
+  } catch (e) { console.log('emailEach error:', e && e.message); }
+}
 
 // New post -> notify all other members in-app; email members who opted in.
 // emailBlast=true only for admin (Michael) posts, so member posts don't email-blast.
@@ -71,11 +113,10 @@ async function notifyNewPost(post, actor, opts) {
 
     if (opts && opts.emailBlast) {
       const emails = recips.filter(function (r) { return r.notify_email_posts; }).map(function (r) { return r.email; });
-      const html = '<p><strong>' + esc(actorName) + '</strong> posted on Think Beyond Practice:</p>' +
+      const body = '<p><strong>' + esc(actorName) + '</strong> posted on Think Beyond Practice:</p>' +
         '<p style="font-size:16px"><strong>' + esc(post.title || '') + '</strong></p>' +
-        '<p><a href="' + PLATFORM_URL + '">Read it on the platform &rarr;</a></p>' +
-        '<p style="font-size:12px;color:#888">Manage email notifications in your profile.</p>';
-      await emailBcc(emails, 'New post: ' + (post.title || 'Think Beyond Practice'), html);
+        '<p><a href="' + PLATFORM_URL + '">Read it on the platform &rarr;</a></p>';
+      await emailEach(emails, 'New post: ' + (post.title || 'Think Beyond Practice'), function (email) { return body + prefsFooter(email); });
     }
   } catch (e) { console.log('notifyNewPost error:', e && e.message); }
 }
@@ -110,12 +151,11 @@ async function notifyNewComment(post, commenter) {
     try { await sb('member_notifications', 'POST', rows, 'return=minimal'); } catch (e) { console.log('notify comment in-app:', e && e.message); }
 
     const emails = recips.filter(function (r) { return r.notify_email_comments; }).map(function (r) { return r.email; });
-    const html = '<p><strong>' + esc(commenterName) + '</strong> commented on a thread you\'re part of:</p>' +
+    const body = '<p><strong>' + esc(commenterName) + '</strong> commented on a thread you\'re part of:</p>' +
       '<p style="font-size:16px"><strong>' + esc(post.title || '') + '</strong></p>' +
-      '<p><a href="' + PLATFORM_URL + '">Read the thread &rarr;</a></p>' +
-      '<p style="font-size:12px;color:#888">Manage email notifications in your profile.</p>';
-    await emailBcc(emails, 'New comment on: ' + (post.title || 'a thread'), html);
+      '<p><a href="' + PLATFORM_URL + '">Read the thread &rarr;</a></p>';
+    await emailEach(emails, 'New comment on: ' + (post.title || 'a thread'), function (email) { return body + prefsFooter(email); });
   } catch (e) { console.log('notifyNewComment error:', e && e.message); }
 }
 
-module.exports = { notifyNewPost, notifyNewComment, emailBcc, sb };
+module.exports = { notifyNewPost, notifyNewComment, emailBcc, emailEach, prefsFooter, sb };

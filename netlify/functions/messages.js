@@ -13,7 +13,7 @@
 //   { token, action:'unread_count' }
 
 const { verifyToken } = require('./_lib/session');
-const { emailBcc } = require('./_lib/notify');
+const { emailBcc, prefsFooter } = require('./_lib/notify');
 const { linkifyMentions } = require('./_lib/mentions');
 
 const MAX_BODY = 5000;
@@ -136,7 +136,7 @@ exports.handler = async function (event) {
           var dmHtml = '<p><strong>' + esc(me.name || 'A member') + '</strong> sent you a message on Think Beyond Practice:</p>' +
             '<blockquote>' + esc(String(raw).slice(0, 400)) + '</blockquote>' +
             '<p><a href="https://thinkbeyondpractice.com/platform.html">Reply on the platform &rarr;</a></p>' +
-            '<p style="font-size:12px;color:#888">Manage email notifications in your profile.</p>';
+            prefsFooter(rec.email);
           await emailBcc([rec.email], 'New message from ' + (me.name || 'a member'), dmHtml);
         } catch (e) { /* best-effort */ }
       }

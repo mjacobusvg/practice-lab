@@ -11,7 +11,7 @@
 // Nothing here throws to the caller: a mention failure must never block the
 // post/comment/message from being created.
 
-const { sb, emailBcc } = require('./notify');
+const { sb, emailEach, prefsFooter } = require('./notify');
 
 const PLATFORM_URL = 'https://thinkbeyondpractice.com/platform.html';
 const MAX_MENTIONS = 20;
@@ -73,11 +73,10 @@ async function notifyMentions(accounts, actor, ctx) {
     try { await sb('member_notifications', 'POST', rows, 'return=minimal'); } catch (e) { console.log('notify mention in-app:', e && e.message); }
 
     const emails = recips.filter(function (a) { return a.notify_email_comments && a.email; }).map(function (a) { return a.email; });
-    const html = '<p><strong>' + esc(actorName) + '</strong> mentioned you on Think Beyond Practice' +
+    const body = '<p><strong>' + esc(actorName) + '</strong> mentioned you on Think Beyond Practice' +
       (ctx && ctx.title ? ': <strong>' + esc(ctx.title) + '</strong>' : '') + '.</p>' +
-      '<p><a href="' + PLATFORM_URL + '">Open the platform &rarr;</a></p>' +
-      '<p style="font-size:12px;color:#888">Manage email notifications in your profile.</p>';
-    await emailBcc(emails, esc(actorName) + ' mentioned you', html);
+      '<p><a href="' + PLATFORM_URL + '">Open the platform &rarr;</a></p>';
+    await emailEach(emails, esc(actorName) + ' mentioned you', function (email) { return body + prefsFooter(email); });
   } catch (e) { console.log('notifyMentions error:', e && e.message); }
 }
 
