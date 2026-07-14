@@ -49,10 +49,29 @@ exports.handler = async function (event) {
     if (!tpls || !tpls.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'Template not found' }) };
     const tpl = tpls[0];
 
-    if (tpl.is_paid) {
-      if (tier !== 'full') return { statusCode: 402, headers, body: JSON.stringify({ ok: false, error: 'This is a paid template' }) };
-    } else if ((TIER_RANK[tier] || 0) < (TIER_RANK[tpl.min_tier] || 2)) {
-      return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Upgrade required to download this template' }) };
+    // Access model: every PAYING member (forum or full) gets all templates.
+    // Free members get free/member-open templates only, unless they've bought
+    // this specific one.
+    const paying = (tier === 'forum' || tier === 'full');
+    let allowed = false;
+    if (paying) {
+      allowed = true;
+    } else if (!tpl.is_paid && (TIER_RANK[tier] || 0) >= (TIER_RANK[tpl.min_tier] || 2)) {
+      allowed = true;
+    } else if (tpl.is_paid) {
+      // Did this free member purchase it?
+      try {
+        const meRes = await fetch(URL + '/rest/v1/accounts?email=eq.' + encodeURIComponent(email) + '&select=id&limit=1', { headers: sbHeaders });
+        const me = await meRes.json();
+        if (me && me[0]) {
+          const purRes = await fetch(URL + '/rest/v1/template_purchases?account_id=eq.' + me[0].id + '&template_id=eq.' + encodeURIComponent(templateId) + '&select=id&limit=1', { headers: sbHeaders });
+          const pur = await purRes.json();
+          allowed = !!(pur && pur.length);
+        }
+      } catch (e) { /* treat as not purchased */ }
+    }
+    if (!allowed) {
+      return { statusCode: tpl.is_paid ? 402 : 403, headers, body: JSON.stringify({ ok: false, error: tpl.is_paid ? 'Purchase or join to download this template' : 'Join to download this template' }) };
     }
 
     // Private storage file: mint a short-lived signed URL

@@ -24,6 +24,7 @@
 | pm-letter-generator.html | clinical-proxy | claude-haiku-4-5-20251001, claude-sonnet-4-6 | Letter generation |
 | pm-termination-workflow.html | clinical-proxy | claude-haiku-4-5-20251001 | Termination package (Haiku is intentional — stays under Netlify 26s timeout) |
 | inngest-serve.mjs | api.anthropic direct | claude-sonnet-4-6 (synthesis), claude-haiku-4-5-20251001 (query expansion) | Ask the Archive RAG pipeline |
+| extract-templates-background.js | api.anthropic direct | claude-sonnet-4-6 | Admin batch: extracts the reusable template from each source post into template_library.preview + a downloadable PDF. Constrained to reuse only post content (no fabrication). |
 
 ## Proxies
 
