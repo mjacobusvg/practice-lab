@@ -309,12 +309,16 @@ Pipeline of focused calls (the "reason better" pattern, kept):
      never re-asked or re-asserted), and **safety** (never carried). This also gives the
      follow-up path real behavior (previously thin) and is the anti-clone-note /
      audit-integrity safeguard.
-   - **Pre-visit prep (Bucket 1, designed, not yet built):** an optional, toggleable mode
-     — paste last visit's note *before* the appointment to get questions to ask / foci to
-     address today (carry-forward threads + psychotherapy focus), i.e. the Dev "For Next
-     Time" idea moved to the front of the visit. Toggleable because some clinicians won't
-     have it on-screen with the patient. Note-time reminder checklists (Bucket 3) are held
-     — limited value since a missed in-visit question can't be recovered at charting time.
+   - **Pre-visit prep (Bucket 1, BUILT):** the "Set me up for this visit" button — paste
+     last visit's note and it returns (a) a **carry-forward starting note** (standing/
+     historical items pre-filled as continued/stable, dynamic sections left as labeled
+     prompts to fill during the visit, SI/HI left to assess today), (b) a **"to check / ask
+     today"** list from last visit's threads, and (c) optional **psychotherapy focus**
+     options (the Dev "For Next Time" idea moved to the front). "Work from this" loads the
+     starting note into the working area, delivering steps 1–2 of the §0 workspace loop.
+     Also absorbs the Copilot eval→follow-up "Carry Forward" button (same mechanism).
+     Note-time reminder checklists (Bucket 3) are held — limited value since a missed
+     in-visit question can't be recovered at charting time.
 3. **QA/verify pass — now automatic (revised after testing).** Every draft is
    auto-reviewed by a second `claude-sonnet-4-6` call that silently corrects clear
    fabrications and surfaces only genuine flags — matching the Note Builder / v1 copilot

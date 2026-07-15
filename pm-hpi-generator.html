@@ -98,6 +98,9 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
     <label for="context" style="margin-top:16px">Last visit's note &mdash; to carry forward from <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional, follow-ups)</span></label>
     <textarea id="context" style="min-height:80px" placeholder="Paste last visit's note. On a follow-up, standing items that don't change each visit (substance use, exercise, hallucinations, history) carry forward worded as continued; today's notes drive everything that changed. Safety (SI/HI) is never carried forward as if assessed today."></textarea>
+    <button class="btn-ghost" id="prep-btn" style="margin-top:10px">Set me up for this visit &rarr;</button>
+    <span class="hint" id="prep-hint" style="margin-left:8px">Paste last visit's note above, then get a carry-forward starting note plus what to check today.</span>
+    <div id="prep-results"></div>
 
     <div class="card-group" style="margin-top:16px">
       <label>How did you capture these notes?</label>
@@ -450,6 +453,75 @@ async function verifyHpi(hpi){
   } catch(e){}
   // If the verifier did not return clean JSON, keep the original draft rather than lose it.
   return { hpi: hpi, flags: [] };
+}
+
+// ── "Set me up for this visit" — pre-visit prep (Bucket 1) ──
+function prepSystem(){
+  var tmpl = (vaultTemplates.follow_up || '').trim();
+  var s = "You are helping a psychiatric prescriber PREP for a follow-up visit, before they see the patient. You are given LAST VISIT'S NOTE" + (tmpl ? " and the clinician's follow-up HPI template" : "") + ". Produce a starting point for today's note plus a short list of things to check or ask today.\n\n";
+  if(tmpl){ s += "CLINICIAN'S FOLLOW-UP TEMPLATE (structure and any carry-forward classification):\n\n" + tmpl + "\n\n"; }
+  s += "Respond ONLY with raw JSON, no code fence:\n{\"startingNote\":\"<today's follow-up scaffold>\",\"checklist\":[\"...\"],\"foci\":[\"...\"]}\n\n";
+  s += "STARTING NOTE rules:\n";
+  s += "- Follow the clinician's template structure, order, and labels" + (tmpl ? "" : " (use a conventional follow-up structure if no template)") + ". Plain text, no Markdown.\n";
+  s += "- STANDING or HISTORICAL items (per the template's classification, else best judgment: e.g. substance use, exercise, absence of hallucinations, history): carry forward from last visit worded as CONTINUED or STABLE ('continues to deny auditory or visual hallucinations'), as a starting point.\n";
+  s += "- DYNAMIC items (current mood and anxiety, active symptoms, medication response, side effects): do NOT carry last visit's content forward. Leave a brief labeled prompt to fill during the visit (e.g. 'Mood / anxiety: '), so the clinician types today's findings.\n";
+  s += "- SAFETY (SI/HI): leave a prompt to assess today; never pre-fill it from last visit.\n";
+  s += "- Invent nothing; only carry what last visit's note documents.\n\n";
+  s += "CHECKLIST rules: short, concrete things to check or ask today that follow from last visit (unresolved threads, planned follow-ups such as 'recheck sleep response to the med change', pending items, anything flagged for next time). Derive from last visit's note; do not invent.\n\n";
+  s += "FOCI rules: 0 to 3 brief psychotherapy focus options that genuinely follow from last visit's picture, each a practical suggestion. Omit if none fit.";
+  return s;
+}
+
+document.getElementById('prep-btn').addEventListener('click', async function(){
+  var last = document.getElementById('context').value.trim();
+  var hint = document.getElementById('prep-hint');
+  if(last.length < 40){ hint.innerHTML = '<span style="color:var(--amber)">Paste last visit\'s note above first.</span>'; return; }
+  var btn = this; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Setting up&hellip;';
+  document.getElementById('prep-results').innerHTML = '';
+  try {
+    var raw = await callAPI(prepSystem(), [{role:'user', content: "LAST VISIT'S NOTE:\n\n" + last}], 2600);
+    var j = safeJSON(raw);
+    if(!j || typeof j.startingNote !== 'string'){ throw new Error('Could not build the prep. Try again.'); }
+    renderPrep(j);
+  } catch(err){
+    hint.innerHTML = '<span style="color:var(--red)">'+esc(err.message||err)+'</span>';
+  } finally {
+    btn.disabled = false; btn.innerHTML = 'Set me up for this visit &rarr;';
+  }
+});
+
+function renderPrep(j){
+  var note = finalizeHpi(j.startingNote);
+  var checklist = Array.isArray(j.checklist) ? j.checklist : [];
+  var foci = Array.isArray(j.foci) ? j.foci : [];
+  var html = '<div class="out" style="margin-top:16px"><h3>You are set up for this visit</h3>';
+  if(checklist.length){
+    html += '<div class="flags"><div class="flags-h">To check or ask today</div><ul>'
+      + checklist.map(function(c){ return '<li>'+esc(c)+'</li>'; }).join('') + '</ul></div>';
+  }
+  if(foci.length){
+    html += '<div class="flags" style="background:rgba(42,171,184,0.07);border-color:var(--teal);border-left-color:var(--teal)"><div class="flags-h" style="color:var(--teal)">Possible focus this visit</div><ul>'
+      + foci.map(function(f){ return '<li>'+esc(f)+'</li>'; }).join('') + '</ul></div>';
+  }
+  html += '<label style="margin-top:14px">Your starting note (fill the dynamic sections during the visit)</label>';
+  html += '<textarea class="hpi-edit" id="prep-note">'+esc(note)+'</textarea>';
+  html += '<button class="btn" id="prep-work">Work from this &rarr;</button>';
+  html += '<button class="btn-ghost" id="prep-copy" style="margin-left:8px">Copy</button>';
+  html += '<div class="hint" style="margin-top:6px">&ldquo;Work from this&rdquo; loads the starting note into your working area above, so you fill it in during the visit and draft when done.</div></div>';
+  document.getElementById('prep-results').innerHTML = html;
+  document.getElementById('prep-work').addEventListener('click', function(){
+    var t = document.getElementById('prep-note').value;
+    var rawBox = document.getElementById('raw');
+    rawBox.value = t;
+    var fu = document.querySelector('#visit-opts [data-visit="follow_up"]');
+    if(fu) fu.click(); // ensure follow-up is selected for the eventual draft
+    rawBox.scrollIntoView({behavior:'smooth', block:'center'});
+    rawBox.focus();
+  });
+  document.getElementById('prep-copy').addEventListener('click', function(){
+    navigator.clipboard.writeText(document.getElementById('prep-note').value);
+    var b = this; b.textContent = 'Copied'; setTimeout(function(){ b.textContent = 'Copy'; }, 1500);
+  });
 }
 
 // ── Slice 2: hand off to the Note Builder ──
