@@ -155,7 +155,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
     <label for="wiz-scaffold" style="margin-top:16px">Your HPI template / scaffold <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(recommended)</span></label>
     <textarea id="wiz-scaffold" style="min-height:150px" placeholder="Paste your blank template: your section order and any standard phrasing you start from, including canned 'associated symptoms include ...' menus. This has no patient info, so there is nothing to de-identify. The generator keeps your structure and treats each symptom menu as a checklist &mdash; at draft time it keeps only what you documented and deletes the rest, and drops whole sections (e.g. ADHD, borderline) you did not ask about."></textarea>
 
-    <label for="wiz-sample" style="margin-top:16px">A completed HPI you like <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional)</span></label>
+    <label id="wiz-sample-label" for="wiz-sample" style="margin-top:16px">A completed HPI you like <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional)</span></label>
     <textarea id="wiz-sample" style="min-height:130px" placeholder="Optional: paste a real completed HPI so it also learns your voice and level of detail. Paste it as-is &mdash; you do NOT need to de-identify it. It is processed transiently (BAA-covered) and never stored; only your PHI-free structure and style are saved to the Vault."></textarea>
 
     <label for="wiz-notes" style="margin-top:16px">Anything else about how you like it <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional)</span></label>
@@ -470,7 +470,21 @@ function sendToNoteBuilder(){
 // ── Slice 3: Setup wizard ──
 var wiz = { visit:'new_eval', style:'brief', quote:'verbatim' };
 var wizMode = 'build';
-bindOpts('wiz-visit-opts','data-wizvisit', function(v){ wiz.visit=v; if(wizMode==='refine') loadCurrentIntoRefine(); });
+bindOpts('wiz-visit-opts','data-wizvisit', function(v){ wiz.visit=v; updateWizSampleLabel(); if(wizMode==='refine') loadCurrentIntoRefine(); });
+
+// The completed-note box is the richest signal, especially for follow-ups; label it per visit type.
+function updateWizSampleLabel(){
+  var lbl = document.getElementById('wiz-sample-label');
+  var ta = document.getElementById('wiz-sample');
+  if(!lbl || !ta) return;
+  if(wiz.visit === 'follow_up'){
+    lbl.innerHTML = 'A completed FOLLOW-UP note you like <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(recommended &mdash; the best signal for carry-forward)</span>';
+    ta.placeholder = "Paste a real completed follow-up note. This is the single best input here: it shows which sections you update each visit versus carry forward as stable, and how you word standing/background items. Paste as-is; processed transiently and never stored, only your PHI-free structure is saved.";
+  } else {
+    lbl.innerHTML = 'A completed HPI you like <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional)</span>';
+    ta.placeholder = "Optional: paste a real completed HPI so it also learns your voice and level of detail. Paste it as-is; processed transiently and never stored, only your PHI-free structure and style are saved.";
+  }
+}
 bindOpts('wiz-style-opts','data-wizstyle', function(v){ wiz.style=v; });
 bindOpts('wiz-quote-opts','data-wizquote', function(v){ wiz.quote=v; });
 bindOpts('wiz-mode-opts','data-wizmode', function(v){ wizMode=v; switchWizMode(v); });
@@ -498,6 +512,7 @@ function openWizard(){
     o.classList.toggle('sel', o.getAttribute('data-wizmode')==='build');
   });
   switchWizMode('build');
+  updateWizSampleLabel();
   document.getElementById('wizard').classList.add('open');
 }
 function closeWizard(){ document.getElementById('wizard').classList.remove('open'); }
@@ -519,7 +534,7 @@ function wizardSystem(){
   s += "Honor these preferences: overall format = " + (styleMap[wiz.style] || styleMap.brief) + "; patient quotes = " + (wiz.quote==='verbatim' ? 'keep verbatim, fix spelling only' : 'fold into narrative, quote sparingly') + ".\n\n";
   s += "If a CLARIFYING Q&A block is present, treat the clinician's answers there as authoritative preferences that override defaults.\n\n";
   s += "Write the template in PRONOUN-NEUTRAL form: use 'the patient' or they/them in any example sentences, so it never biases a draft toward a gender. Keep bracketed placeholders as clearly-marked instructions, not patient content.\n\n";
-  s += "If the clinician indicated which sections are reassessed each visit (dynamic), carried forward as stable when unchanged (standing), or kept as known background such as a 'Historical Notes' block (historical), ENCODE that carry-forward classification explicitly in the template (note each section's carry-forward behavior) so a future follow-up draft handles it correctly.\n\n";
+  s += "If the clinician indicated, OR a completed follow-up note reveals (by how each section is written, updated-each-visit vs stated as continued/stable/background), which sections are reassessed each visit (dynamic), carried forward as stable when unchanged (standing), or kept as known background such as a 'Historical Notes' block (historical), ENCODE that carry-forward classification explicitly in the template (note each section's carry-forward behavior) so a future follow-up draft handles it correctly.\n\n";
   s += "Output the template text only, no preamble: clear directives plus the retained generic section scaffold and symptom menus.";
   return s;
 }
@@ -533,7 +548,8 @@ function elicitSystem(){
   s += "- Infer everything you can from their materials first. NEVER ask about anything the materials already answer.\n";
   s += "- Ask GOOD questions: concrete, plain, mostly multiple-choice, each briefly implying why it matters. At most 5 per round.\n";
   s += "- Prefer to finish in one round. Ask a second round only if the first round's answers open a genuinely important follow-up.\n";
-  s += "- Surface the choices clinicians would not think to specify; do not just confirm the obvious.\n\n";
+  s += "- Surface the choices clinicians would not think to specify; do not just confirm the obvious.\n";
+  s += "- MINE A COMPLETED NOTE HARD if one is provided. For a follow-up, a completed follow-up note is the best signal: it reveals which sections are updated each visit versus stated as continued/stable/background, and how standing items are worded. Infer the carry-forward classification FROM the note, and only ask about what the note does not make clear.\n\n";
   s += "DIMENSIONS TO COVER (only those not already clear from their materials):\n";
   s += "- Section order and headings (usually inferable from the scaffold; confirm only if unclear or inconsistent).\n";
   s += "- Level of detail: how tight vs full they like the narrative.\n";
