@@ -460,22 +460,102 @@ function wizardSystem(){
   s += "- Preserve patient quotes verbatim, correcting spelling only.\n";
   s += "The template defines the FORMAT (order, labels, subheadings, grouping); write it as this clinician's own format, and do not hardcode a subheading scheme they did not ask for.\n\n";
   s += "Honor these preferences: overall format = " + (styleMap[wiz.style] || styleMap.brief) + "; patient quotes = " + (wiz.quote==='verbatim' ? 'keep verbatim, fix spelling only' : 'fold into narrative, quote sparingly') + ".\n\n";
+  s += "If a CLARIFYING Q&A block is present, treat the clinician's answers there as authoritative preferences that override defaults.\n\n";
   s += "Output the template text only, no preamble: clear directives plus the retained generic section scaffold and symptom menus.";
   return s;
 }
 
-document.getElementById('wiz-generate').addEventListener('click', async function(){
-  var errEl = document.getElementById('wiz-err'); errEl.innerHTML='';
+// Clarify pass: ask follow-up questions ONLY if something is genuinely unclear.
+function clarifySystem(){
+  var visitLabel = wiz.visit==='new_eval' ? 'new patient psychiatric evaluation' : 'psychiatric follow-up visit';
+  var s = "You are about to build a reusable HPI template for a clinician's " + visitLabel + " from the materials they provided (a blank scaffold and/or a completed example) plus preferences. BEFORE building it, decide whether anything is genuinely ambiguous or missing in a way that would change the template.\n\n";
+  s += "Ask a follow-up question ONLY when the answer would actually change the template. Good reasons: the section order is unclear or inconsistent; it is unclear whether a symptom menu should be positive-only; a domain's handling is ambiguous; the sample and the stated preferences conflict; the quote style is unclear; the follow-up interval structure is undefined. If everything needed is clear, ask NOTHING.\n\n";
+  s += "Ask at most 3 questions. Prefer concrete multiple-choice options. Keep questions short and plain.\n\n";
+  s += "Respond ONLY with raw JSON, no code fence, exactly:\n{\"questions\":[{\"id\":\"q1\",\"text\":\"...\",\"options\":[\"option a\",\"option b\"]}]}\nOmit \"options\" for a free-text question. If nothing needs clarifying, return {\"questions\":[]}.";
+  return s;
+}
+
+// Assemble the clinician's wizard inputs into one message (re-read live each time).
+function gatherWizInputs(){
   var scaffold = document.getElementById('wiz-scaffold').value.trim();
   var sample = document.getElementById('wiz-sample').value.trim();
   var notes = document.getElementById('wiz-notes').value.trim();
-  if(scaffold.length < 40 && sample.length < 40){ errEl.innerHTML='<div class="err">Paste your template/scaffold (recommended) and/or a completed HPI, so it has something to learn from.</div>'; return; }
-  var btn = this; btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Building&hellip;';
+  var msg = '';
+  if(scaffold) msg += "CLINICIAN'S BLANK TEMPLATE / SCAFFOLD (their section order and canned symptom menus; no patient content):\n\n" + scaffold;
+  if(sample) msg += (msg ? "\n\n---\n\n" : "") + "A COMPLETED HPI (learn voice and level of detail only; keep NO patient specifics):\n\n" + sample;
+  if(notes) msg += "\n\n---\n\nADDITIONAL PREFERENCES:\n\n" + notes;
+  return { scaffold: scaffold, sample: sample, notes: notes, msg: msg };
+}
+
+// Step 1: clarify, then either ask questions or build straight away.
+document.getElementById('wiz-generate').addEventListener('click', async function(){
+  var errEl = document.getElementById('wiz-err'); errEl.innerHTML='';
+  var inp = gatherWizInputs();
+  if(inp.scaffold.length < 40 && inp.sample.length < 40){ errEl.innerHTML='<div class="err">Paste your template/scaffold (recommended) and/or a completed HPI, so it has something to learn from.</div>'; return; }
+  var btn = this; btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Reviewing&hellip;';
+  document.getElementById('wiz-result').innerHTML='';
   try {
-    var msg = '';
-    if(scaffold) msg += "CLINICIAN'S BLANK TEMPLATE / SCAFFOLD (their section order and canned symptom menus; no patient content):\n\n" + scaffold;
-    if(sample) msg += (msg ? "\n\n---\n\n" : "") + "A COMPLETED HPI (learn voice and level of detail only; keep NO patient specifics):\n\n" + sample;
-    if(notes) msg += "\n\n---\n\nADDITIONAL PREFERENCES:\n\n" + notes;
+    var raw = await callAPI(clarifySystem(), [{role:'user', content: inp.msg}], 800);
+    var qs = [];
+    try { var j = JSON.parse(raw); if(j && Array.isArray(j.questions)) qs = j.questions; } catch(e){}
+    if(qs.length){
+      renderClarifyQuestions(qs);
+    } else {
+      await buildTemplate('');
+    }
+  } catch(err){
+    errEl.innerHTML='<div class="err">'+esc(err.message||err)+'</div>';
+  } finally {
+    btn.disabled=false; btn.innerHTML='Build my template &rarr;';
+  }
+});
+
+// Render the follow-up questions with optional option-chips + a free-text answer each.
+function renderClarifyQuestions(qs){
+  window._wizQs = qs;
+  var html = '<div class="out" style="margin-top:16px"><h3>A couple of quick questions</h3>'
+    + '<div class="hint" style="margin-bottom:10px">Just to make sure your template comes out the way you want. Answer what applies, then build.</div>';
+  qs.forEach(function(q, i){
+    html += '<div class="card-group"><label>'+esc(q.text||('Question '+(i+1)))+'</label>';
+    if(Array.isArray(q.options) && q.options.length){
+      html += '<div class="opts" data-qopts="'+i+'">';
+      q.options.forEach(function(opt){ html += '<div class="opt" data-qval="'+esc(opt)+'">'+esc(opt)+'</div>'; });
+      html += '</div>';
+    }
+    html += '<input type="text" id="wiz-q-'+i+'" placeholder="Your answer" style="margin-top:8px"></div>';
+  });
+  html += '<button class="btn" id="wiz-continue">Build my template &rarr;</button></div>';
+  document.getElementById('wiz-result').innerHTML = html;
+  // option chips fill the matching answer input
+  qs.forEach(function(q, i){
+    var group = document.querySelector('[data-qopts="'+i+'"]');
+    if(!group) return;
+    group.addEventListener('click', function(e){
+      var o = e.target.closest('.opt'); if(!o) return;
+      group.querySelectorAll('.opt').forEach(function(x){ x.classList.remove('sel'); });
+      o.classList.add('sel');
+      document.getElementById('wiz-q-'+i).value = o.getAttribute('data-qval');
+    });
+  });
+  document.getElementById('wiz-continue').addEventListener('click', function(){
+    var qa = '';
+    (window._wizQs||[]).forEach(function(q, i){
+      var a = (document.getElementById('wiz-q-'+i)||{}).value;
+      if(a && a.trim()) qa += 'Q: '+(q.text||'')+'\nA: '+a.trim()+'\n\n';
+    });
+    var block = qa ? ('CLARIFYING Q&A (authoritative preferences from the clinician):\n\n'+qa) : '';
+    this.disabled = true; this.innerHTML='<span class="spinner"></span>Building&hellip;';
+    buildTemplate(block);
+  });
+}
+
+// Step 2: build the template (optionally with the clarifying Q&A) and show it for approval.
+async function buildTemplate(qaBlock){
+  var errEl = document.getElementById('wiz-err'); errEl.innerHTML='';
+  try {
+    var inp = gatherWizInputs();
+    var msg = inp.msg;
+    if(qaBlock) msg += "\n\n---\n\n" + qaBlock;
     var tmpl = await callAPI(wizardSystem(), [{role:'user', content: msg}], 2000);
     if(!tmpl){ throw new Error('Nothing came back. Try again.'); }
     tmpl = stripDashes(tmpl);
@@ -489,10 +569,8 @@ document.getElementById('wiz-generate').addEventListener('click', async function
     document.getElementById('wiz-save').addEventListener('click', saveWizardTemplate);
   } catch(err){
     errEl.innerHTML='<div class="err">'+esc(err.message||err)+'</div>';
-  } finally {
-    btn.disabled=false; btn.innerHTML='Build my template &rarr;';
   }
-});
+}
 
 async function saveWizardTemplate(){
   var btn = document.getElementById('wiz-save');

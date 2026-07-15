@@ -144,6 +144,11 @@ guided **Setup** flow populates the Vault for them:
   **completed example** (learns voice/detail). At least one is required.
 - **Ingests them** and reverse-engineers a template + prompt that reproduces *their* style,
   keeping any generic symptom menus as checklists.
+- **Clarify step before writing anything (added after testing):** a first pass reviews the
+  inputs and asks a few follow-up questions **only if something is genuinely ambiguous**
+  (unclear order, positive-vs-denial menu handling, sample/preference conflict, quote
+  style). If all is clear it asks nothing. The clinician's answers become authoritative
+  preferences fed into the build. Mirrors the Note Builder / Chart Coder preflight pattern.
 - **Writes the result into their Vault fields** for them to review/approve/tweak — they
   are never staring at a blank box.
 
