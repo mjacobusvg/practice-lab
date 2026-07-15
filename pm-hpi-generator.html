@@ -104,7 +104,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
         <div class="opt sel" data-source="typed">I typed as I went</div>
         <div class="opt" data-source="ambient">Pasted transcript (ambient / dictation)</div>
       </div>
-      <div class="hint" id="source-hint">You are the ground truth for what was said, so the hallucination check is optional (a button after drafting). Only spend the extra call when you want it.</div>
+      <div class="hint" id="source-hint">Every draft is auto-reviewed against your notes to catch anything not supported by them.</div>
     </div>
 
     <button class="btn" id="generate">Draft my HPI &rarr;</button>
@@ -276,6 +276,21 @@ function stripDashes(s){
     .replace(/\s+[—–―]\s*/g, ', ')
     .replace(/[—–―]/g, '-');
 }
+// Strip Markdown so the HPI is clean chart text (templates are often written in Markdown).
+function cleanMarkdown(s){
+  var lines = String(s).split('\n');
+  var out = [];
+  for(var i=0;i<lines.length;i++){
+    var ln = lines[i];
+    if(/^\s*([-*_])(\s*\1){2,}\s*$/.test(ln)) continue;   // drop --- *** ___ divider lines
+    ln = ln.replace(/^\s*#{1,6}\s+/, '');                  // strip heading hashes, keep the label
+    ln = ln.replace(/^\s*>\s?/, '');                       // strip blockquote markers
+    ln = ln.replace(/\*\*(.+?)\*\*/g, '$1').replace(/__(.+?)__/g, '$1'); // strip bold
+    out.push(ln);
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+function finalizeHpi(s){ return stripDashes(cleanMarkdown(s)); }
 function copyOut(id){
   var t = document.getElementById(id).innerText;
   navigator.clipboard.writeText(t);
@@ -296,8 +311,8 @@ bindOpts('visit-opts','data-visit', function(v){ visitType=v; renderTemplateStat
 bindOpts('source-opts','data-source', function(v){
   sourceMode=v;
   document.getElementById('source-hint').textContent = (v==='ambient')
-    ? 'A transcript has no clinician-written ground truth, so the hallucination check runs automatically after drafting.'
-    : 'You are the ground truth for what was said, so the hallucination check is optional (a button after drafting). Only spend the extra call when you want it.';
+    ? 'A transcript has no written ground truth, so the automatic review also checks for transcription errors.'
+    : 'Every draft is auto-reviewed against your notes to catch anything not supported by them.';
 });
 
 // ── Template status line ──
@@ -337,6 +352,8 @@ function draftSystem(){
   s += "=== PLACEHOLDERS AND PRONOUNS ===\n";
   s += "- The template may contain bracketed placeholders and instructions (e.g. \"[ ]\", *[Narrative: ...]*) and 'Menu (...)' reference blocks. These are DIRECTIONS TO YOU, never content. NEVER print a bracketed placeholder, an italic instruction, a 'Menu' block, or phrases like 'do not reproduce' / 'select endorsed items only' in the HPI. Fill each placeholder from the notes; if the notes do not supply it, omit that piece entirely (no empty quotes, no blank brackets).\n";
   s += "- PRONOUNS follow the patient in the notes, NOT the template. If the template's examples use a specific gender (e.g. 'She'), do not inherit it; use the patient's documented pronouns, or they/them if unknown.\n\n";
+  s += "=== OUTPUT FORMAT ===\n";
+  s += "Output plain, chart-ready text for pasting into an EHR. Do NOT use Markdown: no # or ## headings, no --- or *** divider lines, no > blockquotes, no ** bold **. Render the clinician's section labels as plain text on their own line, with a single blank line between sections. Even if the template is written in Markdown, do not carry that syntax into the HPI.\n\n";
   s += "Add only minimal connective narrative needed to make the notes read as clinical prose. Connective wording must not introduce any new clinical fact. Output the HPI text only.";
   return s;
 }
@@ -344,6 +361,8 @@ function draftSystem(){
 function verifySystem(){
   var s = HOUSE + "\n\n=== TASK ===\nYou are auditing a drafted HPI against its SOURCE (the clinician's raw notes, plus any prior-context block). Find anything in the HPI that is NOT supported by the source: invented or embellished symptoms, added denials or pertinent negatives, a diagnosis or characterization the notes did not state, altered timeframes, or a patient quote whose wording or meaning was changed (spelling fixes are fine; word substitutions or paraphrases are not).\n\n";
   s += "Silently correct clear, unambiguous fabrications by removing or trimming them back to what the source supports. For anything a clinician should personally judge, leave it and raise a flag.\n\n";
+  if(sourceMode === 'ambient'){ s += "The source is a transcript (dictation/ambient) with no clinician-written ground truth, so also flag likely mis-transcriptions and anything that reads as a transcription error.\n\n"; }
+  s += "The corrected 'hpi' must stay plain, chart-ready text with NO Markdown (no #/## headings, no --- dividers, no ** bold **, no > blockquotes).\n\n";
   s += "Respond ONLY with raw JSON, no code fence, in exactly this shape:\n{\"hpi\": \"<the verified HPI text>\", \"flags\": [\"short note about something to check\", \"...\"]}\nIf nothing is wrong, return the HPI unchanged and an empty flags array.";
   return s;
 }
@@ -358,33 +377,25 @@ function gatherSource(){
 }
 
 // ── Render the HPI result (Slices 1 + 2) ──
-function renderResult(hpi, flags, verified){
+function renderResult(hpi, flags){
+  hpi = finalizeHpi(hpi);
   lastHpi = hpi;
   var html = '';
   html += '<div class="out"><button class="btn-copy" onclick="copyOut(\'hpi-out\')">Copy</button>';
   html += '<h3>History of Present Illness</h3>';
-  html += '<div class="out-body" id="hpi-out">'+esc(stripDashes(hpi))+'</div></div>';
+  html += '<div class="out-body" id="hpi-out">'+esc(hpi)+'</div></div>';
 
   if(flags && flags.length){
     var items = flags.map(function(f){ return '<li>'+esc(f)+'</li>'; }).join('');
     html += '<div class="flags"><div class="flags-h">Worth a look before you sign</div><ul>'+items+'</ul></div>';
   }
-
-  if(!verified){
-    html += '<button class="btn-ghost" id="verify-btn" style="margin-top:14px">Verify against what I entered</button>';
-    html += '<div class="hint" id="verify-hint" style="margin-top:6px">Optional. Runs one more pass to flag anything in the draft not traceable to your notes.</div>';
-  } else {
-    html += '<div class="hint" style="margin-top:14px">&#10003; Checked against your source.</div>';
-  }
+  html += '<div class="hint" style="margin-top:14px">&#10003; Auto-reviewed against your notes.</div>';
 
   // Slice 2: one-button handoff to the Note Builder
   html += '<div class="handoff">Ready to work up the assessment and psychotherapy note? Send this HPI straight into the Clinical Note Builder, no copy-paste.'
        +  '<br><button class="btn" id="send-nb">Send to Clinical Note Builder &rarr;</button></div>';
 
   document.getElementById('results').innerHTML = html;
-
-  var vb = document.getElementById('verify-btn');
-  if(vb) vb.addEventListener('click', runVerify);
   document.getElementById('send-nb').addEventListener('click', sendToNoteBuilder);
 }
 
@@ -399,14 +410,10 @@ document.getElementById('generate').addEventListener('click', async function(){
   try {
     var hpi = await callAPI(draftSystem(), [{role:'user', content: gatherSource()}], 3400);
     if(!hpi){ throw new Error('No HPI came back. Try again.'); }
-    // Ambient source => auto-verify (no clinician-written ground truth).
-    if(sourceMode === 'ambient'){
-      btn.innerHTML = '<span class="spinner"></span>Checking&hellip;';
-      var res = await verifyHpi(hpi);
-      renderResult(res.hpi, res.flags, true);
-    } else {
-      renderResult(hpi, [], false);
-    }
+    // Always auto-review the draft against the source and silently apply corrections.
+    btn.innerHTML = '<span class="spinner"></span>Reviewing&hellip;';
+    var res = await verifyHpi(hpi);
+    renderResult(res.hpi, res.flags);
   } catch(err){
     errBox.innerHTML = '<div class="err">'+esc(err.message||err)+'</div>';
   } finally {
@@ -424,18 +431,6 @@ async function verifyHpi(hpi){
   } catch(e){}
   // If the verifier did not return clean JSON, keep the original draft rather than lose it.
   return { hpi: hpi, flags: [] };
-}
-async function runVerify(){
-  var btn = document.getElementById('verify-btn');
-  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Checking&hellip;';
-  try {
-    var res = await verifyHpi(lastHpi);
-    renderResult(res.hpi, res.flags, true);
-  } catch(err){
-    var h = document.getElementById('verify-hint');
-    if(h) h.innerHTML = '<span style="color:var(--red)">'+esc(err.message||err)+'</span>';
-    btn.disabled = false; btn.innerHTML = 'Verify against what I entered';
-  }
 }
 
 // ── Slice 2: hand off to the Note Builder ──

@@ -232,20 +232,20 @@ Pipeline of focused calls (the "reason better" pattern, kept):
      comes from the clinician's template, never hardcoded.** Anxiety subtypes get their
      own paragraphs/headers only if *that clinician's* template calls for it; nothing
      structural is imposed on everyone.
-3. **QA/verify pass (cost-gated)** — a second focused call that flags anything in the
-   draft not traceable to the input (mirrors the Note Builder's existing review pass),
-   surfacing flags rather than silently editing where clinically material. **This pass
-   is gated by a "Did you use Ambient?" toggle to avoid wasted spend:**
-   - **Typed input (toggle = No):** verify is **opt-in** — a one-tap "Verify against
-     what I entered" button, **off by default**. The clinician authored the source and
-     reads the draft, so the pass is largely redundant; only spend the call on request.
-   - **Ambient (toggle = Yes):** verify runs **automatically** — there is no
-     clinician-authored ground truth, so cross-checking every HPI statement against the
-     raw transcript is non-negotiable.
-   - When it runs, keep it on **`claude-sonnet-4-6`** — it is the fabrication-catching
-     safety net; control cost by frequency, not by downgrading the model.
-   The toggle + button ship **now** (defaulting to No, ambient not yet built); when
-   ambient lands it simply flips the default. This is the scaffold ambient plugs into.
+   - **Plain chart output, no Markdown (added after testing):** templates are often
+     written in Markdown, and the draft was mirroring `## headings` and `---` dividers
+     into the HPI. The draft now outputs plain EHR-ready text (labels on their own line,
+     blank line between sections), and a `cleanMarkdown()` post-pass strips any residual
+     `#`/`---`/`**`/`>` as a safety net.
+3. **QA/verify pass — now automatic (revised after testing).** Every draft is
+   auto-reviewed by a second `claude-sonnet-4-6` call that silently corrects clear
+   fabrications and surfaces only genuine flags — matching the Note Builder / v1 copilot
+   "adversarial review" pattern. The earlier opt-in-button / cost-gating design is
+   **superseded**: the clinician wanted it to "just fix it behind the scenes," so it runs
+   on every draft (typed or transcript). The capture toggle remains but only informs the
+   review (a transcript source also gets a mis-transcription check); it no longer gates
+   whether the pass runs. Cost tradeoff (2 calls per draft) is accepted, consistent with
+   the recurring-membership pricing model.
 4. **Hand off** — populate `ClinicalNote.hpi` + context; enable the one-button push to
    the Note Builder.
 
