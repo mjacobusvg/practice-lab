@@ -96,8 +96,8 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
     <label for="raw" style="margin-top:6px">Your visit notes &mdash; exactly as you took them</label>
     <textarea id="raw" placeholder="Paste your running notes: fragments, shorthand, and patient quotes in the order you asked. Don't clean them up first &mdash; that's this tool's job. Example:&#10;&#10;here re: 6wk f/u duloxetine 60&#10;&quot;the anxiety is better but I still feel blah&quot;&#10;sleep 5-6h, was 3-4&#10;denies SI&#10;still not exercising, wants to&#10;mom's health stressor ongoing"></textarea>
 
-    <label for="context" style="margin-top:16px">Prior HPI / assessment for continuity <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional, follow-ups)</span></label>
-    <textarea id="context" style="min-height:80px" placeholder="Optional: paste last visit's HPI or assessment so the interval update reads in continuity. This is context only &mdash; it never becomes today's documented content unless today's notes support it."></textarea>
+    <label for="context" style="margin-top:16px">Last visit's note &mdash; to carry forward from <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional, follow-ups)</span></label>
+    <textarea id="context" style="min-height:80px" placeholder="Paste last visit's note. On a follow-up, standing items that don't change each visit (substance use, exercise, hallucinations, history) carry forward worded as continued; today's notes drive everything that changed. Safety (SI/HI) is never carried forward as if assessed today."></textarea>
 
     <div class="card-group" style="margin-top:16px">
       <label>How did you capture these notes?</label>
@@ -343,6 +343,16 @@ function draftSystem(){
   s += "Handle documented risk (suicidal ideation, homicidal ideation, self-harm, plan, intent, access to means) with maximum fidelity. NEVER omit, soften, downgrade, or paraphrase away any risk the notes document. NEVER fabricate a risk denial (e.g. 'denies SI/HI') unless the notes document it was asked and denied. If risk is documented ambiguously, preserve the clinician's exact words and do not resolve the ambiguity.\n\n";
   s += "=== MEDICATIONS (keep exactly as written) ===\n";
   s += "Never change, correct, normalize, or guess medication names, doses, routes, or frequencies. Write each exactly as the clinician documented it; do not convert brand to generic or generic to brand. If a medication name or dose looks implausible, misspelled, or unrecognized, keep it verbatim, do not substitute a 'correct' name, and let the review pass flag it.\n\n";
+  if(visitType === 'follow_up'){
+    s += "=== FOLLOW-UP: CARRY-FORWARD HYGIENE ===\n";
+    s += "This is a follow-up. Today's notes are the record of THIS visit; the prior-context block is last visit's note, provided so you can carry standing information forward. Merge them the way a careful clinician cleans up a copied-forward note:\n";
+    s += "- TODAY DRIVES DYNAMIC CONTENT: current mood and anxiety, active symptoms, medication response and adherence, side effects, and this visit's events come ONLY from today's notes. Never clone the prior note's dynamic content as if it were reassessed today.\n";
+    s += "- STANDING ITEMS MAY CARRY: information that is relatively stable and not re-asked every visit (e.g. substance use baseline, exercise, absence of hallucinations, longstanding history) may be carried from the prior note, but worded as CONTINUED or STABLE ('continues to deny auditory or visual hallucinations'; 'no reported change in substance use'), never as if freshly assessed today.\n";
+    s += "- IF A DYNAMIC TOPIC IS NOT IN TODAY'S NOTES: do not fabricate that it was assessed. Omit it or note it was not reassessed this visit, and let the review flag it.\n";
+    s += "- SAFETY IS NEVER CARRIED FORWARD: never write a suicidal or homicidal ideation or self-harm assessment as done today unless today's notes document it. If today's notes contain no safety assessment, do not write one.\n";
+    s += "- SECTIONS: keep your standard follow-up sections present. A standing section counts as addressed if the prior note documents it (carried as stable). The later 'include a domain only if discussed' rule applies to genuinely new topics, NOT to your standing follow-up sections.\n";
+    s += "- The clinician's follow-up template governs which sections are standing versus reassessed each visit; follow it when it specifies this.\n\n";
+  }
   s += "=== STRUCTURE ===\n";
   if(tmpl){
     s += "Follow THIS clinician's own template and instructions exactly, for structure, section order, headings, level of detail, and voice:\n\n<<<CLINICIAN TEMPLATE>>>\n" + tmpl + "\n<<<END TEMPLATE>>>\n\nThe template governs form only. It never supplies clinical content and never overrides the anti-fabrication rule.\n\n";
@@ -369,6 +379,7 @@ function verifySystem(){
   s += "Silently correct clear, unambiguous fabrications by removing or trimming them back to what the source supports. For anything a clinician should personally judge, leave it and raise a flag.\n\n";
   s += "RISK: never let the draft add, drop, or soften any documented risk (SI, HI, self-harm, plan, intent). If it did, correct it to match the source exactly and flag it.\n";
   s += "IMPLAUSIBILITY (flag, do NOT fix): flag anything that looks wrong without changing it, e.g. an unrecognized or likely-misspelled medication name, an implausible dose or frequency, an internal contradiction, a number or date that looks off, or a phrase that reads like a garbled transcription artifact. Preserve the exact wording and raise a flag for the clinician.\n\n";
+  if(visitType === 'follow_up'){ s += "FOLLOW-UP CARRY-FORWARD: flag any current-visit assessment, especially SI/HI or self-harm, that the draft asserts as done today but that only the prior note supports and today's notes do not. A prior safety assessment must never read as if performed today. Standing items carried as 'continued/stable' are fine.\n\n"; }
   if(sourceMode === 'ambient'){ s += "The source is a transcript (dictation/ambient) with no clinician-written ground truth, so also flag likely mis-transcriptions and anything that reads as a transcription error.\n\n"; }
   s += "The corrected 'hpi' must stay plain, chart-ready text with NO Markdown (no #/## headings, no --- dividers, no ** bold **, no > blockquotes).\n\n";
   s += "Respond ONLY with raw JSON, no code fence, in exactly this shape:\n{\"hpi\": \"<the verified HPI text>\", \"flags\": [\"short note about something to check\", \"...\"]}\nIf nothing is wrong, return the HPI unchanged and an empty flags array.";

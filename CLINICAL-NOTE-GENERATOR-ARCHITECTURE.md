@@ -252,6 +252,24 @@ Pipeline of focused calls (the "reason better" pattern, kept):
      artifacts) rather than silently fixing it — the right posture for ASR errors we
      cannot repair upstream (mitigated later by a medical-vocabulary ASR model, e.g. AWS
      Transcribe Medical).
+   - **Follow-up carry-forward hygiene (added after testing).** For `visitType ===
+     'follow_up'` with last visit's note in the continuity field, the draft merges the two
+     the way a clinician cleans up a copied-forward note: **today's notes drive dynamic
+     content** (mood, active symptoms, med response, side effects — never cloned from the
+     prior note); **standing items** that don't change each visit (substance use,
+     exercise, absence of hallucinations, history) **may carry forward but worded as
+     continued/stable**, never as if freshly assessed today. A dynamic topic absent from
+     today's notes is omitted/flagged, not fabricated. **Safety (SI/HI/self-harm) is
+     never carried forward** — a prior denial must never read as performed today; the
+     review flags it. Standing-vs-reassessed is personalized through the clinician's
+     follow-up template. This also gives the follow-up path real behavior (previously
+     thin) and is the anti-clone-note / audit-integrity safeguard.
+   - **Pre-visit prep (Bucket 1, designed, not yet built):** an optional, toggleable mode
+     — paste last visit's note *before* the appointment to get questions to ask / foci to
+     address today (carry-forward threads + psychotherapy focus), i.e. the Dev "For Next
+     Time" idea moved to the front of the visit. Toggleable because some clinicians won't
+     have it on-screen with the patient. Note-time reminder checklists (Bucket 3) are held
+     — limited value since a missed in-visit question can't be recovered at charting time.
 3. **QA/verify pass — now automatic (revised after testing).** Every draft is
    auto-reviewed by a second `claude-sonnet-4-6` call that silently corrects clear
    fabrications and surfaces only genuine flags — matching the Note Builder / v1 copilot
