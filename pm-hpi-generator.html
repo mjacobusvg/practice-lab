@@ -62,6 +62,9 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 .modal label{margin-top:14px}
 .modal-x{float:right;background:none;border:none;color:var(--cream-dim);font-size:1.4rem;cursor:pointer;line-height:1}
 .wizard-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.bubble{padding:10px 14px;border-radius:10px;margin-bottom:10px;font-size:.88rem;line-height:1.5;white-space:pre-wrap}
+.bubble.ai{background:var(--navy);border:1px solid var(--rule);color:var(--cream)}
+.bubble.me{background:var(--teal-glow);border:1px solid var(--teal);color:var(--white)}
 </style>
 <script src="/auth-gate.js"></script>
 <style id="tbp-theme-css">
@@ -128,6 +131,13 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
       <div class="opt" data-wizvisit="follow_up">Follow-up</div>
     </div>
 
+    <label style="margin-top:16px">What do you want to do?</label>
+    <div class="opts" id="wiz-mode-opts">
+      <div class="opt sel" data-wizmode="build">Set up a new template</div>
+      <div class="opt" data-wizmode="refine">Adjust / troubleshoot my current one</div>
+    </div>
+
+    <div id="wiz-build-panel">
     <label style="margin-top:16px">How should it read?</label>
     <div class="opts" id="wiz-style-opts">
       <div class="opt sel" data-wizstyle="brief">Brief labels, narrative under each</div>
@@ -151,6 +161,18 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
     <textarea id="wiz-notes" style="min-height:60px" placeholder="e.g. Open with CC, then interval and current meds. Depression under Depression, mania under Mania. Risk at the end. Keep it tight."></textarea>
 
     <button class="btn" id="wiz-generate">Build my template &rarr;</button>
+    </div><!-- /wiz-build-panel -->
+
+    <div id="wiz-refine-panel" style="display:none">
+      <label style="margin-top:16px">Your current template <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(loaded from your Vault)</span></label>
+      <textarea id="refine-current" style="min-height:140px" placeholder="Loading your current template from the Vault&hellip;"></textarea>
+      <label for="refine-issue" style="margin-top:16px">What is going wrong, or what do you want to change?</label>
+      <textarea id="refine-issue" style="min-height:80px" placeholder="e.g. It keeps including symptoms the patient denied. Or: it puts risk at the top and I want it at the end. Or: it dropped the Sleep section even though I asked about sleep."></textarea>
+      <label for="refine-badoutput" style="margin-top:16px">Paste an HPI it produced that came out wrong <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional)</span></label>
+      <textarea id="refine-badoutput" style="min-height:90px" placeholder="Optional. Helps it see the problem. Processed transiently and never stored."></textarea>
+      <button class="btn" id="refine-start">Work on it with me &rarr;</button>
+    </div>
+
     <div id="wiz-err"></div>
     <div id="wiz-result"></div>
   </div>
@@ -429,9 +451,23 @@ function sendToNoteBuilder(){
 
 // ── Slice 3: Setup wizard ──
 var wiz = { visit:'new_eval', style:'brief', quote:'verbatim' };
-bindOpts('wiz-visit-opts','data-wizvisit', function(v){ wiz.visit=v; });
+var wizMode = 'build';
+bindOpts('wiz-visit-opts','data-wizvisit', function(v){ wiz.visit=v; if(wizMode==='refine') loadCurrentIntoRefine(); });
 bindOpts('wiz-style-opts','data-wizstyle', function(v){ wiz.style=v; });
 bindOpts('wiz-quote-opts','data-wizquote', function(v){ wiz.quote=v; });
+bindOpts('wiz-mode-opts','data-wizmode', function(v){ wizMode=v; switchWizMode(v); });
+
+function switchWizMode(v){
+  document.getElementById('wiz-build-panel').style.display = (v==='build') ? 'block' : 'none';
+  document.getElementById('wiz-refine-panel').style.display = (v==='refine') ? 'block' : 'none';
+  document.getElementById('wiz-result').innerHTML='';
+  document.getElementById('wiz-err').innerHTML='';
+  if(v==='refine') loadCurrentIntoRefine();
+}
+function loadCurrentIntoRefine(){
+  var el = document.getElementById('refine-current');
+  if(el) el.value = vaultTemplates[wiz.visit] || '';
+}
 
 function openWizard(){
   // default the wizard to the visit type currently selected on the page
@@ -439,8 +475,11 @@ function openWizard(){
   document.querySelectorAll('#wiz-visit-opts .opt').forEach(function(o){
     o.classList.toggle('sel', o.getAttribute('data-wizvisit')===visitType);
   });
-  document.getElementById('wiz-result').innerHTML='';
-  document.getElementById('wiz-err').innerHTML='';
+  wizMode = 'build';
+  document.querySelectorAll('#wiz-mode-opts .opt').forEach(function(o){
+    o.classList.toggle('sel', o.getAttribute('data-wizmode')==='build');
+  });
+  switchWizMode('build');
   document.getElementById('wizard').classList.add('open');
 }
 function closeWizard(){ document.getElementById('wizard').classList.remove('open'); }
@@ -572,48 +611,152 @@ async function buildTemplate(qaBlock){
   }
 }
 
+// Shared: merge one template field into vault_profile (load-modify-save), mirror to
+// localStorage, and update in-memory so the next draft uses it immediately.
+async function persistTemplate(text, visitKey){
+  var key = visitKey==='new_eval' ? 'hpiTemplateEval' : 'hpiTemplateFollowup';
+  var current = {};
+  try {
+    var r = await fetch('/.netlify/functions/user-tool-data', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
+      body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'load' })
+    });
+    var d = await r.json();
+    if(d && d.found && d.data) current = d.data;
+  } catch(e){}
+  current[key] = text;
+  var sr = await fetch('/.netlify/functions/user-tool-data', {
+    method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
+    body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'save', data: current })
+  });
+  var sd = await sr.json();
+  try {
+    var lv = JSON.parse(localStorage.getItem('tbp_vault')||'{}'); lv[key]=text;
+    localStorage.setItem('tbp_vault', JSON.stringify(lv));
+    localStorage.setItem('credentialing-hub-profile', JSON.stringify(lv));
+  } catch(e){}
+  vaultTemplates[visitKey] = text;
+  renderTemplateStatus();
+  return sd && sd.saved;
+}
+
 async function saveWizardTemplate(){
   var btn = document.getElementById('wiz-save');
   var text = document.getElementById('wiz-tmpl-edit').value.trim();
   if(!text){ return; }
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Saving&hellip;';
-  var key = wiz.visit==='new_eval' ? 'hpiTemplateEval' : 'hpiTemplateFollowup';
-  // Merge into the vault_profile record (load-modify-save so we never clobber other fields).
   try {
-    var current = {};
-    try {
-      var r = await fetch('/.netlify/functions/user-tool-data', {
-        method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
-        body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'load' })
-      });
-      var d = await r.json();
-      if(d && d.found && d.data) current = d.data;
-    } catch(e){}
-    current[key] = text;
-    var sr = await fetch('/.netlify/functions/user-tool-data', {
-      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
-      body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'save', data: current })
-    });
-    var sd = await sr.json();
-    // keep localStorage vault mirror in sync so vault.html shows it too
-    try {
-      var lv = JSON.parse(localStorage.getItem('tbp_vault')||'{}'); lv[key]=text;
-      localStorage.setItem('tbp_vault', JSON.stringify(lv));
-      localStorage.setItem('credentialing-hub-profile', JSON.stringify(lv));
-    } catch(e){}
-    // update in-memory so the next draft uses it immediately
-    vaultTemplates[wiz.visit] = text;
-    renderTemplateStatus();
-    if(sd && sd.saved){
-      btn.innerHTML='&#10003; Saved to Vault';
-      setTimeout(function(){ closeWizard(); }, 900);
-    } else {
-      document.getElementById('wiz-save-hint').innerHTML='<span style="color:var(--amber)">Saved on this device; cloud save may have failed. It is set for this session.</span>';
-      btn.disabled=false; btn.innerHTML='Save to my Vault';
-    }
+    var ok = await persistTemplate(text, wiz.visit);
+    if(ok){ btn.innerHTML='&#10003; Saved to Vault'; setTimeout(function(){ closeWizard(); }, 900); }
+    else { document.getElementById('wiz-save-hint').innerHTML='<span style="color:var(--amber)">Saved on this device; cloud save may have failed. It is set for this session.</span>'; btn.disabled=false; btn.innerHTML='Save to my Vault'; }
   } catch(err){
-    document.getElementById('wiz-save-hint').innerHTML='<span style="color:var(--red)">'+esc(err.message||err)+'</span>';
-    btn.disabled=false; btn.innerHTML='Save to my Vault';
+    document.getElementById('wiz-save-hint').innerHTML='<span style="color:var(--red)">'+esc(err.message||err)+'</span>'; btn.disabled=false; btn.innerHTML='Save to my Vault';
+  }
+}
+
+// ── Refine / troubleshoot an existing template, conversationally ──
+var refineChat = [];       // [{who:'ai'|'me', text}]
+var refineMessages = [];   // API history [{role, content}]
+var refineTemplate = '';   // latest revised template
+
+function safeJSON(raw){
+  try { return JSON.parse(raw); } catch(e){}
+  var a = raw.indexOf('{'), b = raw.lastIndexOf('}');
+  if(a !== -1 && b !== -1 && b > a){ try { return JSON.parse(raw.slice(a, b+1)); } catch(e2){} }
+  return null;
+}
+function refineSystem(){
+  var s = "You are helping a clinician troubleshoot and adjust their reusable HPI template. You are given their CURRENT template, the problem or change they want, optionally an example HPI output that came out wrong, and the conversation so far. Diagnose what in the template is causing the problem and revise the template to fix it.\n\n";
+  s += "RULES:\n";
+  s += "- Preserve the universal integrity rules: anti-fabrication; verbatim patient quotes with spelling-only fixes; every 'associated symptoms include ...' menu stays a POSITIVE endorsed-only checklist; include a domain or subtopic only if discussed; keep explicit denials (SI/HI) as their own statement. Never weaken these.\n";
+  s += "- Change ONLY what the clinician's issue calls for. Preserve the rest of their structure, order, labels, and voice.\n";
+  s += "- Never put patient PHI in the template; it is stored in the Vault.\n";
+  s += "- If you genuinely need one detail to fix it correctly, ask a short question in 'reply' and return the template unchanged for now.\n\n";
+  s += "Respond ONLY with raw JSON, no code fence:\n{\"reply\":\"<short plain explanation of what you changed, or a question>\",\"template\":\"<the full updated template>\"}";
+  return s;
+}
+function refineUserMsg(current, issue, bad){
+  var s = "CURRENT TEMPLATE:\n\n" + current + "\n\n---\n\nWHAT THE CLINICIAN WANTS FIXED OR CHANGED:\n\n" + issue;
+  if(bad) s += "\n\n---\n\nAN EXAMPLE HPI OUTPUT THAT CAME OUT WRONG (transient; do not store; use only to see the problem):\n\n" + bad;
+  return s;
+}
+function renderRefine(){
+  var chat = '';
+  refineChat.forEach(function(m){ chat += '<div class="bubble '+(m.who==='ai'?'ai':'me')+'">'+esc(m.text)+'</div>'; });
+  var html = '<div class="out" style="margin-top:16px"><h3>Working it through</h3>'
+    + '<div id="refine-chat">'+chat+'</div>'
+    + '<label style="margin-top:6px">Reply to keep refining</label>'
+    + '<div style="display:flex;gap:8px;align-items:flex-start">'
+    + '<input type="text" id="refine-reply" placeholder="e.g. Also stop capitalizing every heading" style="flex:1">'
+    + '<button class="btn-ghost" id="refine-send" style="margin-top:0">Send</button></div>'
+    + '<label style="margin-top:14px">Updated template (edit if you like)</label>'
+    + '<textarea id="refine-working" style="min-height:160px">'+esc(refineTemplate)+'</textarea>'
+    + '<button class="btn" id="refine-save" style="margin-top:10px">Save to my Vault</button>'
+    + '<div class="hint" id="refine-save-hint" style="margin-top:6px">Saves to your Vault under HPI Templates for the selected visit type.</div></div>';
+  document.getElementById('wiz-result').innerHTML = html;
+  document.getElementById('refine-send').addEventListener('click', sendRefine);
+  document.getElementById('refine-save').addEventListener('click', saveRefineTemplate);
+  document.getElementById('refine-reply').addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); sendRefine(); } });
+}
+document.getElementById('refine-start').addEventListener('click', async function(){
+  var errEl = document.getElementById('wiz-err'); errEl.innerHTML='';
+  var current = document.getElementById('refine-current').value.trim();
+  var issue = document.getElementById('refine-issue').value.trim();
+  var bad = document.getElementById('refine-badoutput').value.trim();
+  if(!current){ errEl.innerHTML='<div class="err">No current template found for this visit type. Set one up first, or switch visit type.</div>'; return; }
+  if(issue.length < 4){ errEl.innerHTML='<div class="err">Tell it what is going wrong or what you want to change.</div>'; return; }
+  var btn = this; btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Thinking&hellip;';
+  refineChat = [{who:'me', text: issue + (bad ? '\n\n(Example of a wrong output attached.)' : '')}];
+  refineMessages = [{role:'user', content: refineUserMsg(current, issue, bad)}];
+  try {
+    var raw = await callAPI(refineSystem(), refineMessages, 2600);
+    var j = safeJSON(raw);
+    if(!j || typeof j.template !== 'string'){ throw new Error('Could not read the response. Try again.'); }
+    refineMessages.push({role:'assistant', content: raw});
+    refineTemplate = stripDashes(j.template);
+    refineChat.push({who:'ai', text: j.reply || 'Updated.'});
+    renderRefine();
+  } catch(err){
+    errEl.innerHTML='<div class="err">'+esc(err.message||err)+'</div>';
+  } finally {
+    btn.disabled=false; btn.innerHTML='Work on it with me &rarr;';
+  }
+});
+async function sendRefine(){
+  var input = document.getElementById('refine-reply');
+  var text = (input.value||'').trim();
+  if(!text) return;
+  var working = document.getElementById('refine-working').value; // capture manual edits
+  var sendBtn = document.getElementById('refine-send');
+  input.disabled=true; sendBtn.disabled=true; sendBtn.innerHTML='<span class="spinner"></span>';
+  refineChat.push({who:'me', text: text});
+  refineMessages.push({role:'user', content: "Current working template:\n\n" + working.trim() + "\n\nMy follow-up: " + text});
+  try {
+    var raw = await callAPI(refineSystem(), refineMessages, 2600);
+    var j = safeJSON(raw);
+    if(!j || typeof j.template !== 'string'){ throw new Error('Could not read the response. Try again.'); }
+    refineMessages.push({role:'assistant', content: raw});
+    refineTemplate = stripDashes(j.template);
+    refineChat.push({who:'ai', text: j.reply || 'Updated.'});
+    renderRefine();
+  } catch(err){
+    var hint = document.getElementById('refine-save-hint');
+    if(hint) hint.innerHTML='<span style="color:var(--red)">'+esc(err.message||err)+'</span>';
+    input.disabled=false; sendBtn.disabled=false; sendBtn.innerHTML='Send';
+  }
+}
+async function saveRefineTemplate(){
+  var btn = document.getElementById('refine-save');
+  var text = document.getElementById('refine-working').value.trim();
+  if(!text) return;
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Saving&hellip;';
+  var hint = document.getElementById('refine-save-hint');
+  try {
+    var ok = await persistTemplate(text, wiz.visit);
+    if(ok){ btn.innerHTML='&#10003; Saved to Vault'; if(hint) hint.textContent='Saved. Your next HPI will use the updated template.'; setTimeout(function(){ closeWizard(); }, 1100); }
+    else { if(hint) hint.innerHTML='<span style="color:var(--amber)">Saved on this device; cloud save may have failed.</span>'; btn.disabled=false; btn.innerHTML='Save to my Vault'; }
+  } catch(err){
+    if(hint) hint.innerHTML='<span style="color:var(--red)">'+esc(err.message||err)+'</span>'; btn.disabled=false; btn.innerHTML='Save to my Vault';
   }
 }
 

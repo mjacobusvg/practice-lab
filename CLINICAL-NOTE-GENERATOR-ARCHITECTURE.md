@@ -159,6 +159,15 @@ is saved, and the clinician reviews it before it writes. The blank scaffold path
 at all. So "de-identify if you prefer" was wrong and is removed — the burden is on the
 system, not the clinician.
 
+**D. Adjust / troubleshoot mode (added after testing).** The Setup is not one-shot. A
+"Adjust / troubleshoot my current one" mode loads the clinician's existing template from the
+Vault and works the problem *with* them conversationally: they describe what is going wrong
+(optionally paste a bad HPI output), and the model diagnoses and revises the template in a
+back-and-forth, preserving the universal integrity rules and changing only what the issue
+calls for. Each turn returns the full updated template (editable inline); the clinician keeps
+refining until they save it back to the Vault. Same PHI posture — bad-output examples are
+transient, only the PHI-free template is stored.
+
 The same wizard pattern populates the **Plan library** (§4B): question them → generate
 their PARQ/standard wording + area numbers → write to Vault for approval. Learning from a
 real example is also the best test of fidelity, so the wizard doubles as onboarding *and*
