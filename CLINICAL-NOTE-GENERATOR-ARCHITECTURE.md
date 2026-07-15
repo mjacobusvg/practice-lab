@@ -144,11 +144,15 @@ guided **Setup** flow populates the Vault for them:
   **completed example** (learns voice/detail). At least one is required.
 - **Ingests them** and reverse-engineers a template + prompt that reproduces *their* style,
   keeping any generic symptom menus as checklists.
-- **Clarify step before writing anything (added after testing):** a first pass reviews the
-  inputs and asks a few follow-up questions **only if something is genuinely ambiguous**
-  (unclear order, positive-vs-denial menu handling, sample/preference conflict, quote
-  style). If all is clear it asks nothing. The clinician's answers become authoritative
-  preferences fed into the build. Mirrors the Note Builder / Chart Coder preflight pattern.
+- **Adaptive elicitation before writing anything (upgraded after testing):** not a form —
+  a skilled intake interviewer. It infers everything it can from the clinician's materials,
+  then asks the smallest set of high-value questions to surface choices clinicians never
+  think to specify, running up to two rounds (a second only if the first opens something
+  important). It is **visit-aware**: for a follow-up it specifically elicits the
+  **dynamic / standing / historical** classification of each section and whether they keep
+  a persistent **"Historical Notes"** block — the exact personalization the carry-forward
+  engine needs but that a scaffold never encodes. Answers are authoritative and are encoded
+  into the generated template (including each section's carry-forward behavior).
 - **Writes the result into their Vault fields** for them to review/approve/tweak — they
   are never staring at a blank box.
 

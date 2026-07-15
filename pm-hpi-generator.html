@@ -519,17 +519,33 @@ function wizardSystem(){
   s += "Honor these preferences: overall format = " + (styleMap[wiz.style] || styleMap.brief) + "; patient quotes = " + (wiz.quote==='verbatim' ? 'keep verbatim, fix spelling only' : 'fold into narrative, quote sparingly') + ".\n\n";
   s += "If a CLARIFYING Q&A block is present, treat the clinician's answers there as authoritative preferences that override defaults.\n\n";
   s += "Write the template in PRONOUN-NEUTRAL form: use 'the patient' or they/them in any example sentences, so it never biases a draft toward a gender. Keep bracketed placeholders as clearly-marked instructions, not patient content.\n\n";
+  s += "If the clinician indicated which sections are reassessed each visit (dynamic), carried forward as stable when unchanged (standing), or kept as known background such as a 'Historical Notes' block (historical), ENCODE that carry-forward classification explicitly in the template (note each section's carry-forward behavior) so a future follow-up draft handles it correctly.\n\n";
   s += "Output the template text only, no preamble: clear directives plus the retained generic section scaffold and symptom menus.";
   return s;
 }
 
-// Clarify pass: ask follow-up questions ONLY if something is genuinely unclear.
-function clarifySystem(){
-  var visitLabel = wiz.visit==='new_eval' ? 'new patient psychiatric evaluation' : 'psychiatric follow-up visit';
-  var s = "You are about to build a reusable HPI template for a clinician's " + visitLabel + " from the materials they provided (a blank scaffold and/or a completed example) plus preferences. BEFORE building it, decide whether anything is genuinely ambiguous or missing in a way that would change the template.\n\n";
-  s += "Ask a follow-up question ONLY when the answer would actually change the template. Good reasons: the section order is unclear or inconsistent; it is unclear whether a symptom menu should be positive-only; a domain's handling is ambiguous; the sample and the stated preferences conflict; the quote style is unclear; the follow-up interval structure is undefined. If everything needed is clear, ask NOTHING.\n\n";
-  s += "Ask at most 3 questions. Prefer concrete multiple-choice options. Keep questions short and plain.\n\n";
-  s += "Respond ONLY with raw JSON, no code fence, exactly:\n{\"questions\":[{\"id\":\"q1\",\"text\":\"...\",\"options\":[\"option a\",\"option b\"]}]}\nOmit \"options\" for a free-text question. If nothing needs clarifying, return {\"questions\":[]}.";
+// Elicitation pass: ask follow-up questions ONLY if something is genuinely unclear.
+function elicitSystem(){
+  var isFu = (wiz.visit === 'follow_up');
+  var visitLabel = isFu ? 'psychiatric follow-up visit' : 'new patient psychiatric evaluation';
+  var s = "You are an expert clinical-documentation onboarding specialist helping a clinician set up their reusable HPI template for a " + visitLabel + ". Your job is to ELICIT what they actually want, because clinicians usually have NOT thought explicitly about these choices. Read their materials (scaffold and/or completed example) and stated preferences, then ask the smallest set of high-value questions that lets you build a template that genuinely fits how they work.\n\n";
+  s += "PRINCIPLES:\n";
+  s += "- Infer everything you can from their materials first. NEVER ask about anything the materials already answer.\n";
+  s += "- Ask GOOD questions: concrete, plain, mostly multiple-choice, each briefly implying why it matters. At most 5 per round.\n";
+  s += "- Prefer to finish in one round. Ask a second round only if the first round's answers open a genuinely important follow-up.\n";
+  s += "- Surface the choices clinicians would not think to specify; do not just confirm the obvious.\n\n";
+  s += "DIMENSIONS TO COVER (only those not already clear from their materials):\n";
+  s += "- Section order and headings (usually inferable from the scaffold; confirm only if unclear or inconsistent).\n";
+  s += "- Level of detail: how tight vs full they like the narrative.\n";
+  s += "- Quote handling: keep patient quotes verbatim (spelling fixed) vs fold into narrative.\n";
+  s += "- Medication naming: keep exactly as they type it vs convert to generic.\n";
+  s += "- Safety: how they like SI/HI framed when it IS documented (note internally: the system never carries safety forward regardless).\n";
+  if(isFu){
+    s += "- FOLLOW-UP CARRY-FORWARD (the most important, and clinicians rarely specify it): for each of their sections, whether it is DYNAMIC (reassessed every visit, today drives it), STANDING (not re-asked every visit, carried forward as stable when unchanged), or HISTORICAL / chronic-known background. Elicit this clearly, section by section if useful. Explain the idea in plain terms if they seem unsure.\n";
+    s += "- Whether they keep a persistent 'Historical Notes' style block of standing background they always carry forward and never re-ask.\n";
+    s += "- What, if anything, they ALWAYS want reassessed each visit no matter what.\n";
+  }
+  s += "\nRespond ONLY with raw JSON, no code fence:\n{\"questions\":[{\"id\":\"q1\",\"text\":\"...\",\"options\":[\"a\",\"b\"]}],\"enough\":false}\nOmit \"options\" for a free-text question. Set \"enough\": true with \"questions\": [] when you have what you need to build a template that fits them.";
   return s;
 }
 
@@ -545,22 +561,19 @@ function gatherWizInputs(){
   return { scaffold: scaffold, sample: sample, notes: notes, msg: msg };
 }
 
-// Step 1: clarify, then either ask questions or build straight away.
+// Adaptive elicitation: interview the clinician (up to 2 rounds), then build.
+var elicitTranscript = '';
+var elicitRound = 0;
+
 document.getElementById('wiz-generate').addEventListener('click', async function(){
   var errEl = document.getElementById('wiz-err'); errEl.innerHTML='';
   var inp = gatherWizInputs();
   if(inp.scaffold.length < 40 && inp.sample.length < 40){ errEl.innerHTML='<div class="err">Paste your template/scaffold (recommended) and/or a completed HPI, so it has something to learn from.</div>'; return; }
+  elicitTranscript = ''; elicitRound = 0;
   var btn = this; btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Reviewing&hellip;';
   document.getElementById('wiz-result').innerHTML='';
   try {
-    var raw = await callAPI(clarifySystem(), [{role:'user', content: inp.msg}], 800);
-    var qs = [];
-    try { var j = JSON.parse(raw); if(j && Array.isArray(j.questions)) qs = j.questions; } catch(e){}
-    if(qs.length){
-      renderClarifyQuestions(qs);
-    } else {
-      await buildTemplate('');
-    }
+    await runElicit();
   } catch(err){
     errEl.innerHTML='<div class="err">'+esc(err.message||err)+'</div>';
   } finally {
@@ -568,11 +581,27 @@ document.getElementById('wiz-generate').addEventListener('click', async function
   }
 });
 
-// Render the follow-up questions with optional option-chips + a free-text answer each.
-function renderClarifyQuestions(qs){
+// One elicitation round: ask more, or (when it has enough) build.
+async function runElicit(){
+  var inp = gatherWizInputs();
+  var payload = inp.msg + (elicitTranscript ? "\n\n---\n\nELICITATION SO FAR (clinician's answers, authoritative):\n\n" + elicitTranscript : "");
+  var raw = await callAPI(elicitSystem(), [{role:'user', content: payload}], 1100);
+  var j = safeJSON(raw) || {};
+  var qs = Array.isArray(j.questions) ? j.questions : [];
+  if(qs.length && j.enough !== true && elicitRound < 2){
+    elicitRound++;
+    renderElicit(qs);
+  } else {
+    await buildTemplate(elicitTranscript ? ("CLINICIAN'S ELICITED PREFERENCES (authoritative):\n\n" + elicitTranscript) : '');
+  }
+}
+
+// Render one round of questions; Continue accumulates answers and re-runs the interview.
+function renderElicit(qs){
   window._wizQs = qs;
-  var html = '<div class="out" style="margin-top:16px"><h3>A couple of quick questions</h3>'
-    + '<div class="hint" style="margin-bottom:10px">Just to make sure your template comes out the way you want. Answer what applies, then build.</div>';
+  var heading = elicitRound > 1 ? 'A couple more, then I will build it' : 'A few questions to set this up right';
+  var html = '<div class="out" style="margin-top:16px"><h3>'+heading+'</h3>'
+    + '<div class="hint" style="margin-bottom:10px">These make the template genuinely yours. Pick an option or type your own; skip any that do not apply.</div>';
   qs.forEach(function(q, i){
     html += '<div class="card-group"><label>'+esc(q.text||('Question '+(i+1)))+'</label>';
     if(Array.isArray(q.options) && q.options.length){
@@ -582,9 +611,8 @@ function renderClarifyQuestions(qs){
     }
     html += '<input type="text" id="wiz-q-'+i+'" placeholder="Your answer" style="margin-top:8px"></div>';
   });
-  html += '<button class="btn" id="wiz-continue">Build my template &rarr;</button></div>';
+  html += '<button class="btn" id="wiz-continue">Continue &rarr;</button></div>';
   document.getElementById('wiz-result').innerHTML = html;
-  // option chips fill the matching answer input
   qs.forEach(function(q, i){
     var group = document.querySelector('[data-qopts="'+i+'"]');
     if(!group) return;
@@ -595,15 +623,14 @@ function renderClarifyQuestions(qs){
       document.getElementById('wiz-q-'+i).value = o.getAttribute('data-qval');
     });
   });
-  document.getElementById('wiz-continue').addEventListener('click', function(){
-    var qa = '';
+  document.getElementById('wiz-continue').addEventListener('click', async function(){
     (window._wizQs||[]).forEach(function(q, i){
       var a = (document.getElementById('wiz-q-'+i)||{}).value;
-      if(a && a.trim()) qa += 'Q: '+(q.text||'')+'\nA: '+a.trim()+'\n\n';
+      if(a && a.trim()) elicitTranscript += 'Q: '+(q.text||'')+'\nA: '+a.trim()+'\n\n';
     });
-    var block = qa ? ('CLARIFYING Q&A (authoritative preferences from the clinician):\n\n'+qa) : '';
-    this.disabled = true; this.innerHTML='<span class="spinner"></span>Building&hellip;';
-    buildTemplate(block);
+    this.disabled = true; this.innerHTML='<span class="spinner"></span>Thinking&hellip;';
+    try { await runElicit(); }
+    catch(err){ document.getElementById('wiz-err').innerHTML='<div class="err">'+esc(err.message||err)+'</div>'; }
   });
 }
 
