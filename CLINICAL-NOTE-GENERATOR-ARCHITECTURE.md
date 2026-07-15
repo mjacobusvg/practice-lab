@@ -221,6 +221,11 @@ Pipeline of focused calls (the "reason better" pattern, kept):
      denial sentence, never folded back into the positive list. A domain or subtopic is
      included ONLY if the notes address it (untouched domains like ADHD/borderline are
      omitted, not printed as "denies").
+   - **Placeholders and pronouns (added after testing):** templates carry bracketed
+     placeholders (`[ ]`, `*[Narrative: ...]*`) and `Menu (...)` reference blocks — these
+     are directions to the model and are NEVER emitted in the HPI (fill from notes or
+     omit). Pronouns follow the *patient in the notes*, never the template's example
+     gender; the wizard also now writes templates pronoun-neutral.
    - **Integrity rules global, format per-clinician (corrected after testing):** the
      global prompt owns only universal integrity rules (anti-fabrication, quote fidelity,
      menu-as-checklist). **All formatting — labels, order, subheadings, groupings —
