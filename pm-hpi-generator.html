@@ -49,7 +49,16 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 .tmpl-status{font-size:.8rem;color:var(--cream-dim);margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .tmpl-status .ok{color:var(--green);font-weight:600}
 .tmpl-status .none{color:var(--amber);font-weight:600}
-.hpi-edit{width:100%;min-height:300px;background:var(--navy);border:1px solid var(--rule);border-radius:8px;color:var(--white);font-family:var(--font-body);font-size:.9rem;line-height:1.7;padding:14px;resize:vertical;white-space:pre-wrap}
+.hpi-edit{width:100%;min-height:340px;background:var(--navy);border:1px solid var(--rule);border-radius:8px;color:var(--white);font-family:var(--font-body);font-size:.9rem;line-height:1.7;padding:14px;resize:vertical;white-space:pre-wrap}
+.btn-mini{background:var(--navy);border:1px solid var(--rule);color:var(--cream);border-radius:6px;padding:5px 11px;font-size:.76rem;font-weight:600;cursor:pointer}
+/* Full-screen focus editor for working the note during the visit */
+.focus-overlay{position:fixed;inset:0;background:var(--navy);z-index:9500;display:none;flex-direction:column;padding:14px 16px 16px}
+.focus-overlay.open{display:flex}
+.focus-bar{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.focus-bar h3{font-family:var(--font-display);color:var(--white);font-size:1.05rem;margin:0}
+.focus-bar .spacer{flex:1}
+.focus-x{background:none;border:none;color:var(--cream-dim);font-size:1.5rem;cursor:pointer;line-height:1;padding:0 4px}
+#focus-note{flex:1;width:100%;background:var(--navy-card);border:1px solid var(--rule);border-radius:8px;color:var(--white);font-family:var(--font-body);font-size:.95rem;line-height:1.7;padding:16px;resize:none}
 .handoff{background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.25);border-radius:8px;padding:16px 18px;font-size:.9rem;margin-top:18px}
 .handoff .btn{margin-top:10px}
 .scope{font-style:italic;color:var(--cream-dim);font-size:.78rem;text-align:center;margin-top:30px;border-top:1px solid var(--rule);padding-top:18px}
@@ -95,11 +104,13 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
     <label for="raw" style="margin-top:6px">Your visit notes &mdash; exactly as you took them</label>
     <textarea id="raw" placeholder="Paste your running notes: fragments, shorthand, and patient quotes in the order you asked. Don't clean them up first &mdash; that's this tool's job. Example:&#10;&#10;here re: 6wk f/u duloxetine 60&#10;&quot;the anxiety is better but I still feel blah&quot;&#10;sleep 5-6h, was 3-4&#10;denies SI&#10;still not exercising, wants to&#10;mom's health stressor ongoing"></textarea>
+    <button type="button" class="btn-mini" style="margin-top:8px" onclick="openFocus('raw')">Full screen &#8599;</button>
 
     <label for="context" style="margin-top:16px">Last visit's note &mdash; to carry forward from <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional, follow-ups)</span></label>
     <textarea id="context" style="min-height:80px" placeholder="Paste last visit's note. On a follow-up, standing items that don't change each visit (substance use, exercise, hallucinations, history) carry forward worded as continued; today's notes drive everything that changed. Safety (SI/HI) is never carried forward as if assessed today."></textarea>
-    <button class="btn-ghost" id="prep-btn" style="margin-top:10px">Set me up for this visit &rarr;</button>
-    <span class="hint" id="prep-hint" style="margin-left:8px">Paste last visit's note above, then get a carry-forward starting note plus what to check today.</span>
+    <div class="hint" style="margin-top:12px;line-height:1.5"><strong style="color:var(--cream)">Optional pre-visit prep (follow-ups).</strong> Paste last visit's note above, then <em>Set me up</em> builds today's starting note &mdash; standing items carried forward as stable, dynamic sections left blank for you to fill live &mdash; plus a checklist of what to follow up on. You then work in that note during the visit and draft from it.</div>
+    <button class="btn-ghost" id="prep-btn" style="margin-top:8px">Set me up for this visit &rarr;</button>
+    <span class="hint" id="prep-hint" style="margin-left:8px"></span>
     <div id="prep-results"></div>
 
     <div class="card-group" style="margin-top:16px">
@@ -120,6 +131,19 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. Nothing is stored.</div>
 </div>
+</div>
+
+<!-- Full-screen focus editor -->
+<div class="focus-overlay" id="focus-overlay">
+  <div class="focus-bar">
+    <h3>Working note</h3>
+    <span class="hint" id="focus-hint" style="margin:0"></span>
+    <span class="spacer"></span>
+    <button class="btn" id="focus-draft">Draft my HPI &rarr;</button>
+    <button class="focus-x" onclick="closeFocus()" aria-label="Close full screen">&times;</button>
+  </div>
+  <textarea id="focus-note" placeholder="Work on your note here, full screen. Fill each section as you go, then Draft my HPI."></textarea>
+  <div id="focus-err"></div>
 </div>
 
 <!-- Setup wizard (Slice 3) -->
@@ -373,7 +397,7 @@ function draftSystem(){
   s += "- The template may contain bracketed placeholders and instructions (e.g. \"[ ]\", *[Narrative: ...]*) and 'Menu (...)' reference blocks. These are DIRECTIONS TO YOU, never content. NEVER print a bracketed placeholder, an italic instruction, a 'Menu' block, or phrases like 'do not reproduce' / 'select endorsed items only' in the HPI. Fill each placeholder from the notes; if the notes do not supply it, omit that piece entirely (no empty quotes, no blank brackets).\n";
   s += "- PRONOUNS follow the patient in the notes, NOT the template. If the template's examples use a specific gender (e.g. 'She'), do not inherit it; use the patient's documented pronouns, or they/them if unknown.\n\n";
   s += "=== OUTPUT FORMAT ===\n";
-  s += "Output plain, chart-ready text for pasting into an EHR. Do NOT use Markdown: no # or ## headings, no --- or *** divider lines, no > blockquotes, no ** bold **. Render the clinician's section labels as plain text on their own line, with a single blank line between sections. Even if the template is written in Markdown, do not carry that syntax into the HPI.\n\n";
+  s += "Output plain, chart-ready text for pasting into an EHR. Do NOT use Markdown: no # or ## headings, no --- or *** divider lines, no > blockquotes, no ** bold **. FOLLOW THE CLINICIAN'S TEMPLATE for how section labels are placed: if the template writes the label inline with a colon and the content on the same line (e.g. 'Counseling: continues weekly therapy...'), do exactly that; if the template puts labels on their own line, do that. Do not impose a layout the template does not use. Even if the template is written in Markdown, do not carry that syntax into the HPI.\n\n";
   s += "Add only minimal connective narrative needed to make the notes read as clinical prose. Connective wording must not introduce any new clinical fact. Output the HPI text only.";
   return s;
 }
@@ -526,6 +550,7 @@ function renderPrep(j){
   html += '<label style="margin-top:14px">Your starting note &mdash; work in this box during the visit</label>';
   html += '<textarea class="hpi-edit" id="prep-note">'+esc(note)+'</textarea>';
   html += '<button class="btn" id="prep-draft">Draft my HPI &rarr;</button>';
+  html += '<button type="button" class="btn-mini" style="margin-left:8px" onclick="openFocus(\'prep-note\')">Full screen &#8599;</button>';
   html += '<button class="btn-ghost" id="prep-copy" style="margin-left:8px">Copy</button>';
   html += '<div id="prep-draft-err"></div>';
   html += '<div class="hint" style="margin-top:6px">Fill the dynamic sections here as you go, then Draft my HPI right from this box.</div></div>';
@@ -538,6 +563,27 @@ function renderPrep(j){
     var b = this; b.textContent = 'Copied'; setTimeout(function(){ b.textContent = 'Copy'; }, 1500);
   });
 }
+
+// ── Full-screen focus editor: work one big note like your EHR, one Draft button ──
+var focusSourceId = null;
+function openFocus(sourceId){
+  focusSourceId = sourceId;
+  var src = document.getElementById(sourceId);
+  document.getElementById('focus-note').value = src ? src.value : '';
+  document.getElementById('focus-err').innerHTML = '';
+  document.getElementById('focus-hint').textContent = (sourceId === 'prep-note') ? 'Fill the dynamic sections, then Draft.' : '';
+  document.getElementById('focus-overlay').classList.add('open');
+  document.getElementById('focus-note').focus();
+}
+function focusSyncBack(){
+  if(focusSourceId){ var src = document.getElementById(focusSourceId); if(src) src.value = document.getElementById('focus-note').value; }
+}
+function closeFocus(){ focusSyncBack(); document.getElementById('focus-overlay').classList.remove('open'); }
+document.getElementById('focus-draft').addEventListener('click', function(){
+  focusSyncBack();
+  document.getElementById('focus-overlay').classList.remove('open');
+  runDraft(document.getElementById('focus-note').value.trim(), this, document.getElementById('err-box'));
+});
 
 // ── Slice 2: hand off to the Note Builder ──
 function sendToNoteBuilder(){
