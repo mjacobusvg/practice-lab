@@ -201,10 +201,18 @@ Pipeline of focused calls (the "reason better" pattern, kept):
    - **Template menus are checklists, not content (added after testing):** real templates
      carry maximal domain scaffolds and canned "associated symptoms include ..." menus.
      The prompt treats every menu as a checklist to filter against the visit, never as
-     text to reproduce. Include a domain ONLY if the notes address it (untouched domains
-     like ADHD/borderline are omitted, not printed as "denies"); within a domain, keep
-     only the menu symptoms the notes support and delete the rest; anxiety subtypes
-     (panic, OCD, social) get their own short paragraphs only when discussed.
+     text to reproduce. A positive "associated symptoms include ..." list keeps **only
+     endorsed** symptoms; denied / not-discussed / inferred-absent items are removed from
+     it. Explicit clinician denials (SI/HI, "denies manic symptoms") stay as their own
+     denial sentence, never folded back into the positive list. A domain or subtopic is
+     included ONLY if the notes address it (untouched domains like ADHD/borderline are
+     omitted, not printed as "denies").
+   - **Integrity rules global, format per-clinician (corrected after testing):** the
+     global prompt owns only universal integrity rules (anti-fabrication, quote fidelity,
+     menu-as-checklist). **All formatting — labels, order, subheadings, groupings —
+     comes from the clinician's template, never hardcoded.** Anxiety subtypes get their
+     own paragraphs/headers only if *that clinician's* template calls for it; nothing
+     structural is imposed on everyone.
 3. **QA/verify pass (cost-gated)** — a second focused call that flags anything in the
    draft not traceable to the input (mirrors the Note Builder's existing review pass),
    surfacing flags rather than silently editing where clinically material. **This pass
