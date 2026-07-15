@@ -886,6 +886,16 @@ a { color: inherit; text-decoration: none; }
 .phi-note { display:flex; gap:8px; align-items:flex-start; font-size:0.78rem; line-height:1.45; color:var(--text-secondary); background:rgba(224,146,42,0.10); border:1px solid rgba(224,146,42,0.42); border-radius:8px; padding:8px 11px; margin:0 0 10px; }
 .phi-note .phi-ic { flex-shrink:0; font-size:0.9rem; }
 .phi-note b { color:var(--text-heading); }
+.forum-rules-banner { display:flex; gap:9px; align-items:flex-start; font-size:0.82rem; line-height:1.5; color:var(--text-secondary); background:rgba(224,146,42,0.10); border:1px solid rgba(224,146,42,0.42); border-radius:10px; padding:11px 14px; margin:0 0 16px; }
+.forum-rules-banner .phi-ic { flex-shrink:0; font-size:0.95rem; }
+.forum-rules-banner b { color:var(--text-heading); }
+.ack-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.55); display:none; align-items:center; justify-content:center; z-index:1000; padding:20px; }
+.ack-overlay.open { display:flex; }
+.ack-card { background:var(--bg-card); border:1px solid var(--border); border-radius:14px; max-width:520px; width:100%; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,0.45); }
+.ack-card h3 { margin:0 0 12px; color:var(--text-heading); font-family:var(--font-heading); }
+.ack-check { display:flex; gap:10px; align-items:flex-start; font-size:0.9rem; line-height:1.5; color:var(--text-primary); background:var(--bg-main); border:1px solid var(--border); border-radius:10px; padding:12px 14px; margin:8px 0 16px; cursor:pointer; }
+.ack-check input { margin-top:3px; flex-shrink:0; width:18px; height:18px; cursor:pointer; }
+.ack-actions { display:flex; justify-content:flex-end; gap:10px; }
 .tpl-detail-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
 .tpl-gate { border: 1px solid var(--copper); background: var(--copper-glow); border-radius: 12px; padding: 20px; }
 .tpl-gate-title { font-weight: 700; color: var(--text-heading); font-size: 1rem; }
@@ -2067,6 +2077,9 @@ function showHome() {
   logView('/platform/home');
   var h = '';
 
+  // Persistent community PHI notice (always shown at the top of the forum).
+  h += '<div class="forum-rules-banner"><span class="phi-ic">&#9888;</span><span><b>Please do not post protected health information (PHI) or personal health information.</b> This community is for professional discussion. Do not post information that could identify a patient, and keep any case discussion fully de-identified. Please also do not post health information about yourself or others. Posts should not contain patient names or identifying details, or personal health information of any kind.</span></div>';
+
   // Zone 1: Ask the Archive
   h += '<div class="archive-zone">';
   h += '<h2>Ask a clinical, billing, or practice question</h2>';
@@ -2075,7 +2088,7 @@ function showHome() {
   h += '<input type="text" id="archive-q" placeholder="e.g. How do I document 90833 with a 99214?" onkeydown="if(event.key===\'Enter\')askArchive()">';
   h += '<button onclick="askArchive()">Ask &rarr;</button>';
   h += '</div>';
-  h += phiNote(true);
+  h += phiNote('tool');
   h += '</div>';
 
   // "What you missed" since last visit (fills in async, once per session)
@@ -2820,7 +2833,7 @@ async function viewPost(postId) {
     // Composer — open to any member (forum or full); locked threads hide it.
     if (!post.is_locked) {
       h += '<div style="margin-top:16px">';
-      h += phiNote(false);
+      h += phiNote('forum');
       h += '<textarea id="comment-input" placeholder="Share your thoughts or add to the discussion..." maxlength="8000" style="width:100%;min-height:84px;padding:12px 14px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:0.86rem;line-height:1.5;resize:vertical"></textarea>';
       h += '<div id="comment-error" style="display:none;color:#c0392b;font-size:0.78rem;margin-top:6px"></div>';
       h += '<div style="display:flex;justify-content:flex-end;margin-top:8px">';
@@ -2863,6 +2876,7 @@ async function submitComment(postId) {
   var body = ta.value.trim();
   if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
   if (!body) { if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Write something first.'; } return; }
+  if (S.forumAck !== true) { requireForumAck(function(){ submitComment(postId); }); return; }
   if (btn) { btn.disabled = true; btn.textContent = 'Posting...'; }
   try {
     var res = await fetch('/.netlify/functions/create-comment', {
@@ -3029,7 +3043,7 @@ function toggleReplyBox(commentId, postId) {
   if (box.innerHTML) { box.innerHTML = ''; return; }
   var ta = 'reply-input-' + commentId;
   box.innerHTML =
-    phiNote(false)
+    phiNote('forum')
     + '<textarea id="' + ta + '" placeholder="Write a reply..." maxlength="8000" style="width:100%;min-height:64px;margin-top:8px;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-page);color:var(--text-primary);font-family:inherit;font-size:0.84rem;line-height:1.5;resize:vertical"></textarea>'
     + '<div id="reply-error-' + commentId + '" style="display:none;color:#c0392b;font-size:0.76rem;margin-top:4px"></div>'
     + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">'
@@ -3048,6 +3062,7 @@ async function submitReply(commentId, postId) {
   var body = ta.value.trim();
   if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
   if (!body) { if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Write something first.'; } return; }
+  if (S.forumAck !== true) { requireForumAck(function(){ submitReply(commentId, postId); }); return; }
   if (btn) { btn.disabled = true; btn.textContent = 'Posting...'; }
   try {
     var res = await fetch('/.netlify/functions/create-comment', {
@@ -3275,6 +3290,7 @@ async function submitMemberPost() {
   var title = document.getElementById('mp-title').value.trim();
   var body = document.getElementById('mp-body').value.trim();
   if (!title || !body) { st.textContent = 'Title and body are required.'; st.className = 'composer-status err'; return; }
+  if (S.forumAck !== true) { requireForumAck(function(){ submitMemberPost(); }); return; }
   var btn = document.getElementById('mp-submit'); btn.disabled = true; st.textContent = 'Posting…';
   try {
     var res = await fetch('/.netlify/functions/create-member-post', {
@@ -4439,7 +4455,7 @@ function renderThread(data) {
     });
   }
   h += '</div>';
-  h += phiNote(false);
+  h += phiNote('forum');
   h += '<div class="dm-compose"><textarea id="dm-input" rows="2" maxlength="5000" placeholder="Write a message..." onkeydown="dmKey(event)"></textarea><button class="btn-primary" id="dm-send" onclick="sendMessage()">Send</button></div>';
   h += '<div id="dm-error" style="display:none;color:#c0392b;font-size:0.78rem;margin-top:6px"></div>';
   center.innerHTML = h;
@@ -4708,11 +4724,73 @@ async function showFollowing() {
 // it covers not just identifiable patient information but ANY personal health
 // detail (a member's own health included), since non-PHI health data can fall
 // under state consumer-health-privacy laws.
-function phiNote(short) {
-  var msg = short
-    ? 'Do not enter identifiable patient information or personal health details. De-identify any clinical example.'
-    : 'Do not post identifiable patient information or personal health details (about a patient, yourself, or anyone else). De-identify every clinical example. This community is not intended for PHI.';
-  return '<div class="phi-note"><span class="phi-ic">&#9888;</span><span><b>No PHI.</b> ' + msg + '</span></div>';
+function phiNote(mode) {
+  var lead = mode === 'tool' ? 'Do not enter PHI or personal health information.' : 'Do not post PHI or personal health information.';
+  var body = mode === 'tool'
+    ? 'This tool is not covered by a Business Associate Agreement and is not intended for protected health information. Do not enter any information that identifies a patient, and do not enter health information about yourself or anyone else.'
+    : 'Do not post information that could identify a patient, and keep any case discussion fully de-identified. Do not post health information about yourself or others.';
+  return '<div class="phi-note"><span class="phi-ic">&#9888;</span><span><b>' + lead + '</b> ' + body + '</span></div>';
+}
+
+// Forum rules acknowledgment: a one-time, gated first-post confirmation that the
+// member will not post PHI or personal health information. Recorded server-side
+// (member + timestamp + version) via forum-ack. Bump FORUM_RULES_VERSION to
+// require re-acknowledgment if the rules text materially changes.
+var FORUM_RULES_VERSION = 1;
+
+// Run proceedFn once the member has acknowledged the current rules version.
+// Checks the server first (so returning, already-acknowledged members are not
+// prompted again), otherwise opens the acknowledgment modal.
+async function requireForumAck(proceedFn) {
+  if (S.forumAck === true) { proceedFn(); return; }
+  if (S.forumAck == null) {
+    try {
+      var r = await fetch('/.netlify/functions/forum-ack', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: getAuthToken(), action: 'status', version: FORUM_RULES_VERSION })
+      });
+      var d = await r.json();
+      if (d && d.ok && d.accepted) { S.forumAck = true; proceedFn(); return; }
+    } catch (e) { /* fall through to prompting */ }
+    S.forumAck = false;
+  }
+  openForumAckModal(proceedFn);
+}
+
+function openForumAckModal(proceedFn) {
+  var ov = document.getElementById('ack-overlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'ack-overlay'; ov.className = 'ack-overlay';
+    ov.innerHTML =
+      '<div class="ack-card">' +
+        '<h3>Before you post</h3>' +
+        '<p style="color:var(--text-secondary);font-size:0.88rem;line-height:1.5;margin:0 0 4px">Please confirm you understand our community rules:</p>' +
+        '<label class="ack-check"><input type="checkbox" id="ack-check"><span>I understand that I must not post protected health information (PHI) or personal health information in this community. This includes information that could identify a patient, and health information about myself or others. I will keep any case discussion fully de-identified.</span></label>' +
+        '<div class="ack-actions"><button class="btn-ghost" id="ack-cancel">Cancel</button><button class="btn-primary" id="ack-continue" disabled>Continue</button></div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    var cb = ov.querySelector('#ack-check');
+    ov.querySelector('#ack-check').addEventListener('change', function () { ov.querySelector('#ack-continue').disabled = !cb.checked; });
+    ov.querySelector('#ack-cancel').addEventListener('click', function () { ov.classList.remove('open'); });
+    ov.addEventListener('click', function (e) { if (e.target === ov) ov.classList.remove('open'); });
+  }
+  var check = ov.querySelector('#ack-check'); check.checked = false;
+  var cont = ov.querySelector('#ack-continue'); cont.disabled = true; cont.textContent = 'Continue';
+  cont.onclick = async function () {
+    cont.disabled = true; cont.textContent = 'Saving...';
+    try {
+      await fetch('/.netlify/functions/forum-ack', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: getAuthToken(), action: 'accept', version: FORUM_RULES_VERSION })
+      });
+    } catch (e) { /* recorded best-effort; still let them proceed */ }
+    S.forumAck = true;
+    ov.classList.remove('open');
+    cont.textContent = 'Continue';
+    if (proceedFn) proceedFn();
+  };
+  ov.classList.add('open');
 }
 
 // Academy: placeholder shell for the future member-led courses / mentorship /
@@ -5501,7 +5579,7 @@ checkAuth();
       <label>Title</label>
       <input type="text" id="cp-title" placeholder="Post title">
       <label>Body</label>
-      <div class="phi-note"><span class="phi-ic">&#9888;</span><span><b>No PHI.</b> Do not post identifiable patient information or personal health details (about a patient, yourself, or anyone else). De-identify every clinical example. This community is not intended for PHI.</span></div>
+      <div class="phi-note"><span class="phi-ic">&#9888;</span><span><b>Do not post PHI or personal health information.</b> Do not post information that could identify a patient, and keep any case discussion fully de-identified. Do not post health information about yourself or others.</span></div>
       <div class="md-toolbar" id="cp-toolbar">
         <button type="button" class="md-btn" title="Bold" onclick="mdSurround('cp-body','**','**')"><b>B</b></button>
         <button type="button" class="md-btn" title="Italic" onclick="mdSurround('cp-body','*','*')"><i>I</i></button>
@@ -5548,7 +5626,7 @@ checkAuth();
     <label>Title</label>
     <input type="text" id="mp-title" maxlength="200" placeholder="What's your question or topic?">
     <label>Body</label>
-    <div class="phi-note"><span class="phi-ic">&#9888;</span><span><b>No PHI.</b> Do not post identifiable patient information or personal health details (about a patient, yourself, or anyone else). De-identify every clinical example. This community is not intended for PHI.</span></div>
+    <div class="phi-note"><span class="phi-ic">&#9888;</span><span><b>Do not post PHI or personal health information.</b> Do not post information that could identify a patient, and keep any case discussion fully de-identified. Do not post health information about yourself or others.</span></div>
     <div class="md-toolbar" id="mp-toolbar">
       <button type="button" class="md-btn" title="Bold" onclick="mdSurround('mp-body','**','**')"><b>B</b></button>
       <button type="button" class="md-btn" title="Italic" onclick="mdSurround('mp-body','*','*')"><i>I</i></button>
