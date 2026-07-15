@@ -128,10 +128,11 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
       <div class="opt" data-wizvisit="follow_up">Follow-up</div>
     </div>
 
-    <label style="margin-top:16px">How should it read? <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(pick what fits)</span></label>
+    <label style="margin-top:16px">How should it read?</label>
     <div class="opts" id="wiz-style-opts">
-      <div class="opt sel" data-wizstyle="flowing">Flowing narrative</div>
-      <div class="opt" data-wizstyle="sectioned">Labeled sections</div>
+      <div class="opt sel" data-wizstyle="brief">Brief labels, narrative under each</div>
+      <div class="opt" data-wizstyle="flowing">Flowing narrative</div>
+      <div class="opt" data-wizstyle="sectioned">Full labeled sections</div>
     </div>
 
     <label style="margin-top:16px">Patient quotes</label>
@@ -140,11 +141,14 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
       <div class="opt" data-wizquote="synth">Fold into narrative, quote sparingly</div>
     </div>
 
-    <label for="wiz-notes" style="margin-top:16px">Anything specific about how you like your HPI <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional)</span></label>
-    <textarea id="wiz-notes" style="min-height:70px" placeholder="e.g. Always open with the interval and current meds. Group by symptom domain. Put risk near the end. Keep it tight."></textarea>
+    <label for="wiz-scaffold" style="margin-top:16px">Your HPI template / scaffold <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(recommended)</span></label>
+    <textarea id="wiz-scaffold" style="min-height:150px" placeholder="Paste your blank template: your section order and any standard phrasing you start from, including canned 'associated symptoms include ...' menus. This has no patient info, so there is nothing to de-identify. The generator keeps your structure and treats each symptom menu as a checklist &mdash; at draft time it keeps only what you documented and deletes the rest, and drops whole sections (e.g. ADHD, borderline) you did not ask about."></textarea>
 
-    <label for="wiz-sample" style="margin-top:16px">Paste one HPI you already like</label>
-    <textarea id="wiz-sample" style="min-height:150px" placeholder="Paste a real HPI you have written (de-identify if you prefer). The tool learns your structure, order, level of detail, and voice from it &mdash; and keeps none of the patient specifics."></textarea>
+    <label for="wiz-sample" style="margin-top:16px">A completed HPI you like <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional)</span></label>
+    <textarea id="wiz-sample" style="min-height:130px" placeholder="Optional: paste a real completed HPI so it also learns your voice and level of detail. Paste it as-is &mdash; you do NOT need to de-identify it. It is processed transiently (BAA-covered) and never stored; only your PHI-free structure and style are saved to the Vault."></textarea>
+
+    <label for="wiz-notes" style="margin-top:16px">Anything else about how you like it <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional)</span></label>
+    <textarea id="wiz-notes" style="min-height:60px" placeholder="e.g. Open with CC, then interval and current meds. Depression under Depression, mania under Mania. Risk at the end. Keep it tight."></textarea>
 
     <button class="btn" id="wiz-generate">Build my template &rarr;</button>
     <div id="wiz-err"></div>
@@ -302,6 +306,11 @@ function draftSystem(){
   } else {
     s += "No clinician template is saved, so write a clean, conventional psychiatric HPI: a flowing narrative that opens with the reason for the visit (or the interval since last visit for a follow-up), then course, current symptoms grouped sensibly, current medications and response, and any risk or pertinent context THAT THE NOTES CONTAIN. Do not force sections the notes do not support.\n\n";
   }
+  s += "=== TEMPLATE SECTIONS AND SYMPTOM MENUS ===\n";
+  s += "Your template may name standard domains (Depression, Mania, Sleep, Anxiety, Panic, OCD, Trauma, ADHD, Borderline, etc.) and canned 'associated symptoms include ...' menus. Treat every such list as a CHECKLIST, never as content to assert:\n";
+  s += "- Include a domain or section ONLY if the visit notes actually address it. If a domain was not discussed, OMIT that section entirely. Never write 'denies ...' for a domain unless the notes document it was asked and denied.\n";
+  s += "- Within an included domain, from the associated-symptom menu keep ONLY the symptoms the notes support (endorsed, or explicitly denied in the notes). Delete every menu item the notes do not mention. Never reproduce the full canned list.\n";
+  s += "- Use brief section labels in the template's order. Within Anxiety or a similar domain, use separate short paragraphs or subheadings for subtypes (panic, OCD, social anxiety) only when the notes address them.\n\n";
   s += "Add only minimal connective narrative needed to make the notes read as clinical prose. Connective wording must not introduce any new clinical fact. Output the HPI text only.";
   return s;
 }
@@ -362,7 +371,7 @@ document.getElementById('generate').addEventListener('click', async function(){
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Drafting&hellip;';
   document.getElementById('results').innerHTML='';
   try {
-    var hpi = await callAPI(draftSystem(), [{role:'user', content: gatherSource()}], 2200);
+    var hpi = await callAPI(draftSystem(), [{role:'user', content: gatherSource()}], 3400);
     if(!hpi){ throw new Error('No HPI came back. Try again.'); }
     // Ambient source => auto-verify (no clinician-written ground truth).
     if(sourceMode === 'ambient'){
@@ -382,7 +391,7 @@ document.getElementById('generate').addEventListener('click', async function(){
 // ── Verify pass ──
 async function verifyHpi(hpi){
   var msg = gatherSource() + "\n\n---\n\nDRAFTED HPI TO AUDIT:\n\n" + hpi;
-  var raw = await callAPI(verifySystem(), [{role:'user', content: msg}], 2200);
+  var raw = await callAPI(verifySystem(), [{role:'user', content: msg}], 3400);
   try {
     var j = JSON.parse(raw);
     if(j && typeof j.hpi === 'string') return { hpi: j.hpi, flags: Array.isArray(j.flags) ? j.flags : [] };
@@ -418,7 +427,7 @@ function sendToNoteBuilder(){
 }
 
 // ── Slice 3: Setup wizard ──
-var wiz = { visit:'new_eval', style:'flowing', quote:'verbatim' };
+var wiz = { visit:'new_eval', style:'brief', quote:'verbatim' };
 bindOpts('wiz-visit-opts','data-wizvisit', function(v){ wiz.visit=v; });
 bindOpts('wiz-style-opts','data-wizstyle', function(v){ wiz.style=v; });
 bindOpts('wiz-quote-opts','data-wizquote', function(v){ wiz.quote=v; });
@@ -439,24 +448,33 @@ document.getElementById('wizard').addEventListener('click', function(e){ if(e.ta
 
 function wizardSystem(){
   var visitLabel = wiz.visit==='new_eval' ? 'new patient psychiatric evaluation' : 'psychiatric follow-up visit';
-  var s = "You help a clinician build a REUSABLE HPI TEMPLATE for their " + visitLabel + ". You are given a sample HPI they already wrote plus a few preferences. Reverse-engineer the STYLE and STRUCTURE of the sample into a template that, applied to a future visit's raw notes, would reproduce this clinician's HPI style.\n\n";
-  s += "CRITICAL: Output ONLY reusable structural and stylistic instructions. Do NOT copy any patient-specific content from the sample (no names, symptoms, meds, dates, or any clinical facts). Strip all PHI. The template is a set of instructions, not an example note.\n\n";
-  s += "Capture: section order and any headings the clinician uses; whether it is a flowing narrative or labeled sections; how they open (chief complaint vs interval); grouping (e.g. by symptom domain); level of detail and typical length; tense and voice; how they handle patient quotes; where risk goes; any characteristic phrasing patterns (described generically, never with the sample's specifics).\n\n";
-  s += "Honor these stated preferences: overall format = " + (wiz.style==='sectioned' ? 'labeled sections' : 'flowing narrative') + "; patient quotes = " + (wiz.quote==='verbatim' ? 'keep verbatim, fix spelling only' : 'fold into narrative, quote sparingly') + ".\n\n";
-  s += "Write the template as clear directives a drafting model can follow (e.g. 'Open with the interval since last visit and current medications. Group symptoms by domain. Preserve patient quotes verbatim, correcting only spelling. Keep to one or two tight paragraphs. Place any risk assessment at the end.'). Output the template text only, no preamble.";
+  var styleMap = { flowing:'a flowing narrative', brief:'brief section labels with narrative under each', sectioned:'full labeled sections' };
+  var s = "You build a REUSABLE HPI TEMPLATE for a clinician's " + visitLabel + ", from the materials they provide (their blank scaffold and/or a completed example) plus preferences. The template is a set of drafting instructions applied later to a visit's raw notes.\n\n";
+  s += "CRITICAL - NO PHI: Output ONLY reusable structure and generic phrasing. NEVER copy patient-specific content from a completed example (no names, no person-specific symptoms/stories, no meds, doses, or dates). Strip all PHI. This template is stored in the clinician's Vault, which must contain NO patient information.\n\n";
+  s += "PRESERVE THE CLINICIAN'S STRUCTURE: keep their section order and their brief labels. If their scaffold includes canned 'associated symptoms include ...' menus for domains (depression, mania, sleep, anxiety, panic, OCD, trauma, ADHD, borderline, etc.), KEEP those menus in the template as reference checklists. They are generic, not PHI, and the drafting step uses them to decide what to include.\n\n";
+  s += "EMBED THESE DRAFTING RULES in the template so a future draft follows them:\n";
+  s += "- Include a domain or section ONLY if the visit notes address it. Omit entirely any domain not discussed (e.g. drop ADHD or borderline if not asked). Do not write 'denies ...' for a domain unless the notes document it was asked and denied.\n";
+  s += "- Within an included domain, from its symptom menu keep ONLY the symptoms the notes support and delete the rest; never reproduce the full canned list.\n";
+  s += "- Within anxiety or similar, use separate short paragraphs or subheadings for subtypes (panic, OCD, social anxiety) only when the notes address them.\n";
+  s += "- Preserve patient quotes verbatim, correcting spelling only.\n\n";
+  s += "Honor these preferences: overall format = " + (styleMap[wiz.style] || styleMap.brief) + "; patient quotes = " + (wiz.quote==='verbatim' ? 'keep verbatim, fix spelling only' : 'fold into narrative, quote sparingly') + ".\n\n";
+  s += "Output the template text only, no preamble: clear directives plus the retained generic section scaffold and symptom menus.";
   return s;
 }
 
 document.getElementById('wiz-generate').addEventListener('click', async function(){
   var errEl = document.getElementById('wiz-err'); errEl.innerHTML='';
+  var scaffold = document.getElementById('wiz-scaffold').value.trim();
   var sample = document.getElementById('wiz-sample').value.trim();
   var notes = document.getElementById('wiz-notes').value.trim();
-  if(sample.length < 60){ errEl.innerHTML='<div class="err">Paste one of your existing HPIs so it has a real example to learn from.</div>'; return; }
+  if(scaffold.length < 40 && sample.length < 40){ errEl.innerHTML='<div class="err">Paste your template/scaffold (recommended) and/or a completed HPI, so it has something to learn from.</div>'; return; }
   var btn = this; btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Building&hellip;';
   try {
-    var msg = "SAMPLE HPI (learn style only, keep no specifics):\n\n" + sample;
-    if(notes) msg += "\n\n---\n\nADDITIONAL PREFERENCES FROM THE CLINICIAN:\n\n" + notes;
-    var tmpl = await callAPI(wizardSystem(), [{role:'user', content: msg}], 1400);
+    var msg = '';
+    if(scaffold) msg += "CLINICIAN'S BLANK TEMPLATE / SCAFFOLD (their section order and canned symptom menus; no patient content):\n\n" + scaffold;
+    if(sample) msg += (msg ? "\n\n---\n\n" : "") + "A COMPLETED HPI (learn voice and level of detail only; keep NO patient specifics):\n\n" + sample;
+    if(notes) msg += "\n\n---\n\nADDITIONAL PREFERENCES:\n\n" + notes;
+    var tmpl = await callAPI(wizardSystem(), [{role:'user', content: msg}], 2000);
     if(!tmpl){ throw new Error('Nothing came back. Try again.'); }
     tmpl = stripDashes(tmpl);
     var label = wiz.visit==='new_eval' ? 'New patient evaluation' : 'Follow-up';

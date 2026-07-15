@@ -139,10 +139,20 @@ produces bad prompts, and bad prompts produce bad output that kills trust. Inste
 guided **Setup** flow populates the Vault for them:
 - Asks a handful of questions (specialty, visit types, how they like the HPI structured,
   quote handling, etc.).
-- **Ingests a sample note they already wrote** and reverse-engineers a template + prompt
-  that reproduces *their* style.
+- **Accepts two inputs (added after testing):** their **blank scaffold** (section order +
+  canned symptom menus — the primary template source, and PHI-free by nature) and/or a
+  **completed example** (learns voice/detail). At least one is required.
+- **Ingests them** and reverse-engineers a template + prompt that reproduces *their* style,
+  keeping any generic symptom menus as checklists.
 - **Writes the result into their Vault fields** for them to review/approve/tweak — they
   are never staring at a blank box.
+
+**PHI never enters the Vault, and the clinician never has to de-identify.** The generated
+template is structure/generic-phrasing only. A pasted completed example is processed
+transiently through the BAA-covered proxy and **never stored**; only the PHI-free template
+is saved, and the clinician reviews it before it writes. The blank scaffold path has no PHI
+at all. So "de-identify if you prefer" was wrong and is removed — the burden is on the
+system, not the clinician.
 
 The same wizard pattern populates the **Plan library** (§4B): question them → generate
 their PARQ/standard wording + area numbers → write to Vault for approval. Learning from a
@@ -188,6 +198,13 @@ Pipeline of focused calls (the "reason better" pattern, kept):
      anxious"` ✓; `"I feel down"` → `"I feel depressed"` ✗ (that is interpretation, not
      spelling). Default to verbatim when the clinician's template is silent; the
      template/prompt may direct more synthesis if they want it.
+   - **Template menus are checklists, not content (added after testing):** real templates
+     carry maximal domain scaffolds and canned "associated symptoms include ..." menus.
+     The prompt treats every menu as a checklist to filter against the visit, never as
+     text to reproduce. Include a domain ONLY if the notes address it (untouched domains
+     like ADHD/borderline are omitted, not printed as "denies"); within a domain, keep
+     only the menu symptoms the notes support and delete the rest; anxiety subtypes
+     (panic, OCD, social) get their own short paragraphs only when discussed.
 3. **QA/verify pass (cost-gated)** — a second focused call that flags anything in the
    draft not traceable to the input (mirrors the Note Builder's existing review pass),
    surfacing flags rather than silently editing where clinically material. **This pass
