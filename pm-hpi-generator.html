@@ -142,6 +142,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
     <button class="btn" id="focus-draft">Draft my HPI &rarr;</button>
     <button class="focus-x" onclick="closeFocus()" aria-label="Close full screen">&times;</button>
   </div>
+  <div id="focus-ref"></div>
   <textarea id="focus-note" placeholder="Work on your note here, full screen. Fill each section as you go, then Draft my HPI."></textarea>
   <div id="focus-err"></div>
 </div>
@@ -479,9 +480,7 @@ async function runDraft(sourceText, btn, errEl){
   }
 }
 document.getElementById('generate').addEventListener('click', function(){
-  var raw = document.getElementById('raw').value.trim();
-  if(!raw){ var pn = document.getElementById('prep-note'); if(pn && pn.value.trim()) raw = pn.value.trim(); } // fall back to the prep box
-  runDraft(raw, this, document.getElementById('err-box'));
+  runDraft(document.getElementById('raw').value.trim(), this, document.getElementById('err-box'));
 });
 
 // ── Verify pass ──
@@ -536,42 +535,44 @@ function renderPrep(j){
   // Prep is inherently a follow-up; make sure the draft uses follow-up carry-forward.
   var fu = document.querySelector('#visit-opts [data-visit="follow_up"]');
   if(fu && visitType !== 'follow_up') fu.click();
-  var checklist = Array.isArray(j.checklist) ? j.checklist : [];
-  var foci = Array.isArray(j.foci) ? j.foci : [];
-  var html = '<div class="out" style="margin-top:16px"><h3>You are set up for this visit</h3>';
-  if(checklist.length){
+  prepChecklist = Array.isArray(j.checklist) ? j.checklist : [];
+  prepFoci = Array.isArray(j.foci) ? j.foci : [];
+  // ONE working surface: load the starting note into the main notes box.
+  document.getElementById('raw').value = note;
+  var html = '<div class="out" style="margin-top:16px"><h3>You are set up for this visit</h3>'
+    + '<div class="hint" style="margin-bottom:10px">&#10003; Your starting note is loaded into <strong>Your visit notes</strong> above. Fill the dynamic sections there (or open <strong>Full screen &#8599;</strong>), then press <strong>Draft my HPI</strong>. This checklist stays here for reference.</div>';
+  if(prepChecklist.length){
     html += '<div class="flags"><div class="flags-h">To check or ask today</div><ul>'
-      + checklist.map(function(c){ return '<li>'+esc(c)+'</li>'; }).join('') + '</ul></div>';
+      + prepChecklist.map(function(c){ return '<li>'+esc(c)+'</li>'; }).join('') + '</ul></div>';
   }
-  if(foci.length){
+  if(prepFoci.length){
     html += '<div class="flags" style="background:rgba(42,171,184,0.07);border-color:var(--teal);border-left-color:var(--teal)"><div class="flags-h" style="color:var(--teal)">Possible focus this visit</div><ul>'
-      + foci.map(function(f){ return '<li>'+esc(f)+'</li>'; }).join('') + '</ul></div>';
+      + prepFoci.map(function(f){ return '<li>'+esc(f)+'</li>'; }).join('') + '</ul></div>';
   }
-  html += '<label style="margin-top:14px">Your starting note &mdash; work in this box during the visit</label>';
-  html += '<textarea class="hpi-edit" id="prep-note">'+esc(note)+'</textarea>';
-  html += '<button class="btn" id="prep-draft">Draft my HPI &rarr;</button>';
-  html += '<button type="button" class="btn-mini" style="margin-left:8px" onclick="openFocus(\'prep-note\')">Full screen &#8599;</button>';
-  html += '<button class="btn-ghost" id="prep-copy" style="margin-left:8px">Copy</button>';
-  html += '<div id="prep-draft-err"></div>';
-  html += '<div class="hint" style="margin-top:6px">Fill the dynamic sections here as you go, then Draft my HPI right from this box.</div></div>';
+  html += '</div>';
   document.getElementById('prep-results').innerHTML = html;
-  document.getElementById('prep-draft').addEventListener('click', function(){
-    runDraft(document.getElementById('prep-note').value.trim(), this, document.getElementById('prep-draft-err'));
-  });
-  document.getElementById('prep-copy').addEventListener('click', function(){
-    navigator.clipboard.writeText(document.getElementById('prep-note').value);
-    var b = this; b.textContent = 'Copied'; setTimeout(function(){ b.textContent = 'Copy'; }, 1500);
-  });
+  document.getElementById('raw').scrollIntoView({behavior:'smooth', block:'center'});
 }
 
 // ── Full-screen focus editor: work one big note like your EHR, one Draft button ──
 var focusSourceId = null;
+var prepChecklist = [];
+var prepFoci = [];
+function focusRefHtml(){
+  if(!(prepChecklist.length || prepFoci.length)) return '';
+  var h = '<details style="margin-bottom:8px"><summary style="cursor:pointer;color:var(--cream-dim);font-size:.72rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase">To check today'+(prepChecklist.length?' ('+prepChecklist.length+')':'')+'</summary><div style="max-height:22vh;overflow:auto;margin-top:8px">';
+  if(prepChecklist.length){ h += '<ul style="margin:0 0 8px 18px;padding:0">'+prepChecklist.map(function(c){ return '<li style="font-size:.84rem;color:var(--cream);line-height:1.5;margin-bottom:4px">'+esc(c)+'</li>'; }).join('')+'</ul>'; }
+  if(prepFoci.length){ h += '<div style="font-size:.7rem;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.05em;margin:4px 0">Possible focus</div><ul style="margin:0 0 0 18px;padding:0">'+prepFoci.map(function(f){ return '<li style="font-size:.84rem;color:var(--cream);line-height:1.5;margin-bottom:4px">'+esc(f)+'</li>'; }).join('')+'</ul>'; }
+  h += '</div></details>';
+  return h;
+}
 function openFocus(sourceId){
   focusSourceId = sourceId;
   var src = document.getElementById(sourceId);
   document.getElementById('focus-note').value = src ? src.value : '';
   document.getElementById('focus-err').innerHTML = '';
-  document.getElementById('focus-hint').textContent = (sourceId === 'prep-note') ? 'Fill the dynamic sections, then Draft.' : '';
+  document.getElementById('focus-ref').innerHTML = (sourceId === 'raw') ? focusRefHtml() : '';
+  document.getElementById('focus-hint').textContent = '';
   document.getElementById('focus-overlay').classList.add('open');
   document.getElementById('focus-note').focus();
 }
