@@ -385,6 +385,7 @@ function draftSystem(){
   s += "=== STRUCTURE ===\n";
   if(tmpl){
     s += "Follow THIS clinician's own template and instructions exactly, for structure, section order, headings, level of detail, and voice:\n\n<<<CLINICIAN TEMPLATE>>>\n" + tmpl + "\n<<<END TEMPLATE>>>\n\nThe template governs form only. It never supplies clinical content and never overrides the anti-fabrication rule.\n\n";
+    s += "KEEP THE SECTION LABELS. Reproduce EVERY section label/heading the template defines that has content, exactly as the template writes it (e.g. 'Mood and Anxiety:'). Do NOT drop a section label, do NOT merge multiple sections into one unlabeled narrative, and do NOT convert the note into free-flowing prose without its section labels. If the input is already organized under these labels, preserve that organization and only clean up the content within each section.\n\n";
   } else {
     s += "No clinician template is saved, so write a clean, conventional psychiatric HPI: a flowing narrative that opens with the reason for the visit (or the interval since last visit for a follow-up), then course, current symptoms grouped sensibly, current medications and response, and any risk or pertinent context THAT THE NOTES CONTAIN. Do not force sections the notes do not support.\n\n";
   }
@@ -460,8 +461,8 @@ function renderResult(hpi, flags){
 // ── Generate (Slice 1) — reusable so the top box AND the prep starting-note box can draft ──
 async function runDraft(sourceText, btn, errEl){
   errEl.innerHTML = '';
-  if(!sourceText || sourceText.length < 15){ errEl.innerHTML='<div class="err">Paste your visit notes first, even rough ones.</div>'; return; }
-  var label = btn.innerHTML;
+  if(!sourceText || sourceText.length < 15){ errEl.innerHTML='<div class="err">Paste your visit notes first, even rough ones.</div>'; return false; }
+  var label = btn.innerHTML; var ok = false;
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Drafting&hellip;';
   document.getElementById('results').innerHTML='';
   try {
@@ -473,11 +474,13 @@ async function runDraft(sourceText, btn, errEl){
     var res = await verifyHpi(hpi);
     renderResult(res.hpi, res.flags);
     document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
+    ok = true;
   } catch(err){
     errEl.innerHTML = '<div class="err">'+esc(err.message||err)+'</div>';
   } finally {
     btn.disabled = false; btn.innerHTML = label;
   }
+  return ok;
 }
 document.getElementById('generate').addEventListener('click', function(){
   runDraft(document.getElementById('raw').value.trim(), this, document.getElementById('err-box'));
@@ -537,10 +540,10 @@ function renderPrep(j){
   if(fu && visitType !== 'follow_up') fu.click();
   prepChecklist = Array.isArray(j.checklist) ? j.checklist : [];
   prepFoci = Array.isArray(j.foci) ? j.foci : [];
-  // ONE working surface: load the starting note into the main notes box.
+  // ONE working surface: load the starting note into the main notes box (also the full-screen source).
   document.getElementById('raw').value = note;
   var html = '<div class="out" style="margin-top:16px"><h3>You are set up for this visit</h3>'
-    + '<div class="hint" style="margin-bottom:10px">&#10003; Your starting note is loaded into <strong>Your visit notes</strong> above. Fill the dynamic sections there (or open <strong>Full screen &#8599;</strong>), then press <strong>Draft my HPI</strong>. This checklist stays here for reference.</div>';
+    + '<div class="hint" style="margin-bottom:12px">Review today\'s checklist, then open your working note to fill it in during the visit and draft when done.</div>';
   if(prepChecklist.length){
     html += '<div class="flags"><div class="flags-h">To check or ask today</div><ul>'
       + prepChecklist.map(function(c){ return '<li>'+esc(c)+'</li>'; }).join('') + '</ul></div>';
@@ -549,9 +552,10 @@ function renderPrep(j){
     html += '<div class="flags" style="background:rgba(42,171,184,0.07);border-color:var(--teal);border-left-color:var(--teal)"><div class="flags-h" style="color:var(--teal)">Possible focus this visit</div><ul>'
       + prepFoci.map(function(f){ return '<li>'+esc(f)+'</li>'; }).join('') + '</ul></div>';
   }
-  html += '</div>';
+  html += '<button class="btn" style="margin-top:14px" onclick="openFocus(\'raw\')">Open my working note (full screen) &#8599;</button>';
+  html += '<div class="hint" style="margin-top:6px">Your starting note is also loaded in <strong>Your visit notes</strong> above if you prefer to work there. Your checklist rides along inside full screen.</div></div>';
   document.getElementById('prep-results').innerHTML = html;
-  document.getElementById('raw').scrollIntoView({behavior:'smooth', block:'center'});
+  document.getElementById('prep-results').scrollIntoView({behavior:'smooth', block:'start'});
 }
 
 // ── Full-screen focus editor: work one big note like your EHR, one Draft button ──
@@ -588,10 +592,11 @@ function closeFocus(){
 document.addEventListener('keydown', function(e){
   if(e.key === 'Escape' && document.getElementById('focus-overlay').classList.contains('open')) closeFocus();
 });
-document.getElementById('focus-draft').addEventListener('click', function(){
+document.getElementById('focus-draft').addEventListener('click', async function(){
   focusSyncBack();
-  document.getElementById('focus-overlay').classList.remove('open');
-  runDraft(document.getElementById('focus-note').value.trim(), this, document.getElementById('err-box'));
+  // Keep full screen open (with the spinner visible) while drafting; close onto the result when done.
+  var ok = await runDraft(document.getElementById('focus-note').value.trim(), this, document.getElementById('focus-err'));
+  if(ok) closeFocus();
 });
 
 // ── Slice 2: hand off to the Note Builder ──
