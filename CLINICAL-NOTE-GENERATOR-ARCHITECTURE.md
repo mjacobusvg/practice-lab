@@ -83,6 +83,34 @@ pipeline.
 
 ---
 
+## 0.2 Hard constraint: it must FEEL like less work
+
+All the personalization power in this tool is also its biggest adoption risk: it can curdle
+into setup burden, choices, and step-count, so the tool feels like *more* work even though
+it is more capable. That is how tools like this die. The power is only worth it if the
+everyday experience is lighter than typing into the EHR. Non-negotiable rules:
+
+1. **Zero-config first value.** First use with no template must still produce a good HPI
+   from messy notes (it falls back to a conventional structure). Setup is optional and
+   deferrable — never a gate before value.
+2. **Setup is one-time and low-effort.** The wizard *learns from a pasted sample* and never
+   makes a clinician write prompts from scratch; done once per template, then every visit is
+   fast. It must feel like a payoff, not a chore.
+3. **The everyday loop is minimal-tap.** Default hot path = paste → draft → (auto-review) →
+   send/copy. No required choices beyond visit type; smart defaults everywhere.
+4. **Optional means optional.** Prep, wizard, troubleshoot, capture-source, carry-forward
+   config — all optional and progressively disclosed; none block the fast path.
+5. **Speed is a feature.** Minimize latency on the hot path; anything that adds a model call
+   must clearly earn its wait or run without the clinician staring at a spinner.
+6. **Net-fewer-keystrokes test.** Every feature must remove more work than it adds versus
+   typing into the EHR. If it doesn't, cut it.
+
+Current state against this: zero-config default ✓, sample-driven one-time setup ✓, prep/
+wizard/troubleshoot are optional buttons ✓. Watch items: main-screen control count, the
+capture-source toggle as an extra choice, and auto-review latency on the hot path.
+
+---
+
 ## 1. Where it stands today (audit)
 
 The "AI Scribe" is already **three separate tools joined by clinician copy-paste**,
