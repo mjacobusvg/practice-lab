@@ -237,6 +237,18 @@ Pipeline of focused calls (the "reason better" pattern, kept):
      into the HPI. The draft now outputs plain EHR-ready text (labels on their own line,
      blank line between sections), and a `cleanMarkdown()` post-pass strips any residual
      `#`/`---`/`**`/`>` as a safety net.
+   - **Risk, meds, length, editable output, implausibility flag (added after testing):**
+     (a) **Risk/safety** is treated as highest-stakes — documented SI/HI/self-harm is
+     never dropped, softened, or fabricated as a denial; ambiguity is preserved and
+     flagged. (b) **Medications are kept exactly as written** — never normalized
+     (no Zoloft→sertraline), never "corrected"; an implausible/unrecognized name or dose
+     is preserved and flagged, not guessed. (c) A **brief / standard / thorough** length
+     selector feeds the draft. (d) The **output is editable** in place; copy and the
+     Note-Builder handoff use the edited text. (e) The auto-review **flags "sounds wrong"
+     content** (misspelled drug names, implausible doses, contradictions, transcription
+     artifacts) rather than silently fixing it — the right posture for ASR errors we
+     cannot repair upstream (mitigated later by a medical-vocabulary ASR model, e.g. AWS
+     Transcribe Medical).
 3. **QA/verify pass — now automatic (revised after testing).** Every draft is
    auto-reviewed by a second `claude-sonnet-4-6` call that silently corrects clear
    fabrications and surfaces only genuine flags — matching the Note Builder / v1 copilot

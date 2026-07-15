@@ -49,6 +49,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 .tmpl-status{font-size:.8rem;color:var(--cream-dim);margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .tmpl-status .ok{color:var(--green);font-weight:600}
 .tmpl-status .none{color:var(--amber);font-weight:600}
+.hpi-edit{width:100%;min-height:300px;background:var(--navy);border:1px solid var(--rule);border-radius:8px;color:var(--white);font-family:var(--font-body);font-size:.9rem;line-height:1.7;padding:14px;resize:vertical;white-space:pre-wrap}
 .handoff{background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.25);border-radius:8px;padding:16px 18px;font-size:.9rem;margin-top:18px}
 .handoff .btn{margin-top:10px}
 .scope{font-style:italic;color:var(--cream-dim);font-size:.78rem;text-align:center;margin-top:30px;border-top:1px solid var(--rule);padding-top:18px}
@@ -105,6 +106,15 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
         <div class="opt" data-source="ambient">Pasted transcript (ambient / dictation)</div>
       </div>
       <div class="hint" id="source-hint">Every draft is auto-reviewed against your notes to catch anything not supported by them.</div>
+    </div>
+
+    <div class="card-group" style="margin-top:16px">
+      <label>How long?</label>
+      <div class="opts" id="length-opts">
+        <div class="opt" data-length="brief">Brief</div>
+        <div class="opt sel" data-length="standard">Standard</div>
+        <div class="opt" data-length="thorough">Thorough</div>
+      </div>
     </div>
 
     <button class="btn" id="generate">Draft my HPI &rarr;</button>
@@ -185,6 +195,7 @@ var HOUSE = "You are a clinical documentation generator for psychiatric and beha
 // ── State ──
 var visitType = 'new_eval';
 var sourceMode = 'typed';
+var lengthMode = 'standard';
 var vaultTemplates = { new_eval: '', follow_up: '' };
 var lastHpi = '';
 var authToken = '';
@@ -292,7 +303,8 @@ function cleanMarkdown(s){
 }
 function finalizeHpi(s){ return stripDashes(cleanMarkdown(s)); }
 function copyOut(id){
-  var t = document.getElementById(id).innerText;
+  var el = document.getElementById(id);
+  var t = (el && typeof el.value === 'string') ? el.value : el.innerText;
   navigator.clipboard.writeText(t);
   event.target.textContent='Copied'; setTimeout(function(){ event.target.textContent='Copy'; },1500);
 }
@@ -314,6 +326,7 @@ bindOpts('source-opts','data-source', function(v){
     ? 'A transcript has no written ground truth, so the automatic review also checks for transcription errors.'
     : 'Every draft is auto-reviewed against your notes to catch anything not supported by them.';
 });
+bindOpts('length-opts','data-length', function(v){ lengthMode=v; });
 
 // ── Template status line ──
 function renderTemplateStatus(){
@@ -337,6 +350,10 @@ function draftSystem(){
   s += "Use ONLY the information present in the raw notes (and the optional prior-context block, for continuity of the narrative only). Never add a symptom, denial, finding, diagnosis, medication, dose, history item, timeframe, or risk statement that is not in the source. If something usual is absent, leave it out; do NOT fill in normal or negative defaults (e.g. do not write 'denies SI' unless the notes say so). If the notes are thin, the HPI is short. You interpret and organize documented data; you never invent it.\n\n";
   s += "=== QUOTE FIDELITY (verbatim, spelling guardrail) ===\n";
   s += "Preserve the patient's quoted words verbatim in wording and meaning. Apply ORTHOGRAPHIC normalization only: fix spelling, obvious typos, and capitalization. Never substitute a word, paraphrase a quote, or change its clinical meaning. 'i feel anxous' becomes 'I feel anxious'; 'I feel down' must NOT become 'I feel depressed'. When in doubt, keep the patient's exact word.\n\n";
+  s += "=== RISK AND SAFETY (highest stakes) ===\n";
+  s += "Handle documented risk (suicidal ideation, homicidal ideation, self-harm, plan, intent, access to means) with maximum fidelity. NEVER omit, soften, downgrade, or paraphrase away any risk the notes document. NEVER fabricate a risk denial (e.g. 'denies SI/HI') unless the notes document it was asked and denied. If risk is documented ambiguously, preserve the clinician's exact words and do not resolve the ambiguity.\n\n";
+  s += "=== MEDICATIONS (keep exactly as written) ===\n";
+  s += "Never change, correct, normalize, or guess medication names, doses, routes, or frequencies. Write each exactly as the clinician documented it; do not convert brand to generic or generic to brand. If a medication name or dose looks implausible, misspelled, or unrecognized, keep it verbatim, do not substitute a 'correct' name, and let the review pass flag it.\n\n";
   s += "=== STRUCTURE ===\n";
   if(tmpl){
     s += "Follow THIS clinician's own template and instructions exactly, for structure, section order, headings, level of detail, and voice:\n\n<<<CLINICIAN TEMPLATE>>>\n" + tmpl + "\n<<<END TEMPLATE>>>\n\nThe template governs form only. It never supplies clinical content and never overrides the anti-fabrication rule.\n\n";
@@ -352,6 +369,10 @@ function draftSystem(){
   s += "=== PLACEHOLDERS AND PRONOUNS ===\n";
   s += "- The template may contain bracketed placeholders and instructions (e.g. \"[ ]\", *[Narrative: ...]*) and 'Menu (...)' reference blocks. These are DIRECTIONS TO YOU, never content. NEVER print a bracketed placeholder, an italic instruction, a 'Menu' block, or phrases like 'do not reproduce' / 'select endorsed items only' in the HPI. Fill each placeholder from the notes; if the notes do not supply it, omit that piece entirely (no empty quotes, no blank brackets).\n";
   s += "- PRONOUNS follow the patient in the notes, NOT the template. If the template's examples use a specific gender (e.g. 'She'), do not inherit it; use the patient's documented pronouns, or they/them if unknown.\n\n";
+  s += "=== LENGTH ===\n";
+  if(lengthMode === 'brief'){ s += "Write the shortest defensible HPI: tight and economical, only what carries clinical weight, no padding.\n\n"; }
+  else if(lengthMode === 'thorough'){ s += "Write a fuller HPI: include the documented detail, context, and relevant history the notes contain, without ever adding anything not in the notes.\n\n"; }
+  else { s += "Write a standard-length HPI: complete but not padded.\n\n"; }
   s += "=== OUTPUT FORMAT ===\n";
   s += "Output plain, chart-ready text for pasting into an EHR. Do NOT use Markdown: no # or ## headings, no --- or *** divider lines, no > blockquotes, no ** bold **. Render the clinician's section labels as plain text on their own line, with a single blank line between sections. Even if the template is written in Markdown, do not carry that syntax into the HPI.\n\n";
   s += "Add only minimal connective narrative needed to make the notes read as clinical prose. Connective wording must not introduce any new clinical fact. Output the HPI text only.";
@@ -361,6 +382,8 @@ function draftSystem(){
 function verifySystem(){
   var s = HOUSE + "\n\n=== TASK ===\nYou are auditing a drafted HPI against its SOURCE (the clinician's raw notes, plus any prior-context block). Find anything in the HPI that is NOT supported by the source: invented or embellished symptoms, added denials or pertinent negatives, a diagnosis or characterization the notes did not state, altered timeframes, or a patient quote whose wording or meaning was changed (spelling fixes are fine; word substitutions or paraphrases are not).\n\n";
   s += "Silently correct clear, unambiguous fabrications by removing or trimming them back to what the source supports. For anything a clinician should personally judge, leave it and raise a flag.\n\n";
+  s += "RISK: never let the draft add, drop, or soften any documented risk (SI, HI, self-harm, plan, intent). If it did, correct it to match the source exactly and flag it.\n";
+  s += "IMPLAUSIBILITY (flag, do NOT fix): flag anything that looks wrong without changing it, e.g. an unrecognized or likely-misspelled medication name, an implausible dose or frequency, an internal contradiction, a number or date that looks off, or a phrase that reads like a garbled transcription artifact. Preserve the exact wording and raise a flag for the clinician.\n\n";
   if(sourceMode === 'ambient'){ s += "The source is a transcript (dictation/ambient) with no clinician-written ground truth, so also flag likely mis-transcriptions and anything that reads as a transcription error.\n\n"; }
   s += "The corrected 'hpi' must stay plain, chart-ready text with NO Markdown (no #/## headings, no --- dividers, no ** bold **, no > blockquotes).\n\n";
   s += "Respond ONLY with raw JSON, no code fence, in exactly this shape:\n{\"hpi\": \"<the verified HPI text>\", \"flags\": [\"short note about something to check\", \"...\"]}\nIf nothing is wrong, return the HPI unchanged and an empty flags array.";
@@ -383,7 +406,8 @@ function renderResult(hpi, flags){
   var html = '';
   html += '<div class="out"><button class="btn-copy" onclick="copyOut(\'hpi-out\')">Copy</button>';
   html += '<h3>History of Present Illness</h3>';
-  html += '<div class="out-body" id="hpi-out">'+esc(hpi)+'</div></div>';
+  html += '<textarea class="hpi-edit" id="hpi-out">'+esc(hpi)+'</textarea>';
+  html += '<div class="hint" style="margin-top:6px">Edit here before you copy or send &mdash; your changes are what get used.</div></div>';
 
   if(flags && flags.length){
     var items = flags.map(function(f){ return '<li>'+esc(f)+'</li>'; }).join('');
@@ -436,8 +460,9 @@ async function verifyHpi(hpi){
 // ── Slice 2: hand off to the Note Builder ──
 function sendToNoteBuilder(){
   try {
+    var edited = (document.getElementById('hpi-out') || {}).value;
     var payload = {
-      hpi: lastHpi,
+      hpi: (typeof edited === 'string' && edited.trim()) ? edited.trim() : lastHpi,
       visitType: visitType,
       priorContext: document.getElementById('context').value.trim(),
       ts: (new Date()).getTime()
