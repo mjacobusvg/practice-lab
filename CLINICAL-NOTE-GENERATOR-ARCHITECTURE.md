@@ -261,9 +261,15 @@ Pipeline of focused calls (the "reason better" pattern, kept):
      continued/stable**, never as if freshly assessed today. A dynamic topic absent from
      today's notes is omitted/flagged, not fabricated. **Safety (SI/HI/self-harm) is
      never carried forward** — a prior denial must never read as performed today; the
-     review flags it. Standing-vs-reassessed is personalized through the clinician's
-     follow-up template. This also gives the follow-up path real behavior (previously
-     thin) and is the anti-clone-note / audit-integrity safeguard.
+     review flags it. **Nothing about which section is dynamic/standing/historical is
+     hardcoded** — the clinician's template declares it (the engine's illustrative
+     examples are just defaults); the engine only executes, with SI/HI-never-carried the
+     single hardcoded rule. Four content classes: **dynamic** (today drives),
+     **standing** (carry as continued/stable), **historical/chronic-known** — including a
+     clinician's persistent **"Historical Notes:"** block — (carry as known background,
+     never re-asked or re-asserted), and **safety** (never carried). This also gives the
+     follow-up path real behavior (previously thin) and is the anti-clone-note /
+     audit-integrity safeguard.
    - **Pre-visit prep (Bucket 1, designed, not yet built):** an optional, toggleable mode
      — paste last visit's note *before* the appointment to get questions to ask / foci to
      address today (carry-forward threads + psychotherapy focus), i.e. the Dev "For Next
