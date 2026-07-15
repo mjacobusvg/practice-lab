@@ -1,6 +1,7 @@
 # Clinical Note Generator — Target Architecture (HPI + Plan)
 
-**Status:** Proposal for review. No implementation yet.
+**Status:** In active build. HPI Generator (Slices 1–3 + refinements) is live on `main`;
+Plan section (Slice 4) and pre-visit prep are pending.
 **Branch:** `claude/clinical-note-generator-audit-lzoeth`
 **Last updated:** 2026-07-14
 
@@ -8,6 +9,33 @@ This document consolidates the audit of the current AI Scribe and proposes the
 architecture for closing the **HPI + Plan gap** — the piece the Practice Manager
 State File (v3) and Growth v6 both call the hero/upgrade lever. It reflects the
 decisions made in the 2026-07-14 design discussion.
+
+---
+
+## 0. Product vision — the visit workspace
+
+The tool is **THE place the clinician builds the note, during the visit — not a post-hoc
+generator, and not a feature bolted onto the EHR.** The EHR becomes only the destination
+for the finished note (and where the clinician prescribes). Intended loop for a
+work-during-visit clinician:
+
+1. **Set me up:** paste last visit's note → the tool produces the carry-forward starting
+   point plus a short "to check / to ask" list for today (pre-visit prep).
+2. **Work in the tool during the visit:** capture as-you-go; draft and refine live.
+3. **Finish:** HPI → Note Builder (assessment + psychotherapy + Plan) → final note → paste
+   into the EHR once. The clinician shouldn't touch the EHR except to prescribe.
+
+This reframes the "buckets" as **stages of one visit lifecycle**, not separate tools:
+pre-visit prep → live HPI → assessment / psychotherapy / plan → coder (optional) → EHR.
+It also re-centers **pre-visit prep** as the *front door* that makes this a workspace
+rather than a generator.
+
+**After-visit / ambient path.** Working live in the tool is the optimized route — less
+total work, and contemporaneous documentation is better clinically and medicolegally. A
+clinician who charts *after* the visit inherently does more work; **ambient (AWS
+Transcribe) is the equalizer** for those who can't type with a patient in the room —
+capture during, draft after, feeding the *same* workspace. Both paths land in the same
+place; live is simply leaner. Design for both; optimize for live.
 
 ---
 
