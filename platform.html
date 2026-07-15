@@ -4926,6 +4926,7 @@ async function showAnalytics() {
     });
     var d = await res.json();
     if (!res.ok || !d.ok) throw new Error(d.error || 'Could not load analytics');
+    S.analyticsData = d;
     renderAnalytics(d);
   } catch (e) {
     center.innerHTML = '<div style="padding:28px;color:var(--text-secondary)">Could not load analytics: ' + esc(e.message) + '</div>';
@@ -4998,8 +4999,49 @@ function renderAnalytics(d) {
     h += '</div>';
   }
 
+  // ── Tool usage by member (excludes your account, test accounts, and pre-attribution events) ──
+  var tu = d.tools || {};
+  var ex = tu.excluded || {};
+  h += '<div class="an-section-h">Tool usage by member</div><div class="an-grid">';
+  h += statCard('Members using tools', tu.member_users || 0);
+  h += statCard('Member tool events', tu.member_events || 0);
+  h += '</div>';
+  h += '<div style="font-size:0.78rem;color:var(--text-secondary);margin:2px 0 12px">Excluded above: your account (' + (ex.you || 0) + '), test accounts (' + (ex.test || 0) + '), and not-signed-in / pre-tracking (' + (ex.anon || 0) + ').</div>';
+
+  var bt = tu.by_tool || [];
+  if (bt.length) {
+    h += '<div class="an-section-h">By tool (members only)</div><div class="an-list">';
+    bt.forEach(function (t) {
+      h += '<div class="an-row" style="cursor:default"><div class="an-row-title">' + esc(t.tool) + '</div>' +
+        '<div class="an-row-meta">' + t.members + ' member' + (t.members === 1 ? '' : 's') + ' &middot; ' + t.events + ' use' + (t.events === 1 ? '' : 's') + '</div></div>';
+    });
+    h += '</div>';
+  }
+  var bm = tu.by_member || [];
+  if (bm.length) {
+    h += '<div class="an-section-h">By member</div><div class="an-list">';
+    bm.forEach(function (x) {
+      var tl = ({ free: 'Free', forum: 'Member', full: 'Full' })[x.tier] || x.tier || '';
+      h += '<div class="an-row" style="cursor:default"><div class="an-row-title">' + esc(x.email) + '</div>' +
+        '<div class="an-row-meta">' + esc(tl) + ' &middot; ' + x.events + ' event' + (x.events === 1 ? '' : 's') + ' across ' + x.tools + ' tool' + (x.tools === 1 ? '' : 's') + ' &middot; last ' + formatDate(x.last) + '</div></div>';
+    });
+    h += '</div>';
+  } else {
+    h += '<div style="padding:14px;color:var(--text-secondary);font-size:0.85rem">No members have used the tools yet.</div>';
+  }
+  h += '<div style="margin:8px 0 4px"><button class="btn-ghost" onclick="toggleAnMine()">' + (S.anShowMine ? 'Hide my own usage' : 'Show my own usage') + '</button></div>';
+  if (S.anShowMine) {
+    var yb = tu.you_by_tool || [];
+    h += '<div class="an-list">';
+    if (yb.length) { yb.forEach(function (t) { h += '<div class="an-row" style="cursor:default"><div class="an-row-title">' + esc(t.tool) + '</div><div class="an-row-meta">you &middot; ' + t.events + ' use' + (t.events === 1 ? '' : 's') + '</div></div>'; }); }
+    else { h += '<div style="padding:10px;color:var(--text-secondary);font-size:0.85rem">No tool usage on your account.</div>'; }
+    h += '</div>';
+  }
+
   center.innerHTML = h; window.scrollTo(0, 0);
 }
+
+function toggleAnMine() { S.anShowMine = !S.anShowMine; if (S.analyticsData) renderAnalytics(S.analyticsData); }
 
 // ════════════════════════════════════════
 // REQUESTS: tool / topic / CE

@@ -89,6 +89,44 @@ exports.handler = async function (event) {
     signupRows.forEach(function (r) { const k = String(r.created_at).slice(0, 10); if (k in daily) daily[k]++; });
     const signups_daily = Object.keys(daily).sort().map(function (k) { return [k, daily[k]]; });
 
+    // ── Tool usage by member ──────────────────────────────────────────────────
+    // Attribute every AI-tool event to a person and split real members from the
+    // admin's own account, disposable test accounts, and pre-attribution
+    // (email-less) events, so "who actually uses the tools" is answerable.
+    const ADMIN_SET = ADMIN_EMAILS.map(function (e) { return e.toLowerCase(); });
+    const isTest = function (e) { return /@slmails\.com$/i.test(e) || /\+test/i.test(e); };
+    const tuRows = await sb('tool_usage?select=account_email,tool,tier,created_at&order=created_at.desc&limit=20000');
+    const memberByEmail = {}, memberByTool = {}, youByTool = {};
+    let youEvents = 0, anonEvents = 0, testEvents = 0, memberEvents = 0;
+    tuRows.forEach(function (r) {
+      const em = String(r.account_email || '').toLowerCase();
+      if (!em) { anonEvents++; return; }
+      if (ADMIN_SET.indexOf(em) !== -1) { youEvents++; youByTool[r.tool] = (youByTool[r.tool] || 0) + 1; return; }
+      if (isTest(em)) { testEvents++; return; }
+      memberEvents++;
+      if (!memberByEmail[em]) memberByEmail[em] = { email: em, tier: r.tier || null, events: 0, tools: {}, last: r.created_at };
+      memberByEmail[em].events++;
+      memberByEmail[em].tools[r.tool] = true;
+      if (!memberByTool[r.tool]) memberByTool[r.tool] = { members: {}, events: 0 };
+      memberByTool[r.tool].members[em] = true;
+      memberByTool[r.tool].events++;
+    });
+    const by_member = Object.keys(memberByEmail).map(function (k) {
+      const mm = memberByEmail[k];
+      return { email: mm.email, tier: mm.tier, events: mm.events, tools: Object.keys(mm.tools).length, last: mm.last };
+    }).sort(function (a, b) { return b.events - a.events; });
+    const by_tool = Object.keys(memberByTool).map(function (k) {
+      return { tool: k, members: Object.keys(memberByTool[k].members).length, events: memberByTool[k].events };
+    }).sort(function (a, b) { return b.events - a.events; });
+    const you_by_tool = Object.keys(youByTool).map(function (k) { return { tool: k, events: youByTool[k] }; })
+      .sort(function (a, b) { return b.events - a.events; });
+    const tools = {
+      member_users: by_member.length, member_events: memberEvents,
+      by_member: by_member, by_tool: by_tool,
+      excluded: { you: youEvents, anon: anonEvents, test: testEvents },
+      you_by_tool: you_by_tool
+    };
+
     return {
       statusCode: 200, headers, body: JSON.stringify({
         ok: true,
@@ -98,7 +136,8 @@ exports.handler = async function (event) {
         ai: { calls_7d: ai7, calls_30d: ai30 },
         top_posts: top_posts || [],
         new_members: new_members || [],
-        signups_daily: signups_daily
+        signups_daily: signups_daily,
+        tools: tools
       })
     };
   } catch (e) {
