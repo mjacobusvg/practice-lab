@@ -242,13 +242,11 @@ Pipeline of focused calls (the "reason better" pattern, kept):
      never dropped, softened, or fabricated as a denial; ambiguity is preserved and
      flagged. (b) **Medications are kept exactly as written** — never normalized
      (no Zoloft→sertraline), never "corrected"; an implausible/unrecognized name or dose
-     is preserved and flagged, not guessed. (c) A **brief / standard / thorough** length
-     selector feeds the draft — scoped to **prose density only**: it never adds or drops
-     a clinical fact (all documented symptoms/meds/doses/risk/quotes appear at every
-     length), it only varies narrative elaboration and peripheral/illustrative detail
-     (e.g. keep an anecdote verbatim vs. condense to its clinical point). Overlaps with
-     the verbosity a clinician's template already sets, so it functions as a per-note
-     override. (d) The **output is editable** in place; copy and the
+     is preserved and flagged, not guessed. (c) **Verbosity is controlled by the
+     clinician's Vault template**, not a separate control. (A brief/standard/thorough
+     selector was built and then removed after testing: on an HPI it could only vary
+     prose density, never clinical content, which the template already governs — so it
+     was redundant.) (d) The **output is editable** in place; copy and the
      Note-Builder handoff use the edited text. (e) The auto-review **flags "sounds wrong"
      content** (misspelled drug names, implausible doses, contradictions, transcription
      artifacts) rather than silently fixing it — the right posture for ASR errors we
