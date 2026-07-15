@@ -39,6 +39,50 @@ place; live is simply leaner. Design for both; optimize for live.
 
 ---
 
+## 0.1 Positioning & differentiation (vs other AI scribes)
+
+**Category term vs. product.** Market it with the words clinicians already search for and
+want — "AI Scribe" — because that is the door. But the product behind the door is a
+different category: a **clinician-controlled psychiatric documentation workspace**, not an
+ambient black box. The known term earns the click; the difference earns the subscription
+(and justifies the recurring price the Growth v6 doc assigns the hero tool).
+
+**What almost every AI scribe is** (Abridge, DAX, Suki, Nabla, Freed, Heidi, DeepScribe,
+Ambience, …): an ambient listener that writes the whole note post-hoc, imposes its own
+format, and leaves the clinician editing its guesses. The universal complaints:
+hallucination, generic notes that are not the clinician's voice, cloned/boilerplate
+content, loss of control, and mis-heard drug names. The clinician becomes a
+charter-after-the-visit cleaning up the machine.
+
+**How this is genuinely different:**
+1. **Workspace, not scribe.** You build the note *during* the visit; the EHR is only the
+   destination. No incumbent is positioned here (see §0).
+2. **The clinician owns the output** — built from their template, structure, and voice via
+   a wizard that *elicits* their way. Incumbents impose a format; this conforms to the user.
+3. **It improves documentation instead of cloning it** — carry-forward hygiene,
+   standing/dynamic/historical classes, Historical Notes, "continues to…" framing,
+   "learn style not habits." The opposite of laundering a clinician's existing habits.
+4. **Anti-fabrication as a first principle** — menus are checklists, quotes verbatim, meds
+   untouched, implausible content *flagged, not "fixed."*
+5. **Reasons into defensible psychiatric billing** — HPI → psychotherapy add-on
+   defensibility → deterministic E&M coding. Generic scribes stop at "here's a note."
+6. **Preps the clinician for the visit** ("Set me up") — no ambient scribe does this.
+
+**Positioning trap to avoid:** do NOT lead with ambient or frame the product as "our
+ambient scribe." Ambient is table stakes and not a race this wins by copying; it is **one
+input to the workspace, not the product.**
+
+**The one-liner (true of what is built):** *"It doesn't listen and guess. It's where you
+build a defensible note, your way, and it stops you cloning your old notes forward."* Ties
+directly to the *Education* in Think Beyond — it makes clinicians document **better**, not
+just faster.
+
+**Where to lean in (most defensible, hardest for incumbents to copy):** (a) the
+carry-forward / "improve don't clone" story, and (b) the reasoning → defensible-coding
+pipeline.
+
+---
+
 ## 1. Where it stands today (audit)
 
 The "AI Scribe" is already **three separate tools joined by clinician copy-paste**,
