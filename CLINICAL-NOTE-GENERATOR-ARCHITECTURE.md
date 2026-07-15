@@ -111,6 +111,29 @@ capture-source toggle as an extra choice, and auto-review latency on the hot pat
 
 ---
 
+## 0.3 Governing check for EVERY prompt change: universal vs per-clinician
+
+Before hardcoding ANY behavior into a prompt, ask: is this a **universal
+integrity/safety rule** (true for every clinician) or a **preference** (format,
+structure, verbosity, wording)? Only integrity/safety rules may be baked in globally.
+Everything else must come from the clinician's template / Vault / elicitation — never
+hardcoded — because a hardcoded preference silently breaks every clinician who wants it
+differently. A format rule must be phrased **"follow the template,"** never "always do X."
+
+- **Global (hardcoding OK):** anti-fabrication; quote-*meaning* fidelity; menus-as-
+  checklists (endorsed-only); SI/HI never fabricated or carried forward; include
+  documented content / no invented comparisons; plain text, no Markdown (for EHR paste).
+- **Per-clinician (NEVER hardcode — template/Vault/elicitation drives it):** section
+  labels vs. flowing narrative; label placement (inline vs. own line); which sections are
+  dynamic/standing/historical; verbosity; verbatim vs. synthesized quotes; brand vs.
+  generic med names; subheadings; section order.
+
+Regression watched here: a "keep section labels" rule was first written as "always use
+labels," which would have forced structure on a flowing-narrative clinician. Corrected to
+"match the template's format faithfully, whatever it is."
+
+---
+
 ## 1. Where it stands today (audit)
 
 The "AI Scribe" is already **three separate tools joined by clinician copy-paste**,
