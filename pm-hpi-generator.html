@@ -340,6 +340,8 @@ function draftSystem(){
   s += "Draft the History of Present Illness (HPI) for a " + label + " from the clinician's RAW, as-they-went visit notes. The notes are fragments, shorthand, and patient quotes captured in the order the clinician asked their questions. Your job is to reorganize that raw stream into a clean, chart-ready HPI. This is the reorganization the clinician would otherwise do in their head; it is the entire value of the tool.\n\n";
   s += "=== ABSOLUTE ANTI-FABRICATION RULE ===\n";
   s += "Use ONLY the information present in the raw notes (and the optional prior-context block, for continuity of the narrative only). Never add a symptom, denial, finding, diagnosis, medication, dose, history item, timeframe, or risk statement that is not in the source. If something usual is absent, leave it out; do NOT fill in normal or negative defaults (e.g. do not write 'denies SI' unless the notes say so). If the notes are thin, the HPI is short. You interpret and organize documented data; you never invent it.\n\n";
+  s += "=== COMPLETENESS AND NON-DUPLICATION ===\n";
+  s += "Include EVERY topic the notes document: every symptom, interval update, medication note, behavior (e.g. skin-picking), and section. Never omit or drop documented content to shorten the note. State each fact ONCE, in the single most appropriate section; do not repeat the same content in two sections. Do NOT add comparative or interval statements ('improved since last visit', 'significant improvement', 'better than before') unless the notes explicitly state the comparison.\n\n";
   s += "=== QUOTE FIDELITY (verbatim, spelling guardrail) ===\n";
   s += "Preserve the patient's quoted words verbatim in wording and meaning. Apply ORTHOGRAPHIC normalization only: fix spelling, obvious typos, and capitalization. Never substitute a word, paraphrase a quote, or change its clinical meaning. 'i feel anxous' becomes 'I feel anxious'; 'I feel down' must NOT become 'I feel depressed'. When in doubt, keep the patient's exact word.\n\n";
   s += "=== RISK AND SAFETY (highest stakes) ===\n";
@@ -389,8 +391,8 @@ function verifySystem(){
 }
 
 // ── Gather input ──
-function gatherSource(){
-  var raw = document.getElementById('raw').value.trim();
+function gatherSource(rawText){
+  var raw = (typeof rawText === 'string' ? rawText : document.getElementById('raw').value).trim();
   var context = document.getElementById('context').value.trim();
   var s = "RAW VISIT NOTES (as the clinician typed them):\n\n" + raw;
   if(context) s += "\n\n---\n\nPRIOR HPI / ASSESSMENT (continuity context only; not today's documented content):\n\n" + context;
@@ -430,27 +432,30 @@ function renderResult(hpi, flags){
   document.getElementById('send-nb').addEventListener('click', sendToNoteBuilder);
 }
 
-// ── Generate (Slice 1) ──
-document.getElementById('generate').addEventListener('click', async function(){
-  var errBox = document.getElementById('err-box'); errBox.innerHTML='';
-  var raw = document.getElementById('raw').value.trim();
-  if(raw.length < 15){ errBox.innerHTML='<div class="err">Paste your visit notes first, even rough ones.</div>'; return; }
-  var btn = this;
+// ── Generate (Slice 1) — reusable so the top box AND the prep starting-note box can draft ──
+async function runDraft(sourceText, btn, errEl){
+  errEl.innerHTML = '';
+  if(!sourceText || sourceText.length < 15){ errEl.innerHTML='<div class="err">Paste your visit notes first, even rough ones.</div>'; return; }
+  var label = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Drafting&hellip;';
   document.getElementById('results').innerHTML='';
   try {
-    var hpi = await callAPI(draftSystem(), [{role:'user', content: gatherSource()}], 3400);
+    var hpi = await callAPI(draftSystem(), [{role:'user', content: gatherSource(sourceText)}], 3400);
     if(!hpi){ throw new Error('No HPI came back. Try again.'); }
     // Show the draft immediately (feels fast), then finalize the review in the background.
     renderResultPreview(hpi);
     btn.innerHTML = '<span class="spinner"></span>Reviewing&hellip;';
     var res = await verifyHpi(hpi);
     renderResult(res.hpi, res.flags);
+    document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
   } catch(err){
-    errBox.innerHTML = '<div class="err">'+esc(err.message||err)+'</div>';
+    errEl.innerHTML = '<div class="err">'+esc(err.message||err)+'</div>';
   } finally {
-    btn.disabled = false; btn.innerHTML = 'Draft my HPI &rarr;';
+    btn.disabled = false; btn.innerHTML = label;
   }
+}
+document.getElementById('generate').addEventListener('click', function(){
+  runDraft(document.getElementById('raw').value.trim(), this, document.getElementById('err-box'));
 });
 
 // ── Verify pass ──
@@ -502,6 +507,9 @@ document.getElementById('prep-btn').addEventListener('click', async function(){
 
 function renderPrep(j){
   var note = finalizeHpi(j.startingNote);
+  // Prep is inherently a follow-up; make sure the draft uses follow-up carry-forward.
+  var fu = document.querySelector('#visit-opts [data-visit="follow_up"]');
+  if(fu && visitType !== 'follow_up') fu.click();
   var checklist = Array.isArray(j.checklist) ? j.checklist : [];
   var foci = Array.isArray(j.foci) ? j.foci : [];
   var html = '<div class="out" style="margin-top:16px"><h3>You are set up for this visit</h3>';
@@ -513,20 +521,15 @@ function renderPrep(j){
     html += '<div class="flags" style="background:rgba(42,171,184,0.07);border-color:var(--teal);border-left-color:var(--teal)"><div class="flags-h" style="color:var(--teal)">Possible focus this visit</div><ul>'
       + foci.map(function(f){ return '<li>'+esc(f)+'</li>'; }).join('') + '</ul></div>';
   }
-  html += '<label style="margin-top:14px">Your starting note (fill the dynamic sections during the visit)</label>';
+  html += '<label style="margin-top:14px">Your starting note &mdash; work in this box during the visit</label>';
   html += '<textarea class="hpi-edit" id="prep-note">'+esc(note)+'</textarea>';
-  html += '<button class="btn" id="prep-work">Work from this &rarr;</button>';
+  html += '<button class="btn" id="prep-draft">Draft my HPI &rarr;</button>';
   html += '<button class="btn-ghost" id="prep-copy" style="margin-left:8px">Copy</button>';
-  html += '<div class="hint" style="margin-top:6px">&ldquo;Work from this&rdquo; loads the starting note into your working area above, so you fill it in during the visit and draft when done.</div></div>';
+  html += '<div id="prep-draft-err"></div>';
+  html += '<div class="hint" style="margin-top:6px">Fill the dynamic sections here as you go, then Draft my HPI right from this box.</div></div>';
   document.getElementById('prep-results').innerHTML = html;
-  document.getElementById('prep-work').addEventListener('click', function(){
-    var t = document.getElementById('prep-note').value;
-    var rawBox = document.getElementById('raw');
-    rawBox.value = t;
-    var fu = document.querySelector('#visit-opts [data-visit="follow_up"]');
-    if(fu) fu.click(); // ensure follow-up is selected for the eventual draft
-    rawBox.scrollIntoView({behavior:'smooth', block:'center'});
-    rawBox.focus();
+  document.getElementById('prep-draft').addEventListener('click', function(){
+    runDraft(document.getElementById('prep-note').value.trim(), this, document.getElementById('prep-draft-err'));
   });
   document.getElementById('prep-copy').addEventListener('click', function(){
     navigator.clipboard.writeText(document.getElementById('prep-note').value);
