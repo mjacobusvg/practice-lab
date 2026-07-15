@@ -20,7 +20,8 @@
 | pm-monitoring-protocol.html | clinical-proxy | claude-sonnet-4-6 | Monitoring counseling generation |
 | practice-lab-billing.html | anthropic-proxy | claude-sonnet-4-6 (x9), claude-haiku-4-5-20251001 (x3) | Billing sim, Angela rep, drills |
 | pm-interaction-checker.html | anthropic-proxy | claude-sonnet-4-6 | Interaction analysis |
-| pm-clinical-note-builder.html | clinical-proxy-stream | claude-sonnet-4-6 (up to x4: preflight cards + assess draft + QA review + therapy blurb) | Psychotherapy add-on + assessment generation from pasted HPI (PHI tool). Does not generate HPI or Plan. |
+| pm-clinical-note-builder.html | clinical-proxy-stream | claude-sonnet-4-6 (up to x4: preflight cards + assess draft + QA review + therapy blurb) | Psychotherapy add-on + assessment generation from pasted HPI (PHI tool). Does not generate HPI or Plan. Accepts a one-button HPI handoff from the HPI Generator via sessionStorage. |
+| pm-hpi-generator.html | clinical-proxy-stream | claude-sonnet-4-6 (draft HPI; optional/auto verify pass; Setup-wizard template build) | Drafts the HPI from raw as-you-go notes using the clinician's Vault template (vault_profile: hpiTemplateEval / hpiTemplateFollowup). Verify pass is opt-in for typed input, automatic for pasted transcripts. PHI tool. |
 | pm-letter-generator.html | clinical-proxy | claude-haiku-4-5-20251001, claude-sonnet-4-6 | Letter generation |
 | pm-termination-workflow.html | clinical-proxy | claude-haiku-4-5-20251001 | Termination package (Haiku is intentional — stays under Netlify 26s timeout) |
 | inngest-serve.mjs | api.anthropic direct | claude-sonnet-4-6 (synthesis), claude-haiku-4-5-20251001 (query expansion) | Ask the Archive RAG pipeline |
