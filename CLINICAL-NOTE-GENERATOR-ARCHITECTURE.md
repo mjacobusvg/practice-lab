@@ -153,6 +153,13 @@ guided **Setup** flow populates the Vault for them:
   a persistent **"Historical Notes"** block — the exact personalization the carry-forward
   engine needs but that a scaffold never encodes. Answers are authoritative and are encoded
   into the generated template (including each section's carry-forward behavior).
+  **Learn STYLE, not HABITS (critical correction):** a completed example note teaches only
+  structure, order, and voice. The carry-forward classification is **elicited from the
+  clinician's stated intent, never inferred from how their current note handles it** —
+  their existing notes often contain the very habit the tool exists to fix (cloning
+  content, not framing standing items as "continues to…"), so copying it would feed the
+  problem back. The engine applies proper continued/stable framing regardless of the
+  example's style; the wizard offers best-practice defaults to react to.
 - **Writes the result into their Vault fields** for them to review/approve/tweak — they
   are never staring at a blank box.
 
