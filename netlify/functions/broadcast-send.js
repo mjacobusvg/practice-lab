@@ -166,8 +166,11 @@ exports.handler = async function (event) {
       await Promise.all(batch.map(function (c) {
         const token = mintPrefsToken(c.email);
         let inner = personalize(bodyHtml, c);
+        // Click tracking (exact) + unsubscribe attribution only. No open pixel:
+        // open tracking is unreliable (mail apps pre-fetch or block it) and adds
+        // little over clicks + actual signups.
         if (bid) inner = trackLinks(inner, bid, token);
-        let html = wrap(inner + footer(c.email, bid) + (bid ? pixelTag(bid, token) : ''));
+        let html = wrap(inner + footer(c.email, bid));
         return ses.client.send(new ses.SendEmailCommand({
           FromEmailAddress: ses.from,
           Destination: { ToAddresses: [c.email] },
