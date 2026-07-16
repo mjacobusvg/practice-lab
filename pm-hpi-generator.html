@@ -96,7 +96,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
     <div class="card-group">
       <label>Visit type</label>
       <div class="opts" id="visit-opts">
-        <div class="opt sel" data-visit="new_eval">New patient evaluation</div>
+        <div class="opt" data-visit="new_eval">New patient evaluation</div>
         <div class="opt" data-visit="follow_up">Follow-up</div>
       </div>
       <div class="tmpl-status" id="tmpl-status">Checking your Vault for a saved template&hellip;</div>
@@ -212,7 +212,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 var HOUSE = "You are a clinical documentation generator for psychiatric and behavioral-health prescribers and therapists. You write like an experienced clinician documenting their own visit. Plain, precise, chart-ready prose. Never use em dashes or en dashes; use a comma or a period. Do not add headings, preambles, or any text naming this tool. Output only the document requested.";
 
 // ── State ──
-var visitType = 'new_eval';
+var visitType = null; // no default: force an explicit choice so the wrong template can never ride a silent default
 var sourceMode = 'typed';
 var vaultTemplates = { new_eval: '', follow_up: '' };
 var lastHpi = '';
@@ -348,6 +348,10 @@ bindOpts('source-opts','data-source', function(v){
 // ── Template status line ──
 function renderTemplateStatus(){
   var el = document.getElementById('tmpl-status');
+  if(!visitType){
+    el.innerHTML = '<span class="none">Choose a visit type above</span> &mdash; it sets which of your templates is used.';
+    return;
+  }
   var t = vaultTemplates[visitType];
   var label = visitType==='new_eval' ? 'New patient evaluation' : 'Follow-up';
   if(t && t.trim()){
@@ -463,6 +467,7 @@ function renderResult(hpi, flags){
 // ── Generate (Slice 1) — reusable so the top box AND the prep starting-note box can draft ──
 async function runDraft(sourceText, btn, errEl){
   errEl.innerHTML = '';
+  if(!visitType){ errEl.innerHTML='<div class="err">Choose a visit type first (New patient evaluation or Follow-up) &mdash; it sets which of your templates is used.</div>'; return false; }
   if(!sourceText || sourceText.length < 15){ errEl.innerHTML='<div class="err">Paste your visit notes first, even rough ones.</div>'; return false; }
   var label = btn.innerHTML; var ok = false;
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Drafting&hellip;';
@@ -519,6 +524,9 @@ function prepSystem(){
 }
 
 document.getElementById('prep-btn').addEventListener('click', async function(){
+  // Pre-visit prep is inherently a follow-up; declare it so the template state is correct and Draft is unblocked.
+  var fuOpt = document.querySelector('#visit-opts [data-visit="follow_up"]');
+  if(fuOpt && visitType !== 'follow_up'){ fuOpt.click(); }
   var last = document.getElementById('context').value.trim();
   var hint = document.getElementById('prep-hint');
   if(last.length < 40){ hint.innerHTML = '<span style="color:var(--amber)">Paste last visit\'s note above first.</span>'; return; }
@@ -653,10 +661,10 @@ function loadCurrentIntoRefine(){
 }
 
 function openWizard(){
-  // default the wizard to the visit type currently selected on the page
-  wiz.visit = visitType;
+  // default the wizard to the visit type selected on the page, or follow-up if none chosen yet
+  wiz.visit = visitType || 'follow_up';
   document.querySelectorAll('#wiz-visit-opts .opt').forEach(function(o){
-    o.classList.toggle('sel', o.getAttribute('data-wizvisit')===visitType);
+    o.classList.toggle('sel', o.getAttribute('data-wizvisit')===wiz.visit);
   });
   wizMode = 'build';
   document.querySelectorAll('#wiz-mode-opts .opt').forEach(function(o){
