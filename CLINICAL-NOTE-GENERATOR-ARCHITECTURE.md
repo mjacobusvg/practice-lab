@@ -81,6 +81,23 @@ just faster.
 carry-forward / "improve don't clone" story, and (b) the reasoning → defensible-coding
 pipeline.
 
+**The reasoning thesis — "brief" was a workaround, not a clinical virtue.** Clinicians were
+trained to write short notes because hand-charting at the end of a packed day made every
+sentence expensive, so they learned to compress: drop the reasoning, keep the conclusion.
+A whole generation came to believe thin notes are *good* notes. But that was economizing on
+effort, not optimizing the chart — the reasoning still happened, it just stopped getting
+written down. A scribe changes *which* work is expensive: transcription goes to zero, so the
+reasoning already in the clinician's head (the confound they ruled out, why they held on a
+diagnosis) can finally land on the page. The note returns to what it was meant to be — a
+visible record of the thinking, defensible *because* the thinking is on it. This is exactly
+what ambient-only scribes miss: they optimize the old bottleneck (faster transcription) but
+never restore the reasoning, because they were never doing the reasoning. This tool is aimed
+at the part "brief" quietly deleted.
+
+- **Candidate marketing lines:** *"Charting made you choose between fast and defensible. It
+  doesn't anymore."* / *"Brief notes were a workaround for a slow pen, not good medicine."* /
+  *"You always did the reasoning. Now it makes it onto the page."*
+
 ---
 
 ## 0.2 Hard constraint: it must FEEL like less work
