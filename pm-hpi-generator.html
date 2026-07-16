@@ -131,6 +131,11 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
       <!-- Ambient mode: live recording -->
       <div id="ambient-panel" style="display:none;margin-top:6px;border:1px solid var(--rule);border-radius:8px;padding:14px;background:var(--navy-card)">
+        <div class="opts" id="capture-opts" style="margin-bottom:8px">
+          <div class="opt sel" data-capture="inperson">In person</div>
+          <div class="opt" data-capture="telehealth">Telehealth</div>
+        </div>
+        <div class="hint" id="capture-hint" style="margin:0 0 12px"></div>
         <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream);font-size:.9rem;line-height:1.5">
           <input type="checkbox" id="record-consent" style="margin-top:3px;width:auto">
           <span>I have the patient's consent to record this visit. Audio streams to AWS Transcribe Medical under our BAA, is transcribed live, and is not stored.</span>
@@ -1161,8 +1166,9 @@ function loadVaultTemplates(){
 // framed as AWS event-stream messages. Finalized transcript flows into #raw.
 // ══════════════════════════════════════════════════════════════════════════
 (function(){
-  var ws=null, audioCtx=null, procNode=null, sourceNode=null, muteNode=null, micStream=null;
-  var recording=false, committed='', rawBaseline='';
+  var ws=null, audioCtx=null, procNode=null, muteNode=null, micStream=null, tabStream=null;
+  var graphNodes=[]; // source/merger nodes to disconnect on teardown
+  var recording=false, committed='', rawBaseline='', lastSpeaker=null;
   var enc = new TextEncoder(), dec = new TextDecoder();
 
   // CRC32 (IEEE, zlib table)
@@ -1227,13 +1233,45 @@ function loadVaultTemplates(){
     return new Uint8Array(out.buffer); // little-endian on all browsers
   }
 
+  // Two mono Float32 inputs (mic, tab) → interleaved 16-bit LE STEREO PCM at 16 kHz.
+  // Channel 0 = clinician (mic), channel 1 = patient (call audio) — matches AWS channel IDs.
+  function toPCM16kStereo(mic, tab, inRate){
+    var ratio=inRate/16000, newLen=Math.floor(Math.min(mic.length,tab.length)/ratio);
+    var out=new Int16Array(newLen*2), idx=0, pos=0;
+    function samp(arr,a,b){ var sum=0,cnt=0; for(var k=a;k<b&&k<arr.length;k++){sum+=arr[k];cnt++;} var v=cnt?sum/cnt:0; return Math.max(-1,Math.min(1,v)); }
+    while(idx<newLen){
+      var next=Math.floor((idx+1)*ratio), a=Math.floor(pos);
+      var m=samp(mic,a,next), t=samp(tab,a,next);
+      out[idx*2]   = m<0?m*0x8000:m*0x7FFF;
+      out[idx*2+1] = t<0?t*0x8000:t*0x7FFF;
+      idx++; pos=next;
+    }
+    return new Uint8Array(out.buffer);
+  }
+
   function setStatus(msg,isErr){ var el=document.getElementById('record-status'); if(!el)return; el.textContent=msg||''; el.style.color=isErr?'var(--red)':'var(--cream-dim)'; }
   function joinText(a,b){ if(!a)return b; if(!b)return a; return /\s$/.test(a)?a+b:a+' '+b; }
   function syncRaw(partial){
     var raw=document.getElementById('raw'); if(!raw)return;
-    var body=joinText(committed, partial);
+    var body = partial ? joinText(committed, partial) : committed;
     var joiner=(rawBaseline && body)?(/\n$/.test(rawBaseline)?'':'\n'):'';
     raw.value=rawBaseline+joiner+body;
+  }
+  // Label a finalized result by speaker: telehealth uses the channel (known roles);
+  // in-person diarization uses item speaker tags (voices split, roles unknown).
+  function speakerLabel(r){
+    if(r.ChannelId==='ch_0') return 'Clinician';
+    if(r.ChannelId==='ch_1') return 'Patient';
+    var items = r.Alternatives && r.Alternatives[0] && r.Alternatives[0].Items;
+    if(items){ for(var i=0;i<items.length;i++){ if(items[i].Speaker!=null) return 'Speaker '+(parseInt(items[i].Speaker,10)+1); } }
+    return null;
+  }
+  function appendFinal(label, text){
+    if(!text) return;
+    if(label){
+      if(label!==lastSpeaker){ committed += (committed?'\n':'') + label + ': ' + text; lastSpeaker=label; }
+      else { committed = committed + ' ' + text; }
+    } else { committed = joinText(committed, text); }
   }
   function onMessage(ev){
     var buf=new Uint8Array(ev.data), m;
@@ -1247,45 +1285,72 @@ function loadVaultTemplates(){
     for(var i=0;i<results.length;i++){
       var r=results[i], alt=r.Alternatives&&r.Alternatives[0]; if(!alt)continue;
       if(r.IsPartial){ partial=joinText(partial, alt.Transcript); }
-      else { committed=joinText(committed, alt.Transcript); }
+      else { appendFinal(speakerLabel(r), alt.Transcript); }
     }
     var live=document.getElementById('record-live'); if(live) live.textContent=partial;
     syncRaw(partial);
   }
 
-  async function doStart(){
+  async function doStart(mode){
+    var isTele = (mode==='telehealth');
+    // Grab capture streams FIRST, while the click's user-activation is still fresh
+    // (getDisplayMedia is strict about needing a live user gesture).
+    if(isTele){
+      tabStream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:true });
+      var aTracks = tabStream.getAudioTracks();
+      if(!aTracks.length){ tabStream.getTracks().forEach(function(t){t.stop();}); tabStream=null; throw new Error('No tab audio was shared. Click Start again, choose your video-call tab, and check "Also share tab audio."'); }
+      tabStream.getVideoTracks().forEach(function(t){ t.stop(); }); // audio only
+    }
+    micStream=await navigator.mediaDevices.getUserMedia({ audio:{ channelCount:1, echoCancellation:true, noiseSuppression:true } });
     var res=await fetch('/.netlify/functions/transcribe-presign',{
       method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
-      body: JSON.stringify({ token: authToken })
+      body: JSON.stringify({ token: authToken, channels: isTele?2:1, speakerLabels: !isTele })
     });
     var data; try { data=await res.json(); } catch(e){ throw new Error('Could not start transcription.'); }
     if(!res.ok || !data.url){ throw new Error(data.error || 'Could not start transcription.'); }
-    micStream=await navigator.mediaDevices.getUserMedia({ audio:{ channelCount:1, echoCancellation:true, noiseSuppression:true } });
+
     audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-    sourceNode=audioCtx.createMediaStreamSource(micStream);
-    procNode=audioCtx.createScriptProcessor(4096,1,1);
-    muteNode=audioCtx.createGain(); muteNode.gain.value=0; // keep the node graph live without audible passthrough
+    committed=''; lastSpeaker=null; rawBaseline=document.getElementById('raw').value;
     ws=new WebSocket(data.url); ws.binaryType='arraybuffer';
-    committed=''; rawBaseline=document.getElementById('raw').value;
-    ws.onopen=function(){ setStatus('Recording… speak normally.'); };
+    ws.onopen=function(){ setStatus(isTele?'Recording the visit… (you + patient)':'Recording… speak normally.'); };
     ws.onmessage=onMessage;
     ws.onerror=function(){ setStatus('Connection error.', true); };
     ws.onclose=function(){ if(recording){ recording=false; teardownAudio(); resetBtn(); setStatus('Recording ended.'); } };
-    procNode.onaudioprocess=function(e){
-      if(!recording || !ws || ws.readyState!==1) return;
-      var pcm=toPCM16k(e.inputBuffer.getChannelData(0), audioCtx.sampleRate);
-      if(pcm.length){ try { ws.send(audioFrame(pcm)); } catch(err){} }
-    };
-    sourceNode.connect(procNode); procNode.connect(muteNode); muteNode.connect(audioCtx.destination);
+
+    var micSrc=audioCtx.createMediaStreamSource(micStream); graphNodes.push(micSrc);
+    muteNode=audioCtx.createGain(); muteNode.gain.value=0; // keep the graph live without audible passthrough
+    if(isTele){
+      var tabSrc=audioCtx.createMediaStreamSource(new MediaStream([tabStream.getAudioTracks()[0]])); graphNodes.push(tabSrc);
+      var merger=audioCtx.createChannelMerger(2); graphNodes.push(merger);
+      micSrc.connect(merger,0,0); tabSrc.connect(merger,0,1); // ch0 = clinician, ch1 = patient
+      procNode=audioCtx.createScriptProcessor(4096,2,2);
+      merger.connect(procNode);
+      procNode.onaudioprocess=function(e){
+        if(!recording||!ws||ws.readyState!==1) return;
+        var pcm=toPCM16kStereo(e.inputBuffer.getChannelData(0), e.inputBuffer.getChannelData(1), audioCtx.sampleRate);
+        if(pcm.length){ try{ ws.send(audioFrame(pcm)); }catch(err){} }
+      };
+    } else {
+      procNode=audioCtx.createScriptProcessor(4096,1,1);
+      micSrc.connect(procNode);
+      procNode.onaudioprocess=function(e){
+        if(!recording||!ws||ws.readyState!==1) return;
+        var pcm=toPCM16k(e.inputBuffer.getChannelData(0), audioCtx.sampleRate);
+        if(pcm.length){ try{ ws.send(audioFrame(pcm)); }catch(err){} }
+      };
+    }
+    procNode.connect(muteNode); muteNode.connect(audioCtx.destination);
     recording=true;
   }
   function teardownAudio(){
     try{ if(procNode) procNode.disconnect(); }catch(e){}
-    try{ if(sourceNode) sourceNode.disconnect(); }catch(e){}
     try{ if(muteNode) muteNode.disconnect(); }catch(e){}
+    for(var i=0;i<graphNodes.length;i++){ try{ graphNodes[i].disconnect(); }catch(e){} }
+    graphNodes=[];
     try{ if(micStream) micStream.getTracks().forEach(function(t){t.stop();}); }catch(e){}
+    try{ if(tabStream) tabStream.getTracks().forEach(function(t){t.stop();}); }catch(e){}
     try{ if(audioCtx) audioCtx.close(); }catch(e){}
-    procNode=sourceNode=muteNode=micStream=audioCtx=null;
+    procNode=muteNode=micStream=tabStream=audioCtx=null;
   }
   function doStop(){
     if(!recording && !ws) return;
@@ -1299,13 +1364,39 @@ function loadVaultTemplates(){
   }
   function resetBtn(){ var b=document.getElementById('record-btn'); if(b) b.innerHTML='&#9679; Start recording'; }
 
+  // Capture mode (In person / Telehealth), remembered per browser. Onboarding will
+  // seed this as a saved Vault preference; here it just needs a sensible sticky value.
+  var captureMode='inperson';
+  try { captureMode = localStorage.getItem('tbp_hpi_capture') || 'inperson'; } catch(e){}
+  function renderCaptureHint(){
+    var h=document.getElementById('capture-hint'); if(!h) return;
+    h.innerHTML = (captureMode==='telehealth')
+      ? 'Captures <strong>you (mic)</strong> and <strong>the patient (call audio)</strong> as two channels, so quotes get attributed. On Start, pick your video-call tab and check <strong>"Also share tab audio."</strong> Headphones give the cleanest split.'
+      : 'Captures one room mic; both voices are transcribed and the tool separates speakers where it can.';
+  }
+  function applyCaptureSel(){
+    var opts=document.querySelectorAll('#capture-opts .opt');
+    for(var i=0;i<opts.length;i++){ opts[i].classList.toggle('sel', opts[i].getAttribute('data-capture')===captureMode); }
+    renderCaptureHint();
+  }
+
   // Wire UI
   var consent=document.getElementById('record-consent'), btn=document.getElementById('record-btn');
+  var capOpts=document.getElementById('capture-opts');
+  if(capOpts){
+    applyCaptureSel();
+    capOpts.addEventListener('click', function(e){
+      var o=e.target.closest('.opt'); if(!o||recording) return;
+      captureMode=o.getAttribute('data-capture');
+      try{ localStorage.setItem('tbp_hpi_capture', captureMode); }catch(err){}
+      applyCaptureSel();
+    });
+  }
   if(consent) consent.addEventListener('change', function(){ if(btn) btn.disabled=!this.checked; });
   if(btn) btn.addEventListener('click', function(){
     if(recording){ doStop(); resetBtn(); return; }
-    btn.disabled=true; setStatus('Starting…');
-    doStart().then(function(){ btn.disabled=false; btn.innerHTML='&#9632; Stop recording'; })
+    btn.disabled=true; setStatus(captureMode==='telehealth'?'Waiting for you to share the call tab…':'Starting…');
+    doStart(captureMode).then(function(){ btn.disabled=false; btn.innerHTML='&#9632; Stop recording'; })
       .catch(function(err){ recording=false; teardownAudio(); setStatus(err.message||'Could not start.', true); btn.disabled=false; });
   });
 })();

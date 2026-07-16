@@ -116,6 +116,18 @@ export default async function handler(request) {
     'type': convType
   };
 
+  // Telehealth: two audio channels (mic = clinician, call audio = patient) → channel
+  // identification gives reliable, named speaker attribution. In person: one mic →
+  // optional speaker partitioning (diarization) splits voices but not roles. The two
+  // features are mutually exclusive, so only one is ever added.
+  const channels = (body && Number(body.channels) === 2) ? 2 : 1;
+  if (channels === 2) {
+    query['enable-channel-identification'] = 'true';
+    query['number-of-channels'] = '2';
+  } else if (body && body.speakerLabels) {
+    query['show-speaker-label'] = 'true';
+  }
+
   const canonicalQuery = Object.keys(query).sort()
     .map(k => awsEnc(k) + '=' + awsEnc(query[k])).join('&');
   const canonicalHeaders = 'host:' + host + '\n';
@@ -125,5 +137,5 @@ export default async function handler(request) {
   const signature = crypto.createHmac('sha256', kSigning).update(stringToSign, 'utf8').digest('hex');
 
   const url = 'wss://' + host + path + '?' + canonicalQuery + '&X-Amz-Signature=' + signature;
-  return json({ url, sampleRate: 16000, region });
+  return json({ url, sampleRate: 16000, region, channels });
 }
