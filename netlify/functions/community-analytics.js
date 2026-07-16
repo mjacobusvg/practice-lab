@@ -127,6 +127,18 @@ exports.handler = async function (event) {
       you_by_tool: you_by_tool
     };
 
+    // ── Support signals: client errors + problem reports ─────────────────────
+    const [errors_recent, reports_recent, errors_24h, reports_open] = await Promise.all([
+      sb('client_errors?select=message,page,email,tier,created_at&order=created_at.desc&limit=15'),
+      sb('problem_reports?select=message,page,email,tier,status,created_at&order=created_at.desc&limit=15'),
+      countOf('client_errors?created_at=gt.' + encodeURIComponent(iso(1)) + '&select=id'),
+      countOf('problem_reports?status=eq.open&select=id')
+    ]);
+    const signals = {
+      errors_24h: errors_24h, reports_open: reports_open,
+      errors_recent: errors_recent || [], reports_recent: reports_recent || []
+    };
+
     return {
       statusCode: 200, headers, body: JSON.stringify({
         ok: true,
@@ -137,7 +149,8 @@ exports.handler = async function (event) {
         top_posts: top_posts || [],
         new_members: new_members || [],
         signups_daily: signups_daily,
-        tools: tools
+        tools: tools,
+        signals: signals
       })
     };
   } catch (e) {

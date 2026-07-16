@@ -1756,6 +1756,72 @@ function logView(path) {
 }
 function tierRank() { var t = (S.user && S.user.tier) || 'free'; return { free:0, forum:1, full:2 }[t] || 0; }
 function isFullMember() { return tierRank() >= 2; }
+
+// ── Client error visibility ────────────────────────────────────────────────
+// Report uncaught script errors + unhandled promise rejections to the server so
+// failures that would die silently in a member's browser become visible. Deduped
+// and capped per page load so a repeating error cannot flood the sink.
+var _errSeen = {}, _errCount = 0;
+function reportClientError(message, stack) {
+  try {
+    if (!message || _errCount >= 20) return;
+    var key = String(message).slice(0, 200);
+    if (_errSeen[key]) return;
+    _errSeen[key] = true; _errCount++;
+    fetch('/.netlify/functions/log-error', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), message: String(message).slice(0, 1000), stack: stack ? String(stack).slice(0, 4000) : null, page: location.pathname + location.hash, ua: navigator.userAgent })
+    }).catch(function () {});
+  } catch (e) {}
+}
+window.addEventListener('error', function (e) {
+  reportClientError((e && e.message) || 'Script error', e && e.error && e.error.stack);
+});
+window.addEventListener('unhandledrejection', function (e) {
+  var r = e && e.reason;
+  reportClientError('Unhandled rejection: ' + ((r && r.message) || r || 'unknown'), r && r.stack);
+});
+
+// ── Report a problem (support channel) ─────────────────────────────────────
+function openReportProblem() {
+  var ov = document.getElementById('report-overlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'report-overlay';
+    ov.className = 'composer-overlay';
+    ov.onclick = function (e) { if (e.target === ov) closeReportProblem(); };
+    ov.innerHTML =
+      '<div class="composer" style="max-width:520px">' +
+      '<h3>Report a problem</h3>' +
+      '<p style="font-size:0.8rem;color:var(--text-secondary);line-height:1.6;margin-bottom:8px">Tell us what went wrong or felt broken. We get the page you were on automatically. Please do not include any patient information.</p>' +
+      '<textarea id="rp-text" rows="5" placeholder="What happened? What did you expect?"></textarea>' +
+      '<div class="composer-actions"><span class="composer-status" id="rp-status"></span>' +
+      '<button class="btn-ghost" onclick="closeReportProblem()">Cancel</button>' +
+      '<button class="btn-primary" id="rp-submit" onclick="submitProblemReport()">Send</button></div>' +
+      '</div>';
+    document.body.appendChild(ov);
+  }
+  document.getElementById('rp-text').value = '';
+  document.getElementById('rp-status').textContent = '';
+  ov.classList.add('active');
+}
+function closeReportProblem() { var ov = document.getElementById('report-overlay'); if (ov) ov.classList.remove('active'); }
+async function submitProblemReport() {
+  var msg = (document.getElementById('rp-text').value || '').trim();
+  var st = document.getElementById('rp-status');
+  if (!msg) { st.textContent = 'Please describe the problem.'; return; }
+  var btn = document.getElementById('rp-submit'); btn.disabled = true; st.textContent = 'Sending...';
+  try {
+    var res = await fetch('/.netlify/functions/report-problem', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), message: msg, page: location.pathname + location.hash, ua: navigator.userAgent })
+    });
+    var d = await res.json();
+    if (!res.ok || !d.ok) throw new Error(d.error || 'Could not send');
+    st.textContent = 'Thank you. We got it.';
+    setTimeout(closeReportProblem, 1200);
+  } catch (e) { st.textContent = 'Could not send: ' + e.message; btn.disabled = false; }
+}
 function isPaidMember() { return tierRank() >= 1; }
 function checkMember() { S.isMember = isPaidMember(); }
 var SB = supabase.createClient('https://ubcrrrapedaxkguxniwv.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InViY3JycmFwZWRheGtndXhuaXd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNjA2MTUsImV4cCI6MjA5MDkzNjYxNX0.CoS_t8EvCsgXJJA1dz4WXYWGsE8OMKEDeaWfsExQ1H0', {
@@ -1941,6 +2007,7 @@ function updateTopbar() {
     '<button onclick="toggleAcctMenu();viewProfile(\''+S.user.id+'\')">Your profile</button>' +
     '<button onclick="toggleAcctMenu();showInvite()">Invite a colleague</button>' +
     '<button onclick="toggleAcctMenu();openWelcomeTour()">Take the tour</button>' +
+    '<button onclick="toggleAcctMenu();openReportProblem()">Report a problem</button>' +
     (isPaidMember()
       ? '<button onclick="openBillingPortal()">Manage billing</button>'
       : '<button onclick="startCheckout(\'full_monthly_119\')">Upgrade to Full</button>') +
@@ -5020,6 +5087,31 @@ function renderAnalytics(d) {
     else { h += '<div style="padding:10px;color:var(--text-secondary);font-size:0.85rem">No tool usage on your account.</div>'; }
     h += '</div>';
   }
+
+  // ── Support & errors ──────────────────────────────────────────────────────
+  var sig = d.signals || {};
+  h += '<div class="an-section-h">Support &amp; errors</div><div class="an-grid">';
+  h += statCard('Client errors (24h)', sig.errors_24h || 0);
+  h += statCard('Open problem reports', sig.reports_open || 0);
+  h += '</div>';
+  var reps = sig.reports_recent || [];
+  h += '<div class="an-section-h" style="font-size:0.82rem">Recent problem reports</div><div class="an-list">';
+  if (reps.length) {
+    reps.forEach(function (r) {
+      h += '<div class="an-row" style="cursor:default;align-items:flex-start"><div class="an-row-title" style="white-space:normal">' + esc((r.message || '').slice(0, 200)) +
+        '</div><div class="an-row-meta" style="flex-shrink:0">' + esc(r.email || 'anon') + ' &middot; ' + timeAgo(r.created_at) + '</div></div>';
+    });
+  } else { h += '<div style="padding:10px;color:var(--text-secondary);font-size:0.85rem">No problem reports.</div>'; }
+  h += '</div>';
+  var errs = sig.errors_recent || [];
+  h += '<div class="an-section-h" style="font-size:0.82rem">Recent client errors</div><div class="an-list">';
+  if (errs.length) {
+    errs.forEach(function (er) {
+      h += '<div class="an-row" style="cursor:default;align-items:flex-start"><div class="an-row-title" style="white-space:normal;color:#dc2626">' + esc((er.message || '').slice(0, 160)) +
+        '</div><div class="an-row-meta" style="flex-shrink:0">' + esc((er.page || '').slice(0, 40)) + ' &middot; ' + esc(er.email || 'anon') + ' &middot; ' + timeAgo(er.created_at) + '</div></div>';
+    });
+  } else { h += '<div style="padding:10px;color:var(--text-secondary);font-size:0.85rem">No client errors logged. That is a good sign.</div>'; }
+  h += '</div>';
 
   center.innerHTML = h; window.scrollTo(0, 0);
 }
