@@ -132,6 +132,36 @@ Regression watched here: a "keep section labels" rule was first written as "alwa
 labels," which would have forced structure on a flowing-narrative clinician. Corrected to
 "match the template's format faithfully, whatever it is."
 
+### 0.3.1 Refinement: classify the SURFACE, not just the behavior
+
+§0.3 was written with the **HPI** in mind — a format-and-voice surface, where the
+clinician's template *should* govern. Not every surface is like that. Classify each
+surface before applying the rule:
+
+- **Format/voice surfaces — HPI, Plan.** The clinician's Vault template governs format,
+  structure, verbosity, wording. Learn STYLE, not HABITS. Hardcode only integrity/safety.
+  §0.3 applies as written.
+- **Reasoning surface — the Assessment.** The tool's **universal reasoning standard**
+  governs, and Vault personalization is a **liability, not a feature.** The assessment's
+  entire value is that it reasons better than a rushed clinician might; a *saved* preference
+  from a clinician who habitually writes thin assessments would encode that exact habit into
+  the one surface where it does the most damage. So the assessment stays hardcoded to a
+  universal standard and takes **no persistent Vault preferences.** This is the deliberate
+  exception to "verbosity is per-clinician" in §0.3 — assessment reasoning depth is NOT a
+  saved preference.
+
+The line that keeps this clean: a **per-visit output control** (the Brief/Thorough length
+selector) is allowed — it is the clinician's call for *this* note, bounded and non-persistent.
+A **saved Vault preference** that persistently reshapes the assessment's reasoning is banned.
+Per-visit dial: yes. Persistent personalization of the assessment: no.
+
+Why the no-reinventory rule (don't re-list symptoms the HPI already carries) is therefore
+hardcoded, not a dial: it's a reasoning-surface rule, and its three carve-outs (pivot of the
+reasoning / safety-relevant / not-documented-elsewhere) *are* the integrity floor. What's left
+to trim is pure cataloging, which no auditor wants. Note it was NOT validated by one
+clinician's feedback — Eniana merged our output with Berries' and never said which lines she
+took; the rule stands on the don't-duplicate-the-HPI principle, not on that soft signal.
+
 ---
 
 ## 1. Where it stands today (audit)
