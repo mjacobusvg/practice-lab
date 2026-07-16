@@ -1974,6 +1974,8 @@ function buildSidebar() {
   h += '<div class="sb-item" data-key="saved" onclick="showSaved()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128278;</span> Saved</div>';
   h += '<div class="sb-item" data-key="following" onclick="showFollowing()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128220;</span> Following</div>';
   if (isAdmin()) h += '<div class="sb-item" data-key="analytics" onclick="showAnalytics()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128202;</span> Analytics</div>';
+  if (isAdmin()) h += '<div class="sb-item" data-key="contacts" onclick="showContacts()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128203;</span> Contacts</div>';
+  if (isAdmin()) h += '<div class="sb-item" data-key="broadcast" onclick="showBroadcast()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128227;</span> Broadcast</div>';
   h += '<div class="sb-item" data-key="library" onclick="showLibrary()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128196;</span> Template Library</div>';
   h += '<div class="sb-item" data-key="learn" onclick="showLearn()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#127891;</span> Academy</div>';
   h += '<div class="sb-item" data-key="directory" onclick="showDirectory()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128101;</span> Member Directory</div>';
@@ -5046,6 +5048,284 @@ function renderAnalytics(d) {
 }
 
 function toggleAnMine() { S.anShowMine = !S.anShowMine; if (S.analyticsData) renderAnalytics(S.analyticsData); }
+
+// ════════════════════════════════════════
+// CONTACTS (admin): the community roster / CRM
+// ════════════════════════════════════════
+async function showContacts() {
+  if (!isAdmin()) { showHome(); return; }
+  closeSidebar(); closeRail();
+  S.view = 'contacts'; S.space = null; clearActive();
+  var side = document.querySelector('.sb-item[data-key="contacts"]'); if (side) side.classList.add('active');
+  if (!S.contactsFilter) S.contactsFilter = 'all';
+  var center = document.getElementById('center');
+  center.innerHTML = '<div class="skel skel-h"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
+  window.scrollTo(0, 0);
+  await loadContacts();
+}
+
+async function loadContacts() {
+  var center = document.getElementById('center');
+  try {
+    var res = await fetch('/.netlify/functions/contacts-list', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), tier: S.contactsFilter || 'all', q: S.contactsQ || '', limit: 500 })
+    });
+    var d = await res.json();
+    if (!res.ok || !d.ok) throw new Error(d.error || 'Could not load contacts');
+    S.contactsData = d;
+    renderContacts(d);
+  } catch (e) {
+    center.innerHTML = '<div style="padding:28px;color:var(--text-secondary)">Could not load contacts: ' + esc(e.message) + '</div>';
+  }
+}
+
+function renderContacts(d) {
+  var center = document.getElementById('center');
+  var c = d.counts || {}, rows = d.contacts || [];
+  var h = '<div class="space-head"><div class="space-accent" style="background:#34d399"></div><h1>Contacts</h1>';
+  h += '<p class="space-tagline">Your whole roster, in one place, off Circle. ' + (c.total || 0) + ' people. You control the tier.</p></div>';
+
+  h += '<div class="an-grid">';
+  h += statCard('Total', c.total || 0);
+  h += statCard('Full', c.full || 0);
+  h += statCard('Forum', c.forum || 0);
+  h += statCard('Free', c.free || 0);
+  h += statCard('Subscribed', c.subscribed || 0, ((c.total || 0) - (c.subscribed || 0)) + ' unsubscribed');
+  h += '</div>';
+
+  // Filter chips + search + import.
+  var filters = [['all', 'All'], ['full', 'Full'], ['forum', 'Forum'], ['free', 'Free'], ['members', 'Members'], ['nonmembers', 'Non-members']];
+  h += '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:18px 0 12px">';
+  filters.forEach(function (f) {
+    var on = (S.contactsFilter || 'all') === f[0];
+    h += '<button onclick="contactsSetFilter(\'' + f[0] + '\')" class="chip' + (on ? ' chip-on' : '') + '" style="cursor:pointer;border:1px solid var(--border);background:' + (on ? 'var(--brand,#002b4b)' : 'transparent') + ';color:' + (on ? '#fff' : 'var(--text)') + ';padding:5px 12px;border-radius:16px;font-size:13px;font-weight:600">' + f[1] + '</button>';
+  });
+  h += '<input id="contacts-q" oninput="contactsSearchDebounced()" value="' + esc(S.contactsQ || '') + '" placeholder="Search name or email" style="flex:1;min-width:160px;padding:7px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px">';
+  h += '<button onclick="contactsImportPick()" style="cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text);padding:6px 12px;border-radius:8px;font-size:13px;font-weight:600">Import CSV</button>';
+  h += '<input type="file" id="contacts-file" accept=".csv" style="display:none" onchange="contactsImportFile(event)">';
+  h += '</div>';
+
+  // Bulk action bar (visible when a non-"all" tier filter is active).
+  h += '<div id="contacts-bulk" style="font-size:13px;color:var(--text-secondary);margin-bottom:8px"></div>';
+
+  // Table.
+  h += '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:10px">';
+  h += '<table style="width:100%;border-collapse:collapse;font-size:13px">';
+  h += '<thead><tr style="text-align:left;background:var(--surface-2,#f6f8fa)">' +
+    '<th style="padding:9px 12px">Name</th><th style="padding:9px 12px">Email</th>' +
+    '<th style="padding:9px 12px">Tier</th><th style="padding:9px 12px">Circle</th>' +
+    '<th style="padding:9px 12px">Email</th></tr></thead><tbody>';
+  if (!rows.length) h += '<tr><td colspan="5" style="padding:16px;color:var(--text-secondary)">No contacts match.</td></tr>';
+  rows.forEach(function (r) {
+    var em = esc(r.email);
+    h += '<tr style="border-top:1px solid var(--border)">';
+    h += '<td style="padding:8px 12px">' + esc(r.name || r.first_name || '-') + '</td>';
+    h += '<td style="padding:8px 12px;color:var(--text-secondary)">' + em + '</td>';
+    h += '<td style="padding:8px 12px"><select onchange="contactsChangeTier(\'' + em + '\',this.value)" style="padding:3px 6px;border:1px solid var(--border);border-radius:6px;font-size:12px">' +
+      ['free', 'forum', 'full'].map(function (t) { return '<option value="' + t + '"' + (r.tier === t ? ' selected' : '') + '>' + t + '</option>'; }).join('') +
+      '</select></td>';
+    h += '<td style="padding:8px 12px;color:var(--text-secondary)">' + esc(r.circle_status || '-') + '</td>';
+    h += '<td style="padding:8px 12px">' + (r.subscribed ? '<span style="color:#16a34a">subscribed</span>' : '<span style="color:#9ca3af">unsub</span>') + '</td>';
+    h += '</tr>';
+  });
+  h += '</tbody></table></div>';
+  h += '<p style="font-size:12px;color:var(--text-secondary);margin-top:10px">Showing ' + rows.length + ' of ' + (c.total || 0) + '. Change a tier from the dropdown; it takes effect immediately.</p>';
+
+  center.innerHTML = h; window.scrollTo(0, 0);
+}
+
+function contactsSetFilter(f) { S.contactsFilter = f; loadContacts(); }
+var _contactsQT = null;
+function contactsSearchDebounced() {
+  var v = document.getElementById('contacts-q').value;
+  S.contactsQ = v;
+  if (_contactsQT) clearTimeout(_contactsQT);
+  _contactsQT = setTimeout(function () { loadContacts(); }, 350);
+}
+async function contactsChangeTier(email, tier) {
+  try {
+    var res = await fetch('/.netlify/functions/contacts-update', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), email: email, tier: tier })
+    });
+    var d = await res.json();
+    if (!res.ok || !d.ok) throw new Error(d.error || 'Update failed');
+    showToast(email + ' set to ' + tier);
+  } catch (e) { showToast('Could not update: ' + e.message); }
+}
+function contactsImportPick() { document.getElementById('contacts-file').click(); }
+function contactsImportFile(ev) {
+  var file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function () {
+    try {
+      var rows = parseContactsCsv(String(reader.result || ''));
+      if (!rows.length) { showToast('No rows found in CSV'); return; }
+      if (!confirm('Import ' + rows.length + ' contacts? Existing tiers are preserved.')) return;
+      sendContactsImport(rows);
+    } catch (e) { showToast('Could not read CSV: ' + e.message); }
+  };
+  reader.readAsText(file);
+  ev.target.value = '';
+}
+// Minimal CSV parser (handles quoted fields, embedded commas/newlines).
+function parseContactsCsv(text) {
+  var rows = [], row = [], cur = '', i = 0, q = false, ch;
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  for (; i < text.length; i++) {
+    ch = text[i];
+    if (q) {
+      if (ch === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; }
+      else cur += ch;
+    } else {
+      if (ch === '"') q = true;
+      else if (ch === ',') { row.push(cur); cur = ''; }
+      else if (ch === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+      else cur += ch;
+    }
+  }
+  if (cur.length || row.length) { row.push(cur); rows.push(row); }
+  if (!rows.length) return [];
+  var head = rows[0].map(function (s) { return String(s).trim().toLowerCase(); });
+  function col(names) { for (var n = 0; n < names.length; n++) { var ix = head.indexOf(names[n]); if (ix !== -1) return ix; } return -1; }
+  var iEmail = col(['email']), iFirst = col(['first name', 'first_name', 'firstname']),
+    iLast = col(['last name', 'last_name', 'lastname']), iTier = col(['tier', 'plan']),
+    iMember = col(['member [y/n]', 'member', 'member [y/n]']), iMkt = col(['email marketing', 'subscribed']),
+    iHead = col(['headline']);
+  if (iEmail === -1) throw new Error('No Email column');
+  var out = [];
+  for (var r = 1; r < rows.length; r++) {
+    var rec = rows[r]; if (!rec || !rec.length) continue;
+    var email = String(rec[iEmail] || '').trim().toLowerCase();
+    if (!email || email.indexOf('@') === -1) continue;
+    var o = { email: email };
+    if (iFirst !== -1) o.first_name = String(rec[iFirst] || '').trim();
+    if (iLast !== -1) o.last_name = String(rec[iLast] || '').trim();
+    o.name = ((o.first_name || '') + ' ' + (o.last_name || '')).trim() || email;
+    if (iHead !== -1 && rec[iHead]) o.headline = String(rec[iHead]).trim();
+    if (iTier !== -1 && rec[iTier]) { var tv = String(rec[iTier]).trim().toLowerCase(); if (['free', 'forum', 'full'].indexOf(tv) !== -1) o.tier = tv; }
+    if (iMember !== -1) o.circle_status = /^y/i.test(String(rec[iMember] || '').trim()) ? 'member' : 'audience';
+    if (iMkt !== -1) o.subscribed = String(rec[iMkt] || '').trim().toLowerCase() !== 'unsubscribed';
+    out.push(o);
+  }
+  return out;
+}
+async function sendContactsImport(rows) {
+  try {
+    showToast('Importing ' + rows.length + ' contacts...');
+    var res = await fetch('/.netlify/functions/contacts-import', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), rows: rows })
+    });
+    var d = await res.json();
+    if (!res.ok || !d.ok) throw new Error(d.error || 'Import failed');
+    showToast('Imported ' + d.valid + ' contacts (' + d.invalid + ' skipped)');
+    loadContacts();
+  } catch (e) { showToast('Import error: ' + e.message); }
+}
+
+// ════════════════════════════════════════
+// BROADCAST (admin): weekly email to members / non-members
+// ════════════════════════════════════════
+function showBroadcast() {
+  if (!isAdmin()) { showHome(); return; }
+  closeSidebar(); closeRail();
+  S.view = 'broadcast'; S.space = null; clearActive();
+  var side = document.querySelector('.sb-item[data-key="broadcast"]'); if (side) side.classList.add('active');
+  var center = document.getElementById('center');
+  var h = '<div class="space-head"><div class="space-accent" style="background:#f59e0b"></div><h1>Broadcast</h1>';
+  h += '<p class="space-tagline">Send an email to your list. Pick who gets it. Unsubscribes are handled automatically.</p></div>';
+  h += '<div style="max-width:680px">';
+  h += '<label style="display:block;font-weight:600;font-size:13px;margin:14px 0 5px">Who gets this</label>';
+  h += '<select id="bc-audience" onchange="broadcastPreview()" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px">' +
+    '<option value="members">Members (Forum + Full)</option>' +
+    '<option value="nonmembers">Non-members (Free tier)</option>' +
+    '<option value="full">Full tier only</option>' +
+    '<option value="forum">Forum tier only</option>' +
+    '<option value="all">Everyone (whole list)</option>' +
+    '</select>';
+  h += '<div id="bc-count" style="font-size:13px;color:var(--text-secondary);margin-top:6px">&nbsp;</div>';
+
+  h += '<label style="display:block;font-weight:600;font-size:13px;margin:14px 0 5px">Subject</label>';
+  h += '<input id="bc-subject" placeholder="Subject line" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px">';
+
+  h += '<label style="display:block;font-weight:600;font-size:13px;margin:14px 0 5px">Message <span style="font-weight:400;color:var(--text-secondary)">(Markdown. Use {{first_name}} to personalize.)</span></label>';
+  h += '<textarea id="bc-body" rows="12" placeholder="Write your update..." style="width:100%;padding:11px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;line-height:1.5"></textarea>';
+
+  h += '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:14px">';
+  h += '<button onclick="broadcastMigrationTemplate()" style="cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text);padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600">Load migration template</button>';
+  h += '<button onclick="broadcastTest()" style="cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text);padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600">Send test to me</button>';
+  h += '<button onclick="broadcastSend()" style="cursor:pointer;border:none;background:var(--brand,#002b4b);color:#fff;padding:9px 20px;border-radius:8px;font-size:14px;font-weight:700;margin-left:auto">Send broadcast</button>';
+  h += '</div>';
+  h += '<div id="bc-status" style="font-size:13px;margin-top:12px"></div>';
+  h += '</div>';
+  center.innerHTML = h; window.scrollTo(0, 0);
+  broadcastPreview();
+}
+
+async function broadcastPreview() {
+  var el = document.getElementById('bc-count'); if (!el) return;
+  var audience = document.getElementById('bc-audience').value;
+  el.textContent = 'Counting...';
+  try {
+    var res = await fetch('/.netlify/functions/broadcast-send', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), audience: audience, subject: 'x', markdown: 'x', dry_run: true })
+    });
+    var d = await res.json();
+    if (d.ok) el.textContent = d.recipients + ' subscribed recipient' + (d.recipients === 1 ? '' : 's') + ' will receive this.';
+    else el.textContent = '';
+  } catch (e) { el.textContent = ''; }
+}
+function broadcastMigrationTemplate() {
+  document.getElementById('bc-audience').value = 'nonmembers';
+  document.getElementById('bc-subject').value = 'Think Beyond Practice has a new home (free access inside)';
+  document.getElementById('bc-body').value =
+    'Hi {{first_name}},\n\n' +
+    'We have moved Think Beyond Practice to our own platform, and your free access is ready.\n\n' +
+    'You now have a free account with access to the community and a growing set of clinical tools built for psychiatric prescribers.\n\n' +
+    '**Sign in here:** https://thinkbeyondpractice.com/platform.html?join\n\n' +
+    'Just enter this email address and we will send you a one-click sign-in link. No password to remember.\n\n' +
+    'See you inside,\nMichael';
+  broadcastPreview();
+}
+async function broadcastTest() {
+  var st = document.getElementById('bc-status');
+  var subject = document.getElementById('bc-subject').value.trim();
+  var body = document.getElementById('bc-body').value.trim();
+  if (!subject || !body) { st.style.color = '#dc2626'; st.textContent = 'Add a subject and message first.'; return; }
+  st.style.color = 'var(--text-secondary)'; st.textContent = 'Sending test to your email...';
+  try {
+    var res = await fetch('/.netlify/functions/broadcast-send', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), audience: document.getElementById('bc-audience').value, subject: subject, markdown: body, test_email: (S.user && S.user.email) })
+    });
+    var d = await res.json();
+    if (!res.ok || !d.ok) throw new Error(d.error || 'Test failed');
+    st.style.color = '#16a34a'; st.textContent = 'Test sent to ' + (S.user && S.user.email) + '. Check your inbox.';
+  } catch (e) { st.style.color = '#dc2626'; st.textContent = 'Test failed: ' + e.message; }
+}
+async function broadcastSend() {
+  var st = document.getElementById('bc-status');
+  var audience = document.getElementById('bc-audience').value;
+  var subject = document.getElementById('bc-subject').value.trim();
+  var body = document.getElementById('bc-body').value.trim();
+  if (!subject || !body) { st.style.color = '#dc2626'; st.textContent = 'Add a subject and message first.'; return; }
+  var label = document.querySelector('#bc-audience option:checked').textContent;
+  if (!confirm('Send "' + subject + '" to: ' + label + '?\n\nThis emails real people. Send a test first if unsure.')) return;
+  st.style.color = 'var(--text-secondary)'; st.textContent = 'Sending...';
+  try {
+    var res = await fetch('/.netlify/functions/broadcast-send', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), audience: audience, subject: subject, markdown: body })
+    });
+    var d = await res.json();
+    if (!res.ok || !d.ok) throw new Error(d.error || 'Send failed');
+    st.style.color = '#16a34a'; st.textContent = 'Sent to ' + d.sent + ' of ' + d.recipients + ' recipients.';
+  } catch (e) { st.style.color = '#dc2626'; st.textContent = 'Send failed: ' + e.message; }
+}
 
 // ════════════════════════════════════════
 // REQUESTS: tool / topic / CE

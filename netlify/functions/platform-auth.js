@@ -68,7 +68,59 @@ exports.handler = async function (event) {
       { headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY } }
     );
     const accts = acctRes.ok ? await acctRes.json() : [];
-    const acct = (accts && accts[0]) ? accts[0] : null;
+    let acct = (accts && accts[0]) ? accts[0] : null;
+
+    // 2b) First sign-in for this auth_id (no linked account yet). Resolve the
+    //     person's PROVISIONED tier so migrated members land at the right access
+    //     level instead of always defaulting to 'free':
+    //       (a) an existing account row with the same email but no auth_id link
+    //           (link it to this auth_id), else
+    //       (b) a contacts (roster) row carrying a provisioned tier, then create
+    //           the linked account row.
+    //     All best-effort: a failure here still mints a correct token for this
+    //     session; the row is retried on the next login.
+    if (!acct) {
+      const svc = { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY, 'Content-Type': 'application/json' };
+      const VALID = ['free', 'forum', 'full'];
+      try {
+        const byEmailRes = await fetch(
+          SUPABASE_URL + '/rest/v1/accounts?email=eq.' + encodeURIComponent(verifiedEmail) +
+          '&select=id,email,tier,is_admin,circle_member_id,auth_id&limit=1',
+          { headers: svc });
+        const byEmail = byEmailRes.ok ? await byEmailRes.json() : [];
+        if (byEmail && byEmail[0]) {
+          acct = byEmail[0];
+          if (!acct.auth_id) {
+            try {
+              await fetch(SUPABASE_URL + '/rest/v1/accounts?id=eq.' + encodeURIComponent(acct.id),
+                { method: 'PATCH', headers: Object.assign({ Prefer: 'return=minimal' }, svc),
+                  body: JSON.stringify({ auth_id: authId, updated_at: new Date().toISOString() }) });
+            } catch (e) { /* best-effort link */ }
+          }
+        } else {
+          let provTier = 'free', provName = null;
+          try {
+            const cRes = await fetch(
+              SUPABASE_URL + '/rest/v1/contacts?email=eq.' + encodeURIComponent(verifiedEmail) +
+              '&select=tier,name&limit=1', { headers: svc });
+            const cRows = cRes.ok ? await cRes.json() : [];
+            if (cRows && cRows[0]) {
+              if (VALID.indexOf(String(cRows[0].tier)) !== -1) provTier = String(cRows[0].tier);
+              provName = cRows[0].name || null;
+            }
+          } catch (e) { /* roster lookup best-effort */ }
+          try {
+            const ins = await fetch(SUPABASE_URL + '/rest/v1/accounts',
+              { method: 'POST', headers: Object.assign({ Prefer: 'return=representation' }, svc),
+                body: JSON.stringify({ auth_id: authId, email: verifiedEmail, tier: provTier, name: provName }) });
+            const insRows = ins.ok ? await ins.json() : [];
+            acct = (insRows && insRows[0]) ? insRows[0] : { email: verifiedEmail, tier: provTier, is_admin: false, circle_member_id: null };
+          } catch (e) {
+            acct = { email: verifiedEmail, tier: provTier, is_admin: false, circle_member_id: null };
+          }
+        }
+      } catch (e) { /* whole fallback best-effort */ }
+    }
 
     // tier from the account row (free/forum/full). No account row yet => 'free'.
     const tier = (acct && acct.tier) ? String(acct.tier).toLowerCase() : 'free';
