@@ -59,9 +59,24 @@ function personalize(html, contact) {
   return html.replace(/\{\{\s*first_name\s*\}\}/gi, esc(first)).replace(/\{\{\s*name\s*\}\}/gi, esc(name));
 }
 
+function b64url(s) {
+  return Buffer.from(String(s), 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+// Open-tracking pixel for one recipient of one broadcast.
+function pixelTag(bid, token) {
+  var src = SITE + '/.netlify/functions/broadcast-track?b=' + encodeURIComponent(bid) + '&e=' + encodeURIComponent(token) + '&k=open';
+  return '<img src="' + src + '" width="1" height="1" alt="" style="display:none">';
+}
+// Rewrite every http(s) link in the body to route through the click tracker.
+function trackLinks(html, bid, token) {
+  return String(html).replace(/href="(https?:\/\/[^"]+)"/gi, function (m, url) {
+    var redirect = SITE + '/.netlify/functions/broadcast-track?b=' + encodeURIComponent(bid) + '&e=' + encodeURIComponent(token) + '&k=click&u=' + encodeURIComponent(b64url(url));
+    return 'href="' + redirect + '"';
+  });
+}
 // One-click broadcast unsubscribe (flips contacts.subscribed=false) + platform link.
-function footer(email) {
-  var unsub = SITE + '/.netlify/functions/broadcast-unsub?t=' + encodeURIComponent(mintPrefsToken(email));
+function footer(email, bid) {
+  var unsub = SITE + '/.netlify/functions/broadcast-unsub?t=' + encodeURIComponent(mintPrefsToken(email)) + (bid ? '&b=' + encodeURIComponent(bid) : '');
   return '<div style="font-size:12px;color:#8a8a8a;margin-top:28px;border-top:1px solid #eee;padding-top:14px;line-height:1.5">' +
     'Think Beyond Practice LLC, 9631 N Nevada St Suite 209, Spokane WA 99218<br>' +
     'You are receiving this because you are on the Think Beyond Practice list. ' +
@@ -129,12 +144,30 @@ exports.handler = async function (event) {
     const ses = sesClient();
     if (!ses) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'Email transport not configured' }) };
 
+    // Create the broadcast row FIRST (real sends only) so every email can carry
+    // its broadcast id for open/click tracking. Test sends are not tracked.
+    let bid = null;
+    if (!p.test_email) {
+      try {
+        const ins = await fetch(URL + '/rest/v1/broadcasts', {
+          method: 'POST',
+          headers: Object.assign({ 'Content-Type': 'application/json', Prefer: 'return=representation' }, auth),
+          body: JSON.stringify({ subject: subject, audience: String(p.audience || 'all'), recipient_count: 0, sent_by: adminEmail, status: 'sent' })
+        });
+        const insRows = ins.ok ? await ins.json() : [];
+        bid = (insRows && insRows[0] && insRows[0].id) ? insRows[0].id : null;
+      } catch (e) { /* tracking row best-effort */ }
+    }
+
     let sent = 0;
     const CONC = 5;
     for (let i = 0; i < recipients.length; i += CONC) {
       const batch = recipients.slice(i, i + CONC);
       await Promise.all(batch.map(function (c) {
-        const html = wrap(personalize(bodyHtml, c) + footer(c.email));
+        const token = mintPrefsToken(c.email);
+        let inner = personalize(bodyHtml, c);
+        if (bid) inner = trackLinks(inner, bid, token);
+        let html = wrap(inner + footer(c.email, bid) + (bid ? pixelTag(bid, token) : ''));
         return ses.client.send(new ses.SendEmailCommand({
           FromEmailAddress: ses.from,
           Destination: { ToAddresses: [c.email] },
@@ -143,16 +176,17 @@ exports.handler = async function (event) {
       }));
     }
 
-    // Log the broadcast (best-effort).
-    try {
-      await fetch(URL + '/rest/v1/broadcasts', {
-        method: 'POST',
-        headers: Object.assign({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }, auth),
-        body: JSON.stringify({ subject: subject, audience: String(p.audience || 'all'), recipient_count: sent, sent_by: adminEmail, status: p.test_email ? 'test' : 'sent' })
-      });
-    } catch (e) { /* logging is best-effort */ }
+    // Finalize the recipient count now that we know how many actually sent.
+    if (bid) {
+      try {
+        await fetch(URL + '/rest/v1/broadcasts?id=eq.' + encodeURIComponent(bid), {
+          method: 'PATCH', headers: Object.assign({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }, auth),
+          body: JSON.stringify({ recipient_count: sent })
+        });
+      } catch (e) { /* best-effort */ }
+    }
 
-    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, dry_run: false, audience: p.audience, recipients: recipients.length, sent: sent, test: !!p.test_email }) };
+    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, dry_run: false, audience: p.audience, recipients: recipients.length, sent: sent, test: !!p.test_email, broadcast_id: bid }) };
   } catch (e) {
     return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: e.message }) };
   }

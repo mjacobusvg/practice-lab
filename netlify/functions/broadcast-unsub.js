@@ -40,5 +40,16 @@ exports.handler = async function (event) {
     });
   } catch (e) { /* fall through to a friendly page regardless */ }
 
+  // Attribute the unsubscribe to the broadcast it came from (for per-send stats).
+  var bid = (event.queryStringParameters && event.queryStringParameters.b) || '';
+  if (bid && /^[0-9a-f-]{36}$/i.test(bid)) {
+    try {
+      await fetch(URL + '/rest/v1/broadcast_events', {
+        method: 'POST', headers: Object.assign({ Prefer: 'return=minimal' }, auth),
+        body: JSON.stringify({ broadcast_id: bid, email: v.email, kind: 'unsub' })
+      });
+    } catch (e) { /* best-effort */ }
+  }
+
   return { statusCode: 200, headers: htmlHeaders, body: page('You are unsubscribed', 'You will no longer receive broadcast emails from Think Beyond Practice. You can still sign in to the platform anytime. If this was a mistake, just reply to any of our emails and we will add you back.') };
 };

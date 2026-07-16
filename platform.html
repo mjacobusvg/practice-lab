@@ -5095,7 +5095,7 @@ function renderContacts(d) {
   h += '</div>';
 
   // Filter chips + search + import.
-  var filters = [['all', 'All'], ['full', 'Full'], ['forum', 'Forum'], ['free', 'Free'], ['members', 'Members'], ['nonmembers', 'Non-members']];
+  var filters = [['all', 'All'], ['full', 'Full'], ['forum', 'Forum'], ['free', 'Free (prospects)']];
   h += '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:18px 0 12px">';
   filters.forEach(function (f) {
     var on = (S.contactsFilter || 'all') === f[0];
@@ -5240,11 +5240,9 @@ function showBroadcast() {
   h += '<div style="max-width:680px">';
   h += '<label style="display:block;font-weight:600;font-size:13px;margin:14px 0 5px">Who gets this</label>';
   h += '<select id="bc-audience" onchange="broadcastPreview()" style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px">' +
-    '<option value="members">Members (Forum + Full)</option>' +
-    '<option value="nonmembers">Non-members (Free tier)</option>' +
-    '<option value="full">Full tier only</option>' +
-    '<option value="forum">Forum tier only</option>' +
-    '<option value="all">Everyone (whole list)</option>' +
+    '<option value="nonmembers">Free list &mdash; people on the free plan (your prospects)</option>' +
+    '<option value="members">Paying members &mdash; Forum + Full</option>' +
+    '<option value="all">Everyone on the list</option>' +
     '</select>';
   h += '<div id="bc-count" style="font-size:13px;color:var(--text-secondary);margin-top:6px">&nbsp;</div>';
 
@@ -5261,8 +5259,47 @@ function showBroadcast() {
   h += '</div>';
   h += '<div id="bc-status" style="font-size:13px;margin-top:12px"></div>';
   h += '</div>';
+  h += '<div id="bc-history" style="margin-top:30px"></div>';
   center.innerHTML = h; window.scrollTo(0, 0);
   broadcastPreview();
+  loadBroadcastHistory();
+}
+
+async function loadBroadcastHistory() {
+  var el = document.getElementById('bc-history'); if (!el) return;
+  try {
+    var res = await fetch('/.netlify/functions/broadcast-stats', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), limit: 40 })
+    });
+    var d = await res.json();
+    if (!res.ok || !d.ok) return;
+    var b = d.broadcasts || [];
+    var h = '<div class="an-section-h">Past broadcasts</div>';
+    if (!b.length) { el.innerHTML = h + '<p style="font-size:13px;color:var(--text-secondary)">No broadcasts sent yet. Opens and clicks will show here after your first send.</p>'; return; }
+    h += '<div style="overflow-x:auto;border:1px solid var(--border);border-radius:10px"><table style="width:100%;border-collapse:collapse;font-size:13px">';
+    h += '<thead><tr style="text-align:left;background:var(--surface-2,#f6f8fa)">' +
+      '<th style="padding:9px 12px">Subject</th><th style="padding:9px 12px">To</th>' +
+      '<th style="padding:9px 12px">Sent</th><th style="padding:9px 12px">Opened</th>' +
+      '<th style="padding:9px 12px">Clicked</th><th style="padding:9px 12px">Unsub</th>' +
+      '<th style="padding:9px 12px">Date</th></tr></thead><tbody>';
+    var aud = { members: 'Members', nonmembers: 'Free list', all: 'Everyone', full: 'Full', forum: 'Forum', free: 'Free' };
+    b.forEach(function (r) {
+      var dt = r.created_at ? new Date(r.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) : '';
+      h += '<tr style="border-top:1px solid var(--border)">';
+      h += '<td style="padding:8px 12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(r.subject || '') + '</td>';
+      h += '<td style="padding:8px 12px;color:var(--text-secondary)">' + esc(aud[r.audience] || r.audience || '') + '</td>';
+      h += '<td style="padding:8px 12px">' + (r.sent || 0) + '</td>';
+      h += '<td style="padding:8px 12px">' + (r.opened || 0) + ' <span style="color:var(--text-secondary)">(' + (r.open_rate || 0) + '%)</span></td>';
+      h += '<td style="padding:8px 12px">' + (r.clicked || 0) + ' <span style="color:var(--text-secondary)">(' + (r.click_rate || 0) + '%)</span></td>';
+      h += '<td style="padding:8px 12px">' + (r.unsub || 0) + '</td>';
+      h += '<td style="padding:8px 12px;color:var(--text-secondary)">' + esc(dt) + '</td>';
+      h += '</tr>';
+    });
+    h += '</tbody></table></div>';
+    h += '<p style="font-size:12px;color:var(--text-secondary);margin-top:8px">Opens are tracked via a pixel (some email apps block it, so real opens can be higher). Clicks are exact.</p>';
+    el.innerHTML = h;
+  } catch (e) { /* stats are non-critical */ }
 }
 
 async function broadcastPreview() {
@@ -5794,23 +5831,40 @@ var welcomeIdx = 0;
 // A small labeled diagram of the three-column layout, highlighting one column
 // (or the search bar) so each slide can point at where things actually are.
 function welcomeArt(kind) {
+  // A small but real-looking mock of the three-column layout: each column has a
+  // header label and a few content rows, so it reads as an interface preview
+  // (not empty boxes). The highlighted column is tinted with the brand accent.
+  function rows(x, w, on) {
+    var line = on ? 'var(--teal)' : 'var(--border)';
+    var op = on ? '0.55' : '0.9';
+    var out = '';
+    var yy = 40, n = 0;
+    while (yy < 100 && n < 6) {
+      var lw = w - 20 - (n % 3) * 8;
+      out += '<rect x="' + (x + 10) + '" y="' + yy + '" width="' + Math.max(16, lw) + '" height="4" rx="2" fill="' + line + '" opacity="' + op + '"/>';
+      yy += 11; n++;
+    }
+    return out;
+  }
   function col(x, w, label, on) {
-    var fill = on ? 'var(--teal-glow)' : 'var(--bg-page)';
+    var fill = on ? 'var(--teal-glow)' : 'var(--surface, #ffffff)';
     var stroke = on ? 'var(--teal)' : 'var(--border)';
     var tcol = on ? 'var(--teal)' : 'var(--text-secondary)';
-    return '<rect x="' + x + '" y="16" width="' + w + '" height="92" rx="6" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + (on ? 2 : 1) + '"/>' +
-      '<text x="' + (x + w / 2) + '" y="66" text-anchor="middle" font-size="11" font-weight="700" fill="' + tcol + '">' + label + '</text>';
+    return '<rect x="' + x + '" y="16" width="' + w + '" height="98" rx="7" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + (on ? 2 : 1) + '"/>' +
+      '<text x="' + (x + 10) + '" y="31" font-size="9.5" font-weight="800" fill="' + tcol + '" letter-spacing="0.3">' + label + '</text>' +
+      rows(x, w, on);
   }
   var bar = '';
   if (kind === 'atap') {
-    bar = '<rect x="80" y="24" width="100" height="16" rx="8" fill="var(--teal-glow)" stroke="var(--teal)" stroke-width="1.5"/>' +
-      '<circle cx="171" cy="32" r="4" fill="none" stroke="var(--teal)" stroke-width="1.5"/><line x1="174" y1="35" x2="178" y2="39" stroke="var(--teal)" stroke-width="1.5"/>';
+    // Draw the search bar over the Feed column header to point at Ask the Archive.
+    bar = '<rect x="82" y="24" width="96" height="15" rx="7.5" fill="var(--teal-glow)" stroke="var(--teal)" stroke-width="1.5"/>' +
+      '<circle cx="169" cy="31.5" r="3.5" fill="none" stroke="var(--teal)" stroke-width="1.5"/><line x1="172" y1="34.5" x2="176" y2="38.5" stroke="var(--teal)" stroke-width="1.5"/>';
   }
   var centerOn = (kind === 'center' || kind === 'atap');
-  return '<svg viewBox="0 0 260 124" width="248" height="118" style="max-width:100%" aria-hidden="true">' +
-    col(6, 62, 'Menu', kind === 'left') +
-    col(74, 112, 'Feed', centerOn) +
-    col(192, 62, 'Topics', kind === 'right') +
+  return '<svg viewBox="0 0 260 128" width="252" height="124" style="max-width:100%" aria-hidden="true">' +
+    col(6, 62, 'MENU', kind === 'left') +
+    col(74, 112, 'FEED', centerOn) +
+    col(192, 62, 'TOPICS', kind === 'right') +
     bar +
     '</svg>';
 }
