@@ -159,6 +159,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
       <div style="margin-top:16px">
         <button class="btn" id="generate">Draft my HPI &rarr;</button>
         <button class="btn-ghost" id="open-wizard" type="button" style="margin-left:8px">Set up / edit my templates</button>
+        <a href="#" onclick="openOnboarding();return false;" class="hint" style="margin-left:10px;color:var(--teal)">Setup guide</a>
       </div>
       <div id="err-box"></div>
     </div>
@@ -241,6 +242,14 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
     <div id="wiz-err"></div>
     <div id="wiz-result"></div>
+  </div>
+</div>
+
+<!-- First-run onboarding: a short guided setup (working style + setup + template). -->
+<div class="modal-overlay" id="onboarding">
+  <div class="modal" style="max-width:640px">
+    <button class="modal-x" type="button" onclick="closeOnboarding()" aria-label="Close">&times;</button>
+    <div id="onb-body"></div>
   </div>
 </div>
 
@@ -1199,7 +1208,7 @@ function loadVaultTemplates(){
   } catch(e){}
   renderTemplateStatus();
   syncTherapyToggle();
-  if(!userEmail){ return; }
+  if(!userEmail){ maybeOnboard(); return; }
   fetch('/.netlify/functions/user-tool-data', {
     method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
     body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'load' })
@@ -1211,13 +1220,16 @@ function loadVaultTemplates(){
       vaultTemplates.follow_up = d.data.hpiTemplateFollowup || vaultTemplates.follow_up;
       if(d.data.hpiWorkflow) workflow = d.data.hpiWorkflow;
       if(typeof d.data.hpiTherapyGuide === 'boolean'){ therapyGuide = d.data.hpiTherapyGuide; syncTherapyToggle(); }
+      if(d.data.hpiOnboarded){ try{ localStorage.setItem('tbp_hpi_onboarded','1'); }catch(e){} }
+      if(typeof d.data.hpiCaptureMode === 'string'){ try{ localStorage.setItem('tbp_hpi_capture', d.data.hpiCaptureMode); }catch(e){} if(typeof window.tbpSetCapture==='function') window.tbpSetCapture(d.data.hpiCaptureMode); }
       renderTemplateStatus();
       // If the workspace is already open, re-render now that the saved style has loaded.
       var wa = document.getElementById('work-area');
       if(wa && wa.style.display !== 'none'){ renderStyleBar(); renderMode(); }
     }
+    maybeOnboard();
   })
-  .catch(function(){});
+  .catch(function(){ maybeOnboard(); });
 }
 
 // ══════════════════════════════════════════════════════════════════════════
@@ -1440,6 +1452,8 @@ function loadVaultTemplates(){
     for(var i=0;i<opts.length;i++){ opts[i].classList.toggle('sel', opts[i].getAttribute('data-capture')===captureMode); }
     renderCaptureHint();
   }
+  // Let onboarding seed the default capture mode into this closure.
+  window.tbpSetCapture = function(m){ if(m!=='inperson'&&m!=='telehealth') return; captureMode=m; try{localStorage.setItem('tbp_hpi_capture',m);}catch(e){} applyCaptureSel(); };
 
   // Wire UI
   var consent=document.getElementById('record-consent'), btn=document.getElementById('record-btn');
@@ -1461,6 +1475,102 @@ function loadVaultTemplates(){
       .catch(function(err){ recording=false; teardownAudio(); setStatus(err.message||'Could not start.', true); btn.disabled=false; });
   });
 })();
+
+// ══════════════════════════════════════════════════════════════════════════
+// First-run onboarding: a short guided setup. Nothing here is hardcoded per user —
+// it just walks a new clinician through choosing their own working style, setup,
+// and template, saving each to their Vault.
+// ══════════════════════════════════════════════════════════════════════════
+var onbState = { step:1, style:null, capture:'inperson', therapy:true };
+var onboardChecked = false;
+
+function openOnboarding(){
+  onbState.step = 1;
+  onbState.style = workflow;
+  onbState.therapy = therapyGuide;
+  try { onbState.capture = localStorage.getItem('tbp_hpi_capture') || 'inperson'; } catch(e){}
+  document.getElementById('onboarding').classList.add('open');
+  onbRender();
+}
+function closeOnboarding(){ document.getElementById('onboarding').classList.remove('open'); }
+
+function onbCard(key, title, desc){
+  return '<div class="opt'+(onbState.style===key?' sel':'')+'" data-style="'+key+'" style="display:block;text-align:left;padding:14px 16px;margin-bottom:8px">'
+    + '<div style="font-weight:700;color:var(--cream);text-transform:none;letter-spacing:0">'+title+'</div>'
+    + '<div class="hint" style="margin-top:4px">'+desc+'</div></div>';
+}
+function onbRender(){
+  var b = document.getElementById('onb-body'); if(!b) return;
+  var s = onbState.step, html='';
+  if(s===1){
+    html = '<h2>Welcome &mdash; let\'s set up your workspace</h2>'
+      + '<p class="msub">This isn\'t an ambient black box. It\'s a guide that runs the visit <em>with</em> you: it reminds you what to re-check each visit, lets you capture answers however you work, and writes the note in your template and voice. About two minutes to set it up your way &mdash; you can change any of it later.</p>'
+      + '<div style="margin-top:18px"><button class="btn" id="onb-start">Set it up &rarr;</button> <button class="btn-ghost" id="onb-skip" style="margin-left:8px">Skip for now</button></div>';
+  } else if(s===2){
+    html = '<h2>How do you usually work?</h2><p class="msub">Pick your default &mdash; the tool opens this way every visit, and you can switch anytime.</p>'
+      + onbCard('prep','Prep from last note','Paste last visit\'s note; I build today\'s checklist and a starting note; you answer each line live and I sort it into your template.')
+      + onbCard('ambient','Record ambient','I listen and transcribe the visit (in person or telehealth); you review and draft. The checklist still guides what to ask.')
+      + onbCard('direct','Paste my own notes','Jot or paste your rough notes and I draft the HPI.')
+      + '<div style="margin-top:18px"><button class="btn" id="onb-next"'+(onbState.style?'':' disabled')+'>Next &rarr;</button> <button class="btn-ghost" id="onb-back" style="margin-left:8px">Back</button></div>';
+  } else if(s===3){
+    html = '<h2>A couple of setup details</h2>'
+      + '<label style="margin-top:4px">When you record, how do you usually see patients?</label>'
+      + '<div class="opts" id="onb-cap"><div class="opt'+(onbState.capture==='inperson'?' sel':'')+'" data-cap="inperson">In person</div><div class="opt'+(onbState.capture==='telehealth'?' sel':'')+'" data-cap="telehealth">Telehealth</div></div>'
+      + '<div class="hint" style="margin-top:6px">You can switch per visit with one tap. For telehealth you\'ll share your call tab\'s audio when you hit record; headphones give the cleanest split.</div>'
+      + '<label style="margin-top:16px">Do you do psychotherapy in these visits?</label>'
+      + '<div class="opts" id="onb-thx"><div class="opt'+(onbState.therapy?' sel':'')+'" data-thx="yes">Yes &mdash; include the guide</div><div class="opt'+(!onbState.therapy?' sel':'')+'" data-thx="no">Med management only</div></div>'
+      + '<div class="hint" style="margin-top:6px">The psychotherapy guide suggests a technique, how-to, and sample prompts each visit. Off = never shown.</div>'
+      + '<div style="margin-top:18px"><button class="btn" id="onb-next">Next &rarr;</button> <button class="btn-ghost" id="onb-back" style="margin-left:8px">Back</button></div>';
+  } else if(s===4){
+    var sum = (WF_LABELS[onbState.style]||'—') + (onbState.style==='ambient' ? ', '+(onbState.capture==='telehealth'?'telehealth':'in person') : '') + ', psychotherapy guide '+(onbState.therapy?'on':'off');
+    html = '<h2>Last thing: your note template</h2>'
+      + '<p class="msub">Paste one HPI you already like and answer a couple of questions &mdash; I turn it into a reusable template in your structure and voice, so you never start from a blank box. No patient details from your sample are kept, only your style.</p>'
+      + '<div class="hint" style="margin-top:8px">You\'re set up: <strong style="color:var(--cream)">'+sum+'</strong>. Change any of it anytime.</div>'
+      + '<div style="margin-top:18px"><button class="btn" id="onb-tmpl">Set up my template &rarr;</button> <button class="btn-ghost" id="onb-later" style="margin-left:8px">I\'ll do it later</button></div>';
+  }
+  b.innerHTML = html;
+  onbWire();
+}
+function onbMarkDone(){ try{ localStorage.setItem('tbp_hpi_onboarded','1'); }catch(e){} persistVaultField('hpiOnboarded', true); }
+function onbFinish(openTemplate){
+  onbMarkDone();
+  closeOnboarding();
+  var wa = document.getElementById('work-area');
+  if(wa && wa.style.display !== 'none'){ renderStyleBar(); renderMode(); }
+  if(openTemplate) openWizard();
+}
+function onbWire(){
+  var s = onbState.step;
+  function on(id, fn){ var el=document.getElementById(id); if(el) el.addEventListener('click', fn); }
+  if(s===1){ on('onb-start', function(){ onbState.step=2; onbRender(); }); on('onb-skip', function(){ onbMarkDone(); closeOnboarding(); }); }
+  if(s===2){
+    var cards=document.querySelectorAll('#onb-body .opt[data-style]');
+    for(var i=0;i<cards.length;i++){ cards[i].addEventListener('click', function(){ onbState.style=this.getAttribute('data-style'); workflow=onbState.style; persistWorkflow(workflow); onbRender(); }); }
+    on('onb-next', function(){ if(onbState.style){ onbState.step=3; onbRender(); } });
+    on('onb-back', function(){ onbState.step=1; onbRender(); });
+  }
+  if(s===3){
+    var caps=document.querySelectorAll('#onb-cap .opt'); for(var j=0;j<caps.length;j++){ caps[j].addEventListener('click', function(){ onbState.capture=this.getAttribute('data-cap'); onbRender(); }); }
+    var thx=document.querySelectorAll('#onb-thx .opt'); for(var k=0;k<thx.length;k++){ thx[k].addEventListener('click', function(){ onbState.therapy=(this.getAttribute('data-thx')==='yes'); onbRender(); }); }
+    on('onb-next', function(){
+      if(typeof window.tbpSetCapture==='function') window.tbpSetCapture(onbState.capture);
+      persistVaultField('hpiCaptureMode', onbState.capture);
+      therapyGuide=onbState.therapy; syncTherapyToggle(); persistVaultField('hpiTherapyGuide', therapyGuide);
+      onbState.step=4; onbRender();
+    });
+    on('onb-back', function(){ onbState.step=2; onbRender(); });
+  }
+  if(s===4){ on('onb-tmpl', function(){ onbFinish(true); }); on('onb-later', function(){ onbFinish(false); }); }
+}
+// Open the guided setup once for a clinician who has never set anything up.
+function maybeOnboard(){
+  if(onboardChecked) return; onboardChecked = true;
+  var done=false; try{ done = localStorage.getItem('tbp_hpi_onboarded')==='1'; }catch(e){}
+  var hasSetup = !!workflow
+    || (vaultTemplates.new_eval && vaultTemplates.new_eval.trim())
+    || (vaultTemplates.follow_up && vaultTemplates.follow_up.trim());
+  if(!done && !hasSetup) openOnboarding();
+}
 
 // ── Auth ──
 TBPAuth.protect({
