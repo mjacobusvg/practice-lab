@@ -456,6 +456,11 @@ function draftSystem(){
   s += "Draft the History of Present Illness (HPI) for a " + label + " from the clinician's RAW, as-they-went visit notes. The notes are fragments, shorthand, and patient quotes captured in the order the clinician asked their questions. Your job is to reorganize that raw stream into a clean, chart-ready HPI. This is the reorganization the clinician would otherwise do in their head; it is the entire value of the tool.\n\n";
   s += "=== ABSOLUTE ANTI-FABRICATION RULE ===\n";
   s += "Use ONLY the information present in the raw notes (and the optional prior-context block, for continuity of the narrative only). Never add a symptom, denial, finding, diagnosis, medication, dose, history item, timeframe, or risk statement that is not in the source. If something usual is absent, leave it out; do NOT fill in normal or negative defaults (e.g. do not write 'denies SI' unless the notes say so). If the notes are thin, the HPI is short. You interpret and organize documented data; you never invent it.\n\n";
+  s += "=== WORKING SCAFFOLD MARKERS (consume, never echo) ===\n";
+  s += "The notes may contain SCAFFOLDING the tool placed for the clinician to work against: a block headed '=== TO CHECK / ASK TODAY ===' listing questions to ask, and inline bracketed placeholders like '[Update today...]' or '[Confirm today.]'. These are NOT chart content.\n";
+  s += "- Use the clinician's answers written under or beside each checklist item / placeholder to build today's note, integrating that information into the appropriate section as flowing clinical narrative.\n";
+  s += "- NEVER reproduce a checklist question, a bullet from that block, a '===' header line, or a bracketed '[...]' instruction in the output. The final HPI contains ZERO scaffolding text.\n";
+  s += "- Unanswered items: do not invent an answer. For a placeholder in a carried-forward section, keep that section's prior content worded as continued/stable and just remove the bracket; simply drop an unanswered checklist question.\n\n";
   s += "=== COMPLETENESS AND NON-DUPLICATION ===\n";
   s += "Include EVERY topic the notes document: every symptom, interval update, medication note, behavior (e.g. skin-picking), and section. Never omit or drop documented content to shorten the note. State each fact ONCE, in the single most appropriate section; do not repeat the same content in two sections. Do NOT add comparative or interval statements ('improved since last visit', 'significant improvement', 'better than before') unless the notes explicitly state the comparison.\n\n";
   s += "=== QUOTE FIDELITY (verbatim, spelling guardrail) ===\n";
@@ -668,20 +673,24 @@ function renderPrep(j){
   if(fu && visitType !== 'follow_up') fu.click();
   prepChecklist = Array.isArray(j.checklist) ? j.checklist : [];
   prepFoci = Array.isArray(j.foci) ? j.foci : [];
-  // ONE working surface: load the starting note into the main notes box (also the full-screen source).
-  document.getElementById('raw').value = note;
-  var html = '<div class="out" style="margin-top:16px"><h3>You are set up for this visit</h3>'
-    + '<div class="hint" style="margin-bottom:12px">Review today\'s checklist, then open your working note to fill it in during the visit and draft when done.</div>';
+  // The checklist goes RIGHT INTO the editable note, at the top, so the clinician answers
+  // each line live during the visit. Draft strips this block (see WORKING SCAFFOLD rule).
+  var working = '';
   if(prepChecklist.length){
-    html += '<div class="flags"><div class="flags-h">To check or ask today</div><ul>'
-      + prepChecklist.map(function(c){ return '<li>'+esc(c)+'</li>'; }).join('') + '</ul></div>';
+    working += "=== TO CHECK / ASK TODAY (jot answers under each; this block is removed when you draft) ===\n\n";
+    working += prepChecklist.map(function(c){ return "• " + c + "\n"; }).join("\n");
+    working += "\n=== TODAY'S NOTE (update the sections below) ===\n\n";
   }
+  working += note;
+  document.getElementById('raw').value = working;
+
+  var html = '<div class="out" style="margin-top:16px"><h3>You are set up for this visit</h3>'
+    + '<div class="hint" style="margin-bottom:12px">Your checklist is now <strong>at the top of your working note</strong> &mdash; answer each line as you go, then Draft. The questions are stripped out automatically.</div>';
   if(prepFoci.length){
     html += '<div class="flags" style="background:rgba(42,171,184,0.07);border-color:var(--teal);border-left-color:var(--teal)"><div class="flags-h" style="color:var(--teal)">Possible focus this visit</div><ul>'
       + prepFoci.map(function(f){ return '<li>'+esc(f)+'</li>'; }).join('') + '</ul></div>';
   }
-  html += '<button class="btn" style="margin-top:14px" onclick="openFocus(\'raw\')">Open my working note (full screen) &#8599;</button>';
-  html += '<div class="hint" style="margin-top:6px">Your starting note is also loaded in <strong>Your visit notes</strong> above if you prefer to work there. Your checklist rides along inside full screen.</div></div>';
+  html += '<button class="btn" style="margin-top:14px" onclick="openFocus(\'raw\')">Open my working note (full screen) &#8599;</button></div>';
   document.getElementById('prep-results').innerHTML = html;
   document.getElementById('prep-results').scrollIntoView({behavior:'smooth', block:'start'});
 }
@@ -691,10 +700,10 @@ var focusSourceId = null;
 var prepChecklist = [];
 var prepFoci = [];
 function focusRefHtml(){
-  if(!(prepChecklist.length || prepFoci.length)) return '';
-  var h = '<details style="margin-bottom:8px"><summary style="cursor:pointer;color:var(--cream-dim);font-size:.72rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase">To check today'+(prepChecklist.length?' ('+prepChecklist.length+')':'')+'</summary><div style="max-height:22vh;overflow:auto;margin-top:8px">';
-  if(prepChecklist.length){ h += '<ul style="margin:0 0 8px 18px;padding:0">'+prepChecklist.map(function(c){ return '<li style="font-size:.84rem;color:var(--cream);line-height:1.5;margin-bottom:4px">'+esc(c)+'</li>'; }).join('')+'</ul>'; }
-  if(prepFoci.length){ h += '<div style="font-size:.7rem;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.05em;margin:4px 0">Possible focus</div><ul style="margin:0 0 0 18px;padding:0">'+prepFoci.map(function(f){ return '<li style="font-size:.84rem;color:var(--cream);line-height:1.5;margin-bottom:4px">'+esc(f)+'</li>'; }).join('')+'</ul>'; }
+  // The checklist now lives inside the note itself; only the psychotherapy focus stays a reference.
+  if(!prepFoci.length) return '';
+  var h = '<details style="margin-bottom:8px"><summary style="cursor:pointer;color:var(--teal);font-size:.72rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase">Possible focus this visit ('+prepFoci.length+')</summary><div style="max-height:22vh;overflow:auto;margin-top:8px">';
+  h += '<ul style="margin:0 0 0 18px;padding:0">'+prepFoci.map(function(f){ return '<li style="font-size:.84rem;color:var(--cream);line-height:1.5;margin-bottom:4px">'+esc(f)+'</li>'; }).join('')+'</ul>';
   h += '</div></details>';
   return h;
 }
