@@ -98,6 +98,30 @@ at the part "brief" quietly deleted.
   doesn't anymore."* / *"Brief notes were a workaround for a slow pen, not good medicine."* /
   *"You always did the reasoning. Now it makes it onto the page."*
 
+**The "guide, not just a scribe" thesis (validated on real patients, 2026-07).** The single
+most differentiating behavior isn't the note — it's that the tool **runs the visit with the
+clinician**. "Set me up" reads last visit's note and produces a **checklist of exactly what to
+re-check and ask today** (interval change, med response, side effects, sleep, safety, unresolved
+threads), drops it **into the editable note**, and the clinician answers each line live while the
+tool sorts every answer into the right template section in their voice. The clinician's own words
+after two real visits: *"It reminds me and guides me to ask about things for continuity session
+after session. THIS is gold… I just type what they say right there and the tool knows how to sort
+it into the proper headings. It is a guide, not just a scribe."* Ambient uses the identical guide —
+the checklist is on screen, the clinician asks those questions, ambient captures, the note
+generates. **The guide is the moat**: every ambient scribe transcribes; none of them walk the
+clinician through visit-to-visit continuity and then file the answers into their template. (An EHR
+could someday build this in, which is the long-run competitive risk — so the guide + the
+per-clinician personalization is where to keep extending the lead.)
+
+- **The psychotherapy guide extends the same idea from asking to *doing*.** Beyond "possible focus,"
+  it offers an **actionable** move: named technique + why it fits this patient + an "In session:"
+  how-to with sample prompts (supportive / insight-oriented / MI / CBT / ERP / behavioral
+  activation, etc.). It doubles as documentation support — a named technique tied to a target is
+  what makes the psychotherapy add-on defensible, feeding the Note Builder blurb. It is a
+  per-clinician **on/off Vault preference** (pure med-management prescribers turn it off) and the
+  *which modalities* is a preference, never hardcoded (§0.3.1).
+- **Candidate line:** *"Not an ambient black box. A guide that runs the visit with you, then writes it in your voice."*
+
 ---
 
 ## 0.2 Hard constraint: it must FEEL like less work
