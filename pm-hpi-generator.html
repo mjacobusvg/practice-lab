@@ -117,8 +117,11 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
       <!-- Prep mode, follow-up: Set me up -->
       <div id="prep-controls" style="display:none">
         <div class="hint" style="margin-top:12px;line-height:1.5"><strong style="color:var(--cream)">Pre-visit prep.</strong> <em>Set me up</em> builds today's starting note from last visit &mdash; standing items carried forward as stable, dynamic sections left blank for you to fill live &mdash; plus a checklist of what to follow up on. You work in that note during the visit and draft from it.</div>
-        <button class="btn-ghost" id="prep-btn" style="margin-top:8px">Set me up for this visit &rarr;</button>
-        <span class="hint" id="prep-hint" style="margin-left:8px"></span>
+        <label style="display:inline-flex;align-items:center;gap:7px;margin-top:8px;cursor:pointer;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream-dim);font-size:.85rem">
+          <input type="checkbox" id="therapy-guide-toggle" checked style="width:auto"> Include psychotherapy guide (technique + how-to prompts)
+        </label>
+        <div style="margin-top:8px"><button class="btn-ghost" id="prep-btn">Set me up for this visit &rarr;</button>
+        <span class="hint" id="prep-hint" style="margin-left:8px"></span></div>
         <div id="prep-results"></div>
       </div>
 
@@ -250,6 +253,7 @@ var visitType = null; // no default: force an explicit choice so the wrong templ
 var sourceMode = 'typed';
 var workflow = null;      // 'prep' | 'ambient' | 'direct' — the clinician's saved working style (Vault, never hardcoded)
 var styleBarOpen = false; // whether the style picker is expanded
+var therapyGuide = true;  // psychotherapy guide on/off — per-clinician (Vault); default on
 var vaultTemplates = { new_eval: '', follow_up: '' };
 var lastHpi = '';
 var authToken = '';
@@ -607,11 +611,23 @@ function prepSystem(){
   s += "- Follow the clinician's template structure, order, and labels" + (tmpl ? "" : " (use a conventional follow-up structure if no template)") + ". Plain text, no Markdown.\n";
   s += "- CARRY EVERY SECTION FORWARD from last visit's note so the clinician starts with a complete note and only edits the deltas. Keep every section present.\n";
   s += "- Standing/historical items (substance use, exercise, hallucinations, history, etc.): carry forward worded as CONTINUED or STABLE ('continues to deny auditory or visual hallucinations').\n";
-  s += "- Dynamic items (mood/anxiety, symptoms, med response, side effects): carry last visit's content forward too, worded as continued/prior-state, as a starting point for the clinician to overwrite with today's findings. Do NOT leave them blank.\n";
-  s += "- SAFETY (SI/HI): carry last visit's status forward worded as continued (e.g. 'Continues to deny ...'); the checklist should remind the clinician to confirm it today.\n";
+  s += "- Dynamic items (mood/anxiety, symptoms, med response, side effects): carry last visit's content forward too, worded as continued/prior-state, as a starting point the clinician overwrites with today's findings. Do NOT leave them blank.\n";
+  s += "- SAFETY (SI/HI): carry last visit's status forward worded as continued (e.g. 'Continues to deny ...'); the checklist reminds the clinician to confirm it today.\n";
+  s += "- The starting note body is CLEAN carried-forward prose. Do NOT put questions, prompts, or bracketed placeholders (e.g. '[update today]') inline in it. Every 'what to update or confirm today' prompt goes in the checklist ONLY, never in the body.\n";
   s += "- Invent nothing; only carry what last visit's note documents.\n\n";
-  s += "CHECKLIST rules: short, concrete things to check or ask today that follow from last visit (unresolved threads, planned follow-ups such as 'recheck sleep response to the med change', pending items, anything flagged for next time). Derive from last visit's note; do not invent.\n\n";
-  s += "FOCI rules: 0 to 3 brief psychotherapy focus options that genuinely follow from last visit's picture, each a practical suggestion. Omit if none fit.";
+  s += "CHECKLIST rules — this is the clinician's SINGLE guide for the visit, so make it complete:\n";
+  s += "- Include one concrete question for EVERY section or standing thread that should be updated or confirmed today: the interval change, medication response and adherence, side effects, sleep, appetite, energy, substance use where relevant, and an explicit safety (SI/HI) confirmation.\n";
+  s += "- Also include any unresolved threads or planned follow-ups from last visit (e.g. 'recheck sleep response to the dose change', a pending referral, anything flagged for next time).\n";
+  s += "- One clear, specific question per thread; phrase it as something to ask. Skip only truly static background that never changes. Derive from last visit's note; do not invent.\n\n";
+  if(therapyGuide){
+    s += "FOCI rules (the PSYCHOTHERAPY GUIDE) — offer 0 to 3 options that genuinely fit THIS patient's picture. Make each ACTIONABLE, not just a label:\n";
+    s += "- name the technique/approach (e.g. cognitive defusion, motivational interviewing, behavioral activation, supportive or insight-oriented exploration, ERP, stimulus-control/wind-down);\n";
+    s += "- one short line on WHY it fits this patient right now;\n";
+    s += "- an 'In session:' line with a concrete way to do it plus one or two sample prompts the clinician could actually say.\n";
+    s += "This also supports documentation: a named technique tied to a target is what makes the psychotherapy add-on defensible. Do NOT push a modality the patient's picture doesn't support; return an empty array if none genuinely fit.";
+  } else {
+    s += "FOCI rules: the psychotherapy guide is OFF for this clinician. Return an empty foci array.";
+  }
   return s;
 }
 
@@ -688,7 +704,7 @@ function renderPrep(j){
     + '<div class="hint" style="margin-bottom:12px">Your checklist is now <strong>at the top of your working note</strong> &mdash; answer each line as you go, then Draft. The questions are stripped out automatically.</div>';
   if(prepFoci.length){
     html += '<div class="flags" style="background:rgba(42,171,184,0.07);border-color:var(--teal);border-left-color:var(--teal)"><div class="flags-h" style="color:var(--teal)">Possible focus this visit</div><ul>'
-      + prepFoci.map(function(f){ return '<li>'+esc(f)+'</li>'; }).join('') + '</ul></div>';
+      + prepFoci.map(function(f){ return '<li style="white-space:pre-line;margin-bottom:8px">'+esc(f)+'</li>'; }).join('') + '</ul></div>';
   }
   html += '<button class="btn" style="margin-top:14px" onclick="openFocus(\'raw\')">Open my working note (full screen) &#8599;</button></div>';
   document.getElementById('prep-results').innerHTML = html;
@@ -703,7 +719,7 @@ function focusRefHtml(){
   // The checklist now lives inside the note itself; only the psychotherapy focus stays a reference.
   if(!prepFoci.length) return '';
   var h = '<details style="margin-bottom:8px"><summary style="cursor:pointer;color:var(--teal);font-size:.72rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase">Possible focus this visit ('+prepFoci.length+')</summary><div style="max-height:22vh;overflow:auto;margin-top:8px">';
-  h += '<ul style="margin:0 0 0 18px;padding:0">'+prepFoci.map(function(f){ return '<li style="font-size:.84rem;color:var(--cream);line-height:1.5;margin-bottom:4px">'+esc(f)+'</li>'; }).join('')+'</ul>';
+  h += '<ul style="margin:0 0 0 18px;padding:0">'+prepFoci.map(function(f){ return '<li style="font-size:.84rem;color:var(--cream);line-height:1.5;margin-bottom:8px;white-space:pre-line">'+esc(f)+'</li>'; }).join('')+'</ul>';
   h += '</div></details>';
   return h;
 }
@@ -989,6 +1005,39 @@ async function persistTemplate(text, visitKey){
 }
 
 // Save the clinician's working style to their Vault (per-clinician; never hardcoded).
+// Psychotherapy-guide toggle (per-clinician Vault preference; default on).
+function syncTherapyToggle(){ var c=document.getElementById('therapy-guide-toggle'); if(c) c.checked = therapyGuide; }
+(function(){
+  var c=document.getElementById('therapy-guide-toggle');
+  if(c) c.addEventListener('change', function(){ therapyGuide = this.checked; persistVaultField('hpiTherapyGuide', therapyGuide); });
+})();
+
+// Generic single-field Vault write (localStorage mirror + Supabase), used by small preferences.
+async function persistVaultField(key, value){
+  try {
+    var lv = JSON.parse(localStorage.getItem('tbp_vault')||'{}'); lv[key]=value;
+    localStorage.setItem('tbp_vault', JSON.stringify(lv));
+    localStorage.setItem('credentialing-hub-profile', JSON.stringify(lv));
+  } catch(e){}
+  if(!userEmail) return false;
+  var current = {};
+  try {
+    var r = await fetch('/.netlify/functions/user-tool-data', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
+      body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'load' })
+    });
+    var d = await r.json(); if(d && d.found && d.data) current = d.data;
+  } catch(e){}
+  current[key] = value;
+  try {
+    var sr = await fetch('/.netlify/functions/user-tool-data', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
+      body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'save', data: current })
+    });
+    var sd = await sr.json(); return sd && sd.saved;
+  } catch(e){ return false; }
+}
+
 async function persistWorkflow(style){
   // instant local mirror so the choice sticks even before the network round-trip
   try {
@@ -1146,8 +1195,10 @@ function loadVaultTemplates(){
     vaultTemplates.new_eval = lv.hpiTemplateEval || '';
     vaultTemplates.follow_up = lv.hpiTemplateFollowup || '';
     if(lv.hpiWorkflow) workflow = lv.hpiWorkflow;
+    if(typeof lv.hpiTherapyGuide === 'boolean') therapyGuide = lv.hpiTherapyGuide;
   } catch(e){}
   renderTemplateStatus();
+  syncTherapyToggle();
   if(!userEmail){ return; }
   fetch('/.netlify/functions/user-tool-data', {
     method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
@@ -1159,6 +1210,7 @@ function loadVaultTemplates(){
       vaultTemplates.new_eval = d.data.hpiTemplateEval || vaultTemplates.new_eval;
       vaultTemplates.follow_up = d.data.hpiTemplateFollowup || vaultTemplates.follow_up;
       if(d.data.hpiWorkflow) workflow = d.data.hpiWorkflow;
+      if(typeof d.data.hpiTherapyGuide === 'boolean'){ therapyGuide = d.data.hpiTherapyGuide; syncTherapyToggle(); }
       renderTemplateStatus();
       // If the workspace is already open, re-render now that the saved style has loaded.
       var wa = document.getElementById('work-area');
