@@ -1,160 +1,172 @@
 //.netlify/functions/azure-transcribe.mjs
-// Batch transcription via Azure AI Speech "Fast Transcription" (synchronous).
-// The browser records the whole visit to one audio file, uploads it here (base64),
-// and this function forwards it to Azure, returning a speaker-labeled transcript.
+// Ambient transcription via Azure AI Speech BATCH transcription — no length limit.
 //
-// Why batch, not streaming: psychiatry doesn't need live captions, and batch is
-// cheaper, simpler, and more accurate (the model sees the whole recording). The
-// note is generated after the visit anyway.
+// Flow (three actions, all short calls; the big audio never passes through here):
+//   1) upload-url : mint a short-lived write SAS; the browser PUTs the recording
+//                   DIRECTLY to Azure Blob storage (so any visit length works).
+//   2) start      : submit an Azure batch transcription job over a read SAS to that
+//                   blob, with diarization (speaker separation).
+//   3) poll       : check the job; when done, return the speaker-labeled transcript
+//                   and delete the blob + job. The client polls every few seconds.
 //
-// HIPAA: Azure AI Speech is HIPAA-eligible under the account's Microsoft BAA. The
-// AZURE_SPEECH_KEY never reaches the browser. Audio is processed transiently and
-// not stored server-side.
-//
-// Auth mirrors the other clinical functions: a valid signed member session is
-// required so this can't be used to burn Azure spend anonymously.
+// HIPAA: audio lives only in the account's Azure Blob storage (covered by the
+// Microsoft BAA) and is deleted after transcription. AZURE_SPEECH_KEY and the
+// storage key never reach the browser. Auth requires a valid signed member session.
 
 import crypto from 'crypto';
+import { StorageSharedKeyCredential, generateBlobSASQueryParameters, BlobSASPermissions, BlobServiceClient } from '@azure/storage-blob';
 
-// ── Inlined token verification (identical algorithm to _lib/session.js) ──
+// ── Token verification (same algorithm as the other clinical functions) ──
 const SECRET = process.env.SESSION_SIGNING_SECRET || '';
-function b64urlDecode(str) {
-  str = str.replace(/-/g, '+').replace(/_/g, '/');
-  while (str.length % 4) str += '=';
-  return Buffer.from(str, 'base64').toString('utf8');
-}
-function b64url(buf) {
-  return Buffer.from(buf).toString('base64')
-    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-function verifyToken(token) {
-  if (!SECRET) return { valid: false, reason: 'server_misconfigured' };
-  if (!token || typeof token !== 'string' || token.indexOf('.') === -1) return { valid: false, reason: 'malformed' };
-  const parts = token.split('.');
-  if (parts.length !== 2) return { valid: false, reason: 'malformed' };
-  const [payloadB64, sigB64] = parts;
-  let payloadJson;
-  try { payloadJson = b64urlDecode(payloadB64); } catch (e) { return { valid: false, reason: 'malformed' }; }
-  const expectedSig = b64url(crypto.createHmac('sha256', SECRET).update(payloadJson).digest());
-  const a = Buffer.from(sigB64), b = Buffer.from(expectedSig);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return { valid: false, reason: 'bad_signature' };
-  let claims;
-  try { claims = JSON.parse(payloadJson); } catch (e) { return { valid: false, reason: 'malformed' }; }
-  if (!claims.exp || Date.now() > claims.exp) return { valid: false, reason: 'expired' };
-  return { valid: true, claims };
+function b64urlDecode(str){ str=str.replace(/-/g,'+').replace(/_/g,'/'); while(str.length%4)str+='='; return Buffer.from(str,'base64').toString('utf8'); }
+function b64url(buf){ return Buffer.from(buf).toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+function verifyToken(token){
+  if(!SECRET) return { valid:false };
+  if(!token || typeof token!=='string' || token.indexOf('.')===-1) return { valid:false };
+  const parts=token.split('.'); if(parts.length!==2) return { valid:false };
+  let payloadJson; try{ payloadJson=b64urlDecode(parts[0]); }catch(e){ return { valid:false }; }
+  const expected=b64url(crypto.createHmac('sha256',SECRET).update(payloadJson).digest());
+  const a=Buffer.from(parts[1]), b=Buffer.from(expected);
+  if(a.length!==b.length || !crypto.timingSafeEqual(a,b)) return { valid:false };
+  let claims; try{ claims=JSON.parse(payloadJson); }catch(e){ return { valid:false }; }
+  if(!claims.exp || Date.now()>claims.exp) return { valid:false };
+  return { valid:true, claims };
 }
 
-// Turn Azure's phrase list into a speaker-labeled transcript. With diarization,
-// each phrase carries a numeric `speaker`; we group consecutive same-speaker
-// phrases into one line ("Speaker 1: ..."). Roles (patient vs clinician) are the
-// clinician's to confirm — Azure separates voices but doesn't know who's who.
-function formatTranscript(data) {
-  const phrases = Array.isArray(data.phrases) ? data.phrases : [];
-  const hasSpeakers = phrases.some(p => p.speaker !== undefined && p.speaker !== null);
-  if (phrases.length && hasSpeakers) {
-    let out = '', last = null;
-    for (const p of phrases) {
-      const text = (p.text || '').trim();
-      if (!text) continue;
-      const label = (p.speaker !== undefined && p.speaker !== null) ? ('Speaker ' + p.speaker) : null;
-      if (label && label !== last) { out += (out ? '\n' : '') + label + ': ' + text; last = label; }
+const ACCOUNT = process.env.AZURE_STORAGE_ACCOUNT || '';
+const STORAGE_KEY = process.env.AZURE_STORAGE_KEY || '';
+const SPEECH_KEY = process.env.AZURE_SPEECH_KEY || '';
+const REGION = process.env.AZURE_SPEECH_REGION || 'eastus';
+const CONTAINER = 'ambient-audio';
+const SPEECH_BASE = 'https://' + REGION + '.api.cognitive.microsoft.com/speechtotext/v3.2';
+
+function extFor(ct){
+  ct=(ct||'').toLowerCase();
+  if(ct.indexOf('ogg')!==-1) return 'ogg';
+  if(ct.indexOf('mp4')!==-1||ct.indexOf('m4a')!==-1) return 'mp4';
+  if(ct.indexOf('wav')!==-1) return 'wav';
+  if(ct.indexOf('mpeg')!==-1||ct.indexOf('mp3')!==-1) return 'mp3';
+  return 'webm';
+}
+function cred(){ return new StorageSharedKeyCredential(ACCOUNT, STORAGE_KEY); }
+function containerClient(){
+  return BlobServiceClient.fromConnectionString(
+    'DefaultEndpointsProtocol=https;AccountName='+ACCOUNT+';AccountKey='+STORAGE_KEY+';EndpointSuffix=core.windows.net'
+  ).getContainerClient(CONTAINER);
+}
+function blobUrl(name){ return 'https://'+ACCOUNT+'.blob.core.windows.net/'+CONTAINER+'/'+name; }
+function sasFor(name, perms, minutes){
+  const now = Date.now();
+  const sas = generateBlobSASQueryParameters({
+    containerName: CONTAINER,
+    blobName: name,
+    permissions: BlobSASPermissions.parse(perms),
+    startsOn: new Date(now - 5*60*1000),
+    expiresOn: new Date(now + minutes*60*1000),
+    protocol: 'https'
+  }, cred()).toString();
+  return blobUrl(name) + '?' + sas;
+}
+const safeBlob = (n) => typeof n==='string' && /^visit-[a-f0-9]{16,}\.(webm|ogg|mp4|wav|mp3)$/.test(n);
+const safeJob  = (u) => typeof u==='string' && u.indexOf(SPEECH_BASE + '/transcriptions/') === 0;
+
+// Turn a batch-transcription result JSON into a speaker-labeled transcript.
+function formatBatch(result){
+  const rp = Array.isArray(result.recognizedPhrases) ? result.recognizedPhrases : [];
+  const hasSpk = rp.some(p => p.speaker !== undefined && p.speaker !== null);
+  if(rp.length && hasSpk){
+    let out='', last=null;
+    for(const p of rp){
+      const text = (p.nBest && p.nBest[0] && (p.nBest[0].display||p.nBest[0].lexical) || '').trim();
+      if(!text) continue;
+      const label = (p.speaker!==undefined && p.speaker!==null) ? ('Speaker '+p.speaker) : null;
+      if(label && label!==last){ out += (out?'\n':'') + label + ': ' + text; last=label; }
       else { out += (out && !out.endsWith('\n') ? ' ' : '') + text; }
     }
     return out.trim();
   }
-  if (Array.isArray(data.combinedPhrases) && data.combinedPhrases.length) {
-    return data.combinedPhrases.map(c => c.text || '').join(' ').trim();
-  }
-  if (phrases.length) return phrases.map(p => p.text || '').join(' ').trim();
+  const crp = Array.isArray(result.combinedRecognizedPhrases) ? result.combinedRecognizedPhrases : [];
+  if(crp.length) return crp.map(c => c.display || c.lexical || '').join(' ').trim();
+  if(rp.length) return rp.map(p => (p.nBest && p.nBest[0] && p.nBest[0].display) || '').join(' ').trim();
   return '';
 }
 
-function extFor(ct) {
-  ct = (ct || '').toLowerCase();
-  if (ct.indexOf('webm') !== -1) return '.webm';
-  if (ct.indexOf('ogg') !== -1) return '.ogg';
-  if (ct.indexOf('mp4') !== -1 || ct.indexOf('m4a') !== -1) return '.mp4';
-  if (ct.indexOf('wav') !== -1) return '.wav';
-  if (ct.indexOf('mpeg') !== -1 || ct.indexOf('mp3') !== -1) return '.mp3';
-  return '.webm';
+export default async function handler(request){
+  const cors = { 'Access-Control-Allow-Origin':'*', 'Access-Control-Allow-Headers':'Content-Type, Authorization', 'Access-Control-Allow-Methods':'POST, OPTIONS' };
+  const json = (o,s)=> new Response(JSON.stringify(o), { status:s||200, headers:{ ...cors, 'Content-Type':'application/json' } });
+  if(request.method==='OPTIONS') return new Response('', { status:200, headers:cors });
+  if(request.method!=='POST') return json({ error:'Method Not Allowed' }, 405);
+
+  let body; try{ body=await request.json(); }catch(e){ return json({ error:'Bad request.' }, 400); }
+  if(!verifyToken(body && body.token).valid) return json({ error:'Unauthorized.' }, 401);
+  if(!SPEECH_KEY || !ACCOUNT || !STORAGE_KEY) return json({ error:'Transcription is not fully configured yet (Azure Speech + Storage keys).' }, 500);
+
+  const action = body.action;
+  try {
+    // 1) Mint a write SAS; the browser uploads the recording straight to blob storage.
+    if(action==='upload-url'){
+      await containerClient().createIfNotExists();
+      const name = 'visit-' + crypto.randomBytes(12).toString('hex') + '.' + extFor(body.contentType);
+      return json({ blobName: name, uploadUrl: sasFor(name, 'cw', 30) });
+    }
+
+    // 2) Submit the batch job over a read SAS to the uploaded blob.
+    if(action==='start'){
+      if(!safeBlob(body.blobName)) return json({ error:'Bad reference.' }, 400);
+      const readUrl = sasFor(body.blobName, 'r', 180);
+      const resp = await fetch(SPEECH_BASE + '/transcriptions', {
+        method:'POST', headers:{ 'Ocp-Apim-Subscription-Key':SPEECH_KEY, 'Content-Type':'application/json' },
+        body: JSON.stringify({
+          contentUrls: [ readUrl ],
+          locale: 'en-US',
+          displayName: 'ambient-visit',
+          properties: {
+            diarizationEnabled: true,
+            diarization: { speakers: { minCount: 1, maxCount: 2 } },
+            punctuationMode: 'DictatedAndAutomatic',
+            profanityFilterMode: 'None'
+          }
+        })
+      });
+      if(!resp.ok){ let d=''; try{ d=(await resp.text()).slice(0,300); }catch(e){} return json({ error:'Could not start transcription ('+resp.status+').', detail:d }, 502); }
+      const j = await resp.json();
+      return json({ jobUrl: j.self, blobName: body.blobName });
+    }
+
+    // 3) Poll the job; when done, return the transcript and clean up.
+    if(action==='poll'){
+      if(!safeJob(body.jobUrl)) return json({ error:'Bad reference.' }, 400);
+      const st = await fetch(body.jobUrl, { headers:{ 'Ocp-Apim-Subscription-Key':SPEECH_KEY } });
+      if(!st.ok) return json({ error:'Could not check transcription.' }, 502);
+      const job = await st.json();
+      const status = job.status;
+      if(status==='Failed'){
+        cleanup(body.jobUrl, body.blobName);
+        return json({ status:'failed', error: (job.properties && job.properties.error && job.properties.error.message) || 'Transcription failed.' });
+      }
+      if(status!=='Succeeded') return json({ status:'running' });
+
+      // Fetch the files list → the Transcription result file → its content.
+      const fr = await fetch(body.jobUrl + '/files', { headers:{ 'Ocp-Apim-Subscription-Key':SPEECH_KEY } });
+      if(!fr.ok) return json({ status:'running' });
+      const files = await fr.json();
+      const file = (files.values||[]).find(f => f.kind==='Transcription');
+      if(!file || !file.links || !file.links.contentUrl){ cleanup(body.jobUrl, body.blobName); return json({ status:'failed', error:'No transcript produced.' }); }
+      const cr = await fetch(file.links.contentUrl);
+      const result = await cr.json();
+      const transcript = formatBatch(result);
+      cleanup(body.jobUrl, body.blobName);
+      return json({ status:'done', transcript });
+    }
+
+    return json({ error:'Unknown action.' }, 400);
+  } catch(e){
+    return json({ error:'Transcription error.', detail: String(e && e.message || e).slice(0,200) }, 500);
+  }
 }
 
-export default async function handler(request) {
-  const cors = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS'
-  };
-  const json = (obj, status) => new Response(JSON.stringify(obj), {
-    status: status || 200, headers: { ...cors, 'Content-Type': 'application/json' }
-  });
-
-  if (request.method === 'OPTIONS') return new Response('', { status: 200, headers: cors });
-  if (request.method !== 'POST') return json({ error: 'Method Not Allowed' }, 405);
-
-  let body;
-  try { body = await request.json(); } catch (e) { return json({ error: 'Bad request.' }, 400); }
-
-  const auth = verifyToken(body && body.token);
-  if (!auth.valid) return json({ error: 'Unauthorized.' }, 401);
-
-  const key = process.env.AZURE_SPEECH_KEY;
-  const region = process.env.AZURE_SPEECH_REGION || 'eastus';
-  if (!key) return json({ error: 'Transcription is not configured yet.' }, 500);
-
-  const audioB64 = body.audioBase64 || '';
-  if (!audioB64) return json({ error: 'No audio received.' }, 400);
-  let audio;
-  try { audio = Buffer.from(audioB64, 'base64'); } catch (e) { return json({ error: 'Bad audio.' }, 400); }
-  if (!audio.length) return json({ error: 'Empty recording.' }, 400);
-
-  const contentType = body.contentType || 'audio/webm';
-  const definition = JSON.stringify({
-    locales: ['en-US'],
-    profanityFilterMode: 'None',
-    diarization: body.diarize === false ? undefined : { maxSpeakers: 2, enabled: true }
-  });
-
-  // Build the multipart/form-data body by hand (no external deps): an `audio` file
-  // part and a `definition` JSON part.
-  const boundary = '----tbpAzure' + crypto.randomBytes(8).toString('hex');
-  const pre = Buffer.from(
-    '--' + boundary + '\r\n' +
-    'Content-Disposition: form-data; name="audio"; filename="visit' + extFor(contentType) + '"\r\n' +
-    'Content-Type: ' + contentType + '\r\n\r\n', 'utf8');
-  const mid = Buffer.from(
-    '\r\n--' + boundary + '\r\n' +
-    'Content-Disposition: form-data; name="definition"\r\n' +
-    'Content-Type: application/json\r\n\r\n' + definition + '\r\n' +
-    '--' + boundary + '--\r\n', 'utf8');
-  const multipart = Buffer.concat([pre, audio, mid]);
-
-  const url = 'https://' + region + '.api.cognitive.microsoft.com/speechtotext/transcriptions:transcribe?api-version=2024-11-15';
-
-  let resp;
-  try {
-    resp = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Ocp-Apim-Subscription-Key': key,
-        'Content-Type': 'multipart/form-data; boundary=' + boundary
-      },
-      body: multipart
-    });
-  } catch (e) {
-    return json({ error: 'Could not reach the transcription service.' }, 502);
-  }
-
-  if (!resp.ok) {
-    let detail = '';
-    try { detail = (await resp.text()).slice(0, 400); } catch (e) {}
-    return json({ error: 'Transcription failed (' + resp.status + ').', detail }, 502);
-  }
-
-  let data;
-  try { data = await resp.json(); } catch (e) { return json({ error: 'Unexpected transcription response.' }, 502); }
-
-  const transcript = formatTranscript(data);
-  if (!transcript) return json({ error: 'No speech was recognized in the recording.' }, 200);
-  return json({ transcript, durationMs: data.durationMilliseconds || null });
+// Best-effort cleanup: delete the transcription job and the audio blob. Fire-and-forget.
+function cleanup(jobUrl, blobName){
+  try { if(safeJob(jobUrl)) fetch(jobUrl, { method:'DELETE', headers:{ 'Ocp-Apim-Subscription-Key':SPEECH_KEY } }).catch(()=>{}); } catch(e){}
+  try { if(safeBlob(blobName)) containerClient().deleteBlob(blobName).catch(()=>{}); } catch(e){}
 }

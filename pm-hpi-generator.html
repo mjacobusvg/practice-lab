@@ -1312,47 +1312,57 @@ function loadVaultTemplates(){
     setStatus('Finishing recording…');
   }
 
-  function blobToBase64(blob){
-    return new Promise(function(resolve,reject){
-      var r=new FileReader();
-      r.onload=function(){ var s=String(r.result); resolve(s.substring(s.indexOf(',')+1)); };
-      r.onerror=function(){ reject(new Error('Could not read the recording.')); };
-      r.readAsDataURL(blob);
-    });
-  }
   function appendTranscript(text){
     var raw=document.getElementById('raw'); if(!raw || !text)return;
     var base = raw.value; // append to whatever is there now (checklist/scaffold etc.)
     var joiner = base && !/\n$/.test(base) ? '\n' : '';
     raw.value = base + joiner + text;
   }
+  function azureCall(payload){
+    payload.token = authToken;
+    return fetch('/.netlify/functions/azure-transcribe',{
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
+      body: JSON.stringify(payload)
+    }).then(function(r){ return r.json().catch(function(){ throw new Error('Transcription service error.'); }); });
+  }
+  // Poll the batch job until the transcript is ready (no length limit on the audio).
+  function pollTranscript(jobUrl, blobName){
+    return new Promise(function(resolve, reject){
+      var tries=0, MAX=300; // ~300 × 3s ≈ 15 min of polling headroom
+      (function tick(){
+        tries++;
+        azureCall({ action:'poll', jobUrl:jobUrl, blobName:blobName }).then(function(d){
+          if(d.status==='done'){ resolve(d.transcript||''); return; }
+          if(d.status==='failed'){ reject(new Error(d.error||'Transcription failed.')); return; }
+          if(d.error && !d.status){ reject(new Error(d.error)); return; }
+          if(tries>=MAX){ reject(new Error('Transcription is taking unusually long — try again.')); return; }
+          setStatus('Transcribing the visit… ('+(tries*3)+'s)');
+          setTimeout(tick, 3000);
+        }).catch(function(e){ reject(e); });
+      })();
+    });
+  }
 
+  // On Stop: upload the recording straight to Azure storage (any length), then batch-transcribe.
   async function finalizeRecording(){
     var blob = new Blob(chunks, { type: (recMime||'audio/webm').split(';')[0] });
     chunks=[];
     if(!blob.size){ setStatus('No audio was captured.', true); resetBtn(); return; }
-    // Netlify function payload caps near 6 MB base64 (~4.3 MB binary). At ~24 kbps
-    // that is roughly 30–35 minutes. Longer visits get a clear message (blob-upload
-    // path is the planned upgrade for unlimited length).
-    var MAX = 4300000;
-    if(blob.size > MAX){
-      setStatus('Recording is ~'+Math.round(blob.size/1e6)+' MB — over this beta’s ~30-min limit. Draft from shorter segments for now.', true);
-      resetBtn(); return;
-    }
-    setStatus('Transcribing the visit… (usually under a minute)');
+    setStatus('Uploading the recording…');
     try{
-      var b64 = await blobToBase64(blob);
-      var res = await fetch('/.netlify/functions/azure-transcribe',{
-        method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
-        body: JSON.stringify({ token: authToken, audioBase64: b64, contentType: blob.type, diarize: true })
-      });
-      var data; try{ data=await res.json(); }catch(e){ throw new Error('Transcription failed.'); }
-      if(!res.ok || (!data.transcript && !data.error)){ throw new Error('Transcription failed.'); }
-      if(data.error && !data.transcript){ throw new Error(data.error); }
-      appendTranscript(data.transcript);
+      var up = await azureCall({ action:'upload-url', contentType: blob.type });
+      if(!up.uploadUrl || !up.blobName) throw new Error(up.error || 'Could not prepare the upload.');
+      var put = await fetch(up.uploadUrl, { method:'PUT', headers:{ 'x-ms-blob-type':'BlockBlob', 'Content-Type': blob.type||'application/octet-stream' }, body: blob });
+      if(!put.ok) throw new Error('Upload failed ('+put.status+').');
+      setStatus('Transcribing the visit…');
+      var st = await azureCall({ action:'start', blobName: up.blobName });
+      if(!st.jobUrl) throw new Error(st.error || 'Could not start transcription.');
+      var transcript = await pollTranscript(st.jobUrl, up.blobName);
+      if(!transcript){ setStatus('No speech was recognized in the recording.', true); resetBtn(); return; }
+      appendTranscript(transcript);
       setStatus('Done — transcript added to your notes. Review, then Draft.');
     } catch(err){
-      setStatus(err.message||'Transcription failed.', true);
+      setStatus(err.message || 'Transcription failed.', true);
     }
     resetBtn();
   }
