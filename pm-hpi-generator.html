@@ -1215,21 +1215,31 @@ function loadVaultTemplates(){
   })
   .then(function(r){ return r.json(); })
   .then(function(d){
+    onboardChecked = true; // the server response, not the shared browser cache, decides
     if(d && d.found && d.data){
-      vaultTemplates.new_eval = d.data.hpiTemplateEval || vaultTemplates.new_eval;
-      vaultTemplates.follow_up = d.data.hpiTemplateFollowup || vaultTemplates.follow_up;
-      if(d.data.hpiWorkflow) workflow = d.data.hpiWorkflow;
-      if(d.data.hpiTherapyGuide!==undefined){ therapyGuide = (d.data.hpiTherapyGuide===true || d.data.hpiTherapyGuide==='on'); syncTherapyToggle(); }
-      if(d.data.hpiOnboarded){ try{ localStorage.setItem('tbp_hpi_onboarded','1'); }catch(e){} }
+      // Authoritative per-account profile (overrides the shared localStorage mirror).
+      vaultTemplates.new_eval = d.data.hpiTemplateEval || '';
+      vaultTemplates.follow_up = d.data.hpiTemplateFollowup || '';
+      workflow = d.data.hpiWorkflow || null;
+      if(d.data.hpiTherapyGuide!==undefined){ therapyGuide = (d.data.hpiTherapyGuide===true || d.data.hpiTherapyGuide==='on'); }
+      syncTherapyToggle();
       if(typeof d.data.hpiCaptureMode === 'string'){ try{ localStorage.setItem('tbp_hpi_capture', d.data.hpiCaptureMode); }catch(e){} if(typeof window.tbpSetCapture==='function') window.tbpSetCapture(d.data.hpiCaptureMode); }
       renderTemplateStatus();
-      // If the workspace is already open, re-render now that the saved style has loaded.
       var wa = document.getElementById('work-area');
       if(wa && wa.style.display !== 'none'){ renderStyleBar(); renderMode(); }
+      var hasSetup = !!d.data.hpiWorkflow || (d.data.hpiTemplateEval||'').trim() || (d.data.hpiTemplateFollowup||'').trim();
+      if(!d.data.hpiOnboarded && !hasSetup) openOnboarding();
+    } else {
+      // No saved profile for THIS account → brand-new user. Clear any stale Vault
+      // cached by another account in this browser, then onboard as the first thing.
+      vaultTemplates.new_eval = ''; vaultTemplates.follow_up = ''; workflow = null;
+      renderTemplateStatus();
+      var wa2 = document.getElementById('work-area');
+      if(wa2 && wa2.style.display !== 'none'){ renderStyleBar(); renderMode(); }
+      openOnboarding();
     }
-    maybeOnboard();
   })
-  .catch(function(){ maybeOnboard(); });
+  .catch(function(){ /* network error: leave as-is; don't force onboarding on an existing user */ });
 }
 
 // ══════════════════════════════════════════════════════════════════════════
