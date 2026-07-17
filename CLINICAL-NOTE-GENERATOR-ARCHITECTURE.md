@@ -455,8 +455,8 @@ Pipeline of focused calls (the "reason better" pattern, kept):
      Note-Builder handoff use the edited text. (e) The auto-review **flags "sounds wrong"
      content** (misspelled drug names, implausible doses, contradictions, transcription
      artifacts) rather than silently fixing it — the right posture for ASR errors we
-     cannot repair upstream (mitigated later by a medical-vocabulary ASR model, e.g. AWS
-     Transcribe Medical).
+     cannot repair upstream (mitigated by clean audio capture + Azure AI Speech batch
+     transcription with diarization; ambient records the visit and transcribes after Stop).
    - **Follow-up carry-forward hygiene (added after testing).** For `visitType ===
      'follow_up'` with last visit's note in the continuity field, the draft merges the two
      the way a clinician cleans up a copied-forward note: **today's notes drive dynamic
