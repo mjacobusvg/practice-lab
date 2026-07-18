@@ -585,8 +585,9 @@ function renderResult(hpi, flags){
   if(visitType === 'follow_up'){
     html += '<div class="hint" style="margin-top:8px" id="assess-prior-hint"></div>';
   }
+  html += '<label style="display:inline-flex;align-items:center;gap:7px;margin-top:12px;cursor:pointer;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream-dim);font-size:.85rem"><input type="checkbox" id="assess-therapy"'+(therapyGuide?' checked':'')+' style="width:auto"> Include a psychotherapy add-on note</label>';
   html += '<div style="margin-top:12px"><button class="btn" id="build-assess">Build assessment &amp; plan &rarr;</button></div>';
-  html += '<div class="hint" style="margin-top:8px">Or <a href="#" id="send-nb-link">open it in the standalone Clinical Note Builder</a> instead.</div></div>';
+  html += '<div class="hint" style="margin-top:8px">First it surfaces the clinical calls for you to confirm (diagnoses, length, therapy), then it writes. Or <a href="#" id="send-nb-link">open the standalone Clinical Note Builder</a> instead.</div></div>';
   html += '<div id="assess-results"></div>';
 
   document.getElementById('results').innerHTML = html;
@@ -843,32 +844,152 @@ async function buildAssessment(btn, force){
     if(ba) ba.addEventListener('click', function(){ buildAssessment(btn, true); });
     return;
   }
+  // Slice 4b: surface the provider-owned clinical calls (preflight) before writing.
+  var wantTherapy = (function(){ var t=document.getElementById('assess-therapy'); return t ? !!t.checked : !!therapyGuide; })();
+  var scope = wantTherapy ? 'both' : 'assessment';
+  var inp = { hpi: hpi, dxprior: dxprior, plan: '' };
   var label = btn.innerHTML;
-  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Building assessment&hellip;';
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Reading the visit&hellip;';
   var box = document.getElementById('assess-results');
-  box.innerHTML = '<div class="out"><div class="hint"><span class="spinner"></span> Drafting the assessment and auditing it against your notes&hellip;</div></div>';
+  box.innerHTML = '<div class="out"><div class="hint"><span class="spinner"></span> Reading the visit to surface the clinical calls&hellip;</div></div>';
   try {
-    var res = await window.NoteEngine.runAssessment({ hpi: hpi, dxprior: dxprior, plan: '' });
-    renderAssessment(res.assessment, res.flags);
-    box.scrollIntoView({ behavior:'smooth', block:'start' });
+    var pf = await window.NoteEngine.runPreflight(inp, scope);
+    var qs = (pf && pf.questions) ? pf.questions : [];
+    if(!qs.length){ await generateNote(inp, scope, {}, []); }   // nothing to confirm — generate directly
+    else { renderPreflightCards(inp, scope, qs); box.scrollIntoView({ behavior:'smooth', block:'start' }); }
   } catch(err){
-    box.innerHTML = '<div class="err">'+esc(err.message || 'Could not build the assessment.')+'</div>';
+    box.innerHTML = '<div class="err">'+esc(err.message || 'Could not read the visit.')+'</div>';
   } finally {
     btn.disabled = false; btn.innerHTML = label;
   }
 }
 
-function renderAssessment(assessment, flags){
+// ── Slice 4b: preflight choice-cards (single/multi + custom), rendered into #assess-results ──
+var pfState = {};
+function renderPreflightCards(inp, scope, questions){
+  pfState = {};
+  var html = '<div class="out"><h3>Confirm the clinical calls</h3>'
+    + '<div class="hint" style="margin-bottom:14px">Based on what you documented, here is what fits. Confirm or adjust, then generate. Where more than one factor applies, select all that fit.</div>';
+  questions.forEach(function(q, qi){
+    var multi = (q.select === 'multi');
+    var hint = multi ? ' <span style="font-weight:400;text-transform:none;color:var(--cream-dim)">(select all that apply)</span>' : '';
+    html += '<div class="card-group" data-qid="'+qi+'" data-multi="'+(multi?'1':'0')+'" style="margin-bottom:16px"><label style="display:block;margin-bottom:8px;color:var(--cream)">'+esc(q.text)+hint+'</label><div class="pf-opts" style="display:flex;flex-wrap:wrap;gap:8px">';
+    (q.options||[]).forEach(function(opt, oi){
+      var isCustom = /other\s*\/\s*enter my own/i.test(opt);
+      var preSel = (!multi && oi===0 && !isCustom);
+      html += '<div class="opt'+(preSel?' sel':'')+'" data-qi="'+qi+'" data-opt="'+String(opt).replace(/"/g,'&quot;')+'"'+(isCustom?' data-custom="1"':'')+'>'+esc(opt)+'</div>';
+    });
+    html += '</div><input type="text" class="pf-custom" data-qi="'+qi+'" placeholder="Enter your own&hellip;" style="display:none;width:100%;margin-top:8px;background:var(--navy);border:1px solid var(--rule);border-radius:8px;color:var(--white);padding:10px 12px;font-size:.9rem"></div>';
+    if(multi){ pfState[qi] = []; }
+    else { var first=(q.options||[]).find(function(o){return !/other\s*\/\s*enter my own/i.test(o);}); pfState[qi] = first || ''; }
+  });
+  html += '<button class="btn" id="pf-generate">Generate assessment' + (scope==='both' ? ' &amp; psychotherapy note' : ' &amp; plan') + ' &rarr;</button></div>';
+  var box = document.getElementById('assess-results');
+  box.innerHTML = html;
+
+  box.querySelectorAll('.pf-opts').forEach(function(group){
+    var groupEl = group.closest('.card-group');
+    var isMulti = groupEl.getAttribute('data-multi')==='1';
+    group.addEventListener('click', function(e){
+      var o = e.target.closest('.opt'); if(!o) return;
+      var qi = o.getAttribute('data-qi');
+      var custom = box.querySelector('.pf-custom[data-qi="'+qi+'"]');
+      if(isMulti){
+        var isPlain = /keep it plain/i.test(o.getAttribute('data-opt')||'');
+        if(isPlain){ group.querySelectorAll('.opt').forEach(function(x){ if(x!==o) x.classList.remove('sel'); }); o.classList.toggle('sel'); }
+        else { group.querySelectorAll('.opt').forEach(function(x){ if(/keep it plain/i.test(x.getAttribute('data-opt')||'')) x.classList.remove('sel'); }); o.classList.toggle('sel'); }
+        var picked = [];
+        group.querySelectorAll('.opt.sel').forEach(function(x){ picked.push(x.getAttribute('data-custom') ? (custom.value.trim()||'(custom)') : x.getAttribute('data-opt')); });
+        var customSel = !!group.querySelector('.opt.sel[data-custom]');
+        custom.style.display = customSel ? 'block' : 'none'; if(customSel) custom.focus();
+        pfState[qi] = picked;
+      } else {
+        group.querySelectorAll('.opt').forEach(function(x){ x.classList.remove('sel'); });
+        o.classList.add('sel');
+        if(o.getAttribute('data-custom')){ custom.style.display='block'; custom.focus(); pfState[qi] = custom.value.trim(); }
+        else { custom.style.display='none'; pfState[qi] = o.getAttribute('data-opt'); }
+      }
+    });
+  });
+  box.querySelectorAll('.pf-custom').forEach(function(ci){
+    ci.addEventListener('input', function(){
+      var qi = ci.getAttribute('data-qi');
+      var groupEl = box.querySelector('.card-group[data-qid="'+qi+'"]');
+      if(groupEl && groupEl.getAttribute('data-multi')==='1'){
+        var group = groupEl.querySelector('.pf-opts'); var picked = [];
+        group.querySelectorAll('.opt.sel').forEach(function(x){ picked.push(x.getAttribute('data-custom') ? (ci.value.trim()||'(custom)') : x.getAttribute('data-opt')); });
+        pfState[qi] = picked;
+      } else { pfState[qi] = ci.value.trim(); }
+    });
+  });
+  document.getElementById('pf-generate').addEventListener('click', function(){
+    // Parse selections into code / modality / clinical decisions / length.
+    var code='90833', timeChoice='', modality='', clinicalDecisions=[], lengthChoice='';
+    questions.forEach(function(q, qi){
+      var val = pfState[qi];
+      if(q.id==='time' || /add-on code/i.test(q.text)){
+        timeChoice = (typeof val==='string') ? val : ''; var m=timeChoice.match(/9083[0-9]/); if(m) code=m[0];
+      } else if(q.id==='length'){ lengthChoice = (typeof val==='string') ? val : '';
+      } else if(q.id==='modality' || /modality/i.test(q.text)){
+        var mv = Array.isArray(val) ? val.filter(function(x){return x && x!=='(custom)';}) : (val ? [val] : []);
+        modality = mv.map(function(m){ return String(m).split(' — ')[0].trim(); }).filter(Boolean).join(' + ');
+      } else if(/^clin_/.test(q.id||'')){
+        var chosen = Array.isArray(val) ? val.filter(function(x){return x && x!=='(custom)';}) : (val ? [val] : []);
+        if(chosen.length){
+          var joined = chosen.length>1 ? 'the provider selected MULTIPLE contributing factors to hold together in the formulation: ' + chosen.join('; ') : chosen[0];
+          clinicalDecisions.push(q.text + ' → ' + joined);
+        } else if(/^clin_(char|attr)/.test(q.id)){
+          clinicalDecisions.push(q.text + ' → the provider did not select a characterization; keep this plain and descriptive, do NOT assign a diagnostic label.');
+        }
+      }
+    });
+    var noTherapy = /no therapy/i.test(timeChoice);
+    generateNote(inp, scope, { clinBlock: window.NoteEngine.buildClinBlock(clinicalDecisions), lengthBlock: window.NoteEngine.buildLengthBlock(lengthChoice), modality: modality, code: code, noTherapy: noTherapy }, clinicalDecisions);
+  });
+}
+
+// ── Slice 4a/4d: generate the assessment (+ optional psychotherapy note), then render ──
+async function generateNote(inp, scope, opt){
+  opt = opt || {};
+  var box = document.getElementById('assess-results');
+  var gbtn = document.getElementById('pf-generate');
+  if(gbtn){ gbtn.disabled = true; gbtn.innerHTML = '<span class="spinner"></span>Generating&hellip;'; }
+  box.innerHTML = '<div class="out"><div class="hint"><span class="spinner"></span> Drafting and auditing against your notes&hellip;</div></div>';
+  try {
+    var assess = null, therapy = '';
+    if(scope==='assessment' || scope==='both'){
+      assess = await window.NoteEngine.runAssessment(inp, opt.clinBlock || '', opt.lengthBlock || '');
+    }
+    if(scope==='both' && !opt.noTherapy){
+      therapy = await window.NoteEngine.runTherapy(inp, opt.modality || 'Supportive psychotherapy', opt.code || '90833');
+    }
+    renderAssessment(assess ? assess.assessment : '', assess ? assess.flags : [], therapy, opt.code);
+    box.scrollIntoView({ behavior:'smooth', block:'start' });
+  } catch(err){
+    box.innerHTML = '<div class="err">'+esc(err.message || 'Could not generate.')+'</div>';
+  }
+}
+
+function renderAssessment(assessment, flags, therapy, code){
   var plan = (planSnippets && planSnippets.trim()) ? planSnippets.trim() : '';
   var html = '';
-  html += '<div class="out"><button class="btn-copy" onclick="copyOut(\'assess-out\')">Copy</button>';
-  html += '<h3>Assessment</h3>';
-  html += '<textarea class="hpi-edit" id="assess-out">'+esc(assessment)+'</textarea>';
-  html += '<div class="hint" style="margin-top:6px">Auto-reviewed against your notes. Edit before you sign.</div></div>';
+  if(assessment){
+    html += '<div class="out"><button class="btn-copy" onclick="copyOut(\'assess-out\')">Copy</button>';
+    html += '<h3>Assessment</h3>';
+    html += '<textarea class="hpi-edit" id="assess-out">'+esc(assessment)+'</textarea>';
+    html += '<div class="hint" style="margin-top:6px">Auto-reviewed against your notes. Edit before you sign.</div></div>';
+  }
 
   if(flags && flags.length){
     var items = flags.map(function(f){ return '<li>'+esc(f)+'</li>'; }).join('');
     html += '<div class="flags"><div class="flags-h">Worth a look before you sign</div><ul>'+items+'</ul></div>';
+  }
+
+  if(therapy && therapy.trim()){
+    html += '<div class="out"><button class="btn-copy" onclick="copyOut(\'therapy-out\')">Copy</button>';
+    html += '<h3>Psychotherapy add-on'+(code?' ('+esc(code)+')':'')+'</h3>';
+    html += '<textarea class="hpi-edit" id="therapy-out">'+esc(therapy.trim())+'</textarea>';
+    html += '<div class="hint" style="margin-top:6px">Add-on documentation matched to the modality you confirmed. Edit before you sign.</div></div>';
   }
 
   if(plan){
@@ -878,7 +999,8 @@ function renderAssessment(assessment, flags){
     html += '<div class="hint" style="margin-top:6px">Your saved plan snippets, dropped in as a starting point. This section is yours &mdash; the AI never writes prescription mechanics.</div></div>';
   }
 
-  html += '<div class="handoff"><button class="btn" id="copy-full">Copy full note (HPI + Assessment'+(plan?' + Plan':'')+')</button></div>';
+  var lbl = 'Copy full note (HPI + Assessment' + (therapy&&therapy.trim()?' + Psychotherapy':'') + (plan?' + Plan':'') + ')';
+  html += '<div class="handoff"><button class="btn" id="copy-full">'+lbl+'</button></div>';
   document.getElementById('assess-results').innerHTML = html;
   var cf = document.getElementById('copy-full');
   if(cf) cf.addEventListener('click', copyFullNote);
@@ -889,6 +1011,7 @@ function copyFullNote(){
   var parts = [];
   var hpi = val('hpi-out'); if(hpi) parts.push('History of Present Illness:\n' + hpi);
   var assess = val('assess-out'); if(assess) parts.push('Assessment:\n' + assess);
+  var therapy = val('therapy-out'); if(therapy) parts.push('Psychotherapy add-on:\n' + therapy);
   var plan = val('plan-out'); if(plan) parts.push('Plan:\n' + plan);
   navigator.clipboard.writeText(parts.join('\n\n'));
   var b = document.getElementById('copy-full');
