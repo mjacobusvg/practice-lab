@@ -51,7 +51,10 @@ exports.handler = async function (event) {
     const accts = acctRes.ok ? await acctRes.json() : [];
     const customerId = accts[0] && accts[0].stripe_customer_id;
     if (!customerId) {
-      return { statusCode: 404, headers: CORS, body: JSON.stringify({ error: 'No billing account on file for this member' }) };
+      // No Stripe customer => this member still bills through Circle (pre-migration).
+      // Return a clear notice instead of an error dead-end, so they aren't confused
+      // during the migration window. (200 so the client shows it as a message.)
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ notice: 'Your membership is currently billed through Circle. Nothing changes for now. We are moving billing to this platform and will handle your switch individually, so there is nothing you need to do today.' }) };
     }
 
     const portal = await stripe.billingPortal.sessions.create({ customer: customerId, return_url: body.return_url });
