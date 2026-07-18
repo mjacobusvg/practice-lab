@@ -2003,6 +2003,7 @@ async function checkAuth() {
     checkMember(); updateTopbar(); init();
     maybeShowWelcome();
     handlePurchaseReturn();
+    handleJoinReturn();
   } else {
     // Deep link from the marketing site (/platform.html?join) opens straight into
     // free-account creation; otherwise default to the returning-member view.
@@ -4057,6 +4058,47 @@ async function handlePurchaseReturn() {
     viewTemplate(bought);
   } catch (e) {}
 }
+
+// After a successful membership checkout, Stripe returns to /platform?joined=1.
+// Welcome the new member, then refresh their identity once so the tier the
+// Stripe webhook just wrote (free -> full) is reflected without a manual reload.
+function handleJoinReturn() {
+  try {
+    var params = new URLSearchParams(window.location.search);
+    if (params.get('joined') === null) return;
+    if (window.history && window.history.replaceState) window.history.replaceState({}, document.title, window.location.pathname);
+    showPurchaseWelcome();
+    setTimeout(function () {
+      loadIdentity().then(function () { try { checkMember(); updateTopbar(); } catch (e) {} });
+    }, 3500);
+  } catch (e) {}
+}
+
+function showPurchaseWelcome() {
+  var ov = document.getElementById('purchase-welcome-overlay');
+  if (!ov) {
+    ov = document.createElement('div');
+    ov.id = 'purchase-welcome-overlay';
+    ov.className = 'welcome-overlay';
+    ov.innerHTML =
+      '<div class="welcome-card" style="max-width:480px;text-align:center">' +
+      '<div style="font-size:2.4rem;margin-bottom:6px">&#127881;</div>' +
+      '<div class="welcome-title" style="font-size:1.25rem">You’re in. Welcome to Think Beyond Practice.</div>' +
+      '<div class="welcome-body" style="margin-top:8px">Your membership is active. You now have full access to the community and every clinical tool. A few good places to start:</div>' +
+      '<div style="text-align:left;margin:16px auto 4px;max-width:340px;font-size:0.9rem;line-height:1.8">' +
+      '<div>&#129302; <b>AI Scribe</b> &mdash; turn a visit into a finished note</div>' +
+      '<div>&#128269; <b>Ask the Archive</b> &mdash; get answers from hundreds of prescriber posts</div>' +
+      '<div>&#128101; <b>The community</b> &mdash; say hi and ask your first question</div>' +
+      '</div>' +
+      '<div class="welcome-actions" style="justify-content:center;margin-top:18px">' +
+      '<button class="btn-primary" onclick="closePurchaseWelcome()">Explore the platform</button>' +
+      '</div></div>';
+    ov.addEventListener('click', function (e) { if (e.target === ov) closePurchaseWelcome(); });
+    document.body.appendChild(ov);
+  }
+  ov.classList.add('open');
+}
+function closePurchaseWelcome() { var ov = document.getElementById('purchase-welcome-overlay'); if (ov) ov.classList.remove('open'); }
 
 async function downloadTemplate(id) {
   try {

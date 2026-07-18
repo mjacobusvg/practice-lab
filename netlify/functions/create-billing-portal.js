@@ -51,10 +51,11 @@ exports.handler = async function (event) {
     const accts = acctRes.ok ? await acctRes.json() : [];
     const customerId = accts[0] && accts[0].stripe_customer_id;
     if (!customerId) {
-      // No Stripe customer => this member still bills through Circle (pre-migration).
-      // Return a clear notice instead of an error dead-end, so they aren't confused
-      // during the migration window. (200 so the client shows it as a message.)
-      return { statusCode: 200, headers: CORS, body: JSON.stringify({ notice: 'Your membership is currently billed through Circle. Nothing changes for now. We are moving billing to this platform and will handle your switch individually, so there is nothing you need to do today.' }) };
+      // No Stripe customer linked to this account yet (e.g. a comped/manual member,
+      // or a customer link not yet backfilled). Most members already have one, since
+      // Circle checkouts create the customer in our own Stripe. Give a calm,
+      // accurate message instead of an error dead-end. (200 so the client shows it.)
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ notice: 'We could not find a billing profile linked to your account. If you believe you are on a paid plan, reply to support@thinkbeyondpractice.com and we will sort it out. Nothing about your access changes in the meantime.' }) };
     }
 
     const portal = await stripe.billingPortal.sessions.create({ customer: customerId, return_url: body.return_url });
