@@ -1465,8 +1465,16 @@ function loadVaultTemplates(){
     try{
       var up = await azureCall({ action:'upload-url', contentType: blob.type });
       if(!up.uploadUrl || !up.blobName) throw new Error(up.error || 'Could not prepare the upload.');
-      var put = await fetch(up.uploadUrl, { method:'PUT', headers:{ 'x-ms-blob-type':'BlockBlob', 'Content-Type': blob.type||'application/octet-stream' }, body: blob });
-      if(!put.ok) throw new Error('Upload failed ('+put.status+').');
+      // The upload is a direct cross-origin PUT to Azure Blob; if it is blocked
+      // it throws "Failed to fetch". Label it and carry the server CORS status so
+      // a screenshot pinpoints the cause instead of a bare "Failed to fetch".
+      var put;
+      try {
+        put = await fetch(up.uploadUrl, { method:'PUT', headers:{ 'x-ms-blob-type':'BlockBlob', 'Content-Type': blob.type||'application/octet-stream' }, body: blob });
+      } catch(e){
+        throw new Error('Storage upload blocked (CORS). Server CORS: ' + (up.cors || 'unknown') + '. [' + (e.message||e) + ']');
+      }
+      if(!put.ok) throw new Error('Storage rejected the upload ('+put.status+').');
       setStatus('Transcribing the visit…');
       var st = await azureCall({ action:'start', blobName: up.blobName });
       if(!st.jobUrl) throw new Error(st.error || 'Could not start transcription.');

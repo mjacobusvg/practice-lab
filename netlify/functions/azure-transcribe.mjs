@@ -66,24 +66,38 @@ function containerClient(){ return serviceClient().getContainerClient(CONTAINER)
 // permission hiccup never blocks an upload if CORS was set by hand.
 let corsEnsured = false;
 async function ensureCors(){
-  if(corsEnsured) return;
+  if(corsEnsured) return 'cached';
   const svc = serviceClient();
-  const props = await svc.getProperties();
+  let props;
+  try { props = await svc.getProperties(); }
+  catch(e){ return 'get-failed: ' + String(e && e.message || e).slice(0,120); }
   const rules = Array.isArray(props.cors) ? props.cors : [];
   const ok = rules.some(r =>
     (r.allowedOrigins||'').indexOf('*') !== -1 &&
     (r.allowedMethods||'').toUpperCase().indexOf('PUT') !== -1);
-  if(!ok){
-    props.cors = rules.concat([{
+  if(ok){ corsEnsured = true; return 'already-present'; }
+  // Build a CLEAN properties object (never round-trip the raw getProperties
+  // response — its _response/metadata fields can make setProperties throw, which
+  // is what silently swallowed the fix before). Preserve the other subsections.
+  const newProps = {
+    cors: rules.concat([{
       allowedOrigins: '*',
       allowedMethods: 'GET,PUT,OPTIONS,HEAD',
       allowedHeaders: '*',
       exposedHeaders: '*',
       maxAgeInSeconds: 3600
-    }]);
-    await svc.setProperties(props);
-  }
+    }]),
+    blobAnalyticsLogging: props.blobAnalyticsLogging,
+    hourMetrics: props.hourMetrics,
+    minuteMetrics: props.minuteMetrics,
+    deleteRetentionPolicy: props.deleteRetentionPolicy,
+    staticWebsite: props.staticWebsite,
+    defaultServiceVersion: props.defaultServiceVersion
+  };
+  try { await svc.setProperties(newProps); }
+  catch(e){ return 'set-failed: ' + String(e && e.message || e).slice(0,120); }
   corsEnsured = true;
+  return 'set-now';
 }
 function blobUrl(name){ return 'https://'+ACCOUNT+'.blob.core.windows.net/'+CONTAINER+'/'+name; }
 function sasFor(name, perms, minutes){
@@ -136,10 +150,11 @@ export default async function handler(request){
   try {
     // 1) Mint a write SAS; the browser uploads the recording straight to blob storage.
     if(action==='upload-url'){
-      try { await ensureCors(); } catch(e){ /* best-effort: CORS may already be set manually */ }
+      let corsStatus;
+      try { corsStatus = await ensureCors(); } catch(e){ corsStatus = 'threw: ' + String(e && e.message || e).slice(0,120); }
       await containerClient().createIfNotExists();
       const name = 'visit-' + crypto.randomBytes(12).toString('hex') + '.' + extFor(body.contentType);
-      return json({ blobName: name, uploadUrl: sasFor(name, 'cw', 30) });
+      return json({ blobName: name, uploadUrl: sasFor(name, 'cw', 30), cors: corsStatus });
     }
 
     // 2) Submit the batch job over a read SAS to the uploaded blob.
