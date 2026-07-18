@@ -780,7 +780,7 @@ function sendToNoteBuilder(){
 // ── Slice 3: Setup wizard ──
 var wiz = { visit:'new_eval', style:'brief', quote:'verbatim' };
 var wizMode = 'build';
-bindOpts('wiz-visit-opts','data-wizvisit', function(v){ wiz.visit=v; updateWizSampleLabel(); if(wizMode==='refine') loadCurrentIntoRefine(); });
+bindOpts('wiz-visit-opts','data-wizvisit', function(v){ wiz.visit=v; updateWizSampleLabel(); applyWizModeForVisit(); });
 
 // The completed-note box is the richest signal, especially for follow-ups; label it per visit type.
 function updateWizSampleLabel(){
@@ -817,13 +817,20 @@ function openWizard(){
   document.querySelectorAll('#wiz-visit-opts .opt').forEach(function(o){
     o.classList.toggle('sel', o.getAttribute('data-wizvisit')===wiz.visit);
   });
-  wizMode = 'build';
-  document.querySelectorAll('#wiz-mode-opts .opt').forEach(function(o){
-    o.classList.toggle('sel', o.getAttribute('data-wizmode')==='build');
-  });
-  switchWizMode('build');
+  // If this visit type already has a saved template, open in "Adjust/troubleshoot" (edit the
+  // one you have) rather than "Set up a new template" — which would REPLACE it. There is one
+  // template per visit type; saving overwrites it.
+  applyWizModeForVisit();
   updateWizSampleLabel();
   document.getElementById('wizard').classList.add('open');
+}
+function applyWizModeForVisit(){
+  var hasTemplate = !!(vaultTemplates[wiz.visit] && vaultTemplates[wiz.visit].trim());
+  wizMode = hasTemplate ? 'refine' : 'build';
+  document.querySelectorAll('#wiz-mode-opts .opt').forEach(function(o){
+    o.classList.toggle('sel', o.getAttribute('data-wizmode')===wizMode);
+  });
+  switchWizMode(wizMode);
 }
 function closeWizard(){ document.getElementById('wizard').classList.remove('open'); }
 document.getElementById('open-wizard').addEventListener('click', openWizard);
@@ -1256,12 +1263,9 @@ function loadVaultTemplates(){
   var recording=false, mediaRecorder=null, chunks=[], micStream=null, tabStream=null, mixCtx=null, mixNodes=[];
   var rawBaseline='', recMime='';
 
-  // ── Beta gate: ambient is invite-only. Add tester emails here (lowercase). ──
-  var AMBIENT_ALLOWLIST = ['michael@thinkbeyondpsych.com','michael.vangelder@gmail.com'];
-  function ambientAllowed(){
-    try { return AMBIENT_ALLOWLIST.indexOf((typeof userEmail==='string'?userEmail:'').toLowerCase()) !== -1; }
-    catch(e){ return false; }
-  }
+  // Ambient is open to any signed-in member (auth already gates non-members). Azure batch
+  // transcription is cheap, so no invite-list. Re-add an allowlist here if that changes.
+  function ambientAllowed(){ return true; }
 
   function setStatus(msg,isErr){ var el=document.getElementById('record-status'); if(!el)return; el.textContent=msg||''; el.style.color=isErr?'var(--red)':'var(--cream-dim)'; }
   function resetBtn(){ var b=document.getElementById('record-btn'); if(b) b.innerHTML='&#9679; Start recording'; }
