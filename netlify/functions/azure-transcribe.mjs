@@ -49,10 +49,41 @@ function extFor(ct){
   return 'webm';
 }
 function cred(){ return new StorageSharedKeyCredential(ACCOUNT, STORAGE_KEY); }
-function containerClient(){
+function serviceClient(){
   return BlobServiceClient.fromConnectionString(
     'DefaultEndpointsProtocol=https;AccountName='+ACCOUNT+';AccountKey='+STORAGE_KEY+';EndpointSuffix=core.windows.net'
-  ).getContainerClient(CONTAINER);
+  );
+}
+function containerClient(){ return serviceClient().getContainerClient(CONTAINER); }
+
+// The browser uploads the recording with a direct cross-origin PUT to
+// <account>.blob.core.windows.net. Azure Blob storage blocks any browser
+// request unless the ACCOUNT has CORS rules allowing it — without them the PUT
+// fails in the browser as a raw "Failed to fetch" (the SAS itself is the real
+// security boundary, so allowing all origins here is fine). We ensure the rule
+// programmatically (account key has permission) so there is no manual portal
+// step; guarded to run once per warm function instance, and best-effort so a
+// permission hiccup never blocks an upload if CORS was set by hand.
+let corsEnsured = false;
+async function ensureCors(){
+  if(corsEnsured) return;
+  const svc = serviceClient();
+  const props = await svc.getProperties();
+  const rules = Array.isArray(props.cors) ? props.cors : [];
+  const ok = rules.some(r =>
+    (r.allowedOrigins||'').indexOf('*') !== -1 &&
+    (r.allowedMethods||'').toUpperCase().indexOf('PUT') !== -1);
+  if(!ok){
+    props.cors = rules.concat([{
+      allowedOrigins: '*',
+      allowedMethods: 'GET,PUT,OPTIONS,HEAD',
+      allowedHeaders: '*',
+      exposedHeaders: '*',
+      maxAgeInSeconds: 3600
+    }]);
+    await svc.setProperties(props);
+  }
+  corsEnsured = true;
 }
 function blobUrl(name){ return 'https://'+ACCOUNT+'.blob.core.windows.net/'+CONTAINER+'/'+name; }
 function sasFor(name, perms, minutes){
@@ -105,6 +136,7 @@ export default async function handler(request){
   try {
     // 1) Mint a write SAS; the browser uploads the recording straight to blob storage.
     if(action==='upload-url'){
+      try { await ensureCors(); } catch(e){ /* best-effort: CORS may already be set manually */ }
       await containerClient().createIfNotExists();
       const name = 'visit-' + crypto.randomBytes(12).toString('hex') + '.' + extFor(body.contentType);
       return json({ blobName: name, uploadUrl: sasFor(name, 'cw', 30) });
