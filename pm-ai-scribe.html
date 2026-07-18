@@ -267,6 +267,9 @@ var styleBarOpen = false; // (unused now — picker is always shown)
 // Map legacy single-value styles to the new capture axis: 'prep'/'direct' were both manual.
 function migrateWf(v){ return v==='ambient' ? 'ambient' : ((v==='prep'||v==='direct'||v==='manual') ? 'manual' : null); }
 var therapyGuide = true;  // psychotherapy guide on/off — per-clinician (Vault); default on
+// Merged-Note prefs (Vault; all optional, default off/empty). ROS is AI-assisted (patient-reported,
+// derivable); MSE is a pure macro insert (observed, never AI-fabricated); plan snippets feed the Plan.
+var rosOn = false, rosMacro = '', mseOn = false, mseMacro = '', planSnippets = '';
 var vaultTemplates = { new_eval: '', follow_up: '' };
 var lastHpi = '';
 var authToken = '';
@@ -518,6 +521,10 @@ function draftSystem(){
   s += "=== OUTPUT FORMAT ===\n";
   s += "Output plain, chart-ready text for pasting into an EHR. Do NOT use Markdown: no # or ## headings, no --- or *** divider lines, no > blockquotes, no ** bold **. FOLLOW THE CLINICIAN'S TEMPLATE for how section labels are placed: if the template writes the label inline with a colon and the content on the same line (e.g. 'Counseling: continues weekly therapy...'), do exactly that; if the template puts labels on their own line, do that. Do not impose a layout the template does not use. Even if the template is written in Markdown, do not carry that syntax into the HPI.\n\n";
   s += "Add only minimal connective narrative needed to make the notes read as clinical prose. Connective wording must not introduce any new clinical fact. Output the HPI text only.";
+  if(rosOn && rosMacro && rosMacro.trim()){
+    s += "\n\n=== APPEND A REVIEW OF SYSTEMS ===\n";
+    s += "After the HPI, add a section headed exactly 'Review of Systems:' built from the clinician's STANDARD ROS below. Keep their categories, default items, and signs. Flip an item to (+) ONLY if today's notes indicate the patient reported that symptom; otherwise keep the clinician's default. Do NOT add items that are not in their list, and NEVER assert a positive the notes do not support. Reproduce their exact format.\n\nCLINICIAN'S STANDARD ROS:\n" + rosMacro.trim() + "\n";
+  }
   return s;
 }
 
@@ -591,7 +598,11 @@ async function runDraft(sourceText, btn, errEl){
     renderResultPreview(hpi);
     btn.innerHTML = '<span class="spinner"></span>Reviewing&hellip;';
     var res = await verifyHpi(hpi);
-    renderResult(res.hpi, res.flags);
+    // MSE is a pure macro insert (the clinician's own attestation) — appended AFTER the AI
+    // passes so the model never touches or fabricates exam findings.
+    var finalHpi = res.hpi;
+    if(mseOn && mseMacro && mseMacro.trim()){ finalHpi += "\n\nMental Status Exam:\n" + mseMacro.trim(); }
+    renderResult(finalHpi, res.flags);
     document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
     ok = true;
   } catch(err){
@@ -1221,6 +1232,9 @@ function loadVaultTemplates(){
     if(lv.hpiPrep!==undefined) prepOn = (lv.hpiPrep===true || lv.hpiPrep==='on');
     else if(lv.hpiWorkflow==='prep') prepOn = true; // legacy 'prep' implied prep-on
     if(lv.hpiTherapyGuide!==undefined) therapyGuide = (lv.hpiTherapyGuide===true || lv.hpiTherapyGuide==='on');
+    rosOn = (lv.hpiRos==='on'); rosMacro = lv.hpiRosMacro || '';
+    mseOn = (lv.hpiMse==='on'); mseMacro = lv.hpiMseMacro || '';
+    planSnippets = lv.hpiPlanSnippets || '';
   } catch(e){}
   renderTemplateStatus();
   syncTherapyToggle();
@@ -1240,6 +1254,9 @@ function loadVaultTemplates(){
       if(d.data.hpiPrep!==undefined) prepOn = (d.data.hpiPrep===true || d.data.hpiPrep==='on');
       else prepOn = (d.data.hpiWorkflow==='prep');
       if(d.data.hpiTherapyGuide!==undefined){ therapyGuide = (d.data.hpiTherapyGuide===true || d.data.hpiTherapyGuide==='on'); }
+      rosOn = (d.data.hpiRos==='on'); rosMacro = d.data.hpiRosMacro || '';
+      mseOn = (d.data.hpiMse==='on'); mseMacro = d.data.hpiMseMacro || '';
+      planSnippets = d.data.hpiPlanSnippets || '';
       syncTherapyToggle();
       if(typeof d.data.hpiCaptureMode === 'string'){ try{ localStorage.setItem('tbp_hpi_capture', d.data.hpiCaptureMode); }catch(e){} if(typeof window.tbpSetCapture==='function') window.tbpSetCapture(d.data.hpiCaptureMode); }
       renderTemplateStatus();
