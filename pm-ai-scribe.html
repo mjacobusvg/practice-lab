@@ -260,8 +260,12 @@ var HOUSE = "You are a clinical documentation generator for psychiatric and beha
 // ── State ──
 var visitType = null; // no default: force an explicit choice so the wrong template can never ride a silent default
 var sourceMode = 'typed';
-var workflow = null;      // 'prep' | 'ambient' | 'direct' — the clinician's saved working style (Vault, never hardcoded)
-var styleBarOpen = false; // whether the style picker is expanded
+// Two independent axes (a clinician can do any combination):
+var workflow = null;      // CAPTURE: 'ambient' (record) | 'manual' (type/paste). Vault, never hardcoded.
+var prepOn = false;       // PREP from last note (carry forward + today's checklist) — works in BOTH capture modes.
+var styleBarOpen = false; // (unused now — picker is always shown)
+// Map legacy single-value styles to the new capture axis: 'prep'/'direct' were both manual.
+function migrateWf(v){ return v==='ambient' ? 'ambient' : ((v==='prep'||v==='direct'||v==='manual') ? 'manual' : null); }
 var therapyGuide = true;  // psychotherapy guide on/off — per-clinician (Vault); default on
 var vaultTemplates = { new_eval: '', follow_up: '' };
 var lastHpi = '';
@@ -400,47 +404,50 @@ function isTranscriptMode(m){ return m === 'ambient' || m === 'record'; }
 
 // Working-style picker. Persisted to the clinician's Vault — nothing hardcoded; a
 // clinician with no saved style sees the expanded picker and chooses their own.
-var WF_LABELS = { prep:'Prep from last note', ambient:'Record ambient (beta)', direct:'Paste my own notes' };
+var WF_LABELS = { ambient:'Record ambient', manual:'Type or paste' };
 function renderStyleBar(){
   var bar = document.getElementById('style-bar'); if(!bar) return;
-  if(!workflow || styleBarOpen){
-    var html = '<div class="hint" style="margin-bottom:6px">How do you work? <span style="color:var(--cream-dim)">(saved for next time &mdash; change it anytime)</span></div><div class="opts" id="wf-opts">';
-    ['prep','ambient','direct'].forEach(function(k){ html += '<div class="opt'+(workflow===k?' sel':'')+'" data-wf="'+k+'">'+WF_LABELS[k]+'</div>'; });
-    html += '</div>';
-    bar.innerHTML = html;
-    var g = document.getElementById('wf-opts');
-    g.addEventListener('click', function(e){
-      var o = e.target.closest('.opt'); if(!o) return;
-      workflow = o.getAttribute('data-wf'); styleBarOpen = false;
-      persistWorkflow(workflow);
-      renderStyleBar(); renderMode();
-    });
-  } else {
-    bar.innerHTML = '<div class="hint">Working style: <strong style="color:var(--cream)">'+WF_LABELS[workflow]+'</strong> &middot; <a href="#" id="wf-change" style="color:var(--teal)">change</a></div>';
-    var a = document.getElementById('wf-change');
-    if(a) a.addEventListener('click', function(e){ e.preventDefault(); styleBarOpen = true; renderStyleBar(); });
-  }
+  // Two independent controls: capture (ambient vs type/paste) and a prep-from-last-note toggle
+  // that applies to EITHER capture mode.
+  var html = '<div class="hint" style="margin-bottom:6px">How do you capture the visit? <span style="color:var(--cream-dim)">(saved &mdash; change anytime)</span></div><div class="opts" id="wf-opts">';
+  ['ambient','manual'].forEach(function(k){ html += '<div class="opt'+(workflow===k?' sel':'')+'" data-wf="'+k+'">'+WF_LABELS[k]+(k==='ambient'?' <span style="opacity:.6;font-weight:400">(beta)</span>':'')+'</div>'; });
+  html += '</div>';
+  html += '<label style="display:inline-flex;align-items:center;gap:8px;margin-top:12px;cursor:pointer;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream);font-size:.9rem">'
+        + '<input type="checkbox" id="wf-prep"'+(prepOn?' checked':'')+' style="width:auto"> <span>Prep from last note <span style="color:var(--cream-dim)">&mdash; carry last visit forward and get today\'s checklist (works whether you record or type)</span></span></label>';
+  bar.innerHTML = html;
+  var g = document.getElementById('wf-opts');
+  g.addEventListener('click', function(e){
+    var o = e.target.closest('.opt'); if(!o) return;
+    workflow = o.getAttribute('data-wf');
+    persistWorkflow(workflow);
+    renderStyleBar(); renderMode();
+  });
+  var pc = document.getElementById('wf-prep');
+  if(pc) pc.addEventListener('change', function(){ prepOn = this.checked; persistVaultField('hpiPrep', prepOn?'on':'off'); renderMode(); });
 }
 
 // Show only the inputs the chosen working style + visit type actually need.
 function renderMode(){
   function show(id, on){ var el=document.getElementById(id); if(el) el.style.display = on ? '' : 'none'; }
-  var wf = workflow, isFu = (visitType==='follow_up'), isNew = (visitType==='new_eval');
-  // Derive the review mode: ambient audio is a transcript (also checked for mis-hearings); typed/pasted is not.
-  sourceMode = (wf === 'ambient') ? 'ambient' : 'typed';
+  var isAmbient = (workflow==='ambient'), isFu = (visitType==='follow_up'), isNew = (visitType==='new_eval');
+  // Review mode: ambient audio is a transcript (also checked for mis-hearings); typed/pasted is not.
+  sourceMode = isAmbient ? 'ambient' : 'typed';
 
-  show('carry-block', isFu && !!wf);   // last-visit note applies to any follow-up workflow
+  // Last-visit note: available for any follow-up (required input when Prep is on; optional carry-forward otherwise).
+  show('carry-block', isFu);
   var cl = document.getElementById('carry-label');
-  if(cl){ cl.innerHTML = (wf==='prep')
+  if(cl){ cl.innerHTML = prepOn
     ? "Last visit's note &mdash; paste to carry forward and set up"
     : "Last visit's note <span style=\"text-transform:none;font-weight:400;color:var(--cream-dim)\">(optional &mdash; to carry forward)</span>"; }
 
-  show('prep-controls', wf==='prep' && isFu);
-  show('neweval-scaffold', wf==='prep' && isNew);
-  show('ambient-panel', wf==='ambient');
+  // Prep controls (Set me up) depend on the PREP toggle, not the capture mode.
+  show('prep-controls', prepOn && isFu);
+  show('neweval-scaffold', prepOn && isNew);
+  // Ambient record panel depends on the CAPTURE mode.
+  show('ambient-panel', isAmbient);
 
   var rl = document.getElementById('raw-label');
-  if(rl){ rl.innerHTML = (wf==='ambient')
+  if(rl){ rl.innerHTML = isAmbient
     ? "Your visit notes <span style=\"text-transform:none;font-weight:400;color:var(--cream-dim)\">(the transcript lands here &mdash; edit freely)</span>"
     : "Your visit notes &mdash; exactly as you took them"; }
 }
@@ -1210,7 +1217,9 @@ function loadVaultTemplates(){
     var lv = JSON.parse(localStorage.getItem('tbp_vault')||'{}');
     vaultTemplates.new_eval = lv.hpiTemplateEval || '';
     vaultTemplates.follow_up = lv.hpiTemplateFollowup || '';
-    if(lv.hpiWorkflow) workflow = lv.hpiWorkflow;
+    if(lv.hpiWorkflow) workflow = migrateWf(lv.hpiWorkflow);
+    if(lv.hpiPrep!==undefined) prepOn = (lv.hpiPrep===true || lv.hpiPrep==='on');
+    else if(lv.hpiWorkflow==='prep') prepOn = true; // legacy 'prep' implied prep-on
     if(lv.hpiTherapyGuide!==undefined) therapyGuide = (lv.hpiTherapyGuide===true || lv.hpiTherapyGuide==='on');
   } catch(e){}
   renderTemplateStatus();
@@ -1227,7 +1236,9 @@ function loadVaultTemplates(){
       // Authoritative per-account profile (overrides the shared localStorage mirror).
       vaultTemplates.new_eval = d.data.hpiTemplateEval || '';
       vaultTemplates.follow_up = d.data.hpiTemplateFollowup || '';
-      workflow = d.data.hpiWorkflow || null;
+      workflow = migrateWf(d.data.hpiWorkflow);
+      if(d.data.hpiPrep!==undefined) prepOn = (d.data.hpiPrep===true || d.data.hpiPrep==='on');
+      else prepOn = (d.data.hpiWorkflow==='prep');
       if(d.data.hpiTherapyGuide!==undefined){ therapyGuide = (d.data.hpiTherapyGuide===true || d.data.hpiTherapyGuide==='on'); }
       syncTherapyToggle();
       if(typeof d.data.hpiCaptureMode === 'string'){ try{ localStorage.setItem('tbp_hpi_capture', d.data.hpiCaptureMode); }catch(e){} if(typeof window.tbpSetCapture==='function') window.tbpSetCapture(d.data.hpiCaptureMode); }
@@ -1436,12 +1447,13 @@ function loadVaultTemplates(){
 // it just walks a new clinician through choosing their own working style, setup,
 // and template, saving each to their Vault.
 // ══════════════════════════════════════════════════════════════════════════
-var onbState = { step:1, style:null, capture:'inperson', therapy:true };
+var onbState = { step:1, style:null, prep:false, capture:'inperson', therapy:true };
 var onboardChecked = false;
 
 function openOnboarding(){
   onbState.step = 1;
   onbState.style = workflow;
+  onbState.prep = prepOn;
   onbState.therapy = therapyGuide;
   try { onbState.capture = localStorage.getItem('tbp_hpi_capture') || 'inperson'; } catch(e){}
   document.getElementById('onboarding').classList.add('open');
@@ -1466,16 +1478,25 @@ function onbRender(){
           + '<strong style="color:var(--cream)">AI Scribe</strong> &mdash; captures the visit (your typed notes, a quick prep from last visit, or an ambient recording) and writes your note in your structure and voice: HPI, assessment &amp; plan.<br>'
           + '<strong style="color:var(--cream)">Chart Audit &amp; Coder</strong> &mdash; audits your finished note for documentation gaps and compliance, then suggests and checks your E/M and psychotherapy codes.'
         + '</div>'
-        + '<div class="hint" style="margin-top:8px"><strong style="color:var(--cream)">Why keep it separate?</strong> Writing a note and auditing/coding it are different jobs. You review and sign the note first, then the audit &amp; coder checks what you actually wrote and assigns the codes &mdash; so you\'re never trusting a black box you can\'t check.</div>'
+        + '<div class="hint" style="margin-top:8px"><strong style="color:var(--cream)">Why keep it separate?</strong> You review and sign the note yourself, then reach for the Audit &amp; Coder when you actually need it. As you get sharper at coding you lean on it less &mdash; using it for the calls you\'re unsure of (is this a 99214, or does it reach a 99215?).</div>'
       + '</div>'
       + '<p class="msub">To document the way <em>you</em> do &mdash; your voice, your templates &mdash; we store your preferences in your <strong>Vault</strong>: the same place that holds your information across every Think Beyond Practice tool. You set it up once here, and it carries everywhere.</p>'
       + '<p class="hint" style="margin-top:6px">Takes about two minutes &mdash; we\'ll set up your AI Scribe now; the Coder shares the same Vault. Change anything later anytime.</p>'
       + '<div style="margin-top:16px"><button class="btn" id="onb-start">Set it up &rarr;</button> <button class="btn-ghost" id="onb-skip" style="margin-left:8px">Skip for now</button></div>';
   } else if(s===2){
-    html = '<h2>How do you usually work?</h2><p class="msub">Pick your default &mdash; the tool opens this way every visit, and you can switch anytime.</p>'
-      + onbCard('prep','Prep from last note','Paste last visit\'s note; I build today\'s checklist and a starting note; you answer each line live and I sort it into your template.')
-      + onbCard('ambient','Record ambient','I listen and transcribe the visit (in person or telehealth); you review and draft. The checklist still guides what to ask.')
-      + onbCard('direct','Paste my own notes','Jot or paste your rough notes and I draft the HPI.')
+    html = '<h2>How do you capture your visits?</h2><p class="msub">Pick your default &mdash; you can switch anytime, per visit.</p>'
+      + onbCard('ambient','Record ambient','I listen to the visit (in person or telehealth) and transcribe it; you review and draft.')
+      + onbCard('manual','Type or paste','You jot or paste your notes as you go and I draft the note.')
+      + '<div style="background:var(--navy);border:1px solid var(--rule);border-radius:8px;padding:14px;margin-top:16px">'
+        + '<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;text-transform:none;font-weight:400;letter-spacing:0;font-size:.95rem;line-height:1.5">'
+          + '<input type="checkbox" id="onb-prep"'+(onbState.prep?' checked':'')+' style="margin-top:3px;width:auto">'
+          + '<span><strong style="color:var(--cream)">Also prep me from last visit</strong> <span style="color:var(--cream-dim)">(optional &mdash; works whether you record or type)</span></span></label>'
+        + '<div class="hint" style="margin-top:10px;line-height:1.6">Before a follow-up, paste last visit\'s note and you <strong style="color:var(--cream)">never start from a blank page</strong>. The tool carries forward everything still true (meds, history, stable items) as &ldquo;continues to&hellip;&rdquo;, and hands you a <strong style="color:var(--cream)">checklist of exactly what to re-check today</strong>, pulled from last time. You go down the list with the patient &mdash; recording or typing &mdash; and your answers drop into the note.</div>'
+        + '<div style="margin-top:10px;background:var(--navy-card);border:1px solid var(--rule);border-radius:6px;padding:10px 12px;font-size:.82rem;color:var(--cream-dim);line-height:1.6">'
+          + '<div style="color:var(--cream);font-weight:600;font-size:.7rem;letter-spacing:.05em;text-transform:uppercase;margin-bottom:5px">Example checklist it builds for you</div>'
+          + '&bull; Re-check sleep &mdash; was 4&ndash;5h after the dose increase<br>&bull; Any new side effects since the bump to 40mg?<br>&bull; Confirm she still denies SI/HI<br>&bull; Follow up &mdash; did she start the therapy referral?'
+        + '</div>'
+      + '</div>'
       + '<div style="margin-top:18px"><button class="btn" id="onb-next"'+(onbState.style?'':' disabled')+'>Next &rarr;</button> <button class="btn-ghost" id="onb-back" style="margin-left:8px">Back</button></div>';
   } else if(s===3){
     html = '<h2>A couple of setup details</h2>'
@@ -1487,7 +1508,7 @@ function onbRender(){
       + '<div class="hint" style="margin-top:6px">The psychotherapy guide suggests a technique, how-to, and sample prompts each visit. Off = never shown.</div>'
       + '<div style="margin-top:18px"><button class="btn" id="onb-next">Next &rarr;</button> <button class="btn-ghost" id="onb-back" style="margin-left:8px">Back</button></div>';
   } else if(s===4){
-    var sum = (WF_LABELS[onbState.style]||'—') + (onbState.style==='ambient' ? ', '+(onbState.capture==='telehealth'?'telehealth':'in person') : '') + ', psychotherapy guide '+(onbState.therapy?'on':'off');
+    var sum = (WF_LABELS[onbState.style]||'—') + (onbState.style==='ambient' ? ', '+(onbState.capture==='telehealth'?'telehealth':'in person') : '') + (onbState.prep?', prep from last note':'') + ', psychotherapy guide '+(onbState.therapy?'on':'off');
     html = '<h2>Last thing: your note template</h2>'
       + '<p class="msub">Paste one HPI you already like and answer a couple of questions &mdash; I turn it into a reusable template in your structure and voice, so you never start from a blank box. No patient details from your sample are kept, only your style.</p>'
       + '<div class="hint" style="margin-top:8px">You\'re set up: <strong style="color:var(--cream)">'+sum+'</strong>. Change any of it anytime.</div>'
@@ -1511,6 +1532,8 @@ function onbWire(){
   if(s===2){
     var cards=document.querySelectorAll('#onb-body .opt[data-style]');
     for(var i=0;i<cards.length;i++){ cards[i].addEventListener('click', function(){ onbState.style=this.getAttribute('data-style'); workflow=onbState.style; persistWorkflow(workflow); onbRender(); }); }
+    var pchk=document.getElementById('onb-prep');
+    if(pchk) pchk.addEventListener('change', function(){ onbState.prep=this.checked; prepOn=this.checked; persistVaultField('hpiPrep', prepOn?'on':'off'); });
     on('onb-next', function(){ if(onbState.style){ onbState.step=3; onbRender(); } });
     on('onb-back', function(){ onbState.step=1; onbRender(); });
   }
