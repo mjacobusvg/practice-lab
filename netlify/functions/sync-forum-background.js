@@ -144,6 +144,7 @@ exports.handler = async function (event) {
             // comments for this post
             if (forumPostId && (post.comments_count || 0) > 0) {
               let cpage = 1;
+              const parentPairs = []; // [circle_child_id, circle_parent_id] for threaded replies
               while (true) {
                 if (Date.now() - start > TIME_BUDGET_MS) { stats.incomplete = true; break; }
                 const cr = await circle('/comments?post_id=' + post.id + '&page=' + cpage + '&per_page=50');
@@ -166,10 +167,28 @@ exports.handler = async function (event) {
                     };
                     const cu = await sbWrite('forum_comments?on_conflict=circle_comment_id', 'POST', crow, 'resolution=merge-duplicates,return=minimal');
                     if (cu.ok) stats.comments++;
+                    if (c.parent_comment_id) parentPairs.push([c.id, c.parent_comment_id]);
                   } catch (ce) { stats.errors.push('comment ' + c.id + ': ' + ce.message); }
                 }
                 if (cbatch.length < 50) break;
                 cpage++;
+              }
+              // Resolve threaded replies: map each Circle parent id to our comment id
+              // and set parent_comment_id so the renderer nests the reply. This runs
+              // after all of the post's comments are upserted, so a parent on an
+              // earlier page is already present. Best-effort — it never breaks a sync.
+              if (parentPairs.length) {
+                try {
+                  const rows = await sbGet('forum_comments?post_id=eq.' + forumPostId + '&select=id,circle_comment_id');
+                  const idByCircle = {};
+                  for (const r of rows) { if (r.circle_comment_id != null) idByCircle[r.circle_comment_id] = r.id; }
+                  for (const [childCircle, parentCircle] of parentPairs) {
+                    const childId = idByCircle[childCircle], parentId = idByCircle[parentCircle];
+                    if (childId && parentId) {
+                      await sbWrite('forum_comments?id=eq.' + childId, 'PATCH', { parent_comment_id: parentId }, 'return=minimal');
+                    }
+                  }
+                } catch (pe) { stats.errors.push('thread resolve post ' + post.id + ': ' + pe.message); }
               }
             }
           } catch (pe) { stats.errors.push('post ' + post.id + ': ' + pe.message); }
