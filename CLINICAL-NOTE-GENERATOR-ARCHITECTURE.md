@@ -280,23 +280,57 @@ Generator is the entry point; Note Builder's preflight / assessment / review / t
 fold in as pipeline stages, and the one-button push becomes an internal stage. Do it
 incrementally behind the existing tools so nothing breaks mid-migration.
 
-### Two markets, one engine (therapist product — future)
-Michael plans a **cheaper standalone scribe for therapists**, who won't pay the $149
-prescriber-platform price. This is the *one* legitimate exception to "no separate brand": a
-standalone product for a **non-overlapping market** at a different price is a second
-go-to-market, not a sub-brand of the platform. Reconciliation:
-- **Inside Think Beyond Practice (prescribers):** the scribe stays an **unbranded feature**
-  (Clinical Note Builder + ambient input mode).
-- **Therapist offering:** its **own identity / landing / price at launch** — same engine,
-  separate front door. Likely **drops "Practice"** (therapists don't identify with the
-  prescriber/business framing). Do NOT create the brand before the product exists.
+### Two markets, one NETWORK (thesis corrected 2026-07)
+**Earlier framing (now rejected):** "a cheaper standalone scribe for therapists, a
+non-overlapping market at a lower price." That measured the wrong unit. Priced as a
+standalone note-writer against SimplePractice's ~$35 in-EHR Notetaker, a therapist scribe
+loses (lower price, deeper integration, happy sticky customers — see the Amy market-research
+reply). Do **not** build a therapist scribe to beat SimplePractice.
+
+**Corrected thesis:** the scribe is the **acquisition hook**; the **cross-clinician network
+is the product and the moat.** SimplePractice is an EHR, not a network of clinicians —
+building the network is a category they are not in. The two markets are **not**
+non-overlapping; the **overlap IS the value.** Every therapist added makes the platform more
+valuable to prescribers and vice versa:
+- **Referrals** — prescribers need therapists to refer to; therapists need prescribers for
+  med management. Both under one roof = a referral network, the stickiest asset in
+  healthcare (people don't leave where their referral relationships live).
+- **Mixed case consultation** — a case discussion is worth more with both types in the room
+  (therapist gets the med view, prescriber gets the modality view). Not content, a community.
+  SimplePractice cannot manufacture this.
+- **Course marketplace** — psych NPs increasingly want therapy skills; therapists teach
+  modality courses to prescribers, platform takes a cut. A revenue line *and* a retention
+  mechanism that monetizes the cross-pollination. (CE offerings are ANCC-accredited, so they
+  count for prescribers/nurses but not necessarily for therapist licenses — be upfront.)
+- **Mentoring, CEs, simulators** all ride the same network.
+
+**Why the economics flip:** a therapist paying $49 for a note-writer is squinting at a $35
+alternative. A therapist paying **$49–59 for referrals + peer network + teaching income +
+CEs** is buying access and opportunity, not a utility — different buyer, different number,
+higher LTV, and a moat instead of a grind. The scribe just gets them in the door on day one.
+
+**The one thing that decides it — network density.** Referrals and mixed case consult only
+fire at enough density in overlapping niches/geographies; cold-starting a two-sided network
+is the classic hard problem. **Unfair advantage: TBP is not cold-starting both sides — the
+prescriber side already exists.** Therapists get seeded into a live prescriber community.
+That is the difference between a real play and wishful thinking, and TBP is on the right side.
+
+**Branding:** therapists may still get their **own front door / landing / price** for
+acquisition (likely **drops "Practice"** — they don't identify with the prescriber/business
+framing), but they land in the **same community**, not a separate product. Do NOT create the
+brand before the product exists.
 
 **Build constraint (applies NOW):** keep the Note engine **market-agnostic** —
 template / toggle / Vault-driven, **no hardcoded prescriber assumptions** (meds, E/M coding,
-etc. are configurable, not baked in). Then the therapist version is a **skin + therapist
-default templates** (DAP / SOAP progress notes, psychotherapy-centric, no med management),
-**not a fork.** This is the same discipline as §0.3 (learn the clinician's style, don't
-hardcode it), applied at the market level.
+etc. are configurable, not baked in). The therapist version is a **skin + therapist default
+templates** (DAP / SOAP progress notes, psychotherapy-centric, no med management), **not a
+fork.** Therapist tuning = **minimal-necessary by default** (what insurance requires, nothing
+more; Amy's own note errs verbose for a therapist), with density/verbosity dialed up via Vault
+templates/prompts/macros for anyone who wants it. Same discipline as §0.3 (learn the
+clinician's style, don't hardcode it), applied at the market level. Note the therapist
+"MDM" is the **same defensibility problem** the psychotherapy blurb already solves: naming
+modality / intervention / focus / response and documenting goal-progress in audit-defensible,
+insurance-acceptable language — that engine is built and is market-agnostic.
 
 ---
 
