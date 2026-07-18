@@ -109,10 +109,12 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
       <!-- Working style: saved per clinician. The screen opens in their style. -->
       <div id="style-bar" style="margin-bottom:14px"></div>
 
-      <!-- Last visit's note: prominent in Prep mode, optional carry-forward in Ambient/Paste modes, hidden for new evals. -->
+      <!-- Last visit's note + assessment: powers BOTH carry-forward (fills standing sections)
+           AND the assessment (prior diagnosis list + current meds). Shown for every follow-up. -->
       <div id="carry-block" style="display:none">
-        <label for="context" id="carry-label" style="margin-top:6px">Last visit's note</label>
-        <textarea id="context" style="min-height:80px" placeholder="Paste last visit's note. Standing items that don't change each visit (substance use, exercise, hallucinations, history) carry forward worded as continued; today's notes drive everything that changed. Safety (SI/HI) is never carried forward as if assessed today."></textarea>
+        <label for="context" id="carry-label" style="margin-top:6px">Last visit's note + assessment</label>
+        <textarea id="context" style="min-height:90px" placeholder="Paste last visit's FULL note, including the assessment (diagnosis list with ICD-10 codes) and current medications. Two jobs: (1) standing items that don't change each visit (substance use, exercise, hallucinations, history) carry forward worded as continued so those sections aren't blank; (2) the diagnosis list and meds let 'Build assessment' run. Today's notes drive everything that changed; safety (SI/HI) is never carried forward as if assessed today."></textarea>
+        <div class="hint" style="margin-top:5px;line-height:1.45">Include the <strong style="color:var(--cream)">assessment and diagnosis list</strong> from last time, not just the HPI &mdash; that is what fills your standing sections and lets the assessment build with the right diagnoses and meds.</div>
       </div>
 
       <!-- Prep mode, follow-up: Set me up -->
@@ -441,8 +443,8 @@ function renderMode(){
   show('carry-block', isFu);
   var cl = document.getElementById('carry-label');
   if(cl){ cl.innerHTML = prepOn
-    ? "Last visit's note &mdash; paste to carry forward and set up"
-    : "Last visit's note <span style=\"text-transform:none;font-weight:400;color:var(--cream-dim)\">(optional &mdash; to carry forward)</span>"; }
+    ? "Last visit's note + assessment &mdash; paste to carry forward and set up"
+    : "Last visit's note + assessment <span style=\"text-transform:none;font-weight:400;color:var(--cream-dim)\">(carries sections forward &amp; powers the assessment)</span>"; }
 
   // Prep controls (Set me up) depend on the PREP toggle, not the capture mode.
   show('prep-controls', prepOn && isFu);
@@ -800,7 +802,7 @@ function sendToNoteBuilder(){
 }
 
 // ── Slice 4: build the assessment in-tool (shared note-engine.js — same prompts as the Note Builder) ──
-async function buildAssessment(btn){
+async function buildAssessment(btn, force){
   if(!window.NoteEngine || typeof window.NoteEngine.runAssessment !== 'function'){
     document.getElementById('assess-results').innerHTML = '<div class="err">Assessment engine did not load. Hard-reload the page (Cmd/Ctrl+Shift+R) and try again.</div>';
     return;
@@ -811,6 +813,21 @@ async function buildAssessment(btn){
   // Prior assessment + diagnoses drive the diagnosis list; for a follow-up that lives in last visit's note.
   var dxprior = '';
   if(visitType === 'follow_up'){ var c = document.getElementById('context'); dxprior = (c && c.value ? c.value.trim() : ''); }
+  // A follow-up assessment needs the prior diagnosis list + current meds. Without them the engine
+  // can only ask for them, which reads badly. Steer the clinician to the box first, but let them
+  // build anyway (the HPI sometimes carries meds/diagnoses inline).
+  if(visitType === 'follow_up' && dxprior.length < 40 && !force){
+    document.getElementById('assess-results').innerHTML =
+      '<div class="flags"><div class="flags-h">Paste last visit\'s note + assessment first</div>'
+      + '<div class="hint" style="margin-top:6px;line-height:1.5">The assessment needs the <strong style="color:var(--cream)">prior diagnosis list (with ICD-10 codes) and current medications</strong> to build accurately, otherwise it can only ask you for them. Paste last visit\'s note and assessment into <strong style="color:var(--cream)">&ldquo;Last visit\'s note + assessment&rdquo;</strong> near the top, then build.</div>'
+      + '<div style="margin-top:10px"><button class="btn-ghost" id="goto-carry">Take me to that box</button> '
+      + '<button class="btn-ghost" id="build-anyway">Build without it anyway</button></div></div>';
+    var g = document.getElementById('goto-carry');
+    if(g) g.addEventListener('click', function(){ var c=document.getElementById('context'); if(c){ c.scrollIntoView({behavior:'smooth',block:'center'}); c.focus(); } });
+    var ba = document.getElementById('build-anyway');
+    if(ba) ba.addEventListener('click', function(){ buildAssessment(btn, true); });
+    return;
+  }
   var label = btn.innerHTML;
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Building assessment&hellip;';
   var box = document.getElementById('assess-results');
