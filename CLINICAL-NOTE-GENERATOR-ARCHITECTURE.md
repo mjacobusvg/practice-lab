@@ -205,6 +205,83 @@ took; the rule stands on the don't-duplicate-the-HPI principle, not on that soft
 
 ---
 
+## 0.4 LOCKED STRUCTURE (decided 2026-07) — two tools, one note pipeline
+
+**The decision.** We had been treating the scribe as *three* tools (HPI Generator, Note
+Builder, Coder). Revisited with Michael and corrected: **HPI and Assessment are two halves
+of ONE signed note** — the existing one-button "HPI → Note Builder" push was a symptom of an
+artificial seam, one note cut in half. Coding is a genuinely *different job* (analysis of a
+finished note, not generation). So the real structure is **two tools**, and Michael is 100%
+certain the coder is separate.
+
+### The two tools
+1. **The Note** — HPI + Assessment & Plan + (optional) Psychotherapy blurb + (optional)
+   MSE / ROS. One signed document, with the visit **guide** (checklist + psychotherapy guide)
+   built in. This is the merge of today's HPI Generator + Note Builder.
+2. **The Coder / Audit** — reads the finished note and produces/checks E/M + add-on codes.
+   Separate tool (evaluation, not writing).
+
+Onboarding story collapses to: **"one tool writes your note in your voice, one tool codes it."**
+
+### The Note pipeline (per visit)
+| # | Pass | Calls | Notes |
+|---|------|-------|-------|
+| 1 | **[Ambient] Clarify** | 0–1 | Verify pass flags likely mishearings; elicitation asks the clinician only if genuinely unclear. **Mostly already exists.** Most valuable for ambient/transcript sources. |
+| 2 | **HPI draft → verify** | 2 | Existing two passes. Psychotherapy content parsed into a Psychotherapy section **if the guide was used**. **ROS positives filled here** (folded in, no extra call). |
+| 3 | **Assessment preflight** | 0–1 | Choice-cards. Skips the psychotherapy question if the guide already answered it. Optional UX. |
+| 4 | **Assessment + Plan → review** | 2 | One draft pass produces assessment **and** plan (meds/labs ordered + Vault plan language, phone numbers, snippets), then review. Optional **MSE macro** inserted here. |
+| 5 | **Psychotherapy blurb** | 0–1 | Adaptive: parse if guide used; else drafted from the preflight pick; omitted if no therapy. |
+
+**Cost:** full note ≈ **4–5 calls ≈ $0.15–0.20**; a stripped "just draft it" path ≈ 2 calls.
+The **verify and review passes ARE the product** (anti-fabrication, mishearing-catching) —
+never cut them to save pennies. A normal HPI draft today = exactly **2 calls (draft → verify)**;
+the elicitation pass is separate and only fires on demand.
+
+### Personalization = toggles in ONE tool, never separate tools
+Governing rule (Michael): *don't split a tool just because some clinicians won't use a
+section — make it an option.* Toggles: psychotherapy on/off, psychotherapy **guide** on/off,
+MSE on/off, ROS on/off, plan style. All in the one Note tool.
+
+### Objective vs subjective — the anti-fabrication line for MSE and ROS
+- **MSE is objective** (appearance, affect, thought process — things you *observe*). It is
+  **not in the HPI/transcript**, so the AI cannot produce it without inventing findings →
+  **NO AI.** The clinician's standard MSE is stored as a **Vault macro** (dot-phrase), inserted
+  on toggle; they edit the deltas and sign. Their attestation, their words.
+- **ROS is subjective** (symptoms the *patient reports*). It **is** in the source, so the AI
+  may honestly fill it. The clinician's **ROS macro** is the base; the **HPI pass flips the
+  pertinent positives actually reported** and keeps the standard negatives; they edit deltas.
+  Folded into the HPI call — **no extra cost.** Default negatives are the clinician's own
+  attestation (their macro), never AI-invented positives.
+- **Principle:** *objective sections = clinician macro only; subjective sections = clinician
+  macro + AI fills the real positives. Never invent findings.*
+
+### Coding reality (drives the MSE/ROS defaults)
+Post-2021 office/outpatient E/M (99202–99215): the level is chosen by **MDM or total time**;
+history and exam must be "medically appropriate" but **do not determine the level.** So MSE and
+ROS are **medical-necessity / preference**, not level drivers → both **optional, off by default.**
+(General info, not billing/legal advice — confirm with billing/compliance.)
+
+### Vault additions implied by this structure
+- `hpiMseMacro` — clinician's standard MSE text (dot-phrase)
+- `hpiRosMacro` — clinician's standard ROS template (with their default +/− items)
+- `hpiPlanSnippets` / phone numbers / standard plan language
+- toggles: `hpiMse` (on/off), `hpiRos` (on/off), `hpiPsychotherapy` (on/off) — `hpiTherapyGuide`
+  already exists
+
+### Cost model (estimate, heavy user at 40 patients/week ≈ 173 notes/month)
+- **Types only:** notes ~$31/mo · notes + coding ~$48/mo
+- **Ambient:** notes + transcription ~$48/mo · + coding ~$65/mo
+  (Transcription = Azure batch $0.18/hr ≈ $0.10/visit at 30 min; scales with visit length.)
+Comfortable margin on $89–149 tiers; bundle flat.
+
+### Migration note
+Merge today's **HPI Generator + Note Builder → one Note tool**; keep the Coder. The HPI
+Generator is the entry point; Note Builder's preflight / assessment / review / therapy passes
+fold in as pipeline stages, and the one-button push becomes an internal stage. Do it
+incrementally behind the existing tools so nothing breaks mid-migration.
+
+---
+
 ## 1. Where it stands today (audit)
 
 The "AI Scribe" is already **three separate tools joined by clinician copy-paste**,
