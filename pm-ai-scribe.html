@@ -77,6 +77,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 .bubble.me{background:var(--teal-glow);border:1px solid var(--teal);color:var(--white)}
 </style>
 <script src="/auth-gate.js"></script>
+<script src="/note-engine.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
 .tbp-theme-fab{position:fixed;top:10px;right:10px;z-index:99999;width:34px;height:34px;border-radius:50%;border:1px solid var(--rule,rgba(255,255,255,.18));background:var(--navy-card,var(--surface,#152238));color:var(--cream,var(--text,#e8e2d6));cursor:pointer;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.22);padding:0}
@@ -575,12 +576,15 @@ function renderResult(hpi, flags){
   }
   html += '<div class="hint" style="margin-top:14px">&#10003; Auto-reviewed against your notes.</div>';
 
-  // Slice 2: one-button handoff to the Note Builder
-  html += '<div class="handoff">Ready to work up the assessment and psychotherapy note? Send this HPI straight into the Clinical Note Builder, no copy-paste.'
-       +  '<br><button class="btn" id="send-nb">Send to Clinical Note Builder &rarr;</button></div>';
+  // Slice 4: build the assessment right here (same engine as the Note Builder), no copy-paste.
+  html += '<div class="handoff">Ready to work up the assessment? Build it right here from this HPI.'
+       +  '<br><button class="btn" id="build-assess">Build assessment &amp; plan &rarr;</button>'
+       +  '<div class="hint" style="margin-top:8px">Or <a href="#" id="send-nb-link">open it in the standalone Clinical Note Builder</a> instead.</div></div>';
+  html += '<div id="assess-results"></div>';
 
   document.getElementById('results').innerHTML = html;
-  document.getElementById('send-nb').addEventListener('click', sendToNoteBuilder);
+  document.getElementById('build-assess').addEventListener('click', function(){ buildAssessment(this); });
+  document.getElementById('send-nb-link').addEventListener('click', function(e){ e.preventDefault(); sendToNoteBuilder(); });
 }
 
 // ── Generate (Slice 1) — reusable so the top box AND the prep starting-note box can draft ──
@@ -793,6 +797,70 @@ function sendToNoteBuilder(){
   // Open the Note Builder in a NEW tab so the HPI workspace stays put.
   // sessionStorage is copied into the new same-origin tab on window.open, so the handoff carries.
   window.open('/pm-clinical-note-builder.html', '_blank');
+}
+
+// ── Slice 4: build the assessment in-tool (shared note-engine.js — same prompts as the Note Builder) ──
+async function buildAssessment(btn){
+  if(!window.NoteEngine || typeof window.NoteEngine.runAssessment !== 'function'){
+    document.getElementById('assess-results').innerHTML = '<div class="err">Assessment engine did not load. Hard-reload the page (Cmd/Ctrl+Shift+R) and try again.</div>';
+    return;
+  }
+  var hpiEl = document.getElementById('hpi-out');
+  var hpi = (hpiEl && typeof hpiEl.value === 'string' && hpiEl.value.trim()) ? hpiEl.value.trim() : lastHpi;
+  if(!hpi){ document.getElementById('assess-results').innerHTML = '<div class="err">No HPI to work from yet.</div>'; return; }
+  // Prior assessment + diagnoses drive the diagnosis list; for a follow-up that lives in last visit's note.
+  var dxprior = '';
+  if(visitType === 'follow_up'){ var c = document.getElementById('context'); dxprior = (c && c.value ? c.value.trim() : ''); }
+  var label = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Building assessment&hellip;';
+  var box = document.getElementById('assess-results');
+  box.innerHTML = '<div class="out"><div class="hint"><span class="spinner"></span> Drafting the assessment and auditing it against your notes&hellip;</div></div>';
+  try {
+    var res = await window.NoteEngine.runAssessment({ hpi: hpi, dxprior: dxprior, plan: '' });
+    renderAssessment(res.assessment, res.flags);
+    box.scrollIntoView({ behavior:'smooth', block:'start' });
+  } catch(err){
+    box.innerHTML = '<div class="err">'+esc(err.message || 'Could not build the assessment.')+'</div>';
+  } finally {
+    btn.disabled = false; btn.innerHTML = label;
+  }
+}
+
+function renderAssessment(assessment, flags){
+  var plan = (planSnippets && planSnippets.trim()) ? planSnippets.trim() : '';
+  var html = '';
+  html += '<div class="out"><button class="btn-copy" onclick="copyOut(\'assess-out\')">Copy</button>';
+  html += '<h3>Assessment</h3>';
+  html += '<textarea class="hpi-edit" id="assess-out">'+esc(assessment)+'</textarea>';
+  html += '<div class="hint" style="margin-top:6px">Auto-reviewed against your notes. Edit before you sign.</div></div>';
+
+  if(flags && flags.length){
+    var items = flags.map(function(f){ return '<li>'+esc(f)+'</li>'; }).join('');
+    html += '<div class="flags"><div class="flags-h">Worth a look before you sign</div><ul>'+items+'</ul></div>';
+  }
+
+  if(plan){
+    html += '<div class="out"><button class="btn-copy" onclick="copyOut(\'plan-out\')">Copy</button>';
+    html += '<h3>Plan</h3>';
+    html += '<textarea class="hpi-edit" id="plan-out">'+esc(plan)+'</textarea>';
+    html += '<div class="hint" style="margin-top:6px">Your saved plan snippets, dropped in as a starting point. This section is yours &mdash; the AI never writes prescription mechanics.</div></div>';
+  }
+
+  html += '<div class="handoff"><button class="btn" id="copy-full">Copy full note (HPI + Assessment'+(plan?' + Plan':'')+')</button></div>';
+  document.getElementById('assess-results').innerHTML = html;
+  var cf = document.getElementById('copy-full');
+  if(cf) cf.addEventListener('click', copyFullNote);
+}
+
+function copyFullNote(){
+  function val(id){ var el=document.getElementById(id); return (el && typeof el.value==='string') ? el.value.trim() : ''; }
+  var parts = [];
+  var hpi = val('hpi-out'); if(hpi) parts.push('History of Present Illness:\n' + hpi);
+  var assess = val('assess-out'); if(assess) parts.push('Assessment:\n' + assess);
+  var plan = val('plan-out'); if(plan) parts.push('Plan:\n' + plan);
+  navigator.clipboard.writeText(parts.join('\n\n'));
+  var b = document.getElementById('copy-full');
+  if(b){ var t=b.textContent; b.textContent='Copied full note'; setTimeout(function(){ b.textContent=t; },1500); }
 }
 
 // ── Slice 3: Setup wizard ──
