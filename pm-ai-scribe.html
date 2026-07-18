@@ -1,0 +1,1561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Scribe | Think Beyond Practice</title>
+<style>
+:root{
+  --navy:#0f1929; --navy-mid:#152033; --navy-card:#16243a; --rule:#24344d;
+  --teal:#2aabb8; --teal-glow:rgba(42,171,184,0.15); --blue:#3b82f6; --green:#34d399;
+  --amber:#fbbf24; --red:#f87171;
+  --white:#f5f8fc; --cream:#cdd9e8; --cream-dim:#8499b3;
+  --radius:12px;
+  --font-display:'Georgia',serif; --font-body:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--navy);color:var(--cream);font-family:var(--font-body);line-height:1.6;padding:24px 16px 60px}
+#tool-container{display:none;max-width:860px;margin:0 auto}
+#tool-container.tbp-shown{display:block!important}
+a{color:var(--teal)}
+.back{font-size:.82rem;color:var(--teal);text-decoration:none;display:inline-block;margin-bottom:18px}
+h1{font-family:var(--font-display);font-size:1.85rem;color:var(--white);margin-bottom:4px}
+h1 span{color:var(--teal)}
+.sub{color:var(--cream-dim);font-size:.92rem;margin-bottom:20px;max-width:680px}
+.caveat{background:rgba(248,113,113,0.08);border-left:3px solid var(--red);border-radius:8px;padding:14px 18px;font-size:.85rem;color:var(--cream);margin-bottom:22px}
+.caveat strong{color:var(--white)}
+.panel{background:var(--navy-card);border:1px solid var(--rule);border-radius:var(--radius);padding:20px;margin-bottom:18px}
+label{display:block;font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--cream-dim);margin-bottom:7px}
+textarea,select,input[type=text]{width:100%;background:var(--navy);border:1px solid var(--rule);border-radius:8px;color:var(--white);font-family:var(--font-body);font-size:.92rem;padding:12px 14px}
+textarea{min-height:150px;resize:vertical;line-height:1.6}
+.hint{font-size:.76rem;color:var(--cream-dim);margin-top:6px}
+.card-group{margin-bottom:16px}
+.opts{display:flex;gap:8px;flex-wrap:wrap}
+.opt{padding:8px 14px;border-radius:7px;font-size:.82rem;font-weight:600;cursor:pointer;background:var(--navy);border:1px solid var(--rule);color:var(--cream)}
+.opt.sel{background:var(--teal-glow);border-color:var(--teal);color:var(--white)}
+.btn{background:var(--teal);color:#06222b;border:none;border-radius:8px;padding:12px 22px;font-size:.92rem;font-weight:700;cursor:pointer;margin-top:6px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-ghost{background:var(--navy);border:1px solid var(--rule);color:var(--cream);border-radius:8px;padding:10px 18px;font-size:.85rem;font-weight:600;cursor:pointer;margin-top:6px}
+.btn-copy{background:var(--navy);border:1px solid var(--rule);color:var(--cream);border-radius:6px;padding:5px 12px;font-size:.74rem;font-weight:600;cursor:pointer;float:right}
+.out{background:var(--navy-card);border:1px solid var(--rule);border-radius:var(--radius);padding:20px;margin-top:18px}
+.out h3{font-family:var(--font-display);color:var(--white);font-size:1.15rem;margin-bottom:12px}
+.out-body{white-space:pre-wrap;font-size:.9rem;color:var(--cream);line-height:1.7}
+.flags{background:rgba(251,191,36,0.07);border:1px solid var(--amber);border-left:3px solid var(--amber);border-radius:8px;padding:14px 18px;margin-top:14px}
+.flags-h{font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--amber);margin-bottom:8px}
+.flags ul{margin:0;padding-left:18px}
+.flags li{font-size:.86rem;color:var(--cream);line-height:1.55;margin-bottom:5px}
+.spinner{display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.3);border-top-color:#06222b;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.tmpl-status{font-size:.8rem;color:var(--cream-dim);margin-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tmpl-status .ok{color:var(--green);font-weight:600}
+.tmpl-status .none{color:var(--amber);font-weight:600}
+.hpi-edit{width:100%;min-height:340px;background:var(--navy);border:1px solid var(--rule);border-radius:8px;color:var(--white);font-family:var(--font-body);font-size:.9rem;line-height:1.7;padding:14px;resize:vertical;white-space:pre-wrap}
+.btn-mini{background:var(--navy);border:1px solid var(--rule);color:var(--cream);border-radius:6px;padding:5px 11px;font-size:.76rem;font-weight:600;cursor:pointer}
+/* Full-screen focus editor for working the note during the visit */
+.focus-overlay{position:fixed;inset:0;background:var(--navy);z-index:9500;display:none;flex-direction:column;padding:14px 16px 16px}
+.focus-overlay.open{display:flex}
+.focus-bar{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.focus-bar h3{font-family:var(--font-display);color:var(--white);font-size:1.05rem;margin:0}
+.focus-bar .spacer{flex:1}
+.focus-x{background:none;border:none;color:var(--cream-dim);font-size:1.5rem;cursor:pointer;line-height:1;padding:0 4px}
+#focus-note{flex:1;width:100%;background:var(--navy-card);border:1px solid var(--rule);border-radius:8px;color:var(--white);font-family:var(--font-body);font-size:.95rem;line-height:1.7;padding:16px;resize:none}
+.handoff{background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.25);border-radius:8px;padding:16px 18px;font-size:.9rem;margin-top:18px}
+.handoff .btn{margin-top:10px}
+.scope{font-style:italic;color:var(--cream-dim);font-size:.78rem;text-align:center;margin-top:30px;border-top:1px solid var(--rule);padding-top:18px}
+.err{background:rgba(248,113,113,0.1);border:1px solid var(--red);border-radius:8px;padding:12px 16px;color:var(--red);font-size:.85rem;margin-top:14px}
+/* Setup wizard modal */
+.modal-overlay{position:fixed;inset:0;background:rgba(4,10,20,.72);z-index:9000;display:none;align-items:flex-start;justify-content:center;padding:32px 16px;overflow:auto}
+.modal-overlay.open{display:flex}
+.modal{background:var(--navy-card);border:1px solid var(--rule);border-radius:var(--radius);max-width:720px;width:100%;padding:24px}
+.modal h2{font-family:var(--font-display);color:var(--white);font-size:1.35rem;margin-bottom:6px}
+.modal .msub{color:var(--cream-dim);font-size:.86rem;margin-bottom:18px}
+.modal label{margin-top:14px}
+.modal-x{float:right;background:none;border:none;color:var(--cream-dim);font-size:1.4rem;cursor:pointer;line-height:1}
+.wizard-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}
+.bubble{padding:10px 14px;border-radius:10px;margin-bottom:10px;font-size:.88rem;line-height:1.5;white-space:pre-wrap}
+.bubble.ai{background:var(--navy);border:1px solid var(--rule);color:var(--cream)}
+.bubble.me{background:var(--teal-glow);border:1px solid var(--teal);color:var(--white)}
+</style>
+<script src="/auth-gate.js"></script>
+<style id="tbp-theme-css">
+[data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
+.tbp-theme-fab{position:fixed;top:10px;right:10px;z-index:99999;width:34px;height:34px;border-radius:50%;border:1px solid var(--rule,rgba(255,255,255,.18));background:var(--navy-card,var(--surface,#152238));color:var(--cream,var(--text,#e8e2d6));cursor:pointer;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.22);padding:0}
+</style>
+<script>(function(){try{var t=localStorage.getItem('tbp_theme');if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
+</head>
+<body>
+<div id="tool-container">
+<div>
+  <a href="/practice-manager.html" class="back">&larr; Practice Manager</a>
+  <h1>AI <span>Scribe</span></h1>
+  <p class="sub">Draft your History of Present Illness from the notes you take as you go. Paste your raw visit notes exactly as you captured them &mdash; fragments, shorthand, and patient quotes, in whatever order you asked your questions. This reorganizes them into your HPI, in your structure, using only what you wrote. It does not diagnose, code, or invent anything.</p>
+
+  <div class="caveat"><strong>Documentation aid, not a clinical authority.</strong> The HPI is generated only from the notes you provide and must be reviewed, corrected, and signed by you. It never adds symptoms, denials, history, or findings you did not document. No patient data is stored.</div>
+
+  <div class="panel">
+    <div class="card-group">
+      <label>Visit type</label>
+      <div class="opts" id="visit-opts">
+        <div class="opt" data-visit="new_eval">New patient evaluation</div>
+        <div class="opt" data-visit="follow_up">Follow-up</div>
+      </div>
+      <div class="tmpl-status" id="tmpl-status">Checking your Vault for a saved template&hellip;</div>
+    </div>
+
+    <!-- Everything below stays hidden until a visit type is chosen; the pick reveals the path that applies. -->
+    <div id="work-area" style="display:none">
+
+      <!-- Working style: saved per clinician. The screen opens in their style. -->
+      <div id="style-bar" style="margin-bottom:14px"></div>
+
+      <!-- Last visit's note: prominent in Prep mode, optional carry-forward in Ambient/Paste modes, hidden for new evals. -->
+      <div id="carry-block" style="display:none">
+        <label for="context" id="carry-label" style="margin-top:6px">Last visit's note</label>
+        <textarea id="context" style="min-height:80px" placeholder="Paste last visit's note. Standing items that don't change each visit (substance use, exercise, hallucinations, history) carry forward worded as continued; today's notes drive everything that changed. Safety (SI/HI) is never carried forward as if assessed today."></textarea>
+      </div>
+
+      <!-- Prep mode, follow-up: Set me up -->
+      <div id="prep-controls" style="display:none">
+        <div class="hint" style="margin-top:12px;line-height:1.5"><strong style="color:var(--cream)">Pre-visit prep.</strong> <em>Set me up</em> builds today's starting note from last visit &mdash; standing items carried forward as stable, dynamic sections left blank for you to fill live &mdash; plus a checklist of what to follow up on. You work in that note during the visit and draft from it.</div>
+        <label style="display:inline-flex;align-items:center;gap:7px;margin-top:8px;cursor:pointer;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream-dim);font-size:.85rem">
+          <input type="checkbox" id="therapy-guide-toggle" checked style="width:auto"> Include psychotherapy guide (technique + how-to prompts)
+        </label>
+        <div style="margin-top:8px"><button class="btn-ghost" id="prep-btn">Set me up for this visit &rarr;</button>
+        <span class="hint" id="prep-hint" style="margin-left:8px"></span></div>
+        <div id="prep-results"></div>
+      </div>
+
+      <!-- Prep mode, new patient: start from the intake scaffold -->
+      <div id="neweval-scaffold" style="display:none">
+        <div class="hint" style="margin-top:6px;line-height:1.5"><strong style="color:var(--cream)">Start from your intake template.</strong> Open your new-patient scaffold full screen and fill each section live during the intake, then draft straight from it.</div>
+        <button class="btn-ghost" id="neweval-setup-btn" style="margin-top:8px">Start my intake note (full screen) &rarr;</button>
+        <span class="hint" id="neweval-hint" style="margin-left:8px"></span>
+      </div>
+
+      <!-- Ambient mode: live recording -->
+      <div id="ambient-panel" style="display:none;margin-top:6px;border:1px solid var(--rule);border-radius:8px;padding:14px;background:var(--navy-card)">
+        <div class="opts" id="capture-opts" style="margin-bottom:8px">
+          <div class="opt sel" data-capture="inperson">In person</div>
+          <div class="opt" data-capture="telehealth">Telehealth</div>
+        </div>
+        <div class="hint" id="capture-hint" style="margin:0 0 12px"></div>
+        <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream);font-size:.9rem;line-height:1.5">
+          <input type="checkbox" id="record-consent" style="margin-top:3px;width:auto">
+          <span>I have the patient's consent to record this visit. The recording is transcribed by Azure AI Speech under our BAA and is not stored.</span>
+        </label>
+        <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button type="button" class="btn" id="record-btn" disabled style="margin:0">&#9679; Start recording</button>
+          <span class="hint" id="record-status" style="margin:0"></span>
+        </div>
+        <div class="hint" id="record-live" style="margin-top:10px;min-height:1.2em;color:var(--cream-dim);font-style:italic"></div>
+        <div class="hint" style="margin-top:6px">Hit Stop when the visit ends &mdash; the transcript is added to <strong>Your visit notes</strong> below in about a minute, then Draft.</div>
+      </div>
+
+      <!-- Shared working note (all modes draft from this) -->
+      <label for="raw" id="raw-label" style="margin-top:16px">Your visit notes &mdash; exactly as you took them</label>
+      <textarea id="raw" placeholder="Paste your running notes: fragments, shorthand, and patient quotes in the order you asked. Don't clean them up first &mdash; that's this tool's job. Example:&#10;&#10;here re: 6wk f/u duloxetine 60&#10;&quot;the anxiety is better but I still feel blah&quot;&#10;sleep 5-6h, was 3-4&#10;denies SI&#10;still not exercising, wants to&#10;mom's health stressor ongoing"></textarea>
+      <button type="button" class="btn-mini" style="margin-top:8px" onclick="openFocus('raw')">Full screen &#8599;</button>
+
+      <div style="margin-top:16px">
+        <button class="btn" id="generate">Draft my HPI &rarr;</button>
+        <button class="btn-ghost" id="open-wizard" type="button" style="margin-left:8px">Set up / edit my templates</button>
+        <a href="#" onclick="openOnboarding();return false;" class="hint" style="margin-left:10px;color:var(--teal)">Setup guide</a>
+      </div>
+      <div id="err-box"></div>
+    </div>
+  </div>
+
+  <div id="results"></div>
+
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. Nothing is stored.</div>
+</div>
+</div>
+
+<!-- Full-screen focus editor -->
+<div class="focus-overlay" id="focus-overlay">
+  <div class="focus-bar">
+    <h3>Working note</h3>
+    <span class="hint" id="focus-hint" style="margin:0"></span>
+    <span class="spacer"></span>
+    <button class="btn-ghost" style="margin-top:0" onclick="closeFocus()">&larr; Exit full screen</button>
+    <button class="btn" id="focus-draft">Draft my HPI &rarr;</button>
+  </div>
+  <div id="focus-ref"></div>
+  <textarea id="focus-note" placeholder="Work on your note here, full screen. Fill each section as you go, then Draft my HPI."></textarea>
+  <div id="focus-err"></div>
+</div>
+
+<!-- Setup wizard (Slice 3) -->
+<div class="modal-overlay" id="wizard">
+  <div class="modal">
+    <button class="modal-x" type="button" onclick="closeWizard()" aria-label="Close">&times;</button>
+    <h2>Set up your HPI template</h2>
+    <p class="msub">Answer a couple of questions and paste one HPI you already like. This writes a reusable template into your Vault, in your structure and voice &mdash; so you never start from a blank box. No patient details from your sample are kept; only your style.</p>
+
+    <label>Which template are you setting up?</label>
+    <div class="opts" id="wiz-visit-opts">
+      <div class="opt sel" data-wizvisit="new_eval">New patient evaluation</div>
+      <div class="opt" data-wizvisit="follow_up">Follow-up</div>
+    </div>
+
+    <label style="margin-top:16px">What do you want to do?</label>
+    <div class="opts" id="wiz-mode-opts">
+      <div class="opt sel" data-wizmode="build">Set up a new template</div>
+      <div class="opt" data-wizmode="refine">Adjust / troubleshoot my current one</div>
+    </div>
+
+    <div id="wiz-build-panel">
+    <label style="margin-top:16px">How should it read?</label>
+    <div class="opts" id="wiz-style-opts">
+      <div class="opt sel" data-wizstyle="brief">Brief labels, narrative under each</div>
+      <div class="opt" data-wizstyle="flowing">Flowing narrative</div>
+      <div class="opt" data-wizstyle="sectioned">Full labeled sections</div>
+    </div>
+
+    <label style="margin-top:16px">Patient quotes</label>
+    <div class="opts" id="wiz-quote-opts">
+      <div class="opt sel" data-wizquote="verbatim">Keep verbatim (fix spelling only)</div>
+      <div class="opt" data-wizquote="synth">Fold into narrative, quote sparingly</div>
+    </div>
+
+    <label for="wiz-scaffold" style="margin-top:16px">Your HPI template / scaffold <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(recommended)</span></label>
+    <textarea id="wiz-scaffold" style="min-height:150px" placeholder="Paste your blank template: your section order and any standard phrasing you start from, including canned 'associated symptoms include ...' menus. This has no patient info, so there is nothing to de-identify. The generator keeps your structure and treats each symptom menu as a checklist &mdash; at draft time it keeps only what you documented and deletes the rest, and drops whole sections (e.g. ADHD, borderline) you did not ask about."></textarea>
+
+    <label id="wiz-sample-label" for="wiz-sample" style="margin-top:16px">A completed HPI you like <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional)</span></label>
+    <textarea id="wiz-sample" style="min-height:130px" placeholder="Optional: paste a real completed HPI so it also learns your voice and level of detail. Paste it as-is &mdash; you do NOT need to de-identify it. It is processed transiently (BAA-covered) and never stored; only your PHI-free structure and style are saved to the Vault."></textarea>
+
+    <label for="wiz-notes" style="margin-top:16px">Anything else about how you like it <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional)</span></label>
+    <textarea id="wiz-notes" style="min-height:60px" placeholder="e.g. Open with CC, then interval and current meds. Depression under Depression, mania under Mania. Risk at the end. Keep it tight."></textarea>
+
+    <button class="btn" id="wiz-generate">Build my template &rarr;</button>
+    </div><!-- /wiz-build-panel -->
+
+    <div id="wiz-refine-panel" style="display:none">
+      <label style="margin-top:16px">Your current template <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(loaded from your Vault)</span></label>
+      <textarea id="refine-current" style="min-height:140px" placeholder="Loading your current template from the Vault&hellip;"></textarea>
+      <label for="refine-issue" style="margin-top:16px">What is going wrong, or what do you want to change?</label>
+      <textarea id="refine-issue" style="min-height:80px" placeholder="e.g. It keeps including symptoms the patient denied. Or: it puts risk at the top and I want it at the end. Or: it dropped the Sleep section even though I asked about sleep."></textarea>
+      <label for="refine-badoutput" style="margin-top:16px">Paste an HPI it produced that came out wrong <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional)</span></label>
+      <textarea id="refine-badoutput" style="min-height:90px" placeholder="Optional. Helps it see the problem. Processed transiently and never stored."></textarea>
+      <button class="btn" id="refine-start">Work on it with me &rarr;</button>
+    </div>
+
+    <div id="wiz-err"></div>
+    <div id="wiz-result"></div>
+  </div>
+</div>
+
+<!-- First-run onboarding: a short guided setup (working style + setup + template). -->
+<div class="modal-overlay" id="onboarding">
+  <div class="modal" style="max-width:640px">
+    <button class="modal-x" type="button" onclick="closeOnboarding()" aria-label="Close">&times;</button>
+    <div id="onb-body"></div>
+  </div>
+</div>
+
+<script>
+// ── House voice ──
+var HOUSE = "You are a clinical documentation generator for psychiatric and behavioral-health prescribers and therapists. You write like an experienced clinician documenting their own visit. Plain, precise, chart-ready prose. Never use em dashes or en dashes; use a comma or a period. Do not add headings, preambles, or any text naming this tool. Output only the document requested.";
+
+// ── State ──
+var visitType = null; // no default: force an explicit choice so the wrong template can never ride a silent default
+var sourceMode = 'typed';
+var workflow = null;      // 'prep' | 'ambient' | 'direct' — the clinician's saved working style (Vault, never hardcoded)
+var styleBarOpen = false; // whether the style picker is expanded
+var therapyGuide = true;  // psychotherapy guide on/off — per-clinician (Vault); default on
+var vaultTemplates = { new_eval: '', follow_up: '' };
+var lastHpi = '';
+var authToken = '';
+var userEmail = '';
+
+function esc(s){ return String(s).replace(/</g,'&lt;'); }
+
+// ── Streaming proxy call (mirrors the Note Builder / Chart Coder pattern) ──
+async function callAPI(systemPrompt, messages, maxTokens){
+  var response;
+  try {
+    response = await fetch('/.netlify/functions/clinical-proxy-stream', {
+      method:'POST',
+      headers:{'Content-Type':'application/json', 'Authorization':'Bearer ' + authToken},
+      body: JSON.stringify({
+        token: authToken,
+        model:'claude-sonnet-4-6',
+        max_tokens: maxTokens || 2000,
+        system: systemPrompt,
+        messages: messages
+      })
+    });
+  } catch(netErr){
+    throw new Error('Could not reach the server. Check your connection and try again.');
+  }
+  var ctype = response.headers.get('content-type') || '';
+  if(!response.ok || ctype.indexOf('application/json') !== -1){
+    var errText = await response.text();
+    var msg;
+    try { var j = JSON.parse(errText); msg = j.error && (j.error.message || j.error) ? (j.error.message || j.error) : (j.error || errText); }
+    catch(e){ msg = errText && errText.charAt(0) === '<'
+      ? 'The server timed out or returned an error page. Try again, or shorten the input.'
+      : (errText || ('Request failed (' + response.status + ').')); }
+    throw new Error(msg);
+  }
+  if(!response.body || !response.body.getReader){
+    var whole = await response.text();
+    return reassembleSSE(whole);
+  }
+  var reader = response.body.getReader();
+  var decoder = new TextDecoder();
+  var buffer = '';
+  var assembled = '';
+  while(true){
+    var chunk = await reader.read();
+    if(chunk.done) break;
+    buffer += decoder.decode(chunk.value, { stream:true });
+    var idx;
+    while((idx = buffer.indexOf('\n\n')) !== -1){
+      var rawEvent = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      var lines = rawEvent.split('\n');
+      for(var i=0;i<lines.length;i++){
+        var line = lines[i];
+        if(line.indexOf('data:') !== 0) continue;
+        var dataStr = line.slice(5).trim();
+        if(!dataStr || dataStr === '[DONE]') continue;
+        try{
+          var evt = JSON.parse(dataStr);
+          if(evt.type === 'content_block_delta' && evt.delta && typeof evt.delta.text === 'string'){
+            assembled += evt.delta.text;
+          }
+        }catch(e2){}
+      }
+    }
+  }
+  return assembled.trim();
+}
+function reassembleSSE(text){
+  var out = '';
+  var events = text.split('\n\n');
+  for(var e=0;e<events.length;e++){
+    var lines = events[e].split('\n');
+    for(var i=0;i<lines.length;i++){
+      var line = lines[i];
+      if(line.indexOf('data:') !== 0) continue;
+      var dataStr = line.slice(5).trim();
+      if(!dataStr || dataStr === '[DONE]') continue;
+      try{ var evt = JSON.parse(dataStr); if(evt.type==='content_block_delta' && evt.delta && typeof evt.delta.text==='string') out += evt.delta.text; }catch(e2){}
+    }
+  }
+  return out.trim();
+}
+
+// ── Output helpers ──
+function stripDashes(s){
+  return String(s)
+    .replace(/\s*[—–―]\s+/g, ', ')
+    .replace(/\s+[—–―]\s*/g, ', ')
+    .replace(/[—–―]/g, '-');
+}
+// Strip Markdown so the HPI is clean chart text (templates are often written in Markdown).
+function cleanMarkdown(s){
+  var lines = String(s).split('\n');
+  var out = [];
+  for(var i=0;i<lines.length;i++){
+    var ln = lines[i];
+    if(/^\s*([-*_])(\s*\1){2,}\s*$/.test(ln)) continue;   // drop --- *** ___ divider lines
+    ln = ln.replace(/^\s*#{1,6}\s+/, '');                  // strip heading hashes, keep the label
+    ln = ln.replace(/^\s*>\s?/, '');                       // strip blockquote markers
+    ln = ln.replace(/\*\*(.+?)\*\*/g, '$1').replace(/__(.+?)__/g, '$1'); // strip bold
+    out.push(ln);
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+function finalizeHpi(s){ return stripDashes(cleanMarkdown(s)); }
+function copyOut(id){
+  var el = document.getElementById(id);
+  var t = (el && typeof el.value === 'string') ? el.value : el.innerText;
+  navigator.clipboard.writeText(t);
+  event.target.textContent='Copied'; setTimeout(function(){ event.target.textContent='Copy'; },1500);
+}
+
+// ── Option binders ──
+function bindOpts(groupId, attr, setter){
+  var g = document.getElementById(groupId);
+  if(!g) return;
+  g.addEventListener('click', function(e){
+    var o = e.target.closest('.opt'); if(!o) return;
+    g.querySelectorAll('.opt').forEach(function(x){ x.classList.remove('sel'); });
+    o.classList.add('sel'); setter(o.getAttribute(attr));
+  });
+}
+bindOpts('visit-opts','data-visit', function(v){ visitType=v; renderTemplateStatus(); revealWorkArea(); });
+
+// Reveal the workspace once a visit type is picked; render the clinician's saved working style.
+function revealWorkArea(){
+  var wa = document.getElementById('work-area');
+  if(!visitType){ if(wa) wa.style.display = 'none'; return; }
+  if(wa) wa.style.display = '';
+  renderStyleBar();
+  renderMode();
+}
+function isTranscriptMode(m){ return m === 'ambient' || m === 'record'; }
+
+// Working-style picker. Persisted to the clinician's Vault — nothing hardcoded; a
+// clinician with no saved style sees the expanded picker and chooses their own.
+var WF_LABELS = { prep:'Prep from last note', ambient:'Record ambient (beta)', direct:'Paste my own notes' };
+function renderStyleBar(){
+  var bar = document.getElementById('style-bar'); if(!bar) return;
+  if(!workflow || styleBarOpen){
+    var html = '<div class="hint" style="margin-bottom:6px">How do you work? <span style="color:var(--cream-dim)">(saved for next time &mdash; change it anytime)</span></div><div class="opts" id="wf-opts">';
+    ['prep','ambient','direct'].forEach(function(k){ html += '<div class="opt'+(workflow===k?' sel':'')+'" data-wf="'+k+'">'+WF_LABELS[k]+'</div>'; });
+    html += '</div>';
+    bar.innerHTML = html;
+    var g = document.getElementById('wf-opts');
+    g.addEventListener('click', function(e){
+      var o = e.target.closest('.opt'); if(!o) return;
+      workflow = o.getAttribute('data-wf'); styleBarOpen = false;
+      persistWorkflow(workflow);
+      renderStyleBar(); renderMode();
+    });
+  } else {
+    bar.innerHTML = '<div class="hint">Working style: <strong style="color:var(--cream)">'+WF_LABELS[workflow]+'</strong> &middot; <a href="#" id="wf-change" style="color:var(--teal)">change</a></div>';
+    var a = document.getElementById('wf-change');
+    if(a) a.addEventListener('click', function(e){ e.preventDefault(); styleBarOpen = true; renderStyleBar(); });
+  }
+}
+
+// Show only the inputs the chosen working style + visit type actually need.
+function renderMode(){
+  function show(id, on){ var el=document.getElementById(id); if(el) el.style.display = on ? '' : 'none'; }
+  var wf = workflow, isFu = (visitType==='follow_up'), isNew = (visitType==='new_eval');
+  // Derive the review mode: ambient audio is a transcript (also checked for mis-hearings); typed/pasted is not.
+  sourceMode = (wf === 'ambient') ? 'ambient' : 'typed';
+
+  show('carry-block', isFu && !!wf);   // last-visit note applies to any follow-up workflow
+  var cl = document.getElementById('carry-label');
+  if(cl){ cl.innerHTML = (wf==='prep')
+    ? "Last visit's note &mdash; paste to carry forward and set up"
+    : "Last visit's note <span style=\"text-transform:none;font-weight:400;color:var(--cream-dim)\">(optional &mdash; to carry forward)</span>"; }
+
+  show('prep-controls', wf==='prep' && isFu);
+  show('neweval-scaffold', wf==='prep' && isNew);
+  show('ambient-panel', wf==='ambient');
+
+  var rl = document.getElementById('raw-label');
+  if(rl){ rl.innerHTML = (wf==='ambient')
+    ? "Your visit notes <span style=\"text-transform:none;font-weight:400;color:var(--cream-dim)\">(the transcript lands here &mdash; edit freely)</span>"
+    : "Your visit notes &mdash; exactly as you took them"; }
+}
+
+// ── Template status line ──
+function renderTemplateStatus(){
+  var el = document.getElementById('tmpl-status');
+  if(!visitType){
+    el.innerHTML = '<span class="none">Choose a visit type above</span> &mdash; it sets which of your templates is used.';
+    return;
+  }
+  var t = vaultTemplates[visitType];
+  var label = visitType==='new_eval' ? 'New patient evaluation' : 'Follow-up';
+  if(t && t.trim()){
+    el.innerHTML = '<span class="ok">&#10003; Using your '+label+' template</span> <a href="#" onclick="openWizard();return false;">edit</a>';
+  } else {
+    el.innerHTML = '<span class="none">No '+label+' template saved</span> &mdash; a sensible default structure will be used. <a href="#" onclick="openWizard();return false;">Set one up</a>';
+  }
+}
+
+// ── Build the draft system prompt ──
+function draftSystem(){
+  var label = visitType==='new_eval' ? 'new patient psychiatric evaluation' : 'psychiatric follow-up visit';
+  var tmpl = (vaultTemplates[visitType] || '').trim();
+  var s = HOUSE + "\n\n=== TASK ===\n";
+  s += "Draft the History of Present Illness (HPI) for a " + label + " from the clinician's RAW, as-they-went visit notes. The notes are fragments, shorthand, and patient quotes captured in the order the clinician asked their questions. Your job is to reorganize that raw stream into a clean, chart-ready HPI. This is the reorganization the clinician would otherwise do in their head; it is the entire value of the tool.\n\n";
+  s += "=== ABSOLUTE ANTI-FABRICATION RULE ===\n";
+  s += "Use ONLY the information present in the raw notes (and the optional prior-context block, for continuity of the narrative only). Never add a symptom, denial, finding, diagnosis, medication, dose, history item, timeframe, or risk statement that is not in the source. If something usual is absent, leave it out; do NOT fill in normal or negative defaults (e.g. do not write 'denies SI' unless the notes say so). If the notes are thin, the HPI is short. You interpret and organize documented data; you never invent it.\n\n";
+  s += "=== WORKING SCAFFOLD MARKERS (consume, never echo) ===\n";
+  s += "The notes may contain SCAFFOLDING the tool placed for the clinician to work against: a block headed '=== TO CHECK / ASK TODAY ===' listing questions to ask, and inline bracketed placeholders like '[Update today...]' or '[Confirm today.]'. These are NOT chart content.\n";
+  s += "- Use the clinician's answers written under or beside each checklist item / placeholder to build today's note, integrating that information into the appropriate section as flowing clinical narrative.\n";
+  s += "- NEVER reproduce a checklist question, a bullet from that block, a '===' header line, or a bracketed '[...]' instruction in the output. The final HPI contains ZERO scaffolding text.\n";
+  s += "- Unanswered items: do not invent an answer. For a placeholder in a carried-forward section, keep that section's prior content worded as continued/stable and just remove the bracket; simply drop an unanswered checklist question.\n\n";
+  s += "=== COMPLETENESS AND NON-DUPLICATION ===\n";
+  s += "Include EVERY topic the notes document: every symptom, interval update, medication note, behavior (e.g. skin-picking), and section. Never omit or drop documented content to shorten the note. State each fact ONCE, in the single most appropriate section; do not repeat the same content in two sections. Do NOT add comparative or interval statements ('improved since last visit', 'significant improvement', 'better than before') unless the notes explicitly state the comparison.\n\n";
+  s += "=== QUOTE FIDELITY (verbatim, spelling guardrail) ===\n";
+  s += "Preserve the patient's quoted words verbatim in wording and meaning. Apply ORTHOGRAPHIC normalization only: fix spelling, obvious typos, and capitalization. Never substitute a word, paraphrase a quote, or change its clinical meaning. 'i feel anxous' becomes 'I feel anxious'; 'I feel down' must NOT become 'I feel depressed'. When in doubt, keep the patient's exact word.\n\n";
+  s += "=== RISK AND SAFETY (highest stakes) ===\n";
+  s += "Handle documented risk (suicidal ideation, homicidal ideation, self-harm, plan, intent, access to means) with maximum fidelity. NEVER omit, soften, downgrade, or paraphrase away any risk the notes document. NEVER fabricate a risk denial (e.g. 'denies SI/HI') unless the notes document it was asked and denied. If risk is documented ambiguously, preserve the clinician's exact words and do not resolve the ambiguity.\n\n";
+  s += "=== MEDICATIONS (keep exactly as written) ===\n";
+  s += "Never change, correct, normalize, or guess medication names, doses, routes, or frequencies. Write each exactly as the clinician documented it; do not convert brand to generic or generic to brand. If a medication name or dose looks implausible, misspelled, or unrecognized, keep it verbatim, do not substitute a 'correct' name, and let the review pass flag it.\n\n";
+  if(visitType === 'follow_up'){
+    s += "=== FOLLOW-UP: CARRY EVERYTHING FORWARD, EDIT THE DELTAS ===\n";
+    s += "This is a follow-up. The prior-context block is last visit's note; today's notes are what changed or was added this visit. This clinician CARRIES THE WHOLE NOTE FORWARD and edits what changed, and does NOT want sections removed (dropping a section breaks next visit's carry-forward). So:\n";
+    s += "- KEEP EVERY SECTION the clinician's template and prior note contain. NEVER omit a section and NEVER write 'not addressed at this visit'. This OVERRIDES any 'omit undiscussed sections' rule for follow-ups.\n";
+    s += "- For any section TODAY'S NOTES UPDATE: use today's content for that section.\n";
+    s += "- For any section today's notes do NOT update: carry the prior note's content forward, framed as continued/stable ('Continues ...', 'Remains ...'), rather than as if freshly assessed today. Reuse what the prior note documented; do not invent new content.\n";
+    s += "- HISTORICAL / persistent background (e.g. a 'Historical Notes:' block): carry forward verbatim as background; never re-ask.\n";
+    s += "- SAFETY (SI/HI, self-harm): carry the prior status forward like other sections but frame it as carried ('Continues to deny ...') and let the review flag it for the clinician to confirm was assessed today. NEVER invent, escalate, or add risk content the notes do not support.\n";
+    s += "- Carry-forward means reusing the prior note's own documented content, updated by today's notes. It is never a license to fabricate.\n\n";
+  }
+  s += "=== STRUCTURE ===\n";
+  if(tmpl){
+    s += "Follow THIS clinician's own template and instructions exactly, for structure, section order, headings, level of detail, and voice:\n\n<<<CLINICIAN TEMPLATE>>>\n" + tmpl + "\n<<<END TEMPLATE>>>\n\nThe template governs form only. It never supplies clinical content and never overrides the anti-fabrication rule.\n\n";
+    s += "MATCH THE TEMPLATE'S FORMAT FAITHFULLY, whatever it is. If the template uses section labels/headings, reproduce ALL of them exactly as written (e.g. 'Mood and Anxiety:') and never drop one or merge labeled sections into unlabeled prose. If the template is a flowing narrative without labels, keep it flowing and do NOT add labels. The only thing to avoid is DEVIATING from the clinician's own template format in either direction. If the input is already organized to match the template, preserve that organization and only clean up the content within it.\n\n";
+  } else {
+    s += "No clinician template is saved, so write a clean, conventional psychiatric HPI: a flowing narrative that opens with the reason for the visit (or the interval since last visit for a follow-up), then course, current symptoms grouped sensibly, current medications and response, and any risk or pertinent context THAT THE NOTES CONTAIN. Do not force sections the notes do not support.\n\n";
+  }
+  s += "=== TEMPLATE SECTIONS AND SYMPTOM MENUS (integrity rules, format-agnostic) ===\n";
+  s += "Your template may name standard domains (Depression, Mania, Sleep, Anxiety, Panic, OCD, Trauma, ADHD, Borderline, etc.) and canned 'associated symptoms include ...' menus. Treat every such menu as a CHECKLIST, never as content to assert:\n";
+  s += "- A 'associated symptoms include ...' menu is a POSITIVE list: include an item ONLY if the notes indicate the patient endorses or experiences it. REMOVE any item that was denied, not discussed, or that the notes indicate is absent. Never reproduce the full canned list.\n";
+  s += "- Document explicit denials the clinician made (e.g. denies SI/HI, denies manic symptoms) as their own denial statement where the notes support it. Do NOT fold denied items back into the positive 'associated symptoms include' list.\n";
+  s += "- Include a domain, section, or subtopic (e.g. panic, OCD, social anxiety) ONLY if the notes address it. Omit any domain or subtopic not discussed. Never write 'denies ...' for a domain unless the notes document it was asked and denied.\n";
+  s += "- FORMAT COMES FROM THE TEMPLATE, NOT FROM YOU: follow the clinician's template for section order, labels, headings, subheadings, and grouping. Do not impose a structure, subheading scheme, or label style the template does not specify.\n\n";
+  s += "=== PLACEHOLDERS AND PRONOUNS ===\n";
+  s += "- The template may contain bracketed placeholders and instructions (e.g. \"[ ]\", *[Narrative: ...]*) and 'Menu (...)' reference blocks. These are DIRECTIONS TO YOU, never content. NEVER print a bracketed placeholder, an italic instruction, a 'Menu' block, or phrases like 'do not reproduce' / 'select endorsed items only' in the HPI. Fill each placeholder from the notes; if the notes do not supply it, omit that piece entirely (no empty quotes, no blank brackets).\n";
+  s += "- PRONOUNS follow the patient in the notes, NOT the template. If the template's examples use a specific gender (e.g. 'She'), do not inherit it; use the patient's documented pronouns, or they/them if unknown.\n\n";
+  s += "=== OUTPUT FORMAT ===\n";
+  s += "Output plain, chart-ready text for pasting into an EHR. Do NOT use Markdown: no # or ## headings, no --- or *** divider lines, no > blockquotes, no ** bold **. FOLLOW THE CLINICIAN'S TEMPLATE for how section labels are placed: if the template writes the label inline with a colon and the content on the same line (e.g. 'Counseling: continues weekly therapy...'), do exactly that; if the template puts labels on their own line, do that. Do not impose a layout the template does not use. Even if the template is written in Markdown, do not carry that syntax into the HPI.\n\n";
+  s += "Add only minimal connective narrative needed to make the notes read as clinical prose. Connective wording must not introduce any new clinical fact. Output the HPI text only.";
+  return s;
+}
+
+function verifySystem(){
+  var s = HOUSE + "\n\n=== TASK ===\nYou are auditing a drafted HPI against its SOURCE (the clinician's raw notes, plus any prior-context block). Find anything in the HPI that is NOT supported by the source: invented or embellished symptoms, added denials or pertinent negatives, a diagnosis or characterization the notes did not state, altered timeframes, or a patient quote whose wording or meaning was changed (spelling fixes are fine; word substitutions or paraphrases are not).\n\n";
+  s += "Silently correct clear, unambiguous fabrications by removing or trimming them back to what the source supports. For anything a clinician should personally judge, leave it and raise a flag.\n\n";
+  s += "FLAGS POLICY (keep it light): a flag is ONLY for something that needs the CLINICIAN'S own judgment or action, e.g. an unresolved ambiguity, a missing or unconfirmed dose, an interpretive characterization to reconsider, a carry-forward item not addressed today, or a possible transcription error. NEVER report changes you already made: do not list what you removed, trimmed, or corrected, and do not narrate the second pass. If you fixed something cleanly and nothing remains for the clinician to decide, do NOT flag it. Zero flags is the right answer when the note is clean; a few high-value flags beat a changelog.\n\n";
+  s += "RISK: never let the draft add, drop, or soften any documented risk (SI, HI, self-harm, plan, intent). If it did, correct it to match the source exactly and flag it.\n";
+  s += "IMPLAUSIBILITY (flag, do NOT fix): flag anything that looks wrong without changing it, e.g. an unrecognized or likely-misspelled medication name, an implausible dose or frequency, an internal contradiction, a number or date that looks off, or a phrase that reads like a garbled transcription artifact. Preserve the exact wording and raise a flag for the clinician.\n\n";
+  if(visitType === 'follow_up'){ s += "FOLLOW-UP CARRY-FORWARD: flag any current-visit assessment, especially SI/HI or self-harm, that the draft asserts as done today but that only the prior note supports and today's notes do not. A prior safety assessment must never read as if performed today. Standing items carried as 'continued/stable' are fine.\n\n"; }
+  if(isTranscriptMode(sourceMode)){ s += "The source is a transcript (dictation/ambient) with no clinician-written ground truth, so also flag likely mis-transcriptions and anything that reads as a transcription error.\n\n"; }
+  s += "The corrected 'hpi' must stay plain, chart-ready text with NO Markdown (no #/## headings, no --- dividers, no ** bold **, no > blockquotes).\n\n";
+  s += "Respond ONLY with raw JSON, no code fence, in exactly this shape:\n{\"hpi\": \"<the verified HPI text>\", \"flags\": [\"short note about something to check\", \"...\"]}\nIf nothing is wrong, return the HPI unchanged and an empty flags array.";
+  return s;
+}
+
+// ── Gather input ──
+function gatherSource(rawText){
+  var raw = (typeof rawText === 'string' ? rawText : document.getElementById('raw').value).trim();
+  var context = document.getElementById('context').value.trim();
+  var s = "RAW VISIT NOTES (as the clinician typed them):\n\n" + raw;
+  if(context) s += "\n\n---\n\nPRIOR HPI / ASSESSMENT (continuity context only; not today's documented content):\n\n" + context;
+  return s;
+}
+
+// ── Render the HPI result (Slices 1 + 2) ──
+// Show the draft the instant it lands, while the review finalizes in the background.
+function renderResultPreview(hpi){
+  var clean = finalizeHpi(hpi);
+  var html = '<div class="out"><h3>History of Present Illness</h3>'
+    + '<div class="out-body" id="hpi-preview">'+esc(clean)+'</div>'
+    + '<div class="hint" style="margin-top:10px"><span class="spinner"></span> Double-checking against your notes&hellip;</div></div>';
+  document.getElementById('results').innerHTML = html;
+}
+
+function renderResult(hpi, flags){
+  hpi = finalizeHpi(hpi);
+  lastHpi = hpi;
+  var html = '';
+  html += '<div class="out"><button class="btn-copy" onclick="copyOut(\'hpi-out\')">Copy</button>';
+  html += '<h3>History of Present Illness</h3>';
+  html += '<textarea class="hpi-edit" id="hpi-out">'+esc(hpi)+'</textarea>';
+  html += '<div class="hint" style="margin-top:6px">Edit here before you copy or send &mdash; your changes are what get used.</div></div>';
+
+  if(flags && flags.length){
+    var items = flags.map(function(f){ return '<li>'+esc(f)+'</li>'; }).join('');
+    html += '<div class="flags"><div class="flags-h">Worth a look before you sign</div><ul>'+items+'</ul></div>';
+  }
+  html += '<div class="hint" style="margin-top:14px">&#10003; Auto-reviewed against your notes.</div>';
+
+  // Slice 2: one-button handoff to the Note Builder
+  html += '<div class="handoff">Ready to work up the assessment and psychotherapy note? Send this HPI straight into the Clinical Note Builder, no copy-paste.'
+       +  '<br><button class="btn" id="send-nb">Send to Clinical Note Builder &rarr;</button></div>';
+
+  document.getElementById('results').innerHTML = html;
+  document.getElementById('send-nb').addEventListener('click', sendToNoteBuilder);
+}
+
+// ── Generate (Slice 1) — reusable so the top box AND the prep starting-note box can draft ──
+async function runDraft(sourceText, btn, errEl){
+  errEl.innerHTML = '';
+  if(!visitType){ errEl.innerHTML='<div class="err">Choose a visit type first (New patient evaluation or Follow-up) &mdash; it sets which of your templates is used.</div>'; return false; }
+  if(!sourceText || sourceText.length < 15){ errEl.innerHTML='<div class="err">Paste your visit notes first, even rough ones.</div>'; return false; }
+  var label = btn.innerHTML; var ok = false;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Drafting&hellip;';
+  document.getElementById('results').innerHTML='';
+  try {
+    var hpi = await callAPI(draftSystem(), [{role:'user', content: gatherSource(sourceText)}], 3400);
+    if(!hpi){ throw new Error('No HPI came back. Try again.'); }
+    // Show the draft immediately (feels fast), then finalize the review in the background.
+    renderResultPreview(hpi);
+    btn.innerHTML = '<span class="spinner"></span>Reviewing&hellip;';
+    var res = await verifyHpi(hpi);
+    renderResult(res.hpi, res.flags);
+    document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
+    ok = true;
+  } catch(err){
+    errEl.innerHTML = '<div class="err">'+esc(err.message||err)+'</div>';
+  } finally {
+    btn.disabled = false; btn.innerHTML = label;
+  }
+  return ok;
+}
+document.getElementById('generate').addEventListener('click', function(){
+  runDraft(document.getElementById('raw').value.trim(), this, document.getElementById('err-box'));
+});
+
+// ── Verify pass ──
+async function verifyHpi(hpi){
+  var msg = gatherSource() + "\n\n---\n\nDRAFTED HPI TO AUDIT:\n\n" + hpi;
+  var raw = await callAPI(verifySystem(), [{role:'user', content: msg}], 3400);
+  try {
+    var j = JSON.parse(raw);
+    if(j && typeof j.hpi === 'string') return { hpi: j.hpi, flags: Array.isArray(j.flags) ? j.flags : [] };
+  } catch(e){}
+  // If the verifier did not return clean JSON, keep the original draft rather than lose it.
+  return { hpi: hpi, flags: [] };
+}
+
+// ── "Set me up for this visit" — pre-visit prep (Bucket 1) ──
+function prepSystem(){
+  var tmpl = (vaultTemplates.follow_up || '').trim();
+  var s = "You are helping a psychiatric prescriber PREP for a follow-up visit, before they see the patient. You are given LAST VISIT'S NOTE" + (tmpl ? " and the clinician's follow-up HPI template" : "") + ". Produce a starting point for today's note plus a short list of things to check or ask today.\n\n";
+  if(tmpl){ s += "CLINICIAN'S FOLLOW-UP TEMPLATE (structure and any carry-forward classification):\n\n" + tmpl + "\n\n"; }
+  s += "Respond ONLY with raw JSON, no code fence:\n{\"startingNote\":\"<today's follow-up scaffold>\",\"checklist\":[\"...\"],\"foci\":[\"...\"]}\n\n";
+  s += "STARTING NOTE rules (this clinician carries the whole note forward and edits what changed):\n";
+  s += "- Follow the clinician's template structure, order, and labels" + (tmpl ? "" : " (use a conventional follow-up structure if no template)") + ". Plain text, no Markdown.\n";
+  s += "- CARRY EVERY SECTION FORWARD from last visit's note so the clinician starts with a complete note and only edits the deltas. Keep every section present.\n";
+  s += "- Standing/historical items (substance use, exercise, hallucinations, history, etc.): carry forward worded as CONTINUED or STABLE ('continues to deny auditory or visual hallucinations').\n";
+  s += "- Dynamic items (mood/anxiety, symptoms, med response, side effects): carry last visit's content forward too, worded as continued/prior-state, as a starting point the clinician overwrites with today's findings. Do NOT leave them blank.\n";
+  s += "- SAFETY (SI/HI): carry last visit's status forward worded as continued (e.g. 'Continues to deny ...'); the checklist reminds the clinician to confirm it today.\n";
+  s += "- The starting note body is CLEAN carried-forward prose. Do NOT put questions, prompts, or bracketed placeholders (e.g. '[update today]') inline in it. Every 'what to update or confirm today' prompt goes in the checklist ONLY, never in the body.\n";
+  s += "- Invent nothing; only carry what last visit's note documents.\n\n";
+  s += "CHECKLIST rules — this is the clinician's SINGLE guide for the visit, so make it complete:\n";
+  s += "- Include one concrete question for EVERY section or standing thread that should be updated or confirmed today: the interval change, medication response and adherence, side effects, sleep, appetite, energy, substance use where relevant, and an explicit safety (SI/HI) confirmation.\n";
+  s += "- Also include any unresolved threads or planned follow-ups from last visit (e.g. 'recheck sleep response to the dose change', a pending referral, anything flagged for next time).\n";
+  s += "- One clear, specific question per thread; phrase it as something to ask. Skip only truly static background that never changes. Derive from last visit's note; do not invent.\n\n";
+  if(therapyGuide){
+    s += "FOCI rules (the PSYCHOTHERAPY GUIDE) — offer 0 to 3 options that genuinely fit THIS patient's picture. Make each ACTIONABLE, not just a label:\n";
+    s += "- name the technique/approach (e.g. cognitive defusion, motivational interviewing, behavioral activation, supportive or insight-oriented exploration, ERP, stimulus-control/wind-down);\n";
+    s += "- one short line on WHY it fits this patient right now;\n";
+    s += "- an 'In session:' line with a concrete way to do it plus one or two sample prompts the clinician could actually say.\n";
+    s += "This also supports documentation: a named technique tied to a target is what makes the psychotherapy add-on defensible. Do NOT push a modality the patient's picture doesn't support; return an empty array if none genuinely fit.";
+  } else {
+    s += "FOCI rules: the psychotherapy guide is OFF for this clinician. Return an empty foci array.";
+  }
+  return s;
+}
+
+document.getElementById('prep-btn').addEventListener('click', async function(){
+  // Pre-visit prep is inherently a follow-up; declare it so the template state is correct and Draft is unblocked.
+  var fuOpt = document.querySelector('#visit-opts [data-visit="follow_up"]');
+  if(fuOpt && visitType !== 'follow_up'){ fuOpt.click(); }
+  var last = document.getElementById('context').value.trim();
+  var hint = document.getElementById('prep-hint');
+  if(last.length < 40){ hint.innerHTML = '<span style="color:var(--amber)">Paste last visit\'s note above first.</span>'; return; }
+  var btn = this; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Setting up&hellip;';
+  document.getElementById('prep-results').innerHTML = '';
+  try {
+    var raw = await callAPI(prepSystem(), [{role:'user', content: "LAST VISIT'S NOTE:\n\n" + last}], 2600);
+    var j = safeJSON(raw);
+    if(!j || typeof j.startingNote !== 'string'){ throw new Error('Could not build the prep. Try again.'); }
+    renderPrep(j);
+  } catch(err){
+    hint.innerHTML = '<span style="color:var(--red)">'+esc(err.message||err)+'</span>';
+  } finally {
+    btn.disabled = false; btn.innerHTML = 'Set me up for this visit &rarr;';
+  }
+});
+
+// ── New-patient intake scaffold: blank sectioned starting note from the eval template ──
+function newEvalScaffoldSystem(){
+  var tmpl = (vaultTemplates.new_eval || '').trim();
+  var s = "You are helping a psychiatric prescriber PREP a new patient evaluation, before they see the patient. Produce a BLANK sectioned scaffold they can type into live during the intake.\n\n";
+  if(tmpl){ s += "CLINICIAN'S NEW-PATIENT HPI TEMPLATE (follow its section structure, order, and labels exactly):\n\n" + tmpl + "\n\n"; }
+  s += "Output the section headings/labels in the clinician's structure and order, each on its own line, each left EMPTY (or with a brief parenthetical cue of what belongs there). This is a blank form to fill, not a draft.\n";
+  s += "- Invent NO clinical content: no symptoms, no findings, no history, no denials. Empty sections only.\n";
+  s += "- Follow the clinician's template" + (tmpl ? "" : " (no template is saved, so use a conventional new-patient psychiatric evaluation structure)") + ". Plain text, no Markdown.\n";
+  s += "Output only the blank scaffold.";
+  return s;
+}
+document.getElementById('neweval-setup-btn').addEventListener('click', async function(){
+  var raw = document.getElementById('raw');
+  var hint = document.getElementById('neweval-hint');
+  hint.innerHTML = '';
+  // Only build a scaffold when the notes box is empty, so we never clobber work already in progress.
+  if(!raw.value.trim()){
+    var btn = this; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Building scaffold&hellip;';
+    try {
+      var scaffold = await callAPI(newEvalScaffoldSystem(), [{role:'user', content: 'Produce the blank intake scaffold now.'}], 1500);
+      if(scaffold && scaffold.trim()){ raw.value = finalizeHpi(scaffold); }
+    } catch(err){
+      hint.innerHTML = '<span style="color:var(--red)">'+esc(err.message||err)+'</span>';
+    } finally {
+      btn.disabled = false; btn.innerHTML = 'Start my intake note (full screen) &rarr;';
+    }
+  }
+  openFocus('raw');
+});
+
+function renderPrep(j){
+  var note = finalizeHpi(j.startingNote);
+  // Prep is inherently a follow-up; make sure the draft uses follow-up carry-forward.
+  var fu = document.querySelector('#visit-opts [data-visit="follow_up"]');
+  if(fu && visitType !== 'follow_up') fu.click();
+  prepChecklist = Array.isArray(j.checklist) ? j.checklist : [];
+  prepFoci = Array.isArray(j.foci) ? j.foci : [];
+  // The checklist goes RIGHT INTO the editable note, at the top, so the clinician answers
+  // each line live during the visit. Draft strips this block (see WORKING SCAFFOLD rule).
+  var working = '';
+  if(prepChecklist.length){
+    working += "=== TO CHECK / ASK TODAY (jot answers under each; this block is removed when you draft) ===\n\n";
+    working += prepChecklist.map(function(c){ return "• " + c + "\n"; }).join("\n");
+    working += "\n=== TODAY'S NOTE (update the sections below) ===\n\n";
+  }
+  working += note;
+  document.getElementById('raw').value = working;
+
+  var html = '<div class="out" style="margin-top:16px"><h3>You are set up for this visit</h3>'
+    + '<div class="hint" style="margin-bottom:12px">Your checklist is now <strong>at the top of your working note</strong> &mdash; answer each line as you go, then Draft. The questions are stripped out automatically.</div>';
+  if(prepFoci.length){
+    html += '<div class="flags" style="background:rgba(42,171,184,0.07);border-color:var(--teal);border-left-color:var(--teal)"><div class="flags-h" style="color:var(--teal)">Possible focus this visit</div><ul>'
+      + prepFoci.map(function(f){ return '<li style="white-space:pre-line;margin-bottom:8px">'+esc(f)+'</li>'; }).join('') + '</ul></div>';
+  }
+  html += '<button class="btn" style="margin-top:14px" onclick="openFocus(\'raw\')">Open my working note (full screen) &#8599;</button></div>';
+  document.getElementById('prep-results').innerHTML = html;
+  document.getElementById('prep-results').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+// ── Full-screen focus editor: work one big note like your EHR, one Draft button ──
+var focusSourceId = null;
+var prepChecklist = [];
+var prepFoci = [];
+function focusRefHtml(){
+  // The checklist now lives inside the note itself; only the psychotherapy focus stays a reference.
+  if(!prepFoci.length) return '';
+  var h = '<details style="margin-bottom:8px"><summary style="cursor:pointer;color:var(--teal);font-size:.72rem;font-weight:700;letter-spacing:.05em;text-transform:uppercase">Possible focus this visit ('+prepFoci.length+')</summary><div style="max-height:22vh;overflow:auto;margin-top:8px">';
+  h += '<ul style="margin:0 0 0 18px;padding:0">'+prepFoci.map(function(f){ return '<li style="font-size:.84rem;color:var(--cream);line-height:1.5;margin-bottom:8px;white-space:pre-line">'+esc(f)+'</li>'; }).join('')+'</ul>';
+  h += '</div></details>';
+  return h;
+}
+function openFocus(sourceId){
+  focusSourceId = sourceId;
+  var src = document.getElementById(sourceId);
+  document.getElementById('focus-note').value = src ? src.value : '';
+  document.getElementById('focus-err').innerHTML = '';
+  document.getElementById('focus-ref').innerHTML = (sourceId === 'raw') ? focusRefHtml() : '';
+  document.getElementById('focus-hint').textContent = '';
+  document.getElementById('focus-overlay').classList.add('open');
+  var fab = document.getElementById('tbp-theme-fab'); if(fab) fab.style.display = 'none'; // don't cover the Exit control
+  document.getElementById('focus-note').focus();
+}
+function focusSyncBack(){
+  if(focusSourceId){ var src = document.getElementById(focusSourceId); if(src) src.value = document.getElementById('focus-note').value; }
+}
+function closeFocus(){
+  focusSyncBack();
+  document.getElementById('focus-overlay').classList.remove('open');
+  var fab = document.getElementById('tbp-theme-fab'); if(fab) fab.style.display = '';
+}
+document.addEventListener('keydown', function(e){
+  if(e.key === 'Escape' && document.getElementById('focus-overlay').classList.contains('open')) closeFocus();
+});
+document.getElementById('focus-draft').addEventListener('click', async function(){
+  focusSyncBack();
+  // Keep full screen open (with the spinner visible) while drafting; close onto the result when done.
+  var ok = await runDraft(document.getElementById('focus-note').value.trim(), this, document.getElementById('focus-err'));
+  if(ok) closeFocus();
+});
+
+// ── Slice 2: hand off to the Note Builder ──
+function sendToNoteBuilder(){
+  try {
+    var edited = (document.getElementById('hpi-out') || {}).value;
+    var payload = {
+      hpi: (typeof edited === 'string' && edited.trim()) ? edited.trim() : lastHpi,
+      visitType: visitType,
+      ts: (new Date()).getTime()
+    };
+    sessionStorage.setItem('tbp_clinical_note', JSON.stringify(payload));
+  } catch(e){}
+  // Open the Note Builder in a NEW tab so the HPI workspace stays put.
+  // sessionStorage is copied into the new same-origin tab on window.open, so the handoff carries.
+  window.open('/pm-clinical-note-builder.html', '_blank');
+}
+
+// ── Slice 3: Setup wizard ──
+var wiz = { visit:'new_eval', style:'brief', quote:'verbatim' };
+var wizMode = 'build';
+bindOpts('wiz-visit-opts','data-wizvisit', function(v){ wiz.visit=v; updateWizSampleLabel(); if(wizMode==='refine') loadCurrentIntoRefine(); });
+
+// The completed-note box is the richest signal, especially for follow-ups; label it per visit type.
+function updateWizSampleLabel(){
+  var lbl = document.getElementById('wiz-sample-label');
+  var ta = document.getElementById('wiz-sample');
+  if(!lbl || !ta) return;
+  if(wiz.visit === 'follow_up'){
+    lbl.innerHTML = 'A completed FOLLOW-UP note you like <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(recommended &mdash; for your structure and voice)</span>';
+    ta.placeholder = "Paste a real completed follow-up note. It teaches the tool your structure, section order, and voice. It will NOT copy your current carry-forward habits: the tool asks you how carry-forward should work and applies proper 'continues to ...' framing, so it improves your documentation rather than mirroring it. Paste as-is; processed transiently and never stored, only your PHI-free structure is saved.";
+  } else {
+    lbl.innerHTML = 'A completed HPI you like <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional)</span>';
+    ta.placeholder = "Optional: paste a real completed HPI so it also learns your voice and level of detail. Paste it as-is; processed transiently and never stored, only your PHI-free structure and style are saved.";
+  }
+}
+bindOpts('wiz-style-opts','data-wizstyle', function(v){ wiz.style=v; });
+bindOpts('wiz-quote-opts','data-wizquote', function(v){ wiz.quote=v; });
+bindOpts('wiz-mode-opts','data-wizmode', function(v){ wizMode=v; switchWizMode(v); });
+
+function switchWizMode(v){
+  document.getElementById('wiz-build-panel').style.display = (v==='build') ? 'block' : 'none';
+  document.getElementById('wiz-refine-panel').style.display = (v==='refine') ? 'block' : 'none';
+  document.getElementById('wiz-result').innerHTML='';
+  document.getElementById('wiz-err').innerHTML='';
+  if(v==='refine') loadCurrentIntoRefine();
+}
+function loadCurrentIntoRefine(){
+  var el = document.getElementById('refine-current');
+  if(el) el.value = vaultTemplates[wiz.visit] || '';
+}
+
+function openWizard(){
+  // default the wizard to the visit type selected on the page, or follow-up if none chosen yet
+  wiz.visit = visitType || 'follow_up';
+  document.querySelectorAll('#wiz-visit-opts .opt').forEach(function(o){
+    o.classList.toggle('sel', o.getAttribute('data-wizvisit')===wiz.visit);
+  });
+  wizMode = 'build';
+  document.querySelectorAll('#wiz-mode-opts .opt').forEach(function(o){
+    o.classList.toggle('sel', o.getAttribute('data-wizmode')==='build');
+  });
+  switchWizMode('build');
+  updateWizSampleLabel();
+  document.getElementById('wizard').classList.add('open');
+}
+function closeWizard(){ document.getElementById('wizard').classList.remove('open'); }
+document.getElementById('open-wizard').addEventListener('click', openWizard);
+// Do NOT close on outside click - too easy to lose your place by accident. Close only via the X.
+
+function wizardSystem(){
+  var visitLabel = wiz.visit==='new_eval' ? 'new patient psychiatric evaluation' : 'psychiatric follow-up visit';
+  var styleMap = { flowing:'a flowing narrative', brief:'brief section labels with narrative under each', sectioned:'full labeled sections' };
+  var s = "You build a REUSABLE HPI TEMPLATE for a clinician's " + visitLabel + ", from the materials they provide (their blank scaffold and/or a completed example) plus preferences. The template is a set of drafting instructions applied later to a visit's raw notes.\n\n";
+  s += "CRITICAL - NO PHI: Output ONLY reusable structure and generic phrasing. NEVER copy patient-specific content from a completed example (no names, no person-specific symptoms/stories, no meds, doses, or dates). Strip all PHI. This template is stored in the clinician's Vault, which must contain NO patient information.\n\n";
+  s += "PRESERVE THE CLINICIAN'S STRUCTURE: keep their section order and their brief labels. If their scaffold includes canned 'associated symptoms include ...' menus for domains (depression, mania, sleep, anxiety, panic, OCD, trauma, ADHD, borderline, etc.), KEEP those menus in the template as reference checklists. They are generic, not PHI, and the drafting step uses them to decide what to include.\n\n";
+  s += "EMBED THESE DRAFTING RULES in the template so a future draft follows them:\n";
+  s += "- Include a domain, section, or subtopic ONLY if the visit notes address it. Omit entirely any domain or subtopic not discussed (e.g. drop ADHD or borderline if not asked). Do not write 'denies ...' for a domain unless the notes document it was asked and denied.\n";
+  s += "- A 'associated symptoms include ...' menu is a POSITIVE list: keep only the symptoms the notes show the patient endorsed; remove any denied, not-discussed, or absent items. Never reproduce the full canned list.\n";
+  s += "- Keep explicit clinician denials (e.g. denies SI/HI) as their own denial statement; do not fold denied items into the positive list.\n";
+  s += "- Preserve patient quotes verbatim, correcting spelling only.\n";
+  s += "The template defines the FORMAT (order, labels, subheadings, grouping); write it as this clinician's own format, and do not hardcode a subheading scheme they did not ask for.\n\n";
+  s += "Honor these preferences: overall format = " + (styleMap[wiz.style] || styleMap.brief) + "; patient quotes = " + (wiz.quote==='verbatim' ? 'keep verbatim, fix spelling only' : 'fold into narrative, quote sparingly') + ".\n\n";
+  s += "If a CLARIFYING Q&A block is present, treat the clinician's answers there as authoritative preferences that override defaults.\n\n";
+  s += "Write the template in PRONOUN-NEUTRAL form: use 'the patient' or they/them in any example sentences, so it never biases a draft toward a gender. Keep bracketed placeholders as clearly-marked instructions, not patient content.\n\n";
+  s += "PRESERVE THE CLINICIAN'S LABEL PLACEMENT from their scaffold: if they write section labels inline with a colon and content on the same line ('Counseling: ...'), keep that inline style; if labels are on their own line, keep them there. Do not change their header style.\n\n";
+  s += "Encode the carry-forward classification (which sections are dynamic / standing / historical) from the CLINICIAN'S STATED INTENT (their elicited answers or preferences), NOT from how a completed example note happens to handle carry-forward, since the example may reflect habits the tool is meant to improve. In the template's guidance, apply proper continued/stable framing for standing and historical items regardless of the example's style. If intent was not captured, use best-practice defaults and note them as adjustable. Learn only STRUCTURE, ORDER, and VOICE from a completed example.\n\n";
+  s += "Output the template text only, no preamble: clear directives plus the retained generic section scaffold and symptom menus.";
+  return s;
+}
+
+// Elicitation pass: ask follow-up questions ONLY if something is genuinely unclear.
+function elicitSystem(){
+  var isFu = (wiz.visit === 'follow_up');
+  var visitLabel = isFu ? 'psychiatric follow-up visit' : 'new patient psychiatric evaluation';
+  var s = "You are an expert clinical-documentation onboarding specialist helping a clinician set up their reusable HPI template for a " + visitLabel + ". Your job is to ELICIT what they actually want, because clinicians usually have NOT thought explicitly about these choices. Read their materials (scaffold and/or completed example) and stated preferences, then ask the smallest set of high-value questions that lets you build a template that genuinely fits how they work.\n\n";
+  s += "PRINCIPLES:\n";
+  s += "- Infer everything you can from their materials first. NEVER ask about anything the materials already answer.\n";
+  s += "- Ask GOOD questions: concrete, plain, mostly multiple-choice, each briefly implying why it matters. At most 5 per round.\n";
+  s += "- Prefer to finish in one round. Ask a second round only if the first round's answers open a genuinely important follow-up.\n";
+  s += "- Surface the choices clinicians would not think to specify; do not just confirm the obvious.\n";
+  s += "- LEARN STYLE FROM A COMPLETED NOTE, NOT HABITS. If a completed note is provided, learn the clinician's STRUCTURE, section order, headings, voice, and level of detail from it. Do NOT infer the carry-forward behavior from it: a clinician's current notes often contain the very habits this tool exists to fix (e.g. cloning content forward, or failing to frame standing items as 'continues to ...'). So ELICIT the carry-forward classification explicitly rather than copying how the note currently handles it; the draft applies proper continued/stable framing regardless of the note's style.\n\n";
+  s += "DIMENSIONS TO COVER (only those not already clear from their materials):\n";
+  s += "- Section order and headings (usually inferable from the scaffold; confirm only if unclear or inconsistent).\n";
+  s += "- Level of detail: how tight vs full they like the narrative.\n";
+  s += "- Quote handling: keep patient quotes verbatim (spelling fixed) vs fold into narrative.\n";
+  s += "- Medication naming: keep exactly as they type it vs convert to generic.\n";
+  s += "- Safety: how they like SI/HI framed when it IS documented (note internally: the system never carries safety forward regardless).\n";
+  if(isFu){
+    s += "- FOLLOW-UP CARRY-FORWARD (the most important, and clinicians rarely specify it): for each of their sections, whether it is DYNAMIC (reassessed every visit, today drives it), STANDING (not re-asked every visit, carried forward as stable when unchanged), or HISTORICAL / chronic-known background. Elicit this clearly, section by section if useful. Explain the idea in plain terms, and OFFER SENSIBLE BEST-PRACTICE DEFAULTS to react to (e.g. mood, sleep, and side effects are usually reassessed each visit; substance use, exercise, and history are often carried as stable) so a clinician who has not thought about it has something concrete to confirm or adjust. This is a place to gently improve their practice, not just record it.\n";
+    s += "- Whether they keep a persistent 'Historical Notes' style block of standing background they always carry forward and never re-ask.\n";
+    s += "- What, if anything, they ALWAYS want reassessed each visit no matter what.\n";
+  }
+  s += "\nRespond ONLY with raw JSON, no code fence:\n{\"questions\":[{\"id\":\"q1\",\"text\":\"...\",\"options\":[\"a\",\"b\"]}],\"enough\":false}\nOmit \"options\" for a free-text question. Set \"enough\": true with \"questions\": [] when you have what you need to build a template that fits them.";
+  return s;
+}
+
+// Assemble the clinician's wizard inputs into one message (re-read live each time).
+function gatherWizInputs(){
+  var scaffold = document.getElementById('wiz-scaffold').value.trim();
+  var sample = document.getElementById('wiz-sample').value.trim();
+  var notes = document.getElementById('wiz-notes').value.trim();
+  var msg = '';
+  if(scaffold) msg += "CLINICIAN'S BLANK TEMPLATE / SCAFFOLD (their section order and canned symptom menus; no patient content):\n\n" + scaffold;
+  if(sample) msg += (msg ? "\n\n---\n\n" : "") + "A COMPLETED HPI (learn voice and level of detail only; keep NO patient specifics):\n\n" + sample;
+  if(notes) msg += "\n\n---\n\nADDITIONAL PREFERENCES:\n\n" + notes;
+  return { scaffold: scaffold, sample: sample, notes: notes, msg: msg };
+}
+
+// Adaptive elicitation: interview the clinician (up to 2 rounds), then build.
+var elicitTranscript = '';
+var elicitRound = 0;
+
+document.getElementById('wiz-generate').addEventListener('click', async function(){
+  var errEl = document.getElementById('wiz-err'); errEl.innerHTML='';
+  var inp = gatherWizInputs();
+  if(inp.scaffold.length < 40 && inp.sample.length < 40){ errEl.innerHTML='<div class="err">Paste your template/scaffold (recommended) and/or a completed HPI, so it has something to learn from.</div>'; return; }
+  elicitTranscript = ''; elicitRound = 0;
+  var btn = this; btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Reviewing&hellip;';
+  document.getElementById('wiz-result').innerHTML='';
+  try {
+    await runElicit();
+  } catch(err){
+    errEl.innerHTML='<div class="err">'+esc(err.message||err)+'</div>';
+  } finally {
+    btn.disabled=false; btn.innerHTML='Build my template &rarr;';
+  }
+});
+
+// One elicitation round: ask more, or (when it has enough) build.
+async function runElicit(){
+  var inp = gatherWizInputs();
+  var payload = inp.msg + (elicitTranscript ? "\n\n---\n\nELICITATION SO FAR (clinician's answers, authoritative):\n\n" + elicitTranscript : "");
+  var raw = await callAPI(elicitSystem(), [{role:'user', content: payload}], 1100);
+  var j = safeJSON(raw) || {};
+  var qs = Array.isArray(j.questions) ? j.questions : [];
+  if(qs.length && j.enough !== true && elicitRound < 2){
+    elicitRound++;
+    renderElicit(qs);
+  } else {
+    await buildTemplate(elicitTranscript ? ("CLINICIAN'S ELICITED PREFERENCES (authoritative):\n\n" + elicitTranscript) : '');
+  }
+}
+
+// Render one round of questions; Continue accumulates answers and re-runs the interview.
+function renderElicit(qs){
+  window._wizQs = qs;
+  var heading = elicitRound > 1 ? 'A couple more, then I will build it' : 'A few questions to set this up right';
+  var html = '<div class="out" style="margin-top:16px"><h3>'+heading+'</h3>'
+    + '<div class="hint" style="margin-bottom:10px">These make the template genuinely yours. Pick an option or type your own; skip any that do not apply.</div>';
+  qs.forEach(function(q, i){
+    html += '<div class="card-group"><label>'+esc(q.text||('Question '+(i+1)))+'</label>';
+    if(Array.isArray(q.options) && q.options.length){
+      html += '<div class="opts" data-qopts="'+i+'">';
+      q.options.forEach(function(opt){ html += '<div class="opt" data-qval="'+esc(opt)+'">'+esc(opt)+'</div>'; });
+      html += '</div>';
+    }
+    html += '<input type="text" id="wiz-q-'+i+'" placeholder="Your answer" style="margin-top:8px"></div>';
+  });
+  html += '<button class="btn" id="wiz-continue">Continue &rarr;</button></div>';
+  document.getElementById('wiz-result').innerHTML = html;
+  qs.forEach(function(q, i){
+    var group = document.querySelector('[data-qopts="'+i+'"]');
+    if(!group) return;
+    group.addEventListener('click', function(e){
+      var o = e.target.closest('.opt'); if(!o) return;
+      group.querySelectorAll('.opt').forEach(function(x){ x.classList.remove('sel'); });
+      o.classList.add('sel');
+      document.getElementById('wiz-q-'+i).value = o.getAttribute('data-qval');
+    });
+  });
+  document.getElementById('wiz-continue').addEventListener('click', async function(){
+    (window._wizQs||[]).forEach(function(q, i){
+      var a = (document.getElementById('wiz-q-'+i)||{}).value;
+      if(a && a.trim()) elicitTranscript += 'Q: '+(q.text||'')+'\nA: '+a.trim()+'\n\n';
+    });
+    this.disabled = true; this.innerHTML='<span class="spinner"></span>Thinking&hellip;';
+    try { await runElicit(); }
+    catch(err){ document.getElementById('wiz-err').innerHTML='<div class="err">'+esc(err.message||err)+'</div>'; }
+  });
+}
+
+// Step 2: build the template (optionally with the clarifying Q&A) and show it for approval.
+async function buildTemplate(qaBlock){
+  var errEl = document.getElementById('wiz-err'); errEl.innerHTML='';
+  try {
+    var inp = gatherWizInputs();
+    var msg = inp.msg;
+    if(qaBlock) msg += "\n\n---\n\n" + qaBlock;
+    var tmpl = await callAPI(wizardSystem(), [{role:'user', content: msg}], 2000);
+    if(!tmpl){ throw new Error('Nothing came back. Try again.'); }
+    tmpl = stripDashes(tmpl);
+    var label = wiz.visit==='new_eval' ? 'New patient evaluation' : 'Follow-up';
+    var html = '<div class="out" style="margin-top:16px"><h3>Your '+label+' template</h3>'
+      + '<label style="margin-top:4px">Review and edit &mdash; this is what will guide your HPIs</label>'
+      + '<textarea id="wiz-tmpl-edit" style="min-height:170px">'+esc(tmpl)+'</textarea>'
+      + '<button class="btn" id="wiz-save" style="margin-top:12px">Save to my Vault</button>'
+      + '<div class="hint" id="wiz-save-hint" style="margin-top:6px">Saved to your Vault under HPI Templates. You can edit it there or here any time.</div></div>';
+    document.getElementById('wiz-result').innerHTML = html;
+    document.getElementById('wiz-save').addEventListener('click', saveWizardTemplate);
+  } catch(err){
+    errEl.innerHTML='<div class="err">'+esc(err.message||err)+'</div>';
+  }
+}
+
+// Shared: merge one template field into vault_profile (load-modify-save), mirror to
+// localStorage, and update in-memory so the next draft uses it immediately.
+async function persistTemplate(text, visitKey){
+  var key = visitKey==='new_eval' ? 'hpiTemplateEval' : 'hpiTemplateFollowup';
+  var current = {};
+  try {
+    var r = await fetch('/.netlify/functions/user-tool-data', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
+      body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'load' })
+    });
+    var d = await r.json();
+    if(d && d.found && d.data) current = d.data;
+  } catch(e){}
+  current[key] = text;
+  var sr = await fetch('/.netlify/functions/user-tool-data', {
+    method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
+    body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'save', data: current })
+  });
+  var sd = await sr.json();
+  try {
+    var lv = JSON.parse(localStorage.getItem('tbp_vault')||'{}'); lv[key]=text;
+    localStorage.setItem('tbp_vault', JSON.stringify(lv));
+    localStorage.setItem('credentialing-hub-profile', JSON.stringify(lv));
+  } catch(e){}
+  vaultTemplates[visitKey] = text;
+  renderTemplateStatus();
+  return sd && sd.saved;
+}
+
+// Save the clinician's working style to their Vault (per-clinician; never hardcoded).
+// Psychotherapy-guide toggle (per-clinician Vault preference; default on).
+function syncTherapyToggle(){ var c=document.getElementById('therapy-guide-toggle'); if(c) c.checked = therapyGuide; }
+(function(){
+  var c=document.getElementById('therapy-guide-toggle');
+  if(c) c.addEventListener('change', function(){ therapyGuide = this.checked; persistVaultField('hpiTherapyGuide', therapyGuide ? 'on' : 'off'); });
+})();
+
+// Generic single-field Vault write (localStorage mirror + Supabase), used by small preferences.
+async function persistVaultField(key, value){
+  try {
+    var lv = JSON.parse(localStorage.getItem('tbp_vault')||'{}'); lv[key]=value;
+    localStorage.setItem('tbp_vault', JSON.stringify(lv));
+    localStorage.setItem('credentialing-hub-profile', JSON.stringify(lv));
+  } catch(e){}
+  if(!userEmail) return false;
+  var current = {};
+  try {
+    var r = await fetch('/.netlify/functions/user-tool-data', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
+      body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'load' })
+    });
+    var d = await r.json(); if(d && d.found && d.data) current = d.data;
+  } catch(e){}
+  current[key] = value;
+  try {
+    var sr = await fetch('/.netlify/functions/user-tool-data', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
+      body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'save', data: current })
+    });
+    var sd = await sr.json(); return sd && sd.saved;
+  } catch(e){ return false; }
+}
+
+async function persistWorkflow(style){
+  // instant local mirror so the choice sticks even before the network round-trip
+  try {
+    var lv = JSON.parse(localStorage.getItem('tbp_vault')||'{}'); lv.hpiWorkflow = style;
+    localStorage.setItem('tbp_vault', JSON.stringify(lv));
+    localStorage.setItem('credentialing-hub-profile', JSON.stringify(lv));
+  } catch(e){}
+  if(!userEmail) return false;
+  var current = {};
+  try {
+    var r = await fetch('/.netlify/functions/user-tool-data', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
+      body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'load' })
+    });
+    var d = await r.json();
+    if(d && d.found && d.data) current = d.data;
+  } catch(e){}
+  current.hpiWorkflow = style;
+  try {
+    var sr = await fetch('/.netlify/functions/user-tool-data', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
+      body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'save', data: current })
+    });
+    var sd = await sr.json();
+    return sd && sd.saved;
+  } catch(e){ return false; }
+}
+
+async function saveWizardTemplate(){
+  var btn = document.getElementById('wiz-save');
+  var text = document.getElementById('wiz-tmpl-edit').value.trim();
+  if(!text){ return; }
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Saving&hellip;';
+  try {
+    var ok = await persistTemplate(text, wiz.visit);
+    if(ok){ btn.innerHTML='&#10003; Saved to Vault'; setTimeout(function(){ closeWizard(); }, 900); }
+    else { document.getElementById('wiz-save-hint').innerHTML='<span style="color:var(--amber)">Saved on this device; cloud save may have failed. It is set for this session.</span>'; btn.disabled=false; btn.innerHTML='Save to my Vault'; }
+  } catch(err){
+    document.getElementById('wiz-save-hint').innerHTML='<span style="color:var(--red)">'+esc(err.message||err)+'</span>'; btn.disabled=false; btn.innerHTML='Save to my Vault';
+  }
+}
+
+// ── Refine / troubleshoot an existing template, conversationally ──
+var refineChat = [];       // [{who:'ai'|'me', text}]
+var refineMessages = [];   // API history [{role, content}]
+var refineTemplate = '';   // latest revised template
+
+function safeJSON(raw){
+  try { return JSON.parse(raw); } catch(e){}
+  var a = raw.indexOf('{'), b = raw.lastIndexOf('}');
+  if(a !== -1 && b !== -1 && b > a){ try { return JSON.parse(raw.slice(a, b+1)); } catch(e2){} }
+  return null;
+}
+function refineSystem(){
+  var s = "You are helping a clinician troubleshoot and adjust their reusable HPI template. You are given their CURRENT template, the problem or change they want, optionally an example HPI output that came out wrong, and the conversation so far. Diagnose what in the template is causing the problem and revise the template to fix it.\n\n";
+  s += "RULES:\n";
+  s += "- Preserve the universal integrity rules: anti-fabrication; verbatim patient quotes with spelling-only fixes; every 'associated symptoms include ...' menu stays a POSITIVE endorsed-only checklist; include a domain or subtopic only if discussed; keep explicit denials (SI/HI) as their own statement. Never weaken these.\n";
+  s += "- Change ONLY what the clinician's issue calls for. Preserve the rest of their structure, order, labels, and voice.\n";
+  s += "- Never put patient PHI in the template; it is stored in the Vault.\n";
+  s += "- Keep the template pronoun-neutral (the patient / they-them) and keep bracketed placeholders and 'Menu (...)' blocks as instructions, never patient content.\n";
+  s += "- If you genuinely need one detail to fix it correctly, ask a short question in 'reply' and return the template unchanged for now.\n\n";
+  s += "Respond ONLY with raw JSON, no code fence:\n{\"reply\":\"<short plain explanation of what you changed, or a question>\",\"template\":\"<the full updated template>\"}";
+  return s;
+}
+function refineUserMsg(current, issue, bad){
+  var s = "CURRENT TEMPLATE:\n\n" + current + "\n\n---\n\nWHAT THE CLINICIAN WANTS FIXED OR CHANGED:\n\n" + issue;
+  if(bad) s += "\n\n---\n\nAN EXAMPLE HPI OUTPUT THAT CAME OUT WRONG (transient; do not store; use only to see the problem):\n\n" + bad;
+  return s;
+}
+function renderRefine(){
+  var chat = '';
+  refineChat.forEach(function(m){ chat += '<div class="bubble '+(m.who==='ai'?'ai':'me')+'">'+esc(m.text)+'</div>'; });
+  var html = '<div class="out" style="margin-top:16px"><h3>Working it through</h3>'
+    + '<div id="refine-chat">'+chat+'</div>'
+    + '<label style="margin-top:6px">Reply to keep refining</label>'
+    + '<div style="display:flex;gap:8px;align-items:flex-start">'
+    + '<input type="text" id="refine-reply" placeholder="e.g. Also stop capitalizing every heading" style="flex:1">'
+    + '<button class="btn-ghost" id="refine-send" style="margin-top:0">Send</button></div>'
+    + '<label style="margin-top:14px">Updated template (edit if you like)</label>'
+    + '<textarea id="refine-working" style="min-height:160px">'+esc(refineTemplate)+'</textarea>'
+    + '<button class="btn" id="refine-save" style="margin-top:10px">Save to my Vault</button>'
+    + '<div class="hint" id="refine-save-hint" style="margin-top:6px">Saves to your Vault under HPI Templates for the selected visit type.</div></div>';
+  document.getElementById('wiz-result').innerHTML = html;
+  document.getElementById('refine-send').addEventListener('click', sendRefine);
+  document.getElementById('refine-save').addEventListener('click', saveRefineTemplate);
+  document.getElementById('refine-reply').addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); sendRefine(); } });
+}
+document.getElementById('refine-start').addEventListener('click', async function(){
+  var errEl = document.getElementById('wiz-err'); errEl.innerHTML='';
+  var current = document.getElementById('refine-current').value.trim();
+  var issue = document.getElementById('refine-issue').value.trim();
+  var bad = document.getElementById('refine-badoutput').value.trim();
+  if(!current){ errEl.innerHTML='<div class="err">No current template found for this visit type. Set one up first, or switch visit type.</div>'; return; }
+  if(issue.length < 4){ errEl.innerHTML='<div class="err">Tell it what is going wrong or what you want to change.</div>'; return; }
+  var btn = this; btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Thinking&hellip;';
+  refineChat = [{who:'me', text: issue + (bad ? '\n\n(Example of a wrong output attached.)' : '')}];
+  refineMessages = [{role:'user', content: refineUserMsg(current, issue, bad)}];
+  try {
+    var raw = await callAPI(refineSystem(), refineMessages, 2600);
+    var j = safeJSON(raw);
+    if(!j || typeof j.template !== 'string'){ throw new Error('Could not read the response. Try again.'); }
+    refineMessages.push({role:'assistant', content: raw});
+    refineTemplate = stripDashes(j.template);
+    refineChat.push({who:'ai', text: j.reply || 'Updated.'});
+    renderRefine();
+  } catch(err){
+    errEl.innerHTML='<div class="err">'+esc(err.message||err)+'</div>';
+  } finally {
+    btn.disabled=false; btn.innerHTML='Work on it with me &rarr;';
+  }
+});
+async function sendRefine(){
+  var input = document.getElementById('refine-reply');
+  var text = (input.value||'').trim();
+  if(!text) return;
+  var working = document.getElementById('refine-working').value; // capture manual edits
+  var sendBtn = document.getElementById('refine-send');
+  input.disabled=true; sendBtn.disabled=true; sendBtn.innerHTML='<span class="spinner"></span>';
+  refineChat.push({who:'me', text: text});
+  refineMessages.push({role:'user', content: "Current working template:\n\n" + working.trim() + "\n\nMy follow-up: " + text});
+  try {
+    var raw = await callAPI(refineSystem(), refineMessages, 2600);
+    var j = safeJSON(raw);
+    if(!j || typeof j.template !== 'string'){ throw new Error('Could not read the response. Try again.'); }
+    refineMessages.push({role:'assistant', content: raw});
+    refineTemplate = stripDashes(j.template);
+    refineChat.push({who:'ai', text: j.reply || 'Updated.'});
+    renderRefine();
+  } catch(err){
+    var hint = document.getElementById('refine-save-hint');
+    if(hint) hint.innerHTML='<span style="color:var(--red)">'+esc(err.message||err)+'</span>';
+    input.disabled=false; sendBtn.disabled=false; sendBtn.innerHTML='Send';
+  }
+}
+async function saveRefineTemplate(){
+  var btn = document.getElementById('refine-save');
+  var text = document.getElementById('refine-working').value.trim();
+  if(!text) return;
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Saving&hellip;';
+  var hint = document.getElementById('refine-save-hint');
+  try {
+    var ok = await persistTemplate(text, wiz.visit);
+    if(ok){ btn.innerHTML='&#10003; Saved to Vault'; if(hint) hint.textContent='Saved. Your next HPI will use the updated template.'; setTimeout(function(){ closeWizard(); }, 1100); }
+    else { if(hint) hint.innerHTML='<span style="color:var(--amber)">Saved on this device; cloud save may have failed.</span>'; btn.disabled=false; btn.innerHTML='Save to my Vault'; }
+  } catch(err){
+    if(hint) hint.innerHTML='<span style="color:var(--red)">'+esc(err.message||err)+'</span>'; btn.disabled=false; btn.innerHTML='Save to my Vault';
+  }
+}
+
+// ── Load the clinician's Vault templates ──
+function loadVaultTemplates(){
+  // instant localStorage mirror first
+  try {
+    var lv = JSON.parse(localStorage.getItem('tbp_vault')||'{}');
+    vaultTemplates.new_eval = lv.hpiTemplateEval || '';
+    vaultTemplates.follow_up = lv.hpiTemplateFollowup || '';
+    if(lv.hpiWorkflow) workflow = lv.hpiWorkflow;
+    if(lv.hpiTherapyGuide!==undefined) therapyGuide = (lv.hpiTherapyGuide===true || lv.hpiTherapyGuide==='on');
+  } catch(e){}
+  renderTemplateStatus();
+  syncTherapyToggle();
+  if(!userEmail){ maybeOnboard(); return; }
+  fetch('/.netlify/functions/user-tool-data', {
+    method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
+    body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'load' })
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    onboardChecked = true; // the server response, not the shared browser cache, decides
+    if(d && d.found && d.data){
+      // Authoritative per-account profile (overrides the shared localStorage mirror).
+      vaultTemplates.new_eval = d.data.hpiTemplateEval || '';
+      vaultTemplates.follow_up = d.data.hpiTemplateFollowup || '';
+      workflow = d.data.hpiWorkflow || null;
+      if(d.data.hpiTherapyGuide!==undefined){ therapyGuide = (d.data.hpiTherapyGuide===true || d.data.hpiTherapyGuide==='on'); }
+      syncTherapyToggle();
+      if(typeof d.data.hpiCaptureMode === 'string'){ try{ localStorage.setItem('tbp_hpi_capture', d.data.hpiCaptureMode); }catch(e){} if(typeof window.tbpSetCapture==='function') window.tbpSetCapture(d.data.hpiCaptureMode); }
+      renderTemplateStatus();
+      var wa = document.getElementById('work-area');
+      if(wa && wa.style.display !== 'none'){ renderStyleBar(); renderMode(); }
+      // Onboarding shows until the account has completed it (hpiOnboarded) OR has a saved
+      // template. Having merely picked a working style does NOT count — that's part of
+      // onboarding itself, so it must not suppress it.
+      var hasTemplate = (d.data.hpiTemplateEval||'').trim() || (d.data.hpiTemplateFollowup||'').trim();
+      if(!d.data.hpiOnboarded && !hasTemplate) openOnboarding();
+    } else {
+      // No saved profile for THIS account → brand-new user. Clear any stale Vault
+      // cached by another account in this browser, then onboard as the first thing.
+      vaultTemplates.new_eval = ''; vaultTemplates.follow_up = ''; workflow = null;
+      renderTemplateStatus();
+      var wa2 = document.getElementById('work-area');
+      if(wa2 && wa2.style.display !== 'none'){ renderStyleBar(); renderMode(); }
+      openOnboarding();
+    }
+  })
+  .catch(function(){ /* network error: leave as-is; don't force onboarding on an existing user */ });
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// Ambient scribe: record the visit in the browser → Azure AI Speech batch
+// transcription → speaker-labeled transcript into the notes. No streaming: we
+// record the whole visit to one audio file, upload it after Stop, and a Netlify
+// function forwards it to Azure (the AZURE_SPEECH_KEY never reaches the browser).
+// Invite-only during beta via AMBIENT_ALLOWLIST.
+// ══════════════════════════════════════════════════════════════════════════
+(function(){
+  var recording=false, mediaRecorder=null, chunks=[], micStream=null, tabStream=null, mixCtx=null, mixNodes=[];
+  var rawBaseline='', recMime='';
+
+  // ── Beta gate: ambient is invite-only. Add tester emails here (lowercase). ──
+  var AMBIENT_ALLOWLIST = ['michael@thinkbeyondpsych.com','michael.vangelder@gmail.com'];
+  function ambientAllowed(){
+    try { return AMBIENT_ALLOWLIST.indexOf((typeof userEmail==='string'?userEmail:'').toLowerCase()) !== -1; }
+    catch(e){ return false; }
+  }
+
+  function setStatus(msg,isErr){ var el=document.getElementById('record-status'); if(!el)return; el.textContent=msg||''; el.style.color=isErr?'var(--red)':'var(--cream-dim)'; }
+  function resetBtn(){ var b=document.getElementById('record-btn'); if(b) b.innerHTML='&#9679; Start recording'; }
+
+  function pickMime(){
+    var c=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4'];
+    if(!window.MediaRecorder) return '';
+    for(var i=0;i<c.length;i++){ try{ if(MediaRecorder.isTypeSupported(c[i])) return c[i]; }catch(e){} }
+    return '';
+  }
+  function stopTracks(){
+    try{ if(micStream) micStream.getTracks().forEach(function(t){t.stop();}); }catch(e){}
+    try{ if(tabStream) tabStream.getTracks().forEach(function(t){t.stop();}); }catch(e){}
+    for(var i=0;i<mixNodes.length;i++){ try{ mixNodes[i].disconnect(); }catch(e){} }
+    mixNodes=[];
+    try{ if(mixCtx) mixCtx.close(); }catch(e){}
+    micStream=tabStream=mixCtx=null;
+  }
+
+  // Start capturing. Telehealth mixes your mic + the call tab's audio into one
+  // recording so both voices are captured cleanly (diarization separates speakers).
+  async function doStart(mode){
+    if(!ambientAllowed()) throw new Error('Ambient scribe is in limited beta and is not enabled for your account yet.');
+    if(!window.MediaRecorder) throw new Error('Your browser does not support recording. Try Chrome.');
+    var isTele=(mode==='telehealth');
+    if(isTele){
+      tabStream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:true });
+      var aTracks = tabStream.getAudioTracks();
+      if(!aTracks.length){ tabStream.getTracks().forEach(function(t){t.stop();}); tabStream=null; throw new Error('No tab audio was shared. Click Start again, choose your video-call tab, and check "Also share tab audio."'); }
+      tabStream.getVideoTracks().forEach(function(t){ t.stop(); });
+    }
+    micStream = await navigator.mediaDevices.getUserMedia({ audio:{ channelCount:1, echoCancellation:true, noiseSuppression:true } });
+
+    var recordStream;
+    if(isTele){
+      mixCtx = new (window.AudioContext||window.webkitAudioContext)();
+      var dest = mixCtx.createMediaStreamDestination();
+      var micSrc = mixCtx.createMediaStreamSource(micStream); micSrc.connect(dest); mixNodes.push(micSrc);
+      var tabSrc = mixCtx.createMediaStreamSource(new MediaStream([tabStream.getAudioTracks()[0]])); tabSrc.connect(dest); mixNodes.push(tabSrc);
+      recordStream = dest.stream;
+    } else {
+      recordStream = micStream;
+    }
+
+    chunks=[]; recMime=pickMime();
+    var opts={ audioBitsPerSecond: 24000 }; if(recMime) opts.mimeType=recMime;
+    mediaRecorder = new MediaRecorder(recordStream, opts);
+    mediaRecorder.ondataavailable = function(e){ if(e.data && e.data.size) chunks.push(e.data); };
+    mediaRecorder.onstop = function(){ finalizeRecording(); };
+    mediaRecorder.start(); // single blob delivered on stop
+    recording=true;
+    rawBaseline = document.getElementById('raw').value;
+    setStatus(isTele ? 'Recording the visit… (you + patient). Hit Stop when done.' : 'Recording… speak normally. Hit Stop when done.');
+  }
+
+  function doStop(){
+    if(!recording) return;
+    recording=false;
+    try{ if(mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(e){ finalizeRecording(); }
+    stopTracks();
+    setStatus('Finishing recording…');
+  }
+
+  function appendTranscript(text){
+    var raw=document.getElementById('raw'); if(!raw || !text)return;
+    var base = raw.value; // append to whatever is there now (checklist/scaffold etc.)
+    var joiner = base && !/\n$/.test(base) ? '\n' : '';
+    raw.value = base + joiner + text;
+  }
+  function azureCall(payload){
+    payload.token = authToken;
+    return fetch('/.netlify/functions/azure-transcribe',{
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
+      body: JSON.stringify(payload)
+    }).then(function(r){ return r.json().catch(function(){ throw new Error('Transcription service error.'); }); });
+  }
+  // Poll the batch job until the transcript is ready (no length limit on the audio).
+  function pollTranscript(jobUrl, blobName){
+    return new Promise(function(resolve, reject){
+      var tries=0, MAX=300; // ~300 × 3s ≈ 15 min of polling headroom
+      (function tick(){
+        tries++;
+        azureCall({ action:'poll', jobUrl:jobUrl, blobName:blobName }).then(function(d){
+          if(d.status==='done'){ resolve(d.transcript||''); return; }
+          if(d.status==='failed'){ reject(new Error(d.error||'Transcription failed.')); return; }
+          if(d.error && !d.status){ reject(new Error(d.error)); return; }
+          if(tries>=MAX){ reject(new Error('Transcription is taking unusually long — try again.')); return; }
+          setStatus('Transcribing the visit… ('+(tries*3)+'s)');
+          setTimeout(tick, 3000);
+        }).catch(function(e){ reject(e); });
+      })();
+    });
+  }
+
+  // On Stop: upload the recording straight to Azure storage (any length), then batch-transcribe.
+  async function finalizeRecording(){
+    var blob = new Blob(chunks, { type: (recMime||'audio/webm').split(';')[0] });
+    chunks=[];
+    if(!blob.size){ setStatus('No audio was captured.', true); resetBtn(); return; }
+    setStatus('Uploading the recording…');
+    try{
+      var up = await azureCall({ action:'upload-url', contentType: blob.type });
+      if(!up.uploadUrl || !up.blobName) throw new Error(up.error || 'Could not prepare the upload.');
+      var put = await fetch(up.uploadUrl, { method:'PUT', headers:{ 'x-ms-blob-type':'BlockBlob', 'Content-Type': blob.type||'application/octet-stream' }, body: blob });
+      if(!put.ok) throw new Error('Upload failed ('+put.status+').');
+      setStatus('Transcribing the visit…');
+      var st = await azureCall({ action:'start', blobName: up.blobName });
+      if(!st.jobUrl) throw new Error(st.error || 'Could not start transcription.');
+      var transcript = await pollTranscript(st.jobUrl, up.blobName);
+      if(!transcript){ setStatus('No speech was recognized in the recording.', true); resetBtn(); return; }
+      appendTranscript(transcript);
+      setStatus('Done — transcript added to your notes. Review, then Draft.');
+    } catch(err){
+      setStatus(err.message || 'Transcription failed.', true);
+    }
+    resetBtn();
+  }
+
+  // Capture mode (In person / Telehealth), remembered per browser; onboarding seeds
+  // it as a saved Vault preference.
+  var captureMode='inperson';
+  try { captureMode = localStorage.getItem('tbp_hpi_capture') || 'inperson'; } catch(e){}
+  function renderCaptureHint(){
+    var h=document.getElementById('capture-hint'); if(!h) return;
+    h.innerHTML = (captureMode==='telehealth')
+      ? 'Records <strong>you (mic)</strong> and <strong>the patient (call audio)</strong> together. On Start, pick your video-call tab and check <strong>"Also share tab audio."</strong> Headphones give the cleanest split. Transcribes after you hit Stop.'
+      : 'Records one room mic; both voices are transcribed and speakers are separated after you hit Stop.';
+  }
+  function applyCaptureSel(){
+    var opts=document.querySelectorAll('#capture-opts .opt');
+    for(var i=0;i<opts.length;i++){ opts[i].classList.toggle('sel', opts[i].getAttribute('data-capture')===captureMode); }
+    renderCaptureHint();
+  }
+  window.tbpSetCapture = function(m){ if(m!=='inperson'&&m!=='telehealth') return; captureMode=m; try{localStorage.setItem('tbp_hpi_capture',m);}catch(e){} applyCaptureSel(); };
+
+  // Wire UI
+  var consent=document.getElementById('record-consent'), btn=document.getElementById('record-btn');
+  var capOpts=document.getElementById('capture-opts');
+  if(capOpts){
+    applyCaptureSel();
+    capOpts.addEventListener('click', function(e){
+      var o=e.target.closest('.opt'); if(!o||recording) return;
+      captureMode=o.getAttribute('data-capture');
+      try{ localStorage.setItem('tbp_hpi_capture', captureMode); }catch(err){}
+      applyCaptureSel();
+    });
+  }
+  // Beta gate: if this account isn't on the allowlist, disable recording outright.
+  function applyGate(){
+    if(ambientAllowed()) return;
+    if(consent){ consent.checked=false; consent.disabled=true; }
+    if(btn){ btn.disabled=true; }
+    setStatus('Ambient scribe is in limited beta — not enabled for your account yet.');
+  }
+  applyGate();
+  if(consent) consent.addEventListener('change', function(){ if(btn && ambientAllowed()) btn.disabled=!this.checked; });
+  if(btn) btn.addEventListener('click', function(){
+    if(!ambientAllowed()){ setStatus('Ambient scribe is in limited beta — not enabled for your account yet.', true); return; }
+    if(recording){ doStop(); resetBtn(); return; }
+    btn.disabled=true; setStatus(captureMode==='telehealth'?'Waiting for you to share the call tab…':'Starting…');
+    doStart(captureMode).then(function(){ btn.disabled=false; btn.innerHTML='&#9632; Stop recording'; })
+      .catch(function(err){ recording=false; stopTracks(); setStatus(err.message||'Could not start.', true); btn.disabled=false; });
+  });
+})();
+
+// ══════════════════════════════════════════════════════════════════════════
+// First-run onboarding: a short guided setup. Nothing here is hardcoded per user —
+// it just walks a new clinician through choosing their own working style, setup,
+// and template, saving each to their Vault.
+// ══════════════════════════════════════════════════════════════════════════
+var onbState = { step:1, style:null, capture:'inperson', therapy:true };
+var onboardChecked = false;
+
+function openOnboarding(){
+  onbState.step = 1;
+  onbState.style = workflow;
+  onbState.therapy = therapyGuide;
+  try { onbState.capture = localStorage.getItem('tbp_hpi_capture') || 'inperson'; } catch(e){}
+  document.getElementById('onboarding').classList.add('open');
+  onbRender();
+}
+function closeOnboarding(){ document.getElementById('onboarding').classList.remove('open'); }
+
+function onbCard(key, title, desc){
+  return '<div class="opt'+(onbState.style===key?' sel':'')+'" data-style="'+key+'" style="display:block;text-align:left;padding:14px 16px;margin-bottom:8px">'
+    + '<div style="font-weight:700;color:var(--cream);text-transform:none;letter-spacing:0">'+title+'</div>'
+    + '<div class="hint" style="margin-top:4px">'+desc+'</div></div>';
+}
+function onbRender(){
+  var b = document.getElementById('onb-body'); if(!b) return;
+  var s = onbState.step, html='';
+  if(s===1){
+    html = '<h2>Welcome to your AI Scribe</h2>'
+      + '<p class="msub">Think Beyond Practice\'s AI Scribe is different from most. Instead of one black box that takes your audio and hands back a finished note you just have to trust, it\'s a <strong>guide that works the visit with you</strong> and documents it in <strong>your</strong> structure and voice.</p>'
+      + '<div style="background:var(--navy);border:1px solid var(--rule);border-radius:8px;padding:12px 14px;margin:14px 0">'
+        + '<div style="font-weight:700;color:var(--cream);margin-bottom:8px">It\'s really three tools that hand off to each other:</div>'
+        + '<div class="hint" style="line-height:1.7">'
+          + '<strong style="color:var(--cream)">1 &middot; HPI Generator</strong> &mdash; turns your notes or the visit recording into a clean History of Present Illness.<br>'
+          + '<strong style="color:var(--cream)">2 &middot; Note Builder</strong> &mdash; reasons out the assessment &amp; plan.<br>'
+          + '<strong style="color:var(--cream)">3 &middot; Chart Coder</strong> &mdash; suggests and checks your ICD / CPT codes.'
+        + '</div>'
+        + '<div class="hint" style="margin-top:8px"><strong style="color:var(--cream)">Why three, not one?</strong> Documentation is really three different jobs. Keeping them separate means each does its job well, <em>you</em> review between steps, and you can use just the piece a given visit needs &mdash; never a black box you can\'t check.</div>'
+      + '</div>'
+      + '<p class="msub">To document the way <em>you</em> do &mdash; your voice, your templates &mdash; we store your preferences in your <strong>Vault</strong>: the same place that holds your information across every Think Beyond Practice tool. You set it up once here, and it carries everywhere.</p>'
+      + '<p class="hint" style="margin-top:6px">Takes about two minutes &mdash; we\'ll set up your AI Scribe now; the others share the same Vault. Change anything later anytime.</p>'
+      + '<div style="margin-top:16px"><button class="btn" id="onb-start">Set it up &rarr;</button> <button class="btn-ghost" id="onb-skip" style="margin-left:8px">Skip for now</button></div>';
+  } else if(s===2){
+    html = '<h2>How do you usually work?</h2><p class="msub">Pick your default &mdash; the tool opens this way every visit, and you can switch anytime.</p>'
+      + onbCard('prep','Prep from last note','Paste last visit\'s note; I build today\'s checklist and a starting note; you answer each line live and I sort it into your template.')
+      + onbCard('ambient','Record ambient','I listen and transcribe the visit (in person or telehealth); you review and draft. The checklist still guides what to ask.')
+      + onbCard('direct','Paste my own notes','Jot or paste your rough notes and I draft the HPI.')
+      + '<div style="margin-top:18px"><button class="btn" id="onb-next"'+(onbState.style?'':' disabled')+'>Next &rarr;</button> <button class="btn-ghost" id="onb-back" style="margin-left:8px">Back</button></div>';
+  } else if(s===3){
+    html = '<h2>A couple of setup details</h2>'
+      + '<label style="margin-top:4px">When you record, how do you usually see patients?</label>'
+      + '<div class="opts" id="onb-cap"><div class="opt'+(onbState.capture==='inperson'?' sel':'')+'" data-cap="inperson">In person</div><div class="opt'+(onbState.capture==='telehealth'?' sel':'')+'" data-cap="telehealth">Telehealth</div></div>'
+      + '<div class="hint" style="margin-top:6px">You can switch per visit with one tap. For telehealth you\'ll share your call tab\'s audio when you hit record; headphones give the cleanest split.</div>'
+      + '<label style="margin-top:16px">Do you do psychotherapy in these visits?</label>'
+      + '<div class="opts" id="onb-thx"><div class="opt'+(onbState.therapy?' sel':'')+'" data-thx="yes">Yes &mdash; include the guide</div><div class="opt'+(!onbState.therapy?' sel':'')+'" data-thx="no">Med management only</div></div>'
+      + '<div class="hint" style="margin-top:6px">The psychotherapy guide suggests a technique, how-to, and sample prompts each visit. Off = never shown.</div>'
+      + '<div style="margin-top:18px"><button class="btn" id="onb-next">Next &rarr;</button> <button class="btn-ghost" id="onb-back" style="margin-left:8px">Back</button></div>';
+  } else if(s===4){
+    var sum = (WF_LABELS[onbState.style]||'—') + (onbState.style==='ambient' ? ', '+(onbState.capture==='telehealth'?'telehealth':'in person') : '') + ', psychotherapy guide '+(onbState.therapy?'on':'off');
+    html = '<h2>Last thing: your note template</h2>'
+      + '<p class="msub">Paste one HPI you already like and answer a couple of questions &mdash; I turn it into a reusable template in your structure and voice, so you never start from a blank box. No patient details from your sample are kept, only your style.</p>'
+      + '<div class="hint" style="margin-top:8px">You\'re set up: <strong style="color:var(--cream)">'+sum+'</strong>. Change any of it anytime.</div>'
+      + '<div style="margin-top:18px"><button class="btn" id="onb-tmpl">Set up my template &rarr;</button> <button class="btn-ghost" id="onb-later" style="margin-left:8px">I\'ll do it later</button></div>';
+  }
+  b.innerHTML = html;
+  onbWire();
+}
+function onbMarkDone(){ try{ localStorage.setItem('tbp_hpi_onboarded','1'); }catch(e){} persistVaultField('hpiOnboarded', true); }
+function onbFinish(openTemplate){
+  onbMarkDone();
+  closeOnboarding();
+  var wa = document.getElementById('work-area');
+  if(wa && wa.style.display !== 'none'){ renderStyleBar(); renderMode(); }
+  if(openTemplate) openWizard();
+}
+function onbWire(){
+  var s = onbState.step;
+  function on(id, fn){ var el=document.getElementById(id); if(el) el.addEventListener('click', fn); }
+  if(s===1){ on('onb-start', function(){ onbState.step=2; onbRender(); }); on('onb-skip', function(){ onbMarkDone(); closeOnboarding(); }); }
+  if(s===2){
+    var cards=document.querySelectorAll('#onb-body .opt[data-style]');
+    for(var i=0;i<cards.length;i++){ cards[i].addEventListener('click', function(){ onbState.style=this.getAttribute('data-style'); workflow=onbState.style; persistWorkflow(workflow); onbRender(); }); }
+    on('onb-next', function(){ if(onbState.style){ onbState.step=3; onbRender(); } });
+    on('onb-back', function(){ onbState.step=1; onbRender(); });
+  }
+  if(s===3){
+    var caps=document.querySelectorAll('#onb-cap .opt'); for(var j=0;j<caps.length;j++){ caps[j].addEventListener('click', function(){ onbState.capture=this.getAttribute('data-cap'); onbRender(); }); }
+    var thx=document.querySelectorAll('#onb-thx .opt'); for(var k=0;k<thx.length;k++){ thx[k].addEventListener('click', function(){ onbState.therapy=(this.getAttribute('data-thx')==='yes'); onbRender(); }); }
+    on('onb-next', function(){
+      if(typeof window.tbpSetCapture==='function') window.tbpSetCapture(onbState.capture);
+      persistVaultField('hpiCaptureMode', onbState.capture);
+      therapyGuide=onbState.therapy; syncTherapyToggle(); persistVaultField('hpiTherapyGuide', therapyGuide ? 'on' : 'off');
+      onbState.step=4; onbRender();
+    });
+    on('onb-back', function(){ onbState.step=2; onbRender(); });
+  }
+  if(s===4){ on('onb-tmpl', function(){ onbFinish(true); }); on('onb-later', function(){ onbFinish(false); }); }
+}
+// Open the guided setup once for a clinician who has never set anything up.
+function maybeOnboard(){
+  if(onboardChecked) return; onboardChecked = true;
+  var done=false; try{ done = localStorage.getItem('tbp_hpi_onboarded')==='1'; }catch(e){}
+  var hasSetup = !!workflow
+    || (vaultTemplates.new_eval && vaultTemplates.new_eval.trim())
+    || (vaultTemplates.follow_up && vaultTemplates.follow_up.trim());
+  if(!done && !hasSetup) openOnboarding();
+}
+
+// ── Auth ──
+TBPAuth.protect({
+  toolName: 'AI Scribe',
+  requireFull: true,
+  termsVersion: 'interim_v1',
+  onVerified: function(){
+    document.body.classList.remove('tbp-gate-active');
+    document.body.style.display='block';
+    document.body.style.overflow='';
+    var tc=document.getElementById('tool-container');
+    tc.style.display='block';
+    tc.classList.add('tbp-shown');
+    try { authToken = localStorage.getItem('tbp_auth_token') || ''; } catch(e){}
+    try { userEmail = localStorage.getItem('tbp_verified_email') || ''; } catch(e){}
+    loadVaultTemplates();
+  }
+});
+</script>
+<button id="tbp-theme-fab" class="tbp-theme-fab" onclick="tbpToggleTheme()" title="Toggle light/dark" aria-label="Toggle light or dark theme">&#9790;</button>
+<script>
+function tbpToggleTheme(){var c=document.documentElement.getAttribute('data-theme')||'dark';var n=c==='light'?'dark':'light';document.documentElement.setAttribute('data-theme',n);try{localStorage.setItem('tbp_theme',n);}catch(e){}var b=document.getElementById('tbp-theme-fab');if(b)b.innerHTML=n==='light'?'&#9728;':'&#9790;';}
+(function(){var b=document.getElementById('tbp-theme-fab');if(b){var c=document.documentElement.getAttribute('data-theme')||'dark';b.innerHTML=c==='light'?'&#9728;':'&#9790;';}})();
+</script>
+</body>
+</html>
