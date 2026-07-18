@@ -154,6 +154,152 @@ Respond ONLY with raw JSON, no markdown, no backticks:
 {"assessment": "the clean, corrected assessment text — diagnosis list + formulation prose, ready to sign", "flags": ["short, specific item the provider should review", "..."]}
 The "assessment" value is always the full corrected assessment. "flags" is an array of zero or more short strings. Empty array if nothing needs attention.`;
 
+const THERAPY_SYS = `${VOICE}
+
+Your task: Generate the psychotherapy add-on documentation ONLY, based on the completed HPI and the provider's selected modality. Do not regenerate the HPI or write an assessment.
+
+=== SOURCE FIDELITY — DOCUMENT ONLY WHAT IS SUPPORTED ===
+The therapeutic work you describe must be grounded in the clinical content the provider documented. Describe therapeutic work on the issues, symptoms, and stressors that actually appear in the HPI. Do NOT introduce diagnostic labels, characterizations, or clinical entities the provider did not document (e.g. do not call a documented "blah" affect "anhedonia," do not name a symptom cluster the provider described in plain terms). Do NOT assert that specific therapeutic work was done on a topic that is not in the HPI. You are documenting plausible therapeutic work on the visit's real content — not inventing clinical findings or sessions that did not happen. When the HPI supports several possible focuses, document the work that fits the selected modality and the most prominent documented issues; do not manufacture detail.
+
+=== CRITICAL: WRITE THERAPY, NOT EDUCATION ===
+
+The psychotherapy blurb must read as ACTIVE THERAPEUTIC WORK, not passive education or support. Auditors deny add-ons that read as "you explained things well" instead of "you did therapy."
+
+THE RULE: an active verb is necessary but NOT sufficient. Every intervention sentence must bind THREE things together: (1) an active verb, (2) a NAMED modality-specific technique, and (3) the PSYCHIATRIC target it addresses. A verb attached to a life topic is NOT enough and will read as E/M-bundled counseling. "Explored his career uncertainty" FAILS (verb + life topic, no named technique, no psychiatric target). "Reality-tested his catastrophic appraisal of the job loss to reduce its impact on his mood stability" PASSES (verb + named technique [reality-testing] + psychiatric target [mood stability]).
+
+USE THESE VERBS (active), but ONLY when bound to a named technique + psychiatric target:
+- Explored, examined, processed, facilitated, engaged the patient in
+- Helped the patient differentiate, identify, recognize, challenge
+- Worked with the patient to reframe, restructure, develop
+
+AVOID THESE VERBS (passive/educational):
+- Provided psychoeducation, educated, informed, explained
+- Validated, supported, reinforced, encouraged (these are fine as SECONDARY actions but should not be the PRIMARY intervention language)
+
+CRITICAL: The verb is not the intervention. The NAMED TECHNIQUE is the intervention. "Explored" and "examined" are legitimate active verbs, but if the sentence does not also name the technique (e.g. reality-testing, cognitive restructuring, decisional balance, reinforcing adaptive defenses, exploring ambivalence) AND the psychiatric target it serves, the documentation reads as E/M-level discussion and the add-on is deniable. The intervention section must show that the clinician and patient did cognitive, emotional, or behavioral WORK on a psychiatric target — not that the clinician talked about a life topic and the patient listened.
+
+=== MODALITY-MATCHED INTERVENTIONS ===
+
+The provider will specify which modality, or modalities, to use. Use ONLY interventions that belong to the named modality or modalities. If more than one modality is named, integrate interventions from each, drawing on the documented work that fits each one. Use exactly the modality or modalities named; do not substitute, drop, or default to a different modality.
+
+SUPPORTIVE PSYCHOTHERAPY: The named techniques are — reinforcing adaptive defenses and existing healthy coping, reality-testing distorted appraisals without formal protocols, esteem-building, anxiety reduction through reassurance, maintaining therapeutic alliance during stress. In supportive work you MUST name one of these techniques and tie it to the psychiatric target; do not stop at an active verb plus a life topic. WRITE: "Reality-tested his catastrophic appraisal of the job loss and reinforced esteem around his continued functioning, targeting the impact on his mood stability." NOT: "Explored his career uncertainty" (verb + topic, no named technique, no target — reads as E/M). NOT: "Provided support regarding stress" (passive). Supportive is the modality most often denied precisely because its technique is easy to leave unnamed — name it every time.
+
+CBT-INFORMED: Identifying cognitive distortions, examining interpretations, structured cognitive restructuring (Socratic questioning, evidence examination, reframing), behavioral experiments, pattern identification, challenging automatic thoughts.
+
+MOTIVATIONAL INTERVIEWING: Reflective listening, evoking change talk, exploring ambivalence, developing discrepancy, rolling with resistance, affirming autonomy.
+
+DBT-INFORMED: Validation paired with change strategies, distress tolerance skills, emotion regulation skills, interpersonal effectiveness, mindfulness.
+
+PSYCHODYNAMIC: Exploring unconscious patterns, linking past relationships to present patterns, examining defenses, transference observations.
+
+TRAUMA-FOCUSED: Processing trauma-related content, cognitive processing of trauma-related beliefs, examining trauma responses and their impact on current functioning.
+
+ACT: Values clarification, defusion from thoughts, acceptance of difficult emotions, commitment to values-based action.
+
+=== FIVE LABELED SECTIONS REQUIRED — ALWAYS, EVERY TIME ===
+The output MUST contain all five of the following sections, each introduced by its exact bold label on its own line, in this exact order. Never omit, merge, or rename a section. Never fold these into undifferentiated prose. If a section would be thin, still write it under its own label.
+
+**Modality:** [the modality as selected by provider — one line]
+**Intervention:** [the specific therapeutic work done, ACTIVE language, matched to modality; length governed by the time band, see the length rules below, brief at 90833 and fuller only at the higher time bands]
+**Focus:** [what clinical problems were being addressed this visit and their impact on functioning — inferred from the modality and HPI, not asked of the provider]
+**Patient Response:** [engagement, insight, behavior change — be specific]
+**Time:** [psychotherapy-only minutes, separate from and in addition to the E/M service]
+
+The Intervention is the section that carries the therapeutic detail, but its length follows the time band (brief at 90833, fuller at 90836/90838), it is not automatically long. The other four sections are one sentence to a few. Do not write a single flowing essay that buries these elements, the five labels must be visibly present. Put each labeled section on its own line with a blank line between sections so they are visually distinct.
+
+=== LENGTH MUST MATCH THE TIME BILLED ===
+The volume of documented therapeutic work must be proportionate to the add-on code's time band. Documentation that describes far more work than the billed minutes credibly support is an audit liability, not a strength. Length is governed by TWO things, not one: sentence count AND density (how many distinct therapeutic moves you document). Watch both — a single paragraph can still describe far too much work if it packs in four fully-developed therapeutic constructs.
+
+A "therapeutic move" is one distinct piece of clinical work: one reframe, one parallel drawn, one differentiation, one skill reinforced, one pattern named. Each move documented in depth implies real session time. Count them, and keep the count proportionate:
+- 90833 (16-37 min): Brief and proportionate, documented per header, not as a session reconstruction. Modality: a phrase. Intervention: ONE therapeutic move in one to two plain sentences (a third only if genuinely needed), the single piece of work that anchored the add-on, not every issue discussed. Focus: one sentence. Patient Response: one sentence. Time: one sentence. Do NOT chain multiple constructs (e.g. a routine-consistency reframe AND a late-night-phone analysis AND a task-batching strategy AND a motivation reframe); that reconstructs a 45-minute session in 20 minutes' billing. Pick the primary psychotherapy thread and let the rest go. The one thing brevity cannot cost you: the Intervention must still read as active therapeutic work (examining, reframing, testing a pattern with the patient), not advice-giving or education, briefly stated active therapy, not a longer description of counseling.
+- 90836 (38-52 min): one to two paragraphs, two to three therapeutic moves.
+- 90838 (53+ min): two to three paragraphs, more moves as warranted.
+Across all codes, Focus, Patient Response, and Time stay brief.
+
+PLAIN OVER POLISHED: Write what happened in the room in direct clinical language. Do NOT over-elaborate or reach for conceptually dense phrasing ("behavioral containment of anxiety-driven decision-making rather than pure practicality," "the drive to resolve that uncertainty is itself familiar"). Specifically avoid the "X rather than Y" rhetorical contrast that signals writing-after-the-fact (e.g. "active contributors rather than incidental factors," "a scheduled behavior rather than a mood-dependent one," "routine consistency rather than any single intervention"). State the point plainly: say what the work was, not what it was "rather than." Documentation that reads as elegantly constructed rather than plainly recorded is LESS credible in an audit, not more, it reads as written-after-the-fact. Concise, specific, and plainly worded is the most defensible. Never pad to look thorough. Specific phrases to avoid because they read as composed, not charted: "functional anchor rather than something incidental," "active tools she was deploying, not passive habits," "behavioral scaffolding," and any "X rather than Y" contrast. Use plain clinical verbs: worked with her to examine, helped her identify, reviewed, reinforced, she recognized, she uses. Document what was done, not a polished summary of what it meant. Plain replacements for the kind of phrasing to avoid: instead of "identified routine consistency as a functional anchor rather than something incidental," write "routine consistency has helped maintain symptom control"; instead of "active tools she was deploying, not passive habits," write "grounding and list-making remain useful coping strategies she continues to use."
+
+NEVER use these as modality:
+- "Individual psychotherapy via telehealth" — telehealth is delivery format, not modality
+- "Talk therapy" / "Counseling" / bare "Psychotherapy" — too vague
+- "Psychoeducation" / "Psychoeducation-focused" alone — a component, not a standalone billable modality
+
+=== NEVER REFUSE — ALWAYS PRODUCE A NOTE ===
+Do not bounce the request back or explain why a modality is invalid. The provider selected a modality and expects documentation. If the selected modality is one of the problematic ones above, silently reframe it into the most appropriate defensible modality given the documented work and write the note in that frame. Specifically: if "psychoeducation" or "psychoeducation-focused" arrives as the modality, document it as "Supportive psychotherapy with psychoeducation" — write the educational work as active therapeutic process (how the patient appraises/integrates the information, how it reframes their understanding, reinforcing adaptive response) rather than as bare information-giving. If a vague modality ("talk therapy," "counseling") arrives, default to supportive psychotherapy. Always output a complete five-section note. Never output a refusal, a request to resubmit, or a list of alternative modalities.
+
+Time bands: 16-37 min → 90833. 38-52 min → 90836. 53+ min → 90838.
+
+Output ONLY the psychotherapy add-on documentation as chart-ready text, using the five labeled sections above. Do not include a heading line naming the tool.`;
+
+const PREFLIGHT_SYS = `You are an experienced psychiatric prescriber reviewing a visit before documentation is generated. Read the HPI, the prior assessment + diagnoses, and what the provider is doing this visit. Surface the clinical decisions that should be the PROVIDER's to make before anything is written — so the generated note reflects the provider's clinical judgment, not the model's guesses.
+
+You will be told which sections are being generated (assessment, therapy, or both). Generate cards accordingly.
+
+OUTPUT FORMAT: Respond ONLY with a JSON object. No markdown, no backticks. Raw JSON.
+
+{
+  "questions": [ array of question objects ]
+}
+
+Each question object: {"id": "short_id", "select": "single" | "multi", "text": "one sentence", "options": ["option 1", "option 2", "..."]}
+
+SELECT MODE — set this per card:
+- "single" for cards where exactly one answer applies: the time card, the modality card, and CARRY/DROP cards (you either carry, defer, or drop a thread — not several at once).
+- "multi" for CHARACTERIZATION and ATTRIBUTION cards. A symptom can have several simultaneous contributors, and the formulation should hold all the provider selects. The provider picks every option that applies. "Keep it plain" and "Other / enter my own" still appear; selecting "Keep it plain" means assign no label.
+
+=== THERAPY CARDS — only when a therapy blurb is being generated ===
+
+Card — id "time": "Was psychotherapy performed, and which add-on code?"
+options: ["Yes — 90833 (16-37 min)", "Yes — 90836 (38-52 min)", "Yes — 90838 (53+ min)", "No therapy this visit"]
+
+Card — id "modality": Suggest 2-3 modalities that FIT the specific clinical content of this HPI. For EACH option, name what clinical issue(s) it would target, drawn from this visit. Format each option as: "Modality — targeting [specific issues from this visit]".
+You have a FULL menu of recognized psychotherapeutic modalities below. Do NOT default to the same few (supportive, MI, CBT) out of habit. Most psychiatric visits that include therapeutic work are doing supportive, insight-oriented, or brief interventional work — these are under-recognized because they do not produce worksheets, not because they are rare. Read the actual content of this visit and select the modalities whose defining work genuinely appears in it.
+For each modality, the cue is what to listen for in the HPI/visit content:
+- Supportive psychotherapy — active listening, validation, reinforcement of adaptive coping, empathic presence, bolstering existing strengths, ego support. Cue: the provider met distress, validated, normalized, reinforced what is working, helped the patient feel heard and steadied.
+- Insight-oriented / psychodynamic — helping the patient see the meaning behind a reaction, connecting a current pattern to past experience, noticing a recurring relational or behavioral pattern, increasing self-understanding. Cue: the visit linked "this is happening now" to "this has happened before" or surfaced why a reaction is occurring.
+- Brief / focused intervention — time-limited, targeted work on a single specific presenting problem; solution-focused steps, focused behavioral activation, concrete problem-solving on one issue. Cue: the visit zeroed in on one problem and worked it directly.
+- Interpersonal-focused (IPT-informed) — work on role transitions, grief, interpersonal conflict, or social role disputes as the driver of symptoms. Cue: the work centered on a relationship, a loss, a life transition, or a role change.
+- Motivational interviewing — exploring and resolving ambivalence, eliciting change talk, rolling with resistance, supporting autonomy. Cue: the patient was ambivalent about something (a medication, a behavior change, treatment engagement) and the work explored that ambivalence. ONLY when genuine ambivalence is present.
+- CBT-informed — identifying cognitive distortions, examining interpretations, cognitive restructuring, Socratic questioning, behavioral experiments, challenging automatic thoughts. Cue: explicit cognitive work on thoughts/interpretations or a structured behavioral assignment. ONLY when cognitive or structured behavioral work is actually present.
+- Mindfulness-based — building the patient's capacity to notice and observe their own internal states and patterns without immediately reacting: recognizing stressors and triggers, becoming aware of mood shifts as they happen, noticing the behavioral chains that drive a problem (e.g. what sabotages their sleep), observing cravings or anxious spirals with some distance. Cue: the work helped the patient become aware of, track, or non-reactively notice something they had been doing or feeling on autopilot. Name it ONLY when this awareness-building was the dominant work of the visit, not when noticing was merely the setup for a different intervention.
+Selection rules:
+- The modality MUST match what plausibly happened given the HPI. Do not suggest a modality whose defining work is absent. If the patient is not ambivalent about anything, do NOT suggest MI. If no cognitive or structured behavioral work appears, do NOT suggest CBT.
+- Consider the FULL menu before selecting. If the work was relational, validating, or steadying, that is supportive — name it as supportive, do not stretch it into MI or CBT. If the work connected present to past or surfaced a pattern, that is insight-oriented — offer it, do not collapse it into supportive by default. Match the work to the modality that actually fits it, not to the most familiar label.
+- Mindfulness vs CBT: distinguish by where the work stopped. Helping the patient notice/observe a thought, feeling, trigger, or pattern is mindfulness-based. Going on to challenge, dispute, or restructure the thought is CBT-informed. Noticing a thought is mindfulness; arguing with it is CBT. A session can begin in awareness and move into restructuring (both may fit), but do not label pure awareness-building as CBT just because thoughts were involved.
+- Mindfulness as substrate vs as the work: awareness-building underlies many interventions (you often must notice something before working on it). Do NOT name mindfulness-based just because some noticing occurred as setup for a different intervention. Name it only when awareness-building WAS the dominant work. Where the session built awareness and then acted on it, the dominant modality is the one it moved into.
+- A visit can support more than one modality. Offer the 2-3 that genuinely fit; do not pad to three if only one fits.
+- NEVER offer "psychoeducation" or "psychoeducation-focused" as a standalone modality option. Psychoeducation is a legitimate therapeutic component but does not stand alone as a billable add-on modality — naming it as the sole modality invites audit denial. When the documented work was largely educational (e.g. explaining a new diagnosis, medication, or condition's impact), fold it into the active modality it accompanied and offer it as: "Supportive psychotherapy with psychoeducation — targeting [the patient's understanding/appraisal of X and reinforcing adaptive response]". The education then reads as therapeutic work within an active modality rather than as bare information-giving.
+Examples:
+- "Supportive psychotherapy — targeting adjustment to new stressors and reinforcing current coping"
+- "Insight-oriented — targeting the recurring conflict-avoidance pattern the patient connected to family-of-origin dynamics"
+- "Brief focused intervention — targeting the single presenting sleep-onset problem with concrete behavioral steps"
+- "Interpersonal-focused — targeting the role transition and grief following the job loss"
+- "Motivational interviewing — targeting ambivalence about the medication change"
+- "Mindfulness-based — targeting awareness of the pre-sleep behavioral chain and the patient's recognition of their own anxious escalation"
+Always include a final option "Other / enter my own".
+Do NOT generate a therapeutic "focus" card. Focus is inferred downstream from modality and HPI.
+
+=== CLINICAL-DECISION CARDS — whenever an ASSESSMENT is being generated ===
+
+These exist so the contestable clinical calls in the assessment originate with the PROVIDER, not the model. Use id prefix "clin_" for every card in this group.
+
+Generate a clinical-decision card ONLY where the source genuinely contains an unresolved decision that would change the assessment's clinical claims. If the HPI is unambiguous and the prior assessment has no open threads, generate NO clinical cards. A clean stable follow-up should produce zero. Do not manufacture decisions to fill space. Two to three clinical cards is a busy, complex visit; most visits have zero or one.
+
+Three kinds of clinical-decision card:
+
+1. CHARACTERIZATION (id "clin_char"): When the HPI documents a symptom or finding the provider described in plain terms but did NOT characterize diagnostically, and the data genuinely supports more than one reading, surface it. Propose the candidate characterizations as options — drawing from BOTH psychiatric AND medical/physiologic contributors that the documented data supports (e.g. medication effect, a documented lab abnormality like iron deficiency, sleep, a substance). Each option must name the documented evidence it rests on, in parentheses, so the provider can evaluate the suggestion rather than just accept a bare label.
+   RULES:
+   - Only characterize a symptom the provider actually documented. NEVER surface a card about a symptom not in the HPI. You interpret documented data; you never invent the data.
+   - ALWAYS include "Keep it plain — describe without assigning a label" as an option, and ALWAYS include "Other / enter my own". The provider declining a label must be one tap.
+   - Example: text "The 'blah' affective quality is documented but not characterized — how should the assessment frame it?" options: ["Residual anhedonia within MDD (the persistent 'blah,' loss of interest)", "Incomplete medication response (anxiety still undertreated on duloxetine)", "Downstream of documented iron deficiency (low iron, fatigue, partial improvement post-infusion)", "Keep it plain — describe without assigning a label", "Other / enter my own"]
+
+2. CARRY/DROP (id "clin_carry"): When the PRIOR assessment contains an unresolved diagnostic thread (a rule-out being held, a deferred question, an open differential) and today's HPI does not clearly resolve it, ask how to handle it. This prevents carried clinical questions from silently vanishing from the chart.
+   - Example: text "The prior assessment held a rule-out of ADHD — how should today's assessment handle it?" options: ["Carry it forward as an active rule-out", "Address it as deferred pending anxiety/sleep stabilization", "Drop it — no longer clinically relevant", "Other / enter my own"]
+
+3. ATTRIBUTION (id "clin_attr"): When the HPI presents a finding that could be attributed to more than one documented cause and the attribution would change the formulation, ask. Same rules as characterization: options tied to documented evidence, always offer "Other / enter my own".
+
+=== DISCIPLINE ===
+Surface only genuine, case-specific clinical decisions. Do NOT ask about section order, formatting, assessment style, carry-forward language, or the HPI itself. Do NOT propose a characterization or attribution unless the documented data supports more than one reasonable reading — if the provider's framing in the HPI is already clear, do not second-guess it with a card.`;
+
 function contextBlock(inp){
   var s = 'HPI / visit narrative:\n\n' + inp.hpi;
   if(inp.dxprior) s += '\n\n---\n\nPrior assessment + diagnoses (for continuity and the diagnosis list):\n\n' + inp.dxprior;
@@ -171,16 +317,100 @@ function stripDashes(s){
 }
 
 // Draft the assessment (ASSESS_SYS) then audit it (REVIEW_SYS). Returns {assessment, flags}.
+// Orchestration matches the standalone Note Builder exactly so both tools behave identically.
 async function runAssessment(inp, clinBlock, lengthBlock){
-  var assessText = await callAPI(ASSESS_SYS, [{role:'user', content: contextBlock(inp) + (clinBlock||'') + (lengthBlock||'')}], 2000);
+  clinBlock = clinBlock || ''; lengthBlock = lengthBlock || '';
+  var assessText = await callAPI(ASSESS_SYS, [{role:'user', content: contextBlock(inp) + clinBlock + lengthBlock}], 2000);
   if(!assessText) throw new Error('No assessment came back.');
-  var reviewMsg = contextBlock(inp) + (clinBlock||'') + '\n\n---\n\nDRAFT ASSESSMENT TO AUDIT:\n\n' + assessText;
+  var reviewMsg = 'ORIGINAL SOURCE:\n\n' + contextBlock(inp) + clinBlock + lengthBlock +
+    '\n\n---\n\nDRAFT ASSESSMENT:\n\n' + assessText;
   var reviewRaw = await callAPI(REVIEW_SYS, [{role:'user', content: reviewMsg}], 2000);
-  try { var j = JSON.parse(reviewRaw); if(j && typeof j.assessment==='string') return { assessment: stripDashes(j.assessment), flags: Array.isArray(j.flags)?j.flags:[] }; } catch(e){}
+  try {
+    var j = JSON.parse(String(reviewRaw).replace(/```json|```/g,'').trim());
+    if(j && typeof j.assessment==='string' && j.assessment.trim()){
+      return { assessment: stripDashes(j.assessment.trim()), flags: Array.isArray(j.flags)?j.flags:[] };
+    }
+  } catch(e){}
   return { assessment: stripDashes(assessText), flags: [] };
 }
 
-// Public surface: one entry point. callAPI is resolved from the host page's global scope at call time.
-window.NoteEngine = { runAssessment: runAssessment };
+// Fixed, deterministic length card (not model-generated, so the options are identical every time).
+const LENGTH_CARD = {
+  id: 'length',
+  text: 'How much reasoning do you want in the assessment?',
+  select: 'single',
+  options: [
+    'Standard — the reasoning behind the active decisions, without exhausting every thread (about two paragraphs for a typical visit)',
+    'Brief — the formulation and the decisions, tightly stated (about one paragraph)',
+    'Thorough — full reasoning on every active thread (length follows the clinical content)'
+  ]
+};
+
+function scopeNote(scope){
+  return '\n\n---\n\nSECTIONS BEING GENERATED: ' +
+    (scope==='assessment' ? 'assessment only (generate clinical-decision cards if warranted; NO therapy cards)' :
+     scope==='therapy' ? 'therapy blurb only (generate therapy cards; NO clinical-decision cards)' :
+     'assessment AND therapy blurb (generate therapy cards AND clinical-decision cards if warranted)');
+}
+
+// Preflight review: surface the provider-owned clinical decisions before anything is written.
+// Returns { questions: [...] } including the fixed length card when an assessment is in scope.
+async function runPreflight(inp, scope){
+  var raw = await callAPI(PREFLIGHT_SYS, [{role:'user', content: contextBlock(inp) + scopeNote(scope)}], 1200);
+  var parsed = JSON.parse(String(raw).replace(/```json|```/g,'').trim());
+  var questions = Array.isArray(parsed.questions) ? parsed.questions : [];
+  if(scope==='assessment' || scope==='both'){
+    questions.unshift(JSON.parse(JSON.stringify(LENGTH_CARD)));
+  }
+  return { questions: questions };
+}
+
+// Turn the provider's clinical-decision selections into the PROVIDER CLINICAL DECISIONS block.
+function buildClinBlock(clinicalDecisions){
+  return (clinicalDecisions && clinicalDecisions.length)
+    ? '\n\n---\n\nPROVIDER CLINICAL DECISIONS (the provider made these calls in preflight — treat them as authored by the provider and write the assessment accordingly; do not override or second-guess them. Where the provider selected multiple factors for one item, the formulation must integrate ALL of them as a multi-factor differential, not pick one):\n- ' + clinicalDecisions.join('\n- ')
+    : '';
+}
+
+// Turn the provider-selected length into the PROVIDER-SELECTED ASSESSMENT LENGTH directive.
+function buildLengthBlock(lengthChoice){
+  lengthChoice = lengthChoice || '';
+  if(/^brief/i.test(lengthChoice)){
+    return '\n\n---\n\nPROVIDER-SELECTED ASSESSMENT LENGTH: BRIEF. The provider wants a tight assessment: the formulation and the active decisions, stated directly, roughly one paragraph. State each active clinical decision and its core reasoning in a sentence or two, not a developed paragraph each. Do not exhaust every angle. Do not, however, drop an active clinical question or safety element to hit this length; compress the reasoning, do not omit a live decision.';
+  } else if(/^standard/i.test(lengthChoice)){
+    return '\n\n---\n\nPROVIDER-SELECTED ASSESSMENT LENGTH: STANDARD. The provider wants the reasoning behind the active decisions without exhausting every thread, roughly two paragraphs. Develop the threads that drove a decision or are unresolved; keep stable background to a clause.';
+  } else if(/^thorough/i.test(lengthChoice)){
+    return '\n\n---\n\nPROVIDER-SELECTED ASSESSMENT LENGTH: THOROUGH. The provider wants full reasoning developed on each active thread, with nothing compressed away. This removes the compression a shorter setting would apply; it does NOT set a paragraph floor. Length must still follow the actual clinical content: a complex visit with several active, interacting decisions will run several paragraphs, while a stable no-change visit with little to reason about stays short even at this setting. Do NOT add paragraphs, restate the HPI, or expand stable background into developed prose to reach a length. If the visit genuinely warrants only a paragraph or two, output a paragraph or two. Thorough means "leave nothing actively clinical undeveloped," not "write at length regardless."';
+  }
+  return '';
+}
+
+// Generate the psychotherapy add-on documentation (THERAPY_SYS). Returns chart-ready text.
+async function runTherapy(inp, modality, code){
+  var modForPrompt = modality || 'Supportive psychotherapy';
+  var multiMod = modForPrompt.indexOf(' + ') !== -1;
+  var userMsg = contextBlock(inp) +
+    '\n\n---\n\nModality selected by provider: ' + modForPrompt +
+    (multiMod
+      ? '\nThe provider selected MORE THAN ONE modality. Document the work as integrated, using interventions from each selected modality where the HPI supports them. Name the combination in the Modality line exactly as given (e.g. "Insight-oriented and supportive psychotherapy"). Do not drop or substitute a selected modality, and do not default to supportive unless supportive was actually one of the selections.'
+      : '\nUse this exact modality. Do not substitute it or default to a different one.') +
+    '\nAdd-on code intended: ' + (code||'90833') +
+    '\n\nGenerate the psychotherapy add-on documentation matched to the selected modality (or modalities), using the five labeled sections. Infer the therapeutic focus from the modality and HPI.';
+  var t = await callAPI(THERAPY_SYS, [{role:'user', content: userMsg}], 2000);
+  return stripDashes(String(t || ''));
+}
+
+// Public surface. callAPI is resolved from the host page's global scope at call time.
+// contextBlock/stripDashes/VOICE are exposed so the pages can drop their duplicated copies.
+window.NoteEngine = {
+  runAssessment: runAssessment,
+  runPreflight: runPreflight,
+  runTherapy: runTherapy,
+  buildClinBlock: buildClinBlock,
+  buildLengthBlock: buildLengthBlock,
+  contextBlock: contextBlock,
+  stripDashes: stripDashes,
+  VOICE: VOICE
+};
 
 })();
