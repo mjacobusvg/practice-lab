@@ -280,6 +280,24 @@ Generator is the entry point; Note Builder's preflight / assessment / review / t
 fold in as pipeline stages, and the one-button push becomes an internal stage. Do it
 incrementally behind the existing tools so nothing breaks mid-migration.
 
+### Two markets, one engine (therapist product — future)
+Michael plans a **cheaper standalone scribe for therapists**, who won't pay the $149
+prescriber-platform price. This is the *one* legitimate exception to "no separate brand": a
+standalone product for a **non-overlapping market** at a different price is a second
+go-to-market, not a sub-brand of the platform. Reconciliation:
+- **Inside Think Beyond Practice (prescribers):** the scribe stays an **unbranded feature**
+  (Clinical Note Builder + ambient input mode).
+- **Therapist offering:** its **own identity / landing / price at launch** — same engine,
+  separate front door. Likely **drops "Practice"** (therapists don't identify with the
+  prescriber/business framing). Do NOT create the brand before the product exists.
+
+**Build constraint (applies NOW):** keep the Note engine **market-agnostic** —
+template / toggle / Vault-driven, **no hardcoded prescriber assumptions** (meds, E/M coding,
+etc. are configurable, not baked in). Then the therapist version is a **skin + therapist
+default templates** (DAP / SOAP progress notes, psychotherapy-centric, no med management),
+**not a fork.** This is the same discipline as §0.3 (learn the clinician's style, don't
+hardcode it), applied at the market level.
+
 ---
 
 ## 1. Where it stands today (audit)
