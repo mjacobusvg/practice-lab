@@ -579,9 +579,18 @@ function renderResult(hpi, flags){
   html += '<div class="hint" style="margin-top:14px">&#10003; Auto-reviewed against your notes.</div>';
 
   // Slice 4: build the assessment right here (same engine as the Note Builder), no copy-paste.
-  html += '<div class="handoff">Ready to work up the assessment? Build it right here from this HPI.'
-       +  '<br><button class="btn" id="build-assess">Build assessment &amp; plan &rarr;</button>'
-       +  '<div class="hint" style="margin-top:8px">Or <a href="#" id="send-nb-link">open it in the standalone Clinical Note Builder</a> instead.</div></div>';
+  // The assessment is driven by the PRIOR assessment (diagnosis list above all), so ask for it
+  // explicitly at this step for a follow-up, seeded from the top carry box if it was pasted there.
+  html += '<div class="handoff">Ready to work up the assessment? Build it right here from this HPI.';
+  if(visitType === 'follow_up'){
+    var seed = '';
+    try { var cb = document.getElementById('context'); seed = (cb && cb.value) ? cb.value.trim() : ''; } catch(e){}
+    html += '<label for="assess-dxprior" style="display:block;margin-top:12px">Last visit\'s assessment + diagnoses <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(required for an accurate assessment)</span></label>';
+    html += '<textarea id="assess-dxprior" class="hpi-edit" style="min-height:90px" placeholder="Paste last visit\'s ASSESSMENT here: the diagnosis list (with ICD-10 codes) at minimum, the full prior assessment and current meds preferably. This drives today\'s diagnosis list. Without it the tool can only ask you for it.">'+esc(seed)+'</textarea>';
+    html += '<div class="hint" style="margin-top:4px">Diagnoses are the must-have; the full prior assessment is better. Auto-filled if you pasted last visit\'s note up top.</div>';
+  }
+  html += '<div style="margin-top:12px"><button class="btn" id="build-assess">Build assessment &amp; plan &rarr;</button></div>';
+  html += '<div class="hint" style="margin-top:8px">Or <a href="#" id="send-nb-link">open it in the standalone Clinical Note Builder</a> instead.</div></div>';
   html += '<div id="assess-results"></div>';
 
   document.getElementById('results').innerHTML = html;
@@ -810,20 +819,24 @@ async function buildAssessment(btn, force){
   var hpiEl = document.getElementById('hpi-out');
   var hpi = (hpiEl && typeof hpiEl.value === 'string' && hpiEl.value.trim()) ? hpiEl.value.trim() : lastHpi;
   if(!hpi){ document.getElementById('assess-results').innerHTML = '<div class="err">No HPI to work from yet.</div>'; return; }
-  // Prior assessment + diagnoses drive the diagnosis list; for a follow-up that lives in last visit's note.
+  // The prior assessment (diagnosis list above all) drives today's diagnosis list. For a follow-up
+  // read the dedicated field at this step; fall back to the top carry box if that field is empty.
   var dxprior = '';
-  if(visitType === 'follow_up'){ var c = document.getElementById('context'); dxprior = (c && c.value ? c.value.trim() : ''); }
-  // A follow-up assessment needs the prior diagnosis list + current meds. Without them the engine
-  // can only ask for them, which reads badly. Steer the clinician to the box first, but let them
-  // build anyway (the HPI sometimes carries meds/diagnoses inline).
+  if(visitType === 'follow_up'){
+    var d = document.getElementById('assess-dxprior');
+    dxprior = (d && d.value) ? d.value.trim() : '';
+    if(!dxprior){ var c = document.getElementById('context'); dxprior = (c && c.value) ? c.value.trim() : ''; }
+  }
+  // Without the prior assessment the engine can only ask for it, which reads badly. Nudge to the
+  // field right above, but let them build anyway (the HPI sometimes carries meds/diagnoses inline).
   if(visitType === 'follow_up' && dxprior.length < 40 && !force){
     document.getElementById('assess-results').innerHTML =
-      '<div class="flags"><div class="flags-h">Paste last visit\'s note + assessment first</div>'
-      + '<div class="hint" style="margin-top:6px;line-height:1.5">The assessment needs the <strong style="color:var(--cream)">prior diagnosis list (with ICD-10 codes) and current medications</strong> to build accurately, otherwise it can only ask you for them. Paste last visit\'s note and assessment into <strong style="color:var(--cream)">&ldquo;Last visit\'s note + assessment&rdquo;</strong> near the top, then build.</div>'
-      + '<div style="margin-top:10px"><button class="btn-ghost" id="goto-carry">Take me to that box</button> '
+      '<div class="flags"><div class="flags-h">Paste last visit\'s assessment first</div>'
+      + '<div class="hint" style="margin-top:6px;line-height:1.5">The assessment is built from the <strong style="color:var(--cream)">prior diagnosis list (with ICD-10 codes)</strong>, plus the full prior assessment and current meds if you have them. Paste it into <strong style="color:var(--cream)">&ldquo;Last visit\'s assessment + diagnoses&rdquo;</strong> just above, then build.</div>'
+      + '<div style="margin-top:10px"><button class="btn-ghost" id="goto-carry">Jump to that field</button> '
       + '<button class="btn-ghost" id="build-anyway">Build without it anyway</button></div></div>';
     var g = document.getElementById('goto-carry');
-    if(g) g.addEventListener('click', function(){ var c=document.getElementById('context'); if(c){ c.scrollIntoView({behavior:'smooth',block:'center'}); c.focus(); } });
+    if(g) g.addEventListener('click', function(){ var t=document.getElementById('assess-dxprior')||document.getElementById('context'); if(t){ t.scrollIntoView({behavior:'smooth',block:'center'}); t.focus(); } });
     var ba = document.getElementById('build-anyway');
     if(ba) ba.addEventListener('click', function(){ buildAssessment(btn, true); });
     return;
