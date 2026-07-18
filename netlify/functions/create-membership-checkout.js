@@ -9,7 +9,7 @@
 // email comes from the verified token, never from client input.
 //
 // Only plans in PURCHASABLE are allowed, enforced here in code. Today that is Full
-// only ($119/mo, $1,140/yr); the post-accreditation Forum and $149 plans exist as
+// only ($119/mo, $1,190/yr); the post-accreditation Forum and $149 plans exist as
 // Stripe Prices but are not open to new checkout until added to this list.
 //
 // POST body: { plan, success_url, cancel_url, token? }

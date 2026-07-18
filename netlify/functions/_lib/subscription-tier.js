@@ -13,7 +13,7 @@ const PRODUCT_TIER = {
   prod_SnR5gmEzqzf4QY: 'forum', // Full Forum Access ($50/$525)
   prod_TVA3ySjsPUYqFu: 'forum', // 7-Day Trial -> $50 forum
   prod_TItCoEzHwGexN3: 'forum', // Toolkit Buyers trial -> $50 forum
-  prod_UG0R8KspOn5vFe: 'full',  // Full Access ($119/$1,140)
+  prod_UG0R8KspOn5vFe: 'full',  // Full Access ($119/mo, $1,190/yr)
   prod_Tync5rANzosLJR: 'full',  // Member Upgrade to $89 (Full CE Access, grandfathered)
   prod_Typ4Rae4Jdk2fY: 'full'   // $89 with CEs (grandfathered)
 };
@@ -39,7 +39,7 @@ const ACCESS_STATUSES = new Set(['active', 'trialing', 'past_due']);
 // Current standard rate. A member paying below this for their cadence is on a
 // grandfathered deal we honor ($50 forum-forever, $89 closed cohort).
 const CURRENT_MONTHLY_CENTS = 11900; // $119/mo
-const CURRENT_ANNUAL_CENTS = 114000; // $1,140/yr
+const CURRENT_ANNUAL_CENTS = 119000; // $1,190/yr
 
 function tierForProduct(productId, fallback) {
   return PRODUCT_TIER[productId] || fallback || null;
