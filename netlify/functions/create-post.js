@@ -166,6 +166,8 @@ exports.handler = async function (event) {
       try {
         await notifyMentions(mentioned, { id: MICHAEL_ACCOUNT_ID, name: 'Michael Van Gelder' }, { title: title, post_id: inserted[0].id });
       } catch (e) { /* never block posting */ }
+      // Index into Ask the Archive (real-time, async — replaces the Circle sync).
+      try { await require('./_lib/embed').triggerEmbed(inserted[0].id); } catch (e) { /* best-effort */ }
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, post_id: inserted[0].id }) };
     }
 

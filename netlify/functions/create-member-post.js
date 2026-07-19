@@ -201,6 +201,9 @@ exports.handler = async function (event) {
       await notifyMentions(mentioned, { id: authorId, name: authorName }, { title: title, post_id: post.id });
     } catch (e) { /* never block posting */ }
 
+    // Index into Ask the Archive (real-time, async — replaces the Circle sync).
+    try { await require('./_lib/embed').triggerEmbed(post.id); } catch (e) { /* best-effort */ }
+
     return { statusCode: 200, headers, body: JSON.stringify({ ok: true, post_id: post.id, tags: attachedTags }) };
   } catch (e) {
     return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: e.message }) };
