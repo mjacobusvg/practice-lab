@@ -2047,6 +2047,9 @@ async function checkAuth() {
   // survives the magic-link sign-in round trip (localStorage persists across the
   // redirect / new tab). Opened once the member is loaded, in handlePostDeepLink.
   try { var _pp = new URLSearchParams(window.location.search).get('post'); if (_pp) { localStorage.setItem('tbp_pending_post', _pp); localStorage.setItem('tbp_pending_post_ts', String(Date.now())); } } catch (e) {}
+  // Capture a ?plan=<lookup_key> deep link (e.g. the marketing site's "$119/month"
+  // button) so the paid checkout auto-starts once the visitor is signed in.
+  try { var _pl = new URLSearchParams(window.location.search).get('plan'); if (_pl) localStorage.setItem('tbp_pending_plan', _pl); } catch (e) {}
   var ok = await loadIdentity();
   if (ok && S.user) {
     document.getElementById('gate').classList.add('hidden');
@@ -2055,11 +2058,12 @@ async function checkAuth() {
     handlePurchaseReturn();
     handleJoinReturn();
     handlePostDeepLink();
+    handlePendingPlan();
   } else {
     // Deep link from the marketing site (/platform.html?join) opens straight into
     // free-account creation; otherwise default to the returning-member view.
     var _q = new URLSearchParams(window.location.search);
-    if (_q.get('join') !== null || _q.get('free') !== null || window.location.hash === '#join') {
+    if (_q.get('join') !== null || _q.get('free') !== null || _q.get('plan') !== null || window.location.hash === '#join') {
       gateMode('signup');
       // Carry an email typed on the marketing site straight into the signup form,
       // so the visitor only has to add their name and hit the button.
@@ -6450,6 +6454,20 @@ document.getElementById('join-modal').addEventListener('click', function(e) { if
 // Start a Stripe Checkout for a membership plan. Requires a signed session, so
 // the member must be logged in (checkout derives identity from the token). A
 // logged-out visitor is sent to sign in first.
+// After a marketing-site "$119/month" click and sign-in, auto-start the paid
+// Stripe checkout for the requested plan (once, then clear the intent).
+function handlePendingPlan() {
+  try {
+    var plan = localStorage.getItem('tbp_pending_plan');
+    if (!plan) return;
+    localStorage.removeItem('tbp_pending_plan');
+    if (['full_monthly_119', 'full_annual_1190'].indexOf(plan) === -1) return;
+    if (!getAuthToken()) return;
+    if (isPaidMember && isPaidMember()) return;  // already Full — nothing to buy
+    startCheckout(plan);
+  } catch (e) {}
+}
+
 async function startCheckout(plan) {
   var token = getAuthToken();
   if (!token) {
