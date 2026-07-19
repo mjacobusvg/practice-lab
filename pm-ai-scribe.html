@@ -59,6 +59,18 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 .focus-bar .spacer{flex:1}
 .focus-x{background:none;border:none;color:var(--cream-dim);font-size:1.5rem;cursor:pointer;line-height:1;padding:0 4px}
 #focus-note{flex:1;width:100%;background:var(--navy-card);border:1px solid var(--rule);border-radius:8px;color:var(--white);font-family:var(--font-body);font-size:.95rem;line-height:1.7;padding:16px;resize:none}
+/* Structured (colored) working-note editor: distinct, individually editable panels. */
+#focus-sections{flex:1;overflow:auto;display:flex;flex-direction:column;gap:14px;padding:2px 2px 40px}
+.wn-panel{border-radius:10px;border:1px solid var(--rule);overflow:hidden;background:var(--navy-card)}
+.wn-head{padding:10px 14px;display:flex;flex-direction:column;gap:2px}
+.wn-title{font-weight:700;font-size:.8rem;letter-spacing:.04em;text-transform:uppercase}
+.wn-sub{font-size:.76rem;color:var(--cream-dim);font-weight:400;text-transform:none;letter-spacing:0;line-height:1.4}
+.wn-ta{width:100%;background:transparent;border:0;border-top:1px solid var(--rule);color:var(--white);font-family:var(--font-body);font-size:.95rem;line-height:1.7;padding:14px;resize:none;display:block;min-height:56px;box-sizing:border-box}
+.wn-ta:focus{outline:none}
+.wn-checklist{border-color:rgba(42,171,184,.55)} .wn-checklist .wn-head{background:rgba(42,171,184,.10)} .wn-checklist .wn-title{color:var(--teal)}
+.wn-guide{border-color:rgba(168,130,255,.55)} .wn-guide .wn-head{background:rgba(168,130,255,.13)} .wn-guide .wn-title{color:#c3a8ff}
+.wn-note{opacity:.92} .wn-note .wn-head{background:rgba(255,255,255,.035)} .wn-note .wn-title{color:var(--cream-dim)}
+.notes-card{border:1px solid var(--rule);border-radius:10px;background:var(--navy-card);padding:16px;margin-top:16px}
 .handoff{background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.25);border-radius:8px;padding:16px 18px;font-size:.9rem;margin-top:18px}
 .handoff .btn{margin-top:10px}
 .scope{font-style:italic;color:var(--cream-dim);font-size:.78rem;text-align:center;margin-top:30px;border-top:1px solid var(--rule);padding-top:18px}
@@ -157,9 +169,18 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
       <!-- Shared working note (all modes draft from this). Hidden while Prep is pending, so the
            empty box doesn't compete with the Set me up flow; it appears once the scaffold/transcript fills it. -->
       <div id="notes-block">
-      <label for="raw" id="raw-label" style="margin-top:16px">Your visit notes &mdash; exactly as you took them</label>
-      <textarea id="raw" placeholder="Paste your running notes: fragments, shorthand, and patient quotes in the order you asked. Don't clean them up first &mdash; that's this tool's job. Example:&#10;&#10;here re: 6wk f/u duloxetine 60&#10;&quot;the anxiety is better but I still feel blah&quot;&#10;sleep 5-6h, was 3-4&#10;denies SI&#10;still not exercising, wants to&#10;mom's health stressor ongoing"></textarea>
-      <button type="button" class="btn-mini" style="margin-top:8px" onclick="openFocus('raw')">Full screen &#8599;</button>
+      <!-- Plain single-box mode (manual typing, ambient transcript, new-eval). -->
+      <div id="notes-plain">
+        <label for="raw" id="raw-label" style="margin-top:16px">Your visit notes &mdash; exactly as you took them</label>
+        <textarea id="raw" placeholder="Paste your running notes: fragments, shorthand, and patient quotes in the order you asked. Don't clean them up first &mdash; that's this tool's job. Example:&#10;&#10;here re: 6wk f/u duloxetine 60&#10;&quot;the anxiety is better but I still feel blah&quot;&#10;sleep 5-6h, was 3-4&#10;denies SI&#10;still not exercising, wants to&#10;mom's health stressor ongoing"></textarea>
+        <button type="button" class="btn-mini" style="margin-top:8px" onclick="openFocus('raw')">Full screen &#8599;</button>
+      </div>
+      <!-- Structured mode (after Set me up): the note is split into colored panels; work it full screen. -->
+      <div id="notes-sections" class="notes-card" style="display:none">
+        <div style="font-weight:700;color:var(--cream);margin-bottom:4px">Your working note is ready</div>
+        <div class="hint" style="line-height:1.5">It is split into colored sections &mdash; your checklist, the psychotherapy guide, and last visit's carried note. Open it full screen to work each one, then Draft.</div>
+        <button class="btn" type="button" style="margin-top:12px" onclick="openFocus('raw')">Open my working note (full screen) &#8599;</button>
+      </div>
 
       <div style="margin-top:16px">
         <button class="btn" id="generate">Draft my HPI &rarr;</button>
@@ -190,6 +211,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
     <button class="btn" id="focus-draft">Draft my HPI &rarr;</button>
   </div>
   <div id="focus-ref"></div>
+  <div id="focus-sections" style="display:none"></div>
   <textarea id="focus-note" placeholder="Work on your note here, full screen. Fill each section as you go, then Draft my HPI."></textarea>
   <div id="focus-err"></div>
 </div>
@@ -402,7 +424,12 @@ function bindOpts(groupId, attr, setter){
     o.classList.add('sel'); setter(o.getAttribute(attr));
   });
 }
-bindOpts('visit-opts','data-visit', function(v){ visitType=v; renderTemplateStatus(); revealWorkArea(); });
+bindOpts('visit-opts','data-visit', function(v){
+  // Switching visit type starts a fresh context; drop any structured-note state so a stale
+  // sections card can't linger. Only on an actual change, so re-clicking the same type is a no-op.
+  if(v !== visitType){ wnMode='plain'; wnSections={checklist:'',guide:'',note:''}; }
+  visitType=v; renderTemplateStatus(); revealWorkArea();
+});
 
 // Reveal the workspace once a visit type is picked; render the clinician's saved working style.
 function revealWorkArea(){
@@ -469,6 +496,9 @@ function renderMode(){
   var rawEl = document.getElementById('raw');
   var hasNotes = rawEl && typeof rawEl.value === 'string' && rawEl.value.trim().length > 0;
   show('notes-block', !prepOn || hasNotes);
+  // In structured mode show the compact "open full screen" card; otherwise the plain textarea.
+  show('notes-plain', wnMode !== 'sections');
+  show('notes-sections', wnMode === 'sections');
 }
 
 // ── Template status line ──
@@ -746,24 +776,16 @@ function renderPrep(j){
   // The checklist AND the psychotherapy guide go RIGHT INTO the editable note, so the clinician
   // jots answers live during the visit (visible, editable, no separate panel). Draft strips these
   // scaffold blocks and keeps only what the clinician wrote (see WORKING SCAFFOLD rule).
-  var RULE = "────────────────────────────────────────────";
-  function header(label, sub){ return RULE + "\n" + label + "\n" + (sub ? sub + "\n" : "") + RULE + "\n\n"; }
-  var working = '';
+  // Store the three sections; the structured editor edits these, and #raw holds their serialization.
   var hasScaffold = prepChecklist.length || prepFoci.length;
-  if(prepChecklist.length){
-    working += header("CHECK / ASK TODAY", "Answer under each line as you go. Removed automatically when you Draft.");
-    working += prepChecklist.map(function(c){ return "• " + c + "\n"; }).join("\n") + "\n";
-  }
-  if(prepFoci.length){
-    working += header("PSYCHOTHERAPY GUIDE", "Optional. Jot what you did and how they responded under each. Removed when you Draft.");
-    working += prepFoci.map(function(f){ return f.trim() + "\n"; }).join("\n") + "\n";
-  }
-  if(hasScaffold){
-    working += header("YOUR NOTE  (carried from last visit)", "You do NOT need to edit this. Answer the questions above and Draft fills it in; edit here only if you want to.");
-  }
-  working += note;
-  document.getElementById('raw').value = working;
-  renderMode();  // scaffold is now in the box — reveal it
+  wnSections = {
+    checklist: prepChecklist.length ? prepChecklist.map(function(c){ return "• " + c; }).join("\n\n") : '',
+    guide: prepFoci.length ? prepFoci.map(function(f){ return f.trim(); }).join("\n\n") : '',
+    note: note
+  };
+  wnMode = hasScaffold ? 'sections' : 'plain';
+  document.getElementById('raw').value = hasScaffold ? serializeSections() : note;
+  renderMode();  // reveal the working note (structured card in sections mode)
 
   var whatsIn = prepFoci.length ? 'Your checklist and psychotherapy guide are' : 'Your checklist is';
   var html = '<div class="out" style="margin-top:16px"><h3>You are set up for this visit</h3>'
@@ -802,19 +824,75 @@ function focusRefHtml(){
   // so there is no separate reference panel to render.
   return '';
 }
+
+// ── Structured working-note model: three individually-editable colored sections, backed into
+//    #raw (the canonical serialized text the Draft step reads and strips). ──
+var wnMode = 'plain';                                   // 'plain' | 'sections'
+var wnSections = { checklist:'', guide:'', note:'' };
+var WN_RULE = "────────────────────────────────────────────";
+function wnHeader(label, sub){ return WN_RULE + "\n" + label + "\n" + (sub ? sub + "\n" : "") + WN_RULE + "\n\n"; }
+// Serialize the sections into the same scaffold-marked text the Draft step already strips.
+function serializeSections(){
+  var s = wnSections || {};
+  var out = '';
+  if(s.checklist && s.checklist.trim()){
+    out += wnHeader("CHECK / ASK TODAY", "Answer under each line as you go. Removed automatically when you Draft.");
+    out += s.checklist.replace(/\s+$/,'') + "\n\n";
+  }
+  if(s.guide && s.guide.trim()){
+    out += wnHeader("PSYCHOTHERAPY GUIDE", "Optional. Jot what you did and how they responded under each. Removed when you Draft.");
+    out += s.guide.replace(/\s+$/,'') + "\n\n";
+  }
+  out += wnHeader("YOUR NOTE  (carried from last visit)", "You do NOT need to edit this. Answer the questions above and Draft fills it in; edit here only if you want to.");
+  out += (s.note || '');
+  return out;
+}
+function syncRawFromSections(){ var r=document.getElementById('raw'); if(r) r.value = serializeSections(); }
+function wnAutosize(ta){ ta.style.height='auto'; ta.style.height=(ta.scrollHeight+4)+'px'; }
+function buildFocusSections(){
+  var host = document.getElementById('focus-sections');
+  var s = wnSections || {checklist:'',guide:'',note:''};
+  var panels = [];
+  if(s.checklist && s.checklist.trim()) panels.push({key:'checklist',cls:'wn-checklist',title:'Check / ask today',sub:'Answer under each line as you go. Removed when you Draft.'});
+  if(s.guide && s.guide.trim()) panels.push({key:'guide',cls:'wn-guide',title:'Psychotherapy guide',sub:'Optional. Jot what you did and how they responded. Removed when you Draft.'});
+  panels.push({key:'note',cls:'wn-note',title:'Your note (carried from last visit)',sub:'You do not need to edit this. Answering above fills it in when you Draft.'});
+  var html = '';
+  panels.forEach(function(p){
+    html += '<div class="wn-panel '+p.cls+'"><div class="wn-head"><span class="wn-title">'+p.title+'</span><span class="wn-sub">'+p.sub+'</span></div>'
+      + '<textarea class="wn-ta" data-key="'+p.key+'">'+esc(s[p.key]||'')+'</textarea></div>';
+  });
+  host.innerHTML = html;
+  host.querySelectorAll('.wn-ta').forEach(function(ta){
+    wnAutosize(ta);
+    ta.addEventListener('input', function(){ wnSections[ta.getAttribute('data-key')] = ta.value; syncRawFromSections(); wnAutosize(ta); });
+  });
+}
 function openFocus(sourceId){
   focusSourceId = sourceId;
-  var src = document.getElementById(sourceId);
-  document.getElementById('focus-note').value = src ? src.value : '';
+  var useSections = (sourceId === 'raw' && wnMode === 'sections');
   document.getElementById('focus-err').innerHTML = '';
-  document.getElementById('focus-ref').innerHTML = (sourceId === 'raw') ? focusRefHtml() : '';
+  document.getElementById('focus-ref').innerHTML = '';
   document.getElementById('focus-hint').textContent = '';
+  var fn = document.getElementById('focus-note');
+  var fs = document.getElementById('focus-sections');
+  fn.style.display = useSections ? 'none' : '';
+  fs.style.display = useSections ? '' : 'none';
+  if(!useSections){ var src = document.getElementById(sourceId); fn.value = src ? src.value : ''; }
+  // Open the overlay BEFORE building the panels so the textareas are visible and autosize
+  // to their real scrollHeight (a hidden element reports height 0).
   document.getElementById('focus-overlay').classList.add('open');
   var fab = document.getElementById('tbp-theme-fab'); if(fab) fab.style.display = 'none'; // don't cover the Exit control
-  document.getElementById('focus-note').focus();
+  if(useSections){
+    buildFocusSections();
+    var first = fs.querySelector('.wn-ta'); if(first) first.focus();
+  } else {
+    fn.focus();
+  }
 }
 function focusSyncBack(){
-  if(focusSourceId){ var src = document.getElementById(focusSourceId); if(src) src.value = document.getElementById('focus-note').value; }
+  if(!focusSourceId) return;
+  if(focusSourceId === 'raw' && wnMode === 'sections'){ syncRawFromSections(); return; }
+  var src = document.getElementById(focusSourceId); if(src) src.value = document.getElementById('focus-note').value;
 }
 function closeFocus(){
   focusSyncBack();
@@ -827,7 +905,10 @@ document.addEventListener('keydown', function(e){
 document.getElementById('focus-draft').addEventListener('click', async function(){
   focusSyncBack();
   // Keep full screen open (with the spinner visible) while drafting; close onto the result when done.
-  var ok = await runDraft(document.getElementById('focus-note').value.trim(), this, document.getElementById('focus-err'));
+  var src = (focusSourceId === 'raw' && wnMode === 'sections')
+    ? document.getElementById('raw').value.trim()
+    : document.getElementById('focus-note').value.trim();
+  var ok = await runDraft(src, this, document.getElementById('focus-err'));
   if(ok) closeFocus();
 });
 
@@ -1620,11 +1701,18 @@ function loadVaultTemplates(){
   }
 
   function appendTranscript(text){
-    var raw=document.getElementById('raw'); if(!raw || !text)return;
-    var base = raw.value; // append to whatever is there now (checklist/scaffold etc.)
-    var joiner = base && !/\n$/.test(base) ? '\n' : '';
-    raw.value = base + joiner + text;
-    renderMode();  // transcript is in the box — make sure it's revealed (e.g. ambient with Prep on)
+    if(!text) return;
+    if(wnMode === 'sections'){
+      // Ambient + prep: the transcript belongs in the carried-note section, which Draft uses as the baseline.
+      var n = wnSections.note || '';
+      wnSections.note = n + (n && !/\n$/.test(n) ? '\n' : '') + text;
+      syncRawFromSections();
+    } else {
+      var raw=document.getElementById('raw'); if(!raw) return;
+      var base = raw.value;
+      raw.value = base + (base && !/\n$/.test(base) ? '\n' : '') + text;
+    }
+    renderMode();  // transcript is in the note — make sure it's revealed (e.g. ambient with Prep on)
   }
   function azureCall(payload){
     payload.token = authToken;
