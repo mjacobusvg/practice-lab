@@ -30,9 +30,9 @@ function toHtml(plain) {
 // Best-effort email to Michael when he is the recipient, so DMs to him surface.
 async function notifyAdmin(fromName, bodyPlain) {
   try {
-    const region = process.env.SES_REGION || process.env.AWS_REGION || 'us-east-1';
-    const accessKeyId = process.env.SES_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
-    const secretAccessKey = process.env.SES_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
+    const region = process.env.SES_AWS_REGION || process.env.SES_REGION || 'us-east-1';
+    const accessKeyId = process.env.SES_AWS_ACCESS_KEY_ID || process.env.SES_ACCESS_KEY_ID;
+    const secretAccessKey = process.env.SES_AWS_SECRET_ACCESS_KEY || process.env.SES_SECRET_ACCESS_KEY;
     if (!accessKeyId || !secretAccessKey) return;
     const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
     const client = new SESv2Client({ region, credentials: { accessKeyId, secretAccessKey } });

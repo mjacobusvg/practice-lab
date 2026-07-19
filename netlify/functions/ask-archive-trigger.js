@@ -8,9 +8,9 @@ const { verifyToken } = require('./_lib/session');
 // Replaces the previous Resend integration so all outbound mail runs through SES.
 // NOTE: env var names below should match those used by your other SES functions.
 async function sendNotification(subject, html) {
-  const region = process.env.SES_REGION || process.env.AWS_REGION || 'us-east-1';
-  const accessKeyId = process.env.SES_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.SES_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
+  const region = process.env.SES_AWS_REGION || process.env.SES_REGION || 'us-east-1';
+  const accessKeyId = process.env.SES_AWS_ACCESS_KEY_ID || process.env.SES_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.SES_AWS_SECRET_ACCESS_KEY || process.env.SES_SECRET_ACCESS_KEY;
   const fromAddress = process.env.SES_FROM || 'Ask the Archive <noreply@thinkbeyondpractice.com>';
   const toAddress = process.env.NOTIFY_TO || 'michael@thinkbeyondpractice.com';
 

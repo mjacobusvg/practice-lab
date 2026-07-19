@@ -40,10 +40,10 @@ function audienceFilter(a) {
 }
 
 function sesClient() {
-  const accessKeyId = process.env.SES_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.SES_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
+  const accessKeyId = process.env.SES_AWS_ACCESS_KEY_ID || process.env.SES_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.SES_AWS_SECRET_ACCESS_KEY || process.env.SES_SECRET_ACCESS_KEY;
   if (!accessKeyId || !secretAccessKey) return null;
-  const region = process.env.SES_REGION || process.env.AWS_REGION || 'us-east-1';
+  const region = process.env.SES_AWS_REGION || process.env.SES_REGION || 'us-east-1';
   const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
   return {
     client: new SESv2Client({ region, credentials: { accessKeyId, secretAccessKey } }),
