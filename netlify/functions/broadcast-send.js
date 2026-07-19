@@ -160,6 +160,7 @@ exports.handler = async function (event) {
     }
 
     let sent = 0;
+    const sendErrors = [];
     const CONC = 5;
     for (let i = 0; i < recipients.length; i += CONC) {
       const batch = recipients.slice(i, i + CONC);
@@ -175,8 +176,15 @@ exports.handler = async function (event) {
           FromEmailAddress: ses.from,
           Destination: { ToAddresses: [c.email] },
           Content: { Simple: { Subject: { Data: subject, Charset: 'UTF-8' }, Body: { Html: { Data: html, Charset: 'UTF-8' } } } }
-        })).then(function () { sent++; }).catch(function (e) { console.log('broadcast send error for one recipient:', e && e.message); });
+        })).then(function () { sent++; }).catch(function (e) { sendErrors.push((e && e.message) || 'send failed'); console.log('broadcast send error for one recipient:', e && e.message); });
       }));
+    }
+
+    // If nothing actually sent, tell the truth instead of a false "sent" — the
+    // most common cause is AWS SES sandbox mode (recipient not verified) or an
+    // unverified From identity.
+    if (sent === 0) {
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'No emails were sent — ' + (sendErrors[0] || 'the email service rejected the send.'), sent: 0, recipients: recipients.length, test: !!p.test_email }) };
     }
 
     // Finalize the recipient count now that we know how many actually sent.
