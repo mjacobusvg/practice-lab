@@ -5460,7 +5460,9 @@ function showBroadcast() {
     '<option value="nonmembers">Free list &mdash; people on the free plan (your prospects)</option>' +
     '<option value="members">Paying members &mdash; Forum + Full</option>' +
     '<option value="all">Everyone on the list</option>' +
+    '<option value="custom">Specific people &mdash; enter email addresses</option>' +
     '</select>';
+  h += '<textarea id="bc-emails" placeholder="Enter email addresses, separated by commas or new lines" oninput="broadcastPreview()" style="display:none;width:100%;margin-top:8px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;font-family:inherit;min-height:60px;background:var(--bg-card);color:var(--text-primary)"></textarea>';
   h += '<div id="bc-count" style="font-size:13px;color:var(--text-secondary);margin-top:6px">&nbsp;</div>';
 
   h += '<label style="display:block;font-weight:600;font-size:13px;margin:14px 0 5px">Subject</label>';
@@ -5539,14 +5541,17 @@ async function loadBroadcastHistory() {
 async function broadcastPreview() {
   var el = document.getElementById('bc-count'); if (!el) return;
   var audience = document.getElementById('bc-audience').value;
+  var emailsEl = document.getElementById('bc-emails');
+  if (emailsEl) emailsEl.style.display = (audience === 'custom') ? 'block' : 'none';
+  var emails = (audience === 'custom' && emailsEl) ? emailsEl.value : '';
   el.textContent = 'Counting...';
   try {
     var res = await fetch('/.netlify/functions/broadcast-send', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: getAuthToken(), audience: audience, subject: 'x', markdown: 'x', dry_run: true })
+      body: JSON.stringify({ token: getAuthToken(), audience: audience, emails: emails, subject: 'x', markdown: 'x', dry_run: true })
     });
     var d = await res.json();
-    if (d.ok) el.textContent = d.recipients + ' subscribed recipient' + (d.recipients === 1 ? '' : 's') + ' will receive this.';
+    if (d.ok) el.textContent = d.recipients + ' recipient' + (d.recipients === 1 ? '' : 's') + ' will receive this.';
     else el.textContent = '';
   } catch (e) { el.textContent = ''; }
 }
@@ -5590,7 +5595,7 @@ async function broadcastSend() {
   try {
     var res = await fetch('/.netlify/functions/broadcast-send', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: getAuthToken(), audience: audience, subject: subject, markdown: body })
+      body: JSON.stringify({ token: getAuthToken(), audience: audience, emails: (document.getElementById('bc-emails') ? document.getElementById('bc-emails').value : ''), subject: subject, markdown: body })
     });
     var d = await res.json();
     if (!res.ok || !d.ok) throw new Error(d.error || 'Send failed');
@@ -5612,7 +5617,7 @@ async function broadcastSchedule() {
   try {
     var res = await fetch('/.netlify/functions/broadcast-send', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: getAuthToken(), audience: audience, subject: subject, markdown: body, scheduled_at: new Date(when).toISOString() })
+      body: JSON.stringify({ token: getAuthToken(), audience: audience, emails: (document.getElementById('bc-emails') ? document.getElementById('bc-emails').value : ''), subject: subject, markdown: body, scheduled_at: new Date(when).toISOString() })
     });
     var d = await res.json();
     if (!res.ok || !d.ok) throw new Error(d.error || 'Could not schedule');

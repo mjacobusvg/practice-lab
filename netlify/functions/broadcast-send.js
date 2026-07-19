@@ -127,8 +127,9 @@ exports.handler = async function (event) {
     : toRichHtml(String(p.markdown || ''));
   if (!bodyHtml.trim()) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Body required' }) };
 
+  const isCustom = String(p.audience || '').toLowerCase() === 'custom';
   const filter = audienceFilter(p.audience);
-  if (filter === null) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Bad audience' }) };
+  if (filter === null && !isCustom) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Bad audience' }) };
 
   // Schedule for later instead of sending now (admin UI; real sends only, never a
   // test). The send-scheduled-broadcasts cron sends it when its time comes.
@@ -139,7 +140,7 @@ exports.handler = async function (event) {
     }
     const ins = await fetch(URL + '/rest/v1/scheduled_broadcasts', {
       method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json', Prefer: 'return=representation' }, auth),
-      body: JSON.stringify({ subject: subject, markdown: String(p.markdown || ''), audience: String(p.audience || 'all'), scheduled_at: when.toISOString(), sent_by: adminEmail || 'admin', status: 'scheduled' })
+      body: JSON.stringify({ subject: subject, markdown: String(p.markdown || ''), audience: String(p.audience || 'all'), emails: String(p.emails || ''), scheduled_at: when.toISOString(), sent_by: adminEmail || 'admin', status: 'scheduled' })
     });
     if (!ins.ok) { const t = await ins.text(); return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'Could not schedule: ' + t.slice(0, 150) }) }; }
     const rows = await ins.json();
@@ -171,6 +172,21 @@ exports.handler = async function (event) {
       } catch (e) { /* fall back to a neutral greeting */ }
       const first = fn || (nm.split(' ')[0]) || 'there';
       recipients = [{ email: te, name: nm || first, first_name: first }];
+    } else if (isCustom) {
+      // Hand-picked recipients: exactly the addresses the admin typed. Personalize
+      // from contacts where we know them; send anyway if we don't. (Global opt-outs
+      // still respected below via the shared filters — disposable excluded.)
+      const list = String(p.emails || '').split(/[\s,;]+/).map(function (e) { return e.toLowerCase().trim(); })
+        .filter(function (e) { return e.indexOf('@') !== -1 && !isDisposable(e); });
+      const uniq = Array.from(new Set(list));
+      const byEmail = {};
+      if (uniq.length) {
+        const inList = uniq.map(function (e) { return '"' + e.replace(/"/g, '') + '"'; }).join(',');
+        const cr = await fetch(URL + '/rest/v1/contacts?email=in.(' + encodeURIComponent(inList) + ')&select=email,name,first_name', { headers: Object.assign({ 'Content-Type': 'application/json' }, auth) });
+        const crows = cr.ok ? await cr.json() : [];
+        crows.forEach(function (r) { byEmail[String(r.email).toLowerCase()] = r; });
+      }
+      recipients = uniq.map(function (e) { const c = byEmail[e] || {}; return { email: e, name: c.name || '', first_name: c.first_name || '' }; });
     } else {
       const qs = ['select=email,name,first_name', 'subscribed=eq.true', 'limit=10000'];
       if (filter) qs.push(filter);
