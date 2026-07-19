@@ -28,6 +28,54 @@ function esc(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// Strip Markdown to plain prose and trim to a snippet (for email previews).
+function makeSnippet(md, max) {
+  let t = String(md == null ? '' : md)
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`{1,3}/g, '')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/^\s{0,3}#{1,6}\s+/gm, '')
+    .replace(/^\s{0,3}>\s?/gm, '')
+    .replace(/\*\*|__/g, '')
+    .replace(/[*_]/g, '')
+    .replace(/^\s*[-–—]{3,}\s*$/gm, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  max = max || 220;
+  if (t.length <= max) return t;
+  let cut = t.slice(0, max);
+  const sp = cut.lastIndexOf(' ');
+  if (sp > max * 0.6) cut = cut.slice(0, sp);
+  return cut + '…';
+}
+
+// A branded post-announcement card (title, author + avatar, space, snippet, CTA).
+function postEmailCard(opts) {
+  const title = esc(opts.title || '');
+  const author = esc(opts.author || 'A member');
+  const url = opts.url;
+  const avatar = opts.avatarUrl
+    ? '<img src="' + esc(opts.avatarUrl) + '" width="40" height="40" style="border-radius:50%;display:block" alt="">'
+    : '<div style="width:40px;height:40px;border-radius:50%;background:#0d3b4f;color:#fff;font-weight:700;font-size:16px;line-height:40px;text-align:center">' + esc((String(opts.author || '?')[0] || '?').toUpperCase()) + '</div>';
+  const meta = opts.space
+    ? '<strong style="color:#1a1a1a">' + author + '</strong><br><span style="color:#777;font-size:13px">Posted in ' + esc(opts.space) + '</span>'
+    : '<strong style="color:#1a1a1a">' + author + '</strong>';
+  const snippet = opts.snippet
+    ? '<p style="font-size:15px;line-height:1.6;color:#333;margin:0 0 22px">' + esc(opts.snippet) + '</p>'
+    : '';
+  return '' +
+    '<div style="max-width:560px;margin:0 auto;font-family:Arial,Helvetica,sans-serif">' +
+      '<h1 style="font-size:22px;line-height:1.3;color:#1a1a1a;margin:0 0 16px">' + title + '</h1>' +
+      '<table cellpadding="0" cellspacing="0" role="presentation" style="margin:0 0 18px">' +
+        '<tr><td style="padding-right:11px;vertical-align:middle">' + avatar + '</td>' +
+        '<td style="vertical-align:middle;font-size:14px">' + meta + '</td></tr>' +
+      '</table>' +
+      snippet +
+      '<p style="margin:0"><a href="' + url + '" style="display:inline-block;background:#0d3b4f;color:#fff;text-decoration:none;font-weight:700;font-size:15px;padding:13px 28px;border-radius:6px">Read more &rarr;</a></p>' +
+    '</div>';
+}
+
 const PLATFORM_URL = 'https://thinkbeyondpractice.com/platform.html';
 const PREFS_URL = 'https://thinkbeyondpractice.com/email-preferences.html';
 
@@ -113,11 +161,27 @@ async function notifyNewPost(post, actor, opts) {
 
     if (opts && opts.emailBlast) {
       const emails = recips.filter(function (r) { return r.notify_email_posts; }).map(function (r) { return r.email; });
-      const postUrl = PLATFORM_URL + '?post=' + encodeURIComponent(post.id);
-      const body = '<p><strong>' + esc(actorName) + '</strong> posted on Think Beyond Practice:</p>' +
-        '<p style="font-size:16px"><strong>' + esc(post.title || '') + '</strong></p>' +
-        '<p><a href="' + postUrl + '">Read it on the platform &rarr;</a></p>';
-      await emailEach(emails, 'New post: ' + (post.title || 'Think Beyond Practice'), function (email) { return body + prefsFooter(email); });
+      // Enrich to a real post announcement: snippet, space, author avatar.
+      // Best-effort — any failure falls back to a title-only card.
+      let bodyPlain = '', spaceName = '', avatarUrl = '';
+      try {
+        const prow = await sb('forum_posts?id=eq.' + encodeURIComponent(post.id) + '&select=body_plain,space_id', 'GET');
+        if (prow && prow[0]) {
+          bodyPlain = prow[0].body_plain || '';
+          if (prow[0].space_id) {
+            const srow = await sb('spaces?id=eq.' + encodeURIComponent(prow[0].space_id) + '&select=name', 'GET');
+            if (srow && srow[0]) spaceName = srow[0].name || '';
+          }
+        }
+        const arow = await sb('accounts?id=eq.' + encodeURIComponent(actorId) + '&select=avatar_url', 'GET');
+        if (arow && arow[0]) avatarUrl = arow[0].avatar_url || '';
+      } catch (e) { /* enrichment best-effort */ }
+      const card = postEmailCard({
+        title: post.title || '', author: actorName, space: spaceName,
+        avatarUrl: avatarUrl, snippet: makeSnippet(bodyPlain, 240),
+        url: PLATFORM_URL + '?post=' + encodeURIComponent(post.id)
+      });
+      await emailEach(emails, 'New post: ' + (post.title || 'Think Beyond Practice'), function (email) { return card + prefsFooter(email); });
     }
   } catch (e) { console.log('notifyNewPost error:', e && e.message); }
 }
