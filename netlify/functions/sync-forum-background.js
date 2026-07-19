@@ -135,10 +135,23 @@ exports.handler = async function (event) {
               created_at: post.created_at,
               updated_at: post.updated_at || post.created_at
             };
-            const up = await sbWrite('forum_posts?on_conflict=circle_post_id', 'POST', row, 'resolution=merge-duplicates,return=representation');
-            if (!up.ok) { stats.errors.push('post ' + post.id + ': ' + up.status + ' ' + (await up.text()).slice(0, 120)); continue; }
-            const savedRows = await up.json();
-            const forumPostId = savedRows[0] && savedRows[0].id;
+            // Preserve platform-side organization: for an EXISTING post, update its
+            // content but NEVER overwrite space_id — it may have been re-filed on the
+            // platform, and the platform is now the source of truth. Only a brand-new
+            // post is placed into its Circle-derived space.
+            const existing = await sbGet('forum_posts?circle_post_id=eq.' + encodeURIComponent(post.id) + '&select=id');
+            let forumPostId;
+            if (existing && existing[0]) {
+              forumPostId = existing[0].id;
+              const { space_id: _omitSpace, ...contentOnly } = row;
+              const up = await sbWrite('forum_posts?id=eq.' + forumPostId, 'PATCH', contentOnly, 'return=minimal');
+              if (!up.ok) { stats.errors.push('post ' + post.id + ': ' + up.status + ' ' + (await up.text()).slice(0, 120)); continue; }
+            } else {
+              const up = await sbWrite('forum_posts?on_conflict=circle_post_id', 'POST', row, 'resolution=merge-duplicates,return=representation');
+              if (!up.ok) { stats.errors.push('post ' + post.id + ': ' + up.status + ' ' + (await up.text()).slice(0, 120)); continue; }
+              const savedRows = await up.json();
+              forumPostId = savedRows[0] && savedRows[0].id;
+            }
             stats.posts++;
 
             // comments for this post
