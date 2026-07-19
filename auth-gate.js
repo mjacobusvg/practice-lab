@@ -20,7 +20,7 @@
   var SESSION_KEY = 'tbp_auth_token';
   var SESSION_EXPIRY_KEY = 'tbp_auth_expiry';
   var SESSION_DURATION_MS = 4 * 60 * 60 * 1000; // 4 hours
-  var REDIRECT_URL = 'https://community.thinkbeyondpractice.com';
+  var REDIRECT_URL = 'https://thinkbeyondpractice.com/platform?join';
 
   // Inject styles
   var style = document.createElement('style');
@@ -52,15 +52,30 @@
   ].join('');
   document.head.appendChild(style);
 
+  // Read the signed token's payload ({ email, scope, tier, cmid, exp }). The
+  // signature isn't checked here (the server does that on every API call) — this
+  // is only to read the tier/exp for gating UX.
+  function parseToken(tok) {
+    try {
+      var b64 = tok.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4) b64 += '=';
+      return JSON.parse(decodeURIComponent(escape(atob(b64))));
+    } catch (e) { return null; }
+  }
+
   function getSessionToken() {
     try {
+      var tok = localStorage.getItem(SESSION_KEY);
+      if (!tok) return null;
+      var claims = parseToken(tok);
+      // Honor the token's OWN expiry (~30 days), not the legacy 4-hour key — that
+      // short window was forcing a re-login every few hours for no reason.
+      if (claims && claims.exp && Date.now() < claims.exp) return tok;
+      // Fallback for an unparseable token: the legacy 4-hour window.
       var expiry = localStorage.getItem(SESSION_EXPIRY_KEY);
-      if (expiry && Date.now() < parseInt(expiry)) {
-        return localStorage.getItem(SESSION_KEY);
-      }
-      localStorage.removeItem(SESSION_KEY);
-      localStorage.removeItem(SESSION_EXPIRY_KEY);
-    } catch(e) {}
+      if (!claims && expiry && Date.now() < parseInt(expiry)) return tok;
+      clearSession();
+    } catch (e) {}
     return null;
   }
 
@@ -91,7 +106,7 @@
         '</div>',
         '<div class="gate-wordmark">Think Beyond Practice</div>',
         '<h1>', toolName, '</h1>',
-        '<p class="gate-sub">Member access only.<br>Enter your Circle email to continue.</p>',
+        '<p class="gate-sub">Member access only.<br>Enter your member email to continue.</p>',
         '<div class="gate-label">Your email</div>',
         '<input class="gate-input" id="tbp-email" type="email" placeholder="you@example.com" autocomplete="email">',
         '<button class="gate-btn" id="tbp-submit">',
@@ -225,11 +240,17 @@
         };
       }
 
-      // If full tier is required, always verify against the API to check the tier
-      // claim. Only skip verification for community-wide (any-member) access.
-      if (!requireFull && getSessionToken()) {
-        onVerified();
-        return;
+      // Skip the email gate when a valid session token already exists:
+      //  - community tools: any member token passes
+      //  - full-tier tools: the token must carry tier 'full'
+      // The clinical backends re-verify the signed token on every call, so
+      // trusting the tier claim here is a UX shortcut, not the security boundary.
+      // This is what stops every tool from re-asking for your email.
+      var existing = getSessionToken();
+      if (existing) {
+        var claims = parseToken(existing) || {};
+        var tier = String(claims.tier || '').toLowerCase();
+        if (!requireFull || tier === 'full') { onVerified(); return; }
       }
 
       if (document.readyState === 'loading') {
