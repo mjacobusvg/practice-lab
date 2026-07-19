@@ -5485,11 +5485,18 @@ function showBroadcast() {
   h += '<button onclick="broadcastTest()" style="cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text);padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600">Send test to me</button>';
   h += '<button onclick="broadcastSend()" style="cursor:pointer;border:none;background:var(--brand,#002b4b);color:#fff;padding:9px 20px;border-radius:8px;font-size:14px;font-weight:700;margin-left:auto">Send broadcast</button>';
   h += '</div>';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:10px">';
+  h += '<label style="font-size:13px;color:var(--text-secondary)">Or schedule for later:</label>';
+  h += '<input type="datetime-local" id="bc-when" style="padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:var(--bg-card);color:var(--text-primary)">';
+  h += '<button onclick="broadcastSchedule()" style="cursor:pointer;border:1px solid var(--teal);background:transparent;color:var(--teal);padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700">Schedule broadcast</button>';
+  h += '</div>';
   h += '<div id="bc-status" style="font-size:13px;margin-top:12px"></div>';
   h += '</div>';
+  h += '<div id="bc-scheduled" style="margin-top:22px"></div>';
   h += '<div id="bc-history" style="margin-top:30px"></div>';
   center.innerHTML = h; window.scrollTo(0, 0);
   broadcastPreview();
+  loadScheduledBroadcasts();
   loadBroadcastHistory();
 }
 
@@ -5589,6 +5596,59 @@ async function broadcastSend() {
     if (!res.ok || !d.ok) throw new Error(d.error || 'Send failed');
     st.style.color = '#16a34a'; st.textContent = 'Sent to ' + d.sent + ' of ' + d.recipients + ' recipients.';
   } catch (e) { st.style.color = '#dc2626'; st.textContent = 'Send failed: ' + e.message; }
+}
+async function broadcastSchedule() {
+  var st = document.getElementById('bc-status');
+  var audience = document.getElementById('bc-audience').value;
+  var subject = document.getElementById('bc-subject').value.trim();
+  var body = document.getElementById('bc-body').value.trim();
+  var when = document.getElementById('bc-when').value;
+  if (!subject || !body) { st.style.color = '#dc2626'; st.textContent = 'Add a subject and message first.'; return; }
+  if (!when) { st.style.color = '#dc2626'; st.textContent = 'Pick a date and time to schedule.'; return; }
+  var whenLabel = new Date(when).toLocaleString();
+  var label = document.querySelector('#bc-audience option:checked').textContent;
+  if (!confirm('Schedule "' + subject + '" to ' + label + '\nfor ' + whenLabel + '?')) return;
+  st.style.color = 'var(--text-secondary)'; st.textContent = 'Scheduling...';
+  try {
+    var res = await fetch('/.netlify/functions/broadcast-send', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), audience: audience, subject: subject, markdown: body, scheduled_at: new Date(when).toISOString() })
+    });
+    var d = await res.json();
+    if (!res.ok || !d.ok) throw new Error(d.error || 'Could not schedule');
+    st.style.color = '#16a34a'; st.textContent = 'Scheduled for ' + whenLabel + '.';
+    loadScheduledBroadcasts();
+  } catch (e) { st.style.color = '#dc2626'; st.textContent = 'Schedule failed: ' + e.message; }
+}
+async function loadScheduledBroadcasts() {
+  var el = document.getElementById('bc-scheduled'); if (!el) return;
+  try {
+    var res = await fetch('/.netlify/functions/broadcast-send', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), action: 'list_scheduled' })
+    });
+    var d = await res.json();
+    var rows = (d && d.scheduled) || [];
+    if (!rows.length) { el.innerHTML = ''; return; }
+    var h = '<div style="font-weight:700;font-size:13px;margin-bottom:8px">Scheduled to send</div>';
+    rows.forEach(function (r) {
+      h += '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px">';
+      h += '<div style="min-width:0"><div style="font-weight:600;font-size:13px">' + esc(r.subject) + '</div><div style="color:var(--text-secondary);font-size:12px">' + esc(r.audience) + ' &middot; ' + new Date(r.scheduled_at).toLocaleString() + '</div></div>';
+      h += '<button onclick="cancelScheduled(\'' + r.id + '\')" style="margin-left:auto;cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text-secondary);padding:6px 12px;border-radius:6px;font-size:12px">Cancel</button>';
+      h += '</div>';
+    });
+    el.innerHTML = h;
+  } catch (e) { el.innerHTML = ''; }
+}
+async function cancelScheduled(id) {
+  if (!confirm('Cancel this scheduled broadcast?')) return;
+  try {
+    await fetch('/.netlify/functions/broadcast-send', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), action: 'cancel_scheduled', id: id })
+    });
+    loadScheduledBroadcasts();
+  } catch (e) {}
 }
 
 // ════════════════════════════════════════

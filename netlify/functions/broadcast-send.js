@@ -103,8 +103,21 @@ exports.handler = async function (event) {
   const token = (p.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
   const session = verifyToken(token);
   const adminEmail = String(session.claims && session.claims.email || '').toLowerCase();
-  if (!session.valid || ADMIN_EMAILS.indexOf(adminEmail) === -1) {
+  const isAdmin = session.valid && ADMIN_EMAILS.indexOf(adminEmail) !== -1;
+  // The scheduled-broadcast cron calls this endpoint to send a queued broadcast.
+  const internalOk = p.internal_secret && p.internal_secret === process.env.BACKFILL_SECRET;
+  if (!isAdmin && !internalOk) {
     return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Admin only' }) };
+  }
+
+  // Manage the scheduled-broadcast queue (admin UI).
+  if (p.action === 'list_scheduled') {
+    const r = await fetch(URL + '/rest/v1/scheduled_broadcasts?status=eq.scheduled&order=scheduled_at.asc&select=id,subject,audience,scheduled_at', { headers: Object.assign({ 'Content-Type': 'application/json' }, auth) });
+    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, scheduled: r.ok ? await r.json() : [] }) };
+  }
+  if (p.action === 'cancel_scheduled' && p.id) {
+    await fetch(URL + '/rest/v1/scheduled_broadcasts?id=eq.' + encodeURIComponent(p.id), { method: 'PATCH', headers: Object.assign({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }, auth), body: JSON.stringify({ status: 'canceled' }) });
+    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, canceled: true }) };
   }
 
   const subject = String(p.subject || '').trim();
@@ -116,6 +129,22 @@ exports.handler = async function (event) {
 
   const filter = audienceFilter(p.audience);
   if (filter === null) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Bad audience' }) };
+
+  // Schedule for later instead of sending now (admin UI; real sends only, never a
+  // test). The send-scheduled-broadcasts cron sends it when its time comes.
+  if (p.scheduled_at && !p.test_email) {
+    const when = new Date(p.scheduled_at);
+    if (isNaN(when.getTime()) || when.getTime() < Date.now() - 60000) {
+      return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Pick a future date and time.' }) };
+    }
+    const ins = await fetch(URL + '/rest/v1/scheduled_broadcasts', {
+      method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json', Prefer: 'return=representation' }, auth),
+      body: JSON.stringify({ subject: subject, markdown: String(p.markdown || ''), audience: String(p.audience || 'all'), scheduled_at: when.toISOString(), sent_by: adminEmail || 'admin', status: 'scheduled' })
+    });
+    if (!ins.ok) { const t = await ins.text(); return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'Could not schedule: ' + t.slice(0, 150) }) }; }
+    const rows = await ins.json();
+    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, scheduled: true, scheduled_at: when.toISOString(), id: rows[0] && rows[0].id }) };
+  }
 
   const wrap = function (inner) {
     return '<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:640px;margin:0 auto;color:#1a2430;font-size:15px;line-height:1.6">' +
