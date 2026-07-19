@@ -1997,6 +1997,10 @@ async function loadIdentity() {
 }
 
 async function checkAuth() {
+  // Capture a ?post=<id> deep link (e.g. from a broadcast email) up front, so it
+  // survives the magic-link sign-in round trip (localStorage persists across the
+  // redirect / new tab). Opened once the member is loaded, in handlePostDeepLink.
+  try { var _pp = new URLSearchParams(window.location.search).get('post'); if (_pp) { localStorage.setItem('tbp_pending_post', _pp); localStorage.setItem('tbp_pending_post_ts', String(Date.now())); } } catch (e) {}
   var ok = await loadIdentity();
   if (ok && S.user) {
     document.getElementById('gate').classList.add('hidden');
@@ -2004,6 +2008,7 @@ async function checkAuth() {
     maybeShowWelcome();
     handlePurchaseReturn();
     handleJoinReturn();
+    handlePostDeepLink();
   } else {
     // Deep link from the marketing site (/platform.html?join) opens straight into
     // free-account creation; otherwise default to the returning-member view.
@@ -4071,6 +4076,25 @@ function handleJoinReturn() {
     setTimeout(function () {
       loadIdentity().then(function () { try { checkMember(); updateTopbar(); } catch (e) {} });
     }, 3500);
+  } catch (e) {}
+}
+
+// Open a specific post from a deep link (?post=<id>, or a pending one stashed
+// before sign-in). Members see the full post; free accounts get the teaser +
+// join CTA — which is exactly the conversion path we want from an email link.
+function handlePostDeepLink() {
+  try {
+    var id = new URLSearchParams(window.location.search).get('post');
+    if (!id) {
+      var pend = localStorage.getItem('tbp_pending_post');
+      var ts = parseInt(localStorage.getItem('tbp_pending_post_ts') || '0', 10);
+      if (pend && (Date.now() - ts) < 1800000) id = pend; // 30-min freshness window
+    }
+    localStorage.removeItem('tbp_pending_post');
+    localStorage.removeItem('tbp_pending_post_ts');
+    if (!id) return;
+    if (window.history && window.history.replaceState) window.history.replaceState({}, document.title, window.location.pathname);
+    viewPost(id);
   } catch (e) {}
 }
 
