@@ -1022,6 +1022,29 @@ a { color: inherit; text-decoration: none; }
   font-size: 0.86rem; color: var(--text-primary); font-family: 'DM Sans', sans-serif;
 }
 .composer textarea { resize: vertical; line-height: 1.6; }
+.md-preview-label { display: block; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-secondary); margin: 10px 0 4px; }
+.md-preview {
+  border: 1px dashed var(--border); border-radius: 6px; padding: 10px 14px;
+  background: var(--bg-input); font-size: 0.86rem; line-height: 1.6; color: var(--text-primary);
+  max-height: 260px; overflow-y: auto;
+}
+.md-preview > :first-child { margin-top: 0; }
+.md-preview > :last-child { margin-bottom: 0; }
+.md-preview p { margin: 0 0 8px; }
+.md-preview h2, .md-preview h3, .md-preview h4 { margin: 12px 0 6px; font-family: 'DM Serif Display', serif; color: var(--text-heading); line-height: 1.25; }
+.md-preview h2 { font-size: 1.15rem; } .md-preview h3 { font-size: 1.03rem; } .md-preview h4 { font-size: 0.92rem; }
+.md-preview ul, .md-preview ol { margin: 0 0 8px; padding-left: 22px; }
+.md-preview li { margin: 2px 0; }
+.md-preview blockquote { margin: 0 0 8px; padding: 2px 0 2px 12px; border-left: 3px solid var(--teal); color: var(--text-secondary); }
+.md-preview code { background: rgba(127,127,127,0.16); padding: 1px 5px; border-radius: 3px; font-size: 0.82em; }
+.md-preview a { color: var(--teal); text-decoration: underline; }
+.md-preview hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+.md-preview strong { font-weight: 700; } .md-preview em { font-style: italic; }
+.md-preview .pv-empty { color: var(--text-secondary); font-style: italic; }
+.md-preview table { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
+.md-preview th, .md-preview td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; }
+.draft-note { font-size: 0.74rem; color: var(--copper); margin: 6px 0 0; }
+.draft-note a { color: var(--teal); cursor: pointer; text-decoration: underline; }
 .composer input:focus, .composer select:focus, .composer textarea:focus { outline: none; border-color: var(--teal); }
 .composer .mt-label { color: var(--copper); }
 .composer-row { display: flex; align-items: center; gap: 16px; margin-top: 16px; flex-wrap: wrap; }
@@ -2972,7 +2995,15 @@ async function viewPost(postId) {
     if (!post.is_locked) {
       h += '<div style="margin-top:16px">';
       h += phiNote('forum');
+      h += '<div class="md-toolbar" id="comment-toolbar">'
+        + '<button type="button" class="md-btn" title="Bold" onclick="mdSurround(\'comment-input\',\'**\',\'**\')"><b>B</b></button>'
+        + '<button type="button" class="md-btn" title="Italic" onclick="mdSurround(\'comment-input\',\'*\',\'*\')"><i>I</i></button>'
+        + '<button type="button" class="md-btn" title="Bulleted list" onclick="mdLinePrefix(\'comment-input\',\'- \')">&#8226; List</button>'
+        + '<button type="button" class="md-btn" title="Quote" onclick="mdLinePrefix(\'comment-input\',\'&gt; \')">&#8220; Quote</button>'
+        + '<button type="button" class="md-btn" title="Link" onclick="mdLink(\'comment-input\')">&#128279; Link</button>'
+        + '</div>';
       h += '<textarea id="comment-input" placeholder="Share your thoughts or add to the discussion..." maxlength="8000" style="width:100%;min-height:84px;padding:12px 14px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:0.86rem;line-height:1.5;resize:vertical"></textarea>';
+      h += '<div class="md-preview" id="comment-preview" style="display:none"></div>';
       h += '<div id="comment-error" style="display:none;color:#c0392b;font-size:0.78rem;margin-top:6px"></div>';
       h += '<div style="display:flex;justify-content:flex-end;margin-top:8px">';
       h += '<button class="btn-primary" id="comment-submit" onclick="submitComment(\'' + post.id + '\')">Post comment</button>';
@@ -2985,6 +3016,7 @@ async function viewPost(postId) {
 
     center.innerHTML = h;
     mentionSetup(document.getElementById('comment-input'));
+    bindLivePreview('comment-input', 'comment-preview', true);
     if (post.poll && Array.isArray(post.poll.options) && post.poll.options.length) fetchPollResults(post.id, post.poll);
     window.scrollTo(0,0);
   } catch(e) {
@@ -3398,6 +3430,11 @@ function openMemberComposer(spaceKey) {
   var st = document.getElementById('mp-status'); st.textContent = ''; st.className = 'composer-status';
   renderPostTagChips();
   mentionSetup(document.getElementById('mp-body'));
+  // Draft safety + live preview: restore any unsaved draft, then wire autosave
+  // and the rendered preview so text is never lost and formatting is visible.
+  bindDraft('member', ['mp-title', 'mp-body', 'mp-space']);
+  restoreDraft('member', ['mp-title', 'mp-body', 'mp-space'], 'mp-draft-note');
+  bindLivePreview('mp-body', 'mp-preview');
   document.getElementById('member-composer-overlay').classList.add('open');
 }
 
@@ -3438,6 +3475,7 @@ async function submitMemberPost() {
     });
     var data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Could not post.');
+    clearDraft('member');
     closeMemberComposer();
     viewPost(data.post_id);
   } catch (e) {
@@ -3584,7 +3622,7 @@ function mdSurround(taId, before, after) {
   ta.value = ta.value.slice(0, s) + before + sel + after + ta.value.slice(e);
   if (sel) { ta.selectionStart = s + before.length; ta.selectionEnd = s + before.length + sel.length; }
   else { ta.selectionStart = ta.selectionEnd = s + before.length; }
-  ta.focus();
+  mdFire(ta);
 }
 function mdLinePrefix(taId, prefix) {
   var ta = document.getElementById(taId); if (!ta) return;
@@ -3595,14 +3633,14 @@ function mdLinePrefix(taId, prefix) {
   var newBlock = block.split('\n').map(function (l) { return prefix + l; }).join('\n');
   ta.value = ta.value.slice(0, start) + newBlock + ta.value.slice(end);
   ta.selectionStart = ta.selectionEnd = start + newBlock.length;
-  ta.focus();
+  mdFire(ta);
 }
 function mdInsert(taId, str) {
   var ta = document.getElementById(taId); if (!ta) return;
   var s = ta.selectionStart;
   ta.value = ta.value.slice(0, s) + str + ta.value.slice(ta.selectionEnd);
   ta.selectionStart = ta.selectionEnd = s + str.length;
-  ta.focus();
+  mdFire(ta);
 }
 function mdLink(taId) {
   var ta = document.getElementById(taId); if (!ta) return;
@@ -3612,7 +3650,116 @@ function mdLink(taId) {
   ta.value = ta.value.slice(0, s) + ins + ta.value.slice(e);
   var pos = s + ins.length - 1; // cursor just before the closing paren
   ta.selectionStart = ta.selectionEnd = pos;
-  ta.focus();
+  mdFire(ta);
+}
+
+// ── Live Markdown preview + draft autosave (shared by every composer) ─────────
+// Client-side mirror of _lib/richtext.js toRichHtml so the preview shows exactly
+// what will post: **bold** renders as bold, not literal asterisks. Escape-first
+// + allowlist (identical to the server), so innerHTML is safe by construction.
+function mdpEsc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function mdpInline(text){
+  var out=text;
+  out=out.replace(/`([^`\n]+)`/g,function(m,c){return '<code>'+c+'</code>';});
+  out=out.replace(/\*\*([^*\n]+)\*\*/g,'<strong>$1</strong>');
+  out=out.replace(/__([^_\n]+)__/g,'<strong>$1</strong>');
+  out=out.replace(/(^|[^*])\*([^*\n]+)\*/g,'$1<em>$2</em>');
+  out=out.replace(/(^|[^_\w])_([^_\n]+)_/g,'$1<em>$2</em>');
+  out=out.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g,function(m,txt,url){return '<a href="'+mdpEsc(url)+'" target="_blank" rel="noopener nofollow">'+txt+'</a>';});
+  return out;
+}
+function mdpTableSep(line){var t=String(line).trim();if(t.indexOf('-')===-1)return false;return /^\|?\s*:?-{1,}:?\s*(\|\s*:?-{1,}:?\s*)*\|?$/.test(t);}
+function mdpSplit(line){var s=String(line).trim().replace(/^\|/,'').replace(/\|$/,'');return s.split('|').map(function(c){return c.trim();});}
+function mdpAlign(spec){var s=String(spec).trim();var l=s.charAt(0)===':',r=s.charAt(s.length-1)===':';if(l&&r)return'center';if(r)return'right';if(l)return'left';return'';}
+function mdpCell(tag,text,align){var st=align?' style="text-align:'+align+'"':'';return '<'+tag+st+'>'+mdpInline(mdpEsc(text))+'</'+tag+'>';}
+function mdPreviewHtml(src){
+  var lines=String(src==null?'':src).replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n');
+  var out=[],para=[],listType=null,listItems=[],quote=[];
+  function flushPara(){if(para.length){out.push('<p>'+para.join('<br>')+'</p>');para=[];}}
+  function flushList(){if(listType){out.push('<'+listType+'>'+listItems.map(function(t){return '<li>'+t+'</li>';}).join('')+'</'+listType+'>');listType=null;listItems=[];}}
+  function flushQuote(){if(quote.length){out.push('<blockquote>'+quote.join('<br>')+'</blockquote>');quote=[];}}
+  function flushAll(){flushPara();flushList();flushQuote();}
+  for(var i=0;i<lines.length;i++){
+    var line=lines[i],e=mdpEsc(line),trimmed=e.trim();
+    if(trimmed===''){flushAll();continue;}
+    if(line.indexOf('|')!==-1&&i+1<lines.length&&mdpTableSep(lines[i+1])){
+      flushAll();var header=mdpSplit(line);var aligns=mdpSplit(lines[i+1]).map(mdpAlign);var n=header.length;var bodyRows=[];var j=i+2;
+      for(;j<lines.length;j++){if(lines[j].indexOf('|')===-1||lines[j].trim()==='')break;bodyRows.push(mdpSplit(lines[j]));}
+      var html='<div class="tbl-wrap"><table><thead><tr>';
+      for(var c=0;c<n;c++)html+=mdpCell('th',header[c]||'',aligns[c]);
+      html+='</tr></thead><tbody>';
+      for(var r=0;r<bodyRows.length;r++){html+='<tr>';for(var cc=0;cc<n;cc++)html+=mdpCell('td',bodyRows[r][cc]||'',aligns[cc]);html+='</tr>';}
+      html+='</tbody></table></div>';out.push(html);i=j-1;continue;
+    }
+    if(/^(-{3,}|\*{3,}|_{3,})$/.test(trimmed)){flushAll();out.push('<hr>');continue;}
+    var hm=/^(#{1,3})\s+(.*)$/.exec(e);
+    if(hm){flushAll();var lvl=hm[1].length+1;out.push('<h'+lvl+'>'+mdpInline(hm[2].trim())+'</h'+lvl+'>');continue;}
+    var qm=/^&gt;\s?(.*)$/.exec(e);
+    if(qm){flushPara();flushList();quote.push(mdpInline(qm[1]));continue;}
+    var um=/^[-*]\s+(.*)$/.exec(trimmed);
+    if(um){flushPara();flushQuote();if(listType&&listType!=='ul')flushList();listType='ul';listItems.push(mdpInline(um[1]));continue;}
+    var om=/^\d+\.\s+(.*)$/.exec(trimmed);
+    if(om){flushPara();flushQuote();if(listType&&listType!=='ol')flushList();listType='ol';listItems.push(mdpInline(om[1]));continue;}
+    flushList();flushQuote();para.push(mdpInline(e));
+  }
+  flushAll();return out.join('\n');
+}
+// Live preview: re-render a textarea into its preview box on every keystroke.
+// hideWhenEmpty keeps short fields (comments) uncluttered until you actually type.
+function bindLivePreview(taId, previewId, hideWhenEmpty){
+  var ta=document.getElementById(taId), pv=document.getElementById(previewId);
+  if(!ta||!pv) return;
+  var lbl=document.getElementById(previewId+'-label');
+  var upd=function(){
+    var v=(ta.value||'').trim();
+    if(!v && hideWhenEmpty){ pv.style.display='none'; if(lbl)lbl.style.display='none'; pv.innerHTML=''; return; }
+    pv.style.display=''; if(lbl)lbl.style.display='';
+    pv.innerHTML = v ? mdPreviewHtml(ta.value) : '<span class="pv-empty">Formatting preview appears here as you type.</span>';
+  };
+  if(!ta._pvBound){ ta._pvBound=true; ta.addEventListener('input',upd); }
+  upd();
+}
+// Toolbar buttons set .value directly; fire input so preview + autosave update.
+function mdFire(ta){ if(ta){ ta.dispatchEvent(new Event('input',{bubbles:true})); ta.focus(); } }
+
+// ── Draft autosave ───────────────────────────────────────────────────────────
+// Every keystroke in a composer is mirrored to localStorage, so an accidental
+// close / navigation / reload never loses the text. Cleared only on a real
+// successful submit; restored (with a dismiss link) the next time you open.
+function draftKey(k){ return 'tbp_draft_'+k; }
+function saveDraft(k,obj){ try{ localStorage.setItem(draftKey(k), JSON.stringify(obj)); }catch(e){} }
+function loadDraft(k){ try{ var s=localStorage.getItem(draftKey(k)); return s?JSON.parse(s):null; }catch(e){ return null; } }
+function clearDraft(k){ try{ localStorage.removeItem(draftKey(k)); }catch(e){} var n=document.getElementById(k==='member'?'mp-draft-note':'cp-draft-note'); if(n) n.textContent=''; }
+function bindDraft(k, fieldIds){
+  fieldIds.forEach(function(id){
+    var el=document.getElementById(id); if(!el||el._draftBound) return; el._draftBound=true;
+    var save=function(){ var o={}; fieldIds.forEach(function(f){ var x=document.getElementById(f); if(x) o[f]=x.value; }); saveDraft(k,o); };
+    el.addEventListener('input',save); el.addEventListener('change',save);
+  });
+}
+// Restore a saved draft into the fields. Returns true if non-empty text was put back.
+function restoreDraft(k, fieldIds, noteId){
+  var d=loadDraft(k); if(!d) return false;
+  var hasText=false; fieldIds.forEach(function(f){ if(/title|body|synthesis/.test(f) && d[f] && String(d[f]).trim()) hasText=true; });
+  if(!hasText) return false;
+  fieldIds.forEach(function(f){ var el=document.getElementById(f); if(el && d[f]!=null) el.value=d[f]; });
+  var note=document.getElementById(noteId);
+  if(note) note.innerHTML='&#9998; Restored your unsaved draft. <a onclick="discardDraft(\''+k+'\')">Discard &amp; start fresh</a>';
+  return true;
+}
+function discardDraft(k){
+  clearDraft(k);
+  if(k==='member'){ var t=document.getElementById('mp-title'), b=document.getElementById('mp-body'); if(t)t.value=''; if(b)b.value=''; bindLivePreview('mp-body','mp-preview'); var n=document.getElementById('mp-draft-note'); if(n)n.textContent=''; }
+  else { var t2=document.getElementById('cp-title'), b2=document.getElementById('cp-body'), s2=document.getElementById('cp-synthesis'); if(t2)t2.value=''; if(b2)b2.value=''; if(s2)s2.value=''; bindLivePreview('cp-body','cp-preview'); var n2=document.getElementById('cp-draft-note'); if(n2)n2.textContent=''; }
+}
+// Backdrop click: only close on a true backdrop hit, and never silently drop
+// text. The draft is auto-saved either way — we just confirm the close.
+function composerBackdrop(e, ov){
+  if(e.target!==ov) return;
+  var hasText=false;
+  ov.querySelectorAll('textarea, input[type=text]').forEach(function(el){ if((el.value||'').trim()) hasText=true; });
+  if(hasText && !confirm('Close this composer? Your draft is saved — it will be waiting when you reopen.')) return;
+  ov.classList.remove('open');
 }
 
 var EMOJI_SET = ['😀','😄','😉','🙂','😊','😍','🤔','😮',
@@ -5481,6 +5628,7 @@ function showBroadcast() {
     + '<button type="button" class="md-btn" title="Divider" onclick="mdInsert(\'bc-body\',\'\\n\\n---\\n\\n\')">&#8213; Divider</button>'
     + '</div>';
   h += '<textarea id="bc-body" rows="12" placeholder="Write your update..." style="width:100%;padding:11px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;font-family:inherit;line-height:1.5"></textarea>';
+  h += '<div class="md-preview-label" id="bc-preview-label">Live preview</div><div class="md-preview" id="bc-preview"></div>';
 
   h += '<div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:14px">';
   h += '<button onclick="broadcastMigrationTemplate()" style="cursor:pointer;border:1px solid var(--border);background:transparent;color:var(--text);padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600">Load migration template</button>';
@@ -5498,6 +5646,7 @@ function showBroadcast() {
   h += '<div id="bc-history" style="margin-top:30px"></div>';
   center.innerHTML = h; window.scrollTo(0, 0);
   broadcastPreview();
+  bindLivePreview('bc-body', 'bc-preview', true);
   loadScheduledBroadcasts();
   loadBroadcastHistory();
 }
@@ -5757,6 +5906,12 @@ function openComposer(mode, post) {
     document.getElementById('cp-ce').checked = !!post.ce_candidate;
     document.getElementById('cp-submit').textContent = 'Save';
   }
+  // Draft safety + live preview (new-post mode has the body + title to protect).
+  if (COMPOSER_MODE === 'new') {
+    bindDraft('admin', ['cp-title', 'cp-body', 'cp-synthesis', 'cp-space']);
+    restoreDraft('admin', ['cp-title', 'cp-body', 'cp-synthesis', 'cp-space'], 'cp-draft-note');
+  }
+  bindLivePreview('cp-body', 'cp-preview');
   ov.classList.add('open');
 }
 
@@ -5840,6 +5995,7 @@ async function submitComposer() {
         });
         var sdata = await sres.json();
         if (!sres.ok || !sdata.ok) throw new Error(sdata.error || 'Could not schedule');
+        clearDraft('admin');
         closeComposer();
         alert('Scheduled for ' + when.toLocaleString() + '. It will publish and notify automatically.');
       } catch (e) { status.textContent = e.message; status.className = 'composer-status err'; }
@@ -5859,6 +6015,7 @@ async function submitComposer() {
     });
     var data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Save failed');
+    if (COMPOSER_MODE === 'new') clearDraft('admin');
     closeComposer();
     if (data.post_id) viewPost(data.post_id);
   } catch(e) {
@@ -6238,7 +6395,7 @@ function openWelcomeTour() {
 // ════════════════════════════════════════
 checkAuth();
 </script>
-<div class="composer-overlay" id="request-overlay" onclick="if(event.target===this)closeRequest()">
+<div class="composer-overlay" id="request-overlay" onclick="composerBackdrop(event,this)">
   <div class="composer" style="max-width:560px">
     <h3 id="request-title">Request a Tool</h3>
     <p id="request-blurb" style="font-size:0.8rem;color:var(--text-secondary);line-height:1.6;margin-bottom:4px"></p>
@@ -6252,7 +6409,7 @@ checkAuth();
   </div>
 </div>
 
-<div class="composer-overlay" id="composer-overlay" onclick="if(event.target===this)closeComposer()">
+<div class="composer-overlay" id="composer-overlay" onclick="composerBackdrop(event,this)">
   <div class="composer">
     <h3 id="composer-title">New Post</h3>
     <input type="hidden" id="cp-post-id" value="">
@@ -6276,6 +6433,9 @@ checkAuth();
         <div class="emoji-pop" id="cp-emoji"></div>
       </div>
       <textarea id="cp-body" rows="10" placeholder="Write here. Use the toolbar for bold, italic, headings, lists, links, and emoji. Blank lines start new paragraphs."></textarea>
+      <div id="cp-draft-note" class="draft-note"></div>
+      <div class="md-preview-label" id="cp-preview-label">Live preview</div>
+      <div class="md-preview" id="cp-preview"></div>
       <label>When</label>
       <select id="cp-when" onchange="document.getElementById('cp-schedule-at').style.display = this.value==='schedule' ? '' : 'none'">
         <option value="now">Publish now</option>
@@ -6301,7 +6461,7 @@ checkAuth();
   </div>
 </div>
 
-<div class="composer-overlay" id="member-composer-overlay" onclick="if(event.target===this)closeMemberComposer()">
+<div class="composer-overlay" id="member-composer-overlay" onclick="composerBackdrop(event,this)">
   <div class="composer">
     <h3>New Post</h3>
     <label>Space</label>
@@ -6323,6 +6483,9 @@ checkAuth();
       <div class="emoji-pop" id="mp-emoji"></div>
     </div>
     <textarea id="mp-body" rows="9" maxlength="20000" placeholder="Write here. Use the toolbar for bold, italic, headings, lists, links, and emoji. Blank lines start new paragraphs."></textarea>
+    <div id="mp-draft-note" class="draft-note"></div>
+    <div class="md-preview-label" id="mp-preview-label">Live preview</div>
+    <div class="md-preview" id="mp-preview"></div>
     <label>Images (optional, up to 6)</label>
     <div class="mp-image-row">
       <button type="button" class="mp-add-image" id="mp-add-image" onclick="document.getElementById('mp-image-input').click()">+ Add image</button>
@@ -6357,7 +6520,7 @@ checkAuth();
   </div>
 </div>
 
-<div class="composer-overlay" id="profile-overlay" onclick="if(event.target===this)closeProfileEdit()">
+<div class="composer-overlay" id="profile-overlay" onclick="composerBackdrop(event,this)">
   <div class="composer">
     <h3>Edit profile</h3>
     <div style="display:flex;align-items:center;gap:14px;margin-bottom:6px">
