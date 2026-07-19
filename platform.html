@@ -1668,7 +1668,7 @@ a.file-chip:hover { border-color:var(--teal); }
 
   <!-- ── Sidebar ── -->
   <nav class="sidebar" id="sidebar">
-    <div class="sb-search"><input type="text" placeholder="Search spaces..." id="sb-filter"></div>
+    <div class="sb-search"><input type="text" placeholder="Search the forum…" id="sb-filter"></div>
     <div id="sb-nav"></div>
   </nav>
   <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
@@ -2186,10 +2186,19 @@ function buildSidebar() {
   document.getElementById('sb-nav').innerHTML = h;
 
   document.getElementById('sb-filter').addEventListener('input', function(e) {
-    var q = e.target.value.toLowerCase();
+    var raw = e.target.value, q = raw.toLowerCase();
+    // Keep the quick space-name filter…
     document.querySelectorAll('.sb-item').forEach(function(el) {
       el.style.display = el.textContent.toLowerCase().includes(q) ? '' : 'none';
     });
+    // …and, at 2+ chars, actually search post content (title + body).
+    clearTimeout(_searchTimer);
+    var term = raw.trim();
+    if (term.length >= 2) { _searchTimer = setTimeout(function(){ searchForum(term); }, 350); }
+    else if (S.view === 'search') { showHome(); }
+  });
+  document.getElementById('sb-filter').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { var t = e.target.value.trim(); if (t) { clearTimeout(_searchTimer); searchForum(t); } }
   });
 }
 
@@ -2636,6 +2645,51 @@ async function loadFeed(sort, append) {
         : '';
     }
   } catch(e) { console.error('loadFeed:', e); }
+}
+
+// Keyword search across the forum (title + body). Renders the same post cards
+// as the feed. Read via the public-read anon client, so it works for any member.
+var _searchTimer = null;
+async function searchForum(q) {
+  q = (q || '').trim();
+  if (q.length < 2) { if (S.view === 'search') showHome(); return; }
+  S.view = 'search'; clearActive();
+  var center = document.getElementById('center');
+  center.innerHTML = '<div class="post-full-back" onclick="showHome()">&larr; Home</div>'
+    + '<div class="space-head"><div class="space-accent" style="background:var(--teal)"></div><h1>Search</h1>'
+    + '<p class="space-tagline">Results for “' + esc(q) + '”</p></div>'
+    + '<div class="post-list" id="search-results"><div class="skel skel-row"></div><div class="skel skel-row"></div></div>';
+  try {
+    var like = '%' + q.replace(/[%,()]/g, ' ') + '%';
+    var { data, error } = await SB.from('forum_posts')
+      .select('id, title, comment_count, reaction_count, created_at, spaces(name, slug), accounts(name, avatar_url)')
+      .or('title.ilike.' + like + ',body_plain.ilike.' + like)
+      .order('created_at', { ascending: false })
+      .limit(40);
+    if (error) throw error;
+    if (S.view !== 'search') return; // user navigated away mid-search
+    var el = document.getElementById('search-results'); if (!el) return;
+    if (!data || !data.length) {
+      el.innerHTML = '<div style="padding:26px;text-align:center;color:var(--text-secondary);font-size:0.85rem">No posts matched “' + esc(q) + '”.<br>Try a different word, or browse by topic on the right.</div>';
+      return;
+    }
+    el.innerHTML = data.map(function(p) {
+      return postRow({
+        id: p.id, title: p.title,
+        author: p.accounts ? p.accounts.name : 'Unknown',
+        avatar: p.accounts ? p.accounts.avatar_url : null,
+        created_at: p.created_at,
+        space: p.spaces ? p.spaces.name : '',
+        dot: SPACE_DOTS[p.spaces ? p.spaces.slug : ''] || '#60a5fa',
+        comments: p.comment_count || 0, likes: p.reaction_count || 0,
+        age: formatDate(p.created_at), slug: p.spaces ? p.spaces.slug : ''
+      });
+    }).join('');
+  } catch (e) {
+    console.error('searchForum:', e);
+    var el2 = document.getElementById('search-results');
+    if (el2) el2.innerHTML = '<div style="padding:24px;color:var(--text-secondary);font-size:0.85rem">Search hit a snag — try again.</div>';
+  }
 }
 
 async function loadRecent() {
