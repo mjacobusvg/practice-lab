@@ -126,6 +126,9 @@ exports.handler = async function (event) {
         await notifyMentions(mentioned, { id: me.id, name: me.name }, { title: posts[0].title || 'a thread', post_id: postId });
       } catch (e) { /* never block commenting */ }
 
+      // Index the comment into Ask the Archive (real-time, async).
+      try { await require('./_lib/embed').triggerEmbedComment(comment.id); } catch (e) { /* best-effort */ }
+
       return {
         statusCode: 200, headers, body: JSON.stringify({
           ok: true,

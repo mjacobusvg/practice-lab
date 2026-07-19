@@ -1,20 +1,21 @@
 // netlify/functions/_lib/embed.js
 //
-// Fire-and-forget trigger for real-time Ask-the-Archive indexing of a native
-// post. Posting must NEVER depend on (or wait for) the archive index, so this
-// dispatches the background embed function and swallows all errors. The
-// background function does the OpenAI call; this just kicks it off (202).
+// Fire-and-forget triggers for real-time Ask-the-Archive indexing of native
+// content. Posting/commenting must NEVER depend on (or wait for) the archive
+// index, so these dispatch the background embed function and swallow all errors.
 
-async function triggerEmbed(postId) {
+function fire(payload) {
   try {
-    if (!postId) return;
     const base = process.env.URL || process.env.DEPLOY_PRIME_URL || 'https://thinkbeyondpractice.com';
-    await fetch(base + '/.netlify/functions/embed-post-background', {
+    return fetch(base + '/.netlify/functions/embed-post-background', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ post_id: postId, secret: process.env.BACKFILL_SECRET })
-    });
-  } catch (e) { /* best-effort; the post already stands */ }
+      body: JSON.stringify(Object.assign({ secret: process.env.BACKFILL_SECRET }, payload))
+    }).catch(function () {});
+  } catch (e) { /* best-effort */ }
 }
 
-module.exports = { triggerEmbed };
+async function triggerEmbed(postId) { if (postId) await fire({ post_id: postId }); }
+async function triggerEmbedComment(commentId) { if (commentId) await fire({ comment_id: commentId }); }
+
+module.exports = { triggerEmbed, triggerEmbedComment };
