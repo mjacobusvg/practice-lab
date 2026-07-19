@@ -13,7 +13,8 @@ const PRODUCT_TIER = {
   prod_SnR5gmEzqzf4QY: 'forum', // Full Forum Access ($50/$525)
   prod_TVA3ySjsPUYqFu: 'forum', // 7-Day Trial -> $50 forum
   prod_TItCoEzHwGexN3: 'forum', // Toolkit Buyers trial -> $50 forum
-  prod_UG0R8KspOn5vFe: 'full',  // Full Access ($119/mo, $1,190/yr)
+  prod_UsGONpNmNr3Fq9: 'full',  // Full Membership ($119/mo, $1,190/yr) — LIVE product behind the full_monthly_119 / full_annual_1190 lookup keys
+  prod_UG0R8KspOn5vFe: 'full',  // Full Access ($119/mo, $1,190/yr) — earlier/alt Full product, kept mapped
   prod_Tync5rANzosLJR: 'full',  // Member Upgrade to $89 (Full CE Access, grandfathered)
   prod_Typ4Rae4Jdk2fY: 'full'   // $89 with CEs (grandfathered)
 };
