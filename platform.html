@@ -1064,6 +1064,15 @@ a { color: inherit; text-decoration: none; }
 .rte code { background: rgba(127,127,127,0.16); padding: 1px 5px; border-radius: 3px; font-size: 0.85em; }
 .rte hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
 .rte strong { font-weight: 700; } .rte em { font-style: italic; }
+
+/* Read-only preview (homepage iframe): non-interactive, scroll still works. */
+html.preview-mode .gate { display: none !important; }
+html.preview-mode a, html.preview-mode button, html.preview-mode input,
+html.preview-mode textarea, html.preview-mode select, html.preview-mode .sb-item,
+html.preview-mode .topbar-right, html.preview-mode .hamburger { pointer-events: none !important; }
+html.preview-mode, html.preview-mode * { cursor: pointer !important; }
+html.preview-mode ::-webkit-scrollbar { width: 8px; height: 8px; }
+html.preview-mode ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 8px; }
 .composer input:focus, .composer select:focus, .composer textarea:focus { outline: none; border-color: var(--teal); }
 .composer .mt-label { color: var(--copper); }
 .composer-row { display: flex; align-items: center; gap: 16px; margin-top: 16px; flex-wrap: wrap; }
@@ -2042,7 +2051,29 @@ async function loadIdentity() {
   } catch(e) { console.error('loadIdentity:', e); return false; }
 }
 
+// Read-only "live window" mode for the marketing homepage iframe (/platform.html
+// ?preview=1). Renders the real shell + feed via the public-read anon client, no
+// login, and turns every click into a message asking the parent page to open its
+// free-access gate. Isolated: only runs when ?preview is present, so the real
+// member app is never affected.
+function isPreviewMode() {
+  try { return new URLSearchParams(window.location.search).get('preview') !== null; } catch (e) { return false; }
+}
+function bootPreview() {
+  try {
+    document.documentElement.classList.add('preview-mode');
+    var g = document.getElementById('gate'); if (g) g.classList.add('hidden');
+    S.user = null;
+    init();  // buildSidebar + showHome (feed loads via public read) + buildRail
+    document.addEventListener('click', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      try { if (window.parent && window.parent !== window) window.parent.postMessage('tbp-preview-click', '*'); } catch (x) {}
+    }, true);
+  } catch (e) { /* preview is best-effort chrome */ }
+}
+
 async function checkAuth() {
+  if (isPreviewMode()) { bootPreview(); return; }
   // Capture a ?post=<id> deep link (e.g. from a broadcast email) up front, so it
   // survives the magic-link sign-in round trip (localStorage persists across the
   // redirect / new tab). Opened once the member is loaded, in handlePostDeepLink.
