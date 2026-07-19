@@ -127,7 +127,21 @@ exports.handler = async function (event) {
     let recipients;
     if (p.test_email) {
       const te = String(p.test_email).toLowerCase().trim();
-      recipients = [{ email: te, name: 'Preview', first_name: 'Preview' }];
+      // Resolve the tester's real name so the preview shows the actual greeting
+      // ({{first_name}}) instead of a placeholder.
+      let fn = '', nm = '';
+      try {
+        const cr = await fetch(URL + '/rest/v1/contacts?email=eq.' + encodeURIComponent(te) + '&select=first_name,name&limit=1', { headers: Object.assign({ 'Content-Type': 'application/json' }, auth) });
+        const crows = cr.ok ? await cr.json() : [];
+        if (crows[0]) { fn = crows[0].first_name || ''; nm = crows[0].name || ''; }
+        if (!fn && !nm) {
+          const ar = await fetch(URL + '/rest/v1/accounts?email=eq.' + encodeURIComponent(te) + '&select=name&limit=1', { headers: Object.assign({ 'Content-Type': 'application/json' }, auth) });
+          const arows = ar.ok ? await ar.json() : [];
+          if (arows[0]) nm = arows[0].name || '';
+        }
+      } catch (e) { /* fall back to a neutral greeting */ }
+      const first = fn || (nm.split(' ')[0]) || 'there';
+      recipients = [{ email: te, name: nm || first, first_name: first }];
     } else {
       const qs = ['select=email,name,first_name', 'subscribed=eq.true', 'limit=10000'];
       if (filter) qs.push(filter);
