@@ -1045,6 +1045,25 @@ a { color: inherit; text-decoration: none; }
 .md-preview th, .md-preview td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; }
 .draft-note { font-size: 0.74rem; color: var(--copper); margin: 6px 0 0; }
 .draft-note a { color: var(--teal); cursor: pointer; text-decoration: underline; }
+.rte {
+  width: 100%; min-height: 130px; max-height: 440px; overflow-y: auto;
+  padding: 11px 13px; background: var(--bg-input); border: 1px solid var(--border);
+  border-radius: 6px; font-size: 0.9rem; color: var(--text-primary);
+  font-family: 'DM Sans', sans-serif; line-height: 1.65;
+}
+.rte:focus { outline: none; border-color: var(--teal); }
+.rte:empty:before { content: attr(data-ph); color: var(--text-secondary); pointer-events: none; }
+.rte > :first-child { margin-top: 0; }
+.rte p { margin: 0 0 8px; }
+.rte h2, .rte h3, .rte h4 { font-family: 'DM Serif Display', serif; color: var(--text-heading); margin: 12px 0 6px; line-height: 1.25; }
+.rte h2 { font-size: 1.15rem; } .rte h3 { font-size: 1.03rem; } .rte h4 { font-size: 0.92rem; }
+.rte ul, .rte ol { margin: 0 0 8px; padding-left: 22px; }
+.rte li { margin: 2px 0; }
+.rte blockquote { margin: 0 0 8px; padding: 2px 0 2px 12px; border-left: 3px solid var(--teal); color: var(--text-secondary); }
+.rte a { color: var(--teal); text-decoration: underline; }
+.rte code { background: rgba(127,127,127,0.16); padding: 1px 5px; border-radius: 3px; font-size: 0.85em; }
+.rte hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+.rte strong { font-weight: 700; } .rte em { font-style: italic; }
 .composer input:focus, .composer select:focus, .composer textarea:focus { outline: none; border-color: var(--teal); }
 .composer .mt-label { color: var(--copper); }
 .composer-row { display: flex; align-items: center; gap: 16px; margin-top: 16px; flex-wrap: wrap; }
@@ -3015,8 +3034,7 @@ async function viewPost(postId) {
     h += '</div>';
 
     center.innerHTML = h;
-    mentionSetup(document.getElementById('comment-input'));
-    bindLivePreview('comment-input', 'comment-preview', true);
+    initRichField('comment-input');
     if (post.poll && Array.isArray(post.poll.options) && post.poll.options.length) fetchPollResults(post.id, post.poll);
     window.scrollTo(0,0);
   } catch(e) {
@@ -3039,6 +3057,7 @@ function teaserHtml(post) {
 // Post a member comment, then reload the thread so it renders with the new
 // comment and an updated count. Body is escaped server-side (create-comment.js).
 async function submitComment(postId) {
+  syncRich('comment-input');
   var ta = document.getElementById('comment-input');
   var btn = document.getElementById('comment-submit');
   var errEl = document.getElementById('comment-error');
@@ -3220,11 +3239,12 @@ function toggleReplyBox(commentId, postId) {
     + '<button class="reply-cancel" onclick="toggleReplyBox(\'' + commentId + '\',\'' + postId + '\')">Cancel</button>'
     + '<button class="btn-primary" id="reply-submit-' + commentId + '" onclick="submitReply(\'' + commentId + '\',\'' + postId + '\')">Reply</button>'
     + '</div>';
-  var input = document.getElementById(ta);
-  if (input) { mentionSetup(input); input.focus(); }
+  var ed = initRichField(ta);
+  if (ed) ed.focus();
 }
 
 async function submitReply(commentId, postId) {
+  syncRich('reply-input-' + commentId);
   var ta = document.getElementById('reply-input-' + commentId);
   var btn = document.getElementById('reply-submit-' + commentId);
   var errEl = document.getElementById('reply-error-' + commentId);
@@ -3361,7 +3381,7 @@ function mentionPick(ev, i) {
 // Ids the member actually still references (their "@name" survives in the text).
 function mentionGetIds(ta) {
   if (!ta || !ta._mentions) return [];
-  var text = ta.value;
+  var text = (ta.value != null ? ta.value : (ta.textContent || ''));
   return ta._mentions
     .filter(function (m) { return text.indexOf('@' + m.name) !== -1; })
     .map(function (m) { return m.id; })
@@ -3417,7 +3437,7 @@ function openMemberComposer(spaceKey) {
   }
   if (spaceKey && MEMBER_POSTABLE.indexOf(spaceKey) !== -1) sel.value = spaceKey;
   document.getElementById('mp-title').value = '';
-  var mpBody = document.getElementById('mp-body'); mpBody.value = ''; mpBody._mentions = [];
+  initRichField('mp-body'); richSet('mp-body', '');
   S.newPostImages = [];
   var mpi = document.getElementById('mp-image-input'); if (mpi) mpi.value = '';
   renderMemberImagePreviews();
@@ -3429,12 +3449,10 @@ function openMemberComposer(spaceKey) {
   resetMemberPoll();
   var st = document.getElementById('mp-status'); st.textContent = ''; st.className = 'composer-status';
   renderPostTagChips();
-  mentionSetup(document.getElementById('mp-body'));
-  // Draft safety + live preview: restore any unsaved draft, then wire autosave
-  // and the rendered preview so text is never lost and formatting is visible.
+  // Draft safety: restore any unsaved draft, then wire autosave. The body is a
+  // WYSIWYG editor (see initRichField above) so formatting shows as you type.
   bindDraft('member', ['mp-title', 'mp-body', 'mp-space']);
   restoreDraft('member', ['mp-title', 'mp-body', 'mp-space'], 'mp-draft-note');
-  bindLivePreview('mp-body', 'mp-preview');
   document.getElementById('member-composer-overlay').classList.add('open');
 }
 
@@ -3461,6 +3479,7 @@ function togglePostTag(name) {
 
 async function submitMemberPost() {
   var st = document.getElementById('mp-status'); st.className = 'composer-status';
+  syncRich('mp-body');
   var space = document.getElementById('mp-space').value;
   var title = document.getElementById('mp-title').value.trim();
   var body = document.getElementById('mp-body').value.trim();
@@ -3742,15 +3761,15 @@ function restoreDraft(k, fieldIds, noteId){
   var d=loadDraft(k); if(!d) return false;
   var hasText=false; fieldIds.forEach(function(f){ if(/title|body|synthesis/.test(f) && d[f] && String(d[f]).trim()) hasText=true; });
   if(!hasText) return false;
-  fieldIds.forEach(function(f){ var el=document.getElementById(f); if(el && d[f]!=null) el.value=d[f]; });
+  fieldIds.forEach(function(f){ var el=document.getElementById(f); if(el && d[f]!=null){ if(el._rte) richSet(f, d[f]); else el.value=d[f]; } });
   var note=document.getElementById(noteId);
   if(note) note.innerHTML='&#9998; Restored your unsaved draft. <a onclick="discardDraft(\''+k+'\')">Discard &amp; start fresh</a>';
   return true;
 }
 function discardDraft(k){
   clearDraft(k);
-  if(k==='member'){ var t=document.getElementById('mp-title'), b=document.getElementById('mp-body'); if(t)t.value=''; if(b)b.value=''; bindLivePreview('mp-body','mp-preview'); var n=document.getElementById('mp-draft-note'); if(n)n.textContent=''; }
-  else { var t2=document.getElementById('cp-title'), b2=document.getElementById('cp-body'), s2=document.getElementById('cp-synthesis'); if(t2)t2.value=''; if(b2)b2.value=''; if(s2)s2.value=''; bindLivePreview('cp-body','cp-preview'); var n2=document.getElementById('cp-draft-note'); if(n2)n2.textContent=''; }
+  if(k==='member'){ var t=document.getElementById('mp-title'); if(t)t.value=''; richSet('mp-body',''); var n=document.getElementById('mp-draft-note'); if(n)n.textContent=''; }
+  else { var t2=document.getElementById('cp-title'), s2=document.getElementById('cp-synthesis'); if(t2)t2.value=''; richSet('cp-body',''); if(s2)s2.value=''; var n2=document.getElementById('cp-draft-note'); if(n2)n2.textContent=''; }
 }
 // Backdrop click: only close on a true backdrop hit, and never silently drop
 // text. The draft is auto-saved either way — we just confirm the close.
@@ -3760,6 +3779,148 @@ function composerBackdrop(e, ov){
   ov.querySelectorAll('textarea, input[type=text]').forEach(function(el){ if((el.value||'').trim()) hasText=true; });
   if(hasText && !confirm('Close this composer? Your draft is saved — it will be waiting when you reopen.')) return;
   ov.classList.remove('open');
+}
+
+// ── WYSIWYG rich-text editor ─────────────────────────────────────────────────
+// Members asked to SEE bold as bold while typing, not raw **asterisks**. Each
+// Markdown field becomes a contenteditable editor that shows real formatting.
+// The original <textarea> is kept hidden as the model and always holds the
+// serialized Markdown, so every submit / autosave / mention path that reads
+// textarea.value keeps working unchanged.
+function rteToolbarHtml(edId, popId){
+  function b(title, on, label){ return '<button type="button" class="md-btn" title="'+title+'" onmousedown="return false" onclick="'+on+'">'+label+'</button>'; }
+  return b('Bold','rteCmd(\''+edId+'\',\'bold\')','<b>B</b>')
+    + b('Italic','rteCmd(\''+edId+'\',\'italic\')','<i>I</i>')
+    + b('Heading','rteBlock(\''+edId+'\',\'h2\')','H')
+    + b('Bulleted list','rteCmd(\''+edId+'\',\'insertUnorderedList\')','&#8226; List')
+    + b('Numbered list','rteCmd(\''+edId+'\',\'insertOrderedList\')','1. List')
+    + b('Quote','rteBlock(\''+edId+'\',\'blockquote\')','&#8220; Quote')
+    + b('Link','rteLink(\''+edId+'\')','&#128279; Link')
+    + b('Divider','rteHr(\''+edId+'\')','&#8213; Divider')
+    + b('Emoji','rteEmojiToggle(event,\''+edId+'\',\''+popId+'\')','&#128512;')
+    + '<div class="emoji-pop" id="'+popId+'"></div>';
+}
+function initRichField(taId){
+  var ta=document.getElementById(taId);
+  if(!ta) return null;
+  if(ta._rich) return ta._rte;
+  ta._rich=true;
+  var prefix=taId.split('-')[0];
+  var oldTb=document.getElementById(prefix+'-toolbar'); if(oldTb) oldTb.style.display='none';
+  var oldPv=document.getElementById(prefix+'-preview'); if(oldPv) oldPv.style.display='none';
+  var oldPvL=document.getElementById(prefix+'-preview-label'); if(oldPvL) oldPvL.style.display='none';
+  var edId=taId+'-rte', popId=taId+'-rte-emoji';
+  var tb=document.createElement('div'); tb.className='md-toolbar rte-toolbar'; tb.innerHTML=rteToolbarHtml(edId, popId);
+  var ed=document.createElement('div'); ed.id=edId; ed.className='rte'; ed.contentEditable='true';
+  ed.setAttribute('data-ph', ta.getAttribute('placeholder') || 'Write here…');
+  ed.innerHTML = ta.value ? mdPreviewHtml(ta.value) : '';
+  ta.style.display='none';
+  ta.parentNode.insertBefore(tb, ta);
+  ta.parentNode.insertBefore(ed, ta);
+  ta._rte=ed; ed._ta=ta;
+  var sync=function(){ try{ ta.value=editorToMarkdown(ed); }catch(e){ ta.value=ed.textContent||''; } ta.dispatchEvent(new Event('input',{bubbles:true})); };
+  ta._syncRich=sync;
+  ed.addEventListener('input', sync);
+  ed.addEventListener('blur', sync);
+  ed.addEventListener('paste', function(e){
+    e.preventDefault();
+    var t=((e.clipboardData||window.clipboardData).getData('text/plain'))||'';
+    try{ document.execCommand('insertText', false, t); }catch(err){}
+  });
+  return ed;
+}
+// Set a rich field's content from Markdown (keeps hidden textarea + editor in sync).
+function richSet(taId, md){
+  var ta=document.getElementById(taId); if(!ta) return;
+  ta.value = md||'';
+  var ed=ta._rte; if(ed) ed.innerHTML = md ? mdPreviewHtml(md) : '';
+}
+// Force a rich field to flush its editor content into the hidden textarea now
+// (mobile may not fire blur before a submit tap).
+function syncRich(taId){ var ta=document.getElementById(taId); if(ta && ta._syncRich) ta._syncRich(); }
+function rteFocus(edId){ var ed=document.getElementById(edId); if(ed) ed.focus(); return ed; }
+function rteCmd(edId, cmd){ var ed=rteFocus(edId); if(!ed) return; try{ document.execCommand(cmd,false,null); }catch(e){} ed.dispatchEvent(new Event('input',{bubbles:true})); }
+function rteBlock(edId, tag){
+  var ed=rteFocus(edId); if(!ed) return;
+  var cur=''; try{ cur=(document.queryCommandValue('formatBlock')||'').toLowerCase(); }catch(e){}
+  var want=tag.toLowerCase();
+  try{ document.execCommand('formatBlock', false, (cur===want||cur==='<'+want+'>') ? 'div' : tag); }catch(e){}
+  ed.dispatchEvent(new Event('input',{bubbles:true}));
+}
+function rteLink(edId){
+  var ed=rteFocus(edId); if(!ed) return;
+  var url=prompt('Link URL (https://…)'); if(!url) return;
+  if(!/^https?:\/\//i.test(url) && !/^mailto:/i.test(url)) url='https://'+url;
+  var sel=window.getSelection();
+  try{
+    if(sel && String(sel)){ document.execCommand('createLink', false, url); }
+    else { document.execCommand('insertHTML', false, '<a href="'+url.replace(/"/g,'&quot;')+'">'+url.replace(/</g,'&lt;')+'</a>'); }
+  }catch(e){}
+  ed.dispatchEvent(new Event('input',{bubbles:true}));
+}
+function rteHr(edId){ var ed=rteFocus(edId); if(!ed) return; try{ document.execCommand('insertHTML', false, '<hr>'); }catch(e){} ed.dispatchEvent(new Event('input',{bubbles:true})); }
+function rteEmojiToggle(ev, edId, popId){
+  if(ev){ ev.stopPropagation(); ev.preventDefault(); }
+  var pop=document.getElementById(popId); if(!pop) return;
+  if(pop.classList.contains('open')){ pop.classList.remove('open'); return; }
+  if(!pop.dataset.filled){
+    pop.innerHTML=EMOJI_SET.map(function(em){ return '<button type="button" onmousedown="return false" onclick="rteInsertEmoji(\''+edId+'\',\''+popId+'\',\''+em+'\')">'+em+'</button>'; }).join('');
+    pop.dataset.filled='1';
+  }
+  pop.classList.add('open');
+  setTimeout(function(){ document.addEventListener('click', function h(e){ if(!pop.contains(e.target)){ pop.classList.remove('open'); document.removeEventListener('click', h); } }); },0);
+}
+function rteInsertEmoji(edId, popId, em){
+  var ed=rteFocus(edId); if(ed){ try{ document.execCommand('insertText', false, em); }catch(e){} ed.dispatchEvent(new Event('input',{bubbles:true})); }
+  var pop=document.getElementById(popId); if(pop) pop.classList.remove('open');
+}
+// Serialize the editor DOM back to the limited Markdown the backend renders.
+function editorToMarkdown(root){
+  if(!root) return '';
+  var md=rteSerialize(root);
+  return md.replace(/ /g,' ').replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').replace(/^\s+|\s+$/g,'');
+}
+function rteSerialize(node){ var s=''; var k=node.childNodes; for(var i=0;i<k.length;i++){ s+=rteSerNode(k[i]); } return s; }
+function rteStyleBold(el){ var w=(el.style&&el.style.fontWeight)||''; return w==='bold'||w==='bolder'||(/^[1-9]00$/.test(w)&&parseInt(w,10)>=600); }
+function rteStyleItalic(el){ return !!(el.style&&el.style.fontStyle==='italic'); }
+function rteSerNode(n){
+  if(n.nodeType===3){ return n.nodeValue.replace(/\r?\n/g,' '); }
+  if(n.nodeType!==1) return '';
+  var tag=n.tagName.toLowerCase(), inner;
+  if(tag==='br') return '\n';
+  if(tag==='hr') return '\n\n---\n\n';
+  switch(tag){
+    case 'strong': case 'b': inner=rteSerialize(n); return inner.trim()? '**'+inner+'**' : inner;
+    case 'em': case 'i': inner=rteSerialize(n); return inner.trim()? '*'+inner+'*' : inner;
+    case 'u': return rteSerialize(n);
+    case 'code': return '`'+rteSerialize(n)+'`';
+    case 'a': inner=rteSerialize(n); var href=n.getAttribute('href')||''; return href ? '['+(inner||href)+']('+href+')' : inner;
+    case 'h1': return '\n\n# '+rteSerialize(n).trim()+'\n\n';
+    case 'h2': return '\n\n## '+rteSerialize(n).trim()+'\n\n';
+    case 'h3': case 'h4': case 'h5': case 'h6': return '\n\n### '+rteSerialize(n).trim()+'\n\n';
+    case 'blockquote': return '\n\n'+rteSerialize(n).split('\n').map(function(l){ l=l.trim(); return l?'> '+l:''; }).filter(function(x){return x!=='';}).join('\n')+'\n\n';
+    case 'ul': return '\n\n'+rteListItems(n,'- ')+'\n\n';
+    case 'ol': return '\n\n'+rteListItems(n,'1. ')+'\n\n';
+    case 'li': return rteSerialize(n);
+    case 'p': case 'div': {
+      inner=rteSerialize(n);
+      if(rteStyleBold(n) && inner.trim()) inner='**'+inner+'**';
+      if(rteStyleItalic(n) && inner.trim()) inner='*'+inner+'*';
+      return '\n\n'+inner+'\n\n';
+    }
+    case 'span': {
+      inner=rteSerialize(n);
+      if(rteStyleBold(n) && inner.trim()) inner='**'+inner+'**';
+      if(rteStyleItalic(n) && inner.trim()) inner='*'+inner+'*';
+      return inner;
+    }
+    default: return rteSerialize(n);
+  }
+}
+function rteListItems(listNode, prefix){
+  var items=[], kids=listNode.children;
+  for(var i=0;i<kids.length;i++){ var c=kids[i]; if(c.tagName && c.tagName.toLowerCase()==='li'){ items.push(prefix+rteSerialize(c).replace(/\n+/g,' ').trim()); } }
+  return items.join('\n');
 }
 
 var EMOJI_SET = ['😀','😄','😉','🙂','😊','😍','🤔','😮',
@@ -5646,7 +5807,7 @@ function showBroadcast() {
   h += '<div id="bc-history" style="margin-top:30px"></div>';
   center.innerHTML = h; window.scrollTo(0, 0);
   broadcastPreview();
-  bindLivePreview('bc-body', 'bc-preview', true);
+  initRichField('bc-body');
   loadScheduledBroadcasts();
   loadBroadcastHistory();
 }
@@ -5707,18 +5868,19 @@ async function broadcastPreview() {
 function broadcastMigrationTemplate() {
   document.getElementById('bc-audience').value = 'nonmembers';
   document.getElementById('bc-subject').value = 'Think Beyond Practice has a new home (free access inside)';
-  document.getElementById('bc-body').value =
+  richSet('bc-body',
     'Hi {{first_name}},\n\n' +
     'We have moved Think Beyond Practice to our own platform, and your free access is ready.\n\n' +
     'You now have a free account with access to the community and a growing set of clinical tools built for psychiatric prescribers.\n\n' +
     '**Sign in here:** https://thinkbeyondpractice.com/platform.html?join\n\n' +
     'Just enter this email address and we will send you a one-click sign-in link. No password to remember.\n\n' +
-    'See you inside,\nMichael';
+    'See you inside,\nMichael');
   broadcastPreview();
 }
 async function broadcastTest() {
   var st = document.getElementById('bc-status');
   var subject = document.getElementById('bc-subject').value.trim();
+  syncRich('bc-body');
   var body = document.getElementById('bc-body').value.trim();
   if (!subject || !body) { st.style.color = '#dc2626'; st.textContent = 'Add a subject and message first.'; return; }
   st.style.color = 'var(--text-secondary)'; st.textContent = 'Sending test to your email...';
@@ -5736,6 +5898,7 @@ async function broadcastSend() {
   var st = document.getElementById('bc-status');
   var audience = document.getElementById('bc-audience').value;
   var subject = document.getElementById('bc-subject').value.trim();
+  syncRich('bc-body');
   var body = document.getElementById('bc-body').value.trim();
   if (!subject || !body) { st.style.color = '#dc2626'; st.textContent = 'Add a subject and message first.'; return; }
   var label = document.querySelector('#bc-audience option:checked').textContent;
@@ -5755,6 +5918,7 @@ async function broadcastSchedule() {
   var st = document.getElementById('bc-status');
   var audience = document.getElementById('bc-audience').value;
   var subject = document.getElementById('bc-subject').value.trim();
+  syncRich('bc-body');
   var body = document.getElementById('bc-body').value.trim();
   var when = document.getElementById('bc-when').value;
   if (!subject || !body) { st.style.color = '#dc2626'; st.textContent = 'Add a subject and message first.'; return; }
@@ -5881,7 +6045,7 @@ function openComposer(mode, post) {
     document.getElementById('cp-new-fields').style.display = '';
     document.getElementById('cp-post-id').value = '';
     document.getElementById('cp-title').value = '';
-    document.getElementById('cp-body').value = '';
+    initRichField('cp-body'); richSet('cp-body', '');
     document.getElementById('cp-synthesis').value = '';
     document.getElementById('cp-ce').checked = false;
     if (!sel.options.length) {
@@ -5908,10 +6072,10 @@ function openComposer(mode, post) {
   }
   // Draft safety + live preview (new-post mode has the body + title to protect).
   if (COMPOSER_MODE === 'new') {
+    initRichField('cp-body');
     bindDraft('admin', ['cp-title', 'cp-body', 'cp-synthesis', 'cp-space']);
     restoreDraft('admin', ['cp-title', 'cp-body', 'cp-synthesis', 'cp-space'], 'cp-draft-note');
   }
-  bindLivePreview('cp-body', 'cp-preview');
   ov.classList.add('open');
 }
 
@@ -5973,6 +6137,7 @@ async function submitComposer() {
     ce_candidate: document.getElementById('cp-ce').checked
   };
   if (COMPOSER_MODE === 'new') {
+    syncRich('cp-body');
     payload.action = 'create';
     payload.space = document.getElementById('cp-space').value;
     payload.title = document.getElementById('cp-title').value.trim();
