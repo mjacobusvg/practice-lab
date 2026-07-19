@@ -154,14 +154,20 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
         <div class="hint" style="margin-top:6px">Hit Stop when the visit ends &mdash; the transcript is added to <strong>Your visit notes</strong> below in about a minute, then Draft.</div>
       </div>
 
-      <!-- Shared working note (all modes draft from this) -->
+      <!-- Shared working note (all modes draft from this). Hidden while Prep is pending, so the
+           empty box doesn't compete with the Set me up flow; it appears once the scaffold/transcript fills it. -->
+      <div id="notes-block">
       <label for="raw" id="raw-label" style="margin-top:16px">Your visit notes &mdash; exactly as you took them</label>
       <textarea id="raw" placeholder="Paste your running notes: fragments, shorthand, and patient quotes in the order you asked. Don't clean them up first &mdash; that's this tool's job. Example:&#10;&#10;here re: 6wk f/u duloxetine 60&#10;&quot;the anxiety is better but I still feel blah&quot;&#10;sleep 5-6h, was 3-4&#10;denies SI&#10;still not exercising, wants to&#10;mom's health stressor ongoing"></textarea>
       <button type="button" class="btn-mini" style="margin-top:8px" onclick="openFocus('raw')">Full screen &#8599;</button>
 
       <div style="margin-top:16px">
         <button class="btn" id="generate">Draft my HPI &rarr;</button>
-        <button class="btn-ghost" id="open-wizard" type="button" style="margin-left:8px">Set up / edit my templates</button>
+      </div>
+      </div><!-- /notes-block -->
+
+      <div style="margin-top:16px">
+        <button class="btn-ghost" id="open-wizard" type="button">Set up / edit my templates</button>
         <a href="#" onclick="openOnboarding();return false;" class="hint" style="margin-left:10px;color:var(--teal)">Setup guide</a>
       </div>
       <div id="err-box"></div>
@@ -456,6 +462,13 @@ function renderMode(){
   if(rl){ rl.innerHTML = isAmbient
     ? "Your visit notes <span style=\"text-transform:none;font-weight:400;color:var(--cream-dim)\">(the transcript lands here &mdash; edit freely)</span>"
     : "Your visit notes &mdash; exactly as you took them"; }
+
+  // The working-notes box competes with the Set me up flow. While Prep is on and nothing has been
+  // built into the box yet, hide it; it reappears the moment Set me up (or an ambient transcript)
+  // fills it, or immediately if the clinician is NOT prepping.
+  var rawEl = document.getElementById('raw');
+  var hasNotes = rawEl && typeof rawEl.value === 'string' && rawEl.value.trim().length > 0;
+  show('notes-block', !prepOn || hasNotes);
 }
 
 // ── Template status line ──
@@ -712,7 +725,7 @@ document.getElementById('neweval-setup-btn').addEventListener('click', async fun
     var btn = this; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Building scaffold&hellip;';
     try {
       var scaffold = await callAPI(newEvalScaffoldSystem(), [{role:'user', content: 'Produce the blank intake scaffold now.'}], 1500);
-      if(scaffold && scaffold.trim()){ raw.value = finalizeHpi(scaffold); }
+      if(scaffold && scaffold.trim()){ raw.value = finalizeHpi(scaffold); renderMode(); }
     } catch(err){
       hint.innerHTML = '<span style="color:var(--red)">'+esc(err.message||err)+'</span>';
     } finally {
@@ -739,6 +752,7 @@ function renderPrep(j){
   }
   working += note;
   document.getElementById('raw').value = working;
+  renderMode();  // scaffold is now in the box — reveal it
 
   var html = '<div class="out" style="margin-top:16px"><h3>You are set up for this visit</h3>'
     + '<div class="hint" style="margin-bottom:12px">Your checklist is now <strong>at the top of your working note</strong> &mdash; answer each line as you go, then Draft. The questions are stripped out automatically.</div>';
@@ -1585,6 +1599,7 @@ function loadVaultTemplates(){
     var base = raw.value; // append to whatever is there now (checklist/scaffold etc.)
     var joiner = base && !/\n$/.test(base) ? '\n' : '';
     raw.value = base + joiner + text;
+    renderMode();  // transcript is in the box — make sure it's revealed (e.g. ambient with Prep on)
   }
   function azureCall(payload){
     payload.token = authToken;
