@@ -673,10 +673,10 @@ function prepSystem(){
   s += "- Also include any unresolved threads or planned follow-ups from last visit (e.g. 'recheck sleep response to the dose change', a pending referral, anything flagged for next time).\n";
   s += "- One clear, specific question per thread; phrase it as something to ask. Skip only truly static background that never changes. Derive from last visit's note; do not invent.\n\n";
   if(therapyGuide){
-    s += "FOCI rules (the PSYCHOTHERAPY GUIDE) — offer 0 to 3 options that genuinely fit THIS patient's picture. Make each ACTIONABLE, not just a label:\n";
-    s += "- name the technique/approach (e.g. cognitive defusion, motivational interviewing, behavioral activation, supportive or insight-oriented exploration, ERP, stimulus-control/wind-down);\n";
-    s += "- one short line on WHY it fits this patient right now;\n";
-    s += "- an 'In session:' line with a concrete way to do it plus one or two sample prompts the clinician could actually say.\n";
+    s += "FOCI rules (the PSYCHOTHERAPY GUIDE) — offer 0 to 3 options that genuinely fit THIS patient's picture. Make each ACTIONABLE, not just a label.\n";
+    s += "CRITICAL FORMAT: each element of the foci array is a SINGLE JSON STRING, never an object. Put the parts on their own lines inside that one string using \\n. Do NOT return {\"technique\":...} objects.\n";
+    s += "Inside each string, include, each on its own line: (1) the technique/approach name (e.g. cognitive defusion, motivational interviewing, behavioral activation, supportive or insight-oriented exploration, ERP, stimulus-control/wind-down); (2) one short line on WHY it fits this patient right now; (3) an 'In session:' line with a concrete way to do it plus one or two sample prompts the clinician could actually say.\n";
+    s += "Example of one array element (a string): \"Motivational interviewing\\nHis ambivalence about ruminating on the lawsuit is a natural MI target.\\nIn session: explore the pros and cons he sees in dwelling on it. Try: 'What does staying angry about it get you, and what does it cost you?'\"\n";
     s += "This also supports documentation: a named technique tied to a target is what makes the psychotherapy add-on defensible. Do NOT push a modality the patient's picture doesn't support; return an empty array if none genuinely fit.";
   } else {
     s += "FOCI rules: the psychotherapy guide is OFF for this clinician. Return an empty foci array.";
@@ -741,7 +741,7 @@ function renderPrep(j){
   var fu = document.querySelector('#visit-opts [data-visit="follow_up"]');
   if(fu && visitType !== 'follow_up') fu.click();
   prepChecklist = Array.isArray(j.checklist) ? j.checklist : [];
-  prepFoci = Array.isArray(j.foci) ? j.foci : [];
+  prepFoci = Array.isArray(j.foci) ? j.foci.map(fociText).filter(Boolean) : [];
   // The checklist goes RIGHT INTO the editable note, at the top, so the clinician answers
   // each line live during the visit. Draft strips this block (see WORKING SCAFFOLD rule).
   var working = '';
@@ -769,6 +769,26 @@ function renderPrep(j){
 var focusSourceId = null;
 var prepChecklist = [];
 var prepFoci = [];
+// A focus item should be a string, but the model sometimes returns an object (technique/why/
+// in-session). Coerce any shape into readable multi-line text so it never renders "[object Object]".
+function fociText(f){
+  if(f == null) return '';
+  if(typeof f === 'string') return f.trim();
+  if(typeof f !== 'object') return String(f);
+  var parts = [];
+  var name = f.technique || f.approach || f.modality || f.name || f.title || f.focus;
+  if(name) parts.push(String(name));
+  var why = f.why || f.rationale || f.reason || f.fit || f.whyItFits;
+  if(why) parts.push(String(why));
+  var how = f.inSession || f.in_session || f['In session'] || f.how || f.session || f.intervention;
+  var prompts = f.prompts || f.samplePrompts || f.examples;
+  if(prompts) how = (how ? how + ' ' : '') + (Array.isArray(prompts) ? prompts.join(' / ') : String(prompts));
+  if(how) parts.push('In session: ' + String(how));
+  if(parts.length) return parts.join('\n');
+  // Unknown shape: join the truthy scalar values so nothing is lost.
+  return Object.keys(f).map(function(k){ return f[k]; })
+    .filter(function(v){ return v != null && typeof v !== 'object'; }).map(String).join('\n').trim();
+}
 function focusRefHtml(){
   // The checklist now lives inside the note itself; only the psychotherapy focus stays a reference.
   if(!prepFoci.length) return '';
