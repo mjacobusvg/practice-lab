@@ -113,9 +113,10 @@ async function notifyNewPost(post, actor, opts) {
 
     if (opts && opts.emailBlast) {
       const emails = recips.filter(function (r) { return r.notify_email_posts; }).map(function (r) { return r.email; });
+      const postUrl = PLATFORM_URL + '?post=' + encodeURIComponent(post.id);
       const body = '<p><strong>' + esc(actorName) + '</strong> posted on Think Beyond Practice:</p>' +
         '<p style="font-size:16px"><strong>' + esc(post.title || '') + '</strong></p>' +
-        '<p><a href="' + PLATFORM_URL + '">Read it on the platform &rarr;</a></p>';
+        '<p><a href="' + postUrl + '">Read it on the platform &rarr;</a></p>';
       await emailEach(emails, 'New post: ' + (post.title || 'Think Beyond Practice'), function (email) { return body + prefsFooter(email); });
     }
   } catch (e) { console.log('notifyNewPost error:', e && e.message); }
@@ -151,9 +152,10 @@ async function notifyNewComment(post, commenter) {
     try { await sb('member_notifications', 'POST', rows, 'return=minimal'); } catch (e) { console.log('notify comment in-app:', e && e.message); }
 
     const emails = recips.filter(function (r) { return r.notify_email_comments; }).map(function (r) { return r.email; });
+    const threadUrl = PLATFORM_URL + '?post=' + encodeURIComponent(post.id);
     const body = '<p><strong>' + esc(commenterName) + '</strong> commented on a thread you\'re part of:</p>' +
       '<p style="font-size:16px"><strong>' + esc(post.title || '') + '</strong></p>' +
-      '<p><a href="' + PLATFORM_URL + '">Read the thread &rarr;</a></p>';
+      '<p><a href="' + threadUrl + '">Read the thread &rarr;</a></p>';
     await emailEach(emails, 'New comment on: ' + (post.title || 'a thread'), function (email) { return body + prefsFooter(email); });
   } catch (e) { console.log('notifyNewComment error:', e && e.message); }
 }
