@@ -2059,7 +2059,16 @@ async function checkAuth() {
     // Deep link from the marketing site (/platform.html?join) opens straight into
     // free-account creation; otherwise default to the returning-member view.
     var _q = new URLSearchParams(window.location.search);
-    if (_q.get('join') !== null || _q.get('free') !== null || window.location.hash === '#join') gateMode('signup');
+    if (_q.get('join') !== null || _q.get('free') !== null || window.location.hash === '#join') {
+      gateMode('signup');
+      // Carry an email typed on the marketing site straight into the signup form,
+      // so the visitor only has to add their name and hit the button.
+      var _pe = (_q.get('email') || '').trim();
+      if (_pe) { try {
+        var _ge = document.getElementById('gate-email'); if (_ge) _ge.value = _pe;
+        setTimeout(function(){ var n = document.getElementById('gate-name'); if (n) n.focus(); }, 60);
+      } catch (e) {} }
+    }
     else gateMode('login');
   }
   // React to magic-link / OAuth completion on redirect back
@@ -3277,6 +3286,7 @@ async function submitReply(commentId, postId) {
 // mentionGetIds(ta) so the server can notify + linkify. Names are read from the
 // public accounts columns (id/name/avatar_url) via the anon client.
 var _mdd = null, _mddTa = null, _mddItems = [], _mddIdx = -1, _mddTimer = null, _mddStart = -1;
+var _mddEd = null, _mddMatch = null;  // rich-editor mention state
 
 function mentionEnsureDD() {
   if (_mdd) return _mdd;
@@ -3286,7 +3296,7 @@ function mentionEnsureDD() {
   document.body.appendChild(_mdd);
   return _mdd;
 }
-function mentionHide() { if (_mdd) _mdd.style.display = 'none'; _mddItems = []; _mddIdx = -1; _mddStart = -1; _mddTa = null; }
+function mentionHide() { if (_mdd) _mdd.style.display = 'none'; _mddItems = []; _mddIdx = -1; _mddStart = -1; _mddTa = null; _mddEd = null; _mddMatch = null; }
 
 function mentionSetup(ta) {
   if (!ta || ta._mentionReady) return;
@@ -3386,6 +3396,89 @@ function mentionGetIds(ta) {
     .filter(function (m) { return text.indexOf('@' + m.name) !== -1; })
     .map(function (m) { return m.id; })
     .filter(function (v, i, a) { return a.indexOf(v) === i; });
+}
+
+// ── @mention inside the WYSIWYG editor ───────────────────────────────────────
+// The picker is wired to the contenteditable surface; the picked id is recorded
+// on the hidden <textarea> (ta._mentions) so mentionGetIds(ta) keeps working.
+function rteMentionSetup(ed, ta) {
+  if (!ed || ed._mentionReady) return;
+  ed._mentionReady = true;
+  ta._mentions = ta._mentions || [];
+  ed.addEventListener('input', function () { rteMentionOnInput(ed, ta); });
+  ed.addEventListener('keydown', function (e) { rteMentionOnKey(ed, e); });
+  ed.addEventListener('blur', function () { setTimeout(mentionHide, 150); });
+}
+// The "@query" ending at the caret inside a text node, or null.
+function rteMentionQueryAt(ed) {
+  var sel = window.getSelection();
+  if (!sel || !sel.rangeCount || !sel.isCollapsed) return null;
+  var node = sel.anchorNode;
+  if (!node || node.nodeType !== 3 || !ed.contains(node)) return null;
+  var offset = sel.anchorOffset;
+  var m = node.nodeValue.slice(0, offset).match(/(?:^|[\s(])@([\w][\w .'\-]*)$/);
+  if (!m) return null;
+  var q = m[1]; if (q.length > 40) return null;
+  return { q: q, node: node, atOffset: offset - q.length - 1, caretOffset: offset };
+}
+function rteMentionOnInput(ed, ta) {
+  var qi = rteMentionQueryAt(ed);
+  if (!qi || qi.q.trim().length < 1) { mentionHide(); return; }
+  _mddEd = ed; _mddTa = ta; _mddMatch = qi;
+  clearTimeout(_mddTimer);
+  var query = qi.q;
+  _mddTimer = setTimeout(function () { rteMentionSearch(query); }, 160);
+}
+async function rteMentionSearch(query) {
+  try {
+    var q = query.trim(); if (!q) { mentionHide(); return; }
+    var r = await SB.from('accounts').select('id,name,avatar_url').ilike('name', '%' + q + '%').not('name', 'is', null).limit(6);
+    var myId = (S.user && S.user.id) || null;
+    var rows = (r.data || []).filter(function (a) { return a.name && a.id !== myId; });
+    if (!rows.length) { mentionHide(); return; }
+    rteMentionShow(rows);
+  } catch (e) { mentionHide(); }
+}
+function rteMentionShow(rows) {
+  var dd = mentionEnsureDD();
+  _mddItems = rows; _mddIdx = 0;
+  var rect = null, sel = window.getSelection();
+  if (sel && sel.rangeCount) { var rr = sel.getRangeAt(0).cloneRange(); rr.collapse(true); rect = rr.getClientRects()[0]; }
+  if (!rect && _mddEd) rect = _mddEd.getBoundingClientRect();
+  if (!rect) { mentionHide(); return; }
+  dd.style.left = (rect.left + window.scrollX) + 'px';
+  dd.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+  dd.style.width = '260px';
+  dd.innerHTML = rows.map(function (a, i) {
+    var pic = a.avatar_url ? '<img src="' + esc(a.avatar_url) + '" alt="">' : '<span class="mdd-ini">' + esc((a.name[0] || '?').toUpperCase()) + '</span>';
+    return '<div class="mdd-item' + (i === 0 ? ' active' : '') + '" data-i="' + i + '" onmousedown="rteMentionPick(event,' + i + ')">' + pic + '<span class="mdd-name">' + esc(a.name) + '</span></div>';
+  }).join('');
+  dd.style.display = 'block';
+}
+function rteMentionOnKey(ed, e) {
+  if (!_mdd || _mdd.style.display === 'none' || _mddEd !== ed) return;
+  if (e.key === 'ArrowDown') { e.preventDefault(); _mddIdx = Math.min(_mddIdx + 1, _mddItems.length - 1); mentionHighlight(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); _mddIdx = Math.max(_mddIdx - 1, 0); mentionHighlight(); }
+  else if (e.key === 'Enter' || e.key === 'Tab') { if (_mddItems.length) { e.preventDefault(); rteMentionPick(null, _mddIdx < 0 ? 0 : _mddIdx); } }
+  else if (e.key === 'Escape') { mentionHide(); }
+}
+function rteMentionPick(ev, i) {
+  if (ev) ev.preventDefault();
+  var ed = _mddEd, ta = _mddTa, qi = _mddMatch; if (!ed || !ta || !qi) return;
+  var a = _mddItems[i]; if (!a) return;
+  try {
+    var node = qi.node, val = node.nodeValue;
+    var insert = '@' + a.name + ' ';
+    node.nodeValue = val.slice(0, qi.atOffset) + insert + val.slice(qi.caretOffset);
+    var sel = window.getSelection(), range = document.createRange();
+    range.setStart(node, qi.atOffset + insert.length); range.collapse(true);
+    sel.removeAllRanges(); sel.addRange(range);
+  } catch (e) {}
+  ta._mentions = ta._mentions || [];
+  if (!ta._mentions.some(function (m) { return m.id === a.id; })) ta._mentions.push({ id: a.id, name: a.name });
+  mentionHide();
+  ed.focus();
+  if (ta._syncRich) ta._syncRich();
 }
 
 // ════════════════════════════════════════
@@ -3822,6 +3915,8 @@ function initRichField(taId){
   ta._syncRich=sync;
   ed.addEventListener('input', sync);
   ed.addEventListener('blur', sync);
+  // @mention picker (not on the broadcast composer — that's an email blast).
+  if (prefix !== 'bc') rteMentionSetup(ed, ta);
   ed.addEventListener('paste', function(e){
     e.preventDefault();
     var t=((e.clipboardData||window.clipboardData).getData('text/plain'))||'';
