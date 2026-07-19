@@ -74,9 +74,45 @@ function trackLinks(html, bid, token) {
     return 'href="' + redirect + '"';
   });
 }
+// The one-click unsubscribe URL for one recipient (used both in the visible
+// footer link and in the RFC 8058 List-Unsubscribe header).
+function unsubUrl(email, bid) {
+  return SITE + '/.netlify/functions/broadcast-unsub?t=' + encodeURIComponent(mintPrefsToken(email)) + (bid ? '&b=' + encodeURIComponent(bid) : '');
+}
+
+// RFC 2047 encoded-word for a header value that may contain non-ASCII (e.g. the
+// subject). ASCII passes through untouched.
+function encodeHeaderWord(s) {
+  s = String(s);
+  if (/^[\x20-\x7E]*$/.test(s)) return s;
+  return '=?UTF-8?B?' + Buffer.from(s, 'utf8').toString('base64') + '?=';
+}
+
+// Build a raw MIME message so we can attach the List-Unsubscribe /
+// List-Unsubscribe-Post headers (SES Content.Simple does not allow custom
+// headers). One-click unsubscribe (RFC 8058) is what Gmail/Yahoo want to show
+// the native "Unsubscribe" affordance and is now required for bulk senders.
+function buildRawEmail(opts) {
+  var CRLF = '\r\n';
+  var bodyB64 = Buffer.from(String(opts.html), 'utf8').toString('base64').replace(/(.{76})/g, '$1' + CRLF);
+  var lines = [
+    'From: ' + opts.from,
+    'To: ' + opts.to,
+    'Subject: ' + encodeHeaderWord(opts.subject),
+    'MIME-Version: 1.0',
+    'List-Unsubscribe: <' + opts.unsub + '>',
+    'List-Unsubscribe-Post: List=One-Click',
+    'Content-Type: text/html; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    bodyB64
+  ];
+  return Buffer.from(lines.join(CRLF), 'utf8');
+}
+
 // One-click broadcast unsubscribe (flips contacts.subscribed=false) + platform link.
 function footer(email, bid) {
-  var unsub = SITE + '/.netlify/functions/broadcast-unsub?t=' + encodeURIComponent(mintPrefsToken(email)) + (bid ? '&b=' + encodeURIComponent(bid) : '');
+  var unsub = unsubUrl(email, bid);
   return '<div style="font-size:12px;color:#8a8a8a;margin-top:28px;border-top:1px solid #eee;padding-top:14px;line-height:1.5">' +
     'Think Beyond Practice LLC, 9631 N Nevada St Suite 209, Spokane WA 99218<br>' +
     'You are receiving this because you are on the Think Beyond Practice list. ' +
@@ -231,10 +267,11 @@ exports.handler = async function (event) {
         // little over clicks + actual signups.
         if (bid) inner = trackLinks(inner, bid, token);
         let html = wrap(inner + footer(c.email, bid));
+        const raw = buildRawEmail({ from: ses.from, to: c.email, subject: subject, html: html, unsub: unsubUrl(c.email, bid) });
         return ses.client.send(new ses.SendEmailCommand({
           FromEmailAddress: ses.from,
           Destination: { ToAddresses: [c.email] },
-          Content: { Simple: { Subject: { Data: subject, Charset: 'UTF-8' }, Body: { Html: { Data: html, Charset: 'UTF-8' } } } }
+          Content: { Raw: { Data: raw } }
         })).then(function () { sent++; }).catch(function (e) { sendErrors.push((e && e.message) || 'send failed'); console.log('broadcast send error for one recipient:', e && e.message); });
       }));
     }

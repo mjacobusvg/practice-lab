@@ -4,7 +4,10 @@
 // the recipient's email. Visiting the link flips contacts.subscribed=false and
 // returns a small confirmation page. No login required (CAN-SPAM one-click).
 //
-// GET /.netlify/functions/broadcast-unsub?t=<token>
+// GET  /.netlify/functions/broadcast-unsub?t=<token>   -> confirmation page
+// POST /.netlify/functions/broadcast-unsub?t=<token>   -> RFC 8058 one-click
+//        (List-Unsubscribe-Post: List=One-Click). Gmail/Yahoo POST here directly
+//        from their native "Unsubscribe" button; we just do the opt-out and 200.
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, SESSION_SIGNING_SECRET
 
@@ -22,14 +25,20 @@ function page(title, msg) {
 
 exports.handler = async function (event) {
   const htmlHeaders = { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' };
+  // RFC 8058 one-click: the mail client POSTs (never renders a page). Reply plain.
+  const isOneClick = event.httpMethod === 'POST';
   const t = (event.queryStringParameters && event.queryStringParameters.t) || '';
   const v = verifyPrefsToken(t);
   if (!v.valid) {
+    if (isOneClick) return { statusCode: 400, headers: { 'Content-Type': 'text/plain' }, body: 'invalid token' };
     return { statusCode: 400, headers: htmlHeaders, body: page('Link not valid', 'This unsubscribe link could not be verified. Please use the link from a recent email, or reply to let us know.') };
   }
 
   const URL = process.env.SUPABASE_URL, KEY = process.env.SUPABASE_SERVICE_KEY;
-  if (!URL || !KEY) return { statusCode: 500, headers: htmlHeaders, body: page('Something went wrong', 'Please try again shortly.') };
+  if (!URL || !KEY) {
+    if (isOneClick) return { statusCode: 500, headers: { 'Content-Type': 'text/plain' }, body: 'error' };
+    return { statusCode: 500, headers: htmlHeaders, body: page('Something went wrong', 'Please try again shortly.') };
+  }
   const auth = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };
 
   try {
@@ -51,5 +60,6 @@ exports.handler = async function (event) {
     } catch (e) { /* best-effort */ }
   }
 
+  if (isOneClick) return { statusCode: 200, headers: { 'Content-Type': 'text/plain' }, body: 'unsubscribed' };
   return { statusCode: 200, headers: htmlHeaders, body: page('You are unsubscribed', 'You will no longer receive broadcast emails from Think Beyond Practice. You can still sign in to the platform anytime. If this was a mistake, just reply to any of our emails and we will add you back.') };
 };
