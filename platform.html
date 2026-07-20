@@ -2099,7 +2099,7 @@ async function checkAuth() {
   try { var _pp = new URLSearchParams(window.location.search).get('post'); if (_pp) { localStorage.setItem('tbp_pending_post', _pp); localStorage.setItem('tbp_pending_post_ts', String(Date.now())); } } catch (e) {}
   // Capture a ?plan=<lookup_key> deep link (e.g. the marketing site's "$119/month"
   // button) so the paid checkout auto-starts once the visitor is signed in.
-  try { var _pl = new URLSearchParams(window.location.search).get('plan'); if (_pl) localStorage.setItem('tbp_pending_plan', _pl); } catch (e) {}
+  try { var _pl = new URLSearchParams(window.location.search).get('plan'); if (_pl) { localStorage.setItem('tbp_pending_plan', _pl); localStorage.setItem('tbp_pending_plan_ts', String(Date.now())); } } catch (e) {}
   var ok = await loadIdentity();
   if (ok && S.user) {
     document.getElementById('gate').classList.add('hidden');
@@ -6625,14 +6625,24 @@ document.getElementById('join-modal').addEventListener('click', function(e) { if
 // logged-out visitor is sent to sign in first.
 // After a marketing-site "$119/month" click and sign-in, auto-start the paid
 // Stripe checkout for the requested plan (once, then clear the intent).
+// Auto-resume checkout: a visitor who clicked "Join" on the marketing site lands
+// at /platform?plan=<key>, which stashes the plan (above). After they create their
+// account / sign in, this drops them straight into Stripe checkout — no second click.
 function handlePendingPlan() {
   try {
     var plan = localStorage.getItem('tbp_pending_plan');
     if (!plan) return;
-    localStorage.removeItem('tbp_pending_plan');
-    if (['full_monthly_119', 'full_annual_1190'].indexOf(plan) === -1) return;
+    var clearPending = function () { localStorage.removeItem('tbp_pending_plan'); localStorage.removeItem('tbp_pending_plan_ts'); };
+    // Freshness: only auto-resume within 60 min of the click, so a stale intent can't
+    // surprise-launch checkout on some unrelated later sign-in.
+    var ts = parseInt(localStorage.getItem('tbp_pending_plan_ts') || '0', 10);
+    if (ts && (Date.now() - ts) > 3600000) { clearPending(); return; }
+    if (['full_monthly_119', 'full_annual_1190'].indexOf(plan) === -1) { clearPending(); return; }
+    // Not signed in yet: KEEP the intent so checkout resumes after sign-in. (Do NOT
+    // consume it here — that was the bug that dropped the plan for logged-out visitors.)
     if (!getAuthToken()) return;
-    if (isPaidMember && isPaidMember()) return;  // already Full — nothing to buy
+    clearPending();                               // signed in — consume the intent now
+    if (isPaidMember && isPaidMember()) return;   // already Full — nothing to buy
     startCheckout(plan);
   } catch (e) {}
 }
