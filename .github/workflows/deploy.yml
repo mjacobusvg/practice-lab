@@ -1,0 +1,35 @@
+name: Deploy to Netlify
+
+# Deploys the site to Netlify from a GitHub-hosted runner, which reaches Netlify
+# directly. This bypasses Netlify's own git-clone step (currently failing with
+# "Host key verification failed" in Netlify's build container). Runs on every push
+# to main, and can be triggered manually from the Actions tab or the API.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: netlify-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies
+        run: npm ci || npm install
+
+      - name: Deploy to Netlify (production)
+        run: npx --yes netlify-cli@latest deploy --prod --build --message "GitHub Actions: ${{ github.sha }}"
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
