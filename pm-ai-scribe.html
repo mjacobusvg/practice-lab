@@ -1634,7 +1634,7 @@ function loadVaultTemplates(){
 // ══════════════════════════════════════════════════════════════════════════
 (function(){
   var recording=false, mediaRecorder=null, chunks=[], micStream=null, tabStream=null, mixCtx=null, mixNodes=[];
-  var rawBaseline='', recMime='';
+  var rawBaseline='', recMime='', recMode='mediarec', pendingBlob=null, wavRec=null;
 
   // Ambient is open to any signed-in member (auth already gates non-members). Azure batch
   // transcription is cheap, so no invite-list. Re-add an allowlist here if that changes.
@@ -1643,11 +1643,66 @@ function loadVaultTemplates(){
   function setStatus(msg,isErr){ var el=document.getElementById('record-status'); if(!el)return; el.textContent=msg||''; el.style.color=isErr?'var(--red)':'var(--cream-dim)'; }
   function resetBtn(){ var b=document.getElementById('record-btn'); if(b) b.innerHTML='&#9679; Start recording'; }
 
-  function pickMime(){
-    var c=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus','audio/mp4'];
+  // Only formats Azure batch transcription can DECODE. Deliberately EXCLUDES
+  // audio/mp4 (AAC): Safari/iOS MediaRecorder can only make mp4, and Azure rejects
+  // it with "The recordings URI contains invalid data." When this returns '' (Safari,
+  // iOS — every iOS browser is WebKit), we fall back to the WAV recorder below, which
+  // Azure accepts on every browser.
+  function azureFriendlyMime(){
     if(!window.MediaRecorder) return '';
+    var c=['audio/webm;codecs=opus','audio/webm','audio/ogg;codecs=opus'];
     for(var i=0;i<c.length;i++){ try{ if(MediaRecorder.isTypeSupported(c[i])) return c[i]; }catch(e){} }
     return '';
+  }
+
+  // Cross-browser WAV recorder (Web Audio). Taps the record stream, decimates to
+  // 16 kHz mono 16-bit PCM as samples arrive (bounded memory), and writes a WAV blob
+  // on stop. Used on Safari/iOS, where MediaRecorder only yields Azure-incompatible mp4.
+  function startWavCapture(stream, existingCtx){
+    var AC = window.AudioContext || window.webkitAudioContext;
+    var ctx = existingCtx || new AC();
+    try{ if(ctx.state==='suspended' && ctx.resume) ctx.resume(); }catch(e){}
+    var source = ctx.createMediaStreamSource(stream);
+    var processor = ctx.createScriptProcessor(4096, 1, 1);
+    var sink = ctx.createGain(); sink.gain.value = 0; // mute: don't play the mic back
+    var rec = { ctx:ctx, source:source, processor:processor, sink:sink, ownsCtx:!existingCtx, pcm:[], total:0, frac:0 };
+    var ratio = ctx.sampleRate / 16000;
+    processor.onaudioprocess = function(e){
+      var ch = e.inputBuffer.getChannelData(0);
+      // Nearest-neighbour decimation with a fractional carry so duration/pitch stay correct.
+      var out=[], pos=rec.frac;
+      while(pos < ch.length){
+        var s = ch[pos|0];
+        var v = s<0 ? s*0x8000 : s*0x7FFF;
+        out.push(v<-32768?-32768:(v>32767?32767:v));
+        pos += ratio;
+      }
+      rec.frac = pos - ch.length;
+      if(out.length){ rec.pcm.push(Int16Array.from(out)); rec.total += out.length; }
+    };
+    source.connect(processor); processor.connect(sink); sink.connect(ctx.destination);
+    wavRec = rec;
+  }
+  function stopWavCapture(){
+    var rec = wavRec; wavRec = null;
+    if(!rec) return null;
+    try{ rec.processor.disconnect(); }catch(e){}
+    try{ rec.source.disconnect(); }catch(e){}
+    try{ rec.sink.disconnect(); }catch(e){}
+    if(rec.ownsCtx){ try{ rec.ctx.close(); }catch(e){} }
+    return encodeWav(rec.pcm, rec.total, 16000);
+  }
+  function encodeWav(chunksInt16, totalSamples, sampleRate){
+    var dataLen = totalSamples*2, byteRate = sampleRate*2;
+    var buf = new ArrayBuffer(44+dataLen), dv = new DataView(buf);
+    function ws(o,s){ for(var i=0;i<s.length;i++) dv.setUint8(o+i, s.charCodeAt(i)); }
+    ws(0,'RIFF'); dv.setUint32(4, 36+dataLen, true); ws(8,'WAVE');
+    ws(12,'fmt '); dv.setUint32(16,16,true); dv.setUint16(20,1,true); dv.setUint16(22,1,true);
+    dv.setUint32(24,sampleRate,true); dv.setUint32(28,byteRate,true); dv.setUint16(32,2,true); dv.setUint16(34,16,true);
+    ws(36,'data'); dv.setUint32(40,dataLen,true);
+    var off=44;
+    for(var c=0;c<chunksInt16.length;c++){ var arr=chunksInt16[c]; for(var i=0;i<arr.length;i++){ dv.setInt16(off, arr[i], true); off+=2; } }
+    return new Blob([buf], { type:'audio/wav' });
   }
   function stopTracks(){
     try{ if(micStream) micStream.getTracks().forEach(function(t){t.stop();}); }catch(e){}
@@ -1662,7 +1717,9 @@ function loadVaultTemplates(){
   // recording so both voices are captured cleanly (diarization separates speakers).
   async function doStart(mode){
     if(!ambientAllowed()) throw new Error('Ambient scribe is in limited beta and is not enabled for your account yet.');
-    if(!window.MediaRecorder) throw new Error('Your browser does not support recording. Try Chrome.');
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if(!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) throw new Error('Your browser does not support microphone recording.');
+    if(!window.MediaRecorder && !AC) throw new Error('Your browser does not support recording. Try Chrome, Edge, or Safari.');
     var isTele=(mode==='telehealth');
     if(isTele){
       tabStream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:true });
@@ -1683,12 +1740,20 @@ function loadVaultTemplates(){
       recordStream = micStream;
     }
 
-    chunks=[]; recMime=pickMime();
-    var opts={ audioBitsPerSecond: 24000 }; if(recMime) opts.mimeType=recMime;
-    mediaRecorder = new MediaRecorder(recordStream, opts);
-    mediaRecorder.ondataavailable = function(e){ if(e.data && e.data.size) chunks.push(e.data); };
-    mediaRecorder.onstop = function(){ finalizeRecording(); };
-    mediaRecorder.start(); // single blob delivered on stop
+    chunks=[]; pendingBlob=null; recMime=azureFriendlyMime();
+    if(recMime){
+      // Chrome/Edge/Firefox/Android: MediaRecorder gives Azure-decodable webm/ogg opus.
+      recMode='mediarec';
+      var opts={ audioBitsPerSecond: 24000 }; opts.mimeType=recMime;
+      mediaRecorder = new MediaRecorder(recordStream, opts);
+      mediaRecorder.ondataavailable = function(e){ if(e.data && e.data.size) chunks.push(e.data); };
+      mediaRecorder.onstop = function(){ finalizeRecording(); };
+      mediaRecorder.start(); // single blob delivered on stop
+    } else {
+      // Safari/iOS: MediaRecorder only makes mp4/AAC (Azure can't read it) — record WAV instead.
+      recMode='wav';
+      startWavCapture(recordStream, isTele ? mixCtx : null);
+    }
     recording=true;
     rawBaseline = document.getElementById('raw').value;
     setStatus(isTele ? 'Recording the visit… (you + patient). Hit Stop when done.' : 'Recording… speak normally. Hit Stop when done.');
@@ -1697,9 +1762,17 @@ function loadVaultTemplates(){
   function doStop(){
     if(!recording) return;
     recording=false;
-    try{ if(mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(e){ finalizeRecording(); }
-    stopTracks();
-    setStatus('Finishing recording…');
+    if(recMode==='wav'){
+      // Build the WAV blob before stopTracks() closes a shared AudioContext.
+      try{ pendingBlob = stopWavCapture(); }catch(e){ pendingBlob=null; }
+      stopTracks();
+      setStatus('Finishing recording…');
+      finalizeRecording();
+    } else {
+      try{ if(mediaRecorder && mediaRecorder.state!=='inactive') mediaRecorder.stop(); }catch(e){ finalizeRecording(); }
+      stopTracks();
+      setStatus('Finishing recording…');
+    }
   }
 
   function appendTranscript(text){
@@ -1743,8 +1816,9 @@ function loadVaultTemplates(){
 
   // On Stop: upload the recording straight to Azure storage (any length), then batch-transcribe.
   async function finalizeRecording(){
-    var blob = new Blob(chunks, { type: (recMime||'audio/webm').split(';')[0] });
-    chunks=[];
+    var blob = (recMode==='wav' && pendingBlob) ? pendingBlob
+             : new Blob(chunks, { type: (recMime||'audio/webm').split(';')[0] });
+    chunks=[]; pendingBlob=null;
     if(!blob.size){ setStatus('No audio was captured.', true); resetBtn(); return; }
     setStatus('Uploading the recording…');
     try{
