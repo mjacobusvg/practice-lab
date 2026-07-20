@@ -67,24 +67,46 @@ exports.handler = async function(event, context) {
       return { statusCode: 200, headers, body: JSON.stringify({ verified: false, message: 'Unable to verify membership. Please try again.' }) };
     }
 
-    // Step 2: Determine TIER by checking full-space membership (always, so the
-    // token always carries the correct tier).
+    // Step 2: Determine TIER. PRIMARY source is the Supabase account tier, which
+    // the team controls directly (set accounts.tier='full' to grant a tool trial,
+    // no Circle space management). The Circle full-space check is kept ONLY as a
+    // fallback so an existing paying member can never lose access if the two
+    // sources ever drift; a grant from EITHER source yields full. Fail closed.
     let tier = 'forum';
+    // (a) Supabase account tier (the source the team manages)
     try {
-      const spaceUrl = `https://app.circle.so/api/v1/space_members?space_id=${FULL_SPACE_ID}&community_member_id=${communityMemberId}`;
-      const spaceRes = await fetch(spaceUrl, {
-        headers: { 'Authorization': `Bearer ${CIRCLE_API_TOKEN}`, 'Content-Type': 'application/json' }
-      });
-      if (spaceRes.ok) {
-        const spaceData = await spaceRes.json();
-        const records = spaceData.records || [];
-        const isFull = records.some(r =>
-          Number(r.community_member_id) === Number(communityMemberId) && r.status === 'active');
-        if (isFull) tier = 'full';
+      const SUPABASE_URL = process.env.SUPABASE_URL;
+      const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+      if (SUPABASE_URL && SERVICE_KEY) {
+        const acctRes = await fetch(
+          SUPABASE_URL + '/rest/v1/accounts?email=eq.' + encodeURIComponent(email) + '&select=tier&limit=1',
+          { headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY } }
+        );
+        if (acctRes.ok) {
+          const rows = await acctRes.json();
+          const t = rows && rows[0] && String(rows[0].tier || '').toLowerCase();
+          if (t === 'full') tier = 'full';
+        }
       }
     } catch (e) {
-      console.error('circle-auth tier check failed (defaulting to forum):', e.message);
-      // Fail closed on tier: if we can't confirm full, treat as forum (least privilege).
+      console.error('circle-auth supabase tier lookup failed:', e.message);
+    }
+    // (b) Fallback: legacy Circle full-space membership. Only runs if Supabase did
+    // not already grant full, and can only UPGRADE to full, never downgrade.
+    if (tier !== 'full') {
+      try {
+        const spaceUrl = `https://app.circle.so/api/v1/space_members?space_id=${FULL_SPACE_ID}&community_member_id=${communityMemberId}`;
+        const spaceRes = await fetch(spaceUrl, {
+          headers: { 'Authorization': `Bearer ${CIRCLE_API_TOKEN}`, 'Content-Type': 'application/json' }
+        });
+        if (spaceRes.ok) {
+          const spaceData = await spaceRes.json();
+          const records = spaceData.records || [];
+          if (records.some(r => Number(r.community_member_id) === Number(communityMemberId) && r.status === 'active')) tier = 'full';
+        }
+      } catch (e) {
+        console.error('circle-auth circle tier fallback failed (staying forum):', e.message);
+      }
     }
 
     // Step 3: If the caller requires full tier and this member is forum-only, reject.
