@@ -2089,6 +2089,7 @@ async function checkAuth() {
     handlePurchaseReturn();
     handleJoinReturn();
     handlePostDeepLink();
+    handleCEDeepLink();
     handlePendingPlan();
   } else {
     // Deep link from the marketing site (/platform.html?join) opens straight into
@@ -2130,6 +2131,7 @@ function updateTopbar() {
     '<button onclick="toggleAcctMenu();showInvite()">Invite a colleague</button>' +
     '<button onclick="toggleAcctMenu();openWelcomeTour()">Take the tour</button>' +
     '<button onclick="toggleAcctMenu();openReportProblem()">Report a problem</button>' +
+    (isAdmin() ? '<button onclick="toggleAcctMenu();showCEList()">CE candidates</button>' : '') +
     (isPaidMember()
       ? '<button onclick="openBillingPortal()">Manage billing</button>'
       : '<button onclick="startCheckout(\'full_monthly_119\')">Upgrade to Full</button>') +
@@ -4600,6 +4602,68 @@ function handlePostDeepLink() {
     if (!id) return;
     if (window.history && window.history.replaceState) window.history.replaceState({}, document.title, window.location.pathname);
     viewPost(id);
+  } catch (e) {}
+}
+
+// Admin-only: list every post flagged ce_candidate=true, grouped by space, sorted by discussion.
+// Lives here (reads live) rather than a static export so it stays current as posts are (un)flagged.
+async function showCEList() {
+  if (!isAdmin()) return;
+  closeSidebar();
+  S.view = 'ce';
+  logView('/platform/ce-candidates');
+  var center = document.getElementById('center');
+  center.innerHTML = '<div class="skel skel-h"></div><div class="skel skel-p"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
+  try {
+    var res = await SB.from('forum_posts')
+      .select('id, title, comment_count, spaces(name)')
+      .eq('ce_candidate', true);
+    if (res.error) throw res.error;
+    var rows = res.data || [];
+    var groups = {};
+    rows.forEach(function (p) { var sp = (p.spaces && p.spaces.name) || 'Other'; (groups[sp] = groups[sp] || []).push(p); });
+    var names = Object.keys(groups).sort(function (a, b) { return groups[b].length - groups[a].length; });
+    var h = '<style>' +
+      '.ce-wrap{max-width:820px;margin:0 auto;padding:8px 4px 60px}' +
+      '.ce-head h1{font-size:1.6rem;margin:0 0 6px;text-wrap:balance}' +
+      '.ce-head p{opacity:.72;font-size:.9rem;line-height:1.55;margin:0 0 18px;max-width:62ch}' +
+      '.ce-chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 26px}' +
+      '.ce-chip{font-size:.74rem;padding:4px 11px;border:1px solid rgba(128,128,128,.28);border-radius:999px;opacity:.9}' +
+      '.ce-chip b{color:#2fb6c4;font-variant-numeric:tabular-nums}' +
+      '.ce-sec{margin:0 0 26px}' +
+      '.ce-sec h2{font-size:1.02rem;display:flex;align-items:baseline;gap:8px;margin:0 0 8px;padding-bottom:6px;border-bottom:1px solid rgba(128,128,128,.22)}' +
+      '.ce-sec h2 em{font-style:normal;font-size:.78rem;opacity:.55;font-variant-numeric:tabular-nums}' +
+      '.ce-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:1px}' +
+      '.ce-list li{display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:8px;cursor:pointer;transition:background .12s}' +
+      '.ce-list li:hover{background:rgba(47,182,196,.11)}' +
+      '.ce-title{flex:1;font-size:.92rem;line-height:1.4}' +
+      '.ce-c{flex:0 0 auto;min-width:3.4em;text-align:right;font-size:.78rem;opacity:.6;font-variant-numeric:tabular-nums}' +
+      '</style>';
+    h += '<div class="ce-wrap"><div class="ce-head"><h1>CE candidates</h1>' +
+      '<p>' + rows.length + ' posts flagged as ANCC needs-assessment evidence, grouped by space and sorted by discussion. Click a post to open it; toggle its CE flag from the post itself.</p>' +
+      '<div class="ce-chips">';
+    names.forEach(function (sp) { h += '<span class="ce-chip">' + esc(sp) + ' <b>' + groups[sp].length + '</b></span>'; });
+    h += '</div>';
+    names.forEach(function (sp) {
+      var list = groups[sp].slice().sort(function (a, b) { return (b.comment_count || 0) - (a.comment_count || 0); });
+      h += '<section class="ce-sec"><h2>' + esc(sp) + '<em>' + list.length + '</em></h2><ul class="ce-list">';
+      list.forEach(function (p) {
+        h += '<li onclick="viewPost(\'' + p.id + '\')"><span class="ce-title">' + esc(p.title || 'Untitled') + '</span><span class="ce-c" title="comments">' + (p.comment_count || 0) + ' 💬</span></li>';
+      });
+      h += '</ul></section>';
+    });
+    h += '</div>';
+    center.innerHTML = h;
+    if (window.scrollTo) window.scrollTo(0, 0);
+  } catch (e) {
+    center.innerHTML = '<div style="max-width:820px;margin:0 auto;padding:24px 4px">Could not load CE candidates: ' + esc(String(e && e.message || e)) + '</div>';
+  }
+}
+function handleCEDeepLink() {
+  try {
+    if (new URLSearchParams(window.location.search).get('ce') === null) return;
+    if (window.history && window.history.replaceState) window.history.replaceState({}, document.title, window.location.pathname);
+    if (isAdmin()) showCEList();
   } catch (e) {}
 }
 
