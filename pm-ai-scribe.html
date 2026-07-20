@@ -219,6 +219,8 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
     <h2>Set up your HPI template</h2>
     <p class="msub">Answer a couple of questions and paste one HPI you already like. This writes a reusable template into your Vault, in your structure and voice &mdash; so you never start from a blank box. No patient details from your sample are kept; only your style.</p>
 
+    <div id="wiz-onb-banner" style="display:none"></div>
+
     <label>Which template are you setting up?</label>
     <div class="opts" id="wiz-visit-opts">
       <div class="opt sel" data-wizvisit="new_eval">New patient evaluation</div>
@@ -1195,8 +1197,88 @@ function applyWizModeForVisit(){
   });
   switchWizMode(wizMode);
 }
-function closeWizard(){ document.getElementById('wizard').classList.remove('open'); }
+function closeWizard(){
+  document.getElementById('wizard').classList.remove('open');
+  // If the user X's out mid-onboarding, end the guided sequence (they can add the
+  // rest later from "Set up / edit my templates"). Nothing is lost — saved ones stay.
+  if(onbTmplSeq){ onbTmplSeq=null; updateOnbBanner(); }
+}
 document.getElementById('open-wizard').addEventListener('click', openWizard);
+
+// ── First-run guided sequence: walk BOTH templates (new-eval, then follow-up) ──
+// Onboarding opens the wizard here instead of once, so a brand-new user is asked to
+// set up each visit type rather than finishing with only the default (new-eval).
+var onbTmplSeq = null; // { queue:['new_eval','follow_up'], pos:0, skipped:{} } while active
+
+function startOnbTemplateSequence(){
+  onbMarkDone();            // they finished the walkthrough; template building continues here
+  closeOnboarding();
+  onbTmplSeq = { queue:['new_eval','follow_up'], pos:0, skipped:{} };
+  document.getElementById('wizard').classList.add('open');
+  var first = nextOnbTemplate() || 'new_eval';
+  onbTmplSeq.pos = onbTmplSeq.queue.indexOf(first);
+  resetWizardForVisit(first);
+  updateOnbBanner();
+}
+// Next visit type still needing setup: not yet saved AND not skipped this run.
+function nextOnbTemplate(){
+  if(!onbTmplSeq) return null;
+  return onbTmplSeq.queue.find(function(v){
+    var saved = vaultTemplates[v] && vaultTemplates[v].trim();
+    var skipped = onbTmplSeq.skipped && onbTmplSeq.skipped[v];
+    return !saved && !skipped;
+  }) || null;
+}
+// Advance after a save or a skip; when nothing remains, finish. Self-healing: it
+// always moves to the first still-unset, still-unskipped template.
+function onbTemplateAdvance(){
+  if(!onbTmplSeq) return;
+  var next = nextOnbTemplate();
+  if(next){ onbTmplSeq.pos = onbTmplSeq.queue.indexOf(next); resetWizardForVisit(next); updateOnbBanner(); }
+  else { finishOnbTemplates(); }
+}
+function onbSkipCurrentTemplate(){
+  if(!onbTmplSeq) return;
+  var cur = onbTmplSeq.queue[onbTmplSeq.pos];
+  onbTmplSeq.skipped[cur] = true;
+  onbTemplateAdvance();
+}
+function finishOnbTemplates(){
+  onbTmplSeq = null;
+  updateOnbBanner();
+  document.getElementById('wizard').classList.remove('open');
+  renderTemplateStatus();
+  var wa = document.getElementById('work-area');
+  if(wa && wa.style.display !== 'none'){ renderStyleBar(); renderMode(); }
+}
+// Reset the wizard to a fresh BUILD of one visit type (used between sequence steps).
+function resetWizardForVisit(visit){
+  wiz.visit = visit;
+  document.querySelectorAll('#wiz-visit-opts .opt').forEach(function(o){ o.classList.toggle('sel', o.getAttribute('data-wizvisit')===visit); });
+  wizMode = 'build';
+  document.querySelectorAll('#wiz-mode-opts .opt').forEach(function(o){ o.classList.toggle('sel', o.getAttribute('data-wizmode')==='build'); });
+  switchWizMode('build');
+  ['wiz-scaffold','wiz-sample','wiz-notes'].forEach(function(id){ var e=document.getElementById(id); if(e) e.value=''; });
+  document.getElementById('wiz-result').innerHTML='';
+  document.getElementById('wiz-err').innerHTML='';
+  updateWizSampleLabel();
+}
+function updateOnbBanner(){
+  var el = document.getElementById('wiz-onb-banner'); if(!el) return;
+  if(!onbTmplSeq){ el.style.display='none'; el.innerHTML=''; return; }
+  var cur = onbTmplSeq.queue[onbTmplSeq.pos];
+  var label = cur==='new_eval' ? 'New patient evaluation' : 'Follow-up';
+  el.style.display='block';
+  el.innerHTML =
+    '<div style="background:var(--navy);border:1px solid var(--teal);border-radius:8px;padding:12px 14px;margin-bottom:16px">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">'
+      + '<span style="color:var(--cream);font-weight:600">First-time setup &middot; template '+(onbTmplSeq.pos+1)+' of '+onbTmplSeq.queue.length+': '+label+'</span>'
+      + '<button type="button" id="onb-skip-tmpl" class="btn-ghost" style="padding:4px 12px;font-size:.85rem">Skip for now</button>'
+    + '</div>'
+    + '<div class="hint" style="margin-top:8px;line-height:1.5">Set up both visit types so every note is ready. You can skip either one and add it any time later.</div>'
+    + '</div>';
+  var sk = document.getElementById('onb-skip-tmpl'); if(sk) sk.addEventListener('click', onbSkipCurrentTemplate);
+}
 // Do NOT close on outside click - too easy to lose your place by accident. Close only via the X.
 
 function wizardSystem(){
@@ -1452,7 +1534,12 @@ async function saveWizardTemplate(){
   btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Saving&hellip;';
   try {
     var ok = await persistTemplate(text, wiz.visit);
-    if(ok){ btn.innerHTML='&#10003; Saved to Vault'; setTimeout(function(){ closeWizard(); }, 900); }
+    if(ok){
+      btn.innerHTML='&#10003; Saved to Vault';
+      // In first-run setup, move on to the next visit type instead of closing.
+      if(onbTmplSeq){ setTimeout(onbTemplateAdvance, 800); }
+      else { setTimeout(function(){ closeWizard(); }, 900); }
+    }
     else { document.getElementById('wiz-save-hint').innerHTML='<span style="color:var(--amber)">Saved on this device; cloud save may have failed. It is set for this session.</span>'; btn.disabled=false; btn.innerHTML='Save to my Vault'; }
   } catch(err){
     document.getElementById('wiz-save-hint').innerHTML='<span style="color:var(--red)">'+esc(err.message||err)+'</span>'; btn.disabled=false; btn.innerHTML='Save to my Vault';
@@ -1961,10 +2048,10 @@ function onbRender(){
       + '<div style="margin-top:18px"><button class="btn" id="onb-next">Next &rarr;</button> <button class="btn-ghost" id="onb-back" style="margin-left:8px">Back</button></div>';
   } else if(s===4){
     var sum = (WF_LABELS[onbState.style]||'—') + (onbState.style==='ambient' ? ', '+(onbState.capture==='telehealth'?'telehealth':'in person') : '') + (onbState.prep?', prep from last note':'') + ', psychotherapy guide '+(onbState.therapy?'on':'off');
-    html = '<h2>Last thing: your note template</h2>'
-      + '<p class="msub">Paste one HPI you already like and answer a couple of questions &mdash; I turn it into a reusable template in your structure and voice, so you never start from a blank box. No patient details from your sample are kept, only your style.</p>'
+    html = '<h2>Last thing: your note templates</h2>'
+      + '<p class="msub">You see two visit types &mdash; <strong style="color:var(--cream)">new patient evaluations</strong> and <strong style="color:var(--cream)">follow-ups</strong>. Let\'s set up a template for each, so every visit is ready. For each one you paste an HPI you already like and answer a couple of questions, and I turn it into a reusable template in your structure and voice. You can skip either and add it later. No patient details from your samples are kept, only your style.</p>'
       + '<div class="hint" style="margin-top:8px">You\'re set up: <strong style="color:var(--cream)">'+sum+'</strong>. Change any of it anytime.</div>'
-      + '<div style="margin-top:18px"><button class="btn" id="onb-tmpl">Set up my template &rarr;</button> <button class="btn-ghost" id="onb-later" style="margin-left:8px">I\'ll do it later</button></div>';
+      + '<div style="margin-top:18px"><button class="btn" id="onb-tmpl">Set up my templates &rarr;</button> <button class="btn-ghost" id="onb-later" style="margin-left:8px">I\'ll do it later</button></div>';
   }
   b.innerHTML = html;
   onbWire();
@@ -2000,7 +2087,7 @@ function onbWire(){
     });
     on('onb-back', function(){ onbState.step=2; onbRender(); });
   }
-  if(s===4){ on('onb-tmpl', function(){ onbFinish(true); }); on('onb-later', function(){ onbFinish(false); }); }
+  if(s===4){ on('onb-tmpl', function(){ startOnbTemplateSequence(); }); on('onb-later', function(){ onbFinish(false); }); }
 }
 // Open the guided setup once for a clinician who has never set anything up.
 function maybeOnboard(){
