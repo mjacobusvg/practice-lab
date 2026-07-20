@@ -1643,6 +1643,15 @@ a.file-chip:hover { border-color:var(--teal); }
 }
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+  // Resilience: the whole platform depends on the Supabase UMD global above.
+  // If the primary CDN (jsDelivr) fails to serve it, synchronously fall back to
+  // unpkg so a single CDN hiccup can't white-screen the app. document.write here
+  // runs during head parsing, so the fallback loads before any body script.
+  if (typeof window.supabase === 'undefined') {
+    document.write('<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.min.js"><\/script>');
+  }
+</script>
 </head>
 <body>
 
@@ -1905,6 +1914,16 @@ async function submitProblemReport() {
 }
 function isPaidMember() { return tierRank() >= 1; }
 function checkMember() { S.isMember = isPaidMember(); }
+// Both CDNs failed (rare): show a friendly refresh prompt instead of a silent
+// ReferenceError white-screen. Currently this crash is our #1 client error.
+if (typeof supabase === 'undefined' || !supabase || !supabase.createClient) {
+  document.body.innerHTML = '<div style="max-width:440px;margin:15vh auto;padding:32px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;text-align:center;color:#1a2430">' +
+    '<h1 style="font-size:20px;margin:0 0 10px">Having trouble loading</h1>' +
+    '<p style="font-size:15px;line-height:1.6;color:#44515e">We couldn\'t load a required library — usually a brief network hiccup. Please refresh to try again.</p>' +
+    '<button onclick="location.reload()" style="margin-top:18px;background:#2aabb8;color:#fff;border:0;border-radius:8px;padding:11px 22px;font-size:15px;cursor:pointer">Refresh</button>' +
+    '</div>';
+  throw new Error('Supabase library failed to load from all CDNs');
+}
 var SB = supabase.createClient('https://ubcrrrapedaxkguxniwv.supabase.co', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InViY3JycmFwZWRheGtndXhuaXd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNjA2MTUsImV4cCI6MjA5MDkzNjYxNX0.CoS_t8EvCsgXJJA1dz4WXYWGsE8OMKEDeaWfsExQ1H0', {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
 });
