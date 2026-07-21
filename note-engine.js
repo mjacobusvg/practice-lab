@@ -347,11 +347,11 @@ function chartClean(s){ return stripDashes(stripMd(s)); }
 // Orchestration matches the standalone Note Builder exactly so both tools behave identically.
 async function runAssessment(inp, clinBlock, lengthBlock){
   clinBlock = clinBlock || ''; lengthBlock = lengthBlock || '';
-  var assessText = await callAPI(ASSESS_SYS, [{role:'user', content: contextBlock(inp) + clinBlock + lengthBlock}], 2000);
+  var assessText = await callAPI(ASSESS_SYS, [{role:'user', content: contextBlock(inp) + clinBlock + lengthBlock}], 4000);
   if(!assessText) throw new Error('No assessment came back.');
   var reviewMsg = 'ORIGINAL SOURCE:\n\n' + contextBlock(inp) + clinBlock + lengthBlock +
     '\n\n---\n\nDRAFT ASSESSMENT:\n\n' + assessText;
-  var reviewRaw = await callAPI(REVIEW_SYS, [{role:'user', content: reviewMsg}], 2000);
+  var reviewRaw = await callAPI(REVIEW_SYS, [{role:'user', content: reviewMsg}], 4000);
   try {
     var j = JSON.parse(String(reviewRaw).replace(/```json|```/g,'').trim());
     if(j && typeof j.assessment==='string' && j.assessment.trim()){
