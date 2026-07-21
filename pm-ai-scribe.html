@@ -337,6 +337,7 @@ var DEFAULT_ROS = 'Constitutional: (-)fever, (-)night sweats, (-)fatigue\nRespir
 var DEFAULT_MSE = 'No abnormal movements noted. Speech is clear with normal rate, rhythm, volume, and amount. Mood is euthymic with full range of affect. Thought content is appropriate and free from preoccupations, perceptions, or delusions. Thought processes are coherent and goal-directed. Oriented to person, place, time, and situation. Insight and judgment are good.';
 var vaultTemplates = { new_eval: '', follow_up: '' };
 var lastHpi = '';
+var lastGen = null; // last assessment-generation context, so length can be rebuilt in place
 var authToken = '';
 var userEmail = '';
 var clinicianName = ''; // clinician's first name (from Vault legalName), for a personal greeting
@@ -1126,7 +1127,7 @@ function renderPreflightCards(inp, scope, questions){
       }
     });
     var noTherapy = /no therapy/i.test(timeChoice);
-    generateNote(inp, scope, { clinBlock: window.NoteEngine.buildClinBlock(clinicalDecisions), lengthBlock: window.NoteEngine.buildLengthBlock(lengthChoice), modality: modality, code: code, noTherapy: noTherapy }, clinicalDecisions);
+    generateNote(inp, scope, { clinBlock: window.NoteEngine.buildClinBlock(clinicalDecisions), lengthBlock: window.NoteEngine.buildLengthBlock(lengthChoice), lengthChoice: (lengthChoice||'Standard'), modality: modality, code: code, noTherapy: noTherapy }, clinicalDecisions);
   });
 }
 
@@ -1152,6 +1153,8 @@ async function generateNote(inp, scope, opt){
       plan = planSnippets.trim();
       try{ plan = await window.NoteEngine.runPlan(inp, planSnippets.trim()); }catch(e){}
     }
+    // Stash context so length can be rebuilt in place (no need to exit the preflight).
+    lastGen = { inp: inp, scope: scope, opt: opt, therapy: therapy, plan: plan };
     renderAssessment(assess ? assess.assessment : '', assess ? assess.flags : [], therapy, opt.code, plan);
     box.scrollIntoView({ behavior:'smooth', block:'start' });
   } catch(err){
@@ -1165,6 +1168,13 @@ function renderAssessment(assessment, flags, therapy, code, plan){
   if(assessment){
     html += '<div class="out"><button class="btn-copy" onclick="copyOut(\'assess-out\')">Copy</button>';
     html += '<h3>Assessment</h3>';
+    // Rebuild length in place — no need to exit the preflight and start over.
+    var curLen = (lastGen && lastGen.opt && lastGen.opt.lengthChoice) ? String(lastGen.opt.lengthChoice).split(' ')[0].replace(/[^A-Za-z]/g,'') : 'Standard';
+    function lenChip(name){
+      var on = (curLen.toLowerCase() === name.toLowerCase());
+      return '<button type="button" class="btn-mini" onclick="rebuildAssessment(\''+name+'\')" style="padding:3px 10px;'+(on?'border-color:var(--teal);color:var(--teal)':'')+'">'+name+'</button>';
+    }
+    html += '<div class="hint" id="len-reroll" style="margin-bottom:6px">Length: '+lenChip('Brief')+' '+lenChip('Standard')+' '+lenChip('Thorough')+' <span style="color:var(--cream-dim)">(rebuilds the assessment only)</span></div>';
     html += '<textarea class="hpi-edit" id="assess-out">'+esc(assessment)+'</textarea>';
     html += '<div class="hint" style="margin-top:6px">Auto-reviewed against your notes. Edit before you sign.</div></div>';
   }
@@ -1193,6 +1203,26 @@ function renderAssessment(assessment, flags, therapy, code, plan){
   document.getElementById('assess-results').innerHTML = html;
   var cf = document.getElementById('copy-full');
   if(cf) cf.addEventListener('click', copyFullNote);
+}
+
+// Rebuild ONLY the assessment at a different length, in place. Preserves any edits the
+// clinician already made to the therapy/plan boxes. Diagnoses do not change with length.
+async function rebuildAssessment(lengthChoice){
+  if(!lastGen){ return; }
+  var row = document.getElementById('len-reroll');
+  if(row) row.innerHTML = '<span class="spinner"></span> Rebuilding at ' + esc(lengthChoice) + '&hellip;';
+  // carry forward any manual edits so a length re-roll never wipes them
+  var tEl = document.getElementById('therapy-out'); if(tEl) lastGen.therapy = tEl.value;
+  var pEl = document.getElementById('plan-out'); if(pEl) lastGen.plan = pEl.value;
+  try {
+    var lengthBlock = window.NoteEngine.buildLengthBlock(lengthChoice);
+    var assess = await window.NoteEngine.runAssessment(lastGen.inp, lastGen.opt.clinBlock || '', lengthBlock);
+    lastGen.opt.lengthChoice = lengthChoice;
+    lastGen.opt.lengthBlock = lengthBlock;
+    renderAssessment(assess.assessment, assess.flags, lastGen.therapy, lastGen.opt.code, lastGen.plan);
+  } catch(e){
+    if(row) row.innerHTML = '<span style="color:var(--red)">Rebuild failed. Try again.</span>';
+  }
 }
 
 function copyFullNote(){
