@@ -184,7 +184,8 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
       </div><!-- /notes-block -->
 
       <div style="margin-top:16px">
-        <button class="btn-ghost" id="open-wizard" type="button">Set up / edit my templates</button>
+        <button class="btn-ghost" id="new-patient" type="button" onclick="clearVisit()" style="border-color:var(--teal)">&#8635; New patient (clear notes)</button>
+        <button class="btn-ghost" id="open-wizard" type="button" style="margin-left:8px">Set up / edit my templates</button>
         <a href="#" onclick="openOnboarding();return false;" class="hint" style="margin-left:10px;color:var(--teal)">Setup guide</a>
       </div>
       <div id="err-box"></div>
@@ -1208,6 +1209,22 @@ function closeWizard(){
   // rest later from "Set up / edit my templates"). Nothing is lost — saved ones stay.
   if(onbTmplSeq){ onbTmplSeq=null; updateOnbBanner(); }
 }
+
+// New patient: wipe every field that can hold THIS patient's data, so nothing bleeds
+// into the next one. Keeps the clinician's own templates/settings (those are not PHI).
+function clearVisit(){
+  if(!confirm('Start a new patient?\n\nThis clears the current visit notes, the pasted last-visit note, and any draft or assessment on screen. Your saved templates and settings are kept.')) return;
+  ['raw','context','focus-note'].forEach(function(id){ var e=document.getElementById(id); if(e) e.value=''; });
+  wnMode='plain'; wnSections={checklist:'',guide:'',note:''};
+  ['results','prep-results','assess-results','err-box'].forEach(function(id){ var e=document.getElementById(id); if(e) e.innerHTML=''; });
+  rawBaseline='';
+  var rs=document.getElementById('record-status'); if(rs) rs.textContent='';
+  var rl=document.getElementById('record-live'); if(rl) rl.textContent='';
+  var rc=document.getElementById('record-consent'); if(rc) rc.checked=false;
+  var rb=document.getElementById('record-btn'); if(rb){ rb.disabled=true; rb.innerHTML='&#9679; Start recording'; }
+  try{ renderMode(); }catch(e){}
+  try{ window.scrollTo(0,0); }catch(e){}
+}
 document.getElementById('open-wizard').addEventListener('click', openWizard);
 
 // ── First-run guided sequence: walk BOTH templates (new-eval, then follow-up) ──
@@ -1820,6 +1837,12 @@ function loadVaultTemplates(){
       var aTracks = tabStream.getAudioTracks();
       if(!aTracks.length){ tabStream.getTracks().forEach(function(t){t.stop();}); tabStream=null; throw new Error('No tab audio was shared. Click Start again, choose your video-call tab, and check "Also share tab audio."'); }
       tabStream.getVideoTracks().forEach(function(t){ t.stop(); });
+      // When you click Chrome's "Stop sharing", the tab audio track ends. Auto-stop the
+      // recording then, so you don't have to come back and hit Stop separately (and so the
+      // recording ends cleanly at share-stop instead of trailing a dead track).
+      aTracks[0].addEventListener('ended', function(){
+        if(recording){ setStatus('Tab sharing ended — finishing the recording…'); doStop(); resetBtn(); }
+      });
     }
     micStream = await navigator.mediaDevices.getUserMedia({ audio:{ channelCount:1, echoCancellation:true, noiseSuppression:true } });
 
@@ -1835,7 +1858,11 @@ function loadVaultTemplates(){
     }
 
     chunks=[]; pendingBlob=null; wavSamples=0; recMime=azureFriendlyMime();
-    if(recMime){
+    // Telehealth mixes mic + tab audio through Web Audio. Handing that synthesized stream
+    // to MediaRecorder makes a WebM whose timestamps Azure rejects as "invalid data", so
+    // the mix is ALWAYS recorded as WAV (raw PCM — nothing for Azure to choke on). Plain
+    // mic (in person) keeps the compact webm/opus path where it works.
+    if(recMime && !isTele){
       // Chrome/Edge/Firefox/Android: MediaRecorder gives Azure-decodable webm/ogg opus.
       recMode='mediarec';
       var opts={ audioBitsPerSecond: 24000 }; opts.mimeType=recMime;
@@ -1844,8 +1871,9 @@ function loadVaultTemplates(){
       mediaRecorder.onstop = function(){ finalizeRecording(); };
       mediaRecorder.start(); // single blob delivered on stop
     } else {
-      // Safari/iOS: MediaRecorder only makes mp4/AAC (Azure can't read it) — record WAV instead.
-      // Reuse the gesture-created context (preCtx) so the engine actually runs on iOS.
+      // WAV path: telehealth mix (always), or Safari/iOS where MediaRecorder only makes
+      // mp4/AAC that Azure can't read. Reuse the gesture-created context (preCtx) so the
+      // engine actually runs on iOS; telehealth taps the mixing context (mixCtx).
       recMode='wav';
       var wavCtx = isTele ? mixCtx : preCtx;
       try{ if(wavCtx && wavCtx.state==='suspended' && wavCtx.resume) wavCtx.resume(); }catch(e){}
