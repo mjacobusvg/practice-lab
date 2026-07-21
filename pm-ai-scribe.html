@@ -157,6 +157,17 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
           <div class="opt" data-capture="telehealth">Telehealth</div>
         </div>
         <div class="hint" id="capture-hint" style="margin:0 0 12px"></div>
+        <!-- Mic picker + live level meter: confirm the RIGHT mic is capturing your voice
+             before you record, instead of finding out from a blank transcript. -->
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 8px">
+          <label for="mic-select" style="text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream-dim);font-size:.85rem;margin:0">Microphone</label>
+          <select id="mic-select" style="background:var(--navy);color:var(--cream);border:1px solid var(--rule);border-radius:6px;padding:5px 8px;font-size:.85rem;max-width:230px">
+            <option value="">System default microphone</option>
+          </select>
+          <button type="button" class="btn-mini" id="mic-test" style="margin:0">Test mic</button>
+          <span id="mic-meter" style="display:none;width:120px;height:11px;background:var(--navy);border:1px solid var(--rule);border-radius:6px;overflow:hidden;vertical-align:middle"><span id="mic-meter-fill" style="display:block;height:100%;width:0%;background:var(--rule);transition:width .06s linear"></span></span>
+        </div>
+        <div class="hint" id="mic-status" style="margin:0 0 12px;min-height:1em"></div>
         <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream);font-size:.9rem;line-height:1.5">
           <input type="checkbox" id="record-consent" style="margin-top:3px;width:auto">
           <span>I have the patient's consent to record this visit. The recording is uploaded temporarily for transcription by Azure AI Speech under our BAA and is deleted after the transcript is returned.</span>
@@ -1745,13 +1756,88 @@ function loadVaultTemplates(){
 (function(){
   var recording=false, mediaRecorder=null, chunks=[], micStream=null, tabStream=null, mixCtx=null, mixNodes=[];
   var rawBaseline='', recMime='', recMode='mediarec', pendingBlob=null, wavRec=null, preCtx=null, wavSamples=0;
+  // Mic selection + live level meter (verify the right mic is capturing your voice).
+  var selectedMicId=null; try{ selectedMicId=localStorage.getItem('tbp_mic_id')||null; }catch(e){}
+  var meterCtx=null, meterRAF=null, meterStream=null, meterOwnStream=false;
 
   // Ambient is open to any signed-in member (auth already gates non-members). Azure batch
   // transcription is cheap, so no invite-list. Re-add an allowlist here if that changes.
   function ambientAllowed(){ return true; }
 
   function setStatus(msg,isErr){ var el=document.getElementById('record-status'); if(!el)return; el.textContent=msg||''; el.style.color=isErr?'var(--red)':'var(--cream-dim)'; }
-  function resetBtn(){ var b=document.getElementById('record-btn'); if(b) b.innerHTML='&#9679; Start recording'; }
+  function setMicStatus(msg,isErr){ var el=document.getElementById('mic-status'); if(!el)return; el.textContent=msg||''; el.style.color=isErr?'var(--red)':'var(--cream-dim)'; }
+
+  // Populate the mic dropdown. Device LABELS are only exposed after mic permission has
+  // been granted once, so before "Test mic" the names may be generic — that's expected.
+  async function listMics(){
+    try{
+      if(!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+      var devs = await navigator.mediaDevices.enumerateDevices();
+      var ins = devs.filter(function(d){ return d.kind==='audioinput'; });
+      var sel = document.getElementById('mic-select'); if(!sel) return;
+      var opts = '<option value="">System default microphone</option>';
+      for(var i=0;i<ins.length;i++){
+        var d=ins[i], label=d.label || ('Microphone '+(i+1));
+        opts += '<option value="'+d.deviceId+'"'+(d.deviceId===selectedMicId?' selected':'')+'>'+label.replace(/</g,'&lt;')+'</option>';
+      }
+      sel.innerHTML = opts;
+    }catch(e){}
+  }
+
+  // Live level meter. Taps a stream with its own AudioContext + analyser and animates the
+  // bar from the RMS level. ownStream=true means we opened the mic (Test mic) and must stop
+  // it; ownStream=false means recording owns the stream and will stop it itself.
+  function startMeter(stream, ownStream){
+    stopMeter();
+    try{
+      meterStream=stream; meterOwnStream=!!ownStream;
+      meterCtx=new (window.AudioContext||window.webkitAudioContext)();
+      try{ if(meterCtx.state==='suspended' && meterCtx.resume) meterCtx.resume(); }catch(e){}
+      var source=meterCtx.createMediaStreamSource(stream);
+      var analyser=meterCtx.createAnalyser(); analyser.fftSize=512; source.connect(analyser);
+      var data=new Uint8Array(analyser.fftSize);
+      var meterEl=document.getElementById('mic-meter'); if(meterEl) meterEl.style.display='inline-block';
+      var fill=document.getElementById('mic-meter-fill');
+      (function tick(){
+        analyser.getByteTimeDomainData(data);
+        var sum=0; for(var i=0;i<data.length;i++){ var v=(data[i]-128)/128; sum+=v*v; }
+        var rms=Math.sqrt(sum/data.length);
+        var pct=Math.min(100, Math.round(rms*350));
+        if(fill){ fill.style.width=pct+'%'; fill.style.background = pct>4 ? 'var(--green)' : 'var(--rule)'; }
+        meterRAF=requestAnimationFrame(tick);
+      })();
+    }catch(e){ setMicStatus('Could not read the microphone level.', true); }
+  }
+  function stopMeter(){
+    if(meterRAF){ try{ cancelAnimationFrame(meterRAF); }catch(e){} meterRAF=null; }
+    try{ if(meterOwnStream && meterStream) meterStream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){}
+    try{ if(meterCtx) meterCtx.close(); }catch(e){}
+    meterCtx=null; meterStream=null; meterOwnStream=false;
+    var fill=document.getElementById('mic-meter-fill'); if(fill) fill.style.width='0%';
+  }
+
+  // Test mic: open the selected mic and show the live meter so you can confirm your voice
+  // registers BEFORE recording. Toggles off on a second click.
+  async function testMic(){
+    if(recording) return;
+    var btn=document.getElementById('mic-test');
+    if(meterStream && meterOwnStream){ stopMeter(); if(btn) btn.textContent='Test mic'; setMicStatus(''); return; }
+    try{
+      var c={ channelCount:1, echoCancellation:true, noiseSuppression:true };
+      if(selectedMicId) c.deviceId={ exact:selectedMicId };
+      var s=await navigator.mediaDevices.getUserMedia({ audio:c });
+      await listMics(); // labels are available now that permission is granted
+      startMeter(s, true);
+      if(btn) btn.textContent='Stop test';
+      setMicStatus('Talk normally — the green bar should move with your voice. If it stays flat, pick a different microphone above.');
+    }catch(e){ setMicStatus('Could not open that microphone. '+(e.message||e), true); }
+  }
+  function resetBtn(){ var b=document.getElementById('record-btn'); if(b) b.innerHTML='&#9679; Start recording'; setMicControls(false); }
+  // Lock the mic picker/test while recording; unlock on every stop path (via resetBtn).
+  function setMicControls(disabled){
+    var s=document.getElementById('mic-select'); if(s) s.disabled=disabled;
+    var t=document.getElementById('mic-test'); if(t){ t.disabled=disabled; if(disabled) t.textContent='Test mic'; }
+  }
 
   // Only formats Azure batch transcription can DECODE. Deliberately EXCLUDES
   // audio/mp4 (AAC): Safari/iOS MediaRecorder can only make mp4, and Azure rejects
@@ -1844,7 +1930,10 @@ function loadVaultTemplates(){
         if(recording){ setStatus('Tab sharing ended — finishing the recording…'); doStop(); resetBtn(); }
       });
     }
-    micStream = await navigator.mediaDevices.getUserMedia({ audio:{ channelCount:1, echoCancellation:true, noiseSuppression:true } });
+    var micConstraints={ channelCount:1, echoCancellation:true, noiseSuppression:true };
+    if(selectedMicId) micConstraints.deviceId={ exact:selectedMicId };
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: micConstraints });
+    startMeter(micStream, false); // live level while recording (recording owns the stream)
 
     var recordStream;
     if(isTele){
@@ -1887,6 +1976,7 @@ function loadVaultTemplates(){
   function doStop(){
     if(!recording) return;
     recording=false;
+    stopMeter();
     if(recMode==='wav'){
       // Build the WAV blob before stopTracks() closes a shared AudioContext.
       try{ pendingBlob = stopWavCapture(); }catch(e){ pendingBlob=null; }
@@ -2012,6 +2102,18 @@ function loadVaultTemplates(){
       applyCaptureSel();
     });
   }
+  // Mic picker + Test-mic wiring.
+  var micSel=document.getElementById('mic-select'), micTestBtn=document.getElementById('mic-test');
+  listMics();
+  if(micSel) micSel.addEventListener('change', function(){
+    selectedMicId=this.value||null;
+    try{ localStorage.setItem('tbp_mic_id', selectedMicId||''); }catch(e){}
+    if(meterStream && meterOwnStream){ stopMeter(); testMic(); } // re-test with the new device
+  });
+  if(micTestBtn) micTestBtn.addEventListener('click', testMic);
+  // Refresh the list when a headset is plugged in or removed.
+  try{ if(navigator.mediaDevices && navigator.mediaDevices.addEventListener) navigator.mediaDevices.addEventListener('devicechange', listMics); }catch(e){}
+
   // Beta gate: if this account isn't on the allowlist, disable recording outright.
   function applyGate(){
     if(ambientAllowed()) return;
@@ -2024,7 +2126,7 @@ function loadVaultTemplates(){
   if(btn) btn.addEventListener('click', function(){
     if(!ambientAllowed()){ setStatus('Ambient scribe is in limited beta — not enabled for your account yet.', true); return; }
     if(recording){ doStop(); resetBtn(); return; }
-    btn.disabled=true; setStatus(captureMode==='telehealth'?'Waiting for you to share the call tab…':'Starting…');
+    btn.disabled=true; setMicControls(true); setStatus(captureMode==='telehealth'?'Waiting for you to share the call tab…':'Starting…');
     // iOS/Safari (WAV path) needs its AudioContext created AND resumed inside this
     // click gesture — one made later, after await getUserMedia, starts suspended and
     // the capture engine never fires (silent WAV → Azure "invalid data"). Pre-make it
@@ -2036,7 +2138,7 @@ function loadVaultTemplates(){
       } else { preCtx=null; }
     }catch(e){ preCtx=null; }
     doStart(captureMode).then(function(){ btn.disabled=false; btn.innerHTML='&#9632; Stop recording'; })
-      .catch(function(err){ recording=false; stopTracks(); setStatus(err.message||'Could not start.', true); btn.disabled=false; });
+      .catch(function(err){ recording=false; stopMeter(); stopTracks(); setStatus(err.message||'Could not start.', true); btn.disabled=false; resetBtn(); });
   });
 })();
 
