@@ -124,6 +124,9 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
       <!-- Working style: saved per clinician. The screen opens in their style. -->
       <div id="style-bar" style="margin-bottom:14px"></div>
 
+      <!-- One-time nudge: set up ROS / MSE / Plan sections in the Vault (dismissable). -->
+      <div id="sections-reminder" style="display:none"></div>
+
       <!-- Last visit's note + assessment: powers BOTH carry-forward (fills standing sections)
            AND the assessment (prior diagnosis list + current meds). Shown for every follow-up. -->
       <div id="carry-block" style="display:none">
@@ -198,6 +201,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
         <button class="btn-ghost" id="new-patient" type="button" onclick="clearVisit()" style="border-color:var(--teal)">&#8635; New patient (clear notes)</button>
         <button class="btn-ghost" id="open-wizard" type="button" style="margin-left:8px">Set up / edit my templates</button>
         <a href="#" onclick="openOnboarding();return false;" class="hint" style="margin-left:10px;color:var(--teal)">Setup guide</a>
+        <div class="hint" style="margin-top:8px">Note sections: <a href="/vault" style="color:var(--teal)">set up your Review of Systems, Mental Status Exam &amp; Plan in the Vault</a> &mdash; they then attach to every note automatically.</div>
       </div>
       <div id="err-box"></div>
     </div>
@@ -316,6 +320,11 @@ var therapyGuide = true;  // psychotherapy guide on/off — per-clinician (Vault
 // Merged-Note prefs (Vault; all optional, default off/empty). ROS is AI-assisted (patient-reported,
 // derivable); MSE is a pure macro insert (observed, never AI-fabricated); plan snippets feed the Plan.
 var rosOn = false, rosMacro = '', mseOn = false, mseMacro = '', planSnippets = '';
+// Built-in fallbacks so a clinician can turn ROS/MSE on WITHOUT writing one from scratch.
+// ROS default is ALL-NEGATIVE — the AI flips items to (+) only where today's notes support it.
+// MSE default is a generic normal exam (edit per visit — it is an attestation of what you observed).
+var DEFAULT_ROS = 'Constitutional: (-)fever, (-)night sweats, (-)fatigue\nRespiratory: (-)dyspnea, (-)cough, (-)wheezing\nCardiovascular: (-)chest pain, (-)palpitations\nNeurological: (-)headaches, (-)vertigo, (-)lightheadedness, (-)tremor\nPsychiatric: (-)depression, (-)anxiety, (-)sleep disturbance, (-)suicidal ideation, (-)delusions, (-)hallucinations';
+var DEFAULT_MSE = 'No abnormal movements noted. Speech is clear with normal rate, rhythm, volume, and amount. Mood is euthymic with full range of affect. Thought content is appropriate and free from preoccupations, perceptions, or delusions. Thought processes are coherent and goal-directed. Oriented to person, place, time, and situation. Insight and judgment are good.';
 var vaultTemplates = { new_eval: '', follow_up: '' };
 var lastHpi = '';
 var authToken = '';
@@ -585,9 +594,10 @@ function draftSystem(){
   s += "=== OUTPUT FORMAT ===\n";
   s += "Output plain, chart-ready text for pasting into an EHR. Do NOT use Markdown: no # or ## headings, no --- or *** divider lines, no > blockquotes, no ** bold **. FOLLOW THE CLINICIAN'S TEMPLATE for how section labels are placed: if the template writes the label inline with a colon and the content on the same line (e.g. 'Counseling: continues weekly therapy...'), do exactly that; if the template puts labels on their own line, do that. Do not impose a layout the template does not use. Even if the template is written in Markdown, do not carry that syntax into the HPI.\n\n";
   s += "Add only minimal connective narrative needed to make the notes read as clinical prose. Connective wording must not introduce any new clinical fact. Output the HPI text only.";
-  if(rosOn && rosMacro && rosMacro.trim()){
+  if(rosOn){
+    var rosText = (rosMacro && rosMacro.trim()) ? rosMacro.trim() : DEFAULT_ROS;
     s += "\n\n=== APPEND A REVIEW OF SYSTEMS ===\n";
-    s += "After the HPI, add a section headed exactly 'Review of Systems:' built from the clinician's STANDARD ROS below. Keep their categories, default items, and signs. Flip an item to (+) ONLY if today's notes indicate the patient reported that symptom; otherwise keep the clinician's default. Do NOT add items that are not in their list, and NEVER assert a positive the notes do not support. Reproduce their exact format.\n\nCLINICIAN'S STANDARD ROS:\n" + rosMacro.trim() + "\n";
+    s += "After the HPI, add a section headed exactly 'Review of Systems:' built from the clinician's STANDARD ROS below. Keep their categories, default items, and signs. Flip an item to (+) ONLY if today's notes indicate the patient reported that symptom; otherwise keep the clinician's default. Do NOT add items that are not in their list, and NEVER assert a positive the notes do not support. Reproduce their exact format.\n\nCLINICIAN'S STANDARD ROS:\n" + rosText + "\n";
   }
   return s;
 }
@@ -676,7 +686,7 @@ async function runDraft(sourceText, btn, errEl){
     // MSE is a pure macro insert (the clinician's own attestation) — appended AFTER the AI
     // passes so the model never touches or fabricates exam findings.
     var finalHpi = res.hpi;
-    if(mseOn && mseMacro && mseMacro.trim()){ finalHpi += "\n\nMental Status Exam:\n" + mseMacro.trim(); }
+    if(mseOn){ finalHpi += "\n\nMental Status Exam:\n" + ((mseMacro && mseMacro.trim()) ? mseMacro.trim() : DEFAULT_MSE); }
     renderResult(finalHpi, res.flags);
     document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
     ok = true;
@@ -1236,6 +1246,28 @@ function clearVisit(){
   try{ renderMode(); }catch(e){}
   try{ window.scrollTo(0,0); }catch(e){}
 }
+
+// One-time nudge to set up ROS / MSE / Plan when the HPI template is done but these aren't.
+function renderSectionsReminder(){
+  var el=document.getElementById('sections-reminder'); if(!el) return;
+  var off=false; try{ off = localStorage.getItem('tbp_sections_reminder_off')==='1'; }catch(e){}
+  var hasTemplate = (vaultTemplates.new_eval && vaultTemplates.new_eval.trim()) || (vaultTemplates.follow_up && vaultTemplates.follow_up.trim());
+  var hasSections = rosOn || mseOn || (planSnippets && planSnippets.trim());
+  if(off || !hasTemplate || hasSections){ el.style.display='none'; el.innerHTML=''; return; }
+  el.style.display='block';
+  el.innerHTML =
+    '<div style="background:var(--navy);border:1px solid var(--teal);border-radius:8px;padding:12px 14px;margin-bottom:14px">'
+    + '<div style="color:var(--cream);font-weight:600;margin-bottom:4px">Finish your note setup: ROS, MSE &amp; Plan</div>'
+    + '<div class="hint" style="line-height:1.5">Your HPI template is set, but your <strong style="color:var(--cream)">Review of Systems</strong>, <strong style="color:var(--cream)">Mental Status Exam</strong>, and <strong style="color:var(--cream)">Plan</strong> aren\'t. Set them up once in the Vault and they attach to every note automatically. (No time to write them? Turning ROS/MSE on uses a sensible default you can edit.)</div>'
+    + '<div style="margin-top:10px;display:flex;gap:16px;align-items:center;flex-wrap:wrap">'
+      + '<a href="/vault" class="btn-mini" style="text-decoration:none">Set them up in the Vault &rarr;</a>'
+      + '<a href="#" onclick="dismissSectionsReminder();return false;" class="hint" style="color:var(--cream-dim)">Don’t remind me</a>'
+    + '</div></div>';
+}
+function dismissSectionsReminder(){
+  try{ localStorage.setItem('tbp_sections_reminder_off','1'); }catch(e){}
+  var el=document.getElementById('sections-reminder'); if(el){ el.style.display='none'; el.innerHTML=''; }
+}
 document.getElementById('open-wizard').addEventListener('click', openWizard);
 
 // ── First-run guided sequence: walk BOTH templates (new-eval, then follow-up) ──
@@ -1703,6 +1735,7 @@ function loadVaultTemplates(){
     planSnippets = lv.hpiPlanSnippets || '';
   } catch(e){}
   renderTemplateStatus();
+  renderSectionsReminder();
   syncTherapyToggle();
   if(!userEmail){ maybeOnboard(); return; }
   fetch('/.netlify/functions/user-tool-data', {
@@ -1726,6 +1759,7 @@ function loadVaultTemplates(){
       syncTherapyToggle();
       if(typeof d.data.hpiCaptureMode === 'string'){ try{ localStorage.setItem('tbp_hpi_capture', d.data.hpiCaptureMode); }catch(e){} if(typeof window.tbpSetCapture==='function') window.tbpSetCapture(d.data.hpiCaptureMode); }
       renderTemplateStatus();
+      renderSectionsReminder();
       var wa = document.getElementById('work-area');
       if(wa && wa.style.display !== 'none'){ renderStyleBar(); renderMode(); }
       // Onboarding shows until the account has completed it (hpiOnboarded) OR has a saved
