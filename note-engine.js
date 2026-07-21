@@ -296,6 +296,12 @@ These exist so the contestable clinical calls in the assessment originate with t
 
 Generate a clinical-decision card ONLY where the source genuinely contains an unresolved decision that would change the assessment's clinical claims. If the HPI is unambiguous and the prior assessment has no open threads, generate NO clinical cards. A clean stable follow-up should produce zero. Do not manufacture decisions to fill space. Two to three clinical cards is a busy, complex visit; most visits have zero or one.
 
+DIAGNOSIS-CONFIRMATION CARD (id "clin_dx") — MANDATORY WHEN NO PRIOR DIAGNOSIS LIST IS PROVIDED:
+The input ends with a line stating whether a prior diagnosis list was provided. When an assessment is in scope AND no prior diagnosis list was provided (a new patient, or a first visit whose prior records are elsewhere), you MUST emit exactly ONE card with id "clin_dx" and select "multi", so the PROVIDER — not the model — owns the diagnosis list. This is the one card that is mandatory rather than discretionary; emit it even if the picture seems clear, because the model must never silently author a new patient's diagnoses. When a prior diagnosis list WAS provided, do NOT emit this card: the list carries forward, and any change is handled in the assessment and raised in the flags.
+- text: state plainly that no prior diagnosis list was found and that, based on today's visit, these fit; ask the provider to select all that apply, adjust, or enter their own. Example: "No prior diagnosis list was provided for this patient. Based on today's visit, these diagnoses fit, select all that apply or enter your own."
+- options: 3 to 6 diagnoses the DOCUMENTED visit content genuinely supports, most-likely first. Format each as "F##.## Diagnosis name (the specific documented evidence from this visit that supports it)". Use real ICD-10 codes. Include a severity/course specifier only where the visit documents one; otherwise use the unspecified code. Propose only diagnoses the visit actually supports, never a boilerplate panel.
+- ALWAYS include a final option "Other / enter my own". Do NOT include a "Keep it plain" option here; a diagnosis list is not an optional label.
+
 Three kinds of clinical-decision card:
 
 1. CHARACTERIZATION (id "clin_char"): When the HPI documents a symptom or finding the provider described in plain terms but did NOT characterize diagnostically, and the data genuinely supports more than one reading, surface it. Propose the candidate characterizations as options — drawing from BOTH psychiatric AND medical/physiologic contributors that the documented data supports (e.g. medication effect, a documented lab abnormality like iron deficiency, sleep, a substance). Each option must name the documented evidence it rests on, in parentheses, so the provider can evaluate the suggestion rather than just accept a bare label.
@@ -392,8 +398,21 @@ function scopeNote(scope){
 // Preflight review: surface the provider-owned clinical decisions before anything is written.
 // Returns { questions: [...] } including the fixed length card when an assessment is in scope.
 async function runPreflight(inp, scope){
-  var raw = await callAPI(PREFLIGHT_SYS, [{role:'user', content: contextBlock(inp) + scopeNote(scope)}], 1200);
-  var parsed = JSON.parse(String(raw).replace(/```json|```/g,'').trim());
+  // Tell the preflight explicitly whether a prior diagnosis list exists, so it knows when to emit
+  // the mandatory diagnosis-confirmation card (new patient with no list to carry forward).
+  var dxSignal = (inp.dxprior && String(inp.dxprior).trim())
+    ? '\n\n---\n\nPRIOR DIAGNOSIS LIST: provided above. Carry it forward; do NOT emit a clin_dx diagnosis-confirmation card.'
+    : '\n\n---\n\nPRIOR DIAGNOSIS LIST: NONE provided. If an assessment is in scope, you MUST emit exactly one clin_dx diagnosis-confirmation card as specified.';
+  var raw = await callAPI(PREFLIGHT_SYS, [{role:'user', content: contextBlock(inp) + scopeNote(scope) + dxSignal}], 2000);
+  var txt = String(raw).replace(/```json|```/g,'').trim();
+  var parsed;
+  try { parsed = JSON.parse(txt); }
+  catch(e){
+    // Salvage the JSON object if the model wrapped it in prose or the tail got clipped.
+    var a = txt.indexOf('{'), b = txt.lastIndexOf('}');
+    if(a !== -1 && b > a){ parsed = JSON.parse(txt.slice(a, b+1)); }
+    else { throw e; }
+  }
   var questions = Array.isArray(parsed.questions) ? parsed.questions : [];
   if(scope==='assessment' || scope==='both'){
     questions.unshift(JSON.parse(JSON.stringify(LENGTH_CARD)));
