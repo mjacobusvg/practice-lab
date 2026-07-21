@@ -683,10 +683,16 @@ async function runDraft(sourceText, btn, errEl){
     renderResultPreview(hpi);
     btn.innerHTML = '<span class="spinner"></span>Reviewing&hellip;';
     var res = await verifyHpi(hpi);
-    // MSE is a pure macro insert (the clinician's own attestation) — appended AFTER the AI
-    // passes so the model never touches or fabricates exam findings.
+    // MSE: the clinician's macro is the baseline; the AI updates ONLY the mental/behavioral
+    // elements today's visit supports (mood, affect, thought process/content, perceptions),
+    // and keeps their observed-physical defaults. Falls back to the static macro on any error.
     var finalHpi = res.hpi;
-    if(mseOn){ finalHpi += "\n\nMental Status Exam:\n" + ((mseMacro && mseMacro.trim()) ? mseMacro.trim() : DEFAULT_MSE); }
+    if(mseOn){
+      var mseBase = (mseMacro && mseMacro.trim()) ? mseMacro.trim() : DEFAULT_MSE;
+      var mseText = mseBase;
+      try{ mseText = await window.NoteEngine.runMSE(res.hpi, mseBase); }catch(e){}
+      finalHpi += "\n\nMental Status Exam:\n" + (mseText || mseBase);
+    }
     renderResult(finalHpi, res.flags);
     document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
     ok = true;
@@ -1114,15 +1120,22 @@ async function generateNote(inp, scope, opt){
     if(scope==='both' && !opt.noTherapy){
       therapy = await window.NoteEngine.runTherapy(inp, opt.modality || 'Supportive psychotherapy', opt.code || '90833');
     }
-    renderAssessment(assess ? assess.assessment : '', assess ? assess.flags : [], therapy, opt.code);
+    // Plan: the clinician's macro is the baseline; the AI fills medication actions and the
+    // follow-up interval from the visit, and leaves refill/date brackets for the clinician.
+    var plan = '';
+    if(planSnippets && planSnippets.trim()){
+      plan = planSnippets.trim();
+      try{ plan = await window.NoteEngine.runPlan(inp, planSnippets.trim()); }catch(e){}
+    }
+    renderAssessment(assess ? assess.assessment : '', assess ? assess.flags : [], therapy, opt.code, plan);
     box.scrollIntoView({ behavior:'smooth', block:'start' });
   } catch(err){
     box.innerHTML = '<div class="err">'+esc(err.message || 'Could not generate.')+'</div>';
   }
 }
 
-function renderAssessment(assessment, flags, therapy, code){
-  var plan = (planSnippets && planSnippets.trim()) ? planSnippets.trim() : '';
+function renderAssessment(assessment, flags, therapy, code, plan){
+  plan = (plan && plan.trim()) ? plan.trim() : '';
   var html = '';
   if(assessment){
     html += '<div class="out"><button class="btn-copy" onclick="copyOut(\'assess-out\')">Copy</button>';
@@ -1147,7 +1160,7 @@ function renderAssessment(assessment, flags, therapy, code){
     html += '<div class="out"><button class="btn-copy" onclick="copyOut(\'plan-out\')">Copy</button>';
     html += '<h3>Plan</h3>';
     html += '<textarea class="hpi-edit" id="plan-out">'+esc(plan)+'</textarea>';
-    html += '<div class="hint" style="margin-top:6px">Your saved plan snippets, dropped in as a starting point. This section is yours &mdash; the AI never writes prescription mechanics.</div></div>';
+    html += '<div class="hint" style="margin-top:6px">Medication actions and follow-up interval filled from the visit; your boilerplate is preserved. <strong style="color:var(--cream)">Refill counts and dates are left as blanks for you</strong> &mdash; the AI never writes prescription bookkeeping. Verify before you sign.</div></div>';
   }
 
   var lbl = 'Copy full note (HPI + Assessment' + (therapy&&therapy.trim()?' + Psychotherapy':'') + (plan?' + Plan':'') + ')';

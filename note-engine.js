@@ -400,12 +400,76 @@ async function runTherapy(inp, modality, code){
   return stripDashes(String(t || ''));
 }
 
+// ── Mental Status Exam (macro baseline; AI updates ONLY visit-supported mental/behavioral
+// elements, never the purely-observed ones). This is documentation the clinician signs. ──
+const MSE_SYS = `${VOICE}
+
+=== TASK: MENTAL STATUS EXAM ===
+You are given the clinician's STANDARD MSE (their attestation of a typical exam) and today's visit narrative. Return the clinician's MSE updated to reflect ONLY what today's visit clearly supports. The clinician will personally review and sign this.
+
+UPDATE (only when the visit narrative clearly indicates it) these mental/behavioral elements, which are reflected in what the patient reports and how they present:
+- Mood (e.g. the patient reports feeling anxious, depressed, irritable, "okay")
+- Affect (range, congruence) when described
+- Thought process (linear/goal-directed vs tangential, circumstantial, disorganized) when the narrative shows it
+- Thought content (preoccupations, obsessions, ruminations) when present
+- Perceptual disturbances (auditory/visual hallucinations) and delusional/paranoid content when the patient describes them
+- Suicidal or homicidal ideation exactly as the narrative documents it
+- Speech (pressured, slowed) only when clearly indicated
+
+KEEP the clinician's default wording, unchanged, for everything the narrative does NOT clearly support, ESPECIALLY the purely-observed elements you cannot know from a narrative or audio visit: appearance/dress/grooming, eye contact, psychomotor activity/movements, orientation, memory, attention/concentration, fund of knowledge, vocabulary, intellectual functioning, insight, and judgment. Do NOT alter these unless the visit explicitly documents an abnormality.
+
+RULES:
+- NEVER invent a finding. If in doubt, keep the clinician's default. Under-changing is safe; fabricating an exam finding is not.
+- Turn a normal default into an abnormal finding ONLY on clear support (patient describes hearing voices -> reflect a perceptual disturbance; patient is markedly anxious -> mood/affect updated).
+- Preserve the clinician's exact format, sentence structure, and order. Edit in place; do not restructure or add sentences beyond what an updated finding requires.
+- Output ONLY the finished MSE as plain, chart-ready text. No Markdown, no preamble, no notes.`;
+
+async function runMSE(narrative, mseMacro){
+  var base = String(mseMacro || '').trim();
+  if(!base) return '';
+  var msg = "CLINICIAN'S STANDARD MSE:\n\n" + base +
+    "\n\n---\n\nTODAY'S VISIT NARRATIVE (the ONLY source for any update):\n\n" + String(narrative || '').trim();
+  var t = await callAPI(MSE_SYS, [{role:'user', content: msg}], 900);
+  return stripDashes(String(t || base).trim());
+}
+
+// ── Plan (macro baseline; AI fills med ACTIONS + follow-up interval from the visit, and
+// NEVER writes prescription bookkeeping — refill counts/dates stay the clinician's blanks). ──
+const PLAN_SYS = `${VOICE}
+
+=== TASK: PLAN ===
+You are given the clinician's PLAN TEMPLATE (their standard plan, often with bracketed placeholders and standing boilerplate) and today's visit context. Return the clinician's plan with ONLY the visit-derived parts filled in. The clinician will review and sign this.
+
+FILL from today's visit:
+- Medication actions actually taken this visit: for each medication addressed, state the action (started, increased, decreased, discontinued/stopped, or continued/renewed) with the medication name, and the dose ONLY when the notes document it. If no medication was changed, use the clinician's "no medications changed" line.
+- The follow-up interval when the visit states it (e.g. "return in 4 weeks", "let's do 4 weeks out" -> fill the return-to-clinic line with that interval).
+
+NEVER invent or compute (leave the clinician's bracket/blank placeholders EXACTLY as written for the clinician to complete):
+- Refill counts, refill-due dates, "date last wrote prescription", or ANY prescription-bookkeeping date or number. These come from the clinician's prescribing records, NOT the visit. Even if the patient mentions refills, do not fabricate a date or count; leave the placeholder untouched.
+- A follow-up interval the visit does not state (leave the clinician's blank, e.g. "in ___ months").
+- Any dose, medication, or action the notes do not support.
+
+PRESERVE VERBATIM all standing boilerplate the clinician included (patient-education paragraphs, crisis-line numbers, ER instructions, PARQ / risk-benefit statements, lab instructions). Do not reword, add, or remove them. Keep the clinician's exact structure, order, numbering, and formatting.
+
+Output ONLY the finished plan as plain, chart-ready text. No Markdown, no preamble, no notes. Where you could not fill a placeholder, leave it exactly as the clinician wrote it.`;
+
+async function runPlan(inp, planMacro){
+  var base = String(planMacro || '').trim();
+  if(!base) return '';
+  var msg = "CLINICIAN'S PLAN TEMPLATE:\n\n" + base +
+    "\n\n---\n\nTODAY'S VISIT CONTEXT (source for medication actions and follow-up interval only):\n\n" + contextBlock(inp);
+  var t = await callAPI(PLAN_SYS, [{role:'user', content: msg}], 1400);
+  return stripDashes(String(t || base).trim());
+}
+
 // Public surface. callAPI is resolved from the host page's global scope at call time.
 // contextBlock/stripDashes/VOICE are exposed so the pages can drop their duplicated copies.
 window.NoteEngine = {
   runAssessment: runAssessment,
   runPreflight: runPreflight,
   runTherapy: runTherapy,
+  runMSE: runMSE,
+  runPlan: runPlan,
   buildClinBlock: buildClinBlock,
   buildLengthBlock: buildLengthBlock,
   contextBlock: contextBlock,
