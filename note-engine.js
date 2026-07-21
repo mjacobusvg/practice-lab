@@ -326,7 +326,7 @@ function stripMd(s){
     if(/^\s*([-*_])(\s*\1){2,}\s*$/.test(ln)) continue;              // divider lines --- *** ___
     ln = ln.replace(/^\s*#{1,6}\s+/, '');                            // heading hashes, keep the text
     ln = ln.replace(/^\s*>\s?/, '');                                 // blockquote markers
-    ln = ln.replace(/\*\*(.+?)\*\*/g, '$1').replace(/__(.+?)__/g, '$1'); // bold
+    ln = ln.replace(/\*\*(.+?)\*\*/g, '$1').replace(/__(?=[^_\n]*[A-Za-z0-9])(.+?)__/g, '$1'); // bold (not blanks like __:__ )
     out.push(ln);
   }
   return out.join('\n');

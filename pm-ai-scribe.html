@@ -320,6 +320,15 @@ var therapyGuide = true;  // psychotherapy guide on/off — per-clinician (Vault
 // Merged-Note prefs (Vault; all optional, default off/empty). ROS is AI-assisted (patient-reported,
 // derivable); MSE is a pure macro insert (observed, never AI-fabricated); plan snippets feed the Plan.
 var rosOn = false, rosMacro = '', mseOn = false, mseMacro = '', planSnippets = '';
+var teleStatement = ''; // clinician's telehealth attestation (Vault); inserted only on telehealth visits
+// Insert a block right after the HPI's opening (reason-for-visit) paragraph. Deterministic,
+// so it lands verbatim in the right spot and the AI never touches or strips it.
+function insertAfterFirstPara(hpi, block){
+  if(!block) return hpi;
+  var idx = String(hpi).indexOf('\n\n');
+  if(idx === -1) return hpi + '\n\n' + block;
+  return hpi.slice(0, idx) + '\n\n' + block + hpi.slice(idx);
+}
 // Built-in fallbacks so a clinician can turn ROS/MSE on WITHOUT writing one from scratch.
 // ROS default is ALL-NEGATIVE — the AI flips items to (+) only where today's notes support it.
 // MSE default is a generic normal exam (edit per visit — it is an attestation of what you observed).
@@ -434,7 +443,7 @@ function cleanMarkdown(s){
     if(/^\s*([-*_])(\s*\1){2,}\s*$/.test(ln)) continue;   // drop --- *** ___ divider lines
     ln = ln.replace(/^\s*#{1,6}\s+/, '');                  // strip heading hashes, keep the label
     ln = ln.replace(/^\s*>\s?/, '');                       // strip blockquote markers
-    ln = ln.replace(/\*\*(.+?)\*\*/g, '$1').replace(/__(.+?)__/g, '$1'); // strip bold
+    ln = ln.replace(/\*\*(.+?)\*\*/g, '$1').replace(/__(?=[^_\n]*[A-Za-z0-9])(.+?)__/g, '$1'); // strip bold (but not blanks like __:__ )
     out.push(ln);
   }
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
@@ -696,6 +705,12 @@ async function runDraft(sourceText, btn, errEl){
     // elements today's visit supports (mood, affect, thought process/content, perceptions),
     // and keeps their observed-physical defaults. Falls back to the static macro on any error.
     var finalHpi = res.hpi;
+    // Telehealth attestation: on a telehealth visit only, drop the clinician's saved statement
+    // in right after the opening paragraph. Never on in-person. Only if they've saved one.
+    var capNow = 'inperson'; try{ capNow = localStorage.getItem('tbp_hpi_capture') || 'inperson'; }catch(e){}
+    if(capNow === 'telehealth' && teleStatement && teleStatement.trim()){
+      finalHpi = insertAfterFirstPara(finalHpi, teleStatement.trim());
+    }
     if(mseOn){
       var mseBase = (mseMacro && mseMacro.trim()) ? mseMacro.trim() : DEFAULT_MSE;
       var mseText = mseBase;
@@ -1755,6 +1770,7 @@ function loadVaultTemplates(){
     rosOn = (lv.hpiRos==='on'); rosMacro = lv.hpiRosMacro || '';
     mseOn = (lv.hpiMse==='on'); mseMacro = lv.hpiMseMacro || '';
     planSnippets = lv.hpiPlanSnippets || '';
+    teleStatement = lv.hpiTeleStatement || '';
     if(lv.legalName) clinicianName = firstNameFrom(lv.legalName);
   } catch(e){}
   renderTemplateStatus();
@@ -1779,6 +1795,7 @@ function loadVaultTemplates(){
       rosOn = (d.data.hpiRos==='on'); rosMacro = d.data.hpiRosMacro || '';
       mseOn = (d.data.hpiMse==='on'); mseMacro = d.data.hpiMseMacro || '';
       planSnippets = d.data.hpiPlanSnippets || '';
+      teleStatement = d.data.hpiTeleStatement || '';
       if(d.data.legalName) clinicianName = firstNameFrom(d.data.legalName);
       syncTherapyToggle();
       if(typeof d.data.hpiCaptureMode === 'string'){ try{ localStorage.setItem('tbp_hpi_capture', d.data.hpiCaptureMode); }catch(e){} if(typeof window.tbpSetCapture==='function') window.tbpSetCapture(d.data.hpiCaptureMode); }
