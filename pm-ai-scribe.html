@@ -787,10 +787,21 @@ document.getElementById('prep-btn').addEventListener('click', async function(){
   var btn = this; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Setting up&hellip;';
   document.getElementById('prep-results').innerHTML = '';
   try {
-    // Big carry-forward notes need room, or the JSON truncates and won't parse.
-    var raw = await callAPI(prepSystem(), [{role:'user', content: "LAST VISIT'S NOTE:\n\n" + last}], 8000);
-    var j = safeJSON(raw);
-    if(!j || typeof j.startingNote !== 'string'){ throw new Error('Could not build the prep from that note. If it is very long, try pasting just the HPI, assessment, and medications, then Set me up again.'); }
+    // The model occasionally returns truncated or non-JSON output on a given attempt — that is a
+    // transient hiccup, not a problem with the note (the SAME note succeeds on a later try). Retry
+    // automatically so the clinician never has to re-click through a flake. Big carry-forward notes
+    // need room (8000), or the JSON truncates and won't parse.
+    var j = null;
+    for(var attempt = 0; attempt < 3 && !j; attempt++){
+      if(attempt > 0){ hint.innerHTML = '<span style="color:var(--cream-dim)">One more try&hellip;</span>'; }
+      try {
+        var raw = await callAPI(prepSystem(), [{role:'user', content: "LAST VISIT'S NOTE:\n\n" + last}], 8000);
+        var cand = safeJSON(raw);
+        if(cand && typeof cand.startingNote === 'string'){ j = cand; }
+      } catch(e){ /* transient — fall through to the next attempt */ }
+    }
+    if(!j){ throw new Error('Could not build the prep after a few tries. This is usually a transient hiccup, give it another go. If it keeps failing on a very long note, paste just the HPI, assessment, and medications, then Set me up again.'); }
+    hint.innerHTML = '';
     renderPrep(j);
   } catch(err){
     hint.innerHTML = '<span style="color:var(--red)">'+esc(err.message||err)+'</span>';
@@ -1226,9 +1237,12 @@ async function rebuildAssessment(lengthChoice){
   // carry forward any manual edits so a length re-roll never wipes them
   var tEl = document.getElementById('therapy-out'); if(tEl) lastGen.therapy = tEl.value;
   var pEl = document.getElementById('plan-out'); if(pEl) lastGen.plan = pEl.value;
+  // Lock the diagnosis list to what is on screen so a length change only rewrites prose,
+  // never adds/drops/re-specifies a diagnosis. Honors any edit the clinician made to the list.
+  var aEl = document.getElementById('assess-out'); var lockDx = (aEl && aEl.value.trim()) ? aEl.value.trim() : '';
   try {
     var lengthBlock = window.NoteEngine.buildLengthBlock(lengthChoice);
-    var assess = await window.NoteEngine.runAssessment(lastGen.inp, lastGen.opt.clinBlock || '', lengthBlock);
+    var assess = await window.NoteEngine.runAssessment(lastGen.inp, lastGen.opt.clinBlock || '', lengthBlock, lockDx);
     lastGen.opt.lengthChoice = lengthChoice;
     lastGen.opt.lengthBlock = lengthBlock;
     renderAssessment(assess.assessment, assess.flags, lastGen.therapy, lastGen.opt.code, lastGen.plan);

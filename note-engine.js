@@ -49,7 +49,9 @@ The assessment has TWO parts in this exact order:
 PART 1 - DIAGNOSIS LIST:
 List diagnoses with ICD-10 codes, one per line. Primary diagnosis first.
 
-THE DIAGNOSIS LIST DOES NOT DEPEND ON LENGTH: the codes, order, and specifiers are the SAME on every generation of the same visit. The length setting changes only how much formulation prose you write. Determine each specifier ONCE, from the documented data, the same way every time — never re-decide it because the requested length changed.
+THE DIAGNOSIS LIST DOES NOT DEPEND ON LENGTH: WHICH conditions are coded, their codes, order, and specifiers are the SAME on every generation of the same visit. The length setting changes only how much formulation prose you write — it NEVER determines whether a condition appears on the diagnosis list. A shorter length means less prose, never fewer diagnoses; a longer length means more reasoning, never additional diagnoses. Determine the list and each specifier ONCE, from the documented data, the same way every time — never re-decide either because the requested length changed.
+
+WHEN NO PRIOR DIAGNOSIS LIST IS PROVIDED (a new patient with no pasted prior note): derive the diagnosis list from the documented clinical data in the HPI/visit, and hold that list IDENTICAL across every length setting. The absence of a prior list is not license to let the length toggle change which diagnoses are coded.
 
 SEVERITY AND COURSE SPECIFIERS ARE A DELIBERATE CLINICAL DETERMINATION, not a guess and not a reflex:
 - DEFAULT to the prior assessment's specifier (e.g. "recurrent, moderate") and KEEP it unless TODAY'S notes DOCUMENT a change in severity or course.
@@ -346,11 +348,17 @@ function chartClean(s){ return stripDashes(stripMd(s)); }
 
 // Draft the assessment (ASSESS_SYS) then audit it (REVIEW_SYS). Returns {assessment, flags}.
 // Orchestration matches the standalone Note Builder exactly so both tools behave identically.
-async function runAssessment(inp, clinBlock, lengthBlock){
+async function runAssessment(inp, clinBlock, lengthBlock, lockDx){
   clinBlock = clinBlock || ''; lengthBlock = lengthBlock || '';
-  var assessText = await callAPI(ASSESS_SYS, [{role:'user', content: contextBlock(inp) + clinBlock + lengthBlock}], 4000);
+  // When re-rolling length in place, the diagnosis list is LOCKED to the prior generation so a
+  // length change can never add, drop, reorder, or re-specify a diagnosis — only the prose changes.
+  var lockBlock = '';
+  if(lockDx && String(lockDx).trim()){
+    lockBlock = '\n\n---\n\nDIAGNOSIS LIST IS LOCKED FOR THIS REGENERATION. The assessment below was already generated for THIS SAME visit at a different length. Reproduce its diagnosis list EXACTLY: the same conditions, the same ICD-10 codes, the same order, and the same severity/course specifiers, verbatim. You may NOT add, remove, reorder, or re-specify any diagnosis. This regeneration changes ONLY the amount of formulation prose to match the requested length. The length setting must never change the diagnosis list.\n\nPREVIOUSLY GENERATED ASSESSMENT (authoritative source of the locked diagnosis list):\n\n' + String(lockDx).trim();
+  }
+  var assessText = await callAPI(ASSESS_SYS, [{role:'user', content: contextBlock(inp) + clinBlock + lengthBlock + lockBlock}], 4000);
   if(!assessText) throw new Error('No assessment came back.');
-  var reviewMsg = 'ORIGINAL SOURCE:\n\n' + contextBlock(inp) + clinBlock + lengthBlock +
+  var reviewMsg = 'ORIGINAL SOURCE:\n\n' + contextBlock(inp) + clinBlock + lengthBlock + lockBlock +
     '\n\n---\n\nDRAFT ASSESSMENT:\n\n' + assessText;
   var reviewRaw = await callAPI(REVIEW_SYS, [{role:'user', content: reviewMsg}], 4000);
   try {
