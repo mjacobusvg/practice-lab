@@ -1727,7 +1727,7 @@ function loadVaultTemplates(){
 // ══════════════════════════════════════════════════════════════════════════
 (function(){
   var recording=false, mediaRecorder=null, chunks=[], micStream=null, tabStream=null, mixCtx=null, mixNodes=[];
-  var rawBaseline='', recMime='', recMode='mediarec', pendingBlob=null, wavRec=null;
+  var rawBaseline='', recMime='', recMode='mediarec', pendingBlob=null, wavRec=null, preCtx=null, wavSamples=0;
 
   // Ambient is open to any signed-in member (auth already gates non-members). Azure batch
   // transcription is cheap, so no invite-list. Re-add an allowlist here if that changes.
@@ -1778,11 +1778,12 @@ function loadVaultTemplates(){
   }
   function stopWavCapture(){
     var rec = wavRec; wavRec = null;
-    if(!rec) return null;
+    if(!rec){ wavSamples = 0; return null; }
     try{ rec.processor.disconnect(); }catch(e){}
     try{ rec.source.disconnect(); }catch(e){}
     try{ rec.sink.disconnect(); }catch(e){}
     if(rec.ownsCtx){ try{ rec.ctx.close(); }catch(e){} }
+    wavSamples = rec.total; // 0 means the capture engine never fired (silence)
     return encodeWav(rec.pcm, rec.total, 16000);
   }
   function encodeWav(chunksInt16, totalSamples, sampleRate){
@@ -1833,7 +1834,7 @@ function loadVaultTemplates(){
       recordStream = micStream;
     }
 
-    chunks=[]; pendingBlob=null; recMime=azureFriendlyMime();
+    chunks=[]; pendingBlob=null; wavSamples=0; recMime=azureFriendlyMime();
     if(recMime){
       // Chrome/Edge/Firefox/Android: MediaRecorder gives Azure-decodable webm/ogg opus.
       recMode='mediarec';
@@ -1844,8 +1845,11 @@ function loadVaultTemplates(){
       mediaRecorder.start(); // single blob delivered on stop
     } else {
       // Safari/iOS: MediaRecorder only makes mp4/AAC (Azure can't read it) — record WAV instead.
+      // Reuse the gesture-created context (preCtx) so the engine actually runs on iOS.
       recMode='wav';
-      startWavCapture(recordStream, isTele ? mixCtx : null);
+      var wavCtx = isTele ? mixCtx : preCtx;
+      try{ if(wavCtx && wavCtx.state==='suspended' && wavCtx.resume) wavCtx.resume(); }catch(e){}
+      startWavCapture(recordStream, wavCtx || null);
     }
     recording=true;
     rawBaseline = document.getElementById('raw').value;
@@ -1858,6 +1862,7 @@ function loadVaultTemplates(){
     if(recMode==='wav'){
       // Build the WAV blob before stopTracks() closes a shared AudioContext.
       try{ pendingBlob = stopWavCapture(); }catch(e){ pendingBlob=null; }
+      try{ if(preCtx){ preCtx.close(); } }catch(e){} preCtx=null;
       stopTracks();
       setStatus('Finishing recording…');
       finalizeRecording();
@@ -1912,8 +1917,18 @@ function loadVaultTemplates(){
     var blob = (recMode==='wav' && pendingBlob) ? pendingBlob
              : new Blob(chunks, { type: (recMime||'audio/webm').split(';')[0] });
     chunks=[]; pendingBlob=null;
-    if(!blob.size){ setStatus('No audio was captured.', true); resetBtn(); return; }
-    setStatus('Uploading the recording…');
+    // Diagnostic tag stamped onto every status/error below. Its mere PRESENCE proves
+    // the browser is running the current build (old builds had no such tag); the value
+    // (wav vs mediarec, the mime, the KB) tells us exactly what was captured/uploaded.
+    var recTag = ' [rec: '+recMode+'/'+(blob.type||'?')+'/'+Math.round(blob.size/1024)+'KB]';
+    // WAV path with ~no samples means the capture engine never fired (silent recording),
+    // which Azure would reject as "invalid data". Catch it here with a clear message.
+    if(recMode==='wav' && wavSamples < 1600){
+      setStatus('The recorder did not capture any audio on this device — the mic engine did not start. Tell Michael exactly what device and browser you used.'+recTag, true);
+      resetBtn(); return;
+    }
+    if(!blob.size){ setStatus('No audio was captured.'+recTag, true); resetBtn(); return; }
+    setStatus('Uploading the recording…'+recTag);
     try{
       var up = await azureCall({ action:'upload-url', contentType: blob.type });
       if(!up.uploadUrl || !up.blobName) throw new Error(up.error || 'Could not prepare the upload.');
@@ -1935,7 +1950,7 @@ function loadVaultTemplates(){
       appendTranscript(transcript);
       setStatus('Done — transcript added to your notes. Review, then Draft.');
     } catch(err){
-      setStatus(err.message || 'Transcription failed.', true);
+      setStatus((err.message || 'Transcription failed.')+recTag, true);
     }
     resetBtn();
   }
@@ -1982,6 +1997,16 @@ function loadVaultTemplates(){
     if(!ambientAllowed()){ setStatus('Ambient scribe is in limited beta — not enabled for your account yet.', true); return; }
     if(recording){ doStop(); resetBtn(); return; }
     btn.disabled=true; setStatus(captureMode==='telehealth'?'Waiting for you to share the call tab…':'Starting…');
+    // iOS/Safari (WAV path) needs its AudioContext created AND resumed inside this
+    // click gesture — one made later, after await getUserMedia, starts suspended and
+    // the capture engine never fires (silent WAV → Azure "invalid data"). Pre-make it
+    // here only when MediaRecorder can't give an Azure-friendly format.
+    try{
+      if(!azureFriendlyMime()){
+        var AC=window.AudioContext||window.webkitAudioContext;
+        if(AC){ preCtx=new AC(); if(preCtx.state==='suspended'&&preCtx.resume){ try{ preCtx.resume(); }catch(e){} } }
+      } else { preCtx=null; }
+    }catch(e){ preCtx=null; }
     doStart(captureMode).then(function(){ btn.disabled=false; btn.innerHTML='&#9632; Stop recording'; })
       .catch(function(err){ recording=false; stopTracks(); setStatus(err.message||'Could not start.', true); btn.disabled=false; });
   });
