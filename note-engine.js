@@ -197,13 +197,13 @@ TRAUMA-FOCUSED: Processing trauma-related content, cognitive processing of traum
 ACT: Values clarification, defusion from thoughts, acceptance of difficult emotions, commitment to values-based action.
 
 === FIVE LABELED SECTIONS REQUIRED — ALWAYS, EVERY TIME ===
-The output MUST contain all five of the following sections, each introduced by its exact bold label on its own line, in this exact order. Never omit, merge, or rename a section. Never fold these into undifferentiated prose. If a section would be thin, still write it under its own label.
+The output MUST contain all five of the following sections, each introduced by its exact label on its own line, in this exact order. Never omit, merge, or rename a section. Never fold these into undifferentiated prose. If a section would be thin, still write it under its own label. Write labels as PLAIN TEXT followed by a colon (e.g. "Modality:") with NO Markdown — no ** asterisks, no bold, no # headings. This is chart text pasted into an EHR.
 
-**Modality:** [the modality as selected by provider — one line]
-**Intervention:** [the specific therapeutic work done, ACTIVE language, matched to modality; length governed by the time band, see the length rules below, brief at 90833 and fuller only at the higher time bands]
-**Focus:** [what clinical problems were being addressed this visit and their impact on functioning — inferred from the modality and HPI, not asked of the provider]
-**Patient Response:** [engagement, insight, behavior change — be specific]
-**Time:** [psychotherapy-only minutes, separate from and in addition to the E/M service]
+Modality: [the modality as selected by provider — one line]
+Intervention: [the specific therapeutic work done, ACTIVE language, matched to modality; length governed by the time band, see the length rules below, brief at 90833 and fuller only at the higher time bands]
+Focus: [what clinical problems were being addressed this visit and their impact on functioning — inferred from the modality and HPI, not asked of the provider]
+Patient Response: [engagement, insight, behavior change — be specific]
+Time: [psychotherapy-only minutes, separate from and in addition to the E/M service]
 
 The Intervention is the section that carries the therapeutic detail, but its length follows the time band (brief at 90833, fuller at 90836/90838), it is not automatically long. The other four sections are one sentence to a few. Do not write a single flowing essay that buries these elements, the five labels must be visibly present. Put each labeled section on its own line with a blank line between sections so they are visually distinct.
 
@@ -228,7 +228,7 @@ Do not bounce the request back or explain why a modality is invalid. The provide
 
 Time bands: 16-37 min → 90833. 38-52 min → 90836. 53+ min → 90838.
 
-Output ONLY the psychotherapy add-on documentation as chart-ready text, using the five labeled sections above. Do not include a heading line naming the tool.`;
+Output ONLY the psychotherapy add-on documentation as plain chart-ready text, using the five labeled sections above (plain "Label:" form, no Markdown, no ** asterisks, no # headings). Do not include a heading line naming the tool.`;
 
 const PREFLIGHT_SYS = `You are an experienced psychiatric prescriber reviewing a visit before documentation is generated. Read the HPI, the prior assessment + diagnoses, and what the provider is doing this visit. Surface the clinical decisions that should be the PROVIDER's to make before anything is written — so the generated note reflects the provider's clinical judgment, not the model's guesses.
 
@@ -316,6 +316,24 @@ function stripDashes(s){
     .replace(/[—–―]/g, '-');          // any remaining unspaced long dash -> hyphen
 }
 
+// Safety net: strip Markdown so outputs paste into an EHR as clean text, never "**bold**".
+// The output boxes are plain textareas (and EHRs are plain text), so markup must be removed,
+// not rendered. Covers **bold**, __bold__, # headings, > blockquotes, and --- *** dividers.
+function stripMd(s){
+  var lines = String(s).split('\n'), out = [];
+  for(var i=0;i<lines.length;i++){
+    var ln = lines[i];
+    if(/^\s*([-*_])(\s*\1){2,}\s*$/.test(ln)) continue;              // divider lines --- *** ___
+    ln = ln.replace(/^\s*#{1,6}\s+/, '');                            // heading hashes, keep the text
+    ln = ln.replace(/^\s*>\s?/, '');                                 // blockquote markers
+    ln = ln.replace(/\*\*(.+?)\*\*/g, '$1').replace(/__(.+?)__/g, '$1'); // bold
+    out.push(ln);
+  }
+  return out.join('\n');
+}
+// Chart-ready cleanup applied to every generated section.
+function chartClean(s){ return stripDashes(stripMd(s)); }
+
 // Draft the assessment (ASSESS_SYS) then audit it (REVIEW_SYS). Returns {assessment, flags}.
 // Orchestration matches the standalone Note Builder exactly so both tools behave identically.
 async function runAssessment(inp, clinBlock, lengthBlock){
@@ -328,10 +346,10 @@ async function runAssessment(inp, clinBlock, lengthBlock){
   try {
     var j = JSON.parse(String(reviewRaw).replace(/```json|```/g,'').trim());
     if(j && typeof j.assessment==='string' && j.assessment.trim()){
-      return { assessment: stripDashes(j.assessment.trim()), flags: Array.isArray(j.flags)?j.flags:[] };
+      return { assessment: chartClean(j.assessment.trim()), flags: Array.isArray(j.flags)?j.flags:[] };
     }
   } catch(e){}
-  return { assessment: stripDashes(assessText), flags: [] };
+  return { assessment: chartClean(assessText), flags: [] };
 }
 
 // Fixed, deterministic length card (not model-generated, so the options are identical every time).
@@ -397,7 +415,7 @@ async function runTherapy(inp, modality, code){
     '\nAdd-on code intended: ' + (code||'90833') +
     '\n\nGenerate the psychotherapy add-on documentation matched to the selected modality (or modalities), using the five labeled sections. Infer the therapeutic focus from the modality and HPI.';
   var t = await callAPI(THERAPY_SYS, [{role:'user', content: userMsg}], 2000);
-  return stripDashes(String(t || ''));
+  return chartClean(String(t || ''));
 }
 
 // ── Mental Status Exam (macro baseline; AI updates ONLY visit-supported mental/behavioral
@@ -430,7 +448,7 @@ async function runMSE(narrative, mseMacro){
   var msg = "CLINICIAN'S STANDARD MSE:\n\n" + base +
     "\n\n---\n\nTODAY'S VISIT NARRATIVE (the ONLY source for any update):\n\n" + String(narrative || '').trim();
   var t = await callAPI(MSE_SYS, [{role:'user', content: msg}], 900);
-  return stripDashes(String(t || base).trim());
+  return chartClean(String(t || base).trim());
 }
 
 // ── Plan (macro baseline; AI fills med ACTIONS + follow-up interval from the visit, and
@@ -459,7 +477,7 @@ async function runPlan(inp, planMacro){
   var msg = "CLINICIAN'S PLAN TEMPLATE:\n\n" + base +
     "\n\n---\n\nTODAY'S VISIT CONTEXT (source for medication actions and follow-up interval only):\n\n" + contextBlock(inp);
   var t = await callAPI(PLAN_SYS, [{role:'user', content: msg}], 1400);
-  return stripDashes(String(t || base).trim());
+  return chartClean(String(t || base).trim());
 }
 
 // Public surface. callAPI is resolved from the host page's global scope at call time.
