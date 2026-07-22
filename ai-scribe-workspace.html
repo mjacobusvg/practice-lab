@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Scribe — Patient Desk</title>
+<style>
+:root{
+  --navy:#0f1929; --navy-mid:#152033; --navy-card:#16243a; --rule:#24344d;
+  --teal:#2aabb8; --amber:#fbbf24; --red:#f87171;
+  --white:#f5f8fc; --cream:#cdd9e8; --cream-dim:#8499b3;
+  --gold:#c9a227;
+  --font-display:'Georgia',serif; --font-body:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--navy);color:var(--cream);font-family:var(--font-body)}
+#desk{display:none;flex-direction:column;height:100vh}
+.deskbar{display:flex;align-items:center;gap:12px;padding:8px 14px;background:var(--navy-mid);border-bottom:1px solid var(--rule);flex-wrap:wrap}
+.brand{font-family:var(--font-display);color:var(--white);font-size:1rem;white-space:nowrap}
+.brand .beta{font-size:.62rem;color:var(--cream-dim);text-transform:uppercase;letter-spacing:1px;margin-left:4px}
+.tabs{display:flex;gap:6px;flex:1;flex-wrap:wrap;min-width:0}
+.tab{display:flex;align-items:center;gap:6px;padding:6px 8px 6px 12px;background:var(--navy-card);border:1px solid var(--rule);border-radius:8px 8px 0 0;cursor:pointer;max-width:230px}
+.tab.active{border-color:var(--teal);background:var(--navy)}
+.tab-label{color:var(--cream);font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px}
+.tab.active .tab-label{color:var(--white)}
+.tab-x{background:none;border:none;color:var(--cream-dim);font-size:1.1rem;line-height:1;cursor:pointer;padding:0 2px;border-radius:4px}
+.tab-x:hover{color:var(--red)}
+.addbtn{background:var(--navy);color:var(--teal);border:1px solid var(--teal);border-radius:8px;padding:7px 12px;font-size:.85rem;cursor:pointer;white-space:nowrap}
+.addbtn:hover{background:var(--teal);color:var(--navy)}
+.hintbar{padding:5px 14px;background:var(--navy);border-bottom:1px solid var(--rule);color:var(--cream-dim);font-size:.75rem}
+.hintbar b{color:var(--cream)}
+.frames{position:relative;flex:1;min-height:0}
+.pframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:var(--navy)}
+#gate{display:none;max-width:560px;margin:12vh auto;padding:28px;text-align:center}
+#gate h1{font-family:var(--font-display);color:var(--white);font-weight:600}
+#gate a{color:var(--teal)}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <h1>Patient Desk</h1>
+  <p>This is a private beta. <a href="/pm-ai-scribe.html">Open the AI Scribe &rarr;</a></p>
+</div>
+
+<div id="desk">
+  <div class="deskbar">
+    <div class="brand">AI Scribe · Patient Desk <span class="beta">beta</span></div>
+    <div id="tabs" class="tabs"></div>
+    <button id="add" class="addbtn" type="button">+ New patient</button>
+  </div>
+  <div class="hintbar">Each patient runs in its own isolated window &mdash; <b>separate memory, nothing shared between them</b>, so data can never cross. Drafting keeps running in the background when you switch. Double-click a tab to rename it.</div>
+  <div id="frames" class="frames"></div>
+</div>
+
+<script>
+var BETA_EMAILS = ['michael@thinkbeyondpsych.com'];
+var SCRIBE_URL = '/pm-ai-scribe.html';
+var patients = [];   // { id, label, frameEl, tabEl }
+var seq = 0;
+
+function findPatient(id){ for(var i=0;i<patients.length;i++){ if(patients[i].id===id) return patients[i]; } return null; }
+
+function activate(id){
+  for(var i=0;i<patients.length;i++){
+    var on = patients[i].id === id;
+    patients[i].frameEl.style.display = on ? 'block' : 'none';
+    patients[i].tabEl.classList.toggle('active', on);
+  }
+}
+
+function renamePatient(id){
+  var p = findPatient(id); if(!p) return;
+  var n = prompt('Label this patient (a first name or a short tag is enough):', p.label);
+  if(n && n.trim()){
+    p.label = n.trim();
+    p.tabEl.querySelector('.tab-label').textContent = p.label;
+    p.frameEl.title = p.label;
+  }
+}
+
+function closePatient(id){
+  var p = findPatient(id); if(!p) return;
+  if(!confirm('Close ' + p.label + '? Their in-progress note is cleared and cannot be recovered.')) return;
+  p.frameEl.parentNode.removeChild(p.frameEl);
+  p.tabEl.parentNode.removeChild(p.tabEl);
+  var wasActive = p.tabEl.classList.contains('active');
+  patients = patients.filter(function(x){ return x.id !== id; });
+  if(patients.length === 0){ addPatient(); }
+  else if(wasActive){ activate(patients[patients.length-1].id); }
+}
+
+function addPatient(){
+  seq++;
+  var id = 'p' + seq;
+  var label = 'Patient ' + seq;
+
+  var frame = document.createElement('iframe');
+  frame.className = 'pframe';
+  frame.src = SCRIBE_URL;
+  frame.title = label;
+  // Let the isolated Scribe use the mic (ambient) and screen share (telehealth) and clipboard.
+  frame.setAttribute('allow', 'microphone; camera; display-capture; clipboard-write; clipboard-read');
+  document.getElementById('frames').appendChild(frame);
+
+  var tab = document.createElement('div');
+  tab.className = 'tab';
+  tab.setAttribute('data-id', id);
+  var lab = document.createElement('span'); lab.className = 'tab-label'; lab.textContent = label;
+  var x = document.createElement('button'); x.className = 'tab-x'; x.type = 'button'; x.title = 'Close'; x.innerHTML = '&times;';
+  tab.appendChild(lab); tab.appendChild(x);
+  document.getElementById('tabs').appendChild(tab);
+
+  tab.addEventListener('click', function(e){ if(e.target === x) return; activate(id); });
+  lab.addEventListener('dblclick', function(){ renamePatient(id); });
+  x.addEventListener('click', function(e){ e.stopPropagation(); closePatient(id); });
+
+  patients.push({ id:id, label:label, frameEl:frame, tabEl:tab });
+  activate(id);
+}
+
+(function(){
+  var email = '';
+  try { email = (localStorage.getItem('tbp_verified_email') || '').toLowerCase(); } catch(e){}
+  // Gate only when we positively know a non-beta email; if unknown, let the Scribe's own auth run.
+  if(email && BETA_EMAILS.indexOf(email) === -1){
+    document.getElementById('gate').style.display = 'block';
+    return;
+  }
+  document.getElementById('desk').style.display = 'flex';
+  document.getElementById('add').addEventListener('click', addPatient);
+  addPatient();
+})();
+</script>
+</body>
+</html>
