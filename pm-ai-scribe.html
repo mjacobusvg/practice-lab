@@ -555,7 +555,7 @@ function renderTemplateStatus(){
   var t = vaultTemplates[visitType];
   var label = visitType==='new_eval' ? 'New patient evaluation' : 'Follow-up';
   if(t && t.trim()){
-    el.innerHTML = '<span class="ok">&#10003; Using your '+label+' template</span> <a href="#" onclick="openWizard();return false;">edit</a>';
+    el.innerHTML = '<span class="ok">&#10003; Using your '+label+' template</span> <a href="#" onclick="openWizard();return false;">edit</a> &middot; <a href="#" onclick="openTemplateTest(\''+visitType+'\');return false;">test it on a sample</a>';
   } else {
     el.innerHTML = '<span class="none">No '+label+' template saved</span> &mdash; a sensible default structure will be used. <a href="#" onclick="openWizard();return false;">Set one up</a>';
   }
@@ -1703,14 +1703,131 @@ async function saveWizardTemplate(){
     var ok = await persistTemplate(text, wiz.visit);
     if(ok){
       btn.innerHTML='&#10003; Saved to Vault';
-      // In first-run setup, move on to the next visit type instead of closing.
-      if(onbTmplSeq){ setTimeout(onbTemplateAdvance, 800); }
-      else { setTimeout(function(){ closeWizard(); }, 900); }
+      // Don't just move on: show the template drafting a note from a sample chart, so the
+      // clinician sees it work (and can fix it) before it ever touches a real patient. The
+      // "Looks right" / Continue button in that step advances onboarding or closes.
+      renderTemplateTest(wiz.visit, { onboarding: !!onbTmplSeq });
     }
     else { document.getElementById('wiz-save-hint').innerHTML='<span style="color:var(--amber)">Saved on this device; cloud save may have failed. It is set for this session.</span>'; btn.disabled=false; btn.innerHTML='Save to my Vault'; }
   } catch(err){
     document.getElementById('wiz-save-hint').innerHTML='<span style="color:var(--red)">'+esc(err.message||err)+'</span>'; btn.disabled=false; btn.innerHTML='Save to my Vault';
   }
+}
+
+// ── "See it work": draft a note from a stored, de-identified SAMPLE chart using the clinician's
+// just-saved template, so template problems (empty sections, carried-forward leaks, stray tables)
+// surface in the setup, not on a real patient. "Fix my template" hands the sample draft to the
+// existing refine flow, so fixing the note fixes the TEMPLATE. Also re-runnable any time.
+// The charts below are entirely fictional and contain NO real patient information.
+var SAMPLE_CHARTS = {
+  new_eval: {
+    raw: "New patient, 34, self-referred. Chief concern: \"I've been anxious and down for about a year, worse since I changed jobs.\"\n"
+      + "Course: anxiety since college; low mood the past year, worse x3 months.\n"
+      + "Sleep: \"I wake up at 3am and can't shut my brain off,\" about 5 to 6 hours.\n"
+      + "Appetite down, lost ~8 lbs without trying.\n"
+      + "Concentration: \"I reread the same email ten times.\" Mood: \"flat, like I'm going through the motions.\" Anhedonia: stopped running, used to love it.\n"
+      + "Anxiety: constant worry about work and money, physical tension, occasional racing heart, no discrete panic attacks.\n"
+      + "SI: \"sometimes I think everyone would be fine without me, but I'd never do anything.\" No plan, no intent, no prior attempts.\n"
+      + "Meds: none now. Past: sertraline ~2 years ago, \"made me nauseous,\" stopped after 2 weeks.\n"
+      + "Substance: alcohol 2 to 3 drinks on weekends; cannabis monthly; denies tobacco and other drugs.\n"
+      + "PMH: hypothyroid on levothyroxine. Family: mother depression, father anxious. Parents divorced when patient was 10, no abuse reported.\n"
+      + "Social: accountant, single, lives alone, one close friend.\n"
+      + "Exam by observation: cooperative, tearful once, linear thought, no psychosis."
+  },
+  follow_up: {
+    prior: "Established patient with major depressive disorder and generalized anxiety, started on escitalopram 10 mg six weeks ago. At last visit reported low mood, poor sleep, anhedonia, and work-related anxiety. Denied SI. Sees a therapist weekly. Levothyroxine continued for hypothyroidism. Alcohol 2 to 3 drinks on weekends. Continues to deny auditory or visual hallucinations. No manic symptoms.",
+    raw: "Follow-up. \"The escitalopram is helping, I think. I'm not crying every day anymore.\"\n"
+      + "Sleep better, 6 to 7 hours. Still some morning anxiety before work. Appetite back to normal, regained a couple pounds. Anhedonia improving, ran twice this week.\n"
+      + "Denies SI today. Continuing weekly therapy. Tolerating the med, no side effects except \"a little more yawning.\" Wants to stay the course.\n"
+      + "No change to levothyroxine. Alcohol unchanged. Denies hallucinations, no mania."
+  }
+};
+
+// Draft an HPI from the sample chart using THIS clinician's saved template for the visit type.
+async function draftSampleHpi(visitKey){
+  var prev = visitType;
+  visitType = visitKey;   // draftSystem() reads visitType + vaultTemplates[visitType]
+  try {
+    var s = SAMPLE_CHARTS[visitKey] || SAMPLE_CHARTS.follow_up;
+    var src = "RAW VISIT NOTES (as the clinician typed them):\n\n" + s.raw;
+    if(visitKey === 'follow_up' && s.prior){
+      src += "\n\n---\n\nPRIOR HPI / ASSESSMENT (continuity context only; not today's documented content):\n\n" + s.prior;
+    }
+    var hpi = await callAPI(draftSystem(), [{role:'user', content: src}], 3400);
+    return finalizeHpi(hpi || '');
+  } finally { visitType = prev; }
+}
+
+function renderTemplateTest(visitKey, opts){
+  opts = opts || {};
+  var label = visitKey === 'new_eval' ? 'New patient evaluation' : 'Follow-up';
+  var host = document.getElementById('wiz-result'); if(!host) return;
+  host.innerHTML =
+    '<div class="out" style="margin-top:16px"><h3>See your ' + label + ' template in action</h3>'
+    + '<div class="hint" style="line-height:1.5;margin-bottom:10px">Before you use this on a real patient, watch it draft a note from a <strong style="color:var(--cream)">sample, made-up chart</strong> (no real patient info). If a section comes out wrong, empty, or carries something it should not, you can fix the template in a couple of minutes right now.</div>'
+    + '<button class="btn" id="tmpltest-run">Draft a note from a sample chart &rarr;</button>'
+    + (opts.onboarding ? ' <button class="btn-ghost" id="tmpltest-skip" type="button">Skip, continue setup</button>' : '')
+    + '<div id="tmpltest-out" style="margin-top:14px"></div></div>';
+  document.getElementById('tmpltest-run').addEventListener('click', function(){ runTemplateTest(visitKey, opts); });
+  var sk = document.getElementById('tmpltest-skip'); if(sk) sk.addEventListener('click', function(){ finishTemplateTest(opts); });
+}
+
+async function runTemplateTest(visitKey, opts){
+  var btn = document.getElementById('tmpltest-run');
+  var out = document.getElementById('tmpltest-out');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Drafting from the sample&hellip;';
+  out.innerHTML = '';
+  try {
+    var hpi = await draftSampleHpi(visitKey);
+    if(!hpi){ throw new Error('Nothing came back. Try again.'); }
+    out.innerHTML =
+      '<div class="hint" style="margin-bottom:6px">Drafted from a sample chart using your template. Read it like you would your own note:</div>'
+      + '<textarea class="hpi-edit" id="tmpltest-hpi" readonly style="min-height:200px">' + esc(hpi) + '</textarea>'
+      + '<div class="hint" style="margin-top:10px;color:var(--cream)">Does this read the way you want your notes to?</div>'
+      + '<div style="margin-top:8px;display:flex;gap:10px;flex-wrap:wrap">'
+        + '<button class="btn" id="tmpltest-ok">&#10003; Yes, this looks right</button>'
+        + '<button class="btn-ghost" id="tmpltest-fix" style="border-color:var(--amber)">Something is off &mdash; fix my template</button>'
+      + '</div>';
+    document.getElementById('tmpltest-ok').addEventListener('click', function(){ finishTemplateTest(opts); });
+    document.getElementById('tmpltest-fix').addEventListener('click', function(){ startTemplateFix(visitKey, hpi); });
+  } catch(err){
+    out.innerHTML = '<div class="err">' + esc(err.message || err) + '</div>';
+  } finally {
+    btn.disabled = false; btn.innerHTML = 'Draft again from the sample &rarr;';
+  }
+}
+
+// Approve / continue: in onboarding, advance to the next template; otherwise close the wizard.
+function finishTemplateTest(opts){
+  if(opts && opts.onboarding && onbTmplSeq){ onbTemplateAdvance(); }
+  else { closeWizard(); }
+}
+
+// "Something is off": seed the existing refine flow with the sample draft as the wrong-example,
+// so the clinician describes what's off and the TEMPLATE gets fixed (not just this one draft).
+function startTemplateFix(visitKey, sampleHpi){
+  wiz.visit = visitKey;
+  document.querySelectorAll('#wiz-visit-opts .opt').forEach(function(o){ o.classList.toggle('sel', o.getAttribute('data-wizvisit') === visitKey); });
+  wizMode = 'refine';
+  document.querySelectorAll('#wiz-mode-opts .opt').forEach(function(o){ o.classList.toggle('sel', o.getAttribute('data-wizmode') === 'refine'); });
+  switchWizMode('refine');   // reveals the refine panel and loads the current template into refine-current
+  var bad = document.getElementById('refine-badoutput'); if(bad) bad.value = sampleHpi;
+  var issue = document.getElementById('refine-issue');
+  var err = document.getElementById('wiz-err');
+  if(err) err.innerHTML = '<div class="hint" style="line-height:1.5;color:var(--cream)">The sample draft is loaded below as the example. Tell it what is off (for example: &ldquo;the Review of Systems came out empty&rdquo; or &ldquo;it carried a whole section it should not have&rdquo;), then run it. Fixing this fixes your saved template.</div>';
+  if(issue){ try{ issue.focus(); issue.scrollIntoView({behavior:'smooth', block:'center'}); }catch(e){} }
+}
+
+// Re-runnable entry: test an already-saved template any time from the status line.
+function openTemplateTest(visitKey){
+  wiz.visit = visitKey || visitType || 'follow_up';
+  if(!(vaultTemplates[wiz.visit] && vaultTemplates[wiz.visit].trim())){ openWizard(); return; }
+  document.getElementById('wizard').classList.add('open');
+  document.querySelectorAll('#wiz-visit-opts .opt').forEach(function(o){ o.classList.toggle('sel', o.getAttribute('data-wizvisit') === wiz.visit); });
+  var bp = document.getElementById('wiz-build-panel'); if(bp) bp.style.display = 'none';
+  var rp = document.getElementById('wiz-refine-panel'); if(rp) rp.style.display = 'none';
+  document.getElementById('wiz-err').innerHTML = '';
+  renderTemplateTest(wiz.visit, { onboarding: false });
 }
 
 // ── Refine / troubleshoot an existing template, conversationally ──
