@@ -689,10 +689,19 @@
     loading.textContent = thisIsFollowUp ? 'Following up with context from your last question...' : 'Searching the archive and synthesizing an answer...';
 
     try {
+      // Forward the member's signed session token so this AI usage is attributed
+      // to them in tool_usage (the trigger reads body.token / Authorization and
+      // passes the verified email + tier into the pipeline). Best-effort: if no
+      // token is present the request still works, just unattributed.
+      var sessTok = '';
+      try { sessTok = localStorage.getItem('tbp_auth_token') || ''; } catch (e) {}
       var startResp = await fetch('/.netlify/functions/ask-archive-trigger', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: question, conversation_history: conversationHistory })
+        headers: Object.assign(
+          { 'Content-Type': 'application/json' },
+          sessTok ? { 'Authorization': 'Bearer ' + sessTok } : {}
+        ),
+        body: JSON.stringify({ question: question, conversation_history: conversationHistory, token: sessTok })
       });
 
       if (!startResp.ok) {
