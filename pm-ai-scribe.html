@@ -93,6 +93,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 </style>
 <script src="/auth-gate.js"></script>
 <script src="/note-engine.js"></script>
+<script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
 .tbp-theme-fab{position:fixed;top:10px;right:10px;z-index:99999;width:34px;height:34px;border-radius:50%;border:1px solid var(--rule,rgba(255,255,255,.18));background:var(--navy-card,var(--surface,#152238));color:var(--cream,var(--text,#e8e2d6));cursor:pointer;font-size:15px;line-height:1;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(0,0,0,.22);padding:0}
@@ -198,7 +199,8 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
       <!-- Therapy coach: private beta, revealed in JS only for a single clinician's email. -->
       <div id="tcoach-row" style="margin-top:12px;display:none">
         <button class="btn-ghost" id="tcoach-open" type="button" style="border-color:#c9a227;color:#e8cf7a">Therapy coach</button>
-        <span class="hint" style="margin-left:8px">Private beta &middot; the right technique and what to say, for this moment</span>
+        <select id="scale-select-main" title="Insert a screening scale" style="display:none;margin-left:8px;background:var(--navy);border:1px solid #c9a227;color:#e8cf7a;border-radius:8px;padding:9px 10px;font-size:.85rem" onchange="insertScaleFromSelect(this)"><option value="">+ Scale&hellip;</option></select>
+        <span class="hint" style="margin-left:8px">Private beta &middot; technique + what to say, and screening scales</span>
       </div>
       </div><!-- /notes-block -->
 
@@ -226,6 +228,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
     <span class="hint" id="focus-hint" style="margin:0"></span>
     <span class="spacer"></span>
     <button class="btn-ghost" id="tcoach-open-focus" type="button" style="margin-top:0;display:none;border-color:#c9a227;color:#e8cf7a" onclick="openTCoach()">Therapy coach</button>
+    <select id="scale-select-focus" title="Insert a screening scale" style="display:none;margin-top:0;background:var(--navy);border:1px solid #c9a227;color:#e8cf7a;border-radius:8px;padding:8px 10px;font-size:.85rem" onchange="insertScaleFromSelect(this)"><option value="">+ Scale&hellip;</option></select>
     <button class="btn-ghost" style="margin-top:0" onclick="closeFocus()">&larr; Exit full screen</button>
     <button class="btn" id="focus-draft">Draft my HPI &rarr;</button>
   </div>
@@ -2671,11 +2674,61 @@ async function tcoachFindFromNote(){
   }
 }
 
+// ── Screening scales (private beta): insert an Assessment Suite instrument's questions
+// into the working note so the clinician stops Googling and pasting mid-visit. Text-insert
+// (Tier 1); scoring/PDF is a later tier that belongs with the Assessment Suite. ────────────
+function tcoachTargetTextarea(){
+  var ae = document.activeElement;
+  if(ae && ae.tagName==='TEXTAREA' && (ae.id==='focus-note' || ae.id==='raw' || (ae.className||'').indexOf('wn-ta')!==-1)) return ae;
+  var fo = document.getElementById('focus-overlay');
+  if(fo && fo.classList.contains('open')){
+    var fn = document.getElementById('focus-note');
+    if(fn && fn.style.display !== 'none') return fn;
+    var first = document.querySelector('#focus-sections .wn-ta'); if(first) return first;
+  }
+  return document.getElementById('raw');
+}
+function tcoachInsertAtCursor(ta, text){
+  if(!ta) return;
+  var s = ta.selectionStart, e = ta.selectionEnd, v = ta.value || '';
+  if(typeof s === 'number'){ ta.value = v.slice(0,s) + text + v.slice(e); var p = s + text.length; ta.selectionStart = ta.selectionEnd = p; }
+  else { ta.value = v + text; }
+  ta.focus();
+  try { ta.dispatchEvent(new Event('input', { bubbles:true })); } catch(_){}   // autosize / sync
+}
+function buildScaleText(sc){
+  var t = '\n' + sc.name + (sc.fullName ? ' (' + sc.fullName + ')' : '') + '\n';
+  if(sc.instructionText) t += sc.instructionText + '\n';
+  if(sc.options && sc.options.length){ t += 'Scale: ' + sc.options.map(function(o){ return o.value + '=' + o.label; }).join(', ') + '\n'; }
+  (sc.items||[]).forEach(function(it, i){
+    t += (i+1) + '. ' + it.text;
+    if(it.options && it.options.length){ t += ' [' + it.options.map(function(o){ return o.label; }).join(' / ') + ']'; }
+    t += ' — \n';   // em-dash + space for the clinician to type the answer (with context)
+  });
+  return t + '\n';
+}
+function insertScaleFromSelect(sel){
+  var id = sel.value; sel.value = '';
+  if(!id) return;
+  var sc = (window.TBP_SCALES || []).filter(function(s){ return s.id === id; })[0];
+  if(!sc) return;
+  tcoachInsertAtCursor(tcoachTargetTextarea(), buildScaleText(sc));
+}
+function initScaleSelects(){
+  var scales = window.TBP_SCALES || [];
+  ['scale-select-focus','scale-select-main'].forEach(function(id){
+    var sel = document.getElementById(id); if(!sel) return;
+    if(!sel._filled){ sel._filled = true; scales.forEach(function(sc){ var o = document.createElement('option'); o.value = sc.id; o.textContent = sc.name; sel.appendChild(o); }); }
+    sel.style.display = 'inline-block';
+  });
+}
+
 function initTherapyCoach(){
   var allowed = TCOACH_BETA_EMAILS.indexOf((userEmail||'').toLowerCase()) !== -1;
   var row = document.getElementById('tcoach-row');
   if(!allowed || !row) return;
   row.style.display='block';
+  try { initScaleSelects(); } catch(e){}
   var focusBtn = document.getElementById('tcoach-open-focus');
   if(focusBtn) focusBtn.style.display='inline-block';   // also in the full-screen working note header
   var openBtn = document.getElementById('tcoach-open');
