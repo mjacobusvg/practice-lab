@@ -2142,6 +2142,7 @@ async function checkAuth() {
     handlePostDeepLink();
     handleCEDeepLink();
     handlePendingPlan();
+    maybeShowPushNudge();
   } else {
     // Deep link from the marketing site (/platform.html?join) opens straight into
     // free-account creation; otherwise default to the returning-member view.
@@ -5022,6 +5023,9 @@ async function openProfileEdit() {
     document.getElementById('pe-nposts').checked = a.notify_email_posts !== false;
     document.getElementById('pe-ncomments').checked = a.notify_email_comments !== false;
     document.getElementById('pe-ndms').checked = a.notify_email_dms !== false;
+    document.getElementById('pe-pposts').checked = a.notify_push_posts !== false;
+    document.getElementById('pe-pcomments').checked = a.notify_push_comments !== false;
+    document.getElementById('pe-pdms').checked = a.notify_push_dms !== false;
     renderAvatarPreview(a.avatar_url, a.name);
   } catch (e) { /* open with whatever we have */ }
   document.getElementById('profile-overlay').classList.add('open');
@@ -5058,7 +5062,10 @@ async function saveProfile() {
     directory_visible: document.getElementById('pe-visible').checked,
     notify_email_posts: document.getElementById('pe-nposts').checked,
     notify_email_comments: document.getElementById('pe-ncomments').checked,
-    notify_email_dms: document.getElementById('pe-ndms').checked
+    notify_email_dms: document.getElementById('pe-ndms').checked,
+    notify_push_posts: document.getElementById('pe-pposts').checked,
+    notify_push_comments: document.getElementById('pe-pcomments').checked,
+    notify_push_dms: document.getElementById('pe-pdms').checked
   };
   if (!payload.name.trim()) { st.textContent = 'Name is required.'; st.className = 'composer-status err'; return; }
   btn.disabled = true; st.textContent = 'Saving…';
@@ -6907,6 +6914,107 @@ async function togglePushSubscription() {
   }
 }
 
+// ── Proactive nudge ─────────────────────────────────────────────────────────
+// Most people never dig into Settings, so we surface a one-tap banner at a good
+// moment (after login / after the welcome tour). Browsers REQUIRE a user gesture
+// to ask for notification permission, so tapping "Enable" here is what fires the
+// system prompt. Respects a cooldown so it is never naggy, and never shows once
+// the member has subscribed or blocked notifications.
+var PUSH_NUDGE_KEY = 'tbp_push_nudge_until';
+function _pushNudgeCoolingDown() {
+  try { var until = parseInt(localStorage.getItem(PUSH_NUDGE_KEY) || '0', 10); return until && Date.now() < until; } catch (e) { return false; }
+}
+function _setPushNudgeCooldown(days) {
+  try { localStorage.setItem(PUSH_NUDGE_KEY, String(Date.now() + days * 864e5)); } catch (e) {}
+}
+function dismissPushNudge(days) {
+  var el = document.getElementById('push-nudge');
+  if (el && el.parentNode) el.parentNode.removeChild(el);
+  _setPushNudgeCooldown(days || 14);
+}
+function _openSettingsFromNudge() {
+  dismissPushNudge(14);
+  try { openProfileEdit(); } catch (e) {}
+}
+
+async function maybeShowPushNudge() {
+  try {
+    if (!pushSupported()) return;
+    // Members only (free tier doesn't receive post/comment/DM notifications).
+    var tier = (S.user && String(S.user.tier || '')).toLowerCase();
+    if (!S.user || (tier !== 'forum' && tier !== 'full' && !(S.user && S.user.is_admin))) return;
+    if (_pushNudgeCoolingDown()) return;
+    if (document.getElementById('push-nudge')) return;
+    if (Notification.permission === 'denied') return;        // can't act on it
+    if (Notification.permission === 'granted') {
+      var sub = await _getPushSub();
+      if (sub) return;                                        // already on
+    }
+    // If the welcome tour is up, wait for it to close before nudging.
+    var w = document.getElementById('welcome-overlay');
+    if (w && w.classList.contains('open')) { setTimeout(maybeShowPushNudge, 4000); return; }
+
+    var iosNeedsInstall = _isIOS() && !_isStandalone();
+    var wrap = document.createElement('div');
+    wrap.id = 'push-nudge';
+    wrap.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:9500;width:calc(100% - 32px);max-width:440px;background:var(--bg-card,#fff);color:var(--text-primary,#111);border:1px solid var(--border,rgba(0,0,0,0.12));border-radius:12px;box-shadow:0 10px 34px rgba(0,0,0,0.28);padding:16px 18px;font-size:14px;line-height:1.5;';
+
+    if (iosNeedsInstall) {
+      wrap.innerHTML =
+        '<div style="display:flex;gap:12px;align-items:flex-start">' +
+          '<div style="font-size:22px;line-height:1">&#128241;</div>' +
+          '<div style="flex:1">' +
+            '<div style="font-weight:700;margin-bottom:3px">Get notified on your iPhone</div>' +
+            '<div style="color:var(--text-secondary,#555);margin-bottom:12px">To get alerts for replies and messages, add this app to your Home Screen: tap <b>Share</b>, then <b>Add to Home Screen</b>, and open it from there.</div>' +
+            '<div style="display:flex;gap:8px;justify-content:flex-end">' +
+              '<button class="btn-ghost" onclick="dismissPushNudge(14)">Got it</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    } else {
+      wrap.innerHTML =
+        '<div style="display:flex;gap:12px;align-items:flex-start">' +
+          '<div style="font-size:22px;line-height:1">&#128276;</div>' +
+          '<div style="flex:1">' +
+            '<div style="font-weight:700;margin-bottom:3px">Turn on notifications</div>' +
+            '<div style="color:var(--text-secondary,#555);margin-bottom:12px">Get a heads-up when someone replies to you or sends a message, even when the app is closed.</div>' +
+            '<div style="display:flex;gap:8px;justify-content:flex-end;align-items:center">' +
+              '<button class="btn-ghost" onclick="dismissPushNudge(14)">Not now</button>' +
+              '<button class="btn-primary" id="push-nudge-enable">Enable</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    }
+    document.body.appendChild(wrap);
+    // Showing it starts a shorter cooldown, so ignoring it isn't punished as hard
+    // as an explicit dismiss but it won't reappear on every reload.
+    _setPushNudgeCooldown(3);
+
+    var enable = document.getElementById('push-nudge-enable');
+    if (enable) {
+      enable.addEventListener('click', async function () {
+        enable.disabled = true; enable.textContent = 'Enabling…';
+        try {
+          var reg = await navigator.serviceWorker.ready;
+          var perm = await Notification.requestPermission();
+          if (perm !== 'granted') { dismissPushNudge(14); return; }
+          var subscription = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: _urlB64ToUint8(VAPID_PUBLIC_KEY)
+          });
+          await fetch('/.netlify/functions/push-subscribe', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: getAuthToken(), action: 'subscribe', subscription: subscription, ua: navigator.userAgent })
+          });
+          dismissPushNudge(365); // subscribed — don't nudge again
+        } catch (e) {
+          dismissPushNudge(14);
+        }
+      });
+    }
+  } catch (e) { /* nudge is best-effort */ }
+}
+
 // ════════════════════════════════════════
 // FIRST-TIME WELCOME + WALKTHROUGH
 // ════════════════════════════════════════
@@ -7017,6 +7125,9 @@ function closeWelcome() {
   var o = document.getElementById('welcome-overlay');
   if (o) o.classList.remove('open');
   try { localStorage.setItem(WELCOME_KEY, '1'); } catch (e) {}
+  // First-timers just finished the tour — now is the natural moment to nudge them
+  // toward enabling device notifications.
+  try { maybeShowPushNudge(); } catch (e) {}
 }
 
 // Lets members re-open the tour from anywhere (e.g. a help link).
@@ -7200,6 +7311,12 @@ checkAuth();
       <p style="font-size:13px;color:var(--text-secondary);margin:0 0 4px">Get a notification on this device for new posts, replies, and messages, even when the app is closed.</p>
       <button class="btn-primary" id="push-toggle-btn" style="display:none" onclick="togglePushSubscription()">Enable notifications on this device</button>
       <p class="composer-status" id="push-status" style="margin:0"></p>
+    </div>
+    <div class="composer-row" style="flex-direction:column;align-items:flex-start;gap:8px">
+      <span style="font-size:13px;color:var(--text-secondary)">Push me when</span>
+      <label class="composer-check"><input type="checkbox" id="pe-pposts"> a new post goes up</label>
+      <label class="composer-check"><input type="checkbox" id="pe-pcomments"> someone replies in a thread I'm in</label>
+      <label class="composer-check"><input type="checkbox" id="pe-pdms"> I get a direct message</label>
     </div>
     <div class="composer-actions">
       <span class="composer-status" id="pe-status"></span>

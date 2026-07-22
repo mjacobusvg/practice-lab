@@ -103,7 +103,7 @@ exports.handler = async function (event) {
       if (!raw) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Message is empty' }) };
       if (raw.length > MAX_BODY) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Message is too long' }) };
 
-      const recRows = await sb('accounts?id=eq.' + encodeURIComponent(toId) + '&select=id,name,is_admin,email,notify_email_dms&limit=1', 'GET');
+      const recRows = await sb('accounts?id=eq.' + encodeURIComponent(toId) + '&select=id,name,is_admin,email,notify_email_dms,notify_push_dms&limit=1', 'GET');
       if (!recRows || !recRows.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'Recipient not found' }) };
       const rec = recRows[0];
 
@@ -131,9 +131,9 @@ exports.handler = async function (event) {
         last_message_at: msg.created_at, last_message_preview: preview, last_sender_id: me.id
       }, 'return=minimal');
 
-      // Phone push to the recipient (best-effort; never blocks send).
+      // Phone push to the recipient if they have push-for-DMs on (default on).
       try {
-        await sendToAccounts([toId], {
+        if (rec.notify_push_dms !== false) await sendToAccounts([toId], {
           title: 'New message from ' + (me.name || 'a member'),
           body: preview,
           url: 'https://thinkbeyondpractice.com/platform.html?dm=' + encodeURIComponent(me.id),

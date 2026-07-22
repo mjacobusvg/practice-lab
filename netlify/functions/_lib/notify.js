@@ -155,7 +155,7 @@ async function notifyNewPost(post, actor, opts) {
     if (!post || !post.id) return;
     const actorId = (actor && actor.id) || '00000000-0000-0000-0000-000000000000';
     const actorName = (actor && actor.name) || 'A member';
-    const recips = await sb('accounts?' + MEMBER_TIERS + '&id=neq.' + actorId + '&select=id,email,notify_email_posts', 'GET');
+    const recips = await sb('accounts?' + MEMBER_TIERS + '&id=neq.' + actorId + '&select=id,email,notify_email_posts,notify_push_posts', 'GET');
     if (!recips || !recips.length) return;
 
     const rows = recips.map(function (r) {
@@ -163,9 +163,11 @@ async function notifyNewPost(post, actor, opts) {
     });
     try { await sb('member_notifications', 'POST', rows, 'return=minimal'); } catch (e) { console.log('notify post in-app:', e && e.message); }
 
-    // Phone push to every recipient who has a subscription (best-effort).
+    // Phone push to recipients who have push-for-posts on (default on). Sends
+    // only reach devices that actually subscribed; this just honors the type pref.
     try {
-      await sendToAccounts(recips.map(function (r) { return r.id; }), {
+      const pushIds = recips.filter(function (r) { return r.notify_push_posts !== false; }).map(function (r) { return r.id; });
+      await sendToAccounts(pushIds, {
         title: 'New post from ' + actorName,
         body: post.title || 'A new post was published',
         url: PLATFORM_BASE + '?post=' + encodeURIComponent(post.id),
@@ -221,7 +223,7 @@ async function notifyNewComment(post, commenter) {
     const ids = Object.keys(idset);
     if (!ids.length) return;
 
-    const recips = await sb('accounts?id=in.(' + ids.join(',') + ')&select=id,email,notify_email_comments', 'GET');
+    const recips = await sb('accounts?id=in.(' + ids.join(',') + ')&select=id,email,notify_email_comments,notify_push_comments', 'GET');
     if (!recips || !recips.length) return;
 
     const rows = recips.map(function (r) {
@@ -229,9 +231,11 @@ async function notifyNewComment(post, commenter) {
     });
     try { await sb('member_notifications', 'POST', rows, 'return=minimal'); } catch (e) { console.log('notify comment in-app:', e && e.message); }
 
-    // Phone push to the post author + thread participants (best-effort).
+    // Phone push to the post author + thread participants who have push-for-
+    // comments on (default on).
     try {
-      await sendToAccounts(recips.map(function (r) { return r.id; }), {
+      const pushIds = recips.filter(function (r) { return r.notify_push_comments !== false; }).map(function (r) { return r.id; });
+      await sendToAccounts(pushIds, {
         title: commenterName + ' commented',
         body: 'on "' + (post.title || 'a thread') + '"',
         url: PLATFORM_BASE + '?post=' + encodeURIComponent(post.id),
