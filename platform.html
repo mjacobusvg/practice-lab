@@ -6844,16 +6844,46 @@ async function refreshPushUI() {
     return;
   }
   var sub = await _getPushSub();
+  var testBtn = document.getElementById('push-test-btn');
   btn.style.display = 'inline-flex';
   if (sub) {
     btn.textContent = 'Turn off notifications on this device';
     btn.dataset.on = '1';
     status.textContent = 'Notifications are on for this device.';
+    if (testBtn) testBtn.style.display = 'inline-flex';
   } else {
     btn.textContent = 'Enable notifications on this device';
     btn.dataset.on = '';
     status.textContent = '';
+    if (testBtn) testBtn.style.display = 'none';
   }
+}
+
+async function sendTestPush() {
+  var status = document.getElementById('push-status');
+  var testBtn = document.getElementById('push-test-btn');
+  if (status) { status.className = 'composer-status'; status.textContent = 'Sending a test…'; }
+  if (testBtn) testBtn.disabled = true;
+  try {
+    var res = await fetch('/.netlify/functions/push-test', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken() })
+    });
+    var data = await res.json();
+    if (data && data.ok && data.sent > 0) {
+      status.textContent = 'Sent. Watch for the notification on this device (and any others you enabled).';
+    } else if (data && data.sent === 0) {
+      status.textContent = (data.error || 'No devices received it. If you just enabled it, try toggling off and on.');
+      status.className = 'composer-status err';
+    } else {
+      status.textContent = (data && data.error) ? data.error : 'Could not send a test.';
+      status.className = 'composer-status err';
+    }
+  } catch (e) {
+    status.textContent = 'Could not send a test.';
+    status.className = 'composer-status err';
+  }
+  if (testBtn) testBtn.disabled = false;
 }
 
 async function togglePushSubscription() {
@@ -7309,7 +7339,10 @@ checkAuth();
     <label style="margin-top:14px">Phone &amp; desktop notifications</label>
     <div class="composer-row" style="flex-direction:column;align-items:flex-start;gap:8px">
       <p style="font-size:13px;color:var(--text-secondary);margin:0 0 4px">Get a notification on this device for new posts, replies, and messages, even when the app is closed.</p>
-      <button class="btn-primary" id="push-toggle-btn" style="display:none" onclick="togglePushSubscription()">Enable notifications on this device</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn-primary" id="push-toggle-btn" style="display:none" onclick="togglePushSubscription()">Enable notifications on this device</button>
+        <button class="btn-ghost" id="push-test-btn" style="display:none" onclick="sendTestPush()">Send a test notification</button>
+      </div>
       <p class="composer-status" id="push-status" style="margin:0"></p>
     </div>
     <div class="composer-row" style="flex-direction:column;align-items:flex-start;gap:8px">
