@@ -82,6 +82,13 @@ exports.handler = async function (event) {
     const top_posts = await sb('forum_posts?select=id,title,comment_count,reaction_count&order=comment_count.desc.nullslast,reaction_count.desc.nullslast&limit=8');
     const new_members = await sb('accounts?select=name,tier,created_at&order=created_at.desc&limit=8');
 
+    // Net-new PAID members: those who were NEVER on Circle (circle_member_id IS NULL)
+    // and are on a paid tier. This is real post-launch growth — distinct from migrated
+    // members renewing. (Free net-new is dominated by pre-created contacts, so we
+    // surface paid only.) Also a duplicate-signup smell test: a name/practice that
+    // matches an existing Circle member here may be a second account.
+    const net_new_paid = await sb('accounts?circle_member_id=is.null&tier=in.(forum,full)&select=name,email,tier,created_at&order=created_at.desc&limit=50');
+
     // New signups per day, last 14 days.
     const signupRows = await sb('accounts?created_at=gt.' + encodeURIComponent(iso(14)) + '&select=created_at&limit=2000');
     const daily = {};
@@ -148,6 +155,7 @@ exports.handler = async function (event) {
         ai: { calls_7d: ai7, calls_30d: ai30 },
         top_posts: top_posts || [],
         new_members: new_members || [],
+        net_new_paid: net_new_paid || [],
         signups_daily: signups_daily,
         tools: tools,
         signals: signals
