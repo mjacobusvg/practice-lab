@@ -195,6 +195,11 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
       <div style="margin-top:16px">
         <button class="btn" id="generate">Draft my HPI &rarr;</button>
       </div>
+      <!-- Therapy coach: private beta, revealed in JS only for a single clinician's email. -->
+      <div id="tcoach-row" style="margin-top:12px;display:none">
+        <button class="btn-ghost" id="tcoach-open" type="button" style="border-color:#c9a227;color:#e8cf7a">Therapy coach</button>
+        <span class="hint" style="margin-left:8px">Private beta &middot; the right technique and what to say, for this moment</span>
+      </div>
       </div><!-- /notes-block -->
 
       <div style="margin-top:16px">
@@ -301,6 +306,23 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
   <div class="modal" style="max-width:640px">
     <button class="modal-x" type="button" onclick="closeOnboarding()" aria-label="Close">&times;</button>
     <div id="onb-body"></div>
+  </div>
+</div>
+
+<!-- Therapy coach (private beta, gated in JS to a single clinician). Situation-organized
+     brief-therapy moves + what to say + the line that documents it. Instant filter, no AI
+     needed; optional one-shot "Find from my note" for those who want the auto-match. -->
+<div class="modal-overlay" id="tcoach">
+  <div class="modal" style="max-width:720px">
+    <button class="modal-x" type="button" onclick="closeTCoach()" aria-label="Close">&times;</button>
+    <h2>Therapy coach <span style="font-size:.6em;color:var(--cream-dim);text-transform:uppercase;letter-spacing:1px">beta</span></h2>
+    <p class="msub">Brief-therapy moves you can use inside a med visit. Match your patient to a situation, or type to filter. Each gives you a few things you could actually say, and the line that documents it as billable therapeutic work. Nothing is sent anywhere unless you tap &ldquo;Find from my note.&rdquo;</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px">
+      <input type="text" id="tcoach-filter" placeholder="Filter: ambivalent, stuck, anxious, substance&hellip;" style="flex:1;min-width:220px">
+      <button class="btn-ghost" id="tcoach-find" type="button" style="margin-top:0">Find from my note</button>
+    </div>
+    <div id="tcoach-find-note" class="hint" style="margin-bottom:10px"></div>
+    <div id="tcoach-cards"></div>
   </div>
 </div>
 
@@ -2532,6 +2554,7 @@ TBPAuth.protect({
     try { authToken = localStorage.getItem('tbp_auth_token') || ''; } catch(e){}
     try { userEmail = localStorage.getItem('tbp_verified_email') || ''; } catch(e){}
     loadVaultTemplates();
+    try { if(typeof initTherapyCoach==='function') initTherapyCoach(); } catch(e){}
   }
 });
 </script>
@@ -2539,6 +2562,113 @@ TBPAuth.protect({
 <script>
 function tbpToggleTheme(){var c=document.documentElement.getAttribute('data-theme')||'dark';var n=c==='light'?'dark':'light';document.documentElement.setAttribute('data-theme',n);try{localStorage.setItem('tbp_theme',n);}catch(e){}var b=document.getElementById('tbp-theme-fab');if(b)b.innerHTML=n==='light'?'&#9728;':'&#9790;';}
 (function(){var b=document.getElementById('tbp-theme-fab');if(b){var c=document.documentElement.getAttribute('data-theme')||'dark';b.innerHTML=c==='light'?'&#9728;':'&#9790;';}})();
+</script>
+<script>
+// ── Therapy coach (private beta) ──────────────────────────────────────────────
+// Situation-organized brief-therapy moves for a med visit. Small on purpose (~8),
+// so you scan or filter in seconds. Zero API cost to browse; one optional call to
+// auto-match from the current note. Gated to a single clinician's email for now.
+var TCOACH_BETA_EMAILS = ['michael@thinkbeyondpsych.com'];
+var TCOACH_CARDS = [
+  { id:'ambivalent', situation:'Ambivalent about a med or a change', tags:'ambivalent resistant unsure hesitant not sure motivation MI motivational',
+    prompts:['"What feels like the upside of trying this, and what\'s the hesitation?"','Reflect the split: "So part of you wants X, and part of you worries about Y."','"On a 0 to 10, how ready do you feel? What makes it that and not lower?"'],
+    counts:'Motivational interviewing: explored ambivalence about [med/change], elicited change talk, and reflected discrepancy.' },
+  { id:'catastrophizing', situation:'Catastrophizing or stuck in a distorted thought', tags:'catastrophizing anxious thought distortion cognitive worst case CBT rumination',
+    prompts:['"What\'s the thought going through your mind when that happens?"','"What\'s the evidence for that, and what\'s the evidence against?"','"If a friend said this to you, what would you tell them?"'],
+    counts:'Cognitive restructuring: identified the automatic thought [X], examined the evidence, and developed a balanced alternative.' },
+  { id:'hopeless', situation:'Hopeless, inert, "nothing helps"', tags:'hopeless stuck inert nothing helps unmotivated depressed behavioral activation SFBT',
+    prompts:['"What\'s one small thing that used to give you even a little lift?"','"What would be different if this were even 10 percent better?"','"What\'s one step this week that\'s almost too small to fail?"'],
+    counts:'Behavioral activation / solution-focused: collaboratively identified one values-based activity and a concrete next step.' },
+  { id:'anxious-now', situation:'Anxious or activated right now, in the room', tags:'anxious panic activated grounding breathing somatic body mindfulness',
+    prompts:['"Let\'s slow the breath together for a moment, in for 4, out for 6."','"Name five things you can see right now."','"Where do you feel it in your body?"'],
+    counts:'Taught a brief grounding/breathing skill for acute anxiety; patient practiced it in session.' },
+  { id:'psychoed', situation:'Needs to understand their diagnosis or how a med works', tags:'psychoeducation explain diagnosis mechanism understanding teach how it works',
+    prompts:['"Here\'s the model I use for how [condition] works..."','"What\'s your understanding of why we\'re using this med?"','"What questions come up as I explain this?"'],
+    counts:'Psychoeducation as part of supportive therapy: explained [dx/med mechanism] and assessed and addressed the patient\'s understanding and appraisal.' },
+  { id:'supportive', situation:'Just needs to be heard, hard week', tags:'supportive venting validation listening rapport heard silence hard week',
+    prompts:['Reflect: "That sounds like a lot to be carrying."','Validate: "Given everything, that reaction makes sense."','Let a silence sit, do not rush to fill it.'],
+    counts:'Supportive psychotherapy: reflective listening, validation, and reinforcement of adaptive coping.' },
+  { id:'substance', situation:'Minimizing or ambivalent about substance use', tags:'substance alcohol cannabis use minimizing ambivalent MI roll with resistance',
+    prompts:['"Would it be okay if we looked at how the [substance] fits with your goals?"','"What have you noticed about how it affects your [sleep/anxiety]?"','Roll with it: "It\'s completely your call, I just want to understand it with you."'],
+    counts:'Motivational interviewing around [substance] use: explored ambivalence without confrontation and supported autonomy.' },
+  { id:'pattern', situation:'A relational or boundary pattern is driving the distress', tags:'relationship boundary pattern insight recurring family origin reactive interpersonal IPT',
+    prompts:['"Have you noticed this pattern show up before?"','"What happens for you right before you [react]?"','"How does this connect to what you learned growing up about [X]?"'],
+    counts:'Insight-oriented work connecting a current relational pattern to its origins; increased the patient\'s awareness.' }
+];
+
+function tcoachCardHtml(c, highlight){
+  var prompts = c.prompts.map(function(p){ return '<li style="margin:4px 0">'+esc(p)+'</li>'; }).join('');
+  var border = highlight ? 'var(--teal)' : 'var(--rule)';
+  var badge = highlight ? '<span style="float:right;font-size:.7rem;color:var(--teal);text-transform:uppercase;letter-spacing:1px">fits your note</span>' : '';
+  return '<div class="out" data-tcid="'+c.id+'" style="margin:0 0 12px;border-color:'+border+'">'
+    + badge
+    + '<div style="color:var(--cream);font-weight:600;margin-bottom:6px">'+esc(c.situation)+'</div>'
+    + '<div class="hint" style="margin-bottom:4px">Things you could say:</div>'
+    + '<ul style="margin:0 0 10px;padding-left:18px">'+prompts+'</ul>'
+    + '<div style="font-size:.85rem;color:var(--cream-dim)"><strong style="color:var(--cream)">Counts as:</strong> '+esc(c.counts)+'</div>'
+    + '</div>';
+}
+function renderTCoachCards(filterText, highlightIds){
+  var q = (filterText||'').trim().toLowerCase();
+  var hi = highlightIds || [];
+  var list = TCOACH_CARDS.filter(function(c){
+    if(!q) return true;
+    return (c.situation+' '+c.tags+' '+c.prompts.join(' ')).toLowerCase().indexOf(q) !== -1;
+  });
+  // Highlighted (note-matched) cards float to the top.
+  list.sort(function(a,b){ return (hi.indexOf(b.id)!==-1) - (hi.indexOf(a.id)!==-1); });
+  var host = document.getElementById('tcoach-cards');
+  host.innerHTML = list.length
+    ? list.map(function(c){ return tcoachCardHtml(c, hi.indexOf(c.id)!==-1); }).join('')
+    : '<div class="hint">No match. Clear the filter to see all situations.</div>';
+}
+function openTCoach(){
+  document.getElementById('tcoach-find-note').innerHTML='';
+  var f=document.getElementById('tcoach-filter'); if(f) f.value='';
+  renderTCoachCards('', []);
+  document.getElementById('tcoach').classList.add('open');
+  if(f) try{ f.focus(); }catch(e){}
+}
+function closeTCoach(){ document.getElementById('tcoach').classList.remove('open'); }
+
+async function tcoachFindFromNote(){
+  var note = '';
+  var raw = document.getElementById('raw'); if(raw) note += (raw.value||'');
+  var ctx = document.getElementById('context'); if(ctx && ctx.value) note += '\n' + ctx.value;
+  note = note.trim();
+  var noteEl = document.getElementById('tcoach-find-note');
+  if(note.length < 20){ noteEl.innerHTML='<span style="color:var(--amber)">Type or paste some visit notes first, or just scan the situations above.</span>'; return; }
+  var btn = document.getElementById('tcoach-find');
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Reading&hellip;';
+  noteEl.innerHTML='';
+  try {
+    var sys = "You are a brief-therapy technique matcher for a psychiatric prescriber mid-visit. Given the clinician's current visit notes and a fixed list of SITUATIONS (each with an id), pick the 1 or 2 situations whose therapeutic moment best fits what is happening with THIS patient right now. Also give ONE short, concrete thing the clinician could say next, tailored to the notes. Invent no clinical facts. Respond ONLY with raw JSON, no code fence: {\"matches\":[\"id\",...],\"tip\":\"one sentence the clinician could actually say\"}.";
+    var listStr = TCOACH_CARDS.map(function(c){ return c.id+': '+c.situation; }).join('\n');
+    var user = "SITUATIONS:\n" + listStr + "\n\nCURRENT VISIT NOTES:\n\n" + note;
+    var raw2 = await callAPI(sys, [{role:'user', content:user}], 400);
+    var j = safeJSON(raw2);
+    var ids = (j && Array.isArray(j.matches)) ? j.matches.filter(function(id){ return TCOACH_CARDS.some(function(c){return c.id===id;}); }) : [];
+    renderTCoachCards(document.getElementById('tcoach-filter').value, ids);
+    noteEl.innerHTML = (j && j.tip) ? '<strong style="color:var(--cream)">Try:</strong> ' + esc(j.tip) : (ids.length ? '' : 'No clear match, scan the situations above.');
+  } catch(e){
+    noteEl.innerHTML='<span style="color:var(--red)">Could not read the note. Use the situations directly.</span>';
+  } finally {
+    btn.disabled=false; btn.innerHTML='Find from my note';
+  }
+}
+
+function initTherapyCoach(){
+  var allowed = TCOACH_BETA_EMAILS.indexOf((userEmail||'').toLowerCase()) !== -1;
+  var row = document.getElementById('tcoach-row');
+  if(!allowed || !row) return;
+  row.style.display='block';
+  var openBtn = document.getElementById('tcoach-open');
+  if(openBtn && !openBtn._wired){ openBtn._wired=true; openBtn.addEventListener('click', openTCoach); }
+  var filter = document.getElementById('tcoach-filter');
+  if(filter && !filter._wired){ filter._wired=true; filter.addEventListener('input', function(){ renderTCoachCards(this.value, []); }); }
+  var findBtn = document.getElementById('tcoach-find');
+  if(findBtn && !findBtn._wired){ findBtn._wired=true; findBtn.addEventListener('click', tcoachFindFromNote); }
+}
 </script>
 </body>
 </html>
