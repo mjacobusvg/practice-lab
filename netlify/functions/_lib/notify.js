@@ -7,7 +7,11 @@
 //
 // Member = accounts with tier 'forum' or 'full' (the tiers that can read posts).
 
+const { sendToAccounts } = require('./webpush');
+
 const MEMBER_TIERS = "tier=in.(forum,full)";
+
+const PLATFORM_BASE = 'https://thinkbeyondpractice.com/platform.html';
 
 function sbEnv() {
   return { URL: process.env.SUPABASE_URL, KEY: process.env.SUPABASE_SERVICE_KEY };
@@ -159,6 +163,16 @@ async function notifyNewPost(post, actor, opts) {
     });
     try { await sb('member_notifications', 'POST', rows, 'return=minimal'); } catch (e) { console.log('notify post in-app:', e && e.message); }
 
+    // Phone push to every recipient who has a subscription (best-effort).
+    try {
+      await sendToAccounts(recips.map(function (r) { return r.id; }), {
+        title: 'New post from ' + actorName,
+        body: post.title || 'A new post was published',
+        url: PLATFORM_BASE + '?post=' + encodeURIComponent(post.id),
+        tag: 'post-' + post.id
+      });
+    } catch (e) { console.log('notify post push:', e && e.message); }
+
     if (opts && opts.emailBlast) {
       const emails = recips.filter(function (r) { return r.notify_email_posts; }).map(function (r) { return r.email; });
       // Enrich to a real post announcement: snippet, space, author avatar.
@@ -214,6 +228,16 @@ async function notifyNewComment(post, commenter) {
       return { user_id: r.id, type: 'comment', actor_id: commenterId || null, actor_name: commenterName, title: post.title || 'a post', post_id: post.id };
     });
     try { await sb('member_notifications', 'POST', rows, 'return=minimal'); } catch (e) { console.log('notify comment in-app:', e && e.message); }
+
+    // Phone push to the post author + thread participants (best-effort).
+    try {
+      await sendToAccounts(recips.map(function (r) { return r.id; }), {
+        title: commenterName + ' commented',
+        body: 'on "' + (post.title || 'a thread') + '"',
+        url: PLATFORM_BASE + '?post=' + encodeURIComponent(post.id),
+        tag: 'comment-' + post.id
+      });
+    } catch (e) { console.log('notify comment push:', e && e.message); }
 
     const emails = recips.filter(function (r) { return r.notify_email_comments; }).map(function (r) { return r.email; });
     const threadUrl = PLATFORM_URL + '?post=' + encodeURIComponent(post.id);

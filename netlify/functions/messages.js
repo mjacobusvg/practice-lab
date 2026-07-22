@@ -14,6 +14,7 @@
 
 const { verifyToken } = require('./_lib/session');
 const { emailBcc, prefsFooter } = require('./_lib/notify');
+const { sendToAccounts } = require('./_lib/webpush');
 const { linkifyMentions } = require('./_lib/mentions');
 
 const MAX_BODY = 5000;
@@ -129,6 +130,16 @@ exports.handler = async function (event) {
       await sb('dm_conversations?id=eq.' + convId, 'PATCH', {
         last_message_at: msg.created_at, last_message_preview: preview, last_sender_id: me.id
       }, 'return=minimal');
+
+      // Phone push to the recipient (best-effort; never blocks send).
+      try {
+        await sendToAccounts([toId], {
+          title: 'New message from ' + (me.name || 'a member'),
+          body: preview,
+          url: 'https://thinkbeyondpractice.com/platform.html?dm=' + encodeURIComponent(me.id),
+          tag: 'dm-' + me.id
+        });
+      } catch (e) { /* best-effort */ }
 
       // Email the recipient if they opted in (best-effort; never blocks send).
       if (rec.notify_email_dms && rec.email) {

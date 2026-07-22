@@ -5025,6 +5025,7 @@ async function openProfileEdit() {
     renderAvatarPreview(a.avatar_url, a.name);
   } catch (e) { /* open with whatever we have */ }
   document.getElementById('profile-overlay').classList.add('open');
+  try { refreshPushUI(); } catch (e) {}
 }
 
 function closeProfileEdit() {
@@ -6783,6 +6784,130 @@ async function promptInstall() {
 }
 
 // ════════════════════════════════════════
+// WEB PUSH — phone / desktop notifications
+// ════════════════════════════════════════
+// The public half of the VAPID keypair (safe to ship in the client). The private
+// half lives only in Netlify env (VAPID_PRIVATE_KEY) and signs each push.
+var VAPID_PUBLIC_KEY = 'BNIv439EisBl3nrzqSgLSpfdUaUHHBB5LpAMvLKhEYfwFn5KZKB6CLM_8nhnkcwT3p4P4Mad3wifeuNDCi4OqHI';
+
+function _urlB64ToUint8(base64String) {
+  var padding = '='.repeat((4 - base64String.length % 4) % 4);
+  var base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  var raw = atob(base64);
+  var arr = new Uint8Array(raw.length);
+  for (var i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+  return arr;
+}
+function pushSupported() {
+  return ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window);
+}
+function _isIOS() { return /iP(hone|ad|od)/i.test(navigator.userAgent); }
+function _isStandalone() {
+  return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+}
+async function _getPushSub() {
+  try {
+    var reg = await navigator.serviceWorker.ready;
+    return await reg.pushManager.getSubscription();
+  } catch (e) { return null; }
+}
+
+// Set the button label + helper text to match the current state whenever the
+// settings panel opens.
+async function refreshPushUI() {
+  var btn = document.getElementById('push-toggle-btn');
+  var status = document.getElementById('push-status');
+  if (!btn || !status) return;
+  status.className = 'composer-status';
+
+  if (!pushSupported()) {
+    btn.style.display = 'none';
+    status.textContent = 'This browser does not support notifications.';
+    return;
+  }
+  // iOS only allows web push when the app is installed to the Home Screen.
+  if (_isIOS() && !_isStandalone()) {
+    btn.style.display = 'none';
+    status.innerHTML = 'On iPhone/iPad, first add this app to your Home Screen (Share &rarr; Add to Home Screen), then open it from there to enable notifications.';
+    return;
+  }
+  if (Notification.permission === 'denied') {
+    btn.style.display = 'none';
+    status.textContent = 'Notifications are blocked in your browser settings for this site. Re-allow them there to turn this on.';
+    return;
+  }
+  var sub = await _getPushSub();
+  btn.style.display = 'inline-flex';
+  if (sub) {
+    btn.textContent = 'Turn off notifications on this device';
+    btn.dataset.on = '1';
+    status.textContent = 'Notifications are on for this device.';
+  } else {
+    btn.textContent = 'Enable notifications on this device';
+    btn.dataset.on = '';
+    status.textContent = '';
+  }
+}
+
+async function togglePushSubscription() {
+  var btn = document.getElementById('push-toggle-btn');
+  var status = document.getElementById('push-status');
+  if (!btn) return;
+  status.className = 'composer-status';
+
+  try {
+    if (btn.dataset.on) {
+      // Turn OFF: unsubscribe locally, then drop the row server-side.
+      var sub = await _getPushSub();
+      if (sub) {
+        var endpoint = sub.endpoint;
+        try { await sub.unsubscribe(); } catch (e) {}
+        try {
+          await fetch('/.netlify/functions/push-subscribe', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: getAuthToken(), action: 'unsubscribe', endpoint: endpoint })
+          });
+        } catch (e) {}
+      }
+      await refreshPushUI();
+      return;
+    }
+
+    // Turn ON: ask permission, subscribe, register with the server.
+    btn.disabled = true; status.textContent = 'Requesting permission…';
+    var perm = await Notification.requestPermission();
+    if (perm !== 'granted') {
+      btn.disabled = false;
+      status.textContent = 'Permission was not granted, so notifications stay off.';
+      status.className = 'composer-status err';
+      return;
+    }
+    var reg = await navigator.serviceWorker.ready;
+    var subscription = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: _urlB64ToUint8(VAPID_PUBLIC_KEY)
+    });
+    var res = await fetch('/.netlify/functions/push-subscribe', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), action: 'subscribe', subscription: subscription, ua: navigator.userAgent })
+    });
+    var data = await res.json();
+    btn.disabled = false;
+    if (!res.ok || !data.ok) {
+      status.textContent = (data && data.error) ? data.error : 'Could not enable notifications. Please try again.';
+      status.className = 'composer-status err';
+      return;
+    }
+    await refreshPushUI();
+    status.textContent = 'Done. This device will now get notifications.';
+  } catch (e) {
+    btn.disabled = false;
+    status.textContent = 'Could not enable notifications on this device.';
+    status.className = 'composer-status err';
+  }
+}
+
+// ════════════════════════════════════════
 // FIRST-TIME WELCOME + WALKTHROUGH
 // ════════════════════════════════════════
 var WELCOME_KEY = 'tbp_welcomed_v3';
@@ -7069,6 +7194,12 @@ checkAuth();
       <label class="composer-check"><input type="checkbox" id="pe-nposts"> a new post goes up</label>
       <label class="composer-check"><input type="checkbox" id="pe-ncomments"> someone replies in a thread I'm in</label>
       <label class="composer-check"><input type="checkbox" id="pe-ndms"> I get a direct message</label>
+    </div>
+    <label style="margin-top:14px">Phone &amp; desktop notifications</label>
+    <div class="composer-row" style="flex-direction:column;align-items:flex-start;gap:8px">
+      <p style="font-size:13px;color:var(--text-secondary);margin:0 0 4px">Get a notification on this device for new posts, replies, and messages, even when the app is closed.</p>
+      <button class="btn-primary" id="push-toggle-btn" style="display:none" onclick="togglePushSubscription()">Enable notifications on this device</button>
+      <p class="composer-status" id="push-status" style="margin:0"></p>
     </div>
     <div class="composer-actions">
       <span class="composer-status" id="pe-status"></span>

@@ -18,6 +18,43 @@ self.addEventListener('activate', function (e) {
   );
 });
 
+// ── Web Push ────────────────────────────────────────────────────────────────
+// A push arrives even when no tab is open. Show the notification (required on
+// every push, or the browser may show a generic "site updated" one) and, on
+// click, focus an existing platform tab or open the target URL.
+self.addEventListener('push', function (e) {
+  var data = {};
+  try { data = e.data ? e.data.json() : {}; } catch (err) { data = {}; }
+  var title = data.title || 'Think Beyond Practice';
+  var options = {
+    body: data.body || '',
+    tag: data.tag || 'tbp',
+    renotify: true,
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    data: { url: data.url || '/platform.html' }
+  };
+  e.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', function (e) {
+  e.notification.close();
+  var target = (e.notification.data && e.notification.data.url) || '/platform.html';
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function (list) {
+      for (var i = 0; i < list.length; i++) {
+        var c = list[i];
+        // Reuse an already-open platform tab if we have one.
+        if (c.url.indexOf('/platform') !== -1 && 'focus' in c) {
+          c.navigate(target).catch(function () {});
+          return c.focus();
+        }
+      }
+      if (self.clients.openWindow) return self.clients.openWindow(target);
+    })
+  );
+});
+
 self.addEventListener('fetch', function (e) {
   var req = e.request;
   if (req.method !== 'GET') return;
