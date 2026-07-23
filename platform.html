@@ -1726,6 +1726,7 @@ a.file-chip:hover { border-color:var(--teal); }
         <option value="NP Student">NP Student</option>
         <option value="Other">Other</option>
       </select>
+      <input type="text" id="gate-referred-by" placeholder="Referred by someone? Their name (optional)" autocomplete="off">
       <button class="btn-primary" onclick="signUpFree()">Browse for Free</button>
       <div class="gate-note" id="signup-status">No credit card. No commitment. Pay only when you want full access.</div>
     </div>
@@ -2033,6 +2034,25 @@ async function signUpFree() {
   var email = document.getElementById('gate-email').value.trim().toLowerCase();
   if (!name || !email || email.indexOf('@') === -1) { document.getElementById('signup-status').textContent = 'Enter your name and a valid email.'; return; }
   sendMagicLink('signup');
+  // Best-effort referral attribution, keyed by the email they just entered:
+  // from the ?ref= invite link and/or the "referred by" field. Never blocks signup.
+  try {
+    var refBy = (document.getElementById('gate-referred-by') || {}).value;
+    refBy = refBy ? String(refBy).trim() : '';
+    var refId = '';
+    try { refId = localStorage.getItem('tbp_ref') || ''; } catch (e) {}
+    if (refBy || refId) {
+      fetch('/.netlify/functions/referral-attribution', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          new_member_email: email, new_member_name: name,
+          referrer_name: refBy || undefined,
+          referrer_account_id: refId || undefined,
+          source: refId ? 'ref-link' : 'signup-form'
+        })
+      }).then(function () { try { localStorage.removeItem('tbp_ref'); } catch (e) {} }).catch(function () {});
+    }
+  } catch (e) {}
 }
 
 async function signInGoogle() {
@@ -2132,6 +2152,9 @@ async function checkAuth() {
   // Capture a ?plan=<lookup_key> deep link (e.g. the marketing site's "$119/month"
   // button) so the paid checkout auto-starts once the visitor is signed in.
   try { var _pl = new URLSearchParams(window.location.search).get('plan'); if (_pl) { localStorage.setItem('tbp_pending_plan', _pl); localStorage.setItem('tbp_pending_plan_ts', String(Date.now())); } } catch (e) {}
+  // Capture a ?ref=<referrer account id> from a member's personal invite link, so
+  // the referral is attributed automatically when this visitor signs up.
+  try { var _rf = new URLSearchParams(window.location.search).get('ref'); if (_rf) { localStorage.setItem('tbp_ref', _rf); localStorage.setItem('tbp_ref_ts', String(Date.now())); } } catch (e) {}
   var ok = await loadIdentity();
   if (ok && S.user) {
     document.getElementById('gate').classList.add('hidden');
