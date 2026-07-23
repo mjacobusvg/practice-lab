@@ -107,7 +107,10 @@ async function sendToAccounts(accountIds, payload) {
       const batch = subs.slice(i, i + CONC);
       await Promise.all(batch.map(function (s) {
         const subscription = { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } };
-        return wp.sendNotification(subscription, data, { TTL: 86400 })
+        // urgency:'high' tells the push service to deliver immediately instead of
+        // batching for a device maintenance window. Without it, Android Doze holds
+        // normal-urgency pushes for ~10-15 min when the phone is idle/locked.
+        return wp.sendNotification(subscription, data, { TTL: 86400, urgency: 'high' })
           .then(function () { sent++; })
           .catch(function (err) {
             const code = err && err.statusCode;
