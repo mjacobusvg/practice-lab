@@ -36,6 +36,10 @@ html,body{margin:0;height:100%;background:var(--navy);color:var(--cream);font-fa
 .addbtn:hover{background:var(--teal);color:var(--navy)}
 .hintbar{padding:5px 14px;background:var(--navy);border-bottom:1px solid var(--rule);color:var(--cream-dim);font-size:.75rem}
 .hintbar b{color:var(--cream)}
+#recovery{display:none;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;background:var(--navy-card);border-bottom:1px solid var(--teal);color:var(--cream);font-size:.85rem}
+#recovery button{background:var(--navy);border-radius:7px;padding:6px 12px;font-size:.82rem;cursor:pointer}
+#recovery .rec-yes{color:var(--teal);border:1px solid var(--teal)}
+#recovery .rec-no{color:var(--cream-dim);border:1px solid var(--rule)}
 .frames{position:relative;flex:1;min-height:0}
 .pframe{position:absolute;inset:0;width:100%;height:100%;border:0;background:var(--navy)}
 #gate{display:none;max-width:560px;margin:12vh auto;padding:28px;text-align:center}
@@ -57,14 +61,39 @@ html,body{margin:0;height:100%;background:var(--navy);color:var(--cream);font-fa
     <button id="add" class="addbtn" type="button">+ New patient</button>
   </div>
   <div class="hintbar">Each patient runs in its own isolated window &mdash; <b>separate memory, nothing shared between them</b>, so data can never cross. Drafting keeps running in the background when you switch. Click the <b>&#9998;</b> on a tab to rename it to the patient's name.</div>
+  <div id="recovery"></div>
   <div id="frames" class="frames"></div>
 </div>
 
 <script>
 var BETA_EMAILS = ['michael@thinkbeyondpsych.com'];
 var SCRIBE_URL = '/pm-ai-scribe.html';
-var patients = [];   // { id, label, frameEl, tabEl }
+var patients = [];   // { id, label, slot, frameEl, tabEl }
 var seq = 0;
+
+// Crash-recovery: each tab's Scribe autosaves its draft to localStorage under tbp_draft_<slot>.
+// The Desk tracks the slot per tab, persists the tab's label, and on reopen offers to recover
+// any drafts left over from a crash. All local to this device.
+var DRAFT_PREFIX = 'tbp_draft_';
+var LABELS_KEY = 'tbp_desk_labels';
+function newSlot(){ return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function getLabels(){ try{ return JSON.parse(localStorage.getItem(LABELS_KEY) || '{}') || {}; }catch(e){ return {}; } }
+function setLabelFor(slot, label){ if(!slot) return; try{ var m = getLabels(); m[slot] = label; localStorage.setItem(LABELS_KEY, JSON.stringify(m)); }catch(e){} }
+function clearLabelFor(slot){ try{ var m = getLabels(); delete m[slot]; localStorage.setItem(LABELS_KEY, JSON.stringify(m)); }catch(e){} }
+function removeDraft(slot){ try{ localStorage.removeItem(DRAFT_PREFIX + slot); }catch(e){} clearLabelFor(slot); }
+function scanDrafts(){
+  var out = [], cutoff = Date.now() - 48 * 3600 * 1000;   // ignore anything older than 48h
+  try {
+    for(var i = 0; i < localStorage.length; i++){
+      var k = localStorage.key(i);
+      if(k && k.indexOf(DRAFT_PREFIX) === 0){
+        try{ var d = JSON.parse(localStorage.getItem(k)); if(d && d.ts && d.ts > cutoff){ out.push({ slot: k.slice(DRAFT_PREFIX.length), ts: d.ts }); } }catch(e){}
+      }
+    }
+  } catch(e){}
+  out.sort(function(a, b){ return a.ts - b.ts; });
+  return out;
+}
 
 function findPatient(id){ for(var i=0;i<patients.length;i++){ if(patients[i].id===id) return patients[i]; } return null; }
 
@@ -112,6 +141,7 @@ function startRename(id){
     if(save && t){ p.label = t.slice(0, 40); }
     lab.textContent = p.label;      // normalize / revert if emptied
     p.frameEl.title = p.label;
+    setLabelFor(p.slot, p.label);   // persist so a recovered tab keeps the name
   }
   function onKey(e){
     if(e.key === 'Enter'){ e.preventDefault(); finish(true); }
@@ -124,23 +154,26 @@ function startRename(id){
 
 function closePatient(id){
   var p = findPatient(id); if(!p) return;
-  if(!confirm('Close ' + p.label + '? Their in-progress note is cleared and cannot be recovered.')) return;
+  if(!confirm('Close ' + p.label + '? Their note is cleared and cannot be recovered.')) return;
+  var slot = p.slot;
+  var wasActive = p.tabEl.classList.contains('active');
   p.frameEl.parentNode.removeChild(p.frameEl);
   p.tabEl.parentNode.removeChild(p.tabEl);
-  var wasActive = p.tabEl.classList.contains('active');
   patients = patients.filter(function(x){ return x.id !== id; });
+  setTimeout(function(){ removeDraft(slot); }, 150);   // clear draft after any final autosave settles
   if(patients.length === 0){ addPatient(); }
   else if(wasActive){ activate(patients[patients.length-1].id); }
 }
 
-function addPatient(autoName){
+function addPatient(autoName, slot, label){
   seq++;
   var id = 'p' + seq;
-  var label = 'Patient ' + seq;
+  slot = slot || newSlot();
+  label = label || ('Patient ' + seq);
 
   var frame = document.createElement('iframe');
   frame.className = 'pframe';
-  frame.src = SCRIBE_URL;
+  frame.src = SCRIBE_URL + '?slot=' + encodeURIComponent(slot);   // per-tab autosave key
   frame.title = label;
   // Let the isolated Scribe use the mic (ambient) and screen share (telehealth) and clipboard.
   frame.setAttribute('allow', 'microphone; camera; display-capture; clipboard-write; clipboard-read');
@@ -165,16 +198,37 @@ function addPatient(autoName){
   lab.addEventListener('dblclick', function(e){ e.stopPropagation(); startRename(id); });
   x.addEventListener('click', function(e){ e.stopPropagation(); closePatient(id); });
 
-  patients.push({ id:id, label:label, frameEl:frame, tabEl:tab });
+  patients.push({ id:id, label:label, slot:slot, frameEl:frame, tabEl:tab });
+  setLabelFor(slot, label);
   activate(id);
   if(autoName){ startRename(id); }   // new patient from the button: name it right away
+}
+
+// Reopen any drafts left over from a crash / accidental close, or start fresh.
+function recoverAll(drafts){
+  var labels = getLabels();
+  drafts.forEach(function(d){ addPatient(false, d.slot, labels[d.slot]); });
+}
+function showRecovery(drafts){
+  var bar = document.getElementById('recovery');
+  if(!bar){ recoverAll(drafts); return; }
+  var n = drafts.length;
+  bar.innerHTML = '<span>&#10227; ' + n + ' unsaved ' + (n === 1 ? 'note was' : 'notes were')
+    + ' still open when the Desk last closed. Recover ' + (n === 1 ? 'it' : 'them') + '?</span>'
+    + '<button type="button" class="rec-yes" id="rec-yes">Recover ' + n + '</button>'
+    + '<button type="button" class="rec-no" id="rec-no">Start fresh</button>';
+  bar.style.display = 'flex';
+  document.getElementById('rec-yes').addEventListener('click', function(){ bar.style.display = 'none'; recoverAll(drafts); });
+  document.getElementById('rec-no').addEventListener('click', function(){ bar.style.display = 'none'; drafts.forEach(function(d){ removeDraft(d.slot); }); addPatient(); });
 }
 
 (function(){
   // Patient Desk is available to all members. The Scribe inside each tab enforces its own auth.
   document.getElementById('desk').style.display = 'flex';
   document.getElementById('add').addEventListener('click', function(){ addPatient(true); });   // name it on create
-  addPatient();
+  var drafts = scanDrafts();
+  if(drafts.length){ showRecovery(drafts); }
+  else { addPatient(); }
 })();
 </script>
 </body>

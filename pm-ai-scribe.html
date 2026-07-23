@@ -113,7 +113,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
   <h1>AI <span>Scribe</span></h1>
   <p class="sub">Turn your visit into a clean clinical note in your structure and voice. Type your notes as you go, prep from last visit, or record the visit (in person or telehealth) &mdash; the AI Scribe reorganizes exactly what you documented into your note, using only what you wrote. It does not invent, and it flags what needs your judgment.</p>
 
-  <div class="caveat"><strong>Documentation aid, not a clinical authority.</strong> The HPI is generated only from the notes you provide and must be reviewed, corrected, and signed by you. It never adds symptoms, denials, history, or findings you did not document. No patient data is retained: notes are processed transiently, and any recording is uploaded only for transcription and deleted afterward.</div>
+  <div class="caveat"><strong>Documentation aid, not a clinical authority.</strong> The HPI is generated only from the notes you provide and must be reviewed, corrected, and signed by you. It never adds symptoms, denials, history, or findings you did not document. No patient data is retained on our servers: notes are processed transiently, and any recording is uploaded only for transcription and deleted afterward. A working draft is saved on your own device so a crash or accidental close can be recovered, and it is cleared when you finish the patient.</div>
 
   <div class="panel">
     <div class="card-group">
@@ -1450,6 +1450,7 @@ function clearVisit(){
   var rc=document.getElementById('record-consent'); if(rc) rc.checked=false;
   var rb=document.getElementById('record-btn'); if(rb){ rb.disabled=true; rb.innerHTML='&#9679; Start recording'; }
   try{ renderMode(); }catch(e){}
+  try{ if(window.tbpSaveDraft) window.tbpSaveDraft(); }catch(e){}   // drop the now-empty saved draft
   try{ window.scrollTo(0,0); }catch(e){}
 }
 
@@ -2641,6 +2642,7 @@ TBPAuth.protect({
     try { userEmail = localStorage.getItem('tbp_verified_email') || ''; } catch(e){}
     loadVaultTemplates();
     try { if(typeof initTherapyCoach==='function') initTherapyCoach(); } catch(e){}
+    try { if(typeof tbpRestoreDraft==='function') tbpRestoreDraft(); } catch(e){}
   }
 });
 </script>
@@ -2826,6 +2828,56 @@ function initTherapyCoach(){
   var findBtn = document.getElementById('tcoach-find');
   if(findBtn && !findBtn._wired){ findBtn._wired=true; findBtn.addEventListener('click', tcoachFindFromNote); }
 }
+</script>
+<script>
+// ── Local crash-recovery ─────────────────────────────────────────────────────
+// Autosave the working draft to THIS device only (localStorage, never our servers), keyed per
+// Desk tab via ?slot=, so a browser crash or accidental close can be recovered on reopen. The
+// draft is cleared when the patient is finished (tab closed or notes cleared).
+(function(){
+  function getSlot(){ try{ var m = location.search.match(/[?&]slot=([^&]+)/); if(m) return decodeURIComponent(m[1]); }catch(e){} return 'solo'; }
+  var KEY = 'tbp_draft_' + getSlot();
+  var timer = null, stopped = false;
+  function val(id){ var e = document.getElementById(id); return e ? (e.value || '') : ''; }
+  function collect(){
+    return {
+      raw: val('raw'), context: val('context'), focus: val('focus-note'),
+      visitType: (typeof visitType !== 'undefined' ? visitType : null),
+      wnMode: (typeof wnMode !== 'undefined' ? wnMode : 'plain'),
+      wnSections: (typeof wnSections !== 'undefined' ? wnSections : null),
+      ts: Date.now()
+    };
+  }
+  function hasContent(d){
+    return !!((d.raw && d.raw.trim()) || (d.context && d.context.trim()) || (d.focus && d.focus.trim())
+      || (d.wnSections && ((d.wnSections.note || '') + (d.wnSections.checklist || '')).trim()));
+  }
+  function save(){ if(stopped) return; try{ var d = collect(); if(hasContent(d)) localStorage.setItem(KEY, JSON.stringify(d)); else localStorage.removeItem(KEY); }catch(e){} }
+  function schedule(){ if(timer) clearTimeout(timer); timer = setTimeout(save, 700); }
+  window.tbpSaveDraft = save;   // clearVisit calls this after emptying the fields, dropping the stale draft
+  window.tbpClearDraft = function(){ stopped = true; try{ localStorage.removeItem(KEY); }catch(e){} };
+  document.addEventListener('input', function(ev){
+    var el = ev.target; if(!el) return;
+    if(el.id === 'raw' || el.id === 'context' || el.id === 'focus-note' || ((''+el.className).indexOf('wn-ta') !== -1)) schedule();
+  });
+  window.addEventListener('beforeunload', save);
+  // Restore this tab's saved draft if one exists (called from onVerified once the app is up).
+  window.tbpRestoreDraft = function(){
+    try{
+      var raw = localStorage.getItem(KEY); if(!raw) return;
+      var d = JSON.parse(raw); if(!d || !hasContent(d)) return;
+      if(d.visitType){ var opt = document.querySelector('#visit-opts [data-visit="' + d.visitType + '"]'); if(opt) opt.click(); }
+      if(typeof wnMode !== 'undefined' && d.wnMode) wnMode = d.wnMode;
+      if(typeof wnSections !== 'undefined' && d.wnSections) wnSections = d.wnSections;
+      var r = document.getElementById('raw'); if(r && d.raw) r.value = d.raw;
+      var c = document.getElementById('context'); if(c && d.context) c.value = d.context;
+      var f = document.getElementById('focus-note'); if(f && d.focus) f.value = d.focus;
+      try{ if(typeof renderMode === 'function') renderMode(); }catch(e){}
+      var box = document.getElementById('err-box');
+      if(box) box.innerHTML = '<div class="hint" style="color:var(--teal);margin-bottom:8px">&#10003; Recovered your unsaved note from before. Review it, it is exactly where you left off.</div>';
+    }catch(e){}
+  };
+})();
 </script>
 </body>
 </html>
