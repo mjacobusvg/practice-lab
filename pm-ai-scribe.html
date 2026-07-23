@@ -42,6 +42,8 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 .out-body{white-space:pre-wrap;font-size:.9rem;color:var(--cream);line-height:1.7}
 .flags{background:rgba(251,191,36,0.07);border:1px solid var(--amber);border-left:3px solid var(--amber);border-radius:8px;padding:14px 18px;margin-top:14px}
 .flags-h{font-size:.7rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--amber);margin-bottom:8px}
+.flags .flag-fix{display:block;width:100%;margin-top:7px;background:var(--navy);border:1px solid var(--rule);border-radius:6px;color:var(--white);padding:7px 10px;font-size:.85rem}
+.flags .flag-fix:focus{outline:none;border-color:var(--amber)}
 .flags ul{margin:0;padding-left:18px}
 .flags li{font-size:.86rem;color:var(--cream);line-height:1.55;margin-bottom:5px}
 .spinner{display:inline-block;width:15px;height:15px;border:2px solid rgba(255,255,255,.3);border-top-color:#06222b;border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:8px}
@@ -706,8 +708,16 @@ function renderResult(hpi, flags){
   html += '<div class="hint" style="margin-top:6px">Edit here before you copy or send &mdash; your changes are what get used.</div></div>';
 
   if(flags && flags.length){
-    var items = flags.map(function(f){ return '<li>'+esc(f)+'</li>'; }).join('');
-    html += '<div class="flags"><div class="flags-h">Worth a look before you sign</div><ul>'+items+'</ul></div>';
+    var items = flags.map(function(f, i){
+      return '<li style="margin-bottom:12px">' + esc(f)
+        + '<input type="text" class="flag-fix" data-fi="' + i + '" placeholder="Optional: type what you want changed for this one, in plain words">'
+        + '</li>';
+    }).join('');
+    html += '<div class="flags"><div class="flags-h">Worth a look before you sign</div><ul style="margin-bottom:6px">' + items + '</ul>'
+      + '<div class="hint" style="margin-bottom:8px">Type into any box what you want done, then apply them all in one pass. Leave a box empty to handle that one yourself in the note above.</div>'
+      + '<button class="btn-mini" id="apply-flags" type="button">Apply my notes to the HPI &rarr;</button>'
+      + '<span class="hint" id="apply-flags-hint" style="margin-left:8px"></span>'
+      + '</div>';
   }
   html += '<div class="hint" style="margin-top:14px">&#10003; Auto-reviewed against your notes.</div>';
 
@@ -729,6 +739,54 @@ function renderResult(hpi, flags){
   refreshAssessPriorHint();
   document.getElementById('build-assess').addEventListener('click', function(){ buildAssessment(this); });
   document.getElementById('send-nb-link').addEventListener('click', function(e){ e.preventDefault(); sendToNoteBuilder(); });
+  var af = document.getElementById('apply-flags');
+  if(af) af.addEventListener('click', function(){ applyFlagFixes(flags); });
+}
+
+// Apply the clinician's per-flag instructions to the HPI in ONE call (not one per flag), so a
+// small edit ("keep that he enjoys it too") doesn't mean hunting through the whole note.
+function reviseHpiSystem(){
+  var s = HOUSE + "\n\n=== TASK ===\n";
+  s += "You are REVISING an already-drafted psychiatric HPI to apply the clinician's specific instructions. Each instruction is the clinician's response to a review flag about the note. Apply ONLY what they ask, weaving each change into the correct existing section as natural clinical prose in their voice.\n\n";
+  s += "RULES:\n";
+  s += "- Change ONLY what the instructions direct. Leave every other part of the HPI exactly as it is, word for word.\n";
+  s += "- Put each change where it belongs (an alleviating-factors edit goes in that section, a sleep edit in sleep, etc.).\n";
+  s += "- Do the instruction faithfully but NEVER fabricate clinical facts beyond what it directs. If it asks to restore or keep something (e.g. 'keep that he enjoys it too'), state it as documented, not as a new invented finding.\n";
+  s += "- Preserve all risk/safety content and every medication name and dose exactly, unless an instruction specifically changes them.\n";
+  s += "- Output plain, chart-ready text, no Markdown. Output ONLY the revised HPI, nothing else.\n";
+  return s;
+}
+async function applyFlagFixes(flags){
+  var btn = document.getElementById('apply-flags');
+  var hint = document.getElementById('apply-flags-hint');
+  var hpiEl = document.getElementById('hpi-out');
+  if(!btn || !hpiEl) return;
+  var fixes = [];
+  document.querySelectorAll('.flag-fix').forEach(function(inp){
+    var v = (inp.value || '').trim();
+    if(v){ var i = parseInt(inp.getAttribute('data-fi'), 10); fixes.push({ flag: (flags && flags[i]) || '', instruction: v }); }
+  });
+  if(!fixes.length){ hint.innerHTML = '<span style="color:var(--amber)">Type what you want changed in a box first.</span>'; return; }
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Applying&hellip;'; hint.innerHTML = '';
+  tbpNotifyDesk('busy');
+  var ok = false;
+  try {
+    var msg = "CURRENT HPI:\n\n" + hpiEl.value + "\n\n---\n\nCLINICIAN INSTRUCTIONS (each responds to a review flag; apply each):\n"
+      + fixes.map(function(x){ return "- Flag: " + x.flag + "\n  Do: " + x.instruction; }).join("\n");
+    var revised = await callAPI(reviseHpiSystem(), [{role:'user', content: msg}], 3400);
+    if(!revised || !revised.trim()){ throw new Error('Nothing came back. Try again.'); }
+    hpiEl.value = finalizeHpi(revised);
+    lastHpi = hpiEl.value;
+    document.querySelectorAll('.flag-fix').forEach(function(inp){ if(inp.value.trim()) inp.value = ''; });
+    hint.innerHTML = '<span style="color:var(--teal)">Applied. Review the HPI above.</span>';
+    try { hpiEl.scrollIntoView({ behavior:'smooth', block:'center' }); } catch(e){}
+    ok = true;
+  } catch(err){
+    hint.innerHTML = '<span style="color:var(--red)">'+esc(err.message||err)+'</span>';
+  } finally {
+    btn.disabled = false; btn.innerHTML = 'Apply my notes to the HPI &rarr;';
+    tbpNotifyDesk(ok ? 'done' : 'idle');
+  }
 }
 
 // When this Scribe runs as a Patient Desk tab, tell the parent Desk whether it is generating,
