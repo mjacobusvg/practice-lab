@@ -59,28 +59,15 @@ async function sbFetch(path, method, body, prefer) {
   return text ? JSON.parse(text) : null;
 }
 
-// TEMP diagnostic: record each send attempt to push_debug so we can see, from a
-// real event, whether the function is configured, found subscriptions, and what
-// the push service returned. Best-effort; never throws. Remove once verified.
-async function logDebug(row) {
-  try { await sbFetch('push_debug', 'POST', row, 'return=minimal'); } catch (e) { /* ignore */ }
-}
-
 // Send one payload to every enabled subscription belonging to the given account
 // ids. `payload` = { title, body, url, tag }. Fire-and-forget from the caller's
 // perspective; we await internally only so the serverless function stays alive
 // long enough to deliver. Returns { sent, pruned } counts (useful in logs).
 async function sendToAccounts(accountIds, payload) {
-  const ctx = (payload && (payload.tag || payload.title)) || 'unknown';
   try {
     const ids = (accountIds || []).filter(Boolean);
-    if (!ids.length) { await logDebug({ context: ctx, configured: false, module_ok: !!getWebpush(), env_ok: !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY), sub_count: 0, sent: 0, pruned: 0, errors: 'no account ids' }); return { sent: 0, pruned: 0 }; }
-    const moduleOk = !!getWebpush();
-    const envOk = !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
-    if (!ensureConfigured()) { // keys not set yet / module missing -> silently off
-      await logDebug({ context: ctx, configured: false, module_ok: moduleOk, env_ok: envOk, sub_count: 0, sent: 0, pruned: 0, errors: 'ensureConfigured=false' });
-      return { sent: 0, pruned: 0 };
-    }
+    if (!ids.length) return { sent: 0, pruned: 0 };
+    if (!ensureConfigured()) return { sent: 0, pruned: 0 }; // keys not set yet -> silently off
     const wp = getWebpush();
 
     const inList = ids.map(function (i) { return String(i); }).join(',');
@@ -88,7 +75,7 @@ async function sendToAccounts(accountIds, payload) {
       'push_subscriptions?enabled=is.true&account_id=in.(' + inList + ')&select=id,endpoint,p256dh,auth',
       'GET'
     );
-    if (!subs || !subs.length) { await logDebug({ context: ctx, configured: true, module_ok: moduleOk, env_ok: envOk, sub_count: 0, sent: 0, pruned: 0, errors: 'no subscriptions for ' + inList }); return { sent: 0, pruned: 0 }; }
+    if (!subs || !subs.length) return { sent: 0, pruned: 0 };
 
     const data = JSON.stringify({
       title: payload.title || 'Think Beyond Practice',
@@ -99,7 +86,6 @@ async function sendToAccounts(accountIds, payload) {
 
     let sent = 0;
     const dead = [];
-    const errs = [];
     // Modest concurrency; the recipient set per event is small (post fan-out is
     // the largest and is still only the active member base).
     const CONC = 10;
@@ -114,7 +100,6 @@ async function sendToAccounts(accountIds, payload) {
           .then(function () { sent++; })
           .catch(function (err) {
             const code = err && err.statusCode;
-            errs.push('id' + s.id + ':' + code + ':' + String(err && (err.body || err.message)).slice(0, 120));
             // 404/410 => the push service says this endpoint is gone for good.
             if (code === 404 || code === 410) dead.push(s.id);
             else console.log('webpush send error (' + code + '):', err && err.message);
@@ -129,10 +114,8 @@ async function sendToAccounts(accountIds, payload) {
       } catch (e) { /* prune is best-effort */ }
     }
 
-    await logDebug({ context: ctx, configured: true, module_ok: moduleOk, env_ok: envOk, sub_count: subs.length, sent: sent, pruned: dead.length, errors: errs.join(' | ') || null });
     return { sent: sent, pruned: dead.length };
   } catch (e) {
-    await logDebug({ context: ctx, configured: null, module_ok: !!getWebpush(), env_ok: !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY), sub_count: null, sent: 0, pruned: 0, errors: 'THROW: ' + (e && e.message) });
     console.log('sendToAccounts error:', e && e.message);
     return { sent: 0, pruned: 0 };
   }
