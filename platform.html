@@ -2966,7 +2966,7 @@ async function viewPost(postId) {
     // Load post
     var { data: post, error } = await SB
       .from('forum_posts')
-      .select('id, author_id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, is_locked, image_urls, poll, attachments, canonical_synthesis, ce_candidate, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name))')
+      .select('id, author_id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, is_locked, image_urls, poll, attachments, canonical_synthesis, ce_candidate, free_visible, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name))')
       .eq('id', postId)
       .single();
     if (error) throw error;
@@ -3040,8 +3040,9 @@ async function viewPost(postId) {
     h += postTagPillsHtml(postTags);
 
     // Non-members: excerpt teaser + join gate instead of the full thread.
-    // (First few paragraphs prove the answer is good, then convert.)
-    if (!isPaidMember()) {
+    // (First few paragraphs prove the answer is good, then convert.) A post
+    // flagged free_visible is exempt: free members read it in full.
+    if (!isPaidMember() && !post.free_visible) {
       h += '<div class="post-prose teaser-fade">' + teaserHtml(post) + '</div>';
       h += '<div class="teaser-gate">';
       h += '<div class="tg-title">Keep reading</div>';
@@ -3050,6 +3051,10 @@ async function viewPost(postId) {
       h += '</div>';
       center.innerHTML = h; window.scrollTo(0, 0); return;
     }
+
+    // Paid members can react/comment. A free member reading a free_visible post
+    // gets the full text but a read-only view (participation stays a paid perk).
+    var canParticipate = isPaidMember();
 
     // Body
     h += '<div class="post-prose">';
@@ -3087,8 +3092,8 @@ async function viewPost(postId) {
       h += '<div class="poll" id="poll-' + post.id + '" data-post="' + post.id + '">' + pollHtml(post.id, post.poll, null, {}, 0) + '</div>';
     }
 
-    // Reactions on the post itself (heart / helpful / insight)
-    h += reactionBarHtml('post', post.id, aggregateReactions(postReacts, myId));
+    // Reactions on the post itself (heart / helpful / insight) — participants only.
+    if (canParticipate) h += reactionBarHtml('post', post.id, aggregateReactions(postReacts, myId));
 
     // Admin tools: inline synthesis editing + CE candidate marker
     if (isAdmin()) {
@@ -3096,6 +3101,7 @@ async function viewPost(postId) {
       h += '<div class="admin-post-tools">';
       h += '<button onclick="openComposer(\'synthesis\', window.__currentPost)">' + (post.canonical_synthesis ? 'Edit summary' : '+ Add summary') + '</button>';
       h += '<button class="' + (post.ce_candidate ? 'on' : '') + '" onclick="toggleCE()">' + (post.ce_candidate ? '\u2713 CE candidate' : 'Mark CE candidate') + '</button>';
+      h += '<button class="' + (post.free_visible ? 'on' : '') + '" onclick="togglePostFree()">' + (post.free_visible ? '\ud83d\udd13 Free to read' : '\ud83d\udd12 Members-only') + '</button>';
       h += '</div>';
     }
 
@@ -3157,11 +3163,14 @@ async function viewPost(postId) {
       if (canDelete) out += '<button onclick="deleteComment(\'' + c.id + '\',\'' + post.id + '\')" title="Delete" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:0.72rem;padding:2px 4px">Delete</button>';
       out += '</div>';
       out += '<div class="rich-body" style="font-size:0.84rem;color:var(--text-primary);line-height:1.6;word-wrap:break-word">' + (c.body_html || esc(c.body_plain || '')) + '</div>';
-      // Reaction bar + Reply action row
-      out += '<div class="comment-actions">';
-      out += reactionBarHtml('comment', c.id, cReactMap[c.id] || { heart: 0, helpful: 0, insight: 0, mine: null });
-      if (!post.is_locked) out += '<button type="button" class="reply-link" onclick="toggleReplyBox(\'' + c.id + '\',\'' + post.id + '\')">Reply</button>';
-      out += '</div>';
+      // Reaction bar + Reply action row (participants only; free readers of a
+      // free_visible post see comments read-only).
+      if (canParticipate) {
+        out += '<div class="comment-actions">';
+        out += reactionBarHtml('comment', c.id, cReactMap[c.id] || { heart: 0, helpful: 0, insight: 0, mine: null });
+        if (!post.is_locked) out += '<button type="button" class="reply-link" onclick="toggleReplyBox(\'' + c.id + '\',\'' + post.id + '\')">Reply</button>';
+        out += '</div>';
+      }
       out += '<div class="reply-box" id="reply-box-' + c.id + '"></div>';
       var kids = childrenMap[c.id] || [];
       kids.forEach(function(k) { out += renderCommentNode(k, depth + 1); });
@@ -3172,8 +3181,17 @@ async function viewPost(postId) {
     h += '<div style="margin-top:24px;border-top:1px solid var(--border);padding-top:20px">';
     h += '<div style="font-size:0.85rem;font-weight:600;color:var(--text-primary);margin-bottom:16px">' + cCount + ' Comment' + (cCount !== 1 ? 's' : '') + '</div>';
     topLevel.forEach(function(c) { h += renderCommentNode(c, 0); });
-    // Composer — open to any member (forum or full); locked threads hide it.
-    if (!post.is_locked) {
+    // Composer — paid members only; locked threads hide it; a free reader of a
+    // free_visible post gets a Join CTA instead of the composer.
+    if (post.is_locked) {
+      h += '<div style="font-size:0.78rem;color:var(--text-secondary);font-style:italic;margin-top:8px">This thread is locked. New comments are closed.</div>';
+    } else if (!canParticipate) {
+      h += '<div class="teaser-gate" style="margin-top:16px">';
+      h += '<div class="tg-title">Free to read — join to join in</div>';
+      h += '<p class="tg-sub">You just read this whole post free. Become a member to comment, react, and unlock every thread.</p>';
+      h += '<button class="btn-primary" onclick="showJoin(\'' + (post.spaces ? post.spaces.slug : '') + '\')">Join Think Beyond Practice</button>';
+      h += '</div>';
+    } else {
       h += '<div style="margin-top:16px">';
       h += phiNote('forum');
       h += '<div class="md-toolbar" id="comment-toolbar">'
@@ -3190,8 +3208,6 @@ async function viewPost(postId) {
       h += '<button class="btn-primary" id="comment-submit" onclick="submitComment(\'' + post.id + '\')">Post comment</button>';
       h += '</div>';
       h += '</div>';
-    } else {
-      h += '<div style="font-size:0.78rem;color:var(--text-secondary);font-style:italic;margin-top:8px">This thread is locked. New comments are closed.</div>';
     }
     h += '</div>';
 
@@ -3214,6 +3230,23 @@ function teaserHtml(post) {
   if (ps && ps.length) return ps.slice(0, 3).join('');
   var plain = (post.body_plain || post.excerpt || '').slice(0, 450);
   return plain ? '<p>' + esc(plain) + '</p>' : '';
+}
+
+// Admin: toggle whether free-tier members can read this whole post (vs. teaser).
+// Lets you rotate a "free post of the week" without touching everything else.
+async function togglePostFree() {
+  var post = window.__currentPost; if (!post) return;
+  var next = !post.free_visible;
+  try {
+    var res = await fetch('/.netlify/functions/set-post-visibility', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), post_id: post.id, free_visible: next })
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) { alert((data && data.error) || 'Could not update visibility.'); return; }
+    post.free_visible = next;
+    viewPost(post.id);
+  } catch (e) { alert('Could not update visibility.'); }
 }
 
 // Post a member comment, then reload the thread so it renders with the new
