@@ -58,7 +58,10 @@ exports.handler = async function (event) {
   const sessionToken = (p.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
   const session = verifyToken(sessionToken);
   if (!session.valid) return { statusCode: 401, headers, body: JSON.stringify({ ok: false, error: 'Sign in first' }) };
-  if (session.claims.scope !== 'member') return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Members only' }) };
+  // 'member' (forum/full) may comment anywhere; 'free' may comment only on posts
+  // explicitly opened to free members (enforced per-post below). Nothing else.
+  const scope = String(session.claims.scope || '');
+  if (scope !== 'member' && scope !== 'free') return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Members only' }) };
   const email = String(session.claims.email || '').trim().toLowerCase();
   if (!email || email.indexOf('@') === -1) return { statusCode: 401, headers, body: JSON.stringify({ ok: false, error: 'Sign in first' }) };
 
@@ -79,9 +82,11 @@ exports.handler = async function (event) {
       if (raw.length > MAX_COMMENT_CHARS) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Comment is too long' }) };
 
       // Post must exist and be open to replies.
-      const posts = await sb('forum_posts?id=eq.' + encodeURIComponent(postId) + '&select=id,title,author_id,comment_count,is_locked&limit=1', 'GET');
+      const posts = await sb('forum_posts?id=eq.' + encodeURIComponent(postId) + '&select=id,title,author_id,comment_count,is_locked,free_visible&limit=1', 'GET');
       if (!posts || !posts.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'Post not found' }) };
       if (posts[0].is_locked) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'This thread is locked' }) };
+      // Free-tier accounts may comment only on posts opened to free members.
+      if (scope !== 'member' && !posts[0].free_visible) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Join to comment on this thread' }) };
 
       // Optional threaded reply: the parent must belong to the same post.
       let parentId = null;

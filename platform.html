@@ -3052,9 +3052,11 @@ async function viewPost(postId) {
       center.innerHTML = h; window.scrollTo(0, 0); return;
     }
 
-    // Paid members can react/comment. A free member reading a free_visible post
-    // gets the full text but a read-only view (participation stays a paid perk).
-    var canParticipate = isPaidMember();
+    // Paid members can react and comment. A free member reading a free_visible
+    // post can also comment/reply (the engagement on-ramp), but reactions stay a
+    // paid perk. Free readers of a gated post get neither.
+    var canReact = isPaidMember();
+    var canComment = isPaidMember() || !!post.free_visible;
 
     // Body
     h += '<div class="post-prose">';
@@ -3092,8 +3094,8 @@ async function viewPost(postId) {
       h += '<div class="poll" id="poll-' + post.id + '" data-post="' + post.id + '">' + pollHtml(post.id, post.poll, null, {}, 0) + '</div>';
     }
 
-    // Reactions on the post itself (heart / helpful / insight) — participants only.
-    if (canParticipate) h += reactionBarHtml('post', post.id, aggregateReactions(postReacts, myId));
+    // Reactions on the post itself (heart / helpful / insight) — paid members only.
+    if (canReact) h += reactionBarHtml('post', post.id, aggregateReactions(postReacts, myId));
 
     // Admin tools: inline synthesis editing + CE candidate marker
     if (isAdmin()) {
@@ -3163,12 +3165,11 @@ async function viewPost(postId) {
       if (canDelete) out += '<button onclick="deleteComment(\'' + c.id + '\',\'' + post.id + '\')" title="Delete" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:0.72rem;padding:2px 4px">Delete</button>';
       out += '</div>';
       out += '<div class="rich-body" style="font-size:0.84rem;color:var(--text-primary);line-height:1.6;word-wrap:break-word">' + (c.body_html || esc(c.body_plain || '')) + '</div>';
-      // Reaction bar + Reply action row (participants only; free readers of a
-      // free_visible post see comments read-only).
-      if (canParticipate) {
+      // Reaction bar (paid only) + Reply (paid, or free on a free_visible post).
+      if (canReact || canComment) {
         out += '<div class="comment-actions">';
-        out += reactionBarHtml('comment', c.id, cReactMap[c.id] || { heart: 0, helpful: 0, insight: 0, mine: null });
-        if (!post.is_locked) out += '<button type="button" class="reply-link" onclick="toggleReplyBox(\'' + c.id + '\',\'' + post.id + '\')">Reply</button>';
+        if (canReact) out += reactionBarHtml('comment', c.id, cReactMap[c.id] || { heart: 0, helpful: 0, insight: 0, mine: null });
+        if (canComment && !post.is_locked) out += '<button type="button" class="reply-link" onclick="toggleReplyBox(\'' + c.id + '\',\'' + post.id + '\')">Reply</button>';
         out += '</div>';
       }
       out += '<div class="reply-box" id="reply-box-' + c.id + '"></div>';
@@ -3185,7 +3186,7 @@ async function viewPost(postId) {
     // free_visible post gets a Join CTA instead of the composer.
     if (post.is_locked) {
       h += '<div style="font-size:0.78rem;color:var(--text-secondary);font-style:italic;margin-top:8px">This thread is locked. New comments are closed.</div>';
-    } else if (!canParticipate) {
+    } else if (!canComment) {
       h += '<div class="teaser-gate" style="margin-top:16px">';
       h += '<div class="tg-title">Free to read — join to join in</div>';
       h += '<p class="tg-sub">You just read this whole post free. Become a member to comment, react, and unlock every thread.</p>';
