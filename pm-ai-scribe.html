@@ -718,6 +718,12 @@ function renderResult(hpi, flags){
   document.getElementById('send-nb-link').addEventListener('click', function(e){ e.preventDefault(); sendToNoteBuilder(); });
 }
 
+// When this Scribe runs as a Patient Desk tab, tell the parent Desk whether it is generating,
+// so the tab can show a drafting / ready badge. Harmless (no-op) when not framed.
+function tbpNotifyDesk(status){
+  try { if(window.top !== window.self) window.parent.postMessage({ tbp:'scribe-status', status:status }, window.location.origin); } catch(e){}
+}
+
 // ── Generate (Slice 1) — reusable so the top box AND the prep starting-note box can draft ──
 async function runDraft(sourceText, btn, errEl){
   errEl.innerHTML = '';
@@ -726,6 +732,7 @@ async function runDraft(sourceText, btn, errEl){
   var label = btn.innerHTML; var ok = false;
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Drafting&hellip;';
   document.getElementById('results').innerHTML='';
+  tbpNotifyDesk('busy');
   try {
     var hpi = await callAPI(draftSystem(), [{role:'user', content: gatherSource(sourceText)}], 3400);
     if(!hpi){ throw new Error('No HPI came back. Try again.'); }
@@ -756,6 +763,7 @@ async function runDraft(sourceText, btn, errEl){
     errEl.innerHTML = '<div class="err">'+esc(err.message||err)+'</div>';
   } finally {
     btn.disabled = false; btn.innerHTML = label;
+    tbpNotifyDesk(ok ? 'done' : 'idle');
   }
   return ok;
 }
@@ -814,6 +822,8 @@ document.getElementById('prep-btn').addEventListener('click', async function(){
   if(last.length < 40){ hint.innerHTML = '<span style="color:var(--amber)">Paste last visit\'s note above first.</span>'; return; }
   var btn = this; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Setting up&hellip;';
   document.getElementById('prep-results').innerHTML = '';
+  tbpNotifyDesk('busy');
+  var prepOk = false;
   try {
     // The model occasionally returns truncated or non-JSON output on a given attempt — that is a
     // transient hiccup, not a problem with the note (the SAME note succeeds on a later try). Retry
@@ -831,10 +841,12 @@ document.getElementById('prep-btn').addEventListener('click', async function(){
     if(!j){ throw new Error('Could not build the prep after a few tries. This is usually a transient hiccup, give it another go. If it keeps failing on a very long note, paste just the HPI, assessment, and medications, then Set me up again.'); }
     hint.innerHTML = '';
     renderPrep(j);
+    prepOk = true;
   } catch(err){
     hint.innerHTML = '<span style="color:var(--red)">'+esc(err.message||err)+'</span>';
   } finally {
     btn.disabled = false; btn.innerHTML = 'Set me up for this visit &rarr;';
+    tbpNotifyDesk(prepOk ? 'done' : 'idle');
   }
 });
 
@@ -1190,6 +1202,8 @@ async function generateNote(inp, scope, opt){
   var gbtn = document.getElementById('pf-generate');
   if(gbtn){ gbtn.disabled = true; gbtn.innerHTML = '<span class="spinner"></span>Generating&hellip;'; }
   box.innerHTML = '<div class="out"><div class="hint"><span class="spinner"></span> Drafting and auditing against your notes&hellip;</div></div>';
+  tbpNotifyDesk('busy');
+  var genOk = false;
   try {
     var assess = null, therapy = '';
     if(scope==='assessment' || scope==='both'){
@@ -1209,12 +1223,14 @@ async function generateNote(inp, scope, opt){
     lastGen = { inp: inp, scope: scope, opt: opt, therapy: therapy, plan: plan };
     renderAssessment(assess ? assess.assessment : '', assess ? assess.flags : [], therapy, opt.code, plan);
     box.scrollIntoView({ behavior:'smooth', block:'start' });
+    genOk = true;
   } catch(err){
     box.innerHTML = '<div class="err">'+esc(err.message || 'Could not generate.')+'</div>';
   } finally {
     // Leave the Generate button live so the clinician can change a preflight answer and
     // regenerate in place. Relabel it so it reads as a re-run, not a first run.
     if(gbtn){ gbtn.disabled = false; gbtn.innerHTML = 'Regenerate assessment' + (scope==='both' ? ' &amp; psychotherapy note' : ' &amp; plan') + ' &rarr;'; }
+    tbpNotifyDesk(genOk ? 'done' : 'idle');
   }
 }
 

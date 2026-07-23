@@ -25,6 +25,10 @@ html,body{margin:0;height:100%;background:var(--navy);color:var(--cream);font-fa
 .tab.active .tab-label{color:var(--white)}
 .tab-x{background:none;border:none;color:var(--cream-dim);font-size:1.1rem;line-height:1;cursor:pointer;padding:0 2px;border-radius:4px}
 .tab-x:hover{color:var(--red)}
+.tab-badge{width:8px;height:8px;border-radius:50%;background:transparent;flex:none}
+.tab-badge.busy{background:var(--amber);animation:tbpulse 1s ease-in-out infinite}
+.tab-badge.ready{background:var(--teal)}
+@keyframes tbpulse{0%,100%{opacity:.3}50%{opacity:1}}
 .addbtn{background:var(--navy);color:var(--teal);border:1px solid var(--teal);border-radius:8px;padding:7px 12px;font-size:.85rem;cursor:pointer;white-space:nowrap}
 .addbtn:hover{background:var(--teal);color:var(--navy)}
 .hintbar{padding:5px 14px;background:var(--navy);border-bottom:1px solid var(--rule);color:var(--cream-dim);font-size:.75rem}
@@ -66,8 +70,27 @@ function activate(id){
     var on = patients[i].id === id;
     patients[i].frameEl.style.display = on ? 'block' : 'none';
     patients[i].tabEl.classList.toggle('active', on);
+    // Opening a tab means you're now looking at it — clear its "ready" badge.
+    if(on){ var bb = patients[i].tabEl.querySelector('.tab-badge'); if(bb && bb.classList.contains('ready')){ bb.className = 'tab-badge'; bb.title = ''; } }
   }
 }
+
+// A tab shows a pulsing amber dot while its Scribe is generating, and a steady teal dot when a
+// draft/assessment finished in a tab you're not looking at. Signals come from the Scribe via postMessage.
+function setBadge(p, status){
+  var b = p.tabEl.querySelector('.tab-badge'); if(!b) return;
+  var active = p.tabEl.classList.contains('active');
+  if(status === 'busy'){ b.className = 'tab-badge busy'; b.title = 'Drafting…'; }
+  else if(status === 'done'){ b.className = active ? 'tab-badge' : 'tab-badge ready'; b.title = active ? '' : 'Ready to review'; }
+  else { b.className = 'tab-badge'; b.title = ''; }
+}
+window.addEventListener('message', function(e){
+  if(e.origin !== window.location.origin) return;
+  var d = e.data; if(!d || d.tbp !== 'scribe-status') return;
+  for(var i=0;i<patients.length;i++){
+    if(patients[i].frameEl.contentWindow === e.source){ setBadge(patients[i], d.status); break; }
+  }
+});
 
 function renamePatient(id){
   var p = findPatient(id); if(!p) return;
@@ -106,9 +129,10 @@ function addPatient(){
   var tab = document.createElement('div');
   tab.className = 'tab';
   tab.setAttribute('data-id', id);
+  var badge = document.createElement('span'); badge.className = 'tab-badge';
   var lab = document.createElement('span'); lab.className = 'tab-label'; lab.textContent = label;
   var x = document.createElement('button'); x.className = 'tab-x'; x.type = 'button'; x.title = 'Close'; x.innerHTML = '&times;';
-  tab.appendChild(lab); tab.appendChild(x);
+  tab.appendChild(badge); tab.appendChild(lab); tab.appendChild(x);
   document.getElementById('tabs').appendChild(tab);
 
   tab.addEventListener('click', function(e){ if(e.target === x) return; activate(id); });
