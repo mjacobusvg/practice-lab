@@ -119,7 +119,12 @@ exports.handler = async function (event) {
         const optOutUrl = BASE_URL + '/.netlify/functions/letter-schedule-optout?token=' +
           encodeURIComponent(sch.opt_out_token);
         // Provider-authored intro shown at the top of the email; falls back to standard wording when blank.
-        const customMsg = (sch.patient_message || '').toString().trim();
+        // The very first send (sends_count 0/null) uses first_message when set; every later send uses
+        // the recurring patient_message.
+        const isFirstSend = !(sch.sends_count > 0);
+        const firstMsg = (sch.first_message || '').toString().trim();
+        const recurringMsg = (sch.patient_message || '').toString().trim();
+        const customMsg = (isFirstSend && firstMsg) ? firstMsg : recurringMsg;
         const ses = sesClient();
 
         if (esign) {
