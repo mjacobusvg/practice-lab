@@ -187,12 +187,14 @@ exports.handler = async function (event) {
       }
     }
 
-    // Notify all other members in-app (no email blast for member posts).
+    // Notify all other members: in-app always, plus the teaser-with-link email
+    // (respects each member's notify_email_posts preference + unsubscribe), so a
+    // member's post pulls the community back onto the platform like Michael's do.
     try {
       await notifyNewPost(
         { id: post.id, title: title, author_id: authorId },
         { id: authorId, name: authorName },
-        { emailBlast: false }
+        { emailBlast: true }
       );
     } catch (e) { /* never block posting */ }
 
