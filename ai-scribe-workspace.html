@@ -25,6 +25,9 @@ html,body{margin:0;height:100%;background:var(--navy);color:var(--cream);font-fa
 .tab.active .tab-label{color:var(--white)}
 .tab-x{background:none;border:none;color:var(--cream-dim);font-size:1.1rem;line-height:1;cursor:pointer;padding:0 2px;border-radius:4px}
 .tab-x:hover{color:var(--red)}
+.tab-edit{background:none;border:none;color:var(--cream-dim);font-size:.82rem;line-height:1;cursor:pointer;padding:0 2px;border-radius:4px}
+.tab-edit:hover{color:var(--teal)}
+.tab-label[contenteditable="true"]{outline:1px solid var(--teal);border-radius:3px;padding:0 4px;cursor:text;min-width:46px;max-width:200px}
 .tab-badge{width:8px;height:8px;border-radius:50%;background:transparent;flex:none}
 .tab-badge.busy{background:var(--amber);animation:tbpulse 1s ease-in-out infinite}
 .tab-badge.ready{background:var(--teal)}
@@ -53,7 +56,7 @@ html,body{margin:0;height:100%;background:var(--navy);color:var(--cream);font-fa
     <div id="tabs" class="tabs"></div>
     <button id="add" class="addbtn" type="button">+ New patient</button>
   </div>
-  <div class="hintbar">Each patient runs in its own isolated window &mdash; <b>separate memory, nothing shared between them</b>, so data can never cross. Drafting keeps running in the background when you switch. Double-click a tab to rename it.</div>
+  <div class="hintbar">Each patient runs in its own isolated window &mdash; <b>separate memory, nothing shared between them</b>, so data can never cross. Drafting keeps running in the background when you switch. Click the <b>&#9998;</b> on a tab to rename it to the patient's name.</div>
   <div id="frames" class="frames"></div>
 </div>
 
@@ -92,14 +95,31 @@ window.addEventListener('message', function(e){
   }
 });
 
-function renamePatient(id){
+// Inline rename: click the pencil (or double-click the label) and type the patient's name
+// right on the tab. Enter or click-away saves; Escape cancels. Labels are in-memory only.
+function startRename(id){
   var p = findPatient(id); if(!p) return;
-  var n = prompt('Label this patient (a first name or a short tag is enough):', p.label);
-  if(n && n.trim()){
-    p.label = n.trim();
-    p.tabEl.querySelector('.tab-label').textContent = p.label;
+  var lab = p.tabEl.querySelector('.tab-label');
+  if(lab.getAttribute('contenteditable') === 'true') return;
+  lab.setAttribute('contenteditable', 'true');
+  lab.focus();
+  try { var r = document.createRange(); r.selectNodeContents(lab); var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r); } catch(e){}
+  function finish(save){
+    lab.removeAttribute('contenteditable');
+    lab.removeEventListener('keydown', onKey);
+    lab.removeEventListener('blur', onBlur);
+    var t = (lab.textContent || '').replace(/\s+/g, ' ').trim();
+    if(save && t){ p.label = t.slice(0, 40); }
+    lab.textContent = p.label;      // normalize / revert if emptied
     p.frameEl.title = p.label;
   }
+  function onKey(e){
+    if(e.key === 'Enter'){ e.preventDefault(); finish(true); }
+    else if(e.key === 'Escape'){ e.preventDefault(); finish(false); }
+  }
+  function onBlur(){ finish(true); }
+  lab.addEventListener('keydown', onKey);
+  lab.addEventListener('blur', onBlur);
 }
 
 function closePatient(id){
@@ -113,7 +133,7 @@ function closePatient(id){
   else if(wasActive){ activate(patients[patients.length-1].id); }
 }
 
-function addPatient(){
+function addPatient(autoName){
   seq++;
   var id = 'p' + seq;
   var label = 'Patient ' + seq;
@@ -131,16 +151,23 @@ function addPatient(){
   tab.setAttribute('data-id', id);
   var badge = document.createElement('span'); badge.className = 'tab-badge';
   var lab = document.createElement('span'); lab.className = 'tab-label'; lab.textContent = label;
+  var ed = document.createElement('button'); ed.className = 'tab-edit'; ed.type = 'button'; ed.title = 'Rename'; ed.innerHTML = '&#9998;';
   var x = document.createElement('button'); x.className = 'tab-x'; x.type = 'button'; x.title = 'Close'; x.innerHTML = '&times;';
-  tab.appendChild(badge); tab.appendChild(lab); tab.appendChild(x);
+  tab.appendChild(badge); tab.appendChild(lab); tab.appendChild(ed); tab.appendChild(x);
   document.getElementById('tabs').appendChild(tab);
 
-  tab.addEventListener('click', function(e){ if(e.target === x) return; activate(id); });
-  lab.addEventListener('dblclick', function(){ renamePatient(id); });
+  tab.addEventListener('click', function(e){
+    if(e.target === x || e.target === ed) return;
+    if(lab.getAttribute('contenteditable') === 'true') return;   // don't switch while editing
+    activate(id);
+  });
+  ed.addEventListener('click', function(e){ e.stopPropagation(); startRename(id); });
+  lab.addEventListener('dblclick', function(e){ e.stopPropagation(); startRename(id); });
   x.addEventListener('click', function(e){ e.stopPropagation(); closePatient(id); });
 
   patients.push({ id:id, label:label, frameEl:frame, tabEl:tab });
   activate(id);
+  if(autoName){ startRename(id); }   // new patient from the button: name it right away
 }
 
 (function(){
@@ -152,7 +179,7 @@ function addPatient(){
     return;
   }
   document.getElementById('desk').style.display = 'flex';
-  document.getElementById('add').addEventListener('click', addPatient);
+  document.getElementById('add').addEventListener('click', function(){ addPatient(true); });   // name it on create
   addPatient();
 })();
 </script>
