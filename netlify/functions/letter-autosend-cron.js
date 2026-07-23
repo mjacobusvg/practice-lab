@@ -118,6 +118,8 @@ exports.handler = async function (event) {
         const returnEmail = sch.return_email || 'jesse@corspokane.com';
         const optOutUrl = BASE_URL + '/.netlify/functions/letter-schedule-optout?token=' +
           encodeURIComponent(sch.opt_out_token);
+        // Provider-authored intro shown at the top of the email; falls back to standard wording when blank.
+        const customMsg = (sch.patient_message || '').toString().trim();
         const ses = sesClient();
 
         if (esign) {
@@ -145,7 +147,7 @@ exports.handler = async function (event) {
 
           const signUrl = BASE_URL + '/medicaid-sign.html?t=' + encodeURIComponent(signToken);
           const subject = 'Action needed: sign your Private-Pay Acknowledgment';
-          const textBody = buildSignLinkNote(signUrl, optOutUrl);
+          const textBody = buildSignLinkNote(signUrl, optOutUrl, customMsg);
           const rawMime = buildRawMime({
             fromName: FROM_NAME, fromAddress: FROM_ADDRESS, to: sch.patient_email,
             replyTo: returnEmail, subject: subject, textBody: textBody
@@ -169,7 +171,7 @@ exports.handler = async function (event) {
           });
           const pdfB64 = Buffer.from(pdfBytes).toString('base64');
           const subject = 'Action needed: Private-Pay Acknowledgment to review and sign';
-          const textBody = buildCoverNote(returnEmail, optOutUrl);
+          const textBody = buildCoverNote(returnEmail, optOutUrl, customMsg);
           const rawMime = buildRawMime({
             fromName: FROM_NAME, fromAddress: FROM_ADDRESS, to: sch.patient_email,
             replyTo: returnEmail, subject: subject, textBody: textBody,
@@ -248,11 +250,11 @@ function formatToday(offsetDays) {
   return months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
 }
 
-function buildSignLinkNote(signUrl, optOutUrl) {
-  return [
-    'Hello,',
-    '',
-    'Your provider needs you to review and sign a Private-Pay Acknowledgment for your psychiatric care.',
+function buildSignLinkNote(signUrl, optOutUrl, customMsg) {
+  const intro = customMsg
+    ? [customMsg]
+    : ['Hello,', '', 'Your provider needs you to review and sign a Private-Pay Acknowledgment for your psychiatric care.'];
+  return intro.concat([
     '',
     'You can complete and sign it online in about a minute here:',
     '  ' + signUrl,
@@ -267,14 +269,14 @@ function buildSignLinkNote(signUrl, optOutUrl) {
     '  ' + optOutUrl,
     '',
     'Think Beyond Practice'
-  ].join('\n');
+  ]).join('\n');
 }
 
-function buildCoverNote(returnEmail, optOutUrl) {
-  return [
-    'Hello,',
-    '',
-    'Attached is a Private-Pay Acknowledgment for your psychiatric care that needs to be reviewed and signed.',
+function buildCoverNote(returnEmail, optOutUrl, customMsg) {
+  const intro = customMsg
+    ? [customMsg]
+    : ['Hello,', '', 'Attached is a Private-Pay Acknowledgment for your psychiatric care that needs to be reviewed and signed.'];
+  return intro.concat([
     '',
     'Please print the attached form, then complete the following by hand:',
     '  - Patient Name',
@@ -292,7 +294,7 @@ function buildCoverNote(returnEmail, optOutUrl) {
     '  ' + optOutUrl,
     '',
     'Think Beyond Practice'
-  ].join('\n');
+  ]).join('\n');
 }
 
 // --- Raw MIME builder. With an attachment: multipart/mixed (text + base64 file).

@@ -5,7 +5,7 @@
 // (provider_email is taken from the verified token, not from the request body).
 //
 // Actions (POST body { action, ... }):
-//   create: { standard_id, patient_email, patient_label?, toggles?, sign?, cadence_days?, first_send_in_days? }
+//   create: { standard_id, patient_email, patient_label?, patient_message?, toggles?, sign?, cadence_days?, first_send_in_days? }
 //   list:   {}                          -> this provider's active/recent schedules
 //   cancel: { id }                      -> sets status 'cancelled' (provider's opt-out / patient changed coverage)
 //
@@ -80,6 +80,7 @@ exports.handler = async function (event) {
         standard_id: body.standard_id,
         patient_email: String(body.patient_email).trim(),
         patient_label: (body.patient_label || '').toString().slice(0, 120) || null,
+        patient_message: (body.patient_message || '').toString().slice(0, 2000).trim() || null,
         toggles: body.toggles && typeof body.toggles === 'object' ? body.toggles : {},
         sign: body.sign !== false,
         cadence_days: cadence,
