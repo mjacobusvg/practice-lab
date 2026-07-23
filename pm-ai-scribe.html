@@ -2696,7 +2696,22 @@ var TCOACH_CARDS = [
     counts:'Insight-oriented work connecting a current relational pattern to its origins; increased the patient\'s awareness.' }
 ];
 
-function tcoachCardHtml(c, highlight){
+// Free, no-AI relevance score: how many distinct keyword tokens from a card's tags and
+// situation actually appear in the clinician's current note. Used to order the situations
+// so the most likely-needed ones sit at the top the moment the coach opens.
+var TCOACH_STOP = {with:1,roll:1,your:1,this:1,that:1,from:1,have:1,been:1,what:1,when:1,then:1,some:1,more:1,over:1,into:1,just:1,does:1,make:1,need:1,want:1,used:1,take:1,right:1,hard:1,week:1,harm:1};
+function tcoachScore(card, noteLc){
+  if(!noteLc) return 0;
+  var toks = (card.tags || '').toLowerCase().split(/[^a-z0-9-]+/);
+  var seen = {}, score = 0;
+  toks.forEach(function(w){
+    if(w.length < 4 || seen[w] || TCOACH_STOP[w]) return;
+    seen[w] = 1;
+    if(noteLc.indexOf(w) !== -1) score++;
+  });
+  return score;
+}
+function tcoachCardHtml(c, highlight, relevant){
   var prompts = c.prompts.map(function(p){ return '<li style="margin:4px 0">'+esc(p)+'</li>'; }).join('');
   var teachArr = c.teach || [];
   var teach = teachArr.map(function(t){ return '<li style="margin:4px 0">'+esc(t)+'</li>'; }).join('');
@@ -2704,8 +2719,10 @@ function tcoachCardHtml(c, highlight){
     ? '<div class="hint" style="margin-bottom:4px">Techniques you could teach:</div>'
       + '<ul style="margin:0 0 10px;padding-left:18px">'+teach+'</ul>'
     : '';
-  var border = highlight ? 'var(--teal)' : 'var(--rule)';
-  var badge = highlight ? '<span style="float:right;font-size:.7rem;color:var(--teal);text-transform:uppercase;letter-spacing:1px">fits your note</span>' : '';
+  var border = highlight ? 'var(--teal)' : (relevant ? 'var(--gold)' : 'var(--rule)');
+  var badge = highlight
+    ? '<span style="float:right;font-size:.7rem;color:var(--teal);text-transform:uppercase;letter-spacing:1px">fits your note</span>'
+    : (relevant ? '<span style="float:right;font-size:.7rem;color:#c9a227;text-transform:uppercase;letter-spacing:1px">seen in your note</span>' : '');
   return '<div class="out" data-tcid="'+c.id+'" style="margin:0 0 12px;border-color:'+border+'">'
     + badge
     + '<div style="color:var(--cream);font-weight:600;margin-bottom:6px">'+esc(c.situation)+'</div>'
@@ -2722,11 +2739,19 @@ function renderTCoachCards(filterText, highlightIds){
     if(!q) return true;
     return (c.situation+' '+c.tags+' '+c.prompts.join(' ')+' '+(c.teach||[]).join(' ')).toLowerCase().indexOf(q) !== -1;
   });
-  // Highlighted (note-matched) cards float to the top.
-  list.sort(function(a,b){ return (hi.indexOf(b.id)!==-1) - (hi.indexOf(a.id)!==-1); });
+  // Order: AI-matched cards first, then by free keyword relevance to the current note,
+  // so the situations most likely needed for THIS patient sit at the top.
+  var noteLc = tcoachCurrentNote().toLowerCase();
+  var scoreOf = {};
+  TCOACH_CARDS.forEach(function(c){ scoreOf[c.id] = tcoachScore(c, noteLc); });
+  list.sort(function(a,b){
+    var ha = hi.indexOf(a.id)!==-1 ? 1 : 0, hb = hi.indexOf(b.id)!==-1 ? 1 : 0;
+    if(ha !== hb) return hb - ha;
+    return scoreOf[b.id] - scoreOf[a.id];
+  });
   var host = document.getElementById('tcoach-cards');
   host.innerHTML = list.length
-    ? list.map(function(c){ return tcoachCardHtml(c, hi.indexOf(c.id)!==-1); }).join('')
+    ? list.map(function(c){ return tcoachCardHtml(c, hi.indexOf(c.id)!==-1, scoreOf[c.id] >= 2); }).join('')
     : '<div class="hint">No match. Clear the filter to see all situations.</div>';
 }
 function openTCoach(){
