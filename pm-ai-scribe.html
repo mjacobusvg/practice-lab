@@ -235,6 +235,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
         <button class="btn-ghost" id="open-wizard" type="button" style="margin-left:8px">Set up / edit my HPI templates</button>
         <a href="/vault#hpi" class="btn-ghost" style="margin-left:8px;text-decoration:none;display:inline-block">Edit ROS, MSE, Plan &amp; Telehealth</a>
         <a href="#" onclick="openOnboarding();return false;" class="hint" style="margin-left:10px;color:var(--teal)">Setup guide</a>
+        <a href="#" onclick="startScribeTour();return false;" class="hint" style="margin-left:10px;color:var(--teal)">&#9658; Show me how it works</a>
         <div class="hint" style="margin-top:8px">Your Review of Systems, Mental Status Exam, Plan, and telehealth attestation live in your Vault (Note Templates tab) and attach to every note automatically.</div>
       </div>
       <div id="err-box"></div>
@@ -3041,6 +3042,155 @@ function initTherapyCoach(){
       }
     }catch(e){}
   };
+})();
+</script>
+
+<!-- ── Guided walkthrough (self-contained; teaches the post-setup usage flow) ── -->
+<style>
+.tbp-tour-scrim{position:fixed;inset:0;background:rgba(8,12,22,.55);z-index:100000;pointer-events:none}
+.tbp-tour-ring{position:fixed;z-index:100001;border-radius:10px;box-shadow:0 0 0 3px #2aabb8,0 0 0 9999px rgba(8,12,22,.55);pointer-events:none;transition:top .2s,left .2s,width .2s,height .2s}
+.tbp-tour-card{position:fixed;z-index:100002;width:330px;max-width:calc(100vw - 28px);background:#152238;color:#e8e2d6;border:1px solid rgba(255,255,255,.16);border-radius:12px;box-shadow:0 12px 38px rgba(0,0,0,.45);padding:15px 17px 14px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5}
+:root[data-theme="light"] .tbp-tour-card{background:#ffffff;color:#1b2330;border-color:rgba(27,35,48,.16)}
+.tbp-tour-card h4{margin:0 0 6px;font-size:15px;color:#2aabb8}
+.tbp-tour-card p{margin:0 0 14px}
+.tbp-tour-nav{display:flex;align-items:center;gap:8px}
+.tbp-tour-nav .sp{flex:1;font-size:12px;color:#8b93a3}
+.tbp-tour-btn{border:1px solid #2aabb8;background:#2aabb8;color:#08131c;border-radius:7px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer}
+.tbp-tour-btn.ghost{background:transparent;color:#2aabb8}
+.tbp-tour-x{position:absolute;top:7px;right:10px;background:none;border:none;color:#8b93a3;font-size:19px;cursor:pointer;line-height:1}
+</style>
+<div class="tbp-tour-scrim" id="tbp-tour-scrim" style="display:none"></div>
+<div class="tbp-tour-ring" id="tbp-tour-ring" style="display:none"></div>
+<div class="tbp-tour-card" id="tbp-tour-card" style="display:none" role="dialog" aria-modal="true" aria-label="Guided walkthrough">
+  <button class="tbp-tour-x" type="button" aria-label="Close walkthrough" onclick="TBP_TOUR.close()">&times;</button>
+  <h4 id="tbp-tour-title"></h4>
+  <p id="tbp-tour-body"></p>
+  <div class="tbp-tour-nav">
+    <span class="sp" id="tbp-tour-step"></span>
+    <button class="tbp-tour-btn ghost" type="button" id="tbp-tour-back" onclick="TBP_TOUR.prev()">Back</button>
+    <button class="tbp-tour-btn" type="button" id="tbp-tour-next" onclick="TBP_TOUR.next()">Next</button>
+  </div>
+</div>
+<script>
+var TBP_TOUR = (function(){
+  var STEPS = [
+    {sel:'#visit-opts', core:true, title:'1. Start with the visit type',
+     body:'Every visit starts here. Pick New patient or Follow-up and the right template loads automatically. Everything else opens once you choose.'},
+    {sel:'#context', optional:true, title:'Carry last visit forward',
+     body:"On a follow-up, paste last visit's whole note here once. The standing parts carry forward so today's note continues the story instead of starting from a blank page."},
+    {sel:'#prep-btn', optional:true, title:'Set me up',
+     body:"Tap this and you get today's starting note, with last visit carried forward, plus a checklist of what to follow up on. You work right in that during the visit."},
+    {sel:'#raw', core:true, title:'Your visit notes',
+     body:"Type or paste your notes exactly as you took them, shorthand and quotes and all. Don't tidy them up first, that is the tool's job."},
+    {sel:'#record-btn', optional:true, title:'Or record the visit',
+     body:"Prefer to record? With the patient's consent, start recording and the transcript drops into your notes automatically when you stop."},
+    {sel:'#generate', core:true, title:'Draft the note',
+     body:'When you are ready, hit Draft my HPI. It writes the note in your structure and voice, using only what you documented. It never invents.'},
+    {sel:'#results', core:true, title:'Your note, checked before you sign',
+     body:"Your finished note lands here, and just below it the Audit and Coder reads it back: the E/M level your documentation actually supports and whether it is safe to bill, before you put your name to it."},
+    {sel:'#open-wizard', core:true, title:'Adjust anytime',
+     body:"Change your template or sections whenever you like, right here. And the rule from the banner up top holds: review and sign every note yourself. You are always the clinician of record."}
+  ];
+  var i = 0, order = [], active = false;
+  function vis(el){ return el && el.offsetParent !== null; }
+  function target(s){ return document.querySelector(s.sel); }
+  function el(id){ return document.getElementById(id); }
+  function buildOrder(){
+    order = [];
+    for(var k=0;k<STEPS.length;k++){
+      var s = STEPS[k], t = target(s);
+      if(!t) continue;
+      if(s.optional && !vis(t)) continue;
+      order.push(k);
+    }
+    if(!order.length) order = [0];
+  }
+  function scrim(on){ var e = el('tbp-tour-scrim'); if(e) e.style.display = on ? 'block' : 'none'; }
+  function positionAt(t){
+    var ring = el('tbp-tour-ring'), card = el('tbp-tour-card');
+    var r = t.getBoundingClientRect(), pad = 6;
+    ring.style.top = (r.top - pad) + 'px';
+    ring.style.left = (r.left - pad) + 'px';
+    ring.style.width = (r.width + pad*2) + 'px';
+    ring.style.height = (r.height + pad*2) + 'px';
+    card.style.transform = 'none';
+    card.style.display = 'block';
+    var cw = card.offsetWidth, ch = card.offsetHeight, gap = 12, vw = window.innerWidth, vh = window.innerHeight;
+    var top = r.bottom + gap, left = r.left;
+    if(top + ch > vh - 10) top = Math.max(10, r.top - ch - gap);
+    if(left + cw > vw - 10) left = vw - cw - 10;
+    if(left < 10) left = 10;
+    if(top < 10) top = 10;
+    card.style.top = top + 'px';
+    card.style.left = left + 'px';
+  }
+  function centerCard(){
+    var card = el('tbp-tour-card');
+    card.style.display = 'block';
+    card.style.top = '50%';
+    card.style.left = '50%';
+    card.style.transform = 'translate(-50%,-50%)';
+  }
+  function place(){
+    var s = STEPS[order[i]], t = target(s);
+    el('tbp-tour-title').textContent = s.title;
+    el('tbp-tour-body').textContent = s.body;
+    el('tbp-tour-step').textContent = (i+1) + ' of ' + order.length;
+    el('tbp-tour-back').style.visibility = i === 0 ? 'hidden' : 'visible';
+    el('tbp-tour-next').textContent = i === order.length - 1 ? 'Done' : 'Next';
+    var anchored = t && vis(t) && t.offsetHeight > 18;
+    if(anchored){
+      try { t.scrollIntoView({ block:'center', behavior:'smooth' }); } catch(e){ try { t.scrollIntoView(); } catch(_){} }
+      scrim(false);
+      el('tbp-tour-ring').style.display = 'block';
+      setTimeout(function(){ if(active) positionAt(t); }, 260);
+    } else {
+      el('tbp-tour-ring').style.display = 'none';
+      scrim(true);
+      centerCard();
+    }
+  }
+  function onScroll(){
+    if(!active) return;
+    var s = STEPS[order[i]], t = target(s);
+    if(t && vis(t) && el('tbp-tour-ring').style.display !== 'none') positionAt(t);
+  }
+  function escFn(e){ if(e.key === 'Escape') _close(); }
+  function _start(){
+    if(active) return;
+    buildOrder(); i = 0; active = true;
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onScroll);
+    document.addEventListener('keydown', escFn);
+    place();
+  }
+  function _next(){ if(i >= order.length - 1){ _close(); return; } i++; place(); }
+  function _prev(){ if(i > 0){ i--; place(); } }
+  function _close(){
+    active = false;
+    ['tbp-tour-scrim','tbp-tour-ring','tbp-tour-card'].forEach(function(id){ var e = el(id); if(e) e.style.display = 'none'; });
+    window.removeEventListener('scroll', onScroll, true);
+    window.removeEventListener('resize', onScroll);
+    document.removeEventListener('keydown', escFn);
+    try { localStorage.setItem('tbp_scribe_tour_seen','1'); } catch(e){}
+  }
+  return { start:_start, next:_next, prev:_prev, close:_close };
+})();
+function startScribeTour(){ TBP_TOUR.start(); }
+(function(){
+  if(document.documentElement.classList.contains('in-desk')) return;
+  try { if(localStorage.getItem('tbp_scribe_tour_seen')) return; } catch(e){ return; }
+  var done = false;
+  var iv = setInterval(function(){
+    if(done) return;
+    var wa = document.getElementById('work-area');
+    if(wa && wa.offsetParent !== null){
+      done = true; clearInterval(iv);
+      try { localStorage.setItem('tbp_scribe_tour_seen','1'); } catch(e){}
+      setTimeout(startScribeTour, 600);
+    }
+  }, 700);
+  setTimeout(function(){ clearInterval(iv); }, 240000);
 })();
 </script>
 </body>
