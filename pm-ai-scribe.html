@@ -3139,6 +3139,8 @@ function initTherapyCoach(){
 <script>
 var TBP_TOUR = (function(){
   var STEPS = [
+    {sel:'#__intro__', deskOnly:true, title:'You are in a patient tab',
+     body:"You landed in the Patient Desk, and this is your first patient's tab. Let's set this visit up start to finish, and at the end I'll show you how to run several patients at once."},
     {sel:'#visit-opts', core:true, title:'Start with the visit type',
      body:'Every visit starts here. Pick New patient or Follow-up and the right template loads automatically. Everything else opens once you choose.'},
     {sel:'#style-bar', core:true, title:'Choose how you capture the visit',
@@ -3181,7 +3183,7 @@ var TBP_TOUR = (function(){
     {sel:'#open-wizard', core:true, title:'Adjust anytime',
      body:"Back on the main screen: change your template or sections whenever you like, right here. And the rule from the banner up top holds: review and sign every note yourself. You are always the clinician of record."}
   ];
-  var i = 0, order = [], active = false, demoOpen = false, saved = null;
+  var i = 0, order = [], active = false, demoOpen = false, saved = null, deskMode = false;
   function vis(el){ return el && el.offsetParent !== null; }
   function target(s){ return document.querySelector(s.sel); }
   function el(id){ return document.getElementById(id); }
@@ -3189,6 +3191,7 @@ var TBP_TOUR = (function(){
     order = [];
     for(var k=0;k<STEPS.length;k++){
       var s = STEPS[k];
+      if(s.deskOnly){ if(deskMode) order.push(k); continue; } // orientation line: only when the Desk launched us
       if(s.fullscreen){ order.push(k); continue; } // target only exists once the demo full screen opens
       var t = target(s);
       if(!t) continue;
@@ -3299,9 +3302,10 @@ var TBP_TOUR = (function(){
     if(t && vis(t) && el('tbp-tour-ring').style.display !== 'none') positionAt(t);
   }
   function escFn(e){ if(e.key === 'Escape') _close(); }
-  function _start(){
+  function _start(mode){
     if(active) return;
     active = true;
+    deskMode = (mode === 'desk');
     // Every step after the first lives inside the work area, which stays hidden until a
     // visit type is picked. If the tour is launched WITHOUT one chosen (e.g. someone hits
     // Next without selecting), default to Follow-up so the work area opens and every step
@@ -3313,10 +3317,21 @@ var TBP_TOUR = (function(){
     document.addEventListener('keydown', escFn);
     place();
   }
-  function _next(){ if(i >= order.length - 1){ _close(); return; } i++; place(); }
+  function _next(){
+    if(i >= order.length - 1){
+      // Last step. If the Desk launched this tour, hand back so it can run the multi-patient
+      // walkthrough as the finale; otherwise just close.
+      var wasDesk = deskMode;
+      _close();
+      if(wasDesk){ try { window.parent.postMessage({ tbp:'tbp-scribe-tour-done' }, location.origin); } catch(e){} }
+      return;
+    }
+    i++; place();
+  }
   function _prev(){ if(i > 0){ i--; place(); } }
   function _close(){
     active = false;
+    deskMode = false;
     if(demoOpen) closeDemoFullScreen();
     // Undo the walkthrough's visual prep-toggle (we only checked the box to reveal "Set me up";
     // we never changed the real setting) so the screen returns to the clinician's actual state.
@@ -3329,14 +3344,14 @@ var TBP_TOUR = (function(){
   }
   return { start:_start, next:_next, prev:_prev, close:_close };
 })();
-function startScribeTour(){ TBP_TOUR.start(); }
+function startScribeTour(mode){ TBP_TOUR.start(mode); }
 // When embedded in the Patient Desk, the Desk's own walkthrough hands off to this one so the
 // whole thing feels like a single continuous tour. (The Desk covers the tabs; this covers the
 // working window.) The auto-start below is suppressed in-desk precisely so the Desk drives it.
 window.addEventListener('message', function(e){
   if(e.origin !== window.location.origin) return;
   var d = e.data;
-  if(d && d.tbp === 'tbp-start-scribe-tour'){ try { startScribeTour(); } catch(_){} }
+  if(d && d.tbp === 'tbp-start-scribe-tour'){ try { startScribeTour(d.mode || null); } catch(_){} }
 });
 (function(){
   if(document.documentElement.classList.contains('in-desk')) return;
