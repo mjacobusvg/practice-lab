@@ -219,6 +219,13 @@ async function notifyNewComment(post, commenter) {
       const followers = await sb('follows?target_type=eq.post&target_id=eq.' + post.id + '&select=account_id', 'GET');
       (followers || []).forEach(function (f) { if (f.account_id) idset[f.account_id] = true; });
     } catch (e) { /* following is best-effort */ }
+    // Admins (the founder) are notified of EVERY comment, community-wide, even on
+    // threads they aren't part of, so they can stay on top of activity. Excluded
+    // below if the admin is the one commenting.
+    try {
+      const admins = await sb('accounts?is_admin=eq.true&select=id', 'GET');
+      (admins || []).forEach(function (a) { if (a.id) idset[a.id] = true; });
+    } catch (e) { /* admin notify best-effort */ }
     delete idset[commenterId];
     const ids = Object.keys(idset);
     if (!ids.length) return;
