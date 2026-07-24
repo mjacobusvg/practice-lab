@@ -61,6 +61,12 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 .focus-bar .spacer{flex:1}
 .focus-x{background:none;border:none;color:var(--cream-dim);font-size:1.5rem;cursor:pointer;line-height:1;padding:0 4px}
 #focus-note{flex:1;width:100%;background:var(--navy-card);border:1px solid var(--rule);border-radius:8px;color:var(--white);font-family:var(--font-body);font-size:.95rem;line-height:1.7;padding:16px;resize:none}
+/* Pre-visit rundown banner: sits ABOVE the editable note (never part of the draft), collapsible. */
+.focus-snap{border:1px solid var(--teal);border-radius:8px;background:rgba(42,171,184,0.08);margin:0 0 12px;flex:0 0 auto}
+.focus-snap-head{display:flex;justify-content:space-between;align-items:center;cursor:pointer;padding:10px 14px;font-size:.7rem;text-transform:uppercase;letter-spacing:1px;color:var(--teal);font-weight:700;user-select:none}
+.focus-snap-body{display:none;padding:0 14px 12px;white-space:pre-wrap;font-size:.88rem;color:var(--cream);line-height:1.55}
+.focus-snap.open .focus-snap-body{display:block}
+.focus-snap .fs-chev{color:var(--teal);font-size:.7rem}
 /* Structured (colored) working-note editor: distinct, individually editable panels. */
 #focus-sections{flex:1;overflow:auto;display:flex;flex-direction:column;gap:14px;padding:2px 2px 40px}
 /* flex:0 0 auto so panels keep their full content height and the OVERLAY scrolls,
@@ -976,6 +982,7 @@ function renderPrep(j){
   // A quick pre-visit rundown (why they're back, dx, meds, what to watch), so the clinician
   // doesn't re-read the whole last note. Glance-only; deliberately NOT part of the drafted note.
   var snap = (typeof j.snapshot === 'string' && j.snapshot.trim()) ? j.snapshot.trim() : '';
+  prepSnapshot = snap;   // also surfaced atop the full-screen working note (see openFocus)
   var snapHtml = snap
     ? '<div class="out" style="margin-top:16px;border-color:var(--teal)">'
       + '<div style="font-size:.7rem;text-transform:uppercase;letter-spacing:1px;color:var(--teal);margin-bottom:8px">Quick rundown before you walk in</div>'
@@ -989,6 +996,7 @@ function renderPrep(j){
 var focusSourceId = null;
 var prepChecklist = [];
 var prepFoci = [];
+var prepSnapshot = '';   // pre-visit rundown; shown on the setup panel AND atop the working note
 // A focus item should be a string, but the model sometimes returns an object (technique/why/
 // in-session). Coerce any shape into readable multi-line text so it never renders "[object Object]".
 function fociText(f){
@@ -1064,7 +1072,8 @@ function openFocus(sourceId){
   focusSourceId = sourceId;
   var useSections = (sourceId === 'raw' && wnMode === 'sections');
   document.getElementById('focus-err').innerHTML = '';
-  document.getElementById('focus-ref').innerHTML = '';
+  // Pre-visit rundown pinned above the note when working the prepped note (never in the draft text).
+  document.getElementById('focus-ref').innerHTML = (prepSnapshot && sourceId === 'raw') ? tbpSnapshotBannerHtml(prepSnapshot) : '';
   document.getElementById('focus-hint').textContent = '';
   var fn = document.getElementById('focus-note');
   var fs = document.getElementById('focus-sections');
@@ -1081,6 +1090,17 @@ function openFocus(sourceId){
   } else {
     fn.focus();
   }
+}
+function tbpSnapshotBannerHtml(snap){
+  return '<div id="focus-snap" class="focus-snap open">'
+    + '<div class="focus-snap-head" onclick="tbpToggleSnap()"><span>Quick rundown before you walk in</span><span class="fs-chev">&#9650;</span></div>'
+    + '<div class="focus-snap-body">' + esc(snap) + '</div>'
+    + '</div>';
+}
+function tbpToggleSnap(){
+  var el = document.getElementById('focus-snap'); if(!el) return;
+  el.classList.toggle('open');
+  var c = el.querySelector('.fs-chev'); if(c) c.innerHTML = el.classList.contains('open') ? '&#9650;' : '&#9660;';
 }
 function focusSyncBack(){
   if(!focusSourceId) return;
@@ -1457,6 +1477,7 @@ function clearVisit(){
   if(!confirm('Start a new patient?\n\nThis clears the current visit notes, the pasted last-visit note, and any draft or assessment on screen. Your saved templates and settings are kept.')) return;
   ['raw','context','focus-note'].forEach(function(id){ var e=document.getElementById(id); if(e) e.value=''; });
   wnMode='plain'; wnSections={checklist:'',guide:'',note:''};
+  prepChecklist=[]; prepFoci=[]; prepSnapshot='';   // drop the prior patient's rundown/scaffold
   ['results','prep-results','assess-results','err-box'].forEach(function(id){ var e=document.getElementById(id); if(e) e.innerHTML=''; });
   rawBaseline='';
   var rs=document.getElementById('record-status'); if(rs) rs.textContent='';
