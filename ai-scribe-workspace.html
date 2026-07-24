@@ -82,15 +82,21 @@ function setLabelFor(slot, label){ if(!slot) return; try{ var m = getLabels(); m
 function clearLabelFor(slot){ try{ var m = getLabels(); delete m[slot]; localStorage.setItem(LABELS_KEY, JSON.stringify(m)); }catch(e){} }
 function removeDraft(slot){ try{ localStorage.removeItem(DRAFT_PREFIX + slot); }catch(e){} clearLabelFor(slot); }
 function scanDrafts(){
-  var out = [], cutoff = Date.now() - 48 * 3600 * 1000;   // ignore anything older than 48h
+  // Drafts self-expire after 18h; expired or malformed ones are purged here so PHI does not linger.
+  var out = [], stale = [], TTL = 18 * 3600 * 1000, now = Date.now();
   try {
     for(var i = 0; i < localStorage.length; i++){
       var k = localStorage.key(i);
       if(k && k.indexOf(DRAFT_PREFIX) === 0){
-        try{ var d = JSON.parse(localStorage.getItem(k)); if(d && d.ts && d.ts > cutoff){ out.push({ slot: k.slice(DRAFT_PREFIX.length), ts: d.ts }); } }catch(e){}
+        try{
+          var d = JSON.parse(localStorage.getItem(k));
+          if(d && d.ts && (now - d.ts) <= TTL){ out.push({ slot: k.slice(DRAFT_PREFIX.length), ts: d.ts }); }
+          else { stale.push(k); }
+        }catch(e){ stale.push(k); }
       }
     }
   } catch(e){}
+  stale.forEach(function(k){ try{ localStorage.removeItem(k); }catch(e){} });
   out.sort(function(a, b){ return a.ts - b.ts; });
   return out;
 }

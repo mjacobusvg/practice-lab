@@ -402,7 +402,7 @@ function firstNameFrom(full){
   return first.replace(/[^A-Za-z'\-]/g, '');
 }
 
-function esc(s){ return String(s).replace(/</g,'&lt;'); }
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
 
 // ── Streaming proxy call (mirrors the Note Builder / Chart Coder pattern) ──
 async function callAPI(systemPrompt, messages, maxTokens){
@@ -503,11 +503,11 @@ function cleanMarkdown(s){
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 function finalizeHpi(s){ return stripDashes(cleanMarkdown(s)).replace(/\n{3,}/g, '\n\n').trim(); }
-function copyOut(id){
+function copyOut(id, btn){
   var el = document.getElementById(id);
-  var t = (el && typeof el.value === 'string') ? el.value : el.innerText;
+  var t = (el && typeof el.value === 'string') ? el.value : (el ? el.innerText : '');
   navigator.clipboard.writeText(t);
-  event.target.textContent='Copied'; setTimeout(function(){ event.target.textContent='Copy'; },1500);
+  if(btn){ btn.textContent='Copied'; setTimeout(function(){ btn.textContent='Copy'; },1500); }
 }
 
 // ── Option binders ──
@@ -708,11 +708,11 @@ function renderResultPreview(hpi){
   document.getElementById('results').innerHTML = html;
 }
 
-function renderResult(hpi, flags){
+function renderResult(hpi, flags, verified){
   hpi = finalizeHpi(hpi);
   lastHpi = hpi;
   var html = '';
-  html += '<div class="out"><button class="btn-copy" onclick="copyOut(\'hpi-out\')">Copy</button>';
+  html += '<div class="out"><button class="btn-copy" onclick="copyOut(\'hpi-out\', this)">Copy</button>';
   html += '<h3>History of Present Illness</h3>';
   html += '<textarea class="hpi-edit" id="hpi-out">'+esc(hpi)+'</textarea>';
   html += '<div class="hint" style="margin-top:6px">Edit here before you copy or send &mdash; your changes are what get used.</div></div>';
@@ -729,7 +729,9 @@ function renderResult(hpi, flags){
       + '<span class="hint" id="apply-flags-hint" style="margin-left:8px"></span>'
       + '</div>';
   }
-  html += '<div class="hint" style="margin-top:14px">&#10003; Auto-reviewed against your notes.</div>';
+  html += (verified === false)
+    ? '<div class="hint" style="margin-top:14px;color:var(--amber)">&#9888; Automatic review could not be completed this time. Read this draft against your notes carefully before you use it.</div>'
+    : '<div class="hint" style="margin-top:14px">&#10003; Auto-reviewed against your notes.</div>';
 
   // Slice 4: build the assessment right here (same engine as the Note Builder), no copy-paste.
   // One upfront paste of last visit's full note (HPI + assessment) feeds everything: carry-forward,
@@ -837,7 +839,7 @@ async function runDraft(sourceText, btn, errEl){
       try{ mseText = await window.NoteEngine.runMSE(res.hpi, mseBase); }catch(e){}
       finalHpi += "\n\nMental Status Exam:\n" + (mseText || mseBase);
     }
-    renderResult(finalHpi, res.flags);
+    renderResult(finalHpi, res.flags, res.verified !== false);
     document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
     ok = true;
   } catch(err){
@@ -858,10 +860,11 @@ async function verifyHpi(hpi){
   var raw = await callAPI(verifySystem(), [{role:'user', content: msg}], 3400);
   try {
     var j = JSON.parse(raw);
-    if(j && typeof j.hpi === 'string') return { hpi: j.hpi, flags: Array.isArray(j.flags) ? j.flags : [] };
+    if(j && typeof j.hpi === 'string') return { hpi: j.hpi, flags: Array.isArray(j.flags) ? j.flags : [], verified: true };
   } catch(e){}
-  // If the verifier did not return clean JSON, keep the original draft rather than lose it.
-  return { hpi: hpi, flags: [] };
+  // If the verifier did not return clean JSON, keep the original draft rather than lose it, but
+  // report that the review did NOT complete so the UI never shows a false "auto-reviewed" state.
+  return { hpi: hpi, flags: [], verified: false };
 }
 
 // ── "Set me up for this visit" — pre-visit prep (Bucket 1) ──
@@ -1378,7 +1381,7 @@ function renderAssessment(assessment, flags, therapy, code, plan){
   plan = (plan && plan.trim()) ? plan.trim() : '';
   var html = '';
   if(assessment){
-    html += '<div class="out"><button class="btn-copy" onclick="copyOut(\'assess-out\')">Copy</button>';
+    html += '<div class="out"><button class="btn-copy" onclick="copyOut(\'assess-out\', this)">Copy</button>';
     html += '<h3>Assessment</h3>';
     // Rebuild length in place — no need to exit the preflight and start over.
     var curLen = (lastGen && lastGen.opt && lastGen.opt.lengthChoice) ? String(lastGen.opt.lengthChoice).split(' ')[0].replace(/[^A-Za-z]/g,'') : 'Standard';
@@ -1397,14 +1400,14 @@ function renderAssessment(assessment, flags, therapy, code, plan){
   }
 
   if(therapy && therapy.trim()){
-    html += '<div class="out"><button class="btn-copy" onclick="copyOut(\'therapy-out\')">Copy</button>';
+    html += '<div class="out"><button class="btn-copy" onclick="copyOut(\'therapy-out\', this)">Copy</button>';
     html += '<h3>Psychotherapy add-on'+(code?' ('+esc(code)+')':'')+'</h3>';
     html += '<textarea class="hpi-edit" id="therapy-out">'+esc(therapy.trim())+'</textarea>';
     html += '<div class="hint" style="margin-top:6px">Add-on documentation matched to the modality you confirmed. Edit before you sign.</div></div>';
   }
 
   if(plan){
-    html += '<div class="out"><button class="btn-copy" onclick="copyOut(\'plan-out\')">Copy</button>';
+    html += '<div class="out"><button class="btn-copy" onclick="copyOut(\'plan-out\', this)">Copy</button>';
     html += '<h3>Plan</h3>';
     html += '<textarea class="hpi-edit" id="plan-out">'+esc(plan)+'</textarea>';
     html += '<div class="hint" style="margin-top:6px">Medication actions and follow-up interval filled from the visit; your boilerplate is preserved. <strong style="color:var(--cream)">Refill counts and dates are left as blanks for you</strong> &mdash; the AI never writes prescription bookkeeping. Verify before you sign.</div></div>';
@@ -3007,10 +3010,14 @@ function initTherapyCoach(){
   });
   window.addEventListener('beforeunload', save);
   // Restore this tab's saved draft if one exists (called from onVerified once the app is up).
+  var TTL_MS = 18 * 60 * 60 * 1000;   // recovery drafts self-expire after 18h so PHI does not linger
+  function purgeDraft(){ try{ localStorage.removeItem(KEY); }catch(e){} }
   window.tbpRestoreDraft = function(){
     try{
       var raw = localStorage.getItem(KEY); if(!raw) return;
       var d = JSON.parse(raw); if(!d || !hasContent(d)) return;
+      // Expired draft: drop it rather than surface stale PHI.
+      if(d.ts && (Date.now() - d.ts) > TTL_MS){ purgeDraft(); return; }
       if(d.visitType){ var opt = document.querySelector('#visit-opts [data-visit="' + d.visitType + '"]'); if(opt) opt.click(); }
       if(typeof wnMode !== 'undefined' && d.wnMode) wnMode = d.wnMode;
       if(typeof wnSections !== 'undefined' && d.wnSections) wnSections = d.wnSections;
@@ -3019,7 +3026,19 @@ function initTherapyCoach(){
       var f = document.getElementById('focus-note'); if(f && d.focus) f.value = d.focus;
       try{ if(typeof renderMode === 'function') renderMode(); }catch(e){}
       var box = document.getElementById('err-box');
-      if(box) box.innerHTML = '<div class="hint" style="color:var(--teal);margin-bottom:8px">&#10003; Recovered your unsaved note from before. Review it, it is exactly where you left off.</div>';
+      if(box){
+        box.innerHTML = '<div class="hint" style="color:var(--teal);margin-bottom:8px">&#10003; Recovered your unsaved note from before. Review it, it is exactly where you left off. <a href="#" id="tbp-del-recovered" style="color:var(--amber);margin-left:6px">Delete recovered draft</a></div>';
+        var del = document.getElementById('tbp-del-recovered');
+        if(del) del.addEventListener('click', function(ev){
+          ev.preventDefault();
+          purgeDraft();
+          ['raw','context','focus-note'].forEach(function(id){ var el = document.getElementById(id); if(el) el.value=''; });
+          if(typeof wnSections !== 'undefined') wnSections = {checklist:'',guide:'',note:''};
+          if(typeof wnMode !== 'undefined') wnMode = 'plain';
+          try{ if(typeof renderMode === 'function') renderMode(); }catch(_){}
+          box.innerHTML = '';
+        });
+      }
     }catch(e){}
   };
 })();
