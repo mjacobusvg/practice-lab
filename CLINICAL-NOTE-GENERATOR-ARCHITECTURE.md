@@ -120,6 +120,15 @@ per-clinician personalization is where to keep extending the lead.)
   what makes the psychotherapy add-on defensible, feeding the Note Builder blurb. It is a
   per-clinician **on/off Vault preference** (pure med-management prescribers turn it off) and the
   *which modalities* is a preference, never hardcoded (§0.3.1).
+- **The Therapy Coach is a live, in-visit documentation source that feeds the same blurb.** The
+  coach's **"Add to my note"** drops the chosen technique into the note as a `Psychotherapy
+  intervention:` line plus a blank `Patient response:` line (into the Psychotherapy Guide section
+  when present). When the source already documents therapy this way, the pipeline adapts: the
+  **modality preflight card is skipped** (the documentation already names the work), and the
+  **add-on blurb is drafted from the documented intervention + response** rather than a re-picked
+  modality (THERAPY_SYS / `runTherapy` empty-modality path). This is the live realization of the
+  pipeline's "parse if guide used" row. Blank response lines contribute nothing (anti-fabrication);
+  clinicians who never touch the coach see no change.
 - **Candidate line:** *"Not an ambient black box. A guide that runs the visit with you, then writes it in your voice."*
 
 ---
