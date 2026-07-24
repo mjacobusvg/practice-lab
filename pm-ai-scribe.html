@@ -3157,27 +3157,85 @@ var TBP_TOUR = (function(){
      body:'Hit Start recording, then Stop when the visit ends. The transcript drops into your visit notes below in about a minute, then you draft.'},
     {sel:'#raw', core:true, title:'Your visit notes',
      body:"Typing instead? Put your notes here exactly as you took them, shorthand and quotes and all. Don't tidy them up first, that is the tool's job. A recorded visit lands here as a transcript too."},
-    {sel:'#generate', core:true, title:'Draft the note',
-     body:'When you are ready, hit Draft my HPI. It writes the note in your structure and voice, using only what you documented. It never invents.'},
-    {sel:'#results', core:true, title:'Your note, checked before you sign',
-     body:"Your finished note lands here, and just below it the Audit and Coder reads it back: the E/M level your documentation actually supports and whether it is safe to bill, before you put your name to it."},
+    {fullscreen:true, sel:'#focus-snap', title:'This is your working window',
+     body:"Now the visit itself. Type anywhere in here. Up top is a quick snapshot of the patient and last visit so you never walk in blind. (Everything you are about to see is a demo example, not a real chart.)"},
+    {fullscreen:true, sel:'.wn-checklist', title:'Your follow-up checklist',
+     body:"The questions pulled from last visit to guide today. Typer: type the answer under each line. Ambient: just ask them out loud and the recording captures the answers, no typing needed."},
+    {fullscreen:true, optional:true, sel:'.wn-guide', title:'Psychotherapy guide',
+     body:"If you turned on the psychotherapy guide, technique prompts land here to steer the therapy part of the visit. Jot what you did under each and it feeds your note."},
+    {fullscreen:true, sel:'.wn-note', title:'Your note, carried forward',
+     body:"Your template's sections, prefilled from last visit. Work in one box or all of them, and collapse any you do not need. When you Draft, everything merges into the finished note."},
+    {fullscreen:true, optional:true, sel:'#tcoach-open-focus', title:'Therapy Coach',
+     body:"Prefer live coaching over the guide? Therapy Coach opens a box for this patient with focus, questions, and techniques that fit, or search for others mid-visit. What you pick feeds your psychotherapy note."},
+    {fullscreen:true, optional:true, sel:'#scale-select-focus', title:'Rating scales',
+     body:"Like rating scales? Pick one from the list and its questions drop straight into your window, ready to score."},
+    {fullscreen:true, sel:'#focus-draft', title:'Draft when the visit is done',
+     body:"Hit Draft and everything merges into your note in your structure and voice, then goes to the Audit and Coder to check the level and compliance before you sign."},
     {sel:'#open-wizard', core:true, title:'Adjust anytime',
-     body:"Change your template or sections whenever you like, right here. And the rule from the banner up top holds: review and sign every note yourself. You are always the clinician of record."}
+     body:"Back on the main screen: change your template or sections whenever you like, right here. And the rule from the banner up top holds: review and sign every note yourself. You are always the clinician of record."}
   ];
-  var i = 0, order = [], active = false;
+  var i = 0, order = [], active = false, demoOpen = false, saved = null;
   function vis(el){ return el && el.offsetParent !== null; }
   function target(s){ return document.querySelector(s.sel); }
   function el(id){ return document.getElementById(id); }
   function buildOrder(){
     order = [];
     for(var k=0;k<STEPS.length;k++){
-      var s = STEPS[k], t = target(s);
+      var s = STEPS[k];
+      if(s.fullscreen){ order.push(k); continue; } // target only exists once the demo full screen opens
+      var t = target(s);
       if(!t) continue;
       if(s.optional && !vis(t)) continue;
       order.push(k);
     }
     if(!order.length) order = [0];
   }
+
+  // ── Demo full-screen working note ──
+  // Inject example content so the walkthrough can show the real working window, then restore the
+  // clinician's actual state EXACTLY on the way out. Nothing here is ever saved to a real note:
+  // we close the overlay directly (never closeFocus, which would sync the demo into #raw) and
+  // restore every value we touched.
+  function openDemoFullScreen(){
+    if(demoOpen) return;
+    saved = {
+      snap: (typeof prepSnapshot !== 'undefined') ? prepSnapshot : '',
+      sections: (typeof wnSections !== 'undefined' && wnSections) ? { checklist: wnSections.checklist, guide: wnSections.guide, note: wnSections.note } : null,
+      mode: (typeof wnMode !== 'undefined') ? wnMode : 'plain',
+      src: (typeof focusSourceId !== 'undefined') ? focusSourceId : null,
+      raw: (function(){ var r = el('raw'); return r ? r.value : ''; })(),
+      fnote: (function(){ var f = el('focus-note'); return f ? f.value : ''; })()
+    };
+    prepSnapshot = "Example patient (demo, not a real chart).\nReturning: Follow-up for depression and insomnia. No med change last visit.\nDiagnoses: Major depressive disorder, recurrent, moderate (F33.1); Insomnia (G47.00).\nMeds: Sertraline 100mg daily; Trazodone 50mg PRN for sleep.\nWatch: Sleep was the live thread last visit. Check whether trazodone helped and whether mood lifted on the sertraline increase.";
+    wnSections = {
+      checklist: "• Confirm whether sleep improved on trazodone, and how many nights a week it was used\n• Ask about mood since the sertraline increase, and any side effects\n• Confirm no SI/HI today",
+      guide: "Behavioral activation\nDepression is keeping activity low. In session: pick one small, doable activity for this week and problem-solve the first step.",
+      note: "Interval History: Continues follow-up for depression and insomnia. [Update today.]\nMood: [Update today.]\nSleep: Was sleeping 4-5 hours; trazodone started last visit. [Update today.]\nMedications: Sertraline 100mg daily; Trazodone 50mg PRN.\nSafety: Continues to deny SI/HI. [Confirm today.]"
+    };
+    wnMode = 'sections';
+    try { openFocus('raw'); } catch(e){}
+    demoOpen = true;
+  }
+  function closeDemoFullScreen(){
+    if(!demoOpen) return;
+    var ov = el('focus-overlay'); if(ov) ov.classList.remove('open');
+    var fab = el('tbp-theme-fab'); if(fab) fab.style.display = '';
+    var fs = el('focus-sections'); if(fs){ fs.innerHTML = ''; fs.style.display = 'none'; }
+    var fr = el('focus-ref'); if(fr) fr.innerHTML = '';
+    if(saved){
+      try { prepSnapshot = saved.snap; } catch(e){}
+      try { if(saved.sections) wnSections = saved.sections; } catch(e){}
+      try { wnMode = saved.mode; } catch(e){}
+      try { focusSourceId = saved.src; } catch(e){}
+      var r = el('raw'); if(r) r.value = saved.raw;
+      var f = el('focus-note'); if(f) f.value = saved.fnote;
+    }
+    saved = null;
+    demoOpen = false;
+    // Re-persist the restored (real) state so the crash-recovery draft can never keep demo content.
+    try { if(window.tbpSaveDraft) window.tbpSaveDraft(); } catch(e){}
+  }
+
   function scrim(on){ var e = el('tbp-tour-scrim'); if(e) e.style.display = on ? 'block' : 'none'; }
   function positionAt(t){
     var ring = el('tbp-tour-ring'), card = el('tbp-tour-card');
@@ -3205,13 +3263,17 @@ var TBP_TOUR = (function(){
     card.style.transform = 'translate(-50%,-50%)';
   }
   function place(){
-    var s = STEPS[order[i]], t = target(s);
+    var s = STEPS[order[i]];
+    // Open or close the demo full-screen note as the step requires, so its target exists.
+    if(s.fullscreen && !demoOpen) openDemoFullScreen();
+    else if(!s.fullscreen && demoOpen) closeDemoFullScreen();
+    var t = target(s);
     el('tbp-tour-title').textContent = s.title;
     el('tbp-tour-body').textContent = s.body;
     el('tbp-tour-step').textContent = (i+1) + ' of ' + order.length;
     el('tbp-tour-back').style.visibility = i === 0 ? 'hidden' : 'visible';
     el('tbp-tour-next').textContent = i === order.length - 1 ? 'Done' : 'Next';
-    var anchored = t && vis(t) && t.offsetHeight > 18;
+    var anchored = t && vis(t) && t.offsetHeight > 10;
     if(anchored){
       try { t.scrollIntoView({ block:'center', behavior:'smooth' }); } catch(e){ try { t.scrollIntoView(); } catch(_){} }
       scrim(false);
@@ -3247,6 +3309,7 @@ var TBP_TOUR = (function(){
   function _prev(){ if(i > 0){ i--; place(); } }
   function _close(){
     active = false;
+    if(demoOpen) closeDemoFullScreen();
     ['tbp-tour-scrim','tbp-tour-ring','tbp-tour-card'].forEach(function(id){ var e = el(id); if(e) e.style.display = 'none'; });
     window.removeEventListener('scroll', onScroll, true);
     window.removeEventListener('resize', onScroll);
