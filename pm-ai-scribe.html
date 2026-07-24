@@ -1871,21 +1871,7 @@ async function buildTemplate(qaBlock){
 // localStorage, and update in-memory so the next draft uses it immediately.
 async function persistTemplate(text, visitKey){
   var key = visitKey==='new_eval' ? 'hpiTemplateEval' : 'hpiTemplateFollowup';
-  var current = {};
-  try {
-    var r = await fetch('/.netlify/functions/user-tool-data', {
-      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
-      body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'load' })
-    });
-    var d = await r.json();
-    if(d && d.found && d.data) current = d.data;
-  } catch(e){}
-  current[key] = text;
-  var sr = await fetch('/.netlify/functions/user-tool-data', {
-    method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
-    body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'save', data: current })
-  });
-  var sd = await sr.json();
+  // Mirror locally + in memory FIRST, so the template is never lost even if the server is unreachable.
   try {
     var lv = JSON.parse(localStorage.getItem('tbp_vault')||'{}'); lv[key]=text;
     localStorage.setItem('tbp_vault', JSON.stringify(lv));
@@ -1893,6 +1879,24 @@ async function persistTemplate(text, visitKey){
   } catch(e){}
   vaultTemplates[visitKey] = text;
   renderTemplateStatus();
+  // Load-modify-save. The server does a FULL replace of the data object, so client-side merge is
+  // the only thing preserving the other fields. If we cannot definitively read the current Vault,
+  // do NOT write — a save built on an empty/unknown state would clobber templates and settings.
+  var current = {}, loadedOk = false;
+  try {
+    var r = await fetch('/.netlify/functions/user-tool-data', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
+      body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'load' })
+    });
+    if(r.ok){ var d = await r.json(); loadedOk = true; if(d && d.found && d.data) current = d.data; }
+  } catch(e){}
+  if(!loadedOk) return false;
+  current[key] = text;
+  var sr = await fetch('/.netlify/functions/user-tool-data', {
+    method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
+    body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'save', data: current })
+  });
+  var sd = await sr.json();
   return sd && sd.saved;
 }
 
@@ -1912,14 +1916,16 @@ async function persistVaultField(key, value){
     localStorage.setItem('credentialing-hub-profile', JSON.stringify(lv));
   } catch(e){}
   if(!userEmail) return false;
-  var current = {};
+  // Never write from an unknown state (full-replace server → a partial object wipes the Vault).
+  var current = {}, loadedOk = false;
   try {
     var r = await fetch('/.netlify/functions/user-tool-data', {
       method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
       body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'load' })
     });
-    var d = await r.json(); if(d && d.found && d.data) current = d.data;
+    if(r.ok){ var d = await r.json(); loadedOk = true; if(d && d.found && d.data) current = d.data; }
   } catch(e){}
+  if(!loadedOk) return false;
   current[key] = value;
   try {
     var sr = await fetch('/.netlify/functions/user-tool-data', {
@@ -1938,15 +1944,16 @@ async function persistWorkflow(style){
     localStorage.setItem('credentialing-hub-profile', JSON.stringify(lv));
   } catch(e){}
   if(!userEmail) return false;
-  var current = {};
+  // Never write from an unknown state (full-replace server → a partial object wipes the Vault).
+  var current = {}, loadedOk = false;
   try {
     var r = await fetch('/.netlify/functions/user-tool-data', {
       method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
       body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'load' })
     });
-    var d = await r.json();
-    if(d && d.found && d.data) current = d.data;
+    if(r.ok){ var d = await r.json(); loadedOk = true; if(d && d.found && d.data) current = d.data; }
   } catch(e){}
+  if(!loadedOk) return false;
   current.hpiWorkflow = style;
   try {
     var sr = await fetch('/.netlify/functions/user-tool-data', {
