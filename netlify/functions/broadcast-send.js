@@ -262,10 +262,10 @@ exports.handler = async function (event) {
       await Promise.all(batch.map(function (c) {
         const token = mintPrefsToken(c.email);
         let inner = personalize(bodyHtml, c);
-        // Click tracking (exact) + unsubscribe attribution only. No open pixel:
-        // open tracking is unreliable (mail apps pre-fetch or block it) and adds
-        // little over clicks + actual signups.
-        if (bid) inner = trackLinks(inner, bid, token);
+        // Click tracking (exact) + open-tracking pixel. NOTE: open rates are
+        // directional only — Apple Mail Privacy pre-fetches images (inflates) and
+        // image-blockers suppress them (deflates). Clicks remain the truer signal.
+        if (bid) { inner = trackLinks(inner, bid, token); inner = inner + pixelTag(bid, token); }
         let html = wrap(inner + footer(c.email, bid));
         const raw = buildRawEmail({ from: ses.from, to: c.email, subject: subject, html: html, unsub: unsubUrl(c.email, bid) });
         return ses.client.send(new ses.SendEmailCommand({
