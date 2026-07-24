@@ -1,9 +1,15 @@
 // netlify/functions/onboarding-drip.js
 //
-// Welcome drip for NEW free members. Runs daily; for each enrolled account it
-// sends at most ONE email per run — the lowest un-sent step that has come due by
-// days-since-signup — so a member who signed up a few days ago is caught up one
-// email at a time (never a burst), and brand-new signups stay on schedule.
+// Welcome drip for NEW free members.
+//
+//   • Step 0 (the welcome) is sent IMMEDIATELY at signup — platform-auth.js calls
+//     sendWelcomeNow(account) the moment it creates a brand-new free account row,
+//     so a new member hears from us within seconds, at peak curiosity, instead of
+//     waiting for the next daily cron.
+//   • Steps 1-3 (days 2/4/7) are sent by the scheduled cron below: for each
+//     enrolled account it sends at most ONE email per run — the lowest un-sent step
+//     that has come due — so a member is caught up one email at a time (never a
+//     burst). The cron also backstops step 0 for anyone the instant-send missed.
 //
 // Enrolled = tier 'free', created on/after DRIP_START (excludes the pre-created
 // contact batches), genuinely new (circle_member_id IS NULL), and not
@@ -94,6 +100,84 @@ function firstName(name) {
   return n ? n.split(/\s+/)[0] : 'there';
 }
 
+// Build a Supabase REST caller and an SES client from env. Returns { sb, ses };
+// ses is null if SES isn't configured (callers should no-op the send).
+function makeClients() {
+  const URL = process.env.SUPABASE_URL, KEY = process.env.SUPABASE_SERVICE_KEY;
+  if (!URL || !KEY) return { sb: null, ses: null };
+  const auth = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };
+  const sb = async (path, method, body, prefer) => {
+    const h = Object.assign({}, auth); if (prefer) h['Prefer'] = prefer;
+    const res = await fetch(URL + '/rest/v1/' + path, { method: method || 'GET', headers: h, body: body ? JSON.stringify(body) : undefined });
+    const t = await res.text();
+    if (!res.ok) throw new Error('sb ' + res.status + ': ' + t.slice(0, 150));
+    return t ? JSON.parse(t) : null;
+  };
+
+  let ses = null;
+  const accessKeyId = process.env.SES_AWS_ACCESS_KEY_ID || process.env.SES_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.SES_AWS_SECRET_ACCESS_KEY || process.env.SES_SECRET_ACCESS_KEY;
+  if (accessKeyId && secretAccessKey) {
+    const region = process.env.SES_AWS_REGION || process.env.SES_REGION || 'us-east-1';
+    const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
+    ses = { client: new SESv2Client({ region, credentials: { accessKeyId, secretAccessKey } }), SendEmailCommand, from: process.env.SES_FROM || 'Michael Van Gelder <michael@thinkbeyondpractice.com>' };
+  }
+  return { sb, ses };
+}
+
+// Send one step to one account and record it in onboarding_sends. Idempotent on
+// (account_id, step): a duplicate insert is swallowed so a double-fire (instant
+// send racing the cron) never double-emails past the first success. Returns true
+// if an email went out.
+async function sendOneStep(sb, ses, account, step) {
+  const email = String(account.email || '').toLowerCase();
+  if (!email || email.indexOf('@') === -1) return false;
+  const html = step.html().replace(/\{first_name\}/g, firstName(account.name)) + prefsFooter(email);
+  await ses.client.send(new ses.SendEmailCommand({
+    FromEmailAddress: ses.from,
+    Destination: { ToAddresses: [email] },
+    ReplyToAddresses: [REPLY_TO],
+    Content: { Simple: { Subject: { Data: step.subject, Charset: 'UTF-8' }, Body: { Html: { Data: html, Charset: 'UTF-8' } } } }
+  }));
+  // resolution=merge-duplicates: if the row already exists (cron already sent, or
+  // a concurrent instant-send won), the insert is a no-op instead of a 409.
+  await sb('onboarding_sends?on_conflict=account_id,step', 'POST',
+    { account_id: account.id, step: step.n }, 'return=minimal,resolution=merge-duplicates');
+  return true;
+}
+
+// Called by platform-auth.js the instant a brand-new free account is created.
+// Sends step 0 (the welcome) right away — unless the member is already unsubscribed
+// or step 0 was somehow already sent. Best-effort: never throws to the caller, so a
+// send hiccup can't block login. The cron still backstops missed step 0s.
+async function sendWelcomeNow(account) {
+  try {
+    if (!account || !account.id || !account.email) return false;
+    const { sb, ses } = makeClients();
+    if (!sb || !ses) return false;
+
+    const email = String(account.email).toLowerCase();
+    // Skip if unsubscribed.
+    try {
+      const urows = await sb('contacts?subscribed=is.false&email=eq.' + encodeURIComponent(email) + '&select=email&limit=1');
+      if (urows && urows.length) return false;
+    } catch (e) { /* if contacts unavailable, default to send */ }
+    // Skip if step 0 already recorded (idempotent across retries/relogins).
+    try {
+      const done = await sb('onboarding_sends?account_id=eq.' + encodeURIComponent(account.id) + '&step=eq.0&select=account_id&limit=1');
+      if (done && done.length) return false;
+    } catch (e) { /* if unreadable, the merge-duplicates insert still guards us */ }
+
+    return await sendOneStep(sb, ses, account, STEPS[0]);
+  } catch (e) {
+    console.log('sendWelcomeNow error:', e && e.message);
+    return false;
+  }
+}
+
+exports.sendWelcomeNow = sendWelcomeNow;
+exports.STEPS = STEPS;
+
 exports.handler = async function (event) {
   const headers = { 'Content-Type': 'application/json' };
   const URL = process.env.SUPABASE_URL, KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -104,24 +188,8 @@ exports.handler = async function (event) {
   const secretOk = process.env.BACKFILL_SECRET && p.secret === process.env.BACKFILL_SECRET;
   if (!scheduled && !secretOk) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Not authorized' }) };
 
-  const auth = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };
-  const sb = async (path, method, body, prefer) => {
-    const h = Object.assign({}, auth); if (prefer) h['Prefer'] = prefer;
-    const res = await fetch(URL + '/rest/v1/' + path, { method: method || 'GET', headers: h, body: body ? JSON.stringify(body) : undefined });
-    const t = await res.text();
-    if (!res.ok) throw new Error('sb ' + res.status + ': ' + t.slice(0, 150));
-    return t ? JSON.parse(t) : null;
-  };
-
-  // SES client (best-effort; if not configured we just no-op).
-  let ses = null;
-  const accessKeyId = process.env.SES_AWS_ACCESS_KEY_ID || process.env.SES_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.SES_AWS_SECRET_ACCESS_KEY || process.env.SES_SECRET_ACCESS_KEY;
-  if (accessKeyId && secretAccessKey) {
-    const region = process.env.SES_AWS_REGION || process.env.SES_REGION || 'us-east-1';
-    const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
-    ses = { client: new SESv2Client({ region, credentials: { accessKeyId, secretAccessKey } }), SendEmailCommand, from: process.env.SES_FROM || 'Michael Van Gelder <michael@thinkbeyondpractice.com>' };
-  }
+  const { sb, ses } = makeClients();
+  if (!sb) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'Missing env' }) };
   if (!ses) return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: 'SES not configured', sent: 0 }) };
 
   try {
@@ -154,15 +222,7 @@ exports.handler = async function (event) {
       if (!step) continue;
 
       try {
-        const html = step.html().replace(/\{first_name\}/g, firstName(a.name)) + prefsFooter(email);
-        await ses.client.send(new ses.SendEmailCommand({
-          FromEmailAddress: ses.from,
-          Destination: { ToAddresses: [email] },
-          ReplyToAddresses: [REPLY_TO],
-          Content: { Simple: { Subject: { Data: step.subject, Charset: 'UTF-8' }, Body: { Html: { Data: html, Charset: 'UTF-8' } } } }
-        }));
-        await sb('onboarding_sends', 'POST', { account_id: a.id, step: step.n }, 'return=minimal');
-        sent++;
+        if (await sendOneStep(sb, ses, a, step)) sent++;
       } catch (e) { console.log('drip send error for', email, ':', e && e.message); }
     }
 

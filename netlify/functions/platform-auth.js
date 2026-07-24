@@ -115,6 +115,15 @@ exports.handler = async function (event) {
                 body: JSON.stringify({ auth_id: authId, email: verifiedEmail, tier: provTier, name: provName }) });
             const insRows = ins.ok ? await ins.json() : [];
             acct = (insRows && insRows[0]) ? insRows[0] : { email: verifiedEmail, tier: provTier, is_admin: false, circle_member_id: null };
+            // Brand-new FREE self-signup: fire the welcome email now, at peak
+            // curiosity, instead of waiting for the next daily drip run. Only for
+            // a real inserted row (needs the account id) at the free tier; migrated
+            // members (provTier forum/full) don't get the free-member drip. Awaited
+            // but self-guarded (never throws) so a send hiccup can't block login.
+            if (insRows && insRows[0] && insRows[0].id && provTier === 'free') {
+              try { await require('./onboarding-drip').sendWelcomeNow(insRows[0]); }
+              catch (e) { /* best-effort; cron backstops a miss */ }
+            }
           } catch (e) {
             acct = { email: verifiedEmail, tier: provTier, is_admin: false, circle_member_id: null };
           }
