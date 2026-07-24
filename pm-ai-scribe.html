@@ -226,7 +226,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
       <div id="notes-plain">
         <label for="raw" id="raw-label" style="margin-top:16px">Your visit notes &mdash; exactly as you took them</label>
         <textarea id="raw" placeholder="Paste your running notes: fragments, shorthand, and patient quotes in the order you asked. Don't clean them up first &mdash; that's this tool's job. Example:&#10;&#10;here re: 6wk f/u duloxetine 60&#10;&quot;the anxiety is better but I still feel blah&quot;&#10;sleep 5-6h, was 3-4&#10;denies SI&#10;still not exercising, wants to&#10;mom's health stressor ongoing"></textarea>
-        <button type="button" class="btn-mini" style="margin-top:8px" onclick="openFocus('raw')">Full screen &#8599;</button>
+        <button type="button" id="raw-fullscreen-btn" class="btn-mini" style="margin-top:8px" onclick="openFocus('raw')">Full screen &#8599;</button>
       </div>
       <div style="margin-top:16px">
         <button class="btn" id="generate">Draft my HPI &rarr;</button>
@@ -3142,11 +3142,14 @@ var TBP_TOUR = (function(){
     {sel:'#visit-opts', core:true, title:'Start with the visit type',
      body:'Every visit starts here. Pick New patient or Follow-up and the right template loads automatically. Everything else opens once you choose.'},
     {sel:'#style-bar', core:true, title:'Choose how you capture the visit',
-     body:'Two ways: Record ambient listens to the visit and transcribes it, or Type or paste lets you jot or paste your notes as you go. Pick either, and you can switch anytime.'},
-    {sel:'#context', optional:true, title:'Carry last visit forward',
+     body:'Record ambient listens to the visit and transcribes it, or Type or paste lets you jot or paste your notes as you go. Pick either, and you can switch anytime.'},
+    {sel:'#wf-prep', core:true, title:'Prep from last note',
+     onEnter:function(){ try{ var cb=document.getElementById('wf-prep'); if(cb) cb.checked=true; var pc=document.getElementById('prep-controls'); if(pc) pc.style.display=''; }catch(e){} },
+     body:"Check this box and, before the visit, you get a summary of last visit so you are not walking in blind, a checklist of what to ask today, and it feeds the Therapy Coach. Checking it also reveals the Set me up button below. Leave it off to just chart the visit fresh."},
+    {sel:'#context', core:true, title:'Carry last visit forward',
      body:"On a follow-up, paste last visit's HPI, the assessment (diagnosis list with ICD-10 codes), and current med list. That is all it needs to carry the story forward, so today's note continues instead of starting from a blank page."},
-    {sel:'#prep-btn', optional:true, title:'Set me up',
-     body:"Tap this and you get today's starting note, with last visit carried forward, plus a checklist of what to follow up on. You work right in that during the visit."},
+    {sel:'#prep-btn', core:true, title:'Set me up for this visit',
+     body:"With Prep on, tap Set me up and it builds today's starting note from last visit, standing items carried forward, plus your follow-up checklist. Then you work in the full-screen note, which we open in a moment."},
     {sel:'#capture-opts', optional:true, title:'Recording: in person or telehealth',
      body:'If you are recording, pick how you are seeing the patient. Telehealth captures your call tab audio; in person uses your microphone.'},
     {sel:'#mic-select', optional:true, title:'Recording: pick and test your mic',
@@ -3157,8 +3160,12 @@ var TBP_TOUR = (function(){
      body:'Hit Start recording, then Stop when the visit ends. The transcript drops into your visit notes below in about a minute, then you draft.'},
     {sel:'#raw', core:true, title:'Your visit notes',
      body:"Typing instead? Put your notes here exactly as you took them, shorthand and quotes and all. Don't tidy them up first, that is the tool's job. A recorded visit lands here as a transcript too."},
-    {fullscreen:true, sel:'#focus-snap', title:'This is your working window',
-     body:"Now the visit itself. Type anywhere in here. Up top is a quick snapshot of the patient and last visit so you never walk in blind. (Everything you are about to see is a demo example, not a real chart.)"},
+    {sel:'#raw-fullscreen-btn', core:true, title:'Open your working window',
+     body:"This button opens your full-screen working window, where the visit actually happens. I will open it for you now so you can see inside."},
+    {fullscreen:true, sel:'#focus-sections', title:'This is your working window',
+     body:"This is where you do all your work during the visit. Type anywhere. It is laid out in sections and the tool guides you through them. (Everything you see here is a demo example, not a real chart.)"},
+    {fullscreen:true, sel:'#focus-snap', title:'Your quick snapshot',
+     body:"Up top, a quick rundown of the patient and last visit so you never walk in blind. It stays out of the note itself."},
     {fullscreen:true, sel:'.wn-checklist', title:'Your follow-up checklist',
      body:"The questions pulled from last visit to guide today. Typer: type the answer under each line. Ambient: just ask them out loud and the recording captures the answers, no typing needed."},
     {fullscreen:true, optional:true, sel:'.wn-guide', title:'Psychotherapy guide',
@@ -3267,6 +3274,7 @@ var TBP_TOUR = (function(){
     // Open or close the demo full-screen note as the step requires, so its target exists.
     if(s.fullscreen && !demoOpen) openDemoFullScreen();
     else if(!s.fullscreen && demoOpen) closeDemoFullScreen();
+    if(s.onEnter){ try { s.onEnter(); } catch(e){} }
     var t = target(s);
     el('tbp-tour-title').textContent = s.title;
     el('tbp-tour-body').textContent = s.body;
@@ -3310,6 +3318,9 @@ var TBP_TOUR = (function(){
   function _close(){
     active = false;
     if(demoOpen) closeDemoFullScreen();
+    // Undo the walkthrough's visual prep-toggle (we only checked the box to reveal "Set me up";
+    // we never changed the real setting) so the screen returns to the clinician's actual state.
+    try { var cb = el('wf-prep'); if(cb && typeof prepOn !== 'undefined') cb.checked = prepOn; if(typeof renderMode === 'function') renderMode(); } catch(e){}
     ['tbp-tour-scrim','tbp-tour-ring','tbp-tour-card'].forEach(function(id){ var e = el(id); if(e) e.style.display = 'none'; });
     window.removeEventListener('scroll', onScroll, true);
     window.removeEventListener('resize', onScroll);
