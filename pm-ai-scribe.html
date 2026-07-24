@@ -1344,7 +1344,9 @@ async function generateNote(inp, scope, opt){
       assess = await window.NoteEngine.runAssessment(inp, opt.clinBlock || '', opt.lengthBlock || '');
     }
     if(scope==='both' && !opt.noTherapy){
-      therapy = await window.NoteEngine.runTherapy(inp, opt.modality || 'Supportive psychotherapy', opt.code || '90833');
+      // Pass modality through as-is (empty when it was skipped because the therapy is already
+      // documented); runTherapy drafts from the documented work and only then falls back to supportive.
+      therapy = await window.NoteEngine.runTherapy(inp, opt.modality || '', opt.code || '90833');
     }
     // Plan: the clinician's macro is the baseline; the AI fills medication actions and the
     // follow-up interval from the visit, and leaves refill/date brackets for the clinician.
@@ -2803,7 +2805,26 @@ function tcoachCardHtml(c, highlight, relevant){
     + '<ul style="margin:0 0 10px;padding-left:18px">'+prompts+'</ul>'
     + teachBlock
     + '<div style="font-size:.85rem;color:var(--cream-dim)"><strong style="color:var(--cream)">Counts as:</strong> '+esc(c.counts)+'</div>'
+    + '<button type="button" class="btn-ghost tc-add" data-tcid="'+c.id+'" style="margin-top:10px;font-size:.8rem;padding:6px 12px;border-color:var(--teal);color:var(--teal)">+ Add to my note</button>'
     + '</div>';
+}
+// Prefer the Psychotherapy Guide section so documented therapy is parsed into the add-on blurb.
+function tcoachGuideTarget(){
+  var fo = document.getElementById('focus-overlay');
+  if(fo && fo.classList.contains('open')){
+    var g = document.querySelector('#focus-sections .wn-ta[data-key="guide"]');
+    if(g) return g;
+  }
+  return tcoachTargetTextarea();
+}
+// Drop the chosen technique + a blank response line into the note, so what the clinician did in
+// the coach becomes documented therapy the draft turns into the psychotherapy add-on.
+function tcoachAddToNote(id, btn){
+  var c = TCOACH_CARDS.filter(function(x){ return x.id===id; })[0]; if(!c) return;
+  var block = '\n\nPsychotherapy intervention: ' + c.counts + '\nPatient response: \n';
+  tcoachInsertAtCursor(tcoachGuideTarget(), block);
+  if(btn){ var t = btn.innerHTML; btn.innerHTML = 'Added to your note &#10003;'; btn.disabled = true;
+    setTimeout(function(){ btn.innerHTML = t; btn.disabled = false; }, 1600); }
 }
 function renderTCoachCards(filterText, highlightIds){
   var q = (filterText||'').trim().toLowerCase();
@@ -2944,6 +2965,9 @@ function initTherapyCoach(){
   if(filter && !filter._wired){ filter._wired=true; filter.addEventListener('input', function(){ renderTCoachCards(this.value, []); }); }
   var findBtn = document.getElementById('tcoach-find');
   if(findBtn && !findBtn._wired){ findBtn._wired=true; findBtn.addEventListener('click', tcoachFindFromNote); }
+  var cardsHost = document.getElementById('tcoach-cards');
+  if(cardsHost && !cardsHost._addWired){ cardsHost._addWired=true;
+    cardsHost.addEventListener('click', function(e){ var b = e.target.closest('.tc-add'); if(b) tcoachAddToNote(b.getAttribute('data-tcid'), b); }); }
 }
 </script>
 <script>
