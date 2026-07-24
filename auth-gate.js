@@ -214,6 +214,22 @@
   // Public API
   window.TBPAuth = {
     protect: function(options) {
+      // ── Public demo mode (?demo=1) ──
+      // Opens the tool with NO login, on baked-in demo content only. Two things make this safe:
+      // (1) the clinical backends re-verify a signed full-tier token on every call and fail closed,
+      // so a demo visitor (no token) can never actually generate; (2) the tool's own demo guard
+      // intercepts every live button with a Join CTA before anything is sent. Nothing a visitor
+      // types ever leaves their browser, so there is no PHI and no BAA to collect. This is the
+      // top-of-funnel entry for prospects and free-tier members.
+      var isDemo = false;
+      try { isDemo = /(?:[?&])demo=1(?:&|$)/.test(location.search); } catch (e) {}
+      if (isDemo) {
+        window.TBP_DEMO = true;
+        var demoVerified = options.onVerified || function () {};
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', demoVerified);
+        else demoVerified();
+        return;
+      }
       var toolName = options.toolName || 'Think Beyond Practice';
       // Canonical full-tier flag is requireFull:true. Legacy pages pass
       // spaceId:2546298 (the old Circle full-space id) to mean the same thing;

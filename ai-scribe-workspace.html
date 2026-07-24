@@ -67,6 +67,11 @@ html,body{margin:0;height:100%;background:var(--navy);color:var(--cream);font-fa
 
 <script>
 var BETA_EMAILS = ['michael@thinkbeyondpsych.com'];
+// Public demo mode: ?demo=1 runs the whole thing with no login, on baked-in content. We carry the
+// flag into each framed Scribe so it too opens ungated and intercepts live buttons with a Join CTA.
+var TBP_DEMO = false;
+try { TBP_DEMO = /(?:[?&])demo=1(?:&|$)/.test(location.search); } catch(e){}
+var TBP_JOIN_URL = 'https://thinkbeyondpractice.com/platform?plan=full_monthly_119';
 var SCRIBE_URL = '/pm-ai-scribe.html';
 var patients = [];   // { id, label, slot, frameEl, tabEl }
 var seq = 0;
@@ -179,7 +184,7 @@ function addPatient(autoName, slot, label){
 
   var frame = document.createElement('iframe');
   frame.className = 'pframe';
-  frame.src = SCRIBE_URL + '?slot=' + encodeURIComponent(slot);   // per-tab autosave key
+  frame.src = SCRIBE_URL + '?slot=' + encodeURIComponent(slot) + (TBP_DEMO ? '&demo=1' : '');   // per-tab autosave key
   frame.title = label;
   // Let the isolated Scribe use the mic (ambient) and screen share (telehealth) and clipboard.
   frame.setAttribute('allow', 'microphone; camera; display-capture; clipboard-write; clipboard-read');
@@ -300,7 +305,7 @@ var DESK_TOUR = (function(){
     el('dk-tour-body').textContent = s.body;
     el('dk-tour-step').textContent = (i+1)+' of '+STEPS.length;
     el('dk-tour-back').style.visibility = i===0 ? 'hidden' : 'visible';
-    el('dk-tour-next').textContent = i===STEPS.length-1 ? 'Done' : 'Next';
+    el('dk-tour-next').textContent = i===STEPS.length-1 ? (TBP_DEMO ? 'Become a member →' : 'Done') : 'Next';
     if(t && vis(t) && t.offsetHeight>8){
       try{ t.scrollIntoView({block:'center',behavior:'smooth'}); }catch(e){}
       scrim(false); el('dk-tour-ring').style.display='block';
@@ -324,7 +329,15 @@ var DESK_TOUR = (function(){
     try{ localStorage.setItem('tbp_desk_tour_seen','1'); }catch(e){}
   }
   function _start(){ if(active) return; active=true; i=0; window.addEventListener('scroll', onScroll, true); window.addEventListener('resize', onScroll); document.addEventListener('keydown', escFn); place(); }
-  function _next(){ if(i>=STEPS.length-1){ _hide(); return; } i++; place(); }
+  function _next(){
+    if(i>=STEPS.length-1){
+      _hide();
+      // Demo finale: the whole tour just ended, this is peak intent — send them to join.
+      if(TBP_DEMO){ try{ window.location.href = TBP_JOIN_URL; }catch(e){} }
+      return;
+    }
+    i++; place();
+  }
   function _prev(){ if(i>0){ i--; place(); } }
   return { start:_start, next:_next, prev:_prev, close:_hide };
 })();
@@ -335,7 +348,8 @@ function startDeskTour(){ DESK_TOUR.start(); }
 // the whole single-patient flow (setup → working window → draft), then posts 'tbp-scribe-tour-done'
 // back here, at which point the Desk runs its own multi-patient steps as the finale.
 (function(){
-  try{ if(localStorage.getItem('tbp_desk_tour_seen')) return; }catch(e){ return; }
+  // Demo always runs the tour (prospects should always see it); real members see it once.
+  if(!TBP_DEMO){ try{ if(localStorage.getItem('tbp_desk_tour_seen')) return; }catch(e){ return; } }
   var tries = 0, launched = false;
   var iv = setInterval(function(){
     tries++;

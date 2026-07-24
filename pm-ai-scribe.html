@@ -407,6 +407,35 @@ var lastGen = null; // last assessment-generation context, so length can be rebu
 var authToken = '';
 var userEmail = '';
 var clinicianName = ''; // clinician's first name (from Vault legalName), for a personal greeting
+
+// ── Public demo mode ──
+// When the tool is opened as a no-login demo (?demo=1, set by auth-gate), the walkthrough runs on
+// baked-in example content and every LIVE action is intercepted with a Join CTA instead of hitting
+// the backend. Nothing a visitor types is ever sent, so there is no PHI to protect and no BAA.
+var TBP_DEMO = false;
+try { TBP_DEMO = !!window.TBP_DEMO || /(?:[?&])demo=1(?:&|$)/.test(location.search); } catch(e){}
+var TBP_JOIN_URL = 'https://thinkbeyondpractice.com/platform?plan=full_monthly_119';
+function tbpShowJoin(){
+  if(document.getElementById('tbp-demo-join')) return;
+  var o = document.createElement('div');
+  o.id = 'tbp-demo-join';
+  o.style.cssText = 'position:fixed;inset:0;z-index:100010;background:rgba(6,10,20,0.82);display:flex;align-items:center;justify-content:center;padding:22px;font-family:-apple-system,"DM Sans",sans-serif;';
+  o.innerHTML = '<div style="max-width:440px;width:100%;background:#111c30;border:1px solid rgba(42,171,184,0.28);border-top:2px solid #2aabb8;border-radius:10px;padding:34px 30px;text-align:center;color:#e8e2d6">' +
+    '<div style="font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#2aabb8;margin-bottom:12px">Think Beyond Practice</div>' +
+    '<h2 style="font-size:20px;color:#f5f4f2;margin:0 0 10px;line-height:1.3">This is where you would run it on a real patient</h2>' +
+    '<p style="font-size:14px;color:#b0aa9e;line-height:1.6;margin:0 0 22px">You just saw the whole flow. Drafting, prep, and recording work on your own patients once you are a member. Full membership is $119/mo and includes the entire clinical suite and the community.</p>' +
+    '<a href="' + TBP_JOIN_URL + '" id="tbp-demo-join-go" style="display:inline-block;padding:13px 30px;background:#2aabb8;color:#0b1120;border-radius:6px;font-size:14px;font-weight:700;text-decoration:none">Become a member &rarr;</a>' +
+    '<div style="margin-top:16px"><a href="#" id="tbp-demo-join-close" style="font-size:13px;color:#b0aa9e;text-decoration:none">Keep looking around</a></div>' +
+  '</div>';
+  document.body.appendChild(o);
+  var go = o.querySelector('#tbp-demo-join-go');
+  if(go) go.addEventListener('click', function(ev){ ev.preventDefault(); try{ (window.top||window).location.href = TBP_JOIN_URL; }catch(e){ window.location.href = TBP_JOIN_URL; } });
+  var cl = o.querySelector('#tbp-demo-join-close');
+  if(cl) cl.addEventListener('click', function(ev){ ev.preventDefault(); if(o.parentNode) o.parentNode.removeChild(o); });
+}
+// Call at the top of any live-action handler. Returns true (and shows the CTA) when in demo mode,
+// so the handler can bail before doing real work.
+function tbpDemoBlock(){ if(!TBP_DEMO) return false; tbpShowJoin(); return true; }
 // Pull a clean first name from a "Sarah Chen, PMHNP" / "Dr. Sarah Chen" style legal name.
 function firstNameFrom(full){
   var s = String(full||'').trim();
@@ -420,6 +449,10 @@ function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 
 // ── Streaming proxy call (mirrors the Note Builder / Chart Coder pattern) ──
 async function callAPI(systemPrompt, messages, maxTokens){
+  // Hard backstop: in demo mode nothing is ever sent to the clinical backend. Live buttons are
+  // already intercepted (tbpDemoBlock) so this rarely fires, but it guarantees no visitor content
+  // can leave the browser through any code path.
+  if(TBP_DEMO){ tbpShowJoin(); throw new Error('__demo_locked__'); }
   var response;
   try {
     response = await fetch('/.netlify/functions/clinical-proxy-stream', {
@@ -943,6 +976,7 @@ function prepSystem(){
 }
 
 document.getElementById('prep-btn').addEventListener('click', async function(){
+  if(tbpDemoBlock()) return;
   // Pre-visit prep is inherently a follow-up; declare it so the template state is correct and Draft is unblocked.
   var fuOpt = document.querySelector('#visit-opts [data-visit="follow_up"]');
   if(fuOpt && visitType !== 'follow_up'){ fuOpt.click(); }
@@ -991,6 +1025,7 @@ function newEvalScaffoldSystem(){
   return s;
 }
 document.getElementById('neweval-setup-btn').addEventListener('click', async function(){
+  if(tbpDemoBlock()) return;
   var raw = document.getElementById('raw');
   var hint = document.getElementById('neweval-hint');
   hint.innerHTML = '';
@@ -1200,6 +1235,7 @@ document.addEventListener('keydown', function(e){
   if(e.key === 'Escape' && document.getElementById('focus-overlay').classList.contains('open')) closeFocus();
 });
 document.getElementById('focus-draft').addEventListener('click', async function(){
+  if(tbpDemoBlock()) return;
   focusSyncBack();
   // Keep full screen open (with the spinner visible) while drafting; close onto the result when done.
   var src = (focusSourceId === 'raw' && wnMode === 'sections')
@@ -2635,6 +2671,7 @@ function loadVaultTemplates(){
   applyGate();
   if(consent) consent.addEventListener('change', function(){ if(btn && ambientAllowed()) btn.disabled=!this.checked; });
   if(btn) btn.addEventListener('click', function(){
+    if(tbpDemoBlock()) return;
     if(!ambientAllowed()){ setStatus('Ambient scribe is in limited beta — not enabled for your account yet.', true); return; }
     if(recording){ doStop(); resetBtn(); return; }
     btn.disabled=true; setMicControls(true); setStatus(captureMode==='telehealth'?'Waiting for you to share the call tab…':'Starting…');
@@ -2779,7 +2816,7 @@ TBPAuth.protect({
   onVerified: function(){
     // Everyone works in the Patient Desk (multi-patient). The single-patient Scribe still runs
     // inside each Desk tab (framed); only the standalone top-level page hands off to the Desk.
-    if(window.self === window.top){ window.location.replace('/ai-scribe-workspace.html'); return; }
+    if(window.self === window.top){ window.location.replace('/ai-scribe-workspace.html' + (window.TBP_DEMO ? '?demo=1' : '')); return; }
     document.body.classList.remove('tbp-gate-active');
     document.body.style.display='block';
     document.body.style.overflow='';
@@ -2790,7 +2827,7 @@ TBPAuth.protect({
     try { userEmail = localStorage.getItem('tbp_verified_email') || ''; } catch(e){}
     loadVaultTemplates();
     try { if(typeof initTherapyCoach==='function') initTherapyCoach(); } catch(e){}
-    try { if(typeof tbpRestoreDraft==='function') tbpRestoreDraft(); } catch(e){}
+    try { if(typeof tbpRestoreDraft==='function' && !TBP_DEMO) tbpRestoreDraft(); } catch(e){}
   }
 });
 </script>
