@@ -85,13 +85,23 @@ exports.handler = async function (event) {
       }
     }
 
+    // Carry a referral through to the subscription: the buyer arrived via a
+    // member's ?ref=<account id> invite link. Only a valid uuid that isn't the
+    // buyer's own account is passed; the webhook records the referral (a referral
+    // is a PAID conversion, so this is the correct point to attribute it).
+    const subMeta = { tbp_owned: 'true', tbp_account_email: email };
+    const refBy = String(body.referred_by || '').trim();
+    if (/^[0-9a-f-]{36}$/i.test(refBy) && !(acct && acct.id === refBy)) {
+      subMeta.referred_by_account_id = refBy;
+    }
+
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer: customerId,
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: body.success_url,
       cancel_url: body.cancel_url,
-      subscription_data: { metadata: { tbp_owned: 'true', tbp_account_email: email } },
+      subscription_data: { metadata: subMeta },
       metadata: { tbp_owned: 'true', tbp_account_email: email, plan }
     });
 

@@ -1726,7 +1726,6 @@ a.file-chip:hover { border-color:var(--teal); }
         <option value="NP Student">NP Student</option>
         <option value="Other">Other</option>
       </select>
-      <input type="text" id="gate-referred-by" placeholder="Referred by someone? Their name (optional)" autocomplete="off">
       <button class="btn-primary" onclick="signUpFree()">Browse for Free</button>
       <div class="gate-note" id="signup-status">No credit card. No commitment. Pay only when you want full access.</div>
     </div>
@@ -2042,25 +2041,9 @@ async function signUpFree() {
   var email = document.getElementById('gate-email').value.trim().toLowerCase();
   if (!name || !email || email.indexOf('@') === -1) { document.getElementById('signup-status').textContent = 'Enter your name and a valid email.'; return; }
   sendMagicLink('signup');
-  // Best-effort referral attribution, keyed by the email they just entered:
-  // from the ?ref= invite link and/or the "referred by" field. Never blocks signup.
-  try {
-    var refBy = (document.getElementById('gate-referred-by') || {}).value;
-    refBy = refBy ? String(refBy).trim() : '';
-    var refId = '';
-    try { refId = localStorage.getItem('tbp_ref') || ''; } catch (e) {}
-    if (refBy || refId) {
-      fetch('/.netlify/functions/referral-attribution', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          new_member_email: email, new_member_name: name,
-          referrer_name: refBy || undefined,
-          referrer_account_id: refId || undefined,
-          source: refId ? 'ref-link' : 'signup-form'
-        })
-      }).then(function () { try { localStorage.removeItem('tbp_ref'); } catch (e) {} }).catch(function () {});
-    }
-  } catch (e) {}
+  // NOTE: no referral recorded here. Referrals are a PAID-signup concept only;
+  // the ?ref= invite link stays stashed in localStorage and is attributed at
+  // paid checkout (startCheckout -> Stripe metadata -> webhook).
 }
 
 async function signInGoogle() {
@@ -6803,12 +6786,15 @@ async function startCheckout(plan) {
     alert('Create your free account or sign in first, then upgrade.');
     return;
   }
+  var refId = '';
+  try { refId = localStorage.getItem('tbp_ref') || ''; } catch (e) {}
   try {
     var res = await fetch('/.netlify/functions/create-membership-checkout', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
       body: JSON.stringify({
         plan: plan,
+        referred_by: refId || undefined,   // ?ref= invite link -> referral on paid conversion
         success_url: window.location.origin + '/platform?joined=1',
         cancel_url: window.location.origin + '/platform'
       })

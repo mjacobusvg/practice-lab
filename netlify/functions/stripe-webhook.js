@@ -123,6 +123,23 @@ async function handleTemplatePurchase(session, headers) {
   }
 }
 
+// Record a referral for a paid conversion by delegating to referral-attribution,
+// which resolves the referrer account -> name/email, guards self-referral, dedups
+// per new member, and emails Michael. Best-effort; never affects the webhook 200.
+async function recordReferralOnPaid(newAccountId, referrerAccountId) {
+  const rows = await sbGet('accounts?id=eq.' + encodeURIComponent(newAccountId) + '&select=email,name');
+  const a = rows[0];
+  if (!a || !a.email) return;
+  const base = process.env.URL || process.env.DEPLOY_PRIME_URL || 'https://thinkbeyondpractice.com';
+  await fetch(base + '/.netlify/functions/referral-attribution', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      new_member_email: a.email, new_member_name: a.name || null,
+      referrer_account_id: referrerAccountId, source: 'ref-link-paid'
+    })
+  });
+}
+
 async function handleSubscriptionEvent(sub, stripe) {
   const item = sub.items && sub.items.data && sub.items.data[0];
   const price = item && item.price;
@@ -189,6 +206,14 @@ async function handleSubscriptionEvent(sub, stripe) {
     await sb('subscriptions?id=eq.' + existing.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(row) });
   } else {
     await sb('subscriptions', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(row) });
+    // First time we've seen this subscription = a paid conversion. If the buyer
+    // arrived via a member's ?ref= invite link, record the referral now (a
+    // referral is a PAID event). Dedup, referrer resolution, and the notify email
+    // all happen inside referral-attribution.
+    if (sub.metadata && sub.metadata.referred_by_account_id && (sub.status === 'active' || sub.status === 'trialing')) {
+      try { await recordReferralOnPaid(accountId, sub.metadata.referred_by_account_id); }
+      catch (e) { console.warn('referral record failed:', e && e.message); }
+    }
   }
 
   const newTier = await recomputeAccountTier(accountId);
