@@ -2,7 +2,8 @@
 // Daily cron. Finds referral_attributions still 'pending' whose referred member
 // has (a) become a paid member, (b) is genuinely new (never on Circle), and
 // (c) cleared the 15-day guarantee window and is still active. Promotes those to
-// day_16_status='qualified' and emails Michael a single digest: "ready to pay."
+// day_16_status='active' (cleared window, still paying) and emails Michael a
+// single digest: "ready to pay."
 //
 // It does NOT mark anything paid — that stays a human action. Michael pays the
 // clinician, then sets payout_status='paid' (admin UI / DB).
@@ -44,6 +45,9 @@ exports.handler = async function (event) {
     for (const r of pending) {
       const email = String(r.new_member_email || '').toLowerCase().trim();
       if (!email) continue;
+      // Never flag a payout with no real referrer to pay (belt-and-suspenders:
+      // capture now only creates payable rows that resolved to a member).
+      if (!r.referrer_email) continue;
 
       // The referred person must be a genuinely-new paid member.
       const accts = await sb('accounts?email=eq.' + encodeURIComponent(email) + '&select=id,tier,created_at,circle_member_id&limit=1');
@@ -59,9 +63,10 @@ exports.handler = async function (event) {
       const joinMs = new Date(s.created_at || a.created_at).getTime();
       if (!(joinMs <= cutoffMs)) continue;                      // still inside the guarantee window
 
-      // Qualified: promote and collect for the digest.
+      // Qualified: promote to 'active' (cleared the window, still paying) and
+      // collect for the digest. payout_status stays 'pending' until Michael pays.
       try {
-        const upd = await sb('referral_attributions?id=eq.' + r.id + '&day_16_status=eq.pending', 'PATCH', { day_16_status: 'qualified' }, 'return=representation');
+        const upd = await sb('referral_attributions?id=eq.' + r.id + '&day_16_status=eq.pending', 'PATCH', { day_16_status: 'active' }, 'return=representation');
         if (upd && upd.length) newlyQualified.push({ referrer: r.referrer_name || r.referrer_email || 'A member', referrer_email: r.referrer_email, new_member: r.new_member_name || email, new_email: email, tier: a.tier });
       } catch (e) { /* skip on race */ }
     }

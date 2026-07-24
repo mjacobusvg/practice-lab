@@ -68,9 +68,35 @@ exports.handler = async function (event) {
       } catch (e) { /* fall back to any provided name */ }
     }
 
+    // If we don't yet have a real referrer email, try to match the typed name to
+    // EXACTLY ONE real member. This is the guardrail that stops an unverifiable
+    // typed name (e.g. "Ona", who is nobody) from creating a payable referral.
+    // Uses a broad contains-fetch, then keeps only true name matches in JS so a
+    // substring like "ona" can't spuriously match "Jonathan".
+    if (!referrerEmail && referrerName) {
+      try {
+        const nm = referrerName.trim().toLowerCase();
+        const cands = (await sb('accounts?name=ilike.*' + encodeURIComponent(referrerName.trim()) + '*&select=id,name,email&limit=25')) || [];
+        const seen = {}, hits = [];
+        cands.forEach(function (a) {
+          const an = String(a.name || '').trim().toLowerCase();
+          const first = an.split(/\s+/)[0];
+          if (!seen[a.id] && (an === nm || first === nm || an.indexOf(nm + ' ') === 0)) { seen[a.id] = true; hits.push(a); }
+        });
+        if (hits.length === 1 && String(hits[0].email || '').toLowerCase() !== newEmail) {
+          referrerName = hits[0].name; referrerEmail = hits[0].email || null;
+        }
+      } catch (e) { /* leave unverified */ }
+    }
+
     if (!referrerName && !referrerEmail) {
       return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Tell us who referred you.' }) };
     }
+
+    // A referral is only "verified" (payable, worth emailing about) once it
+    // resolves to a real member account. Unmatched typed names are recorded as
+    // 'unverified' and never enter the payout pipeline or trigger an email.
+    const verified = !!referrerEmail;
 
     // Dedupe: one referral per new member (first one wins).
     const existing = await sb('referral_attributions?new_member_email=eq.' + encodeURIComponent(newEmail) + '&select=id&limit=1');
@@ -85,14 +111,15 @@ exports.handler = async function (event) {
       referrer_email: referrerEmail,
       notes: notes,
       source: source,
-      day_16_status: 'pending',
+      day_16_status: verified ? 'pending' : 'unverified',
       payout_status: 'pending'
     }, 'return=minimal');
 
-    // Notify Michael that a referral was captured (best-effort).
+    // Notify Michael ONLY for verified referrals (resolved to a real member) —
+    // no more "captured" emails for unverifiable typed names like "Ona".
     const accessKeyId = process.env.SES_AWS_ACCESS_KEY_ID || process.env.SES_ACCESS_KEY_ID;
     const secretAccessKey = process.env.SES_AWS_SECRET_ACCESS_KEY || process.env.SES_SECRET_ACCESS_KEY;
-    if (accessKeyId && secretAccessKey) {
+    if (verified && accessKeyId && secretAccessKey) {
       try {
         const region = process.env.SES_AWS_REGION || process.env.SES_REGION || 'us-east-1';
         const client = new SESv2.SESv2Client({ region, credentials: { accessKeyId, secretAccessKey } });
