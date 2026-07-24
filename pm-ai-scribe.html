@@ -74,6 +74,10 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 .wn-panel{border-radius:10px;border:1px solid var(--rule);overflow:hidden;background:var(--navy-card);flex:0 0 auto}
 .wn-head{padding:10px 14px;display:flex;flex-direction:column;gap:2px;cursor:pointer;user-select:none}
 .wn-head-row{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.wn-ctrls{display:flex;align-items:center;gap:6px;flex-shrink:0}
+.wn-move{background:transparent;border:0;color:var(--cream-dim);font-size:.78rem;cursor:pointer;padding:2px 5px;line-height:1;border-radius:4px}
+.wn-move:hover{color:var(--white);background:rgba(255,255,255,.08)}
+.wn-move:disabled{opacity:.25;cursor:default}
 .wn-chev{font-size:.7rem;color:var(--cream-dim);transition:transform .15s;flex-shrink:0}
 .wn-panel.collapsed .wn-chev{transform:rotate(-90deg)}
 .wn-panel.collapsed .wn-ta{display:none}
@@ -1065,7 +1069,10 @@ function buildFocusSections(){
   var html = '';
   panels.forEach(function(p){
     html += '<div class="wn-panel '+p.cls+'"><div class="wn-head">'
-      + '<div class="wn-head-row"><span class="wn-title">'+p.title+'</span><span class="wn-chev">&#9662;</span></div>'
+      + '<div class="wn-head-row"><span class="wn-title">'+p.title+'</span>'
+        + '<span class="wn-ctrls"><button type="button" class="wn-move" data-dir="up" title="Move up">&#9650;</button>'
+        + '<button type="button" class="wn-move" data-dir="down" title="Move down">&#9660;</button>'
+        + '<span class="wn-chev">&#9662;</span></span></div>'
       + '<span class="wn-sub">'+p.sub+'</span></div>'
       + '<textarea class="wn-ta" data-key="'+p.key+'">'+esc(s[p.key]||'')+'</textarea></div>';
   });
@@ -1075,6 +1082,25 @@ function buildFocusSections(){
   host.querySelectorAll('.wn-head').forEach(function(h){
     h.addEventListener('click', function(){ var pnl = h.closest('.wn-panel'); if(pnl) pnl.classList.toggle('collapsed'); });
   });
+  // Up/down reordering so the clinician arranges the work areas however suits them. Reorder is
+  // visual only (same elements move in the DOM), so textarea content and the draft are untouched.
+  function wnRefreshMoveBtns(){
+    var pnls = host.querySelectorAll('.wn-panel');
+    pnls.forEach(function(pnl, i){
+      var up = pnl.querySelector('.wn-move[data-dir="up"]'); if(up) up.disabled = (i === 0);
+      var dn = pnl.querySelector('.wn-move[data-dir="down"]'); if(dn) dn.disabled = (i === pnls.length - 1);
+    });
+  }
+  host.querySelectorAll('.wn-move').forEach(function(btn){
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();  // don't also collapse the panel
+      var pnl = btn.closest('.wn-panel'); if(!pnl) return;
+      if(btn.getAttribute('data-dir') === 'up'){ var prev = pnl.previousElementSibling; if(prev) host.insertBefore(pnl, prev); }
+      else { var next = pnl.nextElementSibling; if(next) host.insertBefore(next, pnl); }
+      wnRefreshMoveBtns();
+    });
+  });
+  wnRefreshMoveBtns();
   host.querySelectorAll('.wn-ta').forEach(function(ta){
     wnFit(ta);
     ta.addEventListener('input', function(){ wnSections[ta.getAttribute('data-key')] = ta.value; syncRawFromSections(); wnGrow(ta); });
