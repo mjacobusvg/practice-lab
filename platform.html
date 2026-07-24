@@ -3183,7 +3183,7 @@ async function viewPost(postId) {
       if (canReact || canComment) {
         out += '<div class="comment-actions">';
         if (canReact) out += reactionBarHtml('comment', c.id, cReactMap[c.id] || { heart: 0, helpful: 0, insight: 0, mine: null });
-        if (canComment && !post.is_locked) out += '<button type="button" class="reply-link" onclick="toggleReplyBox(\'' + c.id + '\',\'' + post.id + '\')">Reply</button>';
+        if (canComment && !post.is_locked) out += '<button type="button" class="reply-link" data-aid="' + esc(c.author_id || '') + '" data-aname="' + esc(cName) + '" onclick="toggleReplyBox(\'' + c.id + '\',\'' + post.id + '\', this)">Reply</button>';
         out += '</div>';
       }
       out += '<div class="reply-box" id="reply-box-' + c.id + '"></div>';
@@ -3436,7 +3436,7 @@ async function votePoll(postId, optionId) {
 // ════════════════════════════════════════
 // Inline reply composer beneath a comment; posts with parent_comment_id so the
 // server nests it (create-comment.js validates the parent belongs to the post).
-function toggleReplyBox(commentId, postId) {
+function toggleReplyBox(commentId, postId, btn) {
   var box = document.getElementById('reply-box-' + commentId);
   if (!box) return;
   if (box.innerHTML) { box.innerHTML = ''; return; }
@@ -3450,7 +3450,23 @@ function toggleReplyBox(commentId, postId) {
     + '<button class="btn-primary" id="reply-submit-' + commentId + '" onclick="submitReply(\'' + commentId + '\',\'' + postId + '\')">Reply</button>'
     + '</div>';
   var ed = initRichField(ta);
-  if (ed) ed.focus();
+  // Auto-@mention the person being replied to: matches every other platform, makes the
+  // reply visibly directed, and (because it registers a real mention) fires them a
+  // "mentioned you" notification so they know they got a reply. Never for your own comment.
+  var aid = (btn && btn.getAttribute) ? btn.getAttribute('data-aid') : '';
+  var aname = (btn && btn.getAttribute) ? btn.getAttribute('data-aname') : '';
+  if (aid && aname && aid !== ((S.user && S.user.id) || null)) {
+    var taEl = document.getElementById(ta);
+    if (taEl) {
+      taEl._mentions = taEl._mentions || [];
+      if (!taEl._mentions.some(function (m) { return m.id === aid; })) taEl._mentions.push({ id: aid, name: aname });
+      richSet(ta, '@' + aname + ' ');
+    }
+  }
+  if (ed) {
+    ed.focus();
+    try { var r = document.createRange(); r.selectNodeContents(ed); r.collapse(false); var s = window.getSelection(); s.removeAllRanges(); s.addRange(r); } catch (e) {}
+  }
 }
 
 async function submitReply(commentId, postId) {
