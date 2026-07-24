@@ -619,6 +619,8 @@ function renderTemplateStatus(){
   var label = visitType==='new_eval' ? 'New patient evaluation' : 'Follow-up';
   if(t && t.trim()){
     el.innerHTML = '<span class="ok">&#10003; Using your '+label+' template</span> <a href="#" onclick="openWizard();return false;">edit</a> &middot; <a href="#" onclick="openTemplateTest(\''+visitType+'\');return false;">test it on a sample</a>';
+  } else if((houseTemplates[visitType]||'').trim()){
+    el.innerHTML = '<span class="ok">&#10003; Using our default '+label+' template</span> &mdash; a proven starting structure you can use as-is. <a href="#" onclick="openWizard();return false;">Make it your own</a>';
   } else {
     el.innerHTML = '<span class="none">No '+label+' template saved</span> &mdash; a sensible default structure will be used. <a href="#" onclick="openWizard();return false;">Set one up</a>';
   }
@@ -627,7 +629,7 @@ function renderTemplateStatus(){
 // ── Build the draft system prompt ──
 function draftSystem(){
   var label = visitType==='new_eval' ? 'new patient psychiatric evaluation' : 'psychiatric follow-up visit';
-  var tmpl = (vaultTemplates[visitType] || '').trim();
+  var tmpl = (vaultTemplates[visitType] || houseTemplates[visitType] || '').trim();
   var s = HOUSE + "\n\n=== TASK ===\n";
   s += "Draft the History of Present Illness (HPI) for a " + label + " from the clinician's RAW, as-they-went visit notes. The notes are fragments, shorthand, and patient quotes captured in the order the clinician asked their questions. Your job is to reorganize that raw stream into a clean, chart-ready HPI. This is the reorganization the clinician would otherwise do in their head; it is the entire value of the tool.\n\n";
   s += "=== ABSOLUTE ANTI-FABRICATION RULE ===\n";
@@ -880,7 +882,7 @@ async function verifyHpi(hpi){
 
 // ── "Set me up for this visit" — pre-visit prep (Bucket 1) ──
 function prepSystem(){
-  var tmpl = (vaultTemplates.follow_up || '').trim();
+  var tmpl = (vaultTemplates.follow_up || houseTemplates.follow_up || '').trim();
   var s = "You are helping a psychiatric prescriber PREP for a follow-up visit, before they see the patient. You are given LAST VISIT'S NOTE" + (tmpl ? " and the clinician's follow-up HPI template" : "") + ". Produce a starting point for today's note plus a short list of things to check or ask today.\n\n";
   if(tmpl){ s += "CLINICIAN'S FOLLOW-UP TEMPLATE (structure and any carry-forward classification):\n\n" + tmpl + "\n\n"; }
   s += "Respond ONLY with raw JSON, no code fence:\n{\"snapshot\":\"<3-5 short labeled lines>\",\"startingNote\":\"<today's follow-up scaffold>\",\"checklist\":[\"...\"],\"foci\":[\"...\"]}\n\n";
@@ -953,7 +955,7 @@ document.getElementById('prep-btn').addEventListener('click', async function(){
 
 // ── New-patient intake scaffold: blank sectioned starting note from the eval template ──
 function newEvalScaffoldSystem(){
-  var tmpl = (vaultTemplates.new_eval || '').trim();
+  var tmpl = (vaultTemplates.new_eval || houseTemplates.new_eval || '').trim();
   var s = "You are helping a psychiatric prescriber PREP a new patient evaluation, before they see the patient. Produce a BLANK sectioned scaffold they can type into live during the intake.\n\n";
   if(tmpl){ s += "CLINICIAN'S NEW-PATIENT HPI TEMPLATE (follow its section structure, order, and labels exactly):\n\n" + tmpl + "\n\n"; }
   s += "Output the section headings/labels in the clinician's structure and order, each on its own line, each left EMPTY (or with a brief parenthetical cue of what belongs there). This is a blank form to fill, not a draft.\n";
@@ -2137,6 +2139,30 @@ async function saveRefineTemplate(){
   }
 }
 
+// ── House default templates ──
+// When a brand-new clinician has not built their own template, the Scribe drafts
+// from the founder's proven Vault template instead of a bare "conventional structure".
+// Fetched live and read-only; NEVER saved into this user's Vault (so they don't
+// accidentally own it), and if the fetch fails houseTemplates stays empty and the
+// draft falls back to the built-in conventional structure exactly as before.
+var houseTemplates = { new_eval:'', follow_up:'' };
+var houseTemplatesLoaded = false;
+function loadHouseTemplates(){
+  if(houseTemplatesLoaded) return;
+  houseTemplatesLoaded = true;
+  try {
+    fetch('/.netlify/functions/hpi-house-templates', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+(authToken||'')},
+      body: JSON.stringify({ token: authToken })
+    })
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(d){
+      if(d){ houseTemplates.new_eval = d.new_eval || ''; houseTemplates.follow_up = d.follow_up || ''; try{ renderTemplateStatus(); }catch(e){} }
+    })
+    .catch(function(){});
+  } catch(e){}
+}
+
 // ── Load the clinician's Vault templates ──
 function loadVaultTemplates(){
   // instant localStorage mirror first
@@ -2157,6 +2183,7 @@ function loadVaultTemplates(){
   renderTemplateStatus();
   renderSectionsReminder();
   syncTherapyToggle();
+  loadHouseTemplates();
   if(!userEmail){ maybeOnboard(); return; }
   fetch('/.netlify/functions/user-tool-data', {
     method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
@@ -2666,7 +2693,7 @@ function onbRender(){
   } else if(s===4){
     var sum = (WF_LABELS[onbState.style]||'—') + (onbState.style==='ambient' ? ', '+(onbState.capture==='telehealth'?'telehealth':'in person') : '') + (onbState.prep?', prep from last note':'') + ', psychotherapy guide '+(onbState.therapy?'on':'off');
     html = '<h2>Last thing: your note templates</h2>'
-      + '<p class="msub">You see two visit types &mdash; <strong style="color:var(--cream)">new patient evaluations</strong> and <strong style="color:var(--cream)">follow-ups</strong>. Let\'s set up a template for each, so every visit is ready. For each one you paste your blank template and a completed HPI you like, and answer a couple of questions, and I turn it into a reusable template in your structure and voice. You can skip either visit type and add it later. No patient details from your samples are kept, only your style.</p>'
+      + '<p class="msub">You see two visit types &mdash; <strong style="color:var(--cream)">new patient evaluations</strong> and <strong style="color:var(--cream)">follow-ups</strong>. Let\'s set up a template for each, so every visit is ready. For each one you paste your blank template and a completed HPI you like, and answer a couple of questions, and I turn it into a reusable template in your structure and voice. Prefer to just start? You can skip this entirely and use our proven default template, then make it your own anytime. No patient details from your samples are kept, only your style.</p>'
       + '<div class="hint" style="margin-top:8px">You\'re set up: <strong style="color:var(--cream)">'+sum+'</strong>. Change any of it anytime.</div>'
       + '<div style="margin-top:18px"><button class="btn" id="onb-tmpl">Set up my templates &rarr;</button> <button class="btn-ghost" id="onb-later" style="margin-left:8px">I\'ll do it later</button></div>';
   }
