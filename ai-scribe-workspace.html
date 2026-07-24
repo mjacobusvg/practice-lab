@@ -237,5 +237,112 @@ function showRecovery(drafts){
   else { addPatient(); }
 })();
 </script>
+
+<!-- ── Patient Desk walkthrough ──
+     Covers the multi-patient tabs, then hands straight into the working-window walkthrough inside
+     the active tab (via postMessage) so the whole thing is one continuous tour. Auto-starts once. -->
+<style>
+.tbp-tour-scrim{position:fixed;inset:0;background:rgba(8,12,22,.55);z-index:100000;pointer-events:none}
+.tbp-tour-ring{position:fixed;z-index:100001;border-radius:10px;box-shadow:0 0 0 3px #2aabb8,0 0 0 9999px rgba(8,12,22,.55);pointer-events:none;transition:top .2s,left .2s,width .2s,height .2s}
+.tbp-tour-card{position:fixed;z-index:100002;width:330px;max-width:calc(100vw - 28px);background:#152238;color:#e8e2d6;border:1px solid rgba(255,255,255,.16);border-radius:12px;box-shadow:0 12px 38px rgba(0,0,0,.45);padding:15px 17px 14px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5}
+.tbp-tour-card h4{margin:0 0 6px;font-size:15px;color:#2aabb8}
+.tbp-tour-card p{margin:0 0 14px}
+.tbp-tour-nav{display:flex;align-items:center;gap:8px}
+.tbp-tour-nav .sp{flex:1;font-size:12px;color:#8b93a3}
+.tbp-tour-btn{border:1px solid #2aabb8;background:#2aabb8;color:#08131c;border-radius:7px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer}
+.tbp-tour-btn.ghost{background:transparent;color:#2aabb8}
+.tbp-tour-x{position:absolute;top:7px;right:10px;background:none;border:none;color:#8b93a3;font-size:19px;cursor:pointer;line-height:1}
+</style>
+<div class="tbp-tour-scrim" id="dk-tour-scrim" style="display:none"></div>
+<div class="tbp-tour-ring" id="dk-tour-ring" style="display:none"></div>
+<div class="tbp-tour-card" id="dk-tour-card" style="display:none" role="dialog" aria-modal="true" aria-label="Patient Desk walkthrough">
+  <button class="tbp-tour-x" type="button" aria-label="Close" onclick="DESK_TOUR.close()">&times;</button>
+  <h4 id="dk-tour-title"></h4>
+  <p id="dk-tour-body"></p>
+  <div class="tbp-tour-nav">
+    <span class="sp" id="dk-tour-step"></span>
+    <button class="tbp-tour-btn ghost" type="button" id="dk-tour-back" onclick="DESK_TOUR.prev()">Back</button>
+    <button class="tbp-tour-btn" type="button" id="dk-tour-next" onclick="DESK_TOUR.next()">Next</button>
+  </div>
+</div>
+<script>
+var DESK_TOUR = (function(){
+  var STEPS = [
+    {sel:'.tab', title:'Your patients, one tab each',
+     body:'Each patient runs in their own tab with completely separate memory, so nothing crosses between them. Switch tabs anytime, and a draft keeps running in the background while you work another patient.'},
+    {sel:'#add', title:'Add a patient',
+     body:'Add a patient with + New patient. A good habit: add everyone on your schedule at the start of the day, so you can prep them all before your first visit.'},
+    {sel:'.tab-edit', title:'Rename the tab',
+     body:"Click the pencil to rename a tab to the patient's name, so you always know who is in each tab. Next, I'll open the walkthrough inside a patient so you see the whole visit flow."}
+  ];
+  var i = 0, active = false;
+  function el(id){ return document.getElementById(id); }
+  function target(s){ return document.querySelector(s.sel); }
+  function vis(t){ return t && t.offsetParent !== null; }
+  function scrim(on){ var e = el('dk-tour-scrim'); if(e) e.style.display = on ? 'block' : 'none'; }
+  function positionAt(t){
+    var ring = el('dk-tour-ring'), card = el('dk-tour-card');
+    var r = t.getBoundingClientRect(), pad = 6;
+    ring.style.top=(r.top-pad)+'px'; ring.style.left=(r.left-pad)+'px';
+    ring.style.width=(r.width+pad*2)+'px'; ring.style.height=(r.height+pad*2)+'px';
+    card.style.transform='none'; card.style.display='block';
+    var cw=card.offsetWidth, ch=card.offsetHeight, gap=12, vw=window.innerWidth, vh=window.innerHeight;
+    var top=r.bottom+gap, left=r.left;
+    if(top+ch>vh-10) top=Math.max(10, r.top-ch-gap);
+    if(left+cw>vw-10) left=vw-cw-10;
+    if(left<10) left=10; if(top<10) top=10;
+    card.style.top=top+'px'; card.style.left=left+'px';
+  }
+  function centerCard(){ var card=el('dk-tour-card'); card.style.display='block'; card.style.top='50%'; card.style.left='50%'; card.style.transform='translate(-50%,-50%)'; }
+  function place(){
+    var s = STEPS[i], t = target(s);
+    el('dk-tour-title').textContent = s.title;
+    el('dk-tour-body').textContent = s.body;
+    el('dk-tour-step').textContent = (i+1)+' of '+STEPS.length;
+    el('dk-tour-back').style.visibility = i===0 ? 'hidden' : 'visible';
+    el('dk-tour-next').textContent = i===STEPS.length-1 ? 'Open the walkthrough →' : 'Next';
+    if(t && vis(t) && t.offsetHeight>8){
+      try{ t.scrollIntoView({block:'center',behavior:'smooth'}); }catch(e){}
+      scrim(false); el('dk-tour-ring').style.display='block';
+      setTimeout(function(){ if(active) positionAt(t); }, 200);
+    } else { el('dk-tour-ring').style.display='none'; scrim(true); centerCard(); }
+  }
+  function activeFrameWin(){
+    try{
+      for(var k=0;k<patients.length;k++){ if(patients[k].tabEl.classList.contains('active')) return patients[k].frameEl.contentWindow; }
+      return patients[0] && patients[0].frameEl.contentWindow;
+    }catch(e){ return null; }
+  }
+  function onScroll(){ if(!active) return; var t = target(STEPS[i]); if(t && vis(t) && el('dk-tour-ring').style.display!=='none') positionAt(t); }
+  function escFn(e){ if(e.key==='Escape') _hide(); }
+  function _hide(){
+    ['dk-tour-scrim','dk-tour-ring','dk-tour-card'].forEach(function(id){ var e=el(id); if(e) e.style.display='none'; });
+    window.removeEventListener('scroll', onScroll, true);
+    window.removeEventListener('resize', onScroll);
+    document.removeEventListener('keydown', escFn);
+    active = false;
+    try{ localStorage.setItem('tbp_desk_tour_seen','1'); }catch(e){}
+  }
+  function _start(){ if(active) return; active=true; i=0; window.addEventListener('scroll', onScroll, true); window.addEventListener('resize', onScroll); document.addEventListener('keydown', escFn); place(); }
+  function _next(){ if(i>=STEPS.length-1){ _handoff(); return; } i++; place(); }
+  function _prev(){ if(i>0){ i--; place(); } }
+  function _handoff(){
+    _hide();
+    try{ var win = activeFrameWin(); if(win) win.postMessage({tbp:'tbp-start-scribe-tour'}, location.origin); }catch(e){}
+  }
+  return { start:_start, next:_next, prev:_prev, close:_hide };
+})();
+function startDeskTour(){ DESK_TOUR.start(); }
+// Auto-start once on first Desk load, after the first patient tab exists.
+(function(){
+  try{ if(localStorage.getItem('tbp_desk_tour_seen')) return; }catch(e){ return; }
+  var tries = 0;
+  var iv = setInterval(function(){
+    tries++;
+    if(document.querySelector('.tab') && document.getElementById('add')){ clearInterval(iv); setTimeout(function(){ DESK_TOUR.start(); }, 600); }
+    else if(tries > 40){ clearInterval(iv); }
+  }, 300);
+})();
+</script>
 </body>
 </html>
