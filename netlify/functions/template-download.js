@@ -74,9 +74,11 @@ exports.handler = async function (event) {
       return { statusCode: tpl.is_paid ? 402 : 403, headers, body: JSON.stringify({ ok: false, error: tpl.is_paid ? 'Purchase or join to download this template' : 'Join to download this template' }) };
     }
 
-    // Private storage file: mint a short-lived signed URL
+    // Private storage file: mint a short-lived signed URL. Encode each path segment so keys
+    // with spaces or parentheses (e.g. a plainly-named uploaded .docx) sign correctly.
     if (tpl.storage_path) {
-      const signRes = await fetch(URL + '/storage/v1/object/sign/templates/' + tpl.storage_path, {
+      const encodedPath = String(tpl.storage_path).split('/').map(encodeURIComponent).join('/');
+      const signRes = await fetch(URL + '/storage/v1/object/sign/templates/' + encodedPath, {
         method: 'POST',
         headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify({ expiresIn: 120 })

@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Upload a document — Think Beyond Practice</title>
+<meta name="robots" content="noindex,nofollow">
+<style>
+:root{--navy:#0b1120;--navy-mid:#111c30;--card:#152238;--rule:rgba(42,171,184,.22);--teal:#2aabb8;--teal2:#33c8d6;--cream:#e8e2d6;--dim:#8fa0b6;--white:#f5f8fc;--red:#f87171;--green:#4ade80}
+*{box-sizing:border-box}
+body{margin:0;background:var(--navy);color:var(--cream);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:36px 16px}
+.wrap{width:100%;max-width:560px}
+h1{font-size:1.35rem;color:var(--white);margin:0 0 4px}
+.sub{color:var(--dim);font-size:.9rem;margin:0 0 22px}
+.card{background:var(--card);border:1px solid var(--rule);border-top:2px solid var(--teal);border-radius:10px;padding:22px 22px 24px;margin-bottom:16px}
+label{display:block;font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--teal);margin:0 0 6px}
+input,select{width:100%;background:var(--navy);border:1px solid var(--rule);border-radius:8px;color:var(--cream);padding:11px 13px;font-size:.92rem;font-family:inherit;margin-bottom:14px}
+input:focus,select:focus{outline:none;border-color:var(--teal)}
+.btn{background:var(--teal);color:#08131c;border:none;border-radius:8px;padding:12px 22px;font-size:.92rem;font-weight:700;cursor:pointer}
+.btn:hover{background:var(--teal2)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn-ghost{background:transparent;border:1px solid var(--rule);color:var(--teal)}
+#drop{border:2px dashed var(--rule);border-radius:10px;padding:26px;text-align:center;color:var(--dim);cursor:pointer;margin-bottom:14px;transition:border-color .15s,background .15s}
+#drop:hover,#drop.over{border-color:var(--teal);background:rgba(42,171,184,.06);color:var(--cream)}
+#drop b{color:var(--white)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.msg{margin-top:14px;font-size:.88rem;line-height:1.5;padding:10px 14px;border-radius:8px;display:none}
+.msg.err{display:block;background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.3);color:var(--red)}
+.msg.ok{display:block;background:rgba(74,222,128,.1);border:1px solid rgba(74,222,128,.3);color:var(--green)}
+.hint{font-size:.78rem;color:var(--dim);margin:-8px 0 14px}
+code{background:var(--navy);padding:2px 6px;border-radius:5px;color:var(--cream);font-size:.85rem}
+.hide{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Upload a document</h1>
+  <p class="sub">Drops a file straight into storage. Admin only.</p>
+
+  <!-- Step 1: authenticate -->
+  <div class="card" id="auth-card">
+    <label for="admin-email">Your admin email</label>
+    <input type="email" id="admin-email" placeholder="you@example.com" autocomplete="email">
+    <button class="btn" id="auth-btn">Continue</button>
+    <div class="msg" id="auth-msg"></div>
+  </div>
+
+  <!-- Step 2: upload -->
+  <div class="card hide" id="up-card">
+    <div id="drop"><b>Click to choose a file</b> or drag it here<br><span style="font-size:.8rem">PDF, Word, Excel, images, anything up to 25 MB</span></div>
+    <input type="file" id="file" class="hide">
+
+    <label for="bucket">Bucket</label>
+    <select id="bucket">
+      <option value="templates">templates</option>
+      <option value="post-files">post-files</option>
+      <option value="avatars">avatars</option>
+    </select>
+
+    <label for="path">Destination path (folder + filename)</label>
+    <input type="text" id="path" placeholder="e.g. foundations/private-practice-foundations-pack.docx">
+    <div class="hint">Defaults to the filename at the bucket root. Add a <code>folder/</code> prefix to nest it.</div>
+
+    <div class="row">
+      <button class="btn" id="up-btn" disabled>Upload</button>
+      <button class="btn btn-ghost" id="reset-btn" type="button">Choose another</button>
+    </div>
+    <div class="msg" id="up-msg"></div>
+  </div>
+</div>
+
+<script>
+var TOKEN = '';
+try { TOKEN = localStorage.getItem('tbp_auth_token') || ''; } catch(e){}
+var authCard = document.getElementById('auth-card');
+var upCard = document.getElementById('up-card');
+var authMsg = document.getElementById('auth-msg');
+var upMsg = document.getElementById('up-msg');
+var fileInput = document.getElementById('file');
+var drop = document.getElementById('drop');
+var pathInput = document.getElementById('path');
+var upBtn = document.getElementById('up-btn');
+var chosen = null;
+
+function showUpload(){ authCard.classList.add('hide'); upCard.classList.remove('hide'); }
+function setMsg(el, txt, kind){ el.textContent = txt; el.className = 'msg ' + kind; }
+
+// If a valid-looking token is already stored, skip straight to upload (validated for real on submit).
+if (TOKEN) showUpload();
+try { var pe = localStorage.getItem('tbp_verified_email'); if (pe) document.getElementById('admin-email').value = pe; } catch(e){}
+
+document.getElementById('auth-btn').addEventListener('click', function(){
+  var email = (document.getElementById('admin-email').value || '').trim().toLowerCase();
+  if (!email || email.indexOf('@') === -1) { setMsg(authMsg, 'Enter a valid email.', 'err'); return; }
+  this.disabled = true; this.textContent = 'Checking…';
+  var self = this;
+  fetch('/.netlify/functions/circle-auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email: email }) })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      self.disabled = false; self.textContent = 'Continue';
+      if (d && d.verified && d.token) {
+        TOKEN = d.token;
+        try { localStorage.setItem('tbp_auth_token', d.token); localStorage.setItem('tbp_verified_email', email); } catch(e){}
+        showUpload();
+      } else { setMsg(authMsg, (d && d.message) || 'Not authorized.', 'err'); }
+    })
+    .catch(function(){ self.disabled = false; self.textContent = 'Continue'; setMsg(authMsg, 'Connection error, try again.', 'err'); });
+});
+
+drop.addEventListener('click', function(){ fileInput.click(); });
+drop.addEventListener('dragover', function(e){ e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', function(){ drop.classList.remove('over'); });
+drop.addEventListener('drop', function(e){ e.preventDefault(); drop.classList.remove('over'); if (e.dataTransfer.files && e.dataTransfer.files[0]) pick(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', function(){ if (fileInput.files && fileInput.files[0]) pick(fileInput.files[0]); });
+
+function pick(f){
+  chosen = f;
+  drop.innerHTML = '<b>' + f.name + '</b><br><span style="font-size:.8rem">' + Math.round(f.size/1024) + ' KB · ready to upload</span>';
+  if (!pathInput.value.trim()) pathInput.value = f.name;
+  upBtn.disabled = false;
+  upMsg.className = 'msg';
+}
+
+document.getElementById('reset-btn').addEventListener('click', function(){
+  chosen = null; fileInput.value = ''; upBtn.disabled = true; upMsg.className = 'msg';
+  drop.innerHTML = '<b>Click to choose a file</b> or drag it here<br><span style="font-size:.8rem">PDF, Word, Excel, images, anything up to 25 MB</span>';
+});
+
+upBtn.addEventListener('click', function(){
+  if (!chosen) { setMsg(upMsg, 'Choose a file first.', 'err'); return; }
+  var path = (pathInput.value || chosen.name).trim().replace(/^\/+/, '');
+  var bucket = document.getElementById('bucket').value;
+  upBtn.disabled = true; upBtn.textContent = 'Uploading…';
+  var reader = new FileReader();
+  reader.onload = function(){
+    fetch('/.netlify/functions/admin-doc-upload', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer ' + TOKEN},
+      body: JSON.stringify({ token: TOKEN, bucket: bucket, path: path, content_type: chosen.type || 'application/octet-stream', data: reader.result })
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      upBtn.disabled = false; upBtn.textContent = 'Upload';
+      if (d && d.ok) { setMsg(upMsg, 'Uploaded to ' + d.bucket + ' / ' + d.path + ' (' + Math.round(d.size/1024) + ' KB). Done.', 'ok'); }
+      else {
+        if (d && /sign in|not authorized/i.test(d.error||'')) { try{ localStorage.removeItem('tbp_auth_token'); }catch(e){} }
+        setMsg(upMsg, (d && d.error) || 'Upload failed.', 'err');
+      }
+    })
+    .catch(function(){ upBtn.disabled = false; upBtn.textContent = 'Upload'; setMsg(upMsg, 'Connection error, try again.', 'err'); });
+  };
+  reader.onerror = function(){ upBtn.disabled = false; upBtn.textContent = 'Upload'; setMsg(upMsg, 'Could not read the file.', 'err'); };
+  reader.readAsDataURL(chosen);
+});
+</script>
+</body>
+</html>
