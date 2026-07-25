@@ -40,7 +40,7 @@ exports.handler = async function (event) {
 
   const sbHeaders = { apikey: KEY, Authorization: 'Bearer ' + KEY };
   try {
-    const tplRes = await fetch(URL + '/rest/v1/template_library?id=eq.' + encodeURIComponent(templateId) + '&select=id,title,is_paid,price_cents,member_price_cents,visible&limit=1', { headers: sbHeaders });
+    const tplRes = await fetch(URL + '/rest/v1/template_library?id=eq.' + encodeURIComponent(templateId) + '&select=id,title,is_paid,price_cents,member_price_cents,grant_membership_days,visible&limit=1', { headers: sbHeaders });
     const tpls = await tplRes.json();
     const tpl = tpls && tpls[0];
     if (!tpl || !tpl.visible) return { statusCode: 404, headers: CORS, body: JSON.stringify({ error: 'Template not found' }) };
@@ -64,9 +64,15 @@ exports.handler = async function (event) {
     }
 
     const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-    const checkout = await stripe.checkout.sessions.create({
+
+    // A NON-member buying a template that grants membership days gets a free trial
+    // of Full started off their saved card (webhook does the actual subscription).
+    // For that we need a persistent Stripe customer and setup_future_usage so the
+    // card is reusable. Every other purchase stays a simple one-off.
+    const granting = !paying && tpl.grant_membership_days > 0;
+
+    const params = {
       mode: 'payment',
-      customer_email: email,
       line_items: [{
         price_data: {
           currency: 'usd',
@@ -78,7 +84,23 @@ exports.handler = async function (event) {
       success_url: body.success_url,
       cancel_url: body.cancel_url,
       metadata: { tbp_purchase: 'template', tbp_account_email: email, template_id: templateId }
-    });
+    };
+
+    if (granting) {
+      let customerId = me && me.stripe_customer_id ? me.stripe_customer_id : null;
+      if (!customerId) {
+        const customer = await stripe.customers.create({ email, metadata: { tbp_account_email: email } });
+        customerId = customer.id;
+        if (me) await fetch(URL + '/rest/v1/accounts?id=eq.' + me.id, { method: 'PATCH', headers: { ...sbHeaders, 'Content-Type': 'application/json', Prefer: 'return=minimal' }, body: JSON.stringify({ stripe_customer_id: customerId }) });
+      }
+      params.customer = customerId;
+      params.payment_intent_data = { setup_future_usage: 'off_session' };
+      params.metadata.tbp_grant_full_days = String(tpl.grant_membership_days);
+    } else {
+      params.customer_email = email;
+    }
+
+    const checkout = await stripe.checkout.sessions.create(params);
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ url: checkout.url }) };
   } catch (e) {
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: e.message }) };

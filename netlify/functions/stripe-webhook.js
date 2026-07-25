@@ -76,7 +76,7 @@ exports.handler = async function (event) {
     if (stripeEvent.type === 'checkout.session.completed') {
       const s = stripeEvent.data.object;
       if (s.metadata && s.metadata.tbp_purchase === 'template') {
-        return await handleTemplatePurchase(s, headers);
+        return await handleTemplatePurchase(s, headers, stripe);
       }
       return await handleCertifiedMailCheckout(s, headers);
     }
@@ -95,13 +95,13 @@ exports.handler = async function (event) {
 
 // A free member bought a single template. Grant them access by recording the
 // purchase (idempotent on account+template). template-download.js checks this.
-async function handleTemplatePurchase(session, headers) {
+async function handleTemplatePurchase(session, headers, stripe) {
   try {
     const email = (session.metadata && session.metadata.tbp_account_email || session.customer_email || '').toLowerCase().trim();
     const templateId = session.metadata && session.metadata.template_id;
     if (!email || !templateId) return { statusCode: 200, headers, body: JSON.stringify({ received: true, skipped: 'missing metadata' }) };
 
-    const accts = await sbGet('accounts?email=eq.' + encodeURIComponent(email) + '&select=id&limit=1');
+    const accts = await sbGet('accounts?email=eq.' + encodeURIComponent(email) + '&select=id,tier,email&limit=1');
     if (!accts || !accts[0]) return { statusCode: 200, headers, body: JSON.stringify({ received: true, skipped: 'no account' }) };
 
     const row = {
@@ -116,11 +116,56 @@ async function handleTemplatePurchase(session, headers) {
       headers: { Prefer: 'return=minimal,resolution=merge-duplicates' },
       body: JSON.stringify(row)
     });
+
+    // If this purchase grants membership days, start a trialing Full subscription
+    // on the card the buyer just saved. Best-effort; never blocks the 200.
+    const grantDays = parseInt((session.metadata && session.metadata.tbp_grant_full_days) || '0', 10);
+    if (grantDays > 0 && session.customer && stripe) {
+      await startToolkitTrialSubscription(session, accts[0], grantDays, stripe).catch(function (e) {
+        console.error('startToolkitTrialSubscription error:', e.message);
+      });
+    }
     return { statusCode: 200, headers, body: JSON.stringify({ received: true, template_purchase: true }) };
   } catch (e) {
     console.error('handleTemplatePurchase error:', e.message);
     return { statusCode: 200, headers, body: JSON.stringify({ received: true, error: e.message }) };
   }
+}
+
+// A non-member bought the toolkit (which includes N free days of Full). Start a
+// Full subscription with a trial of N days on the card they just saved, so it
+// auto-converts to paid unless they cancel. Guards keep it idempotent and stop it
+// stacking on anyone who is already a paying member or already has a live sub.
+async function startToolkitTrialSubscription(session, acct, trialDays, stripe) {
+  const customerId = session.customer;
+  // Skip if they are already a paying member.
+  if (acct.tier === 'forum' || acct.tier === 'full') return;
+  // Skip if this customer already has a live subscription (also covers webhook retries).
+  const existing = await stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 100 });
+  const live = (existing.data || []).some(function (s) {
+    return ['active', 'trialing', 'past_due', 'unpaid'].indexOf(s.status) !== -1;
+  });
+  if (live) return;
+
+  // Make the card saved at checkout the customer's default for invoices.
+  if (session.payment_intent) {
+    const pi = await stripe.paymentIntents.retrieve(session.payment_intent);
+    const pm = pi && pi.payment_method;
+    if (pm) await stripe.customers.update(customerId, { invoice_settings: { default_payment_method: pm } });
+  }
+
+  // Resolve the live Full monthly price by lookup_key (same source as membership checkout).
+  const prices = await stripe.prices.list({ lookup_keys: ['full_monthly_119'], active: true, limit: 1 });
+  if (!prices.data.length) { console.error('toolkit trial: full_monthly_119 price not found'); return; }
+
+  await stripe.subscriptions.create({
+    customer: customerId,
+    items: [{ price: prices.data[0].id }],
+    trial_period_days: trialDays,
+    // If they never add/keep a valid card, cancel at trial end instead of forcing payment.
+    trial_settings: { end_behavior: { missing_payment_method: 'cancel' } },
+    metadata: { tbp_owned: 'true', tbp_account_email: (acct.email || session.metadata.tbp_account_email || ''), tbp_source: 'toolkit_trial' }
+  });
 }
 
 // Record a referral for a paid conversion by delegating to referral-attribution,
