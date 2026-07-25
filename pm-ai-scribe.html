@@ -190,8 +190,14 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
         <span class="hint" id="neweval-hint" style="margin-left:8px"></span>
       </div>
 
-      <!-- Ambient mode: live recording -->
-      <div id="ambient-panel" style="display:none;margin-top:6px;border:1px solid var(--rule);border-radius:8px;padding:14px;background:var(--navy-card)">
+      <!-- Ambient recording setup — opened on demand from the "Record this visit" buttons (main
+           view + working-note header). A modal, so it can appear over the full-screen working note. -->
+      <div class="modal-overlay" id="ambient-modal" style="z-index:9700">
+       <div class="modal" style="max-width:560px">
+        <button class="modal-x" type="button" onclick="closeAmbientSetup()" aria-label="Close">&times;</button>
+        <h2>Record this visit <span style="font-size:.55em;color:var(--cream-dim);text-transform:uppercase;letter-spacing:1px">ambient &middot; beta</span></h2>
+        <p class="msub">Pick your mic, confirm consent, and Start. Everything you have already typed in the note stays; the transcript lands in your notes when you Stop.</p>
+        <div id="ambient-panel">
         <div class="opts" id="capture-opts" style="margin-bottom:8px">
           <div class="opt sel" data-capture="inperson">In person</div>
           <div class="opt" data-capture="telehealth">Telehealth</div>
@@ -217,7 +223,9 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
           <span class="hint" id="record-status" style="margin:0"></span>
         </div>
         <div class="hint" id="record-live" style="margin-top:10px;min-height:1.2em;color:var(--cream-dim);font-style:italic"></div>
-        <div class="hint" style="margin-top:6px">Hit Stop when the visit ends &mdash; the transcript is added to <strong>Your visit notes</strong> below in about a minute, then Draft.</div>
+        <div class="hint" style="margin-top:6px">Hit Stop when the visit ends &mdash; the transcript is added to <strong>Your visit notes</strong> in about a minute, then Draft.</div>
+        </div>
+       </div>
       </div>
 
       <!-- Shared working note (all modes draft from this). Hidden while Prep is pending, so the
@@ -228,6 +236,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
         <label for="raw" id="raw-label" style="margin-top:16px">Paste an existing note or transcript <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional &mdash; you chart in the working window below)</span></label>
         <textarea id="raw" style="min-height:110px" placeholder="Optional. Already have a rough HPI or an outside transcript? Paste it here and the tool cleans it up. Otherwise skip this and open the working window &mdash; that's where you actually chart the visit."></textarea>
         <button type="button" id="raw-fullscreen-btn" class="btn" style="margin-top:10px" onclick="openFocus('raw')">Open the working window &#8599;</button>
+        <button type="button" id="record-open-main" class="btn-ghost" style="margin-top:10px;margin-left:8px;border-color:var(--teal);color:var(--teal)" onclick="openAmbientSetup()">&#9679; Record this visit (ambient)</button>
       </div>
       <div style="margin-top:16px">
         <button class="btn" id="generate">Draft my HPI &rarr;</button>
@@ -280,6 +289,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
       <option value="/pm-letter-generator">Letter Generator</option>
       <option value="__add__">+ Add your own link&hellip;</option>
     </select>
+    <button class="btn-ghost" id="focus-record" type="button" style="margin-top:0;border-color:var(--teal);color:var(--teal)" onclick="openAmbientSetup()">&#9679; Record</button>
     <button class="btn-ghost" style="margin-top:0" onclick="closeFocus()">&larr; Exit full screen</button>
     <button class="btn" id="focus-draft">Draft my HPI &rarr;</button>
   </div>
@@ -650,21 +660,12 @@ function isTranscriptMode(m){ return m === 'ambient' || m === 'record'; }
 var WF_LABELS = { ambient:'Record ambient', manual:'Type or paste' };
 function renderStyleBar(){
   var bar = document.getElementById('style-bar'); if(!bar) return;
-  // Two independent controls: capture (ambient vs type/paste) and a prep-from-last-note toggle
-  // that applies to EITHER capture mode.
-  var html = '<div class="hint" style="margin-bottom:6px">How do you capture the visit? <span style="color:var(--cream-dim)">(saved &mdash; change anytime)</span></div><div class="opts" id="wf-opts">';
-  ['ambient','manual'].forEach(function(k){ html += '<div class="opt'+(workflow===k?' sel':'')+'" data-wf="'+k+'">'+WF_LABELS[k]+(k==='ambient'?' <span style="opacity:.6;font-weight:400">(beta)</span>':'')+'</div>'; });
-  html += '</div>';
-  html += '<label style="display:inline-flex;align-items:center;gap:8px;margin-top:12px;cursor:pointer;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream);font-size:.9rem">'
+  // Capture is no longer an upfront either/or. Typing/pasting is always available and needs no
+  // button; recording is an on-demand action via the "Record this visit" buttons (main view +
+  // working-note header). This bar now just carries the Prep-from-last-note toggle.
+  var html = '<label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream);font-size:.9rem">'
         + '<input type="checkbox" id="wf-prep"'+(prepOn?' checked':'')+' style="width:auto"> <span>Prep from last note <span style="color:var(--cream-dim)">&mdash; carry last visit forward and get today\'s checklist (works whether you record or type)</span></span></label>';
   bar.innerHTML = html;
-  var g = document.getElementById('wf-opts');
-  g.addEventListener('click', function(e){
-    var o = e.target.closest('.opt'); if(!o) return;
-    workflow = o.getAttribute('data-wf');
-    persistWorkflow(workflow);
-    renderStyleBar(); renderMode();
-  });
   var pc = document.getElementById('wf-prep');
   if(pc) pc.addEventListener('change', function(){ prepOn = this.checked; persistVaultField('hpiPrep', prepOn?'on':'off'); renderMode(); });
 }
@@ -672,9 +673,9 @@ function renderStyleBar(){
 // Show only the inputs the chosen working style + visit type actually need.
 function renderMode(){
   function show(id, on){ var el=document.getElementById(id); if(el) el.style.display = on ? '' : 'none'; }
-  var isAmbient = (workflow==='ambient'), isFu = (visitType==='follow_up'), isNew = (visitType==='new_eval');
-  // Review mode: ambient audio is a transcript (also checked for mis-hearings); typed/pasted is not.
-  sourceMode = isAmbient ? 'ambient' : 'typed';
+  var isFu = (visitType==='follow_up'), isNew = (visitType==='new_eval');
+  // Review mode (transcript vs typed) is set when a recording actually starts, not from an upfront
+  // capture choice; sourceMode defaults to 'typed' and flips to 'ambient' in the record handler.
 
   // Last-visit note: available for any follow-up (required input when Prep is on; optional carry-forward otherwise).
   show('carry-block', isFu);
@@ -686,13 +687,8 @@ function renderMode(){
   // Prep controls (Set me up) depend on the PREP toggle, not the capture mode.
   show('prep-controls', prepOn && isFu);
   show('neweval-scaffold', prepOn && isNew);
-  // Ambient record panel depends on the CAPTURE mode.
-  show('ambient-panel', isAmbient);
-
   var rl = document.getElementById('raw-label');
-  if(rl){ rl.innerHTML = isAmbient
-    ? "Transcript inbox <span style=\"text-transform:none;font-weight:400;color:var(--cream-dim)\">(the recording lands here &mdash; you work on it in the window below)</span>"
-    : "Paste an existing note or transcript <span style=\"text-transform:none;font-weight:400;color:var(--cream-dim)\">(optional &mdash; you chart in the working window below)</span>"; }
+  if(rl){ rl.innerHTML = "Paste an existing note or transcript <span style=\"text-transform:none;font-weight:400;color:var(--cream-dim)\">(optional &mdash; a recording also lands here; you chart in the working window below)</span>"; }
 
   // The working-notes box competes with the Set me up flow. While Prep is on and nothing has been
   // built into the box yet, hide it; it reappears the moment Set me up (or an ambient transcript)
@@ -2773,6 +2769,7 @@ function loadVaultTemplates(){
     if(tbpDemoBlock()) return;
     if(!ambientAllowed()){ setStatus('Ambient scribe is in limited beta — not enabled for your account yet.', true); return; }
     if(recording){ doStop(); resetBtn(); return; }
+    sourceMode = 'ambient';   // a recording is being captured → review the draft as a transcript
     btn.disabled=true; setMicControls(true); setStatus(captureMode==='telehealth'?'Waiting for you to share the call tab…':'Starting…');
     // iOS/Safari (WAV path) needs its AudioContext created AND resumed inside this
     // click gesture — one made later, after await getUserMedia, starts suspended and
@@ -2788,6 +2785,19 @@ function loadVaultTemplates(){
       .catch(function(err){ recording=false; stopMeter(); stopTracks(); setStatus(err.message||'Could not start.', true); btn.disabled=false; resetBtn(); });
   });
 })();
+
+// Ambient recording is an on-demand action now (no upfront capture-mode choice): the "Record this
+// visit" buttons in the main view and the full-screen working-note header both open this setup modal.
+// Typing/pasting is always available and needs no button. In the public demo the live action is gated.
+function openAmbientSetup(){
+  if(typeof tbpDemoBlock === 'function' && tbpDemoBlock()) return;
+  var m = document.getElementById('ambient-modal'); if(!m) return;
+  // Reparent to <body> so the modal is never trapped inside a display:none ancestor (it is authored
+  // inside the work-area for locality). getElementById wiring is unaffected by the move.
+  if(m.parentNode !== document.body) document.body.appendChild(m);
+  m.classList.add('open');
+}
+function closeAmbientSetup(){ var m = document.getElementById('ambient-modal'); if(m) m.classList.remove('open'); }
 
 // ══════════════════════════════════════════════════════════════════════════
 // First-run onboarding: a short guided setup. Nothing here is hardcoded per user —
@@ -3284,10 +3294,8 @@ var TBP_TOUR = (function(){
      body:"You landed in the Patient Desk, and this is your first patient's tab. Let's set this visit up start to finish, and at the end I'll show you how to run several patients at once."},
     {sel:'#visit-opts', core:true, title:'Start with the visit type',
      body:'Every visit starts here. Pick New patient or Follow-up and the right template loads automatically. Everything else opens once you choose.'},
-    {sel:'#style-bar', core:true, title:'Choose how you capture the visit',
-     body:'Record ambient listens to the visit and transcribes it, or Type or paste lets you jot or paste your notes as you go. Pick either, and you can switch anytime.'},
-    {sel:'#__rec_demo__', demoOnly:true, title:'Recording, in the real tool',
-     body:"If you choose Record ambient, the live tool walks you through picking and testing your mic, confirming the patient's consent, and Start/Stop. The visit is transcribed under our BAA and the audio is deleted right after, then the transcript drops into your notes. (Recording is turned off in this demo.)"},
+    {sel:'#__rec_demo__', demoOnly:true, title:'Recording is on demand',
+     body:"Typing or pasting is always on, no button needed. To record instead, hit Record this visit (in the main view, or right in the working note) and it walks you through picking and testing your mic, in person or telehealth, and the patient's consent, then Start/Stop. The visit is transcribed under our BAA, the audio is deleted right after, and the transcript drops into your notes. (Recording is turned off in this demo.)"},
     {sel:'#wf-prep', core:true, title:'Prep from last note',
      onEnter:function(){ try{ var cb=document.getElementById('wf-prep'); if(cb) cb.checked=true; var pc=document.getElementById('prep-controls'); if(pc) pc.style.display=''; }catch(e){} },
      body:"Check this box and, before the visit, you get a summary of last visit so you are not walking in blind, a checklist of what to ask today, and it feeds the Therapy Coach. Checking it also reveals the Set me up button below. Leave it off to just chart the visit fresh."},
@@ -3297,14 +3305,6 @@ var TBP_TOUR = (function(){
      body:"Leave this on and each visit you get a suggested technique, a short how-to, and sample prompts to steer the therapy part, folded right into your note. Turn it off if you do not want it. It is a per-visit choice, so you are never locked in."},
     {sel:'#prep-btn', core:true, title:'Set me up for this visit',
      body:"With Prep on, tap Set me up and it builds today's starting note from last visit, standing items carried forward, plus your follow-up checklist. Then you work in the full-screen note, which we open in a moment."},
-    {sel:'#capture-opts', optional:true, title:'Recording: in person or telehealth',
-     body:'If you are recording, pick how you are seeing the patient. Telehealth captures your call tab audio; in person uses your microphone.'},
-    {sel:'#mic-select', optional:true, title:'Recording: pick and test your mic',
-     body:'Choose the microphone that will capture your voice and tap Test mic, so you know it is working before you record, not after a blank transcript.'},
-    {sel:'#record-consent', optional:true, title:'Recording: consent',
-     body:"Confirm you have the patient's consent. The audio is transcribed under our BAA and deleted right afterward, no recording is kept."},
-    {sel:'#record-btn', optional:true, title:'Recording: start and stop',
-     body:'Hit Start recording, then Stop when the visit ends. The transcript drops into your visit notes below in about a minute, then you draft.'},
     {sel:'#raw', core:true, title:'A place to drop notes in',
      body:"Think of this as an inbox, not your workspace. A recording lands here as a transcript, and if you already jotted an HPI somewhere else you can paste it here. You do not chart your visit in this little box, that happens in the full-screen working window next."},
     {sel:'#raw-fullscreen-btn', core:true, title:'This is where you actually work',
@@ -3322,7 +3322,9 @@ var TBP_TOUR = (function(){
     {fullscreen:true, sel:'.wn-note', title:'Your note, carried forward',
      body:"Your template's sections, prefilled from last visit. Work in one box or all of them, and collapse any you do not need. When you Draft, everything merges into the finished note."},
     {fullscreen:true, sel:'.focus-bar', title:'Your in-visit toolkit',
-     body:"Up here in the working-note header, three tools ride along in every visit, always one click away without leaving your note: the Therapy Coach button, the Scale menu for screeners like PHQ-9 and GAD-7, and Clinical tools for everything else, interaction checks, a crisis and safety plan, letters, even your own pinned links. Let me open each one now, starting with the Coach."},
+     body:"Up here in the working-note header, everything rides along in every visit, one click away without leaving your note: Record this visit (ambient), the Therapy Coach, the Scale menu for screeners like PHQ-9 and GAD-7, and Clinical tools for the rest, interaction checks, a crisis and safety plan, letters, even your own pinned links. Let me walk through them."},
+    {fullscreen:true, sel:'#focus-record', title:'Record right from here',
+     body:"Prepped your note ahead of time? When the patient walks in, hit Record and start ambient without leaving the working note, it opens the mic, consent, and Start in one step. Or just keep typing, recording is always optional."},
     {fullscreen:true, coach:true, cardCorner:'bl', sel:'#tcoach-cards', title:'Therapy Coach, opened up',
      body:"Here is what is inside: focuses, questions, and techniques that fit this patient, ordered by what the note shows. Prefer live coaching over the guide? Pick a focus, hit Add to my note, or search for others mid-visit."},
     {fullscreen:true, onEnter:function(){ try{ demoInsertCoachFocus(); }catch(e){} }, sel:'.wn-guide', title:'It drops into your note',
