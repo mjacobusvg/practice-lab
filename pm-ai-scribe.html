@@ -2266,6 +2266,21 @@ function loadVaultTemplates(){
       // Authoritative per-account profile (overrides the shared localStorage mirror).
       vaultTemplates.new_eval = d.data.hpiTemplateEval || '';
       vaultTemplates.follow_up = d.data.hpiTemplateFollowup || '';
+      // SELF-HEAL: if the server has no template for a visit type but THIS browser still holds one
+      // (an earlier save reached localStorage but not the server, or the server copy was lost),
+      // keep the local template and push it back up, so a template is never silently dropped.
+      // Guarded to this account (found === true) and to non-empty local content, so it can't
+      // resurrect a deliberately cleared template (a clear writes '' locally) or cross accounts.
+      try {
+        var lvHeal = JSON.parse(localStorage.getItem('tbp_vault')||'{}');
+        [['new_eval','hpiTemplateEval'], ['follow_up','hpiTemplateFollowup']].forEach(function(p){
+          var localTxt = (lvHeal[p[1]] || '');
+          if(!(vaultTemplates[p[0]] || '').trim() && localTxt.trim()){
+            vaultTemplates[p[0]] = localTxt;
+            try { persistTemplate(localTxt, p[0]); } catch(e){}  // hardened load-merge-save
+          }
+        });
+      } catch(e){}
       workflow = migrateWf(d.data.hpiWorkflow);
       if(d.data.hpiPrep!==undefined) prepOn = (d.data.hpiPrep===true || d.data.hpiPrep==='on');
       else prepOn = (d.data.hpiWorkflow==='prep');
