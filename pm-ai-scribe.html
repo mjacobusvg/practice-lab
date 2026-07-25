@@ -2271,15 +2271,27 @@ function loadVaultTemplates(){
       // keep the local template and push it back up, so a template is never silently dropped.
       // Guarded to this account (found === true) and to non-empty local content, so it can't
       // resurrect a deliberately cleared template (a clear writes '' locally) or cross accounts.
+      // ONE combined write (not per-field): two concurrent load-modify-saves would race and the
+      // second would clobber the first, restoring only one of two missing templates.
       try {
         var lvHeal = JSON.parse(localStorage.getItem('tbp_vault')||'{}');
-        [['new_eval','hpiTemplateEval'], ['follow_up','hpiTemplateFollowup']].forEach(function(p){
-          var localTxt = (lvHeal[p[1]] || '');
-          if(!(vaultTemplates[p[0]] || '').trim() && localTxt.trim()){
-            vaultTemplates[p[0]] = localTxt;
-            try { persistTemplate(localTxt, p[0]); } catch(e){}  // hardened load-merge-save
-          }
-        });
+        var healEval = (vaultTemplates.new_eval || '').trim() ? '' : (lvHeal.hpiTemplateEval || '');
+        var healFu   = (vaultTemplates.follow_up || '').trim() ? '' : (lvHeal.hpiTemplateFollowup || '');
+        if(healEval.trim() || healFu.trim()){
+          var merged = Object.assign({}, d.data);
+          if(healEval.trim()){ vaultTemplates.new_eval = healEval; merged.hpiTemplateEval = healEval; }
+          if(healFu.trim()){ vaultTemplates.follow_up = healFu; merged.hpiTemplateFollowup = healFu; }
+          fetch('/.netlify/functions/user-tool-data', {
+            method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
+            body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'save', data: merged })
+          }).catch(function(){});
+          try {
+            var lv3 = JSON.parse(localStorage.getItem('tbp_vault')||'{}');
+            if(healEval.trim()) lv3.hpiTemplateEval = healEval;
+            if(healFu.trim()) lv3.hpiTemplateFollowup = healFu;
+            localStorage.setItem('tbp_vault', JSON.stringify(lv3));
+          } catch(e){}
+        }
       } catch(e){}
       workflow = migrateWf(d.data.hpiWorkflow);
       if(d.data.hpiPrep!==undefined) prepOn = (d.data.hpiPrep===true || d.data.hpiPrep==='on');
@@ -3209,6 +3221,8 @@ var TBP_TOUR = (function(){
      body:"Check this box and, before the visit, you get a summary of last visit so you are not walking in blind, a checklist of what to ask today, and it feeds the Therapy Coach. Checking it also reveals the Set me up button below. Leave it off to just chart the visit fresh."},
     {sel:'#context', core:true, title:'Carry last visit forward',
      body:"On a follow-up, paste last visit's HPI, the assessment (diagnosis list with ICD-10 codes), and current med list. That is all it needs to carry the story forward, so today's note continues instead of starting from a blank page."},
+    {sel:'#therapy-guide-toggle', core:true, title:'Psychotherapy guide (your call)',
+     body:"Leave this on and each visit you get a suggested technique, a short how-to, and sample prompts to steer the therapy part, folded right into your note. Turn it off if you do not want it. It is a per-visit choice, so you are never locked in."},
     {sel:'#prep-btn', core:true, title:'Set me up for this visit',
      body:"With Prep on, tap Set me up and it builds today's starting note from last visit, standing items carried forward, plus your follow-up checklist. Then you work in the full-screen note, which we open in a moment."},
     {sel:'#capture-opts', optional:true, title:'Recording: in person or telehealth',
@@ -3219,10 +3233,10 @@ var TBP_TOUR = (function(){
      body:"Confirm you have the patient's consent. The audio is transcribed under our BAA and deleted right afterward, no recording is kept."},
     {sel:'#record-btn', optional:true, title:'Recording: start and stop',
      body:'Hit Start recording, then Stop when the visit ends. The transcript drops into your visit notes below in about a minute, then you draft.'},
-    {sel:'#raw', core:true, title:'Your visit notes',
-     body:"Typing instead? Put your notes here exactly as you took them, shorthand and quotes and all. Don't tidy them up first, that is the tool's job. A recorded visit lands here as a transcript too."},
-    {sel:'#raw-fullscreen-btn', core:true, title:'Open your working window',
-     body:"This button opens your full-screen working window, where the visit actually happens. I will open it for you now so you can see inside."},
+    {sel:'#raw', core:true, title:'A place to drop notes in',
+     body:"Think of this as an inbox, not your workspace. A recording lands here as a transcript, and if you already jotted an HPI somewhere else you can paste it here. You do not chart your visit in this little box, that happens in the full-screen working window next."},
+    {sel:'#raw-fullscreen-btn', core:true, title:'This is where you actually work',
+     body:"This opens your full-screen working window, where the visit actually happens. Whatever landed in the inbox comes with you. I will open it now so you can see inside."},
     {fullscreen:true, sel:'#focus-sections', title:'This is your working window',
      body:"This is where you do all your work during the visit. Type anywhere. It is laid out in sections and the tool guides you through them. (Everything you see here is a demo example, not a real chart.)"},
     {fullscreen:true, sel:'#focus-snap', title:'Your quick snapshot',
