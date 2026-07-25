@@ -2147,6 +2147,9 @@ async function checkAuth() {
   // Capture a ?ref=<referrer account id> from a member's personal invite link, so
   // the referral is attributed automatically when this visitor signs up.
   try { var _rf = new URLSearchParams(window.location.search).get('ref'); if (_rf) { localStorage.setItem('tbp_ref', _rf); localStorage.setItem('tbp_ref_ts', String(Date.now())); } } catch (e) {}
+  // Capture a ?buy=<template_id> deep link (the marketing "Get the toolkit" button)
+  // so the in-platform purchase opens once the visitor has an account.
+  try { var _by = new URLSearchParams(window.location.search).get('buy'); if (_by) { localStorage.setItem('tbp_pending_buy', _by); localStorage.setItem('tbp_pending_buy_ts', String(Date.now())); } } catch (e) {}
   var ok = await loadIdentity();
   if (ok && S.user) {
     document.getElementById('gate').classList.add('hidden');
@@ -2157,12 +2160,13 @@ async function checkAuth() {
     handlePostDeepLink();
     handleCEDeepLink();
     handlePendingPlan();
+    handlePendingBuy();
     maybeShowPushNudge();
   } else {
     // Deep link from the marketing site (/platform.html?join) opens straight into
     // free-account creation; otherwise default to the returning-member view.
     var _q = new URLSearchParams(window.location.search);
-    if (_q.get('join') !== null || _q.get('free') !== null || _q.get('plan') !== null || window.location.hash === '#join') {
+    if (_q.get('join') !== null || _q.get('free') !== null || _q.get('plan') !== null || _q.get('buy') !== null || window.location.hash === '#join') {
       gateMode('signup');
       // Carry an email typed on the marketing site straight into the signup form,
       // so the visitor only has to add their name and hit the button.
@@ -6836,6 +6840,27 @@ function handlePendingPlan() {
     clearPending();                               // signed in — consume the intent now
     if (isPaidMember && isPaidMember()) return;   // already Full — nothing to buy
     startCheckout(plan);
+  } catch (e) {}
+}
+
+// Auto-resume a toolkit/template purchase. A visitor who clicked "Get the toolkit"
+// on the marketing site lands at /platform?buy=<template_id>, which stashes the id
+// (above). After they create their account / sign in, this opens that template's
+// detail page so they see the price and everything included — including the
+// free-month + auto-renew note — and buy in one click. We open the detail rather
+// than bounce straight to Stripe so the auto-renew disclosure is always shown first.
+async function handlePendingBuy() {
+  try {
+    var id = localStorage.getItem('tbp_pending_buy');
+    if (!id) return;
+    var clearPending = function () { localStorage.removeItem('tbp_pending_buy'); localStorage.removeItem('tbp_pending_buy_ts'); };
+    var ts = parseInt(localStorage.getItem('tbp_pending_buy_ts') || '0', 10);
+    if (ts && (Date.now() - ts) > 3600000) { clearPending(); return; }  // stale intent, drop it
+    if (!getAuthToken()) return;                                        // keep intent until signed in
+    if (!/^[0-9a-f-]{36}$/i.test(id)) { clearPending(); return; }       // only a real template id
+    clearPending();
+    await showLibrary();   // loads the library data
+    viewTemplate(id);      // open the toolkit detail (gate shows price + disclosure + Buy)
   } catch (e) {}
 }
 
