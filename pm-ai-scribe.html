@@ -60,6 +60,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 .focus-overlay{position:fixed;inset:0;background:var(--navy);z-index:9500;display:none;flex-direction:column;padding:14px 16px 16px}
 .focus-overlay.open{display:flex}
 .focus-bar{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.focus-bar select{width:auto;max-width:220px}
 .focus-bar h3{font-family:var(--font-display);color:var(--white);font-size:1.05rem;margin:0}
 .focus-bar .spacer{flex:1}
 .focus-x{background:none;border:none;color:var(--cream-dim);font-size:1.5rem;cursor:pointer;line-height:1;padding:0 4px}
@@ -3322,7 +3323,7 @@ var TBP_TOUR = (function(){
      body:"Your template's sections, prefilled from last visit. Work in one box or all of them, and collapse any you do not need. When you Draft, everything merges into the finished note."},
     {fullscreen:true, sel:'.focus-bar', title:'Your in-visit toolkit',
      body:"Up here in the working-note header, three tools ride along in every visit, always one click away without leaving your note: the Therapy Coach button, the Scale menu for screeners like PHQ-9 and GAD-7, and Clinical tools for everything else, interaction checks, a crisis and safety plan, letters, even your own pinned links. Let me open each one now, starting with the Coach."},
-    {fullscreen:true, coach:true, sel:'#tcoach-cards', title:'Therapy Coach, opened up',
+    {fullscreen:true, coach:true, cardCorner:'bl', sel:'#tcoach-cards', title:'Therapy Coach, opened up',
      body:"Here is what is inside: focuses, questions, and techniques that fit this patient, ordered by what the note shows. Prefer live coaching over the guide? Pick a focus, hit Add to my note, or search for others mid-visit."},
     {fullscreen:true, onEnter:function(){ try{ demoInsertCoachFocus(); }catch(e){} }, sel:'.wn-guide', title:'It drops into your note',
      body:"Adding a focus brings that chunk right into your working note, the technique plus a line to type what you did and how the patient responded. Type freely there. When you Draft, it becomes your psychotherapy add-on."},
@@ -3565,6 +3566,11 @@ Past Medication: Wellbutrin, increased agitation.`
     if(left + cw > vw - 10) left = vw - cw - 10;
     if(left < 10) left = 10;
     if(top < 10) top = 10;
+    // Some steps highlight a target inside a centered modal (the Therapy Coach); anchoring the card
+    // to the target would cover the modal's own heading and search field. Pin it to the bottom-left
+    // gutter instead so the modal's explanation and "Find from my note" stay visible.
+    var cs = STEPS[order[i]];
+    if(cs && cs.cardCorner === 'bl'){ left = 16; top = Math.max(10, vh - ch - 16); }
     card.style.top = top + 'px';
     card.style.left = left + 'px';
   }
@@ -3584,6 +3590,10 @@ Past Medication: Wellbutrin, increased agitation.`
     else if(!s.postdraft && demoPdOpen) closeDemoPostdraft();
     if(s.coach && !coachOpen) openDemoCoach();
     else if(!s.coach && coachOpen) closeDemoCoach();
+    // The "Quick rundown" is a static header above the scrolling panels. Expand it only on its
+    // own step; collapse it on the other full-screen steps so the panels below are not scrolled
+    // underneath it (which hid the checklist/guide/note content).
+    if(s.fullscreen){ var snp = el('focus-snap'); if(snp){ var openSnap = (s.sel === '#focus-snap'); snp.classList.toggle('open', openSnap); var chev = snp.querySelector('.fs-chev'); if(chev) chev.innerHTML = openSnap ? '&#9650;' : '&#9660;'; } }
     if(s.onEnter){ try { s.onEnter(); } catch(e){} }
     var t = target(s);
     el('tbp-tour-title').textContent = s.title;
@@ -3593,7 +3603,10 @@ Past Medication: Wellbutrin, increased agitation.`
     el('tbp-tour-next').textContent = i === order.length - 1 ? 'Done' : 'Next';
     var anchored = t && vis(t) && t.offsetHeight > 10;
     if(anchored){
-      try { t.scrollIntoView({ block:'center', behavior:'smooth' }); } catch(e){ try { t.scrollIntoView(); } catch(_){} }
+      // For the coach step, keep the modal pinned to its top so the heading and "Find from my note"
+      // search stay visible; centering the tall cards list would scroll them off the top.
+      if(s.coach){ var cov = el('tcoach'); if(cov) cov.scrollTop = 0; }
+      else { try { t.scrollIntoView({ block:'center', behavior:'smooth' }); } catch(e){ try { t.scrollIntoView(); } catch(_){} } }
       scrim(false);
       el('tbp-tour-ring').style.display = 'block';
       setTimeout(function(){ if(active) positionAt(t); }, 260);
