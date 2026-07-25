@@ -287,6 +287,12 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
   <textarea id="focus-note" placeholder="Work on your note here, full screen. Fill each section as you go, then Draft my HPI."></textarea>
   <div id="focus-err"></div>
 </div>
+
+<!-- Demo-only: post-draft results panel (preflight + assessment + 90833), opened by the walkthrough -->
+<div class="focus-overlay" id="demo-postdraft-overlay" style="display:none">
+  <div class="focus-bar"><h3>Draft &rarr; Assessment</h3><span class="spacer"></span><span class="hint" style="margin:0">Demo example, not a real chart</span></div>
+  <div id="demo-postdraft-body" style="flex:1;overflow:auto;padding:6px 2px 60px"></div>
+</div>
 <script>
 // Cockpit clinical-tool launcher: open the picked tool in a new tab so the working note is never
 // disturbed (drafting keeps running in the background). Clinicians can also pin their own links
@@ -3315,11 +3321,17 @@ var TBP_TOUR = (function(){
     {fullscreen:true, sel:'#clinical-tools-select', title:'Your whole toolkit, one click away',
      body:"You never leave the note mid-visit. Open the interaction checker, a crisis and safety plan, LAI guidance, screeners, monitoring, or a letter, each in a new tab while your note keeps running here. You can even pin your own links, like your EHR or state PDMP."},
     {fullscreen:true, sel:'#focus-draft', title:'Draft when the visit is done',
-     body:"Hit Draft and everything merges into your note in your structure and voice, then goes to the Audit and Coder to check the level and compliance before you sign."},
+     body:"Hit Draft and everything merges into your note in your structure and voice. Then it works up the assessment, which we will look at next."},
+    {postdraft:true, sel:'#demo-preflight', title:'It surfaces the calls, you confirm them',
+     body:"This is the part that answers the trust problem. Before it writes a word of the assessment, it reads the visit and surfaces the clinical decisions for you to confirm: how the diagnosis should read, whether therapy was done and which code, how to frame the fatigue. You decide, it does not. That is what keeps it from inventing anything."},
+    {postdraft:true, sel:'#demo-assessment', title:'Then it writes the assessment',
+     body:"From the calls you confirmed, it writes the assessment in your reasoning: the GAD refinement you chose, the medication decisions, the multifactorial sleep picture. Two paragraphs, because you picked Standard."},
+    {postdraft:true, sel:'#demo-90833', title:'And the psychotherapy add-on',
+     body:"The 90833 note, timed and coded, documenting the ACT work separately from the E/M. This finished note is what then goes to the Chart Audit and Coder."},
     {sel:'#open-wizard', core:true, title:'Adjust anytime',
      body:"Back on the main screen: change your template or sections whenever you like, right here. And the rule from the banner up top holds: review and sign every note yourself. You are always the clinician of record."}
   ];
-  var i = 0, order = [], active = false, demoOpen = false, saved = null, deskMode = false;
+  var i = 0, order = [], active = false, demoOpen = false, saved = null, deskMode = false, demoPdOpen = false;
   function vis(el){ return el && el.offsetParent !== null; }
   function target(s){ return document.querySelector(s.sel); }
   function el(id){ return document.getElementById(id); }
@@ -3329,6 +3341,7 @@ var TBP_TOUR = (function(){
       var s = STEPS[k];
       if(s.deskOnly){ if(deskMode) order.push(k); continue; } // orientation line: only when the Desk launched us
       if(s.fullscreen){ order.push(k); continue; } // target only exists once the demo full screen opens
+      if(s.postdraft){ order.push(k); continue; } // target only exists once the demo results panel opens
       var t = target(s);
       if(!t) continue;
       if(s.optional && !vis(t)) continue;
@@ -3462,6 +3475,45 @@ Past Medication: Wellbutrin, increased agitation.`
     try { if(window.tbpSaveDraft) window.tbpSaveDraft(); } catch(e){}
   }
 
+  // ── Demo post-draft results (the real tool output, canned for the walkthrough) ──
+  // Shows what actually happens after Draft: the "Confirm the clinical calls" preflight (with the
+  // choices this visit was generated from), then the assessment and the 90833 note. Pure display,
+  // no real generation, no real note touched.
+  function buildDemoPostdraft(){
+    var body = el('demo-postdraft-body'); if(!body) return;
+    function pill(txt, on){ return '<span style="display:inline-block;margin:0 6px 6px 0;padding:6px 11px;border-radius:8px;font-size:.82rem;' + (on ? 'background:var(--teal);color:#08131c;border:1px solid var(--teal);font-weight:700' : 'background:var(--navy);color:var(--cream-dim);border:1px solid var(--rule)') + '">' + (on ? '✓ ' : '') + txt + '</span>'; }
+    function q(label, opts){ var h = '<div style="margin-bottom:14px"><div style="font-size:.8rem;color:var(--cream);margin-bottom:7px;font-weight:600">' + label + '</div>'; opts.forEach(function(o){ h += pill(o[0], o[1]); }); return h + '</div>'; }
+    var card = 'background:var(--navy-card,#16243a);border:1px solid var(--rule);border-radius:10px;padding:16px 18px;margin-bottom:16px';
+    var head = 'margin:0 0 10px;font-family:var(--font-display);color:var(--white);font-size:1rem';
+    var txt = 'white-space:pre-wrap;font-size:.86rem;line-height:1.6;color:var(--cream)';
+    var assessment = "F41.1 Generalized anxiety disorder\nG47.26 Circadian rhythm sleep disorder, shift-work type\nF90.9 Attention-deficit/hyperactivity disorder, unspecified\n\nThe anxiety diagnosis is refined this visit from unspecified to GAD, supported by a well-established pattern across multiple visits of chronic multi-domain worry (health, finances, scheduling, work, the litigation), difficulty relaxing, and the \"always thinking\" quality he describes. The ongoing lawsuit continues as a significant psychosocial stressor, with rumination around the employer's motives and the extension of the legal process to his wife adding layers of sustained anger and grief. In session today, he practiced noticing the \"they have an agenda\" thought without following it, and space was held for the anger and sadness without premature redirection to coping, appropriate given where he is in the litigation timeline. His trauma history rooted in community violence exposure is carried as a background contributor to his anxious baseline. No adjustment to the psychotropic regimen was indicated today.\n\nThe sleep and fatigue picture remains multifactorial. The shift-work circadian disruption from the night parcel job remains the organizing frame (G47.26 retained), with sleep deprivation further compounded by uncontrolled Type II diabetes and ongoing psychosocial stress. CPAP use continues without hour tracking or a replacement machine, and late-night phone use was identified as a behavioral contributor to poor onset; a realistic wind-down routine was problem-solved in session. Trazodone 100mg remains limited to weekends and has not yet been extended to weeknights. Resigning from the night job remains the highest-yield variable for sleep architecture and daytime function, and he continues to move toward that decision. Vyvanse continues to support daytime function and is well-tolerated; dry mouth is self-managed with consistent hydration. No medication changes were made.";
+    var pt = "Modality: Acceptance and Commitment Therapy (ACT)-informed supportive psychotherapy\n\nIntervention: Engaged the patient in a defusion exercise targeting the recurrent \"they have an agenda\" thought, helping him notice the difference between having a thought and being caught in it, and practice allowing the thought to arise without following it into rumination, addressing its impact on his sustained anger and mood. Space was also held for him to express the ongoing anger and sadness about the litigation now extending to his wife, without redirecting prematurely, supporting emotional processing of a stressor that remains unresolved and outside his control.\n\nFocus: Ruminative thinking and sustained anger and sadness tied to the pending lawsuit, including the recent development that his wife may be deposed, and the associated impact on his mood and daily functioning.\n\nPatient Response: He engaged with the defusion exercise and was able to articulate the distinction between having the thought and being fused with it. He expressed the emotional weight of the situation touching his wife openly, suggesting he found value in the space to process without being redirected to problem-solving.\n\nTime: 16 minutes of psychotherapy, performed separately from and in addition to the evaluation and management service.";
+    var pre = '<div id="demo-preflight" style="' + card + '"><h3 style="' + head + '">Confirm the clinical calls</h3>'
+      + '<div style="font-size:.8rem;color:var(--cream-dim);margin-bottom:14px">It read the visit and surfaced the decisions. You confirm; then it writes. It never decides these for you.</div>'
+      + q('How much reasoning do you want in the assessment?', [['Standard',1],['Brief',0],['Thorough',0]])
+      + q('Was psychotherapy performed, and which add-on applies?', [['Yes — 90833 (16-37 min)',1],['90836 (38-52)',0],['90838 (53+)',0],['No therapy',0]])
+      + q('How should the assessment handle the anxiety diagnosis?', [['Carry as Anxiety, unspecified (F41.9)',0],['Refine to GAD (F41.1)',1],['Add a PTSD / trauma flag',0]])
+      + q('How should it characterize the fatigue picture? (select all)', [['Multifactorial (sleep debt + T2DM + stress)',1],['Circadian / shift-work (G47.26)',1],['Primarily sleep-deprivation',0],['Keep it plain',0]])
+      + '</div>';
+    body.innerHTML = pre
+      + '<div id="demo-assessment" style="' + card + '"><h3 style="' + head + '">Assessment &amp; Plan</h3><div style="' + txt + '">' + esc(assessment) + '</div></div>'
+      + '<div id="demo-90833" style="' + card + ';margin-bottom:0"><h3 style="' + head + '">Psychotherapy add-on (90833)</h3><div style="' + txt + '">' + esc(pt) + '</div></div>';
+  }
+  function openDemoPostdraft(){
+    if(demoPdOpen) return;
+    buildDemoPostdraft();
+    var ov = el('demo-postdraft-overlay'); if(ov){ ov.style.display = ''; ov.classList.add('open'); }
+    var fab = el('tbp-theme-fab'); if(fab) fab.style.display = 'none';
+    demoPdOpen = true;
+  }
+  function closeDemoPostdraft(){
+    if(!demoPdOpen) return;
+    var ov = el('demo-postdraft-overlay'); if(ov){ ov.classList.remove('open'); ov.style.display = 'none'; }
+    var b = el('demo-postdraft-body'); if(b) b.innerHTML = '';
+    var fab = el('tbp-theme-fab'); if(fab) fab.style.display = '';
+    demoPdOpen = false;
+  }
+
   function scrim(on){ var e = el('tbp-tour-scrim'); if(e) e.style.display = on ? 'block' : 'none'; }
   function positionAt(t){
     var ring = el('tbp-tour-ring'), card = el('tbp-tour-card');
@@ -3493,6 +3545,8 @@ Past Medication: Wellbutrin, increased agitation.`
     // Open or close the demo full-screen note as the step requires, so its target exists.
     if(s.fullscreen && !demoOpen) openDemoFullScreen();
     else if(!s.fullscreen && demoOpen) closeDemoFullScreen();
+    if(s.postdraft && !demoPdOpen) openDemoPostdraft();
+    else if(!s.postdraft && demoPdOpen) closeDemoPostdraft();
     if(s.onEnter){ try { s.onEnter(); } catch(e){} }
     var t = target(s);
     el('tbp-tour-title').textContent = s.title;
@@ -3559,6 +3613,7 @@ Past Medication: Wellbutrin, increased agitation.`
     active = false;
     deskMode = false;
     if(demoOpen) closeDemoFullScreen();
+    if(demoPdOpen) closeDemoPostdraft();
     // Undo the walkthrough's visual prep-toggle (we only checked the box to reveal "Set me up";
     // we never changed the real setting) so the screen returns to the clinician's actual state.
     try { var cb = el('wf-prep'); if(cb && typeof prepOn !== 'undefined') cb.checked = prepOn; if(typeof renderMode === 'function') renderMode(); } catch(e){}
