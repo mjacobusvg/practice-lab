@@ -3460,6 +3460,15 @@ Past Medication: Wellbutrin, increased agitation.`
     if(t && vis(t) && el('tbp-tour-ring').style.display !== 'none') positionAt(t);
   }
   function escFn(e){ if(e.key === 'Escape') _close(); }
+  // Swallow only stray CLICKS on the page (so a highlighted real button can't fire and desync the
+  // tour), while leaving scrolling, scrollbar dragging, and text selection fully working. A covering
+  // shield would also block the wheel and selection, which it did.
+  function blockPageClicks(e){
+    if(!active) return;
+    var card = el('tbp-tour-card');
+    if(card && card.contains(e.target)) return; // let Next/Back/close through
+    e.preventDefault(); e.stopPropagation();
+  }
   function _start(mode){
     if(active) return;
     active = true;
@@ -3470,7 +3479,7 @@ Past Medication: Wellbutrin, increased agitation.`
     // has a real target to highlight, instead of falling back to a centered card.
     if(!visitType){ var vo = document.querySelector('#visit-opts [data-visit="follow_up"]'); if(vo) vo.click(); }
     buildOrder(); i = 0;
-    var blk = el('tbp-tour-block'); if(blk) blk.style.display = 'block';
+    document.addEventListener('click', blockPageClicks, true);
     window.addEventListener('scroll', onScroll, true);
     window.addEventListener('resize', onScroll);
     document.addEventListener('keydown', escFn);
@@ -3495,6 +3504,7 @@ Past Medication: Wellbutrin, increased agitation.`
     // Undo the walkthrough's visual prep-toggle (we only checked the box to reveal "Set me up";
     // we never changed the real setting) so the screen returns to the clinician's actual state.
     try { var cb = el('wf-prep'); if(cb && typeof prepOn !== 'undefined') cb.checked = prepOn; if(typeof renderMode === 'function') renderMode(); } catch(e){}
+    document.removeEventListener('click', blockPageClicks, true);
     ['tbp-tour-block','tbp-tour-scrim','tbp-tour-ring','tbp-tour-card'].forEach(function(id){ var e = el(id); if(e) e.style.display = 'none'; });
     window.removeEventListener('scroll', onScroll, true);
     window.removeEventListener('resize', onScroll);
