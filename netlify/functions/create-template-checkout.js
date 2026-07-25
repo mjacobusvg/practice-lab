@@ -40,11 +40,20 @@ exports.handler = async function (event) {
 
   const sbHeaders = { apikey: KEY, Authorization: 'Bearer ' + KEY };
   try {
-    const tplRes = await fetch(URL + '/rest/v1/template_library?id=eq.' + encodeURIComponent(templateId) + '&select=id,title,is_paid,price_cents,visible&limit=1', { headers: sbHeaders });
+    const tplRes = await fetch(URL + '/rest/v1/template_library?id=eq.' + encodeURIComponent(templateId) + '&select=id,title,is_paid,price_cents,member_price_cents,visible&limit=1', { headers: sbHeaders });
     const tpls = await tplRes.json();
     const tpl = tpls && tpls[0];
     if (!tpl || !tpl.visible) return { statusCode: 404, headers: CORS, body: JSON.stringify({ error: 'Template not found' }) };
     if (!tpl.is_paid || !(tpl.price_cents > 0)) return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'This template is not for individual sale.' }) };
+
+    // Tiered price. member_price_cents set => a premium item that paying members
+    // buy at the reduced price; non-members pay full price_cents. When it is NOT a
+    // member-priced item, paying members already get it free and must not be charged.
+    const tier = String(session.claims.tier || 'free').toLowerCase();
+    const paying = (tier === 'forum' || tier === 'full');
+    const memberPriced = tpl.member_price_cents != null && tpl.member_price_cents > 0;
+    if (!memberPriced && paying) return { statusCode: 200, headers: CORS, body: JSON.stringify({ already_owned: true }) };
+    const unitAmount = (memberPriced && paying) ? tpl.member_price_cents : tpl.price_cents;
 
     // Already own it? Then no charge.
     const meRes = await fetch(URL + '/rest/v1/accounts?email=eq.' + encodeURIComponent(email) + '&select=id,stripe_customer_id&limit=1', { headers: sbHeaders });
@@ -62,7 +71,7 @@ exports.handler = async function (event) {
         price_data: {
           currency: 'usd',
           product_data: { name: String(tpl.title || 'Template').replace(/[^\x20-\x7E]/g, '').trim().slice(0, 120) || 'Template' },
-          unit_amount: tpl.price_cents
+          unit_amount: unitAmount
         },
         quantity: 1
       }],

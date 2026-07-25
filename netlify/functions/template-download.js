@@ -7,6 +7,7 @@
 const { verifyToken } = require('./_lib/session');
 
 const TIER_RANK = { free: 0, forum: 1, full: 2 };
+const ADMIN_EMAILS = ['michael@thinkbeyondpsych.com', 'michael@thinkbeyondpractice.com', 'michael.vangelder@gmail.com'];
 
 exports.handler = async function (event) {
   const headers = {
@@ -44,31 +45,43 @@ exports.handler = async function (event) {
       tier = (accts && accts[0]) ? accts[0].tier : 'free';
     }
 
-    const tplRes = await fetch(URL + '/rest/v1/template_library?id=eq.' + encodeURIComponent(templateId) + '&select=file_url,storage_path,min_tier,is_paid', { headers: sbHeaders });
+    const tplRes = await fetch(URL + '/rest/v1/template_library?id=eq.' + encodeURIComponent(templateId) + '&select=file_url,storage_path,min_tier,is_paid,member_price_cents', { headers: sbHeaders });
     const tpls = await tplRes.json();
     if (!tpls || !tpls.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'Template not found' }) };
     const tpl = tpls[0];
 
-    // Access model: every PAYING member (forum or full) gets all templates.
-    // Free members get free/member-open templates only, unless they've bought
-    // this specific one.
+    // Did the signed-in member individually purchase this template?
+    const ownsTemplate = async function () {
+      try {
+        const meRes = await fetch(URL + '/rest/v1/accounts?email=eq.' + encodeURIComponent(email) + '&select=id&limit=1', { headers: sbHeaders });
+        const me = await meRes.json();
+        if (!me || !me[0]) return false;
+        const purRes = await fetch(URL + '/rest/v1/template_purchases?account_id=eq.' + me[0].id + '&template_id=eq.' + encodeURIComponent(templateId) + '&select=id&limit=1', { headers: sbHeaders });
+        const pur = await purRes.json();
+        return !!(pur && pur.length);
+      } catch (e) { return false; }
+    };
+
+    // Access model:
+    //  - Admins/owner: everything.
+    //  - member_price_cents set (premium/flagship, e.g. the Complete Toolkit): NOBODY
+    //    gets it via tier; forum/full members pay the reduced price too, so access
+    //    requires an individual purchase.
+    //  - Otherwise: every PAYING member (forum or full) gets all templates; free
+    //    members get free/open templates, or a paid one they specifically bought.
     const paying = (tier === 'forum' || tier === 'full');
+    const memberPriced = tpl.member_price_cents != null && tpl.member_price_cents > 0;
     let allowed = false;
-    if (paying) {
+    if (ADMIN_EMAILS.indexOf(email) !== -1) {
+      allowed = true;
+    } else if (memberPriced) {
+      allowed = await ownsTemplate();
+    } else if (paying) {
       allowed = true;
     } else if (!tpl.is_paid && (TIER_RANK[tier] || 0) >= (TIER_RANK[tpl.min_tier] || 2)) {
       allowed = true;
     } else if (tpl.is_paid) {
-      // Did this free member purchase it?
-      try {
-        const meRes = await fetch(URL + '/rest/v1/accounts?email=eq.' + encodeURIComponent(email) + '&select=id&limit=1', { headers: sbHeaders });
-        const me = await meRes.json();
-        if (me && me[0]) {
-          const purRes = await fetch(URL + '/rest/v1/template_purchases?account_id=eq.' + me[0].id + '&template_id=eq.' + encodeURIComponent(templateId) + '&select=id&limit=1', { headers: sbHeaders });
-          const pur = await purRes.json();
-          allowed = !!(pur && pur.length);
-        }
-      } catch (e) { /* treat as not purchased */ }
+      allowed = await ownsTemplate();
     }
     if (!allowed) {
       return { statusCode: tpl.is_paid ? 402 : 403, headers, body: JSON.stringify({ ok: false, error: tpl.is_paid ? 'Purchase or join to download this template' : 'Join to download this template' }) };

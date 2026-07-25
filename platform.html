@@ -4490,7 +4490,7 @@ async function showLibrary() {
     try {
       var { data, error } = await SB
         .from('template_library')
-        .select('id, title, description, category, min_tier, is_paid, price_cents, preview, source_post_id, file_url, storage_path, forum_posts:source_post_id(id,title)')
+        .select('id, title, description, category, min_tier, is_paid, price_cents, member_price_cents, preview, source_post_id, file_url, storage_path, forum_posts:source_post_id(id,title)')
         .eq('visible', true)
         .order('sort_order', { ascending: true })
         .order('created_at', { ascending: false });
@@ -4570,8 +4570,12 @@ async function loadOwnedTemplates(force) {
 // individually purchased.
 function templateAccessible(t) {
   var tier = (S.user && S.user.tier) || 'free';
-  if (tier === 'forum' || tier === 'full') return true;
+  if (isAdmin()) return true;
   if (ownedTemplateIds && ownedTemplateIds[t.id]) return true;
+  // member-priced (premium) items are never free to members: access needs a purchase.
+  var memberPriced = t.member_price_cents != null && t.member_price_cents > 0;
+  if (memberPriced) return false;
+  if (tier === 'forum' || tier === 'full') return true;
   if (!t.is_paid && (TIER_RANK[tier] || 0) >= (TIER_RANK[t.min_tier] || 2)) return true;
   return false;
 }
@@ -4579,12 +4583,22 @@ function templateBadge(t) {
   if (t.is_paid) {
     var price = '$' + ((t.price_cents || 0) / 100).toFixed(0);
     var tier = (S.user && S.user.tier) || 'free';
-    // Paying members (forum/full) get every template free: show the price struck
-    // through with "Free" so the value is visible but they know they owe nothing.
-    if (tier === 'forum' || tier === 'full') return '<span class="tpl-tag tpl-paid"><span class="tpl-strike">' + price + '</span>Free</span>';
-    // A free member who bought this specific one already owns it.
-    if (ownedTemplateIds && ownedTemplateIds[t.id]) return '<span class="tpl-tag tpl-paid"><span class="tpl-strike">' + price + '</span>Owned</span>';
-    return '<span class="tpl-tag tpl-paid">' + price + '</span>';
+    var paying = (tier === 'forum' || tier === 'full');
+    var owned = ownedTemplateIds && ownedTemplateIds[t.id];
+    var memberPriced = t.member_price_cents != null && t.member_price_cents > 0;
+    var pill = function (inner) { return '<span class="tpl-tag tpl-paid">' + inner + '</span>'; };
+    var strike = function (p) { return '<span class="tpl-strike">' + p + '</span>'; };
+    // Anyone who already bought it owns it, whatever their tier.
+    if (owned) return pill(strike(price) + 'Owned');
+    if (memberPriced) {
+      // Premium item: members pay a reduced price (not free). Show the member
+      // discount to a paying member; the full price to everyone else.
+      if (paying) return pill(strike(price) + '$' + ((t.member_price_cents || 0) / 100).toFixed(0));
+      return pill(price);
+    }
+    // Ordinary paid template: free to any paying member.
+    if (paying) return pill(strike(price) + 'Free');
+    return pill(price);
   }
   if (t.min_tier === 'full') return '<span class="tpl-tag">Full</span>';
   if (t.min_tier === 'forum') return '<span class="tpl-tag">Member</span>';
@@ -4625,6 +4639,21 @@ function viewTemplate(id) {
     }
     h += '</div>';
     if (!hasFile && !t.source_post_id) h += '<div style="color:var(--text-secondary);font-size:0.85rem">No file attached yet.</div>';
+  } else if (t.member_price_cents != null && t.member_price_cents > 0) {
+    // Premium/flagship item: members pay a reduced price, non-members pay full.
+    // Both can buy it here; joining does not make it free, it earns the member price.
+    var full = '$' + ((t.price_cents || 0) / 100).toFixed(0);
+    var memp = '$' + ((t.member_price_cents || 0) / 100).toFixed(0);
+    var payingMember = isPaidMember();
+    var buyNow = payingMember ? memp : full;
+    h += '<div class="tpl-gate">';
+    h += '<div class="tpl-gate-title">&#11088; Premium toolkit</div>';
+    if (payingMember) h += '<p class="tpl-gate-sub">Your member price is ' + memp + ' (normally ' + full + '). One download, yours to keep.</p>';
+    else h += '<p class="tpl-gate-sub">' + full + ' for non-members. Members pay ' + memp + '. One download, yours to keep.</p>';
+    h += '<div class="tpl-detail-actions">';
+    h += '<button class="btn-primary" onclick="buyTemplate(\'' + t.id + '\')">Buy for ' + buyNow + '</button>';
+    if (!payingMember) h += '<button class="btn-ghost" onclick="showJoin(\'\')">Join to get the ' + memp + ' member price</button>';
+    h += '</div></div>';
   } else {
     // Gated: show a clear path to unlock. A paid template can be bought on its
     // own; otherwise the path is joining (or upgrading).
