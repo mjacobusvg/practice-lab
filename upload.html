@@ -121,30 +121,39 @@ document.getElementById('reset-btn').addEventListener('click', function(){
   drop.innerHTML = '<b>Click to choose a file</b> or drag it here<br><span style="font-size:.8rem">PDF, Word, Excel, images, anything up to 25 MB</span>';
 });
 
-upBtn.addEventListener('click', function(){
+upBtn.addEventListener('click', async function(){
   if (!chosen) { setMsg(upMsg, 'Choose a file first.', 'err'); return; }
   var path = String(chosen.name || 'upload').trim().replace(/^\/+/, '');
   var bucket = document.getElementById('bucket').value;
+  var reset = function(){ upBtn.disabled = false; upBtn.textContent = 'Upload'; };
   upBtn.disabled = true; upBtn.textContent = 'Uploading…';
-  var reader = new FileReader();
-  reader.onload = function(){
-    fetch('/.netlify/functions/admin-doc-upload', {
+  try {
+    // 1) Ask our admin function for a short-lived signed upload URL.
+    var signRes = await fetch('/.netlify/functions/admin-doc-upload', {
       method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer ' + TOKEN},
-      body: JSON.stringify({ token: TOKEN, bucket: bucket, path: path, content_type: chosen.type || 'application/octet-stream', data: reader.result })
-    })
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-      upBtn.disabled = false; upBtn.textContent = 'Upload';
-      if (d && d.ok) { setMsg(upMsg, 'Uploaded to ' + d.bucket + ' / ' + d.path + ' (' + Math.round(d.size/1024) + ' KB). Done.', 'ok'); }
-      else {
-        if (d && /sign in|not authorized/i.test(d.error||'')) { try{ localStorage.removeItem('tbp_auth_token'); }catch(e){} }
-        setMsg(upMsg, (d && d.error) || 'Upload failed.', 'err');
-      }
-    })
-    .catch(function(){ upBtn.disabled = false; upBtn.textContent = 'Upload'; setMsg(upMsg, 'Connection error, try again.', 'err'); });
-  };
-  reader.onerror = function(){ upBtn.disabled = false; upBtn.textContent = 'Upload'; setMsg(upMsg, 'Could not read the file.', 'err'); };
-  reader.readAsDataURL(chosen);
+      body: JSON.stringify({ action:'sign', token: TOKEN, bucket: bucket, path: path })
+    });
+    var sd = await signRes.json();
+    if (!sd || !sd.ok || !sd.uploadUrl) {
+      if (sd && /sign in|not authorized/i.test(sd.error||'')) { try{ localStorage.removeItem('tbp_auth_token'); }catch(e){} }
+      reset(); setMsg(upMsg, (sd && sd.error) || 'Upload failed.', 'err'); return;
+    }
+    // 2) Send the file BYTES straight to Supabase Storage (no Netlify size limit).
+    //    multipart form matches how Supabase's own client uploads to a signed URL.
+    var fd = new FormData();
+    fd.append('cacheControl', '3600');
+    fd.append('', chosen, chosen.name);
+    var putRes = await fetch(sd.uploadUrl, { method:'PUT', headers: { 'x-upsert':'true' }, body: fd });
+    reset();
+    if (putRes.ok) {
+      setMsg(upMsg, 'Uploaded to ' + sd.bucket + ' / ' + sd.path + ' (' + Math.round(chosen.size/1024) + ' KB). Done.', 'ok');
+    } else {
+      var t = ''; try { t = await putRes.text(); } catch(e){}
+      setMsg(upMsg, 'Upload failed (' + putRes.status + '). ' + String(t).slice(0,200), 'err');
+    }
+  } catch (e) {
+    reset(); setMsg(upMsg, 'Connection error, try again.', 'err');
+  }
 });
 </script>
 </body>

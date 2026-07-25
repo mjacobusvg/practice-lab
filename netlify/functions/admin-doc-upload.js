@@ -40,6 +40,27 @@ exports.handler = async function (event) {
   let path = String(p.path || p.filename || '').trim().replace(/^\/+/, '');
   if (!path) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Missing file path/name' }) };
 
+  // action:'sign' -> return a short-lived signed upload URL so the browser can PUT
+  // the file bytes STRAIGHT to Supabase Storage. This bypasses Netlify's ~6MB
+  // function-body limit, so big files (zips, toolkits) upload fine. The base64
+  // path below stays for tiny files / older callers.
+  if (p.action === 'sign') {
+    try {
+      const signRes = await fetch(URL + '/storage/v1/object/upload/sign/' + bucket + '/' + encodeURI(path), {
+        method: 'POST',
+        headers: { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json', 'x-upsert': 'true' },
+        body: JSON.stringify({})
+      });
+      const sd = await signRes.json().catch(function () { return null; });
+      if (!signRes.ok || !sd || !sd.url) {
+        return { statusCode: 502, headers, body: JSON.stringify({ ok: false, error: 'Could not create upload URL: ' + (sd ? JSON.stringify(sd).slice(0, 200) : signRes.status) }) };
+      }
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, bucket: bucket, path: path, uploadUrl: URL + '/storage/v1' + sd.url }) };
+    } catch (e) {
+      return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: String((e && e.message) || e) }) };
+    }
+  }
+
   const ct = String(p.content_type || 'application/octet-stream');
   let b64 = String(p.data || '');
   const comma = b64.indexOf(',');
