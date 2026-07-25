@@ -50,6 +50,18 @@ exports.handler = async function (event) {
     if (!tpls || !tpls.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'Template not found' }) };
     const tpl = tpls[0];
 
+    // Limited-time comp/trial accounts get full access to the tools but NOT to
+    // template downloads (templates are permanent paid products). Admins exempt.
+    if (ADMIN_EMAILS.indexOf(email) === -1) {
+      try {
+        const accRes = await fetch(URL + '/rest/v1/accounts?email=eq.' + encodeURIComponent(email) + '&select=templates_blocked&limit=1', { headers: sbHeaders });
+        const accRows = await accRes.json();
+        if (accRows && accRows[0] && accRows[0].templates_blocked) {
+          return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Templates are not included with your trial access.' }) };
+        }
+      } catch (e) { /* if the check fails, fall through to normal access rules */ }
+    }
+
     // Did the signed-in member individually purchase this template?
     const ownsTemplate = async function () {
       try {

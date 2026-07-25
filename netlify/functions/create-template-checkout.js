@@ -56,8 +56,10 @@ exports.handler = async function (event) {
     const unitAmount = (memberPriced && paying) ? tpl.member_price_cents : tpl.price_cents;
 
     // Already own it? Then no charge.
-    const meRes = await fetch(URL + '/rest/v1/accounts?email=eq.' + encodeURIComponent(email) + '&select=id,stripe_customer_id&limit=1', { headers: sbHeaders });
+    const meRes = await fetch(URL + '/rest/v1/accounts?email=eq.' + encodeURIComponent(email) + '&select=id,stripe_customer_id,templates_blocked&limit=1', { headers: sbHeaders });
     const me = (await meRes.json())[0];
+    // Limited-time comp/trial accounts cannot buy templates either.
+    if (me && me.templates_blocked) return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'Templates are not included with your trial access.' }) };
     if (me) {
       const owned = await fetch(URL + '/rest/v1/template_purchases?account_id=eq.' + me.id + '&template_id=eq.' + encodeURIComponent(templateId) + '&select=id&limit=1', { headers: sbHeaders });
       if ((await owned.json()).length) return { statusCode: 200, headers: CORS, body: JSON.stringify({ already_owned: true }) };

@@ -64,7 +64,7 @@ exports.handler = async function (event) {
     // 2) Look up the linked account (service key; by auth_id) for tier/admin/cmid.
     const acctRes = await fetch(
       SUPABASE_URL + '/rest/v1/accounts?auth_id=eq.' + encodeURIComponent(authId) +
-      '&select=email,tier,is_admin,circle_member_id',
+      '&select=email,tier,is_admin,circle_member_id,templates_blocked',
       { headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY } }
     );
     const accts = acctRes.ok ? await acctRes.json() : [];
@@ -85,7 +85,7 @@ exports.handler = async function (event) {
       try {
         const byEmailRes = await fetch(
           SUPABASE_URL + '/rest/v1/accounts?email=eq.' + encodeURIComponent(verifiedEmail) +
-          '&select=id,email,tier,is_admin,circle_member_id,auth_id&limit=1',
+          '&select=id,email,tier,is_admin,circle_member_id,auth_id,templates_blocked&limit=1',
           { headers: svc });
         const byEmail = byEmailRes.ok ? await byEmailRes.json() : [];
         if (byEmail && byEmail[0]) {
@@ -149,6 +149,7 @@ exports.handler = async function (event) {
         email: verifiedEmail,
         tier: tier,
         is_admin: !!(acct && acct.is_admin),
+        templates_blocked: !!(acct && acct.templates_blocked),
         communityMemberId: cmid
       })
     };
