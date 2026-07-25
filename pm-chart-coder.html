@@ -559,12 +559,12 @@ Respond ONLY with JSON. No markdown.
   "addon_time": "documented psychotherapy time or null",
   "modifiers": ["25", "95"],
   "coding_support": "Strong or Moderate or Weak",
-  "coding_support_reason": "one sentence",
+  "coding_support_reason": "one sentence. If you reference the E/M code here, write the literal token {{EM_CODE}} — never write or infer a CPT E/M code number (9920x/9921x) yourself; a deterministic engine substitutes the correct one.",
   "audit_defensibility": "Strong or Moderate or Weak",
   "audit_reason": "one sentence",
   "documentation_gaps": ["CODING-SPECIFIC gaps only — documentation that, if added, would strengthen THIS code's defensibility (e.g. an MDM data source referenced but not formally noted, a monitoring plan not specified, medical necessity context not stated). Do NOT repeat note-integrity problems (internal contradictions, unsupported references, missing safety assessment, scribe errors) — those are handled by the separate documentation audit and must not be duplicated here. If a finding is a contradiction or a note-consistency issue rather than a code-defensibility gap, omit it from this list."],
   "suggested_language": ["specific language to add to strengthen documentation"],
-  "attestation": "A chart-ready MDM attestation for audit defensibility. Use this exact structure: '[Visit type] ([code]) was determined by [level] complexity medical decision making based on: (1) [level] problems — [one sentence with specific clinical content]; (2) [level] data — [one sentence]; (3) [level] risk — [one sentence with specific clinical content]. [2-of-3 rule statement]. Psychotherapy add-on [code] for [X] minutes of [modality]. Modifiers: [list with descriptions].' Use the code-computed levels and E/M code you were given. Do NOT write a visit narrative. For established patients say 'established patient follow-up visit,' for new patients say 'new patient evaluation.'"
+  "attestation": "A chart-ready MDM attestation for audit defensibility. Use this exact structure: '[Visit type] ({{EM_CODE}}) was determined by [level] complexity medical decision making based on: (1) [level] problems — [one sentence with specific clinical content]; (2) [level] data — [one sentence]; (3) [level] risk — [one sentence with specific clinical content]. [2-of-3 rule statement]. Psychotherapy add-on [add-on code] for [X] minutes of [modality]. Modifiers: [list with descriptions].' Write the literal token {{EM_CODE}} for the E/M code — do NOT write or infer a CPT E/M code number (9920x/9921x) yourself; a deterministic engine substitutes the authoritative code. Use the code-computed levels you were given for the [level] slots (do not restate or second-guess them). Do NOT write a visit narrative. For established patients say 'established patient follow-up visit,' for new patients say 'new patient evaluation.'"
 }`;
 
 // ══════════════════════════════════════════════════════════════
@@ -785,6 +785,16 @@ async function runCodingPasses() {
     review.em_description = visitDesc + ', ' + emLevelDesc + ' complexity MDM';
     review.two_of_three = 'Code-computed: the E/M level is the highest level reached by at least two of the three axes. Problems ' + mdm.problems.level + ', Data ' + mdm.data.level + ', Risk ' + mdm.risk.level + ' yields ' + emResult.level + ' (' + emResult.code + ').';
 
+    // The model writes the attestation and the coding-support/audit reasons as free prose, but
+    // it is given only the axis LEVELS, not the resulting E/M code — so any CPT E/M code it puts
+    // in that prose is its own guess and can disagree with the deterministic em_code above (e.g.
+    // moderate 2-of-3 written as 99213 instead of 99214). The engine's code is authoritative.
+    // Fill the {{EM_CODE}} placeholder the prompt now emits, and hard-override any stray office
+    // E/M code left in that prose, so the chart-ready text can never contradict the recommendation.
+    review.attestation = forceEmCode(review.attestation, emResult.code);
+    review.coding_support_reason = forceEmCode(review.coding_support_reason, emResult.code);
+    review.audit_reason = forceEmCode(review.audit_reason, emResult.code);
+
     // Done
     updateProgress(4, 'Complete.');
     lastMDM = mdm;
@@ -802,6 +812,20 @@ async function runCodingPasses() {
     document.getElementById('input-area').style.display = 'block';
     alert('Error during coding analysis: ' + e.message);
   }
+}
+
+// The MDM attestation and the coding-support/audit reasons are model-written, but the model is
+// handed the axis levels and NOT the computed E/M code — so any CPT E/M code in that prose is its
+// own guess and can disagree with the deterministic code (see emFromAxes). This forces those
+// fields to the authoritative code: it substitutes the {{EM_CODE}} token the review prompt is told
+// to emit, and, as a backstop, rewrites any leftover office/outpatient E/M code (99202-99205 /
+// 99212-99215) to the computed code. Add-on (908xx), prolonged (99417), and modifier numbers fall
+// outside that pattern and are left untouched.
+function forceEmCode(text, emCode) {
+  if (text == null || !emCode) return text;
+  return String(text)
+    .replace(/\{\{\s*EM_CODE\s*\}\}/g, emCode)
+    .replace(/\b992(?:0[2-5]|1[2-5])\b/g, emCode);
 }
 
 function updateProgress(step, label) {
