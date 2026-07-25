@@ -163,6 +163,12 @@ exports.handler = async function (event) {
     : toRichHtml(String(p.markdown || ''));
   if (!bodyHtml.trim()) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Body required' }) };
 
+  // Optional preheader: the inbox preview text shown next to the subject. Rendered
+  // as a hidden block at the very top of the email so it, not the greeting, is what
+  // the inbox previews. Trailing zero-width spacer pushes the visible body out of
+  // the preview so it doesn't bleed in after the preheader.
+  const preheader = String(p.preheader || '').trim().slice(0, 200);
+
   const isCustom = String(p.audience || '').toLowerCase() === 'custom';
   const filter = audienceFilter(p.audience);
   if (filter === null && !isCustom) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Bad audience' }) };
@@ -176,7 +182,7 @@ exports.handler = async function (event) {
     }
     const ins = await fetch(URL + '/rest/v1/scheduled_broadcasts', {
       method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json', Prefer: 'return=representation' }, auth),
-      body: JSON.stringify({ subject: subject, markdown: String(p.markdown || ''), audience: String(p.audience || 'all'), emails: String(p.emails || ''), scheduled_at: when.toISOString(), sent_by: adminEmail || 'admin', status: 'scheduled' })
+      body: JSON.stringify({ subject: subject, markdown: String(p.markdown || ''), preheader: preheader, audience: String(p.audience || 'all'), emails: String(p.emails || ''), scheduled_at: when.toISOString(), sent_by: adminEmail || 'admin', status: 'scheduled' })
     });
     if (!ins.ok) { const t = await ins.text(); return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'Could not schedule: ' + t.slice(0, 150) }) }; }
     const rows = await ins.json();
@@ -186,6 +192,11 @@ exports.handler = async function (event) {
   const wrap = function (inner) {
     return '<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:640px;margin:0 auto;color:#1a2430;font-size:15px;line-height:1.6">' +
       inner + '</div>';
+  };
+  const preheaderBlock = function () {
+    if (!preheader) return '';
+    const spacer = '&#847;&zwnj;&nbsp;'.repeat(60); // zero-width filler so the body doesn't bleed into the preview
+    return '<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#f4f7fb;opacity:0">' + esc(preheader) + spacer + '</div>';
   };
 
   try {
@@ -266,7 +277,7 @@ exports.handler = async function (event) {
         // directional only — Apple Mail Privacy pre-fetches images (inflates) and
         // image-blockers suppress them (deflates). Clicks remain the truer signal.
         if (bid) { inner = trackLinks(inner, bid, token); inner = inner + pixelTag(bid, token); }
-        let html = wrap(inner + footer(c.email, bid));
+        let html = wrap(preheaderBlock() + inner + footer(c.email, bid));
         const raw = buildRawEmail({ from: ses.from, to: c.email, subject: subject, html: html, unsub: unsubUrl(c.email, bid) });
         return ses.client.send(new ses.SendEmailCommand({
           FromEmailAddress: ses.from,

@@ -29,7 +29,7 @@ exports.handler = async function (event) {
 
   try {
     // Find due, still-scheduled broadcasts.
-    const dueRes = await fetch(URL + '/rest/v1/scheduled_broadcasts?status=eq.scheduled&scheduled_at=lte.' + encodeURIComponent(nowIso) + '&order=scheduled_at.asc&select=id,subject,markdown,audience,emails&limit=20', { headers: auth });
+    const dueRes = await fetch(URL + '/rest/v1/scheduled_broadcasts?status=eq.scheduled&scheduled_at=lte.' + encodeURIComponent(nowIso) + '&order=scheduled_at.asc&select=id,subject,markdown,preheader,audience,emails&limit=20', { headers: auth });
     const due = dueRes.ok ? await dueRes.json() : [];
     const results = [];
 
@@ -46,7 +46,7 @@ exports.handler = async function (event) {
       try {
         const sendRes = await fetch(base + '/.netlify/functions/broadcast-send', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ internal_secret: SECRET, subject: b.subject, markdown: b.markdown, audience: b.audience, emails: b.emails || '' })
+          body: JSON.stringify({ internal_secret: SECRET, subject: b.subject, markdown: b.markdown, preheader: b.preheader || '', audience: b.audience, emails: b.emails || '' })
         });
         const sd = await sendRes.json().catch(function () { return {}; });
         if (sendRes.ok && sd.ok) {
