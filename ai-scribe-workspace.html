@@ -296,10 +296,10 @@ var DESK_TOUR = (function(){
      body:"Everything in the note-building area below belongs to one patient — the tab up top. Each patient gets their own tab with completely separate memory, so nothing crosses between them, and a draft keeps running in the background when you switch. Let's set up this first visit start to finish; at the end I'll show you how to run your whole day."}
   ];
   var FINALE = [
-    {sel:'#add', title:'Add a patient',
+    {sel:'#add', title:'Add a patient', demo:'add',
      body:'That is one visit, start to finish. Add the next patient with + New patient and set them up the same way. A good habit: add everyone on your schedule first thing, so you can prep them all before your first visit.'},
-    {sel:'.tab-edit', title:'Rename the tab',
-     body:"Click the pencil to rename a tab to the patient's name, so you always know who is in each tab. That is the whole tool: prep, chart, and draft one patient at a time, or your entire day at once."}
+    {sel:'.tab-edit', title:'Rename the tab', demo:'rename',
+     body:"Rename a tab however you run your day — the patient's name, or the slot like “8am New Pt Eval.” Click the pencil and type. That is the whole tool: prep, chart, and draft one patient at a time, or your entire day at once."}
   ];
   var STEPS = INTRO, phase = 'intro';
   var i = 0, active = false;
@@ -333,6 +333,73 @@ var DESK_TOUR = (function(){
       scrim(false); el('dk-tour-ring').style.display='block';
       setTimeout(function(){ if(active) positionAt(t); }, 200);
     } else { el('dk-tour-ring').style.display='none'; scrim(true); centerCard(); }
+    // In the public demo, the finale steps act themselves out (add a tab, rename tabs live) so a
+    // prospect sees what the tool does, not just a description. Guarded so scroll/resize won't replay.
+    if(TBP_DEMO && phase==='finale' && s.demo && !demoDone[i]){ demoDone[i]=true; setTimeout(function(){ runDemo(s.demo); }, 650); }
+  }
+  // ── Demo self-play for the finale (demo mode only) ─────────────────────────
+  var demoDone = {};
+  function labelEl(idx){ var p = patients[idx]; return p ? p.tabEl.querySelector('.tab-label') : null; }
+  function typeInto(lab, text, done){
+    var n = 0;
+    (function step(){
+      if(!active || !lab){ return; }
+      lab.textContent = text.slice(0, n);
+      if(n >= text.length){ done && done(); return; }
+      n++; setTimeout(step, 88);
+    })();
+  }
+  function deleteAll(lab, done){
+    (function step(){
+      if(!active || !lab){ return; }
+      var t = lab.textContent || '';
+      if(!t.length){ done && done(); return; }
+      lab.textContent = t.slice(0, -1);
+      setTimeout(step, 62);
+    })();
+  }
+  function edit(lab, on){ if(!lab) return; if(on){ lab.setAttribute('contenteditable','true'); } else { lab.removeAttribute('contenteditable'); } }
+  function commitLabel(idx, text){
+    var p = patients[idx]; if(!p) return;
+    var lab = p.tabEl.querySelector('.tab-label');
+    edit(lab, false);
+    p.label = text.slice(0, 40);
+    if(lab) lab.textContent = p.label;
+    if(p.frameEl) p.frameEl.title = p.label;
+    try{ setLabelFor(p.slot, p.label); }catch(e){}
+  }
+  function runDemo(kind){
+    if(!active) return;
+    if(kind === 'add'){
+      if(patients.length < 2){ try{ addPatient(false); }catch(e){} }   // second tab appears; no rename prompt
+      return;
+    }
+    if(kind === 'rename'){
+      // Tab 1: Patient 1 → "Jane Doe" → (rethink) → "8am New Pt Eval"; Tab 2: Patient 2 → "9:15 Follow-up".
+      var lab1 = labelEl(0);
+      edit(lab1, true);
+      deleteAll(lab1, function(){
+        typeInto(lab1, 'Jane Doe', function(){
+          setTimeout(function(){
+            deleteAll(lab1, function(){
+              typeInto(lab1, '8am New Pt Eval', function(){
+                commitLabel(0, '8am New Pt Eval');
+                setTimeout(function(){
+                  var t2 = patients[1] && patients[1].tabEl.querySelector('.tab-edit');
+                  if(t2 && active) positionAt(t2);          // move the spotlight to the second tab
+                  var lab2 = labelEl(1);
+                  if(!lab2) return;
+                  edit(lab2, true);
+                  deleteAll(lab2, function(){
+                    typeInto(lab2, '9:15 Follow-up', function(){ commitLabel(1, '9:15 Follow-up'); });
+                  });
+                }, 620);
+              });
+            });
+          }, 720);
+        });
+      });
+    }
   }
   function activeFrameWin(){
     try{
@@ -357,7 +424,7 @@ var DESK_TOUR = (function(){
     active = false;
     try{ localStorage.setItem('tbp_desk_tour_seen','1'); }catch(e){}
   }
-  function _start(which){ if(active) return; phase = (which==='finale') ? 'finale' : 'intro'; STEPS = (phase==='finale') ? FINALE : INTRO; active=true; i=0; document.addEventListener('click', blockPageClicks, true); window.addEventListener('scroll', onScroll, true); window.addEventListener('resize', onScroll); document.addEventListener('keydown', escFn); place(); }
+  function _start(which){ if(active) return; phase = (which==='finale') ? 'finale' : 'intro'; STEPS = (phase==='finale') ? FINALE : INTRO; demoDone = {}; active=true; i=0; document.addEventListener('click', blockPageClicks, true); window.addEventListener('scroll', onScroll, true); window.addEventListener('resize', onScroll); document.addEventListener('keydown', escFn); place(); }
   function _next(){
     if(i>=STEPS.length-1){
       _hide();
