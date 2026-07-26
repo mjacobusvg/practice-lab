@@ -3285,14 +3285,14 @@ var TBP_TOUR = (function(){
      body:"Think of this as an inbox, not your workspace. A recording lands here as a transcript, and if you already jotted an HPI somewhere else you can paste it here. You do not chart your visit in this little box, that happens in the full-screen working window next."},
     {sel:'#raw-fullscreen-btn', core:true, title:'This is where you actually work',
      body:"This opens your full-screen working window, where the visit actually happens. This is the real workspace, not the box above it. I will open it now so you can see inside."},
-    {fullscreen:true, sel:'#focus-sections', title:'This is your working window',
+    {fullscreen:true, onEnter:function(){ try{ demoChecklistQuestionsOnly(); }catch(e){} }, sel:'#focus-sections', title:'This is your working window',
      body:"The cockpit for the whole visit. Last visit's entire note is already carried forward, today's follow-up questions are answered right inline, and your therapy plan is laid out, all in guided sections. You answer as you go, hit Draft, and it becomes a clean note in your voice. (This is a demo example, not a real chart.)"},
     {fullscreen:true, sel:'.wn-panel .wn-ctrls', title:'Collapse or reorder any window',
      body:"Not using a section? Collapse it from its header with the chevron, so only what you need is in front of you. The up and down arrows reorder them. It is your workspace, arrange it however you work."},
     {fullscreen:true, sel:'#focus-snap', title:'Your quick snapshot',
      body:"Up top, a quick rundown of the patient and last visit so you never walk in blind. It stays out of the note itself."},
-    {fullscreen:true, sel:'.wn-checklist', title:'Your follow-up checklist',
-     body:"The questions pulled from last visit to guide today. Typer: type the answer under each line. Ambient: just ask them out loud and the recording captures the answers, no typing needed."},
+    {fullscreen:true, onEnter:function(){ try{ demoTypeChecklist(); }catch(e){} }, sel:'.wn-checklist', title:'Your follow-up checklist',
+     body:"The questions pulled from last visit to guide today. Watch the answers fill in — Typer: type the answer under each line. Ambient: just ask them out loud and the recording captures the answers, no typing needed."},
     {fullscreen:true, optional:true, sel:'.wn-guide', title:'Psychotherapy guide',
      body:"If you turned on the psychotherapy guide, technique prompts land here to steer the therapy part of the visit. Jot what you did under each and it feeds your note."},
     {fullscreen:true, sel:'.wn-note', title:'Your note, carried forward',
@@ -3301,12 +3301,14 @@ var TBP_TOUR = (function(){
      body:"Up here in the working-note header, everything rides along in every visit, one click away without leaving your note: Record this visit (ambient), the Therapy Coach, the Scale menu for screeners like PHQ-9 and GAD-7, and Clinical tools for the rest, interaction checks, a crisis and safety plan, letters, even your own pinned links. Let me walk through them."},
     {fullscreen:true, sel:'#focus-record', title:'Record right from here',
      body:"Prepped your note ahead of time? When the patient walks in, hit Record and start ambient without leaving the working note, it opens the mic, consent, and Start in one step. Or just keep typing, recording is always optional."},
+    {fullscreen:true, sel:'#tcoach-open-focus', title:'Therapy coach, right in the med visit',
+     body:"This opens the Therapy Coach: brief-therapy moves matched to this patient — focuses, things you could say, and techniques you could teach — so you can do real therapeutic work inside a med management visit and have it documented as your add-on. Let me open it up."},
     {fullscreen:true, coach:true, cardCorner:'bl', sel:'#tcoach-cards', title:'Therapy Coach, opened up',
      body:"Here is what is inside: focuses, questions, and techniques that fit this patient, ordered by what the note shows. Prefer live coaching over the guide? Pick a focus, hit Add to my note, or search for others mid-visit."},
     {fullscreen:true, onEnter:function(){ try{ demoInsertCoachFocus(); }catch(e){} }, sel:'.wn-guide', title:'It drops into your note',
      body:"Adding a focus brings that chunk right into your working note, the technique plus a line to type what you did and how the patient responded. Type freely there. When you Draft, it becomes your psychotherapy add-on."},
-    {fullscreen:true, sel:'#scale-select-focus', title:'Rating scales',
-     body:"Like rating scales? The Scale menu has PHQ-9, GAD-7, and more. Pick one and its questions drop straight into your window, ready to score. Watch."},
+    {fullscreen:true, onEnter:function(){ try{ demoOpenScaleList(); }catch(e){} }, sel:'#scale-select-focus', title:'Rating scales',
+     body:"Like rating scales? The Scale menu has PHQ-9, GAD-7, and more — here's the list. Pick one and its questions drop straight into your window, ready to score. Watch."},
     {fullscreen:true, onEnter:function(){ try{ demoInsertScale(); }catch(e){} }, sel:'.wn-checklist', title:'The scale lands in your note',
      body:"There it is, the GAD-7 dropped right into your working note, each item ready to score inside the visit. No separate form, no copy-paste."},
     {fullscreen:true, sel:'#clinical-tools-select', title:'Your whole toolkit, one click away',
@@ -3532,6 +3534,88 @@ Past Medication: Wellbutrin, increased agitation.`
       'GAD-7 (inserted from the Scale menu)\nOver the last 2 weeks, how often bothered by: (0 Not at all · 1 Several days · 2 More than half the days · 3 Nearly every day)\n1. Feeling nervous, anxious, or on edge — \n2. Not being able to stop or control worrying — \n3. Worrying too much about different things — ',
       'GAD-7 (inserted from the Scale menu)');
   }
+  // ── Checklist typing effect ──
+  // Show every follow-up QUESTION immediately, then reveal the "→ answer" lines top-to-bottom as if
+  // they were being typed in, over ~8 seconds. The full text is captured once (before any edit) so
+  // stripping the answers for the "questions only" state cannot lose them.
+  var demoChecklistFull = null;
+  function demoChecklistParts(){
+    var ta = document.querySelector('#focus-sections .wn-ta[data-key="checklist"]');
+    if(!ta) return null;
+    if(demoChecklistFull == null) demoChecklistFull = (typeof wnSections !== 'undefined' && wnSections.checklist) ? wnSections.checklist : ta.value;
+    var lines = demoChecklistFull.split('\n');
+    return { ta: ta, lines: lines, isAns: lines.map(function(l){ return /^\s*→/.test(l); }) };
+  }
+  function demoChecklistQuestionsOnly(){
+    var p = demoChecklistParts(); if(!p) return;
+    if(p.ta.getAttribute('data-typed') === '1') return; // already fully typed, leave it
+    var out = []; for(var idx = 0; idx < p.lines.length; idx++){ if(!p.isAns[idx]) out.push(p.lines[idx]); }
+    p.ta.value = out.join('\n');
+    try { p.ta.dispatchEvent(new Event('input', { bubbles:true })); } catch(e){}
+  }
+  function demoTypeChecklist(){
+    var p = demoChecklistParts(); if(!p) return;
+    var ta = p.ta, lines = p.lines, isAns = p.isAns;
+    if(ta.__typing || ta.getAttribute('data-typed') === '1') return;
+    var totalAns = 0; lines.forEach(function(l, idx){ if(isAns[idx]) totalAns += l.length; });
+    if(!totalAns) return;
+    ta.__typing = true;
+    var typed = 0, step = Math.max(1, Math.ceil(totalAns / 500)); // ~500 ticks * 16ms ≈ 8s
+    function render(){
+      var budget = Math.round(typed), out = [];
+      for(var idx = 0; idx < lines.length; idx++){
+        if(!isAns[idx]){ out.push(lines[idx]); continue; }
+        var len = lines[idx].length;
+        if(budget <= 0) continue;                       // answer not revealed yet — omit the line
+        if(budget >= len){ out.push(lines[idx]); budget -= len; }
+        else { out.push(lines[idx].slice(0, budget)); budget = 0; }
+      }
+      ta.value = out.join('\n');
+      try { ta.dispatchEvent(new Event('input', { bubbles:true })); } catch(e){}
+      try { ta.scrollTop = 0; } catch(e){}
+    }
+    render();
+    (function tick(){
+      if(!ta.__typing) return;
+      typed += step;
+      if(typed >= totalAns){ render(); ta.__typing = false; ta.setAttribute('data-typed','1'); return; }
+      render();
+      setTimeout(tick, 16);
+    })();
+  }
+  // ── Demo screener list ──
+  // The Scale control is a native <select>, which JS cannot force open, so at the Scale step we show
+  // a faux list of the real screeners after ~2s (demo-trained users often will not click the box).
+  var demoScaleTimer = null;
+  function demoCloseScaleList(){
+    if(demoScaleTimer){ clearTimeout(demoScaleTimer); demoScaleTimer = null; }
+    var ex = document.getElementById('demo-scale-list'); if(ex && ex.parentNode) ex.parentNode.removeChild(ex);
+  }
+  function demoOpenScaleList(){
+    demoCloseScaleList();
+    demoScaleTimer = setTimeout(function(){
+      var sel = document.getElementById('scale-select-focus'); if(!sel) return;
+      var opts = Array.prototype.slice.call(sel.options).filter(function(o){ return o.value; });
+      if(!opts.length) return;
+      var r = sel.getBoundingClientRect();
+      var box = document.createElement('div');
+      box.id = 'demo-scale-list';
+      box.style.cssText = 'position:fixed;z-index:100003;background:var(--navy-card,#12203a);border:1px solid #c9a227;border-radius:8px;padding:6px;min-width:' + Math.max(210, Math.round(r.width)) + 'px;max-height:52vh;overflow:auto;box-shadow:0 14px 38px rgba(0,0,0,.5)';
+      box.style.top = Math.round(r.bottom + 4) + 'px';
+      box.style.left = Math.round(Math.max(8, Math.min(r.left, window.innerWidth - 250))) + 'px';
+      var head = document.createElement('div');
+      head.style.cssText = 'font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;color:#e8cf7a;padding:4px 9px 7px';
+      head.textContent = 'Screeners';
+      box.appendChild(head);
+      opts.forEach(function(o){
+        var row = document.createElement('div');
+        row.style.cssText = 'padding:7px 10px;font-size:.86rem;color:var(--cream,#e8e2d6);border-radius:6px';
+        row.textContent = o.textContent;
+        box.appendChild(row);
+      });
+      document.body.appendChild(box);
+    }, 2000);
+  }
   function scrim(on){ var e = el('tbp-tour-scrim'); if(e) e.style.display = on ? 'block' : 'none'; }
   function positionAt(t){
     var ring = el('tbp-tour-ring'), card = el('tbp-tour-card');
@@ -3576,6 +3660,7 @@ Past Medication: Wellbutrin, increased agitation.`
     // own step; collapse it on the other full-screen steps so the panels below are not scrolled
     // underneath it (which hid the checklist/guide/note content).
     if(s.fullscreen){ var snp = el('focus-snap'); if(snp){ var openSnap = (s.sel === '#focus-snap'); snp.classList.toggle('open', openSnap); var chev = snp.querySelector('.fs-chev'); if(chev) chev.innerHTML = openSnap ? '&#9650;' : '&#9660;'; } }
+    try { demoCloseScaleList(); } catch(e){} // clear the demo screener list on any step change
     if(s.onEnter){ try { s.onEnter(); } catch(e){} }
     var t = target(s);
     el('tbp-tour-title').textContent = s.title;
@@ -3644,6 +3729,7 @@ Past Medication: Wellbutrin, increased agitation.`
   function _close(){
     active = false;
     deskMode = false;
+    try { demoCloseScaleList(); } catch(e){}
     if(coachOpen) closeDemoCoach();
     if(demoOpen) closeDemoFullScreen();
     if(demoPdOpen) closeDemoPostdraft();
