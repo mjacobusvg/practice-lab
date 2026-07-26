@@ -1136,14 +1136,27 @@ function renderResults(mdm, review) {
     }
 
     if (lastAudit.psychotherapy_issues && lastAudit.psychotherapy_issues.length > 0) {
-      html += '<div style="font-size:.75rem;font-weight:600;color:' + auditColor + ';margin-bottom:6px;margin-top:10px">PSYCHOTHERAPY ADD-ON SUFFICIENCY</div>';
+      // Color the add-on by whether it has a real DEFICIENCY (a required element failed, or the
+      // content is E/M-only) — NOT by the model's "severity" field. For a strong add-on the model
+      // reports "high," meaning the SUFFICIENCY is high (good), not a high-severity problem. So a
+      // robust add-on reads GREEN "well supported"; red/amber shows only on an actual gap.
+      var ptHeaderColor = deficientPt.length > 0 ? 'var(--red)' : 'var(--green)';
+      html += '<div style="font-size:.75rem;font-weight:600;color:' + ptHeaderColor + ';margin-bottom:6px;margin-top:10px">PSYCHOTHERAPY ADD-ON SUFFICIENCY</div>';
       lastAudit.psychotherapy_issues.forEach(function(item) {
-        var sevColor = String(item.severity||'').toLowerCase() === 'high' ? 'var(--red)' : String(item.severity||'').toLowerCase() === 'moderate' ? 'var(--amber)' : 'var(--cream-dim)';
-        html += '<div style="background:' + auditBg + ';border:1px solid ' + auditBorder + ';border-radius:6px;padding:10px 14px;margin-bottom:8px">';
-        html += '<div style="font-size:.78rem;color:' + sevColor + ';font-weight:600;margin-bottom:4px">' + esc(item.severity).toUpperCase();
-        if (item.is_actually_em_only) html += ' — CONTENT READS AS E/M-ONLY';
-        html += '</div>';
-        if (item.elements_failed && item.elements_failed.length > 0) html += '<div style="font-size:.76rem;color:var(--cream-dim);margin-bottom:4px">Elements failing: ' + esc(item.elements_failed.join(', ')) + '</div>';
+        var deficient = ptDeficient(item);
+        var badgeColor, badgeText, rowBg, rowBorder;
+        if (!deficient) {
+          badgeColor = 'var(--green)';
+          badgeText = '✓ WELL SUPPORTED — GOOD TO GO';
+          rowBg = 'rgba(52,211,153,0.06)'; rowBorder = 'rgba(52,211,153,0.25)';
+        } else {
+          badgeColor = (String(item.severity||'').toLowerCase() === 'low') ? 'var(--amber)' : 'var(--red)';
+          badgeText = item.is_actually_em_only ? 'CONTENT READS AS E/M-ONLY' : 'NEEDS ATTENTION BEFORE BILLING';
+          rowBg = 'rgba(248,113,113,0.06)'; rowBorder = 'rgba(248,113,113,0.25)';
+        }
+        html += '<div style="background:' + rowBg + ';border:1px solid ' + rowBorder + ';border-radius:6px;padding:10px 14px;margin-bottom:8px">';
+        html += '<div style="font-size:.78rem;color:' + badgeColor + ';font-weight:600;margin-bottom:4px">' + badgeText + '</div>';
+        if (deficient && item.elements_failed && item.elements_failed.length > 0) html += '<div style="font-size:.76rem;color:var(--cream-dim);margin-bottom:4px">Elements failing: ' + esc(item.elements_failed.join(', ')) + '</div>';
         html += '<div style="font-size:.82rem;color:var(--cream);margin-bottom:4px">' + esc(item.detail) + '</div>';
         if (item.audit_impact) html += '<div style="font-size:.78rem;color:var(--cream-dim)">Audit impact: ' + esc(item.audit_impact) + '</div>';
         html += '</div>';
@@ -1306,7 +1319,7 @@ function renderResults(mdm, review) {
 
   // Documentation Gaps
   if (review.documentation_gaps && review.documentation_gaps.length > 0) {
-    html += '<div class="section-card"><h3>Documentation Gaps</h3>';
+    html += '<div class="section-card" id="doc-gaps-card"><h3>Documentation Gaps</h3>';
     html += '<div style="font-size:.8rem;color:var(--cream-dim);margin-bottom:12px">These gaps could weaken the recommended code in an audit.</div>';
     review.documentation_gaps.forEach(function(gap) {
       html += '<div class="gap-item">' + esc(gap) + '</div>';
@@ -1316,7 +1329,7 @@ function renderResults(mdm, review) {
 
   // Suggested Language
   if (review.suggested_language && review.suggested_language.length > 0) {
-    html += '<div class="section-card"><h3>Suggested Language to Strengthen Documentation</h3>';
+    html += '<div class="section-card" id="suggested-lang-card"><h3>Suggested Language to Strengthen Documentation</h3>';
     review.suggested_language.forEach(function(lang) {
       html += '<div class="gap-item"><div class="gap-fix">' + esc(lang) + '</div></div>';
     });
@@ -1999,11 +2012,13 @@ Sleep remains the most active clinical thread. The circadian rhythm disruption d
     { sel:'#visit-options', title:'Confirm the visit type', body:'Established follow-up here, so the visit is coded by MDM complexity. (New-patient visits also get a time-vs-MDM reimbursement comparison.) Then Analyze.' },
     { sel:'#preflight-cards', onEnter:showDemoPreflight, title:'It confirms the clinical calls first', body:'Before coding, it shows what it detected — 18 minutes of psychotherapy pointing to a 90833 add-on, and the monitoring data you reviewed. You confirm; it never decides these for you. Then Proceed to Code Analysis.' },
     { sel:'#results .section-card', onEnter:showDemoResults, title:'The audit runs before the code', body:'Before it codes, it audits the note. The must-fix here is a contradiction: your ROS says the patient sleeps fine, but the HPI and assessment describe ~5-hour sleep and onset trouble — flagged HIGH, exactly what an auditor or covering provider would trip on. Optional strengtheners sit below it.' },
-    { sel:'#results .section-card', title:'Your psychotherapy add-on, checked', body:'The same audit pressure-tested the 90833: all five required elements are present (modality, intervention, focus, patient response, and time documented separately). Model documentation, low denial risk.' },
+    { sel:'#results .section-card', title:'Your psychotherapy add-on, checked', body:'The same audit pressure-tested the 90833: all five required elements are present — modality, intervention, focus, patient response, and time documented separately — so it comes back GREEN, well supported, low denial risk. Only a weak or medication-management-only add-on would flag red here.' },
     { sel:'.code-card', title:'The recommendation', body:'99214 + 90833, with Modifier 25. The E/M code is computed deterministically from the MDM axes — not written by the model — so the recommended code and the chart-ready attestation can never disagree.' },
     { sel:'.mdm-table', title:'The why: three axes, 2-of-3', body:'Problems moderate (three chronic conditions actively managed) and Risk moderate (prescription drug management) both reach moderate — two of three sets the level at 99214. Data is only minimal, and the panel tells you exactly what would raise it.' },
+    { sel:'#doc-gaps-card', title:'Coding gaps that could weaken it', body:'Different from the audit above: these are coding-specific gaps — documentation that, if added, would make THIS code harder to challenge (e.g. PMP review not formally noted, a data source reviewed but not logged, a follow-up plan not stated). Optional, but each one hardens defensibility.' },
+    { sel:'#suggested-lang-card', title:'Paste-ready language to close them', body:'For each gap, a specific sentence you can drop straight into the note — PMP review, PCP coordination, the CPAP follow-up plan, the condition-by-condition reasoning. Add what fits and skip what does not; you stay the clinician.' },
     { sel:'.doc-blurb', title:'A chart-ready attestation', body:'The payoff: paste-ready MDM justification carrying the exact 2-of-3 reasoning and the add-on. Copy it into the note and sign. The coder tells you what your documentation supports — you stay the clinician.' },
-    { center:true, title:'That is the Chart Audit + Coder', body:'From the same note your scribe just wrote: audit it, code it defensibly, and attest — in one pass. Become a member to run your own notes through the live tool.' }
+    { center:true, title:'That is the Chart Audit + Coder', body:'From that same visit’s finished note: audit it, code it defensibly, and attest — in one pass. Become a member to run your own notes through the live tool.' }
   ];
 
   var i = 0, active = false;
