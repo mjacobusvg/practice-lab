@@ -82,6 +82,7 @@ function estCostUsd(model, inputTokens, outputTokens) {
   return Math.round(((inTok * price.in + outTok * price.out) / 1e6) * 1e6) / 1e6;
 }
 const REFERER_TOOL_MAP = [
+  ['pm-ai-scribe', 'AI Scribe'],
   ['pm-letter-generator', 'Letter Generator'],
   ['pm-chart-coder', 'Chart Coder'],
   ['pm-clinical-note-builder', 'Clinical Note Builder'],
@@ -143,6 +144,14 @@ const ALLOWED_MODELS = ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'];
 const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 
 const TRIAL_DAYS = 7;
+
+// Forum-tier AI Scribe beta: a single SHARED window with a fixed end date (NOT a
+// per-user clock). Every forum member may use the Scribe until this instant, then
+// forum reverts to the wall and only full tier (or an active trial) passes. This is
+// deliberately not the note_builder_trials clock — that starts on each person's first
+// open and would run past the shared window for late starters. Keep in sync with the
+// same constant in pm-ai-scribe.html's gate. End of Aug 9, 2026 (Pacific).
+const SCRIBE_FORUM_BETA_UNTIL = Date.parse('2026-08-10T07:00:00Z');
 
 // READ-ONLY: does this member have an unexpired trial row? Lets a forum-tier member
 // through the full-tier gate during their trial. Never creates a trial (that side
@@ -221,11 +230,22 @@ export default async function handler(request) {
     });
   }
   if (session.claims.tier !== 'full') {
-    const trialOk = await hasActiveTrial(session.claims.cmid, session.claims.email);
-    if (!trialOk) {
-      return new Response(JSON.stringify({ error: 'This tool requires the full Think Beyond Practice membership.' }), {
-        status: 403, headers: { ...cors, 'Content-Type': 'application/json' }
-      });
+    // Forum-tier AI Scribe beta: a fixed SHARED window, open to every forum member
+    // until SCRIBE_FORUM_BETA_UNTIL. Scoped to the Scribe by referer so it does not
+    // open the other clinical tools. After the date this is false and forum falls
+    // back to the trial check below — i.e. reverts to the wall. (Free tier never
+    // reaches here: scope !== 'member' already 403'd above.)
+    const referer = request.headers.get('referer') || request.headers.get('referrer') || '';
+    const scribeBetaOk = session.claims.tier === 'forum'
+      && Date.now() < SCRIBE_FORUM_BETA_UNTIL
+      && toolFromReferer(referer) === 'AI Scribe';
+    if (!scribeBetaOk) {
+      const trialOk = await hasActiveTrial(session.claims.cmid, session.claims.email);
+      if (!trialOk) {
+        return new Response(JSON.stringify({ error: 'This tool requires the full Think Beyond Practice membership.' }), {
+          status: 403, headers: { ...cors, 'Content-Type': 'application/json' }
+        });
+      }
     }
   }
 
