@@ -3053,16 +3053,30 @@ function tcoachGuideTarget(){
   }
   return tcoachTargetTextarea();
 }
-// Therapy Coach content lands in its OWN amber "Therapy coach" section, kept separate from the
-// Psychotherapy guide. The section is created on first add (buildFocusSections renders it once it
-// has content); later adds append into it directly so the clinician's panel layout is preserved.
+// Convert an empty/plain working note into sections mode so added content (Therapy coach, Screeners)
+// lands in its own colored panel instead of loose text. Any freeform text already typed is preserved
+// into the note section. Only the raw working note (in full screen) supports sections.
+function wnEnsureSections(){
+  var fo = document.getElementById('focus-overlay');
+  if(!fo || !fo.classList.contains('open')) return false;
+  if(typeof focusSourceId !== 'undefined' && focusSourceId && focusSourceId !== 'raw') return false;
+  if(typeof wnSections === 'undefined' || !wnSections){ try { wnSections = {checklist:'',guide:'',note:''}; } catch(e){ return false; } }
+  if(typeof wnMode !== 'undefined' && wnMode === 'sections') return true;
+  var fn = document.getElementById('focus-note');
+  var existing = fn ? (fn.value || '') : '';
+  if(existing.trim()) wnSections.note = (wnSections.note && wnSections.note.trim() ? wnSections.note.replace(/\s+$/,'') + '\n\n' : '') + existing;
+  wnMode = 'sections';
+  if(fn) fn.style.display = 'none';
+  var fs = document.getElementById('focus-sections'); if(fs) fs.style.display = '';
+  if(typeof buildFocusSections === 'function') buildFocusSections();
+  return true;
+}
+// Therapy Coach / Screeners content lands in its OWN colored work-note section, kept separate from
+// the other sections. Created on first add (converting a plain note to sections if needed); later
+// adds append into it directly so the clinician's panel layout is preserved.
 function wnAddToWorkSection(key, text, marker){
   var fo = document.getElementById('focus-overlay');
-  // Only route into a dedicated colored section when the working note is actually in sections mode.
-  // An empty/plain note shows a single #focus-note textarea (sections are hidden), so building a
-  // section there would be invisible and lost on exit — return false so the caller falls back to the
-  // visible note textarea instead.
-  if(fo && fo.classList.contains('open') && typeof wnMode !== 'undefined' && wnMode === 'sections' && typeof wnSections !== 'undefined'){
+  if(fo && fo.classList.contains('open') && typeof wnSections !== 'undefined' && wnEnsureSections()){
     var existing = document.querySelector('#focus-sections .wn-ta[data-key="' + key + '"]');
     if(existing){
       if(marker && existing.value.indexOf(marker) !== -1) return true;
