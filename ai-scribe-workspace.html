@@ -288,14 +288,20 @@ function showRecovery(drafts){
 </div>
 <script>
 var DESK_TOUR = (function(){
-  var STEPS = [
-    {sel:'.tab', title:'Now run your whole day here',
-     body:'You just ran one visit start to finish. This is the Patient Desk, where you run all of them. Each patient gets their own tab with completely separate memory, so nothing crosses between them. Switch tabs anytime, and a draft keeps running in the background while you work another patient.'},
+  // The walkthrough runs Desk-INTRO (spotlight this patient's real tab, up top) → the single-patient
+  // Scribe flow → Desk-FINALE (add / rename). Splitting it puts the tab context up front, tied to the
+  // actual tab, and lands the multi-patient steps after they have run one visit.
+  var INTRO = [
+    {sel:'.tab', title:'This is your first patient',
+     body:"Everything in the note-building area below belongs to one patient — the tab up top. Each patient gets their own tab with completely separate memory, so nothing crosses between them, and a draft keeps running in the background when you switch. Let's set up this first visit start to finish; at the end I'll show you how to run your whole day."}
+  ];
+  var FINALE = [
     {sel:'#add', title:'Add a patient',
-     body:'Add a patient with + New patient, then set them up exactly the way you just did. A good habit: add everyone on your schedule first thing, so you can prep them all before your first visit.'},
+     body:'That is one visit, start to finish. Add the next patient with + New patient and set them up the same way. A good habit: add everyone on your schedule first thing, so you can prep them all before your first visit.'},
     {sel:'.tab-edit', title:'Rename the tab',
      body:"Click the pencil to rename a tab to the patient's name, so you always know who is in each tab. That is the whole tool: prep, chart, and draft one patient at a time, or your entire day at once."}
   ];
+  var STEPS = INTRO, phase = 'intro';
   var i = 0, active = false;
   function el(id){ return document.getElementById(id); }
   function target(s){ return document.querySelector(s.sel); }
@@ -321,7 +327,7 @@ var DESK_TOUR = (function(){
     el('dk-tour-body').textContent = s.body;
     el('dk-tour-step').textContent = (i+1)+' of '+STEPS.length;
     el('dk-tour-back').style.visibility = i===0 ? 'hidden' : 'visible';
-    el('dk-tour-next').textContent = i===STEPS.length-1 ? (TBP_DEMO ? 'Become a member →' : 'Done') : 'Next';
+    el('dk-tour-next').textContent = (i===STEPS.length-1) ? (phase==='intro' ? 'Next' : (TBP_DEMO ? 'Become a member →' : 'Done')) : 'Next';
     if(t && vis(t) && t.offsetHeight>8){
       try{ t.scrollIntoView({block:'center',behavior:'smooth'}); }catch(e){}
       scrim(false); el('dk-tour-ring').style.display='block';
@@ -351,13 +357,12 @@ var DESK_TOUR = (function(){
     active = false;
     try{ localStorage.setItem('tbp_desk_tour_seen','1'); }catch(e){}
   }
-  function _start(){ if(active) return; active=true; i=0; document.addEventListener('click', blockPageClicks, true); window.addEventListener('scroll', onScroll, true); window.addEventListener('resize', onScroll); document.addEventListener('keydown', escFn); place(); }
+  function _start(which){ if(active) return; phase = (which==='finale') ? 'finale' : 'intro'; STEPS = (phase==='finale') ? FINALE : INTRO; active=true; i=0; document.addEventListener('click', blockPageClicks, true); window.addEventListener('scroll', onScroll, true); window.addEventListener('resize', onScroll); document.addEventListener('keydown', escFn); place(); }
   function _next(){
     if(i>=STEPS.length-1){
       _hide();
-      // Demo finale: the whole Scribe tour just ended. Hand off to the next tool (Chart Audit +
-      // Coder) with an option to join, instead of jumping straight to checkout.
-      if(TBP_DEMO){ showCoderHandoff(); }
+      if(phase === 'intro'){ handoffToScribe(); }            // intro done → run the single-patient note-building flow
+      else if(TBP_DEMO){ showCoderHandoff(); }               // finale done (demo) → next tool + join
       return;
     }
     i++; place();
@@ -386,13 +391,11 @@ function showCoderHandoff(){
 }
 function startDeskTour(){ DESK_TOUR.start(); }
 
-// ── Walkthrough orchestration (single continuous tour, Desk-last) ──
-// On first load we hand the tour to the FIRST patient's Scribe with mode:'desk'. That Scribe runs
-// the whole single-patient flow (setup → working window → draft), then posts 'tbp-scribe-tour-done'
-// back here, at which point the Desk runs its own multi-patient steps as the finale.
-(function(){
-  // Demo always runs the tour (prospects should always see it); real members see it once.
-  if(!TBP_DEMO){ try{ if(localStorage.getItem('tbp_desk_tour_seen')) return; }catch(e){ return; } }
+// ── Walkthrough orchestration (Desk-intro → Scribe → Desk-finale) ──
+// First load: the Desk plays a short INTRO spotlighting this patient's real tab, then hands the tour
+// into the first patient's Scribe (mode:'desk'). The Scribe runs the whole single-patient flow and
+// posts 'tbp-scribe-tour-done' back, at which point the Desk plays its multi-patient FINALE.
+function handoffToScribe(){
   var tries = 0, launched = false;
   var iv = setInterval(function(){
     tries++;
@@ -403,19 +406,29 @@ function startDeskTour(){ DESK_TOUR.start(); }
     try{ ready = fr && fr.contentDocument && fr.contentDocument.readyState === 'complete' && fr.contentWindow; }catch(e){ ready = false; }
     if(ready){
       launched = true; clearInterval(iv);
-      // One-shot: mark seen at launch so bailing out early does not re-trigger on reload.
-      try{ localStorage.setItem('tbp_desk_tour_seen','1'); }catch(e){}
-      setTimeout(function(){
-        try{ fr.contentWindow.postMessage({ tbp:'tbp-start-scribe-tour', mode:'desk' }, location.origin); }catch(e){}
-      }, 600);
-    } else if(tries > 60){ clearInterval(iv); }
-  }, 300);
+      setTimeout(function(){ try{ fr.contentWindow.postMessage({ tbp:'tbp-start-scribe-tour', mode:'desk' }, location.origin); }catch(e){} }, 250);
+    } else if(tries > 80){ clearInterval(iv); }
+  }, 250);
+}
+(function(){
+  // Demo always runs the tour (prospects should always see it); real members see it once.
+  if(!TBP_DEMO){ try{ if(localStorage.getItem('tbp_desk_tour_seen')) return; }catch(e){ return; } }
+  try{ localStorage.setItem('tbp_desk_tour_seen','1'); }catch(e){}   // one-shot: bailing early won't re-trigger
+  // Start with the Desk intro once the first tab exists; its Next hands off to the Scribe.
+  var tries = 0;
+  var iv = setInterval(function(){
+    tries++;
+    if(typeof patients !== 'undefined' && patients.length && document.querySelector('.tab')){
+      clearInterval(iv);
+      setTimeout(function(){ try{ DESK_TOUR.start('intro'); }catch(e){} }, 300);
+    } else if(tries > 80){ clearInterval(iv); }
+  }, 250);
 })();
-// When the patient Scribe finishes its flow, run the Desk's multi-patient steps as the finale.
+// When the patient Scribe finishes its flow, run the Desk's multi-patient FINALE steps.
 window.addEventListener('message', function(e){
   if(e.origin !== window.location.origin) return;
   var d = e.data;
-  if(d && d.tbp === 'tbp-scribe-tour-done'){ try{ DESK_TOUR.start(); }catch(_){} }
+  if(d && d.tbp === 'tbp-scribe-tour-done'){ try{ DESK_TOUR.start('finale'); }catch(_){} }
 });
 </script>
 </body>
