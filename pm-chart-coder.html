@@ -2008,7 +2008,9 @@ Sleep remains the most active clinical thread. The circadian rhythm disruption d
 
   var i = 0, active = false;
   function q(sel){ try { return document.querySelector(sel); } catch(e){ return null; } }
-  function scrim(on){ var s = el('tbp-tour-scrim'), b = el('tbp-tour-block'); if(s) s.style.display = on?'block':'none'; if(b) b.style.display = on?'block':'none'; }
+  function block(on){ var b = el('tbp-tour-block'); if(b) b.style.display = on?'block':'none'; }
+  function dim(on){ var s = el('tbp-tour-scrim'); if(s) s.style.display = on?'block':'none'; }
+  function scrim(on){ block(on); dim(on); }   // both off together (used by close)
 
   function positionAt(t){
     var ring = el('tbp-tour-ring'), card = el('tbp-tour-card');
@@ -2018,10 +2020,20 @@ Sleep remains the most active clinical thread. The circadian rhythm disruption d
     ring.style.width = (r.width+12)+'px'; ring.style.height = (r.height+12)+'px';
     card.style.display = 'block';
     var cw = card.offsetWidth, ch = card.offsetHeight, vw = innerWidth, vh = innerHeight, m = 12;
-    var top = r.bottom + 12;
-    if (top + ch > vh - m) top = Math.max(m, r.top - ch - 12);
-    if (top + ch > vh - m) top = Math.max(m, vh - ch - m);
-    var left = Math.min(Math.max(m, r.left), vw - cw - m);
+    var top, left;
+    // Prefer an empty side gutter so the card never sits on top of the highlighted content.
+    if (r.left >= cw + 2*m) {                 // room in the left gutter
+      left = Math.max(m, r.left - cw - m);
+      top  = Math.min(Math.max(m, r.top), vh - ch - m);
+    } else if (vw - r.right >= cw + 2*m) {    // room in the right gutter
+      left = Math.min(vw - cw - m, r.right + m);
+      top  = Math.min(Math.max(m, r.top), vh - ch - m);
+    } else {                                  // narrow screen: fall back below/above the target
+      top = r.bottom + 12;
+      if (top + ch > vh - m) top = Math.max(m, r.top - ch - 12);
+      if (top + ch > vh - m) top = Math.max(m, vh - ch - m);
+      left = Math.min(Math.max(m, r.left), vw - cw - m);
+    }
     card.style.top = top+'px'; card.style.left = left+'px';
   }
   function center(){
@@ -2038,10 +2050,14 @@ Sleep remains the most active clinical thread. The circadian rhythm disruption d
     el('tbp-tour-step').textContent = 'Step ' + (i+1) + ' of ' + STEPS.length;
     el('tbp-tour-back').style.visibility = i===0 ? 'hidden' : 'visible';
     el('tbp-tour-next').textContent = i===STEPS.length-1 ? 'Done' : 'Next';
-    scrim(true);
+    // Block page clicks throughout the tour. The full-screen dim is used ONLY for centered
+    // steps; spotlight steps rely on the ring's own box-shadow cutout, so the highlighted
+    // element stays at full brightness (a second scrim on top would grey it out).
+    block(true);
     var t = s.center ? null : q(s.sel);
+    dim(!!s.center);
     if (t){ try { t.scrollIntoView({block:'center',behavior:'smooth'}); } catch(e){}
-      setTimeout(function(){ var t2 = q(s.sel); if(t2 && active) positionAt(t2); else center(); }, 260);
+      setTimeout(function(){ var t2 = q(s.sel); if(t2 && active){ dim(false); positionAt(t2); } else { dim(true); center(); } }, 260);
     } else { center(); }
   }
   function start(){
