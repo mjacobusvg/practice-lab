@@ -10,6 +10,8 @@ consent table shape, the tool classification, or a send/job pattern changes,
 update this file in the SAME commit. Same discipline as MODEL-REGISTRY.md.
 
 Last verified against live code and Supabase schema: June 2026.
+BAA version + AI Scribe classification re-verified against live code: July 2026
+(BAA now 3.0; pm-ai-scribe added to the PHI-gated list).
 
 ---
 
@@ -91,8 +93,12 @@ TBPAuth.protect({
 
 ### Current versions (authoritative)
 
-- BAA version required by the gate: **2.0**
-  (in `auth-gate.js`, `baaVersion = options.baaVersion || '2.0'`)
+- BAA version required by the gate: **3.0**
+  (in `auth-gate.js`, `baaVersion = options.baaVersion || '3.0'`)
+  Bumped 2.0 -> 3.0 (June 2026 agreement). The whole chain is aligned at 3.0:
+  `baa-sign.html` (`BAA_VERSION = '3.0'`) -> `process-baa-signature.js` writes
+  `baa_version: '3.0'` -> `check-baa-status` returns the latest signature ->
+  the gate exact-matches '3.0'. A member on 1.0/2.0 is correctly routed to re-sign.
 - Terms version: **interim_v1**
   (in `auth-gate.js`, `termsVersion = options.termsVersion || 'interim_v1'`,
   and `record-terms-acceptance.js`, `CURRENT_TERMS_VERSION = 'interim_v1'`)
@@ -103,9 +109,10 @@ exact-version match, and update this section.
 
 KNOWN INCONSISTENCY TO BE AWARE OF: the `baa_signatures` table column
 `baa_version` still DEFAULTS to `'1.0'` at the database level. The signing flow
-must write the current version (2.0) explicitly on insert; never rely on the
+must write the current version (3.0) explicitly on insert; never rely on the
 column default. If you build or touch the BAA-signing function, confirm it passes
-`baa_version` explicitly.
+`baa_version` explicitly. (process-baa-signature.js already does: it writes the
+`baaVersion` the client submits, and baa-sign.html submits '3.0'.)
 
 ### Endpoints the gate calls (must exist)
 
@@ -117,8 +124,12 @@ column default. If you build or touch the BAA-signing function, confirm it passe
 
 PHI-GATED (default, no skip flag):
 pm-clinical-note-builder, note-builder-trial, chart-coder-trial, pm-chart-coder,
-pm-letter-generator, pm-termination-workflow, pm-crisis-safety-plan. Any new
-clinical-content tool joins this list by default.
+pm-letter-generator, pm-termination-workflow, pm-crisis-safety-plan,
+pm-ai-scribe (the AI Scribe; runs the BAA + Terms gate via protect(), termsVersion
+'interim_v1'). The Patient Desk shell (ai-scribe-workspace.html) loads pm-ai-scribe
+in an iframe, so the gate fires inside the iframe at use time; the shell itself
+processes no PHI. The demo (`?demo=1`) is exempt (canned content, no real PHI).
+Any new clinical-content tool joins this list by default.
 
 EXEMPT (`skipPHIGate: true`, non-PHI):
 pm-interaction-checker, pm-monitoring-protocol, pm-lai, pm-hipaa-hub,
@@ -158,7 +169,7 @@ the real client IP and user-agent. The canonical example is
   (default `interim_v1`), accepted_at, ip_address, user_agent, created_at.
   Natural key for upsert: (member_email, terms_version).
 - `baa_signatures`: id, member_name, member_email, entity_name, signer_title,
-  signed_at, ip_address, baa_version (DB default `1.0`; write `2.0` explicitly),
+  signed_at, ip_address, baa_version (DB default `1.0`; write `3.0` explicitly),
   pdf_storage_path, circle_member_id, created_at.
 - `loa_signatures` (credentialing letter-of-authorization): id, email,
   signed_name, signed_at, ip_address, user_agent.
