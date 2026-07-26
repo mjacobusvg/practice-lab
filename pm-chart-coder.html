@@ -1071,12 +1071,21 @@ function renderResults(mdm, review) {
     });
     // a low-severity psychotherapy nitpick (e.g. "could name the CBT technique") is not a must-fix
     function isActionable(i){ return String(i.severity||'').toLowerCase() !== 'low'; }
-    var actionablePt = ptIssues.filter(isActionable);
+    // A psychotherapy add-on entry only requires action when it flags a REAL deficiency: one or
+    // more of the five required elements failed, or the content reads as E/M-only. When the add-on
+    // is well-documented the model still emits a summary item and labels its SUFFICIENCY "high" —
+    // "high" there means the add-on is good, not that there is a high-severity problem. Keying the
+    // count on severity alone therefore mislabels a strong psychotherapy note as an item "to
+    // address before signing." Gate on the concrete deficiency signals instead, so a positive
+    // sufficiency summary counts toward neither the must-fix nor the optional headline total.
+    function ptDeficient(i){ return i && (i.is_actually_em_only === true || (Array.isArray(i.elements_failed) && i.elements_failed.length > 0)); }
+    var deficientPt = ptIssues.filter(ptDeficient);
+    var actionablePt = deficientPt.filter(isActionable);
     var actionableTime = timeIssues.filter(isActionable);
 
     // must-fix count drives the headline
     var mustFixCount = mustFix.length + actionableTime.length + actionablePt.length;
-    var optionalCount = strengthen.length + minor.length + (ptIssues.length - actionablePt.length) + (timeIssues.length - actionableTime.length);
+    var optionalCount = strengthen.length + minor.length + (deficientPt.length - actionablePt.length) + (timeIssues.length - actionableTime.length);
     var hasHigh = mustFixCount > 0;
 
     var auditColor = hasHigh ? 'var(--red)' : 'var(--amber)';
@@ -1988,7 +1997,7 @@ Sleep remains the most active clinical thread. The circadian rhythm disruption d
     { sel:'#note-input', title:'Start with a finished note', body:'This is a completed psychiatric visit — HPI, ROS, mental status exam, assessment, and the psychotherapy section — pasted in as-is. It is the same visit the AI Scribe demo wrote. The coder reads what you documented; it does not write your note.' },
     { sel:'#visit-options', title:'Confirm the visit type', body:'Established follow-up here, so the visit is coded by MDM complexity. (New-patient visits also get a time-vs-MDM reimbursement comparison.) Then Analyze.' },
     { sel:'#preflight-cards', onEnter:showDemoPreflight, title:'It confirms the clinical calls first', body:'Before coding, it shows what it detected — 18 minutes of psychotherapy pointing to a 90833 add-on, and the monitoring data you reviewed. You confirm; it never decides these for you. Then Proceed to Code Analysis.' },
-    { sel:'#results .section-card', onEnter:showDemoResults, title:'The audit runs before the code', body:'Two items to address before signing. The hard one is a contradiction: your ROS says the patient sleeps fine, but the HPI and assessment describe ~5-hour sleep and onset trouble. It is flagged HIGH — exactly what an auditor or covering provider would trip on.' },
+    { sel:'#results .section-card', onEnter:showDemoResults, title:'The audit runs before the code', body:'Before it codes, it audits the note. The must-fix here is a contradiction: your ROS says the patient sleeps fine, but the HPI and assessment describe ~5-hour sleep and onset trouble — flagged HIGH, exactly what an auditor or covering provider would trip on. Optional strengtheners sit below it.' },
     { sel:'#results .section-card', title:'Your psychotherapy add-on, checked', body:'The same audit pressure-tested the 90833: all five required elements are present (modality, intervention, focus, patient response, and time documented separately). Model documentation, low denial risk.' },
     { sel:'.code-card', title:'The recommendation', body:'99214 + 90833, with Modifier 25. The E/M code is computed deterministically from the MDM axes — not written by the model — so the recommended code and the chart-ready attestation can never disagree.' },
     { sel:'.mdm-table', title:'The why: three axes, 2-of-3', body:'Problems moderate (three chronic conditions actively managed) and Risk moderate (prescription drug management) both reach moderate — two of three sets the level at 99214. Data is only minimal, and the panel tells you exactly what would raise it.' },
