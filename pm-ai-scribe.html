@@ -3996,14 +3996,28 @@ Counseling: Continues without counseling at this time.`;
   }
   return { start:_start, next:_next, prev:_prev, close:_close };
 })();
-function startScribeTour(mode){ TBP_TOUR.start(mode); }
+function startScribeTour(mode){
+  // Framed inside the Patient Desk: ask the Desk to run the FULL orchestrated
+  // walkthrough (Desk intro → this Scribe tour → Desk finale) instead of only the
+  // middle Scribe steps. Without this, "Show me how it works" skips the patient-desk
+  // intro (first step) and the add/rename finale that demo visitors get.
+  try{
+    if(window.self !== window.top){
+      window.parent.postMessage({ tbp:'tbp-start-desk-walkthrough' }, location.origin);
+      return;
+    }
+  }catch(e){}
+  TBP_TOUR.start(mode);   // standalone (unframed) fallback
+}
 // When embedded in the Patient Desk, the Desk's own walkthrough hands off to this one so the
 // whole thing feels like a single continuous tour. (The Desk covers the tabs; this covers the
 // working window.) The auto-start below is suppressed in-desk precisely so the Desk drives it.
 window.addEventListener('message', function(e){
   if(e.origin !== window.location.origin) return;
   var d = e.data;
-  if(d && d.tbp === 'tbp-start-scribe-tour'){ try { startScribeTour(d.mode || null); } catch(_){} }
+  // Desk's explicit hand-off: start THIS Scribe tour directly. (Not startScribeTour(),
+  // which when framed bounces back to the Desk to orchestrate — that would loop.)
+  if(d && d.tbp === 'tbp-start-scribe-tour'){ try { TBP_TOUR.start(d.mode || null); } catch(_){} }
 });
 (function(){
   if(document.documentElement.classList.contains('in-desk')) return;
