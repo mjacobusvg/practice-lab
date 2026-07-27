@@ -77,6 +77,19 @@ exports.handler = async function (event) {
     const acct = accts[0] || null;
     let customerId = acct && acct.stripe_customer_id ? acct.stripe_customer_id : null;
 
+    // Stacking guard: this endpoint starts a BRAND NEW subscription. If the member
+    // already has a live (active/trialing) subscription, a new one would bill them
+    // twice (e.g. keep $50 forum AND add $119 full). That case is an UPGRADE, not a
+    // new checkout — send them to upgrade-membership.js, which edits the existing
+    // subscription in place. Only genuinely un-subscribed members proceed here.
+    if (customerId) {
+      const live = await stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 100 });
+      const hasLive = live.data.some(s => s.status === 'active' || s.status === 'trialing' || s.status === 'past_due');
+      if (hasLive) {
+        return { statusCode: 409, headers: CORS, body: JSON.stringify({ error: 'You already have an active subscription. Use the in-platform upgrade instead of starting a new one.', reason: 'already_subscribed' }) };
+      }
+    }
+
     if (!customerId) {
       const customer = await stripe.customers.create({ email, metadata: { tbp_account_email: email } });
       customerId = customer.id;

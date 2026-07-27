@@ -1923,6 +1923,7 @@ async function submitProblemReport() {
   } catch (e) { st.textContent = 'Could not send: ' + e.message; btn.disabled = false; }
 }
 function isPaidMember() { return tierRank() >= 1; }
+function isForumMember() { return tierRank() === 1; }          // paying, but not Full yet (isFullMember defined above)
 function checkMember() { S.isMember = isPaidMember(); }
 // Both CDNs failed (rare): show a friendly refresh prompt instead of a silent
 // ReferenceError white-screen. Currently this crash is our #1 client error.
@@ -2208,9 +2209,11 @@ function updateTopbar() {
     '<button onclick="toggleAcctMenu();openWelcomeTour()">Take the tour</button>' +
     '<button onclick="toggleAcctMenu();openReportProblem()">Report a problem</button>' +
     (isAdmin() ? '<button onclick="toggleAcctMenu();showCEList()">CE candidates</button>' : '') +
-    (isPaidMember()
+    (isFullMember()
       ? '<button onclick="openBillingPortal()">Manage billing</button>'
-      : '<button onclick="startCheckout(\'full_monthly_119\')">Upgrade to Full</button>') +
+      : isForumMember()
+        ? '<button onclick="upgradeMembership()">Upgrade to Full &mdash; $119/mo</button><button onclick="openBillingPortal()">Manage billing</button>'
+        : '<button onclick="startCheckout(\'full_monthly_119\')">Upgrade to Full</button>') +
     '<button onclick="signOut()">Sign out</button></div></div>';
   refreshUnread();
   if (!window.__dmPoll) { window.__dmPoll = setInterval(refreshUnread, 60000); }
@@ -4810,8 +4813,10 @@ function viewTemplate(id) {
     h += '<p class="tpl-gate-sub">Members get every template in the library. ' + (buyable ? 'Or buy just this one and keep it forever.' : 'Join to unlock this and all other templates.') + '</p>';
     h += '<div class="tpl-detail-actions">';
     if (buyable) h += '<button class="btn-primary" onclick="buyTemplate(\'' + t.id + '\')">Buy for $' + ((t.price_cents || 0) / 100).toFixed(2).replace(/\.00$/, '') + '</button>';
-    if (isPaidMember()) h += '<button class="' + (buyable ? 'btn-ghost' : 'btn-primary') + '" onclick="startCheckout(\'full_monthly_119\')">Upgrade to Full</button>';
-    else h += '<button class="' + (buyable ? 'btn-ghost' : 'btn-primary') + '" onclick="showJoin(\'\')">Join to unlock all templates</button>';
+    // Forum members upgrade IN PLACE (edits their existing sub — never a second
+    // subscription). Full members already have every template, so no button.
+    if (isForumMember()) h += '<button class="' + (buyable ? 'btn-ghost' : 'btn-primary') + '" onclick="upgradeMembership()">Upgrade to Full &mdash; get every template</button>';
+    else if (!isPaidMember()) h += '<button class="' + (buyable ? 'btn-ghost' : 'btn-primary') + '" onclick="showJoin(\'\')">Join to unlock all templates</button>';
     h += '</div></div>';
   }
   h += '</div>';
@@ -6978,7 +6983,8 @@ function handlePendingPlan() {
     // consume it here — that was the bug that dropped the plan for logged-out visitors.)
     if (!getAuthToken()) return;
     clearPending();                               // signed in — consume the intent now
-    if (isPaidMember && isPaidMember()) return;   // already Full — nothing to buy
+    if (isFullMember()) return;                   // already Full — nothing to buy
+    if (isForumMember()) { upgradeMembership(); return; } // paying already: upgrade in place, never a 2nd sub
     startCheckout(plan);
   } catch (e) {}
 }
@@ -7030,6 +7036,49 @@ async function startCheckout(plan) {
     if (data && data.url) { window.location.href = data.url; return; }
     alert((data && data.error) ? data.error : 'Could not start checkout. Please try again.');
   } catch(e) { alert('Could not start checkout. Please try again.'); }
+}
+
+// In-place upgrade to Full for an EXISTING paying member (e.g. $50 forum -> $119
+// full). Edits their current subscription rather than starting a second one, so
+// they are never billed twice. We first do a dry-run to show the prorated charge
+// today, confirm, then commit. A member with no live sub falls back to Checkout.
+async function upgradeMembership() {
+  var token = getAuthToken();
+  if (!token) { alert('Please sign in first, then upgrade.'); return; }
+  var call = function (dry) {
+    return fetch('/.netlify/functions/upgrade-membership', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({ dry_run: !!dry })
+    }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, status: r.status, d: d }; }); });
+  };
+  try {
+    // 1) Preview: get the amount charged today (prorated) before committing.
+    var pre = await call(true);
+    if (pre.d && pre.d.needs_checkout) { startCheckout('full_monthly_119'); return; }
+    if (pre.d && pre.d.already_full) { alert('You are already on Full membership.'); return; }
+    if (!pre.ok) { alert((pre.d && pre.d.error) || 'Could not start the upgrade. Please try again.'); return; }
+
+    var today = (pre.d && typeof pre.d.charge_today_cents === 'number')
+      ? '$' + (pre.d.charge_today_cents / 100).toFixed(2) : null;
+    var renew = (pre.d && pre.d.interval === 'year') ? '$1,190/yr' : '$119/mo';
+    var msg = 'Upgrade to Full membership?\n\n' +
+      (today ? ('You will be charged about ' + today + ' today for the rest of this billing period, ') : 'You will be charged a prorated amount today, ') +
+      'then ' + renew + ' going forward on the card you already have on file.';
+    if (!confirm(msg)) return;
+
+    // 2) Commit the in-place upgrade.
+    var res = await call(false);
+    if (res.d && res.d.needs_checkout) { startCheckout('full_monthly_119'); return; }
+    if (res.d && res.d.already_full) { alert('You are already on Full membership.'); location.reload(); return; }
+    if (res.ok && res.d && res.d.upgraded) {
+      alert('You are now on Full membership. Thank you! Your access will update momentarily.');
+      setTimeout(function () { location.reload(); }, 1500);
+      return;
+    }
+    if (res.status === 402) { alert((res.d && res.d.error) || 'Your card was declined. Please update your payment method and try again.'); return; }
+    alert((res.d && res.d.error) || 'Could not complete the upgrade. Please try again or contact support.');
+  } catch (e) { alert('Could not complete the upgrade. Please try again.'); }
 }
 
 // Open Stripe's hosted billing portal so a member can manage/cancel/switch.
