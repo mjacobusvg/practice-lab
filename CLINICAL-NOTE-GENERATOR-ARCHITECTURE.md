@@ -608,11 +608,19 @@ Pipeline of focused calls (the "reason better" pattern, kept):
      hardcoded** — the clinician's template declares it (the engine's illustrative
      examples are just defaults); the engine only executes, with SI/HI-never-carried the
      single hardcoded rule. Four content classes: **dynamic** (today drives),
-     **standing** (carry as continued/stable), **historical/chronic-known** — including a
-     clinician's persistent **"Historical Notes:"** block — (carry as known background,
-     never re-asked or re-asserted), and **safety** (never carried). This also gives the
-     follow-up path real behavior (previously thin) and is the anti-clone-note /
-     audit-integrity safeguard.
+     **standing** (carry as continued/stable), **historical/chronic-known** and **safety**
+     (never carried). Historical background is marked **`Historical Note:`** and carried
+     **verbatim under the section heading it belongs to** (a chronic side effect stays under
+     Side Effects), never merged into one lump; a standalone **`Historical Notes:`** block
+     holds only cross-cutting background that belongs to no single section (optional — the
+     clinician can keep one). Historical is *derived from a documented source note* (extracted
+     at the eval→follow-up carry-forward, one-time content dropped), never conjured from an
+     ambient transcript, and is **inert in the assessment** (never a present-day driver — the
+     jetlag-from-10-months-ago failure). It is never re-asked, never re-asserted, and today's
+     fresh finding is never auto-promoted into it; the clinician curates the set. Carry-forward
+     also **prunes stale content** (stale quotes → third-person, one-time/past-dated/out-of-season
+     events removed). This gives the follow-up path real behavior (previously thin) and is the
+     anti-clone-note / audit-integrity safeguard.
    - **Pre-visit prep (Bucket 1, BUILT):** the "Set me up for this visit" button — paste
      last visit's note and it returns (a) a **carry-forward starting note** (standing/
      historical items pre-filled as continued/stable, dynamic sections left as labeled
