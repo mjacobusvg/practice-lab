@@ -60,8 +60,12 @@ exports.handler = async function (event) {
           comment_count: 0,
           reaction_count: 0,
           post_type: 'discussion',
-          is_pinned: !!s.pin
+          is_pinned: !!s.pin,
+          free_visible: !!s.free_visible
         };
+        // Optional: publish under a pre-chosen id so a link can be handed out
+        // (e.g. in an email) before the post goes live. Only when explicitly set.
+        if (s.forced_post_id) row.id = s.forced_post_id;
         const inserted = await sb('forum_posts', 'POST', row, 'return=representation');
         const postId = inserted && inserted[0] && inserted[0].id;
         await sb('scheduled_posts?id=eq.' + s.id, 'PATCH', { published_post_id: postId, error: null }, 'return=minimal');
