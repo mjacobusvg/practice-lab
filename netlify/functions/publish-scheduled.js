@@ -8,7 +8,7 @@
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY (+ SES via notify), optional PUBLISH_SECRET
 
 const { toRichHtml } = require('./_lib/richtext');
-const { notifyNewPost } = require('./_lib/notify');
+const { notifyNewPost, notifyAuthorPostPublished } = require('./_lib/notify');
 
 const MICHAEL_ACCOUNT_ID = '00000000-0000-0000-0000-000000000001';
 
@@ -76,6 +76,13 @@ exports.handler = async function (event) {
             { id: MICHAEL_ACCOUNT_ID, name: 'Michael Van Gelder' },
             { emailBlast: s.email_blast !== false }
           );
+        } catch (e) { /* never fail the publish on a notify error */ }
+
+        // Confirm to the AUTHOR that their scheduled post actually went live (bell
+        // + phone push). notifyNewPost excludes the author, so this is the only
+        // signal they get that the post they scheduled hours earlier really fired.
+        try {
+          await notifyAuthorPostPublished({ id: postId, title: s.title }, MICHAEL_ACCOUNT_ID);
         } catch (e) { /* never fail the publish on a notify error */ }
         published++;
       } catch (e) {

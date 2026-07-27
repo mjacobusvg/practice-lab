@@ -57,7 +57,7 @@ exports.handler = async function (event) {
     const meId = meRows[0].id;
 
     if (p.action === 'summary') {
-      const posts = await countOf('member_notifications?user_id=eq.' + meId + '&type=eq.post&read_at=is.null&select=id');
+      const posts = await countOf('member_notifications?user_id=eq.' + meId + '&type=in.(post,published)&read_at=is.null&select=id');
       const comments = await countOf('member_notifications?user_id=eq.' + meId + '&type=eq.comment&read_at=is.null&select=id');
       const mentions = await countOf('member_notifications?user_id=eq.' + meId + '&type=eq.mention&read_at=is.null&select=id');
       const dms = await countOf('dm_messages?recipient_id=eq.' + meId + '&read_at=is.null&select=id');

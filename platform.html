@@ -1273,7 +1273,8 @@ a.file-chip:hover { border-color:var(--teal); }
 .notif-counts { display:flex; gap:6px; padding:8px 10px; }
 .notif-counts span { flex:1; text-align:center; font-size:0.72rem; color:var(--text-secondary); background:var(--bg-card-hover,rgba(127,127,127,0.08)); border-radius:8px; padding:6px 4px; }
 .notif-counts span b { display:block; font-size:0.95rem; color:var(--text-primary); }
-.notif-item { padding:10px; border-radius:8px; cursor:pointer; font-size:0.8rem; color:var(--text-secondary); line-height:1.45; }
+.notif-item { position:relative; padding:10px 26px 10px 10px; border-radius:8px; cursor:pointer; font-size:0.8rem; color:var(--text-secondary); line-height:1.45; }
+.notif-item .notif-dot { position:absolute; top:13px; right:11px; width:9px; height:9px; border-radius:50%; background:#e5484d; box-shadow:0 0 0 3px rgba(229,72,77,0.16); }
 .notif-item:hover { background:var(--bg-card-hover,rgba(127,127,127,0.08)); }
 .notif-item.unread { background:rgba(42,171,184,0.08); }
 .notif-item strong { color:var(--text-primary); }
@@ -2170,6 +2171,7 @@ async function checkAuth() {
     handlePendingPlan();
     handlePendingBuy();
     maybeShowPushNudge();
+    reconcilePushSubscription();
   } else {
     // Deep link from the marketing site (/platform.html?join) opens straight into
     // free-account creation; otherwise default to the returning-member view.
@@ -5500,10 +5502,12 @@ function renderNotifPanel(data) {
     h += '<div class="notif-empty">Nothing new yet.</div>';
   } else {
     items.forEach(function (n) {
-      var verb = n.type === 'post' ? 'posted' : (n.type === 'mention' ? 'mentioned you in' : 'commented on');
+      var verb = n.type === 'post' ? 'posted' : (n.type === 'published' ? 'is now live:' : (n.type === 'mention' ? 'mentioned you in' : 'commented on'));
       h += '<div class="notif-item' + (n.read_at ? '' : ' unread') + '" onclick="openNotif(\'' + n.id + '\',\'' + (n.post_id || '') + '\')">';
       h += '<strong>' + esc(n.actor_name || 'Someone') + '</strong> ' + verb + ' <span class="notif-title">' + esc(n.title || '') + '</span>';
-      h += '<div class="notif-time">' + timeAgo(n.created_at) + '</div></div>';
+      h += '<div class="notif-time">' + timeAgo(n.created_at) + '</div>';
+      if (!n.read_at) h += '<span class="notif-dot" title="Unread"></span>';   // red dot marks the exact unread item(s) the bell count refers to
+      h += '</div>';
     });
   }
   panel.innerHTML = h;
@@ -7261,6 +7265,38 @@ async function refreshPushUI() {
     status.textContent = '';
     if (testBtn) testBtn.style.display = 'none';
   }
+}
+
+// Self-heal push on every app open. Browsers periodically ROTATE or invalidate a
+// push subscription (after a service-worker update, storage pressure, or on their
+// own schedule). When that happens the client silently gets a NEW endpoint while
+// the OLD one still sits in our DB — so the server keeps pushing into a dead
+// endpoint and the member's phone goes quiet with no error. This was the recurring
+// "app notifications just stop working" bug. Fix: on load, if notifications are
+// permitted, re-register the CURRENT subscription (push-subscribe upserts on
+// endpoint, so this refreshes the row and re-enables it). If permission is granted
+// but the subscription vanished, re-subscribe. Fully best-effort and silent.
+async function reconcilePushSubscription() {
+  try {
+    if (!pushSupported()) return;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    if (_isIOS() && !_isStandalone()) return;      // iOS: push only in the installed PWA
+    var token = getAuthToken(); if (!token) return;
+    var reg = await navigator.serviceWorker.ready;
+    var sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      // Permission is granted but the subscription is gone — re-create it so the
+      // device keeps getting notifications instead of silently dropping off.
+      try {
+        sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: _urlB64ToUint8(VAPID_PUBLIC_KEY) });
+      } catch (e) { return; }
+    }
+    if (!sub) return;
+    await fetch('/.netlify/functions/push-subscribe', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: token, action: 'subscribe', subscription: sub, ua: navigator.userAgent })
+    });
+  } catch (e) { /* reconcile is best-effort; never block app load */ }
 }
 
 async function sendTestPush() {

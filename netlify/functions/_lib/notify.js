@@ -259,4 +259,33 @@ async function notifyNewComment(post, commenter) {
   } catch (e) { console.log('notifyNewComment error:', e && e.message); }
 }
 
-module.exports = { notifyNewPost, notifyNewComment, emailBcc, emailEach, prefsFooter, sb };
+// A scheduled post just went live -> tell its AUTHOR (in-app + push). notifyNewPost
+// deliberately excludes the author from the fan-out (you don't notify yourself of
+// your own post), so without this a scheduled post would publish with the author
+// getting no signal it fired. That's the "I got no notification my posts posted
+// this morning" gap: the author schedules it, walks away, and wants confirmation
+// it actually went out. Type 'published' is folded into the Posts bell bucket in
+// notifications.js so it increments the badge like any other notification.
+async function notifyAuthorPostPublished(post, authorId) {
+  try {
+    if (!post || !post.id || !authorId) return;
+    try {
+      await sb('member_notifications', 'POST', [{
+        user_id: authorId, type: 'published', actor_id: authorId,
+        actor_name: 'Your scheduled post', title: post.title || '', post_id: post.id
+      }], 'return=minimal');
+    } catch (e) { console.log('notify author in-app:', e && e.message); }
+    // Push to the author's own devices. Unconditional: this is a confirmation the
+    // author asked for, not a broadcast, so it ignores the post-notification pref.
+    try {
+      await sendToAccounts([authorId], {
+        title: 'Your scheduled post is live',
+        body: post.title || 'Your post was published',
+        url: PLATFORM_BASE + '?post=' + encodeURIComponent(post.id),
+        tag: 'published-' + post.id
+      });
+    } catch (e) { console.log('notify author push:', e && e.message); }
+  } catch (e) { console.log('notifyAuthorPostPublished error:', e && e.message); }
+}
+
+module.exports = { notifyNewPost, notifyNewComment, notifyAuthorPostPublished, emailBcc, emailEach, prefsFooter, sb };
