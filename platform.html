@@ -3456,13 +3456,19 @@ async function votePoll(postId, optionId) {
 function toggleReplyBox(commentId, postId, btn) {
   var box = document.getElementById('reply-box-' + commentId);
   if (!box) return;
-  if (box.innerHTML) { box.innerHTML = ''; return; }
+  if (box.innerHTML) { box.innerHTML = ''; if (S.replyImages) delete S.replyImages[commentId]; return; }
+  if (!S.replyImages) S.replyImages = {};
+  S.replyImages[commentId] = [];   // fresh image tray for this reply
   var ta = 'reply-input-' + commentId;
   box.innerHTML =
     phiNote('forum')
     + '<textarea id="' + ta + '" placeholder="Write a reply..." maxlength="8000" style="width:100%;min-height:64px;margin-top:8px;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-page);color:var(--text-primary);font-family:inherit;font-size:0.84rem;line-height:1.5;resize:vertical"></textarea>'
+    + '<input type="file" id="reply-image-input-' + commentId + '" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none" onchange="onReplyImagePick(event,\'' + commentId + '\')">'
+    + '<div class="mp-image-previews" id="reply-image-previews-' + commentId + '" style="margin-top:6px"></div>'
+    + '<div id="reply-image-status-' + commentId + '" style="font-size:0.74rem;color:var(--text-secondary);margin-top:2px"></div>'
     + '<div id="reply-error-' + commentId + '" style="display:none;color:#c0392b;font-size:0.76rem;margin-top:4px"></div>'
-    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">'
+    + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px;align-items:center">'
+    + '<button type="button" class="md-btn" title="Add image" style="margin-right:auto" onclick="document.getElementById(\'reply-image-input-' + commentId + '\').click()">&#128247; Image</button>'
     + '<button class="reply-cancel" onclick="toggleReplyBox(\'' + commentId + '\',\'' + postId + '\')">Cancel</button>'
     + '<button class="btn-primary" id="reply-submit-' + commentId + '" onclick="submitReply(\'' + commentId + '\',\'' + postId + '\')">Reply</button>'
     + '</div>';
@@ -3493,15 +3499,16 @@ async function submitReply(commentId, postId) {
   var errEl = document.getElementById('reply-error-' + commentId);
   if (!ta) return;
   var body = ta.value.trim();
+  var replyImages = ((S.replyImages && S.replyImages[commentId]) || []).map(function(im){ return im.url; });
   if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
-  if (!body) { if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Write something first.'; } return; }
+  if (!body && !replyImages.length) { if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Write something or add an image first.'; } return; }
   if (S.forumAck !== true) { requireForumAck(function(){ submitReply(commentId, postId); }); return; }
   if (btn) { btn.disabled = true; btn.textContent = 'Posting...'; }
   try {
     var res = await fetch('/.netlify/functions/create-comment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: getAuthToken(), action: 'create', post_id: postId, parent_comment_id: commentId, body: body, mention_ids: mentionGetIds(ta) })
+      body: JSON.stringify({ token: getAuthToken(), action: 'create', post_id: postId, parent_comment_id: commentId, body: body, image_urls: replyImages, mention_ids: mentionGetIds(ta) })
     });
     var data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Could not post reply.');
@@ -3936,6 +3943,56 @@ async function onCommentImagePick(ev) {
       if (!res.ok || !data.ok) throw new Error(data.error || 'Upload failed');
       S.newCommentImages.push({ url: data.url });
       renderCommentImagePreviews();
+      if (status) status.textContent = '';
+    } catch (e) {
+      if (status) status.textContent = e.message;
+    }
+  }
+}
+
+// ── Reply image upload (inline reply composer) ───────────────────────────────
+// Same flow, keyed per comment so several open reply boxes never share a tray.
+function renderReplyImagePreviews(commentId) {
+  var wrap = document.getElementById('reply-image-previews-' + commentId);
+  if (!wrap) return;
+  var imgs = (S.replyImages && S.replyImages[commentId]) || [];
+  wrap.innerHTML = imgs.map(function(im, i) {
+    return '<div class="mp-thumb"><img src="' + esc(im.url) + '" alt="">' +
+      '<button type="button" class="mp-thumb-x" title="Remove" onclick="removeReplyImage(\'' + commentId + '\',' + i + ')">&times;</button></div>';
+  }).join('');
+}
+
+function removeReplyImage(commentId, i) {
+  if (!S.replyImages || !S.replyImages[commentId]) return;
+  S.replyImages[commentId].splice(i, 1);
+  renderReplyImagePreviews(commentId);
+}
+
+async function onReplyImagePick(ev, commentId) {
+  var input = ev.target;
+  var files = Array.prototype.slice.call(input.files || []);
+  input.value = '';
+  if (!files.length) return;
+  if (!S.replyImages) S.replyImages = {};
+  if (!S.replyImages[commentId]) S.replyImages[commentId] = [];
+  var arr = S.replyImages[commentId];
+  var status = document.getElementById('reply-image-status-' + commentId);
+  for (var f = 0; f < files.length; f++) {
+    if (arr.length >= MAX_COMMENT_IMAGES) { if (status) status.textContent = 'Up to ' + MAX_COMMENT_IMAGES + ' images.'; break; }
+    var file = files[f];
+    if (file.size > 6 * 1024 * 1024) { if (status) status.textContent = '"' + file.name + '" is over 6 MB.'; continue; }
+    if (status) status.textContent = 'Uploading ' + file.name + '...';
+    try {
+      var dataUrl = await readFileAsDataURL(file);
+      var res = await fetch('/.netlify/functions/upload-post-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: getAuthToken(), data: dataUrl, content_type: file.type })
+      });
+      var data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Upload failed');
+      arr.push({ url: data.url });
+      renderReplyImagePreviews(commentId);
       if (status) status.textContent = '';
     } catch (e) {
       if (status) status.textContent = e.message;
