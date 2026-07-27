@@ -1119,6 +1119,9 @@ html.preview-mode ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15)
 .mdd-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 /* Post image gallery + composer image picker */
 .post-gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:8px; margin:14px 0 4px; }
+/* Inline images (pasted or added) in post/comment bodies and the rich editor. */
+.rich-img { display:block; max-width:100%; height:auto; border-radius:6px; border:1px solid var(--border); margin:8px 0; }
+.rte .rich-img { max-width:min(100%,360px); }
 .post-gallery-item { display:block; border-radius:8px; overflow:hidden; border:1px solid var(--border); background:var(--bg-card); }
 .post-gallery-item img { width:100%; height:100%; max-height:320px; object-fit:cover; display:block; }
 .mp-image-row { display:flex; align-items:center; gap:10px; margin-top:2px; }
@@ -3229,12 +3232,8 @@ async function viewPost(postId) {
         + '<button type="button" class="md-btn" title="Bulleted list" onclick="mdLinePrefix(\'comment-input\',\'- \')">&#8226; List</button>'
         + '<button type="button" class="md-btn" title="Quote" onclick="mdLinePrefix(\'comment-input\',\'&gt; \')">&#8220; Quote</button>'
         + '<button type="button" class="md-btn" title="Link" onclick="mdLink(\'comment-input\')">&#128279; Link</button>'
-        + '<button type="button" class="md-btn" title="Add image" onclick="document.getElementById(\'comment-image-input\').click()">&#128247; Image</button>'
         + '</div>';
-      h += '<input type="file" id="comment-image-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none" onchange="onCommentImagePick(event)">';
       h += '<textarea id="comment-input" placeholder="Share your thoughts or add to the discussion..." maxlength="8000" style="width:100%;min-height:84px;padding:12px 14px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:0.86rem;line-height:1.5;resize:vertical"></textarea>';
-      h += '<div class="mp-image-previews" id="comment-image-previews" style="margin-top:8px"></div>';
-      h += '<div id="comment-image-status" style="font-size:0.76rem;color:var(--text-secondary);margin-top:4px"></div>';
       h += '<div class="md-preview" id="comment-preview" style="display:none"></div>';
       h += '<div id="comment-error" style="display:none;color:#c0392b;font-size:0.78rem;margin-top:6px"></div>';
       h += '<div style="display:flex;justify-content:flex-end;margin-top:8px">';
@@ -3466,12 +3465,8 @@ function toggleReplyBox(commentId, postId, btn) {
   box.innerHTML =
     phiNote('forum')
     + '<textarea id="' + ta + '" placeholder="Write a reply..." maxlength="8000" style="width:100%;min-height:64px;margin-top:8px;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-page);color:var(--text-primary);font-family:inherit;font-size:0.84rem;line-height:1.5;resize:vertical"></textarea>'
-    + '<input type="file" id="reply-image-input-' + commentId + '" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none" onchange="onReplyImagePick(event,\'' + commentId + '\')">'
-    + '<div class="mp-image-previews" id="reply-image-previews-' + commentId + '" style="margin-top:6px"></div>'
-    + '<div id="reply-image-status-' + commentId + '" style="font-size:0.74rem;color:var(--text-secondary);margin-top:2px"></div>'
     + '<div id="reply-error-' + commentId + '" style="display:none;color:#c0392b;font-size:0.76rem;margin-top:4px"></div>'
     + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px;align-items:center">'
-    + '<button type="button" class="md-btn" title="Add image" style="margin-right:auto" onclick="document.getElementById(\'reply-image-input-' + commentId + '\').click()">&#128247; Image</button>'
     + '<button class="reply-cancel" onclick="toggleReplyBox(\'' + commentId + '\',\'' + postId + '\')">Cancel</button>'
     + '<button class="btn-primary" id="reply-submit-' + commentId + '" onclick="submitReply(\'' + commentId + '\',\'' + postId + '\')">Reply</button>'
     + '</div>';
@@ -4122,6 +4117,7 @@ function mdpInline(text){
   out=out.replace(/__([^_\n]+)__/g,'<strong>$1</strong>');
   out=out.replace(/(^|[^*])\*([^*\n]+)\*/g,'$1<em>$2</em>');
   out=out.replace(/(^|[^_\w])_([^_\n]+)_/g,'$1<em>$2</em>');
+  out=out.replace(/!\[([^\]\n]*)\]\((https?:\/\/[^\s)]+)\)/g,function(m,alt,url){ return /\/storage\/v1\/object\/public\/post-images\//.test(url) ? '<img src="'+mdpEsc(url)+'" alt="'+alt+'" loading="lazy" class="rich-img">' : m; });
   out=out.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g,function(m,txt,url){return '<a href="'+mdpEsc(url)+'" target="_blank" rel="noopener nofollow">'+txt+'</a>';});
   return out;
 }
@@ -4235,6 +4231,7 @@ function rteToolbarHtml(edId, popId){
     + b('Quote','rteBlock(\''+edId+'\',\'blockquote\')','&#8220; Quote')
     + b('Link','rteLink(\''+edId+'\')','&#128279; Link')
     + b('Divider','rteHr(\''+edId+'\')','&#8213; Divider')
+    + b('Add image (or just paste a screenshot)','rtePickImage(\''+edId+'\')','&#128247; Image')
     + b('Emoji','rteEmojiToggle(event,\''+edId+'\',\''+popId+'\')','&#128512;')
     + '<div class="emoji-pop" id="'+popId+'"></div>';
 }
@@ -4263,8 +4260,20 @@ function initRichField(taId){
   // @mention picker (not on the broadcast composer — that's an email blast).
   if (prefix !== 'bc') rteMentionSetup(ed, ta);
   ed.addEventListener('paste', function(e){
+    var cd = e.clipboardData || window.clipboardData;
+    // A pasted screenshot: upload it and drop it inline where the caret is.
+    var items = (cd && cd.items) ? cd.items : null;
+    var imgFile = null;
+    if(items){ for(var ii=0; ii<items.length; ii++){ if(items[ii].type && items[ii].type.indexOf('image/')===0){ imgFile = items[ii].getAsFile(); break; } } }
+    if(imgFile){
+      e.preventDefault();
+      var range = null;
+      try{ var sel=window.getSelection(); if(sel && sel.rangeCount) range = sel.getRangeAt(0); }catch(err){}
+      rteInsertImage(ed, range, imgFile);
+      return;
+    }
     e.preventDefault();
-    var t=((e.clipboardData||window.clipboardData).getData('text/plain'))||'';
+    var t=(cd && cd.getData ? cd.getData('text/plain') : '')||'';
     try{ document.execCommand('insertText', false, t); }catch(err){}
   });
   return ed;
@@ -4278,6 +4287,52 @@ function richSet(taId, md){
 // Force a rich field to flush its editor content into the hidden textarea now
 // (mobile may not fire blur before a submit tap).
 function syncRich(taId){ var ta=document.getElementById(taId); if(ta && ta._syncRich) ta._syncRich(); }
+// ── Inline images in the rich editor (toolbar button + paste-a-screenshot) ────
+// Uploads via the shared post-images bucket and drops an <img> at the caret. On
+// serialize the img becomes ![screenshot](url); the server (richtext.js) only turns
+// bucket URLs back into <img>, so the innerHTML render stays safe.
+var _rteImgState = { ed: null, range: null };
+function rteEnsureImageInput(){
+  var inp = document.getElementById('rte-image-file');
+  if(inp) return inp;
+  inp = document.createElement('input');
+  inp.type = 'file'; inp.id = 'rte-image-file';
+  inp.accept = 'image/png,image/jpeg,image/webp,image/gif'; inp.style.display = 'none';
+  inp.addEventListener('change', function(ev){
+    var f = (ev.target.files && ev.target.files[0]) || null;
+    ev.target.value = '';
+    if(f) rteInsertImage(_rteImgState.ed, _rteImgState.range, f);
+  });
+  document.body.appendChild(inp);
+  return inp;
+}
+function rtePickImage(edId){
+  var ed = document.getElementById(edId); if(!ed) return;
+  ed.focus();
+  var range = null;
+  try{ var sel = window.getSelection(); if(sel && sel.rangeCount) range = sel.getRangeAt(0); }catch(e){}
+  _rteImgState = { ed: ed, range: range };
+  rteEnsureImageInput().click();
+}
+async function rteInsertImage(ed, range, file){
+  if(!ed || !file) return;
+  if(file.size > 6 * 1024 * 1024){ alert('That image is over 6 MB — please use a smaller one.'); return; }
+  try{
+    var dataUrl = await readFileAsDataURL(file);
+    var res = await fetch('/.netlify/functions/upload-post-image', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), data: dataUrl, content_type: file.type })
+    });
+    var data = await res.json();
+    if(!res.ok || !data.ok) throw new Error(data.error || 'Upload failed');
+    ed.focus();
+    try{ if(range){ var s = window.getSelection(); s.removeAllRanges(); s.addRange(range); } }catch(e){}
+    var safeUrl = String(data.url).replace(/"/g, '%22');
+    try{ document.execCommand('insertHTML', false, '<img src="' + safeUrl + '" alt="screenshot" class="rich-img"><br>'); }
+    catch(e){ ed.innerHTML += '<img src="' + safeUrl + '" alt="screenshot" class="rich-img"><br>'; }
+    ed.dispatchEvent(new Event('input', { bubbles: true }));
+  }catch(e){ alert('Could not add the image: ' + (e && e.message ? e.message : e)); }
+}
 function rteFocus(edId){ var ed=document.getElementById(edId); if(ed) ed.focus(); return ed; }
 function rteCmd(edId, cmd){ var ed=rteFocus(edId); if(!ed) return; try{ document.execCommand(cmd,false,null); }catch(e){} ed.dispatchEvent(new Event('input',{bubbles:true})); }
 function rteBlock(edId, tag){
@@ -4329,6 +4384,7 @@ function rteSerNode(n){
   var tag=n.tagName.toLowerCase(), inner;
   if(tag==='br') return '\n';
   if(tag==='hr') return '\n\n---\n\n';
+  if(tag==='img'){ var isrc=n.getAttribute('src')||''; var ialt=(n.getAttribute('alt')||'').replace(/[\[\]\n]/g,''); return isrc ? '\n\n!['+ialt+']('+isrc+')\n\n' : ''; }
   switch(tag){
     case 'strong': case 'b': inner=rteSerialize(n); return inner.trim()? '**'+inner+'**' : inner;
     case 'em': case 'i': inner=rteSerialize(n); return inner.trim()? '*'+inner+'*' : inner;

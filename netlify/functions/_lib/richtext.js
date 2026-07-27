@@ -20,6 +20,14 @@ function esc(s) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// Inline images are allowed ONLY when the URL is one of our own post-images bucket
+// objects. Members never type raw URLs — the composer uploads via upload-post-image and
+// inserts the bucket URL — so anything else (external host, javascript:, data:) renders
+// as literal text and never reaches an <img src>. Pinning to the exact bucket origin is
+// what keeps innerHTML safe. Empty base (missing env) => no image ever renders.
+var IMG_BUCKET_BASE = (process.env.SUPABASE_URL ? String(process.env.SUPABASE_URL).replace(/\/+$/, '') : '') + '/storage/v1/object/public/post-images/';
+var IMG_BUCKET_OK = /^https?:\/\/.+\/post-images\/$/.test(IMG_BUCKET_BASE);
+
 // Inline formatting on already-escaped text. Order matters: code first (so its
 // contents are not re-processed), then bold, italic, then links.
 function inline(text) {
@@ -29,6 +37,14 @@ function inline(text) {
   out = out.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
   out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
   out = out.replace(/(^|[^_\w])_([^_\n]+)_/g, '$1<em>$2</em>');
+  // ![alt](url) inline image — our post-images bucket only; runs BEFORE the link rule so
+  // the leading "!" image form is consumed first. Non-bucket URLs fall through as text.
+  out = out.replace(/!\[([^\]\n]*)\]\((https?:\/\/[^\s)]+)\)/g, function (m, alt, url) {
+    if (IMG_BUCKET_OK && url.indexOf(IMG_BUCKET_BASE) === 0 && url.length < 500) {
+      return '<img src="' + url + '" alt="' + alt + '" loading="lazy" class="rich-img">';
+    }
+    return m;
+  });
   // [text](url) - http(s) or mailto only; otherwise leave the literal text.
   out = out.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+|mailto:[^\s)]+)\)/g, function (m, txt, url) {
     return '<a href="' + url + '" target="_blank" rel="noopener nofollow">' + txt + '</a>';
