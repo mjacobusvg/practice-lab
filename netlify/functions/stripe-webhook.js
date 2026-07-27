@@ -68,7 +68,22 @@ exports.handler = async function (event) {
   try {
     // --- Membership subscription lifecycle ---------------------------------
     if (stripeEvent.type.startsWith('customer.subscription.')) {
-      const result = await handleSubscriptionEvent(stripeEvent.data.object, stripe);
+      // Re-fetch the LIVE subscription so we always persist Stripe's CURRENT
+      // status, never the (possibly stale) status frozen in this event payload.
+      // Why: a fast Checkout fires subscription.created (status=incomplete) and
+      // subscription.updated (status=active) almost simultaneously. With no guard
+      // the 'incomplete' event could land LAST and overwrite 'active' — which
+      // froze a paid member at free (the Tara case). Reading the source of truth
+      // on every event makes event ordering irrelevant: whoever writes last still
+      // writes the real current status. Falls back to the event payload only if
+      // the sub can't be retrieved (e.g. already deleted).
+      let liveSub = stripeEvent.data.object;
+      try {
+        if (liveSub && liveSub.id) liveSub = await stripe.subscriptions.retrieve(liveSub.id);
+      } catch (e) {
+        console.warn('subscription re-fetch failed, using event payload:', liveSub && liveSub.id, e && e.message);
+      }
+      const result = await handleSubscriptionEvent(liveSub, stripe);
       return { statusCode: 200, headers, body: JSON.stringify({ received: true, subscription: result }) };
     }
 
