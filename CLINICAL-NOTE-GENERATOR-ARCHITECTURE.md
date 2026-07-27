@@ -619,7 +619,9 @@ Pipeline of focused calls (the "reason better" pattern, kept):
      jetlag-from-10-months-ago failure). It is never re-asked or re-asserted. The engine
      **may promote genuinely durable background to a `Historical Note:` at any visit** (not
      only the eval carry-forward) — a long-stable tolerable side effect, a chronic
-     medical/trauma context — but NEVER an active or changing symptom, and every promotion is
+     medical/trauma context — but NEVER an active or changing symptom, and NEVER anything under
+     active management or feeding the current clinical context or a decision being made today
+     (chronic ≠ historical if you are still managing it — that stays active). Every promotion is
      flagged in the review pass for the clinician to confirm or undo (promotion drops the item
      out of the active assessment, so a wrong promotion has clinical consequence). Carry-forward
      also **prunes stale content** (stale quotes → third-person, one-time/past-dated/out-of-season
