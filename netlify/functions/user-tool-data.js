@@ -135,6 +135,51 @@ exports.handler = async function(event) {
         return { statusCode: 400, headers: headers, body: JSON.stringify({ error: 'Missing or invalid data field.' }) };
       }
 
+      var dataToSave = body.data;
+
+      // ── Anti-wipe guard for shared stores ────────────────────────────────
+      // vault_profile is written by several tools; each is supposed to
+      // load-modify-save the WHOLE object. Because a save is a full replace of
+      // the row's data, a buggy partial save (writing only its own handful of
+      // fields, or building on an empty/unread state) would drop every other
+      // tool's fields — exactly how a vault gets "wiped." Guard against it: if
+      // an incoming save would drop more than DROP_LIMIT keys that already
+      // exist on the row, treat it as an accidental partial save and preserve
+      // the omitted keys. Incoming values still win for the keys it does send,
+      // so this never blocks a real update; it only refuses to let a partial
+      // writer erase fields it wasn't managing. Small, intentional deletions
+      // (e.g. removing a single letterhead) stay under the limit and pass
+      // through untouched.
+      var PROTECTED_TOOLS = ['vault_profile'];
+      var DROP_LIMIT = 8;
+      if (PROTECTED_TOOLS.indexOf(toolId) !== -1) {
+        try {
+          var exRes = await fetch(
+            tableUrl + '?email=eq.' + encodeURIComponent(email) + '&tool_id=eq.' + encodeURIComponent(toolId) + '&select=data',
+            { headers: supaHeaders }
+          );
+          if (exRes.ok) {
+            var exArr = await exRes.json();
+            var existing = (exArr && exArr.length && exArr[0].data && typeof exArr[0].data === 'object') ? exArr[0].data : null;
+            if (existing) {
+              var dropped = 0, ek;
+              for (ek in existing) {
+                if (Object.prototype.hasOwnProperty.call(existing, ek) && !Object.prototype.hasOwnProperty.call(dataToSave, ek)) dropped++;
+              }
+              if (dropped > DROP_LIMIT) {
+                // Suspected partial-save wipe. Start from what already exists and
+                // overlay the incoming fields, so nothing the caller omitted is lost.
+                var preserved = {}, k1, k2;
+                for (k1 in existing) if (Object.prototype.hasOwnProperty.call(existing, k1)) preserved[k1] = existing[k1];
+                for (k2 in dataToSave) if (Object.prototype.hasOwnProperty.call(dataToSave, k2)) preserved[k2] = dataToSave[k2];
+                dataToSave = preserved;
+                console.warn('user-tool-data: vault_profile save for ' + email + ' omitted ' + dropped + ' existing keys; preserved them (anti-wipe guard).');
+              }
+            }
+          }
+        } catch (e) { /* pre-read failed: fall through to a normal save, no worse than before */ }
+      }
+
       var upsertRes = await fetch(
         tableUrl + '?on_conflict=email,tool_id',
         {
@@ -143,7 +188,7 @@ exports.handler = async function(event) {
           body: JSON.stringify({
             email: email,
             tool_id: toolId,
-            data: body.data,
+            data: dataToSave,
             updated_at: new Date().toISOString()
           })
         }
