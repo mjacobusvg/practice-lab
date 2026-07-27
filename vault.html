@@ -751,6 +751,13 @@ textarea.field-input{resize:vertical;min-height:60px}
   <div class="field-hint" style="margin-top:14px">Tip: the <a href="/pm-hpi-generator.html" style="color:var(--teal)">HPI Generator</a> can build these for you from one of your existing notes, then save them here.</div>
 
   <div class="field-group" style="margin-top:24px">
+    <label class="field-label">Smart Phrases</label>
+    <div class="field-hint">Reusable snippets you drop into a note in one tap from the working note's <strong>Smart phrases</strong> menu &mdash; a normal MSE, SSRI counseling, a stimulant-continuation line, whatever you retype constantly. Create and edit them here (or save a highlighted selection right from the note); they sync to the AI Scribe. Remember to <strong>Save All</strong> to back them up.</div>
+    <div id="sp-list" style="margin-top:12px"></div>
+    <button type="button" class="btn" onclick="spAddRow()" style="background:transparent;border:1px solid var(--teal);color:var(--teal)">+ Add phrase</button>
+  </div>
+
+  <div class="field-group" style="margin-top:24px">
     <label class="field-label">How you work</label>
     <div class="field-hint">Your default working style. The HPI Generator opens this way each visit (you can switch anytime in the tool).</div>
     <select class="field-select" id="v-hpiWorkflow" data-vault="hpiWorkflow">
@@ -879,6 +886,39 @@ function saveVaultToStorage() {
   localStorage.setItem(VAULT_KEY, data);
   localStorage.setItem(VAULT_KEY_LEGACY, data);
 }
+
+// ── Smart Phrases management (same list the working note inserts from) ──
+// Stored as a JSON string on vault.smartPhrases, so it rides along in Save All and in
+// the tbp_vault mirror the AI Scribe reads. Edits mirror to localStorage immediately;
+// Save All backs them up to the cloud.
+function spEscAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function spEscHtml(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function spArr(){ try { var a = JSON.parse(vault.smartPhrases || '[]'); return Array.isArray(a) ? a : []; } catch(e){ return []; } }
+function spRowHtml(name, text){
+  return '<div class="sp-row" style="border:1px solid var(--rule);border-radius:8px;padding:10px;margin-bottom:10px">'
+    + '<div style="display:flex;gap:8px;align-items:center">'
+    + '<input class="field-input sp-name" placeholder="Phrase name (e.g. Normal MSE)" value="' + spEscAttr(name) + '" style="flex:1" oninput="spSync()">'
+    + '<button type="button" class="btn" onclick="spDelete(this)" style="background:transparent;border:1px solid var(--rule);color:var(--text-secondary)">Delete</button>'
+    + '</div>'
+    + '<textarea class="field-input sp-text" placeholder="The text to insert…" style="min-height:70px;margin-top:8px" oninput="spSync()">' + spEscHtml(text) + '</textarea>'
+    + '</div>';
+}
+function renderSmartPhrasesVault(){
+  var host = document.getElementById('sp-list'); if(!host) return;
+  host.innerHTML = spArr().map(function(p){ return spRowHtml(p && p.name, p && p.text); }).join('');
+}
+function spAddRow(){ var host = document.getElementById('sp-list'); if(!host) return; host.insertAdjacentHTML('beforeend', spRowHtml('', '')); }
+function spDelete(btn){ var row = btn && btn.closest('.sp-row'); if(row) row.remove(); spSync(); }
+function spSync(){
+  var arr = [];
+  document.querySelectorAll('#sp-list .sp-row').forEach(function(r){
+    var n = r.querySelector('.sp-name'), t = r.querySelector('.sp-text');
+    var name = (n && n.value || '').trim(), text = (t && t.value || '');
+    if(name || text.trim()) arr.push({ name: name, text: text });
+  });
+  vault.smartPhrases = JSON.stringify(arr);
+  try { saveVaultToStorage(); } catch(e){}
+}
 var vault = {};
 var userEmail = '';
 
@@ -965,6 +1005,7 @@ function loadVault() {
 
 // ── APPLY VAULT DATA TO FORM FIELDS ──
 function applyVaultToForm() {
+  try { renderSmartPhrasesVault(); } catch(e){}
   document.querySelectorAll('[data-vault]').forEach(function(el) {
     var key = el.getAttribute('data-vault');
     var val = vault[key];
