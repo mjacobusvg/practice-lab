@@ -286,6 +286,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
     <span class="spacer"></span>
     <button class="btn-ghost" id="tcoach-open-focus" type="button" style="margin-top:0;display:none;border-color:#c9a227;color:#e8cf7a" onclick="openTCoach()">Therapy coach</button>
     <select id="scale-select-focus" title="Insert a screening scale" style="display:none;margin-top:0;background:var(--navy);border:1px solid #c9a227;color:#e8cf7a;border-radius:8px;padding:8px 10px;font-size:.85rem" onchange="insertScaleFromSelect(this)"><option value="">+ Scale&hellip;</option></select>
+    <select id="smartphrase-select-focus" title="Insert one of your saved smart phrases" style="display:none;margin-top:0;background:var(--navy);border:1px solid var(--teal);color:var(--teal);border-radius:8px;padding:8px 10px;font-size:.85rem" onchange="onSmartPhrase(this)"><option value="">Smart phrases&hellip;</option></select>
     <select id="clinical-tools-select" title="Open a clinical tool in a new tab (your note keeps running here)" style="margin-top:0;background:var(--navy);border:1px solid var(--teal);color:var(--teal);border-radius:8px;padding:8px 10px;font-size:.85rem" onchange="openClinicalTool(this)">
       <option value="">Clinical tools&hellip;</option>
       <option value="/pm-interaction-checker">Interaction Interpreter</option>
@@ -359,6 +360,58 @@ function openClinicalTool(sel){
   if(demo){ if(typeof tbpShowJoin === 'function') tbpShowJoin(); return; }
   try { window.open(u, '_blank', 'noopener'); } catch(e){ location.href = u; }
 }
+// ── Smart phrases ─────────────────────────────────────────────────────────────
+// The clinician's own reusable snippets (Normal MSE, SSRI counseling, …), stored in
+// the Vault (tbp_vault.smartPhrases) exactly like scribeLinks. Insert from the working
+// note in one tap; save a highlighted selection as a new phrase without leaving.
+function smartPhrasesArr(){
+  try { var lv = JSON.parse(localStorage.getItem('tbp_vault')||'{}'); var a = JSON.parse(lv.smartPhrases||'[]'); return Array.isArray(a) ? a : []; }
+  catch(e){ return []; }
+}
+function saveSmartPhrases(arr){
+  if(typeof persistVaultField === 'function'){ persistVaultField('smartPhrases', JSON.stringify(arr)); }
+  else { try { var lv = JSON.parse(localStorage.getItem('tbp_vault')||'{}'); lv.smartPhrases = JSON.stringify(arr); localStorage.setItem('tbp_vault', JSON.stringify(lv)); } catch(e){} }
+}
+function tbpRenderSmartPhrases(){
+  var sel = document.getElementById('smartphrase-select-focus'); if(!sel) return;
+  while(sel.options.length > 1) sel.remove(1);   // keep the "Smart phrases…" placeholder
+  var arr = smartPhrasesArr();
+  arr.forEach(function(p, i){ if(!p || !p.name) return; var o = document.createElement('option'); o.value = 'ins:' + i; o.textContent = p.name; sel.appendChild(o); });
+  var save = document.createElement('option'); save.value = '__save__'; save.textContent = '＋ Save selection as a phrase'; sel.appendChild(save);
+  if(arr.length){ var mng = document.createElement('option'); mng.value = '__manage__'; mng.textContent = 'Manage phrases…'; sel.appendChild(mng); }
+  sel.style.display = 'inline-block';
+}
+function onSmartPhrase(sel){
+  var v = sel && sel.value; if(sel) sel.selectedIndex = 0;
+  if(!v) return;
+  var arr = smartPhrasesArr();
+  if(v.indexOf('ins:') === 0){
+    var p = arr[parseInt(v.slice(4), 10)];
+    if(p && p.text){ tcoachInsertAtCursor(tcoachTargetTextarea(), p.text); }
+    return;
+  }
+  if(v === '__save__'){
+    if(window.TBP_DEMO){ if(typeof tbpShowJoin === 'function') tbpShowJoin(); return; }
+    var ta = tcoachTargetTextarea(), selText = '';
+    try { if(ta && typeof ta.selectionStart === 'number' && ta.selectionEnd > ta.selectionStart) selText = ta.value.slice(ta.selectionStart, ta.selectionEnd); } catch(e){}
+    var text = selText || (window.prompt('Paste or type the phrase text to save:') || '').trim();
+    if(!text) return;
+    var name = (window.prompt('Name this phrase (e.g. Normal MSE, SSRI counseling, Stimulant continuation):') || '').trim();
+    if(!name) return;
+    arr.push({ name: name, text: text }); saveSmartPhrases(arr); tbpRenderSmartPhrases();
+    return;
+  }
+  if(v === '__manage__'){
+    if(window.TBP_DEMO){ if(typeof tbpShowJoin === 'function') tbpShowJoin(); return; }
+    var list = arr.map(function(p, i){ return (i+1) + '. ' + p.name; }).join('\n');
+    var pick = (window.prompt('Your smart phrases:\n' + list + '\n\nType a number to DELETE it (edit them fully in your Vault), or Cancel.') || '').trim();
+    if(!pick) return;
+    var di = parseInt(pick, 10) - 1;
+    if(di >= 0 && di < arr.length && window.confirm('Delete "' + arr[di].name + '"?')){ arr.splice(di, 1); saveSmartPhrases(arr); tbpRenderSmartPhrases(); }
+    return;
+  }
+}
+
 // "Suggest a tool" (Clinical tools menu) — send it to the team via the shared report-problem
 // endpoint (anonymous-friendly), so users can request a tool without leaving the Scribe.
 function tcoachSuggestTool(){
@@ -372,7 +425,7 @@ function tcoachSuggestTool(){
     }); })
     .catch(function(){ try { alert('Could not send that suggestion. Please try again.'); } catch(_){} });
 }
-(function(){ try { tbpRenderScribeLinks(); } catch(e){} })();
+(function(){ try { tbpRenderScribeLinks(); } catch(e){} try { tbpRenderSmartPhrases(); } catch(e){} })();
 </script>
 
 <!-- Setup wizard (Slice 3) -->
@@ -2433,6 +2486,7 @@ function loadVaultTemplates(){
       if(d.data.legalName) clinicianName = firstNameFrom(d.data.legalName);
       // Mirror the clinician's pinned cockpit links from the server Vault so they follow across devices.
       try { if(d.data.scribeLinks !== undefined){ var lvSL = JSON.parse(localStorage.getItem('tbp_vault')||'{}'); lvSL.scribeLinks = d.data.scribeLinks; localStorage.setItem('tbp_vault', JSON.stringify(lvSL)); } if(typeof tbpRenderScribeLinks==='function') tbpRenderScribeLinks(); } catch(e){}
+      try { if(d.data.smartPhrases !== undefined){ var lvSP = JSON.parse(localStorage.getItem('tbp_vault')||'{}'); lvSP.smartPhrases = d.data.smartPhrases; localStorage.setItem('tbp_vault', JSON.stringify(lvSP)); } if(typeof tbpRenderSmartPhrases==='function') tbpRenderSmartPhrases(); } catch(e){}
       syncTherapyToggle();
       if(typeof d.data.hpiCaptureMode === 'string'){ try{ localStorage.setItem('tbp_hpi_capture', d.data.hpiCaptureMode); }catch(e){} if(typeof window.tbpSetCapture==='function') window.tbpSetCapture(d.data.hpiCaptureMode); }
       renderTemplateStatus();
@@ -3301,6 +3355,7 @@ function initScaleSelects(){
     if(!sel._filled){ sel._filled = true; scales.forEach(function(sc){ var o = document.createElement('option'); o.value = sc.id; o.textContent = sc.name; sel.appendChild(o); }); }
     sel.style.display = 'inline-block';
   });
+  try { tbpRenderSmartPhrases(); } catch(e){}   // reveal the Smart phrases dropdown alongside the scale menu
 }
 
 function initTherapyCoach(){
