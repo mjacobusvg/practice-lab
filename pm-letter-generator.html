@@ -1247,18 +1247,50 @@ var VAULT_KEY_LEGACY = 'credentialing-hub-profile';
 var LETTERHEAD_KEY = 'pm-letterhead';
 var profile = {};
 
+// A field is "present" if it actually holds data. Empty string / null / undefined
+// count as absent, so a blank server value never erases a good local one.
+function _vaultPresent(v) { return v !== undefined && v !== null && v !== ''; }
+
+// Overlay `top` onto `base`, but only for keys whose `top` value is present.
+// Missing or blank keys in `top` fall through to `base`. Returns a new object.
+function _vaultMerge(base, top) {
+  var out = {}, k;
+  if (base) for (k in base) if (Object.prototype.hasOwnProperty.call(base, k)) out[k] = base[k];
+  if (top)  for (k in top)  if (Object.prototype.hasOwnProperty.call(top, k) && _vaultPresent(top[k])) out[k] = top[k];
+  return out;
+}
+
+// True if `full` carries any present field that `server` is missing or has blank —
+// i.e. we recovered data the server row had lost and should heal back to it.
+function _vaultNeedsHeal(full, server) {
+  for (var k in full) {
+    if (!Object.prototype.hasOwnProperty.call(full, k)) continue;
+    if (_vaultPresent(full[k]) && !_vaultPresent(server && server[k])) return true;
+  }
+  return false;
+}
+
+function _readVaultKey(key) {
+  try { var r = localStorage.getItem(key); return r ? (JSON.parse(r) || {}) : {}; }
+  catch (e) { return {}; }
+}
+
 function loadVault() {
-  // Load from localStorage first (instant). Prefer the canonical key, fall back to legacy.
-  try {
-    var r = localStorage.getItem(VAULT_KEY);
-    if (!r) r = localStorage.getItem(VAULT_KEY_LEGACY);
-    if (r) profile = JSON.parse(r);
-  } catch(e) { profile = {}; }
+  // Read BOTH local copies. The legacy key (credentialing-hub-profile) can still hold
+  // identity/letterhead/signature that a partial save from another tool (e.g. the AI
+  // Scribe onboarding) dropped from tbp_vault or from the server row — so never ignore
+  // it, and never let the canonical copy alone stand in for the full profile.
+  var localCanonical = _readVaultKey(VAULT_KEY);
+  var localLegacy = _readVaultKey(VAULT_KEY_LEGACY);
+  var localFull = _vaultMerge(localLegacy, localCanonical); // canonical wins over legacy
+  profile = localFull;
   applyVaultToUI();
 
-  // Then fetch from Supabase (authoritative). Supabase data wins over local cache
-  // when both exist, since the Vault tool may have updated Supabase from another device
-  // or browser. Local cache is just for instant render before the network call returns.
+  // Then fetch from Supabase. The server is authoritative for the fields it actually
+  // holds (another device may have updated them), but it must NOT erase fields it is
+  // missing. So we recover any absent/blank field from the local copies, and if that
+  // recovery adds anything the server lacked, we heal the server row by saving the
+  // merged result back. This repairs vaults that a partial cross-tool save gutted.
   if (!_lgUserEmail) return;
   fetch('/.netlify/functions/user-tool-data', {
     method: 'POST',
@@ -1267,11 +1299,22 @@ function loadVault() {
   })
   .then(function(r) { return r.json(); })
   .then(function(data) {
-    if (data && data.found && data.data) {
-      // Supabase is authoritative. Replace local profile with Supabase data.
-      profile = data.data;
-      try { localStorage.setItem(VAULT_KEY, JSON.stringify(profile)); } catch(e) {}
-      applyVaultToUI();
+    var server = (data && data.found && data.data) ? data.data : {};
+    var recovered = _vaultMerge(localFull, server); // server wins where it has data
+    profile = recovered;
+    try { localStorage.setItem(VAULT_KEY, JSON.stringify(recovered)); } catch(e) {}
+    if (window.LIB) LIB._vaultCache = null;
+    applyVaultToUI();
+
+    // Self-heal: push the merged profile back so the server row regains the fields
+    // it had lost (and other devices pick them up). Idempotent — once the server is
+    // whole, later loads recover nothing new and skip the save.
+    if (_lgUserEmail && _vaultNeedsHeal(recovered, server)) {
+      fetch('/.netlify/functions/user-tool-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
+        body: JSON.stringify({ token: _lgTok(), email: _lgUserEmail, toolId: 'vault_profile', action: 'save', data: recovered })
+      }).catch(function() {});
     }
   })
   .catch(function() {});
