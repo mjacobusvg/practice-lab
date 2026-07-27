@@ -616,8 +616,12 @@ Pipeline of focused calls (the "reason better" pattern, kept):
      clinician can keep one). Historical is *derived from a documented source note* (extracted
      at the eval→follow-up carry-forward, one-time content dropped), never conjured from an
      ambient transcript, and is **inert in the assessment** (never a present-day driver — the
-     jetlag-from-10-months-ago failure). It is never re-asked, never re-asserted, and today's
-     fresh finding is never auto-promoted into it; the clinician curates the set. Carry-forward
+     jetlag-from-10-months-ago failure). It is never re-asked or re-asserted. The engine
+     **may promote genuinely durable background to a `Historical Note:` at any visit** (not
+     only the eval carry-forward) — a long-stable tolerable side effect, a chronic
+     medical/trauma context — but NEVER an active or changing symptom, and every promotion is
+     flagged in the review pass for the clinician to confirm or undo (promotion drops the item
+     out of the active assessment, so a wrong promotion has clinical consequence). Carry-forward
      also **prunes stale content** (stale quotes → third-person, one-time/past-dated/out-of-season
      events removed). This gives the follow-up path real behavior (previously thin) and is the
      anti-clone-note / audit-integrity safeguard.
