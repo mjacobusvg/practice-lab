@@ -182,6 +182,11 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
         </label>
         <div style="margin-top:8px"><button class="btn" id="prep-btn">Set me up for this visit &rarr;</button>
         <span class="hint" id="prep-hint" style="margin-left:8px"></span></div>
+        <!-- Record entry that stays reachable in prep mode: the working-notes block (which holds the
+             other record button) is hidden until Set me up builds it, so without this a prep hiccup
+             leaves a clinician who wants to RECORD with no visible way in. -->
+        <div style="margin-top:10px"><button type="button" id="prep-record-btn" class="btn-ghost" style="border-color:var(--teal);color:var(--teal)" onclick="openAmbientSetup()">&#9679; Record this visit (ambient)</button>
+        <span class="hint" style="margin-left:8px;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream-dim)">Recording instead? Start here — no need to Set me up first.</span></div>
         <div id="prep-results"></div>
       </div>
 
@@ -548,6 +553,20 @@ function firstNameFrom(full){
 }
 
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+
+// Best-effort client→server error sink (writes to client_errors, attributed via the session
+// token). Fire-and-forget; never throws back to the page. Only pass generic error text here —
+// never note/patient content. Lets a recurring backend failure surface to the admin instead of
+// dying silently as a generic message in a member's browser.
+function tbpLogError(message, stack){
+  try {
+    fetch('/.netlify/functions/log-error', {
+      method:'POST',
+      headers:{'Content-Type':'application/json', 'Authorization':'Bearer ' + (typeof authToken!=='undefined' ? (authToken||'') : '')},
+      body: JSON.stringify({ message: String(message||'').slice(0,1000), stack: stack ? String(stack).slice(0,4000) : null, page:'pm-ai-scribe', token: (typeof authToken!=='undefined' ? (authToken||'') : '') })
+    }).catch(function(){});
+  } catch(e){}
+}
 
 // ── Streaming proxy call (mirrors the Note Builder / Chart Coder pattern) ──
 async function callAPI(systemPrompt, messages, maxTokens){
@@ -1081,16 +1100,25 @@ document.getElementById('prep-btn').addEventListener('click', async function(){
     // transient hiccup, not a problem with the note (the SAME note succeeds on a later try). Retry
     // automatically so the clinician never has to re-click through a flake. Big carry-forward notes
     // need room (8000), or the JSON truncates and won't parse.
-    var j = null;
+    var j = null, lastErr = null;
     for(var attempt = 0; attempt < 3 && !j; attempt++){
       if(attempt > 0){ hint.innerHTML = '<span style="color:var(--cream-dim)">One more try&hellip;</span>'; }
       try {
         var raw = await callAPI(prepSystem(), [{role:'user', content: "LAST VISIT'S NOTE:\n\n" + last}], 8000);
         var cand = safeJSON(raw);
         if(cand && typeof cand.startingNote === 'string'){ j = cand; }
-      } catch(e){ /* transient — fall through to the next attempt */ }
+        else { lastErr = new Error('the prep came back in an unexpected format' + (raw ? ' (' + String(raw).length + ' characters — likely truncated on a long note)' : ' (empty response)')); }
+      } catch(e){ lastErr = e; /* keep the real cause instead of swallowing it */ }
     }
-    if(!j){ throw new Error('Could not build the prep after a few tries. This is usually a transient hiccup, give it another go. If it keeps failing on a very long note, paste just the HPI, assessment, and medications, then Set me up again.'); }
+    if(!j){
+      // Surface AND log the actual failure (timeout, error page, truncation, …) instead of a
+      // generic "transient hiccup" — so the clinician sees something real and a recurring
+      // failure shows up in client_errors for us. Only the generic error text is logged, never
+      // the note.
+      var why = (lastErr && (lastErr.message || String(lastErr))) || 'unknown error';
+      tbpLogError('Set me up (prep build) failed after 3 tries: ' + why, lastErr && lastErr.stack);
+      throw new Error('Could not build the prep — ' + why + '. Give it another go; if it keeps failing on a very long note, paste just the HPI, assessment, and medications, then Set me up again.');
+    }
     hint.innerHTML = '';
     renderPrep(j);
     prepOk = true;
