@@ -2993,7 +2993,7 @@ async function viewPost(postId) {
     // Load comments (parent_comment_id drives the threaded tree below)
     var { data: comments, error: cErr } = await SB
       .from('forum_comments')
-      .select('id, author_id, parent_comment_id, body_html, body_plain, created_at, accounts(name, avatar_url)')
+      .select('id, author_id, parent_comment_id, body_html, body_plain, image_urls, created_at, accounts(name, avatar_url)')
       .eq('post_id', postId)
       .order('created_at', { ascending: true })
       .limit(200);
@@ -3184,6 +3184,12 @@ async function viewPost(postId) {
       if (canDelete) out += '<button onclick="deleteComment(\'' + c.id + '\',\'' + post.id + '\')" title="Delete" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:0.72rem;padding:2px 4px">Delete</button>';
       out += '</div>';
       out += '<div class="rich-body" style="font-size:0.84rem;color:var(--text-primary);line-height:1.6;word-wrap:break-word">' + (c.body_html || esc(c.body_plain || '')) + '</div>';
+      var cImgs = Array.isArray(c.image_urls) ? c.image_urls : [];
+      if (cImgs.length) {
+        out += '<div class="post-gallery" style="margin-top:10px">';
+        cImgs.forEach(function(u) { out += '<a class="post-gallery-item" href="' + esc(u) + '" target="_blank" rel="noopener"><img src="' + esc(u) + '" alt="" loading="lazy"></a>'; });
+        out += '</div>';
+      }
       // Reaction bar (paid only) + Reply (paid, or free on a free_visible post).
       if (canReact || canComment) {
         out += '<div class="comment-actions">';
@@ -3220,8 +3226,12 @@ async function viewPost(postId) {
         + '<button type="button" class="md-btn" title="Bulleted list" onclick="mdLinePrefix(\'comment-input\',\'- \')">&#8226; List</button>'
         + '<button type="button" class="md-btn" title="Quote" onclick="mdLinePrefix(\'comment-input\',\'&gt; \')">&#8220; Quote</button>'
         + '<button type="button" class="md-btn" title="Link" onclick="mdLink(\'comment-input\')">&#128279; Link</button>'
+        + '<button type="button" class="md-btn" title="Add image" onclick="document.getElementById(\'comment-image-input\').click()">&#128247; Image</button>'
         + '</div>';
+      h += '<input type="file" id="comment-image-input" accept="image/png,image/jpeg,image/webp,image/gif" multiple style="display:none" onchange="onCommentImagePick(event)">';
       h += '<textarea id="comment-input" placeholder="Share your thoughts or add to the discussion..." maxlength="8000" style="width:100%;min-height:84px;padding:12px 14px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:0.86rem;line-height:1.5;resize:vertical"></textarea>';
+      h += '<div class="mp-image-previews" id="comment-image-previews" style="margin-top:8px"></div>';
+      h += '<div id="comment-image-status" style="font-size:0.76rem;color:var(--text-secondary);margin-top:4px"></div>';
       h += '<div class="md-preview" id="comment-preview" style="display:none"></div>';
       h += '<div id="comment-error" style="display:none;color:#c0392b;font-size:0.78rem;margin-top:6px"></div>';
       h += '<div style="display:flex;justify-content:flex-end;margin-top:8px">';
@@ -3233,6 +3243,7 @@ async function viewPost(postId) {
 
     center.innerHTML = h;
     initRichField('comment-input');
+    S.newCommentImages = [];   // fresh image tray for this thread's composer
     if (post.poll && Array.isArray(post.poll.options) && post.poll.options.length) fetchPollResults(post.id, post.poll);
     window.scrollTo(0,0);
   } catch(e) {
@@ -3278,15 +3289,16 @@ async function submitComment(postId) {
   var errEl = document.getElementById('comment-error');
   if (!ta) return;
   var body = ta.value.trim();
+  var commentImages = (S.newCommentImages || []).map(function(im){ return im.url; });
   if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
-  if (!body) { if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Write something first.'; } return; }
+  if (!body && !commentImages.length) { if (errEl) { errEl.style.display = 'block'; errEl.textContent = 'Write something or add an image first.'; } return; }
   if (S.forumAck !== true) { requireForumAck(function(){ submitComment(postId); }); return; }
   if (btn) { btn.disabled = true; btn.textContent = 'Posting...'; }
   try {
     var res = await fetch('/.netlify/functions/create-comment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: getAuthToken(), action: 'create', post_id: postId, body: body, mention_ids: mentionGetIds(ta) })
+      body: JSON.stringify({ token: getAuthToken(), action: 'create', post_id: postId, body: body, image_urls: commentImages, mention_ids: mentionGetIds(ta) })
     });
     var data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Could not post comment.');
@@ -3878,6 +3890,57 @@ function readFileAsDataURL(file) {
     r.onerror = function() { reject(new Error('Could not read the file.')); };
     r.readAsDataURL(file);
   });
+}
+
+// ── Comment image upload (composer) ──────────────────────────────────────────
+// Mirrors the post image picker: uploads via the same upload-post-image endpoint
+// (same bucket) and tracks URLs in S.newCommentImages, sent when the comment posts.
+var MAX_COMMENT_IMAGES = 4;
+
+function renderCommentImagePreviews() {
+  var wrap = document.getElementById('comment-image-previews');
+  if (!wrap) return;
+  var imgs = S.newCommentImages || [];
+  wrap.innerHTML = imgs.map(function(im, i) {
+    return '<div class="mp-thumb"><img src="' + esc(im.url) + '" alt="">' +
+      '<button type="button" class="mp-thumb-x" title="Remove" onclick="removeCommentImage(' + i + ')">&times;</button></div>';
+  }).join('');
+}
+
+function removeCommentImage(i) {
+  if (!S.newCommentImages) return;
+  S.newCommentImages.splice(i, 1);
+  renderCommentImagePreviews();
+}
+
+async function onCommentImagePick(ev) {
+  var input = ev.target;
+  var files = Array.prototype.slice.call(input.files || []);
+  input.value = '';
+  if (!files.length) return;
+  if (!S.newCommentImages) S.newCommentImages = [];
+  var status = document.getElementById('comment-image-status');
+  for (var f = 0; f < files.length; f++) {
+    if (S.newCommentImages.length >= MAX_COMMENT_IMAGES) { if (status) status.textContent = 'Up to ' + MAX_COMMENT_IMAGES + ' images.'; break; }
+    var file = files[f];
+    if (file.size > 6 * 1024 * 1024) { if (status) status.textContent = '"' + file.name + '" is over 6 MB.'; continue; }
+    if (status) status.textContent = 'Uploading ' + file.name + '...';
+    try {
+      var dataUrl = await readFileAsDataURL(file);
+      var res = await fetch('/.netlify/functions/upload-post-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: getAuthToken(), data: dataUrl, content_type: file.type })
+      });
+      var data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Upload failed');
+      S.newCommentImages.push({ url: data.url });
+      renderCommentImagePreviews();
+      if (status) status.textContent = '';
+    } catch (e) {
+      if (status) status.textContent = e.message;
+    }
+  }
 }
 
 // ── Document attachments (composer) ──────────────────────────────────────────

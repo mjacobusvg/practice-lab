@@ -21,6 +21,18 @@ const { resolveMentions, linkifyMentions, notifyMentions } = require('./_lib/men
 const { toRichHtml } = require('./_lib/richtext');
 
 const MAX_COMMENT_CHARS = 8000;
+const MAX_COMMENT_IMAGES = 4;
+
+// Only accept image URLs from our own public post-images bucket (same bucket posts use).
+// Members never supply arbitrary URLs — the composer uploads via upload-post-image and
+// hands back these bucket URLs — so anything else is dropped.
+function cleanImageUrls(urls) {
+  const base = String(process.env.SUPABASE_URL || '').replace(/\/+$/, '') + '/storage/v1/object/public/post-images/';
+  return (Array.isArray(urls) ? urls : [])
+    .map(function (u) { return String(u || '').trim(); })
+    .filter(function (u) { return u.indexOf(base) === 0 && u.length < 500; })
+    .slice(0, MAX_COMMENT_IMAGES);
+}
 
 exports.handler = async function (event) {
   const headers = {
@@ -77,8 +89,9 @@ exports.handler = async function (event) {
     if (p.action === 'create') {
       const postId = String(p.post_id || '').trim();
       const raw = String(p.body || '').trim();
+      const imageUrls = cleanImageUrls(p.image_urls);
       if (!postId) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'post_id required' }) };
-      if (!raw) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Comment cannot be empty' }) };
+      if (!raw && !imageUrls.length) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Comment cannot be empty' }) };
       if (raw.length > MAX_COMMENT_CHARS) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Comment is too long' }) };
 
       // Post must exist and be open to replies.
@@ -109,6 +122,7 @@ exports.handler = async function (event) {
         parent_comment_id: parentId,
         body_plain: raw,
         body_html: bodyHtml,
+        image_urls: imageUrls,
         reaction_count: 0
       };
       const inserted = await sb('forum_comments', 'POST', row);
@@ -144,6 +158,7 @@ exports.handler = async function (event) {
             parent_comment_id: parentId,
             body_html: comment.body_html,
             body_plain: comment.body_plain,
+            image_urls: comment.image_urls || imageUrls,
             created_at: comment.created_at,
             accounts: { name: me.name, avatar_url: me.avatar_url }
           },
