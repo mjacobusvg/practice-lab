@@ -2800,15 +2800,30 @@ function loadVaultTemplates(){
 
   function appendTranscript(text){
     if(!text) return;
+    var ov = document.getElementById('focus-overlay');
+    var focusOpen = !!(ov && ov.classList.contains('open'));
     if(wnMode === 'sections'){
       // Ambient + prep: the transcript belongs in the carried-note section, which Draft uses as the baseline.
       var n = wnSections.note || '';
       wnSections.note = n + (n && !/\n$/.test(n) ? '\n' : '') + text;
       syncRawFromSections();
+      // If the full-screen sections view is open, push it into the visible note panel too, or the
+      // transcript stays invisible and is lost the next time the clinician edits a section.
+      if(focusOpen){
+        var noteTa = document.querySelector('#focus-sections .wn-ta[data-key="note"]');
+        if(noteTa){ noteTa.value = wnSections.note; wnFit(noteTa); }
+      }
     } else {
       var raw=document.getElementById('raw'); if(!raw) return;
       var base = raw.value;
       raw.value = base + (base && !/\n$/.test(base) ? '\n' : '') + text;
+      // If the full-screen working note is open (plain mode — e.g. an ambient intake), THAT textarea
+      // (focus-note) is the live surface the clinician sees and the one Draft reads. Mirror the
+      // transcript into it, or it stays invisible AND focusSyncBack() overwrites raw with the stale
+      // scaffold on Draft — the "transcribed, but Draft produced only the blank template" bug.
+      if(focusOpen && focusSourceId === 'raw'){
+        var fn = document.getElementById('focus-note'); if(fn) fn.value = raw.value;
+      }
     }
     renderMode();  // transcript is in the note — make sure it's revealed (e.g. ambient with Prep on)
   }
