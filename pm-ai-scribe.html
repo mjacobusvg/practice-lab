@@ -2826,6 +2826,11 @@ function loadVaultTemplates(){
       }
     }
     renderMode();  // transcript is in the note — make sure it's revealed (e.g. ambient with Prep on)
+    // Durably persist the moment the transcript lands. It arrived via a programmatic write, which
+    // does NOT fire the input-based autosave — so without this, an immediate refresh/close/clear
+    // would lose a COMPLETED recording. This makes a finished transcript survive reload and any
+    // later draft-sync, and it is recoverable via crash-restore.
+    try{ if(window.tbpSaveDraft) window.tbpSaveDraft(); }catch(e){}
   }
   function azureCall(payload){
     payload.token = authToken;
@@ -2885,7 +2890,11 @@ function loadVaultTemplates(){
       setStatus('Transcribing the visit…');
       var st = await azureCall({ action:'start', blobName: up.blobName });
       if(!st.jobUrl) throw new Error(st.error || 'Could not start transcription.');
+      // Persist the in-flight job so a tab close/reload DURING the (multi-minute) transcription can
+      // RESUME instead of losing the visit — the poll handle otherwise lives only in tab memory.
+      try{ if(window.tbpTxSave) window.tbpTxSave({ jobUrl: st.jobUrl, blobName: up.blobName }); }catch(e){}
       var transcript = await pollTranscript(st.jobUrl, up.blobName);
+      try{ if(window.tbpTxClear) window.tbpTxClear(); }catch(e){}
       if(!transcript){ setStatus('No speech was recognized in the recording.', true); resetBtn(); return; }
       appendTranscript(transcript);
       setStatus('Done — transcript added to your notes. Review, then Draft.');
@@ -2964,6 +2973,22 @@ function loadVaultTemplates(){
     doStart(captureMode).then(function(){ btn.disabled=false; btn.innerHTML='&#9632; Stop recording'; })
       .catch(function(err){ recording=false; stopMeter(); stopTracks(); setStatus(err.message||'Could not start.', true); btn.disabled=false; resetBtn(); });
   });
+
+  // Resume an in-flight transcription after a reload/tab-close (called on boot, after restore).
+  // The job keeps running on Azure; without this the poll handle dies with the tab and the visit
+  // is lost. Silent on failure (job already consumed/failed) — the admin recovery endpoint is the
+  // last-resort fallback.
+  window.tbpResumePendingTx = async function(){
+    var p = (window.tbpTxGet && window.tbpTxGet()) || null; if(!p) return;
+    try{
+      setStatus('Finishing a recording that was still transcribing…');
+      var transcript = await pollTranscript(p.jobUrl, p.blobName);
+      try{ if(window.tbpTxClear) window.tbpTxClear(); }catch(e){}
+      if(transcript){ appendTranscript(transcript); setStatus('Recovered your recording — transcript added to your notes. Review, then Draft.'); }
+    }catch(e){
+      try{ if(window.tbpTxClear) window.tbpTxClear(); }catch(_){}
+    }
+  };
 })();
 
 // Ambient recording is an on-demand action now (no upfront capture-mode choice): the "Record this
@@ -3103,6 +3128,8 @@ TBPAuth.protect({
     loadVaultTemplates();
     try { if(typeof initTherapyCoach==='function') initTherapyCoach(); } catch(e){}
     try { if(typeof tbpRestoreDraft==='function' && !TBP_DEMO) tbpRestoreDraft(); } catch(e){}
+    // After restoring the note, resume any transcription that was still running when the tab closed.
+    try { if(typeof window.tbpResumePendingTx==='function' && !TBP_DEMO) window.tbpResumePendingTx(); } catch(e){}
   }
 });
 </script>
@@ -3474,6 +3501,12 @@ function initTherapyCoach(){
   function schedule(){ if(timer) clearTimeout(timer); timer = setTimeout(save, 700); }
   window.tbpSaveDraft = save;   // clearVisit calls this after emptying the fields, dropping the stale draft
   window.tbpClearDraft = function(){ stopped = true; try{ localStorage.removeItem(KEY); }catch(e){} };
+  // In-flight transcription handle (per Desk tab), so a reload mid-transcription can resume the job
+  // instead of losing the visit. 30-min TTL: an Azure batch job older than that is stale/gone.
+  var PKEY = 'tbp_pendingtx_' + getSlot();
+  window.tbpTxSave  = function(o){ try{ if(o && o.jobUrl) localStorage.setItem(PKEY, JSON.stringify({ jobUrl:o.jobUrl, blobName:o.blobName, ts:Date.now() })); }catch(e){} };
+  window.tbpTxClear = function(){ try{ localStorage.removeItem(PKEY); }catch(e){} };
+  window.tbpTxGet   = function(){ try{ var s=localStorage.getItem(PKEY); if(!s) return null; var d=JSON.parse(s); if(d && d.jobUrl && d.ts && (Date.now()-d.ts) < 30*60*1000) return d; localStorage.removeItem(PKEY); return null; }catch(e){ return null; } };
   document.addEventListener('input', function(ev){
     var el = ev.target; if(!el) return;
     if(el.id === 'raw' || el.id === 'context' || el.id === 'focus-note' || ((''+el.className).indexOf('wn-ta') !== -1)) schedule();
