@@ -96,6 +96,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 .wn-note{opacity:.92} .wn-note .wn-head{background:rgba(255,255,255,.035)} .wn-note .wn-title{color:var(--cream-dim)}
 .wn-coach{border-color:rgba(201,162,39,.55)} .wn-coach .wn-head{background:rgba(201,162,39,.12)} .wn-coach .wn-title{color:#e8cf7a}
 .wn-screeners{border-color:rgba(96,165,250,.5)} .wn-screeners .wn-head{background:rgba(96,165,250,.12)} .wn-screeners .wn-title{color:#93c5fd}
+.wn-transcript{border-color:rgba(52,211,153,.6)} .wn-transcript .wn-head{background:rgba(52,211,153,.13)} .wn-transcript .wn-title{color:#34d399}
 .notes-card{border:1px solid var(--rule);border-radius:10px;background:var(--navy-card);padding:16px;margin-top:16px}
 .handoff{background:rgba(52,211,153,0.08);border:1px solid rgba(52,211,153,0.25);border-radius:8px;padding:16px 18px;font-size:.9rem;margin-top:18px}
 .handoff .btn{margin-top:10px}
@@ -902,6 +903,7 @@ function draftSystem(){
   s += "- PSYCHOTHERAPY GUIDE, HANDLE EACH TECHNIQUE SEPARATELY: the guide may list several techniques. Document a technique ONLY if the clinician wrote what they actually did or how the patient responded under THAT specific technique. Any technique with nothing written under it is dropped entirely, with NO trace: do not name it, do not say it was considered, planned, offered, or recommended, and do not imply therapeutic work that is not documented. Example: if three techniques are listed and the clinician charted under only one, the note reflects that one and the other two vanish completely. Never reproduce the guide's technique names, rationale lines, 'In session:' lines, or sample prompts as if they were performed.\n";
   s += "- CHECK / ASK TODAY, PER QUESTION: an unanswered question contributes NOTHING to the note. Do not invent an answer, do not write 'not discussed' or 'deferred', and do not echo the question. (A section that already has carried-forward baseline content under 'YOUR NOTE' still carries as continued/stable; that baseline is independent of whether today's checklist question was answered.)\n";
   s += "- NEVER reproduce a checklist question, a bullet from a scaffold section, a section header line, a divider/rule line (dashes or box-drawing characters), or a bracketed '[...]' instruction in the output. The final HPI contains ZERO scaffolding text.\n";
+  s += "- AMBIENT TRANSCRIPT (PRIMARY EVIDENCE, not scaffolding): a block headed 'TODAY'S VISIT — AMBIENT TRANSCRIPT' is the verbatim, speaker-labeled recording of today's visit. UNLIKE the checklist/guide (which are non-evidence prompts), this IS clinical evidence of what happened today — draft today's symptoms, medication decisions, and plan from it, merged with the carried-forward baseline. Strip ONLY its header and divider lines; synthesize the dialogue into clean HPI prose in the clinician's structure and voice, and NEVER reproduce raw 'Speaker 1:/Speaker 2:' lines in the output.\n";
   s += "- For a placeholder in a carried-forward section, keep that section's prior content worded as continued/stable and just remove the bracket.\n\n";
   s += "=== COMPLETENESS AND NON-DUPLICATION ===\n";
   s += "Include EVERY topic the notes document: every symptom, interval update, medication note, behavior (e.g. skin-picking), and section. Never omit or drop documented content to shorten the note. State each fact ONCE, in the single most appropriate section; do not repeat the same content in two sections. Do NOT add comparative or interval statements ('improved since last visit', 'significant improvement', 'better than before') unless the notes explicitly state the comparison.\n\n";
@@ -955,6 +957,7 @@ function verifySystem(){
   var s = HOUSE + "\n\n=== TASK ===\nYou are auditing a drafted HPI against its SOURCE (the clinician's raw notes, plus any prior-context block). Find anything in the HPI that is NOT supported by the source: invented or embellished symptoms, added denials or pertinent negatives, a diagnosis or characterization the notes did not state, altered timeframes, or a patient quote whose wording or meaning was changed (spelling fixes are fine; word substitutions or paraphrases are not).\n\n";
   s += "Silently correct clear, unambiguous fabrications by removing or trimming them back to what the source supports. For anything a clinician should personally judge, leave it and raise a flag.\n\n";
   s += "SCAFFOLD IS NOT EVIDENCE: the source may contain the tool's scaffolding, a 'CHECK / ASK TODAY' list of questions and a 'PSYCHOTHERAPY GUIDE' of suggested techniques with rationale and sample prompts. This scaffolding is NOT clinical evidence of what happened. A psychotherapy technique is supported ONLY if the clinician TYPED what they did or how the patient responded under that specific technique; the guide merely naming it does not count. A checklist topic is supported ONLY by the clinician's typed answer, not by the question existing. If the draft asserts a technique that the clinician did not chart under, or answers/states a finding for a question the clinician left blank, treat it as an unsupported fabrication: remove it (silently) and flag it.\n\n";
+  s += "AMBIENT TRANSCRIPT IS EVIDENCE: a 'TODAY'S VISIT — AMBIENT TRANSCRIPT' block is the actual recording of today's visit. Content the draft derived from it is SUPPORTED, not a fabrication — do not strip it. (Only the checklist/guide scaffolds are non-evidence.)\n\n";
   s += "FLAGS POLICY (keep it light): a flag is ONLY for something that needs the CLINICIAN'S own judgment or action, e.g. an unresolved ambiguity, a missing or unconfirmed dose, an interpretive characterization to reconsider, a carry-forward item not addressed today, or a possible transcription error. NEVER report changes you already made: do not list what you removed, trimmed, or corrected, and do not narrate the second pass. If you fixed something cleanly and nothing remains for the clinician to decide, do NOT flag it. Zero flags is the right answer when the note is clean; a few high-value flags beat a changelog.\n\n";
   s += "RISK: never let the draft add, drop, or soften any documented risk (SI, HI, self-harm, plan, intent). If it did, correct it to match the source exactly and flag it.\n";
   s += "IMPLAUSIBILITY (flag, do NOT fix): flag anything that looks wrong without changing it, e.g. an unrecognized or likely-misspelled medication name, an implausible dose or frequency, an internal contradiction, a number or date that looks off, or a phrase that reads like a garbled transcription artifact. Preserve the exact wording and raise a flag for the clinician.\n\n";
@@ -1340,6 +1343,10 @@ function wnHeader(label, sub){ return WN_RULE + "\n" + label + "\n" + (sub ? sub
 function serializeSections(){
   var s = wnSections || {};
   var out = '';
+  if(s.transcript && s.transcript.trim()){
+    out += wnHeader("TODAY'S VISIT — AMBIENT TRANSCRIPT", "Verbatim recording of today's visit. Draft pulls today's findings from this; the raw transcript is not copied into the final note.");
+    out += s.transcript.replace(/\s+$/,'') + "\n\n";
+  }
   if(s.checklist && s.checklist.trim()){
     out += wnHeader("CHECK / ASK TODAY", "Answer under each line as you go. Removed automatically when you Draft.");
     out += s.checklist.replace(/\s+$/,'') + "\n\n";
@@ -1369,6 +1376,7 @@ function buildFocusSections(){
   var host = document.getElementById('focus-sections');
   var s = wnSections || {checklist:'',guide:'',note:''};
   var panels = [];
+  if(s.transcript && s.transcript.trim()) panels.push({key:'transcript',cls:'wn-transcript',title:'Today\'s visit — ambient transcript',sub:'The verbatim recording of today\'s visit. Draft pulls today\'s findings from this; the raw transcript is not copied into the final note.'});
   if(s.checklist && s.checklist.trim()) panels.push({key:'checklist',cls:'wn-checklist',title:'Check / ask today',sub:'Answer under each line as you go. Removed when you Draft.'});
   if(s.guide && s.guide.trim()) panels.push({key:'guide',cls:'wn-guide',title:'Psychotherapy guide',sub:'Optional. Jot what you did and how they responded. Removed when you Draft.'});
   if(s.coach && s.coach.trim()) panels.push({key:'coach',cls:'wn-coach',title:'Therapy coach',sub:'The therapeutic work you did this visit, from the coach. Becomes your psychotherapy add-on when you Draft.'});
@@ -2825,24 +2833,22 @@ function loadVaultTemplates(){
     var ov = document.getElementById('focus-overlay');
     var focusOpen = !!(ov && ov.classList.contains('open'));
     if(wnMode === 'sections'){
-      // Ambient + prep: the transcript belongs in the carried-note section, which Draft uses as the baseline.
-      var n = wnSections.note || '';
-      wnSections.note = n + (n && !/\n$/.test(n) ? '\n' : '') + text;
+      // The transcript is TODAY'S visit — give it its OWN labeled section at the TOP of the working
+      // note (not buried at the bottom of the carried-forward note), so the clinician sees where it
+      // landed and Draft treats it as today's primary source.
+      var t = wnSections.transcript || '';
+      wnSections.transcript = t + (t && !/\n$/.test(t) ? '\n' : '') + text;
       syncRawFromSections();
-      // If the full-screen sections view is open, push it into the visible note panel too, or the
-      // transcript stays invisible and is lost the next time the clinician edits a section.
-      if(focusOpen){
-        var noteTa = document.querySelector('#focus-sections .wn-ta[data-key="note"]');
-        if(noteTa){ noteTa.value = wnSections.note; wnFit(noteTa); }
-      }
+      // Rebuild the panels so the (possibly brand-new) Transcript panel appears and shows the text.
+      if(focusOpen){ try{ buildFocusSections(); }catch(e){} }
     } else {
       var raw=document.getElementById('raw'); if(!raw) return;
+      // Plain mode (e.g. an ambient intake): put the transcript at the TOP under a clear label, not
+      // appended to the bottom where it's easy to miss.
       var base = raw.value;
-      raw.value = base + (base && !/\n$/.test(base) ? '\n' : '') + text;
-      // If the full-screen working note is open (plain mode — e.g. an ambient intake), THAT textarea
-      // (focus-note) is the live surface the clinician sees and the one Draft reads. Mirror the
-      // transcript into it, or it stays invisible AND focusSyncBack() overwrites raw with the stale
-      // scaffold on Draft — the "transcribed, but Draft produced only the blank template" bug.
+      raw.value = "=== TODAY'S VISIT — AMBIENT TRANSCRIPT ===\n" + text + "\n\n" + base;
+      // If the full-screen working note is open, mirror into focus-note (the live surface Draft reads),
+      // or it stays invisible AND focusSyncBack() overwrites raw with the stale field on Draft.
       if(focusOpen && focusSourceId === 'raw'){
         var fn = document.getElementById('focus-note'); if(fn) fn.value = raw.value;
       }
