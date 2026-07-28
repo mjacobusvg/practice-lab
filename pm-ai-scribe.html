@@ -39,6 +39,8 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 .btn{background:var(--teal);color:#06222b;border:none;border-radius:8px;padding:12px 22px;font-size:.92rem;font-weight:700;cursor:pointer;margin-top:6px}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .btn-ghost{background:var(--navy);border:1px solid var(--rule);color:var(--cream);border-radius:8px;padding:10px 18px;font-size:.85rem;font-weight:600;cursor:pointer;margin-top:6px}
+@keyframes recblink{0%,100%{opacity:1}50%{opacity:.12}}
+.rec-live-dot{color:#ff4d4d;animation:recblink 1.1s ease-in-out infinite}
 .btn-copy{background:var(--navy);border:1px solid var(--rule);color:var(--cream);border-radius:6px;padding:5px 12px;font-size:.74rem;font-weight:600;cursor:pointer;float:right}
 .out{background:var(--navy-card);border:1px solid var(--rule);border-radius:var(--radius);padding:20px;margin-top:18px}
 .out h3{font-family:var(--font-display);color:var(--white);font-size:1.15rem;margin-bottom:12px}
@@ -2671,7 +2673,22 @@ function loadVaultTemplates(){
       setMicStatus('Talk normally — the green bar should move with your voice. If it stays flat, pick a different microphone above.');
     }catch(e){ setMicStatus('Could not open that microphone. '+(e.message||e), true); }
   }
-  function resetBtn(){ var b=document.getElementById('record-btn'); if(b) b.innerHTML='&#9679; Start recording'; setMicControls(false); }
+  function resetBtn(){ var b=document.getElementById('record-btn'); if(b) b.innerHTML='&#9679; Start recording'; setMicControls(false); tbpSetRecUI(false); }
+  // While a recording is live, flip the entry buttons (working-note header + main view) to a
+  // blinking-red "Recording…" so it's unmistakable the mic is hot, even away from the status banner.
+  function tbpSetRecUI(active){
+    ['focus-record','record-open-main','prep-record-btn'].forEach(function(id){
+      var b = document.getElementById(id); if(!b) return;
+      if(active){
+        if(b._recLabel == null) b._recLabel = b.innerHTML;
+        b.innerHTML = '<span class="rec-live-dot">&#9679;</span> Recording&hellip;';
+        b.style.borderColor = 'var(--red)'; b.style.color = 'var(--red)';
+      } else {
+        if(b._recLabel != null){ b.innerHTML = b._recLabel; b._recLabel = null; }
+        b.style.borderColor = 'var(--teal)'; b.style.color = 'var(--teal)';
+      }
+    });
+  }
   // Lock the mic picker/test while recording; unlock on every stop path (via resetBtn).
   function setMicControls(disabled){
     var s=document.getElementById('mic-select'); if(s) s.disabled=disabled;
@@ -2808,6 +2825,7 @@ function loadVaultTemplates(){
       startWavCapture(recordStream, wavCtx || null);
     }
     recording=true;
+    tbpSetRecUI(true);
     rawBaseline = document.getElementById('raw').value;
     setStatus(isTele ? 'Recording (you + patient). To finish: hit Stop recording here, OR Chrome’s green “Stop sharing” bar — either one ends the recording.' : 'Recording… speak normally. Hit Stop when done.');
   }
@@ -2815,6 +2833,7 @@ function loadVaultTemplates(){
   function doStop(){
     if(!recording) return;
     recording=false;
+    tbpSetRecUI(false);
     stopMeter();
     if(recMode==='wav'){
       // Build the WAV blob before stopTracks() closes a shared AudioContext.
