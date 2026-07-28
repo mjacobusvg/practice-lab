@@ -2833,7 +2833,7 @@ function loadVaultTemplates(){
       startWavCapture(recordStream, wavCtx || null);
     }
     recording=true;
-    tbpSetRecUI('recording');
+    tbpSetRecUI('recording'); tbpNotifyDesk('recording');
     rawBaseline = document.getElementById('raw').value;
     setStatus(isTele ? 'Recording (you + patient). To finish: hit Stop recording here, OR Chrome’s green “Stop sharing” bar — either one ends the recording.' : 'Recording… speak normally. Hit Stop when done.');
   }
@@ -2841,7 +2841,7 @@ function loadVaultTemplates(){
   function doStop(){
     if(!recording) return;
     recording=false;
-    tbpSetRecUI('transcribing');  // recording stopped → transcription begins; show it on the button until done
+    tbpSetRecUI('transcribing'); tbpNotifyDesk('transcribing');  // recording stopped → transcription begins; show it on the button + tab until done
     stopMeter();
     if(recMode==='wav'){
       // Build the WAV blob before stopTracks() closes a shared AudioContext.
@@ -2927,9 +2927,9 @@ function loadVaultTemplates(){
     // which Azure would reject as "invalid data". Catch it here with a clear message.
     if(recMode==='wav' && wavSamples < 1600){
       setStatus('The recorder did not capture any audio on this device — the mic engine did not start. Tell Michael exactly what device and browser you used.'+recTag, true);
-      resetBtn(); return;
+      tbpNotifyDesk('idle'); resetBtn(); return;
     }
-    if(!blob.size){ setStatus('No audio was captured.'+recTag, true); resetBtn(); return; }
+    if(!blob.size){ setStatus('No audio was captured.'+recTag, true); tbpNotifyDesk('idle'); resetBtn(); return; }
     setStatus('Uploading the recording…'+recTag);
     try{
       var up = await azureCall({ action:'upload-url', contentType: blob.type });
@@ -2952,11 +2952,13 @@ function loadVaultTemplates(){
       try{ if(window.tbpTxSave) window.tbpTxSave({ jobUrl: st.jobUrl, blobName: up.blobName }); }catch(e){}
       var transcript = await pollTranscript(st.jobUrl, up.blobName);
       try{ if(window.tbpTxClear) window.tbpTxClear(); }catch(e){}
-      if(!transcript){ setStatus('No speech was recognized in the recording.', true); resetBtn(); return; }
+      if(!transcript){ setStatus('No speech was recognized in the recording.', true); tbpNotifyDesk('idle'); resetBtn(); return; }
       appendTranscript(transcript);
       setStatus('Done — transcript added to your notes. Review, then Draft.');
+      tbpNotifyDesk('done');   // background tab shows the steady "ready to review" dot
     } catch(err){
       setStatus((err.message || 'Transcription failed.')+recTag, true);
+      tbpNotifyDesk('idle');
     }
     resetBtn();
   }
