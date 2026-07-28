@@ -303,6 +303,10 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
     <button class="btn-ghost" style="margin-top:0" onclick="closeFocus()">&larr; Exit full screen</button>
     <button class="btn" id="focus-draft">Draft my HPI &rarr;</button>
   </div>
+  <!-- Always-visible recording/transcription status. The modal's #record-status is hidden once
+       the clinician closes the setup to run the visit, so mirror it here in the working-note header
+       where they actually are — otherwise "Transcribing…"/errors fire into a box no one can see. -->
+  <div id="rec-hdr-status" style="display:none;margin:8px 0 0;padding:9px 13px;border-radius:8px;font-size:.85rem;font-weight:600;line-height:1.45"></div>
   <div id="focus-ref"></div>
   <div id="focus-sections" style="display:none"></div>
   <textarea id="focus-note" placeholder="Work on your note here, full screen. Fill each section as you go, then Draft my HPI."></textarea>
@@ -1246,7 +1250,7 @@ document.getElementById('neweval-setup-btn').addEventListener('click', async fun
     var btn = this; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Building scaffold&hellip;';
     try {
       var scaffold = await callAPI(newEvalScaffoldSystem(), [{role:'user', content: 'Produce the blank intake scaffold now.'}], 1500);
-      if(scaffold && scaffold.trim()){ raw.value = finalizeHpi(scaffold); renderMode(); }
+      if(scaffold && scaffold.trim()){ raw.value = finalizeHpi(scaffold); renderMode(); try{ if(window.tbpSaveDraft) window.tbpSaveDraft(); }catch(e){} }
     } catch(err){
       hint.innerHTML = '<span style="color:var(--red)">'+esc(err.message||err)+'</span>';
     } finally {
@@ -1276,6 +1280,7 @@ function renderPrep(j){
   wnMode = hasScaffold ? 'sections' : 'plain';
   document.getElementById('raw').value = hasScaffold ? serializeSections() : note;
   renderMode();  // reveal the working note (structured card in sections mode)
+  try{ if(window.tbpSaveDraft) window.tbpSaveDraft(); }catch(e){}   // durably persist the prepped note so a reload can't lose it
 
   var whatsIn = prepFoci.length ? 'Your checklist and psychotherapy guide are' : 'Your checklist is';
   var html = '<div class="out" style="margin-top:16px"><h3>You are set up for this visit</h3>'
@@ -2571,7 +2576,24 @@ function loadVaultTemplates(){
   // transcription is cheap, so no invite-list. Re-add an allowlist here if that changes.
   function ambientAllowed(){ return true; }
 
-  function setStatus(msg,isErr){ var el=document.getElementById('record-status'); if(!el)return; el.textContent=msg||''; el.style.color=isErr?'var(--red)':'var(--cream-dim)'; }
+  function setStatus(msg,isErr){
+    var el=document.getElementById('record-status'); if(el){ el.textContent=msg||''; el.style.color=isErr?'var(--red)':'var(--cream-dim)'; }
+    // Mirror to the always-visible working-note header banner, so recording/transcribing/done/error
+    // are seen even after the setup modal is closed (the telehealth flow, where the clinician leaves
+    // the scribe to run the visit in the video-call tab).
+    var hd=document.getElementById('rec-hdr-status');
+    if(hd){
+      if(msg){
+        var good = !isErr && /\b(done|added|recovered)\b/i.test(msg);
+        var accent = isErr ? 'var(--red)' : (good ? 'var(--green)' : 'var(--teal)');
+        hd.textContent = msg;
+        hd.style.display = 'block';
+        hd.style.color = isErr ? 'var(--red)' : 'var(--cream)';
+        hd.style.background = isErr ? 'rgba(248,113,113,0.12)' : (good ? 'rgba(52,211,153,0.12)' : 'rgba(42,171,184,0.12)');
+        hd.style.border = '1px solid ' + accent;
+      } else { hd.style.display='none'; hd.textContent=''; }
+    }
+  }
   function setMicStatus(msg,isErr){ var el=document.getElementById('mic-status'); if(!el)return; el.textContent=msg||''; el.style.color=isErr?'var(--red)':'var(--cream-dim)'; }
 
   // Populate the mic dropdown. Device LABELS are only exposed after mic permission has
