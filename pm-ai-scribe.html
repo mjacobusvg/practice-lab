@@ -185,11 +185,6 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
         </label>
         <div style="margin-top:8px"><button class="btn" id="prep-btn">Set me up for this visit &rarr;</button>
         <span class="hint" id="prep-hint" style="margin-left:8px"></span></div>
-        <!-- Record entry that stays reachable in prep mode: the working-notes block (which holds the
-             other record button) is hidden until Set me up builds it, so without this a prep hiccup
-             leaves a clinician who wants to RECORD with no visible way in. -->
-        <div style="margin-top:10px"><button type="button" id="prep-record-btn" class="btn-ghost" style="border-color:var(--teal);color:var(--teal)" onclick="openAmbientSetup()">&#9679; Record this visit (ambient)</button>
-        <span class="hint" style="margin-left:8px;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream-dim)">Prefer to record the visit? Start here.</span></div>
         <div id="prep-results"></div>
       </div>
 
@@ -198,6 +193,14 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
         <div class="hint" style="margin-top:6px;line-height:1.5"><strong style="color:var(--cream)">Start from your intake template.</strong> Open your new-patient scaffold full screen and fill each section live during the intake, then draft straight from it.</div>
         <button class="btn" id="neweval-setup-btn" style="margin-top:8px">Start my intake note (full screen) &rarr;</button>
         <span class="hint" id="neweval-hint" style="margin-left:8px"></span>
+      </div>
+
+      <!-- ALWAYS-VISIBLE record entry. Recording is available for every visit type and whether or not
+           Prep is on, so this shows the moment a visit type is chosen — NOT tucked inside the prep-only
+           or intake-only blocks (which is why New-patient-eval used to have no record button). -->
+      <div id="record-always" style="display:none;margin-top:14px">
+        <button type="button" id="record-main-btn" class="btn-ghost" style="border-color:var(--teal);color:var(--teal)" onclick="openAmbientSetup()">&#9679; Record this visit (ambient)</button>
+        <span class="hint" style="margin-left:8px;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream-dim)">In person or telehealth &mdash; start here anytime.</span>
       </div>
 
       <!-- Ambient recording setup — opened on demand from the "Record this visit" buttons (main
@@ -246,7 +249,6 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
         <label for="raw" id="raw-label" style="margin-top:16px">Paste an existing note or transcript <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional &mdash; you chart in the working window below)</span></label>
         <textarea id="raw" style="min-height:110px" placeholder="Optional. Already have a rough HPI or an outside transcript? Paste it here and the tool cleans it up. Otherwise skip this and open the working window &mdash; that's where you actually chart the visit."></textarea>
         <button type="button" id="raw-fullscreen-btn" class="btn" style="margin-top:10px" onclick="openFocus('raw')">Open the working window &#8599;</button>
-        <button type="button" id="record-open-main" class="btn-ghost" style="margin-top:10px;margin-left:8px;border-color:var(--teal);color:var(--teal)" onclick="openAmbientSetup()">&#9679; Record this visit (ambient)</button>
       </div>
       <div style="margin-top:16px">
         <button class="btn" id="generate">Draft my HPI &rarr;</button>
@@ -835,6 +837,9 @@ function renderMode(){
   // Prep controls (Set me up) depend on the PREP toggle, not the capture mode.
   show('prep-controls', prepOn && isFu);
   show('neweval-scaffold', prepOn && isNew);
+  // Record is available for EVERY visit type and prep state, so its button is always on the main
+  // screen once a visit type is chosen (fixes New-patient-eval having no visible record button).
+  show('record-always', !!visitType);
   var rl = document.getElementById('raw-label');
   if(rl){ rl.innerHTML = "Paste an existing note or transcript <span style=\"text-transform:none;font-weight:400;color:var(--cream-dim)\">(optional &mdash; a recording also lands here; you chart in the working window below)</span>"; }
 
@@ -2680,7 +2685,7 @@ function loadVaultTemplates(){
   // The whole lifecycle shows on the Record button itself — that's where the eye checks status.
   function tbpSetRecUI(state){
     var active = (state === 'recording' || state === 'transcribing');
-    ['focus-record','record-open-main','prep-record-btn'].forEach(function(id){
+    ['focus-record','record-main-btn'].forEach(function(id){
       var b = document.getElementById(id); if(!b) return;
       if(active){
         if(b._recLabel == null) b._recLabel = b.innerHTML;
