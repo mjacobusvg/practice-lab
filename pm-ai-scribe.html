@@ -2676,13 +2676,21 @@ function loadVaultTemplates(){
   function resetBtn(){ var b=document.getElementById('record-btn'); if(b) b.innerHTML='&#9679; Start recording'; setMicControls(false); tbpSetRecUI(false); }
   // While a recording is live, flip the entry buttons (working-note header + main view) to a
   // blinking-red "Recording…" so it's unmistakable the mic is hot, even away from the status banner.
-  function tbpSetRecUI(active){
+  // state: 'recording' (blinking red) | 'transcribing' (amber spinner) | anything falsy = idle.
+  // The whole lifecycle shows on the Record button itself — that's where the eye checks status.
+  function tbpSetRecUI(state){
+    var active = (state === 'recording' || state === 'transcribing');
     ['focus-record','record-open-main','prep-record-btn'].forEach(function(id){
       var b = document.getElementById(id); if(!b) return;
       if(active){
         if(b._recLabel == null) b._recLabel = b.innerHTML;
-        b.innerHTML = '<span class="rec-live-dot">&#9679;</span> Recording&hellip;';
-        b.style.borderColor = 'var(--red)'; b.style.color = 'var(--red)';
+        if(state === 'recording'){
+          b.innerHTML = '<span class="rec-live-dot">&#9679;</span> Recording&hellip;';
+          b.style.borderColor = 'var(--red)'; b.style.color = 'var(--red)';
+        } else {
+          b.innerHTML = '<span class="spinner"></span>Transcribing&hellip;';
+          b.style.borderColor = 'var(--amber)'; b.style.color = 'var(--amber)';
+        }
       } else {
         if(b._recLabel != null){ b.innerHTML = b._recLabel; b._recLabel = null; }
         b.style.borderColor = 'var(--teal)'; b.style.color = 'var(--teal)';
@@ -2825,7 +2833,7 @@ function loadVaultTemplates(){
       startWavCapture(recordStream, wavCtx || null);
     }
     recording=true;
-    tbpSetRecUI(true);
+    tbpSetRecUI('recording');
     rawBaseline = document.getElementById('raw').value;
     setStatus(isTele ? 'Recording (you + patient). To finish: hit Stop recording here, OR Chrome’s green “Stop sharing” bar — either one ends the recording.' : 'Recording… speak normally. Hit Stop when done.');
   }
@@ -2833,7 +2841,7 @@ function loadVaultTemplates(){
   function doStop(){
     if(!recording) return;
     recording=false;
-    tbpSetRecUI(false);
+    tbpSetRecUI('transcribing');  // recording stopped → transcription begins; show it on the button until done
     stopMeter();
     if(recMode==='wav'){
       // Build the WAV blob before stopTracks() closes a shared AudioContext.
