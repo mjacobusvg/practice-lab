@@ -72,7 +72,7 @@ async function sendToAccounts(accountIds, payload) {
 
     const inList = ids.map(function (i) { return String(i); }).join(',');
     const subs = await sbFetch(
-      'push_subscriptions?enabled=is.true&account_id=in.(' + inList + ')&select=id,endpoint,p256dh,auth',
+      'push_subscriptions?enabled=is.true&account_id=in.(' + inList + ')&select=id,endpoint,p256dh,auth,fail_count',
       'GET'
     );
     if (!subs || !subs.length) return { sent: 0, pruned: 0 };
@@ -83,6 +83,19 @@ async function sendToAccounts(accountIds, payload) {
       url: payload.url || 'https://thinkbeyondpractice.com/platform.html',
       tag: payload.tag || 'tbp'
     });
+
+    const nowIso = new Date().toISOString();
+    // Persist the push-service outcome per subscription so a device that silently
+    // never shows notifications (push ACCEPTED by the service, dropped by the OS)
+    // is diagnosable after the fact: last_status 201/204 = accepted (look at the
+    // phone's app notification settings / Doze), a 4xx/5xx + last_error = the real
+    // rejection. Best-effort; a logging write must never affect delivery.
+    function record(sub, ok, status, errMsg) {
+      var patch = ok
+        ? { last_status: (status || 201), last_error: null, last_sent_at: nowIso, fail_count: 0 }
+        : { last_status: (status || 0), last_error: String(errMsg || '').slice(0, 300), last_sent_at: nowIso, fail_count: (sub.fail_count || 0) + 1 };
+      return sbFetch('push_subscriptions?id=eq.' + sub.id, 'PATCH', patch, 'return=minimal').catch(function () {});
+    }
 
     let sent = 0;
     const dead = [];
@@ -97,12 +110,13 @@ async function sendToAccounts(accountIds, payload) {
         // batching for a device maintenance window. Without it, Android Doze holds
         // normal-urgency pushes for ~10-15 min when the phone is idle/locked.
         return wp.sendNotification(subscription, data, { TTL: 86400, urgency: 'high' })
-          .then(function () { sent++; })
+          .then(function (res) { sent++; return record(s, true, res && res.statusCode); })
           .catch(function (err) {
             const code = err && err.statusCode;
             // 404/410 => the push service says this endpoint is gone for good.
-            if (code === 404 || code === 410) dead.push(s.id);
-            else console.log('webpush send error (' + code + '):', err && err.message);
+            if (code === 404 || code === 410) { dead.push(s.id); return; }
+            console.log('webpush send error (' + code + '):', err && err.message);
+            return record(s, false, code, err && err.message);
           });
       }));
     }
