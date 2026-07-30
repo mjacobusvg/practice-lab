@@ -594,6 +594,7 @@ var therapyGuide = true;  // psychotherapy guide on/off — per-clinician (Vault
 // Merged-Note prefs (Vault; all optional, default off/empty). ROS is AI-assisted (patient-reported,
 // derivable); MSE is a pure macro insert (observed, never AI-fabricated); plan snippets feed the Plan.
 var rosOn = false, rosMacro = '', mseOn = false, mseMacro = '', planSnippets = '', planOn = false;
+var assessStyle = ''; // clinician's saved assessment STYLE (voice + skeleton), form only; blank = pure engine
 var teleStatement = ''; // clinician's telehealth attestation (Vault); inserted only on telehealth visits
 // Insert a block right after the HPI's opening (reason-for-visit) paragraph. Deterministic,
 // so it lands verbatim in the right spot and the AI never touches or strips it.
@@ -1669,7 +1670,7 @@ async function generateNote(inp, scope, opt){
   try {
     var assess = null, therapy = '';
     if(scope==='assessment' || scope==='both'){
-      assess = await window.NoteEngine.runAssessment(inp, opt.clinBlock || '', opt.lengthBlock || '');
+      assess = await window.NoteEngine.runAssessment(inp, opt.clinBlock || '', opt.lengthBlock || '', null, assessStyle);
     }
     if(scope==='both' && !opt.noTherapy){
       // Pass modality through as-is (empty when it was skipped because the therapy is already
@@ -1756,7 +1757,7 @@ async function rebuildAssessment(lengthChoice){
   var aEl = document.getElementById('assess-out'); var lockDx = (aEl && aEl.value.trim()) ? aEl.value.trim() : '';
   try {
     var lengthBlock = window.NoteEngine.buildLengthBlock(lengthChoice);
-    var assess = await window.NoteEngine.runAssessment(lastGen.inp, lastGen.opt.clinBlock || '', lengthBlock, lockDx);
+    var assess = await window.NoteEngine.runAssessment(lastGen.inp, lastGen.opt.clinBlock || '', lengthBlock, lockDx, assessStyle);
     lastGen.opt.lengthChoice = lengthChoice;
     lastGen.opt.lengthBlock = lengthBlock;
     renderAssessment(assess.assessment, assess.flags, lastGen.therapy, lastGen.opt.code, lastGen.plan);
@@ -2494,6 +2495,7 @@ function loadVaultTemplates(){
     rosOn = (lv.hpiRos==='on'); rosMacro = lv.hpiRosMacro || '';
     mseOn = (lv.hpiMse==='on'); mseMacro = lv.hpiMseMacro || '';
     planSnippets = lv.hpiPlanSnippets || '';
+    assessStyle = lv.hpiAssessTemplate || '';
     planOn = (lv.hpiPlanOn!==undefined) ? (lv.hpiPlanOn===true || lv.hpiPlanOn==='on') : !!(planSnippets && planSnippets.trim());
     teleStatement = lv.hpiTeleStatement || '';
     if(lv.legalName) clinicianName = firstNameFrom(lv.legalName);
@@ -2548,6 +2550,7 @@ function loadVaultTemplates(){
       rosOn = (d.data.hpiRos==='on'); rosMacro = d.data.hpiRosMacro || '';
       mseOn = (d.data.hpiMse==='on'); mseMacro = d.data.hpiMseMacro || '';
       planSnippets = d.data.hpiPlanSnippets || '';
+      assessStyle = d.data.hpiAssessTemplate || '';
       planOn = (d.data.hpiPlanOn!==undefined) ? (d.data.hpiPlanOn===true || d.data.hpiPlanOn==='on') : !!(planSnippets && planSnippets.trim());
       teleStatement = d.data.hpiTeleStatement || '';
       if(d.data.legalName) clinicianName = firstNameFrom(d.data.legalName);

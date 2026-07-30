@@ -385,19 +385,38 @@ function stripMd(s){
 // Chart-ready cleanup applied to every generated section.
 function chartClean(s){ return stripDashes(stripMd(s)); }
 
+// The clinician's saved assessment STYLE (voice + skeleton), form only. It governs how the
+// assessment reads and is laid out; it NEVER supplies clinical content and NEVER lets the model
+// drop the reasoning, the medical decision-making, the risk/safety content, or any diagnosis.
+// Blank = today's behavior (pure engine).
+function assessStyleBlock(style){
+  style = (style || '').trim();
+  if(!style) return '';
+  return '\n\n---\n\nCLINICIAN ASSESSMENT STYLE (FORM ONLY, NEVER CONTENT):\n\n' + style +
+    '\n\nFollow this clinician\'s assessment style for VOICE, OPENING, DIAGNOSIS-LIST FORMAT, ' +
+    'PARAGRAPH/SECTION ORDER, PHRASING, and LAYOUT. It governs FORM ONLY. It NEVER supplies clinical ' +
+    'content, and it NEVER authorizes dropping, shortening past legibility, or omitting the clinical ' +
+    'reasoning, the medical decision-making that supports the visit level, the risk/safety content, or ' +
+    'any diagnosis. If the style is terse or plain, keep ALL the MDM and reasoning but render it in that ' +
+    'voice and shape. The anti-fabrication, clinical-reasoning, and epistemic-calibration rules still ' +
+    'fully apply and OVERRIDE any conflicting stylistic cue. The style is a skeleton to fill with real ' +
+    'reasoning, not a licence to thin it.';
+}
+
 // Draft the assessment (ASSESS_SYS) then audit it (REVIEW_SYS). Returns {assessment, flags}.
 // Orchestration matches the standalone Note Builder exactly so both tools behave identically.
-async function runAssessment(inp, clinBlock, lengthBlock, lockDx){
+async function runAssessment(inp, clinBlock, lengthBlock, lockDx, assessStyle){
   clinBlock = clinBlock || ''; lengthBlock = lengthBlock || '';
+  var styleBlock = assessStyleBlock(assessStyle);
   // When re-rolling length in place, the diagnosis list is LOCKED to the prior generation so a
   // length change can never add, drop, reorder, or re-specify a diagnosis — only the prose changes.
   var lockBlock = '';
   if(lockDx && String(lockDx).trim()){
     lockBlock = '\n\n---\n\nDIAGNOSIS LIST IS LOCKED FOR THIS REGENERATION. The assessment below was already generated for THIS SAME visit at a different length. Reproduce its diagnosis list EXACTLY: the same conditions, the same ICD-10 codes, the same order, and the same severity/course specifiers, verbatim. You may NOT add, remove, reorder, or re-specify any diagnosis. This regeneration changes ONLY the amount of formulation prose to match the requested length. The length setting must never change the diagnosis list.\n\nPREVIOUSLY GENERATED ASSESSMENT (authoritative source of the locked diagnosis list):\n\n' + String(lockDx).trim();
   }
-  var assessText = await callAPI(ASSESS_SYS, [{role:'user', content: contextBlock(inp) + clinBlock + lengthBlock + lockBlock}], 4000);
+  var assessText = await callAPI(ASSESS_SYS, [{role:'user', content: contextBlock(inp) + clinBlock + lengthBlock + styleBlock + lockBlock}], 4000);
   if(!assessText) throw new Error('No assessment came back.');
-  var reviewMsg = 'ORIGINAL SOURCE:\n\n' + contextBlock(inp) + clinBlock + lengthBlock + lockBlock +
+  var reviewMsg = 'ORIGINAL SOURCE:\n\n' + contextBlock(inp) + clinBlock + lengthBlock + styleBlock + lockBlock +
     '\n\n---\n\nDRAFT ASSESSMENT:\n\n' + assessText;
   var reviewRaw = await callAPI(REVIEW_SYS, [{role:'user', content: reviewMsg}], 4000);
   try {
