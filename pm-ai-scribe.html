@@ -479,20 +479,23 @@ function tcoachSuggestTool(){
 <div class="modal-overlay" id="wizard">
   <div class="modal">
     <button class="modal-x" type="button" onclick="closeWizard()" aria-label="Close">&times;</button>
-    <h2>Set up your HPI template</h2>
+    <h2>Set up your note templates</h2>
     <p class="msub">Answer a couple of questions, paste your blank template, and paste one completed HPI you already like. This writes a reusable template into your Vault, in your structure and voice &mdash; so you never start from a blank box. No patient details from your sample are kept; only your style.</p>
 
     <div id="wiz-onb-banner" style="display:none"></div>
 
+    <div id="wiz-visit-block">
     <label>Which template are you setting up?</label>
     <div class="opts" id="wiz-visit-opts">
       <div class="opt sel" data-wizvisit="new_eval">New patient evaluation</div>
       <div class="opt" data-wizvisit="follow_up">Follow-up</div>
     </div>
+    </div>
 
     <label style="margin-top:16px">What do you want to do?</label>
     <div class="opts" id="wiz-mode-opts">
-      <div class="opt sel" data-wizmode="build">Set up a new template</div>
+      <div class="opt" data-wizmode="parse">Paste a full note &mdash; set up every section</div>
+      <div class="opt sel" data-wizmode="build">Set up my HPI template</div>
       <div class="opt" data-wizmode="refine">Adjust / troubleshoot my current one</div>
     </div>
 
@@ -535,6 +538,16 @@ function tcoachSuggestTool(){
       <label for="refine-badoutput" style="margin-top:16px">Paste an HPI it produced that came out wrong <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional)</span></label>
       <textarea id="refine-badoutput" style="min-height:90px" placeholder="Optional. Helps it see the problem. Processed transiently and never stored."></textarea>
       <button class="btn" id="refine-start">Work on it with me &rarr;</button>
+    </div>
+
+    <div id="wiz-parse-panel" style="display:none">
+      <div style="background:var(--navy);border:1px solid var(--rule);border-radius:8px;padding:12px 14px;margin-top:16px">
+        <div id="wiz-parse-title" style="color:var(--cream);font-weight:600;font-size:.9rem;margin-bottom:6px">We&rsquo;ll start with your New Patient Evaluation</div>
+        <div class="hint" style="line-height:1.6">Paste one <strong style="color:var(--cream)">complete</strong> new-patient note below &mdash; include <strong style="color:var(--cream)">every section you use</strong> (HPI, ROS, MSE, Assessment, Plan, and any history sections). We split it into editable pieces you review before saving. When it&rsquo;s saved, we&rsquo;ll set up your Follow-up. Your note is processed transiently (BAA-covered) and never stored &mdash; only your PHI-free structure and style are saved.</div>
+      </div>
+      <label for="wiz-parse-note" style="margin-top:16px">Paste a complete note (all sections) <span style="text-transform:none;font-weight:400;color:var(--teal)">(required)</span></label>
+      <textarea id="wiz-parse-note" style="min-height:200px" placeholder="Paste a full chart note you like, top to bottom: chief complaint / HPI, ROS, MSE, assessment, plan, and any history sections. Paste it as-is &mdash; you do NOT need to de-identify it. It is processed transiently (BAA-covered) and never stored; only your PHI-free structure and style are saved."></textarea>
+      <button class="btn" id="wiz-parse-start">Parse my note &rarr;</button>
     </div>
 
     <div id="wiz-err"></div>
@@ -1803,9 +1816,13 @@ bindOpts('wiz-mode-opts','data-wizmode', function(v){ wizMode=v; switchWizMode(v
 function switchWizMode(v){
   document.getElementById('wiz-build-panel').style.display = (v==='build') ? 'block' : 'none';
   document.getElementById('wiz-refine-panel').style.display = (v==='refine') ? 'block' : 'none';
+  var pp = document.getElementById('wiz-parse-panel'); if(pp) pp.style.display = (v==='parse') ? 'block' : 'none';
+  // The full-note flow drives eval-first on its own, so hide the free visit picker in parse mode.
+  var vb = document.getElementById('wiz-visit-block'); if(vb) vb.style.display = (v==='parse') ? 'none' : 'block';
   document.getElementById('wiz-result').innerHTML='';
   document.getElementById('wiz-err').innerHTML='';
   if(v==='refine') loadCurrentIntoRefine();
+  if(v==='parse') resetParseFlow();
 }
 function loadCurrentIntoRefine(){
   var el = document.getElementById('refine-current');
@@ -2147,6 +2164,148 @@ async function persistTemplate(text, visitKey){
   });
   var sd = await sr.json();
   return sd && sd.saved;
+}
+
+// ── Full-note parse: paste ONE complete note, split into per-section templates ──
+// HPI is per visit type; ROS/MSE/Assessment/Plan are shared macros saved once (on the eval pass).
+var parseVisit = 'new_eval';
+function resetParseFlow(){
+  parseVisit = 'new_eval';
+  var t = document.getElementById('wiz-parse-title'); if(t) t.innerHTML = 'We&rsquo;ll start with your New Patient Evaluation';
+  var n = document.getElementById('wiz-parse-note'); if(n) n.value = '';
+  var r = document.getElementById('wiz-result'); if(r) r.innerHTML = '';
+}
+function parseNoteSystem(visitLabel){
+  var s = "You are helping a psychiatric prescriber turn ONE completed chart note into REUSABLE, PHI-FREE section templates for their AI Scribe. You are given a full " + visitLabel + " note. Split it into the clinician's reusable templates for the five sections below and DE-IDENTIFY everything.\n\n";
+  s += "DE-IDENTIFICATION (critical): remove ALL patient-specific content, including names, ages, dates, quotes, specific symptoms and findings, specific histories, and the specific medications/doses unique to this patient. KEEP the clinician's reusable STRUCTURE and STYLE: section order, headings and labels, standard/boilerplate phrasing, canned 'associated symptoms include ...' menus, formatting, and voice. The result must contain NO patient information; it is a blank, reusable template.\n\n";
+  s += "PRODUCE EACH SECTION:\n";
+  s += "- hpi: the HPI as a reusable template/scaffold in the clinician's structure and voice. Keep their section headings and standard opening phrasing; where patient-specific narrative was, leave a short bracketed cue or an empty placeholder (e.g. \"[ ]\"). Turn this patient's listed symptoms into a POSITIVE symptom MENU/checklist phrased as a reference the draft picks from, never as asserted findings. Preserve the clinician's label placement exactly (inline 'Heading:' vs a standalone heading line). Any history sections present (PMH, family, social, etc.) may be kept as their headings within the HPI scaffold.\n";
+  s += "- ros: the clinician's standard Review of Systems as a reusable macro. Keep their categories, items, and (-)/(+) sign format, presented as their DEFAULT list (their standard negatives), not this one patient's positives.\n";
+  s += "- mse: the clinician's standard Mental Status Exam as a reusable macro: their normal/baseline exam wording, stripped of anything specific to this patient.\n";
+  s += "- assessment: the clinician's assessment STYLE ONLY, meaning how they open, their diagnosis-list format, paragraph order, phrasing, and typical length. This is a STYLE/SKELETON, NOT this patient's assessment: remove the specific diagnoses, the clinical reasoning, and the medical content, and capture only the FORM so the reasoning engine can fill it. Never keep patient-specific clinical reasoning or diagnoses.\n";
+  s += "- plan: the clinician's reusable Plan language and snippets: standard follow-up interval wording, crisis-line and after-hours language, monitoring/labs boilerplate. Remove this patient's specific medication changes and any patient specifics.\n\n";
+  s += "If a section is not present in the note, return an empty string for it. Never fabricate a section the note does not contain, and never invent clinical content. Do not add sections beyond the five.\n\n";
+  s += "Respond ONLY with raw JSON, no code fence:\n{\"hpi\":\"<template>\",\"ros\":\"<macro>\",\"mse\":\"<macro>\",\"assessment\":\"<style>\",\"plan\":\"<snippets>\"}";
+  return s;
+}
+function parseNoteUserMsg(note, visitLabel){
+  return "FULL " + visitLabel.toUpperCase() + " NOTE (transient; de-identify; extract reusable templates only):\n\n" + note;
+}
+async function runParse(note, visitLabel){
+  var raw = await callAPI(parseNoteSystem(visitLabel), [{role:'user', content: parseNoteUserMsg(note, visitLabel)}], 8000);
+  var j = safeJSON(raw);
+  if(!j || typeof j.hpi !== 'string'){ throw new Error('Could not read the note. Try again.'); }
+  return j;
+}
+(function(){
+  var start = document.getElementById('wiz-parse-start');
+  if(start) start.addEventListener('click', async function(){
+    if(tbpDemoBlock()) return;
+    var errEl = document.getElementById('wiz-err'); errEl.innerHTML='';
+    var note = (document.getElementById('wiz-parse-note').value||'').trim();
+    if(note.length < 40){ errEl.innerHTML='<div class="err">Paste a complete note first.</div>'; return; }
+    var btn=this; btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Parsing your note&hellip;';
+    try { renderParseReview(await runParse(note, 'new patient evaluation')); }
+    catch(err){ errEl.innerHTML='<div class="err">'+esc(err.message||err)+'</div>'; }
+    finally { btn.disabled=false; btn.innerHTML='Parse my note &rarr;'; }
+  });
+})();
+function parseField(id, label, val, ph){
+  return '<label style="margin-top:14px">'+label+'</label><textarea id="'+id+'" style="min-height:120px" placeholder="'+ph+'">'+esc(val||'')+'</textarea>';
+}
+function renderParseReview(p){
+  var isFu = (parseVisit==='follow_up');
+  var html = '<div class="out" style="margin-top:16px"><h3>Review your parsed sections</h3>'
+    + '<div class="hint" style="margin-bottom:8px">We split your note and removed the patient details. Edit anything, then save. '
+    + (isFu ? 'Your ROS, MSE, Assessment, and Plan are already set from your eval note, so this step saves only your follow-up HPI.'
+            : 'The HPI saves to your New Patient Eval template; ROS, MSE, Assessment, and Plan are shared across visit types.')
+    + '</div>';
+  html += parseField('parse-hpi', (isFu?'Follow-up':'New-patient')+' HPI template', p.hpi, 'Your HPI structure');
+  if(!isFu){
+    html += parseField('parse-ros', 'Review of Systems (ROS) macro', p.ros, 'Your standard ROS');
+    html += parseField('parse-mse', 'Mental Status Exam (MSE) macro', p.mse, 'Your standard MSE');
+    html += parseField('parse-assess', 'Assessment style (voice &amp; format; the engine keeps the reasoning)', p.assessment, 'Your assessment style');
+    html += parseField('parse-plan', 'Plan language &amp; snippets', p.plan, 'Your standard plan language');
+  }
+  html += '<button class="btn" id="parse-save" style="margin-top:14px">Save '+(isFu?'my follow-up HPI':'all to my Vault')+' &rarr;</button>'
+    + '<div class="hint" id="parse-save-hint" style="margin-top:6px"></div></div>';
+  document.getElementById('wiz-result').innerHTML = html;
+  document.getElementById('parse-save').addEventListener('click', saveParsedTemplates);
+}
+async function persistParsedTemplates(fields){
+  try {
+    var lv = JSON.parse(localStorage.getItem('tbp_vault')||'{}');
+    Object.keys(fields).forEach(function(k){ lv[k]=fields[k]; });
+    localStorage.setItem('tbp_vault', JSON.stringify(lv));
+    localStorage.setItem('credentialing-hub-profile', JSON.stringify(lv));
+  } catch(e){}
+  if(!userEmail) return false;
+  var current = {}, loadedOk=false;
+  try {
+    var r = await fetch('/.netlify/functions/user-tool-data', { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken}, body: JSON.stringify({ token:authToken, email:userEmail, toolId:'vault_profile', action:'load' }) });
+    if(r.ok){ var d=await r.json(); loadedOk=true; if(d && d.found && d.data) current=d.data; }
+  } catch(e){}
+  if(!loadedOk) return false;
+  Object.keys(fields).forEach(function(k){ current[k]=fields[k]; });
+  var sr = await fetch('/.netlify/functions/user-tool-data', { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken}, body: JSON.stringify({ token:authToken, email:userEmail, toolId:'vault_profile', action:'save', data:current }) });
+  var sd = await sr.json();
+  return sd && sd.saved;
+}
+async function saveParsedTemplates(){
+  var isFu = (parseVisit==='follow_up');
+  var hint = document.getElementById('parse-save-hint');
+  var btn = document.getElementById('parse-save');
+  var hpi = (document.getElementById('parse-hpi').value||'').trim();
+  if(!hpi){ if(hint) hint.innerHTML='<span style="color:var(--red)">The HPI section is empty.</span>'; return; }
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Saving&hellip;';
+  var fields = {};
+  fields[isFu ? 'hpiTemplateFollowup' : 'hpiTemplateEval'] = hpi;
+  if(!isFu){
+    var ros=(document.getElementById('parse-ros').value||'').trim();
+    var mse=(document.getElementById('parse-mse').value||'').trim();
+    var assess=(document.getElementById('parse-assess').value||'').trim();
+    var plan=(document.getElementById('parse-plan').value||'').trim();
+    if(ros) fields.hpiRosMacro=ros;
+    if(mse) fields.hpiMseMacro=mse;
+    if(assess) fields.hpiAssessTemplate=assess;
+    if(plan) fields.hpiPlanSnippets=plan;
+  }
+  try {
+    var ok = await persistParsedTemplates(fields);
+    if(isFu){ vaultTemplates.follow_up = hpi; }
+    else {
+      vaultTemplates.new_eval = hpi;
+      if(fields.hpiRosMacro){ rosMacro=fields.hpiRosMacro; }
+      if(fields.hpiMseMacro){ mseMacro=fields.hpiMseMacro; }
+      if(fields.hpiAssessTemplate){ assessStyle=fields.hpiAssessTemplate; }
+      if(fields.hpiPlanSnippets){ planSnippets=fields.hpiPlanSnippets; }
+    }
+    renderTemplateStatus();
+    if(!ok && hint){ hint.innerHTML='<span style="color:var(--amber)">Saved on this device; cloud save may have failed.</span>'; }
+    if(!isFu){ btn.innerHTML='&#10003; Eval saved'; showFollowupPrompt(); }
+    else { btn.innerHTML='&#10003; Saved'; if(hint) hint.textContent='All set. Your next note will use these.'; setTimeout(function(){ closeWizard(); }, 1200); }
+  } catch(err){
+    if(hint) hint.innerHTML='<span style="color:var(--red)">'+esc(err.message||err)+'</span>'; btn.disabled=false; btn.innerHTML='Save';
+  }
+}
+function showFollowupPrompt(){
+  var html = '<div class="out" style="margin-top:16px;border-color:var(--teal)"><h3>Now your Follow-up HPI</h3>'
+    + '<div class="hint" style="margin-bottom:10px">Your ROS, MSE, Assessment, and Plan are saved and shared across visit types. All that is left is your <strong style="color:var(--cream)">follow-up HPI structure</strong>, which usually reads differently from an eval. Paste a follow-up note and we will pull just the HPI.</div>'
+    + '<label>Paste a complete follow-up note</label>'
+    + '<textarea id="wiz-parse-note2" style="min-height:180px" placeholder="Paste a follow-up note. Only the HPI structure is used; your other sections are already set."></textarea>'
+    + '<div style="display:flex;gap:8px;margin-top:12px"><button class="btn" id="parse-fu-start" style="margin-top:0">Parse my follow-up &rarr;</button>'
+    + '<button class="btn-ghost" id="parse-fu-skip" style="margin-top:0">Skip for now</button></div></div>';
+  document.getElementById('wiz-result').innerHTML = html;
+  document.getElementById('parse-fu-skip').addEventListener('click', function(){ closeWizard(); });
+  document.getElementById('parse-fu-start').addEventListener('click', async function(){
+    var errEl = document.getElementById('wiz-err'); errEl.innerHTML='';
+    var note = (document.getElementById('wiz-parse-note2').value||'').trim();
+    if(note.length < 40){ errEl.innerHTML='<div class="err">Paste a complete follow-up note first.</div>'; return; }
+    parseVisit='follow_up';
+    var btn=this; btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Parsing&hellip;';
+    try { renderParseReview(await runParse(note, 'follow-up')); }
+    catch(err){ errEl.innerHTML='<div class="err">'+esc(err.message||err)+'</div>'; btn.disabled=false; btn.innerHTML='Parse my follow-up &rarr;'; }
+  });
 }
 
 // Save the clinician's working style to their Vault (per-clinician; never hardcoded).
