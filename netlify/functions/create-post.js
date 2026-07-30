@@ -151,6 +151,7 @@ exports.handler = async function (event) {
         reaction_count: 0,
         canonical_synthesis: p.synthesis ? String(p.synthesis).trim() || null : null,
         ce_candidate: !!p.ce_candidate,
+        free_visible: !!p.free_visible,   // admin flagged it readable by free-tier members
         post_type: 'discussion'
       };
       const inserted = await sb('forum_posts', 'POST', row, env);

@@ -2257,6 +2257,7 @@ function buildSidebar() {
   var h = '<div class="sb-item" data-key="home" onclick="showHome()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#127968;</span> Home</div>';
   h += '<div class="sb-item" data-key="saved" onclick="showSaved()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128278;</span> Saved</div>';
   h += '<div class="sb-item" data-key="following" onclick="showFollowing()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128220;</span> Following</div>';
+  h += '<div class="sb-item" data-key="free-reads" onclick="showFreeReads()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128275;</span> Free reads</div>';
   if (isAdmin()) h += '<div class="sb-item" data-key="analytics" onclick="showAnalytics()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128202;</span> Analytics</div>';
   if (isAdmin()) h += '<div class="sb-item" data-key="contacts" onclick="showContacts()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128203;</span> Contacts</div>';
   if (isAdmin()) h += '<div class="sb-item" data-key="broadcast" onclick="showBroadcast()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128227;</span> Broadcast</div>';
@@ -2391,6 +2392,14 @@ function showHome() {
   // "What you missed" since last visit (fills in async, once per session)
   h += '<div id="whats-new"></div>';
 
+  // Free-tier members can't browse the gated spaces, so surface every post that's
+  // been flagged "Free to read" right here on Home — no hunting through locked
+  // spaces. Only shown to non-paid members (paid members see everything anyway).
+  if (!isPaidMember()) {
+    h += '<div class="zone-header"><h2>&#128275; Free to read</h2><span style="font-size:0.72rem;color:var(--text-secondary)">Full posts open on your free plan &mdash; new ones added regularly</span></div>';
+    h += '<div class="post-list" id="home-free-reads"><div class="skel skel-row"></div><div class="skel skel-row"></div></div>';
+  }
+
   // Recent activity feed (readable cards — replaces the one-line ticker)
   h += '<div id="home-feed"></div>';
 
@@ -2439,6 +2448,55 @@ function showHome() {
   loadFeed('recent');
   if (savedCache === null) fetchSaved();
   loadWhatsNew();
+  if (!isPaidMember()) loadHomeFreeReads();
+}
+
+// Populate the Home "Free to read" strip (free members only) with the most recent
+// free_visible posts. Reuses the same public-read query + card renderer as the feed.
+async function loadHomeFreeReads() {
+  var el = document.getElementById('home-free-reads');
+  if (!el) return;
+  try {
+    var { data, error } = await SB.from('forum_posts')
+      .select('id, title, excerpt, comment_count, reaction_count, created_at, space_id, spaces(name, slug), author_id, accounts(name, avatar_url)')
+      .eq('free_visible', true)
+      .order('created_at', { ascending: false })
+      .limit(12);
+    if (error) throw error;
+    if (!data || !data.length) {
+      el.innerHTML = '<div style="padding:18px;text-align:center;color:var(--text-secondary);font-size:0.82rem">No free posts yet &mdash; check back soon.</div>';
+      return;
+    }
+    el.innerHTML = data.map(feedRowHtml).join('');
+  } catch (e) { console.error('loadHomeFreeReads:', e); if (el) el.innerHTML = ''; }
+}
+
+// Full "Free reads" view (from the sidebar): every post open to free members.
+async function showFreeReads() {
+  S.view = 'free-reads'; S.space = null; clearActive();
+  logView('/platform/free-reads');
+  var center = document.getElementById('center'); if (!center) return;
+  center.innerHTML = '<div class="post-full-back" onclick="showHome()">&larr; Home</div>'
+    + '<div class="space-head"><div class="space-accent" style="background:var(--teal)"></div><h1>&#128275; Free reads</h1>'
+    + '<p class="space-tagline">Full posts you can open on the free plan &mdash; no membership needed.</p></div>'
+    + '<div class="post-list" id="free-reads-list"><div class="skel skel-row"></div><div class="skel skel-row"></div></div>';
+  try {
+    var { data, error } = await SB.from('forum_posts')
+      .select('id, title, excerpt, comment_count, reaction_count, created_at, space_id, spaces(name, slug), author_id, accounts(name, avatar_url)')
+      .eq('free_visible', true)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    var el = document.getElementById('free-reads-list'); if (!el) return;
+    if (!data || !data.length) {
+      el.innerHTML = '<div style="padding:26px;text-align:center;color:var(--text-secondary);font-size:0.85rem">No free posts yet &mdash; check back soon.</div>';
+      return;
+    }
+    el.innerHTML = data.map(feedRowHtml).join('');
+  } catch (e) {
+    console.error('showFreeReads:', e);
+    var elx = document.getElementById('free-reads-list'); if (elx) elx.innerHTML = '<div style="padding:20px;color:var(--text-secondary);font-size:0.85rem">Could not load. Please refresh.</div>';
+  }
 }
 
 // "What you missed" banner: one lightweight check per session. Advances the
@@ -6740,6 +6798,7 @@ function openComposer(mode, post) {
     var sa = document.getElementById('cp-schedule-at'); if (sa) { sa.value = ''; sa.style.display = 'none'; }
     var ce = document.getElementById('cp-email'); if (ce) ce.checked = true;
     var cpn = document.getElementById('cp-pin'); if (cpn) cpn.checked = false;
+    var cpf = document.getElementById('cp-free'); if (cpf) cpf.checked = false;
     document.getElementById('cp-submit').textContent = 'Publish';
   } else {
     document.getElementById('composer-title').textContent = 'Michael\u2019s Take \u00b7 ' + (post.title.length > 50 ? post.title.slice(0,48)+'\u2026' : post.title);
@@ -6784,7 +6843,7 @@ async function openScheduledList() {
       h += '<div class="an-list">';
       items.forEach(function(s) {
         h += '<div class="an-row" style="cursor:default"><div class="an-row-title">' + esc(s.title) + '</div>';
-        h += '<div class="an-row-meta">' + new Date(s.publish_at).toLocaleString() + ' &middot; ' + esc(s.space) + (s.email_blast ? ' &middot; emails members' : '') + (s.pin ? ' &middot; pinned' : '') + '</div>';
+        h += '<div class="an-row-meta">' + new Date(s.publish_at).toLocaleString() + ' &middot; ' + esc(s.space) + (s.email_blast ? ' &middot; emails members' : '') + (s.pin ? ' &middot; pinned' : '') + (s.free_visible ? ' &middot; 🔓 free to read' : '') + '</div>';
         h += '<div style="margin-top:8px"><button class="tpl-btn locked" onclick="cancelScheduled(\'' + s.id + '\')">Cancel</button></div></div>';
       });
       h += '</div>';
@@ -6821,6 +6880,7 @@ async function submitComposer() {
     payload.space = document.getElementById('cp-space').value;
     payload.title = document.getElementById('cp-title').value.trim();
     payload.body = document.getElementById('cp-body').value.trim();
+    payload.free_visible = document.getElementById('cp-free').checked;
     if (!payload.title || !payload.body) { status.textContent = 'Title and body are required.'; status.className = 'composer-status err'; return; }
 
     // Scheduled path: hand off to the scheduler instead of publishing now.
@@ -6835,7 +6895,8 @@ async function submitComposer() {
         var sres = await fetch('/.netlify/functions/schedule-post', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token: getAuthToken(), action: 'create', space: payload.space, title: payload.title, body: payload.body,
-            publish_at: when.toISOString(), email_blast: document.getElementById('cp-email').checked, pin: document.getElementById('cp-pin').checked })
+            publish_at: when.toISOString(), email_blast: document.getElementById('cp-email').checked, pin: document.getElementById('cp-pin').checked,
+            free_visible: document.getElementById('cp-free').checked })
         });
         var sdata = await sres.json();
         if (!sres.ok || !sdata.ok) throw new Error(sdata.error || 'Could not schedule');
@@ -7671,6 +7732,7 @@ checkAuth();
       <div class="composer-row" style="flex-direction:column;align-items:flex-start;gap:8px;margin-top:8px">
         <label class="composer-check"><input type="checkbox" id="cp-email" checked> Email all members when it goes live</label>
         <label class="composer-check"><input type="checkbox" id="cp-pin"> Pin to the top of its space</label>
+        <label class="composer-check"><input type="checkbox" id="cp-free"> &#128275; Free to read (visible to free-tier members, not just paid)</label>
       </div>
       <div style="margin-top:6px"><a onclick="openScheduledList()" style="font-size:0.8rem;color:var(--teal);cursor:pointer">View scheduled posts &rarr;</a></div>
     </div>
