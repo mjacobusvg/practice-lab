@@ -566,6 +566,19 @@ function tcoachSuggestTool(){
       </div>
       <label for="wiz-parse-note" style="margin-top:16px">Paste a complete note (all sections) <span style="text-transform:none;font-weight:400;color:var(--teal)">(required)</span></label>
       <textarea id="wiz-parse-note" style="min-height:200px" placeholder="Paste a full chart note you like, top to bottom: chief complaint / HPI, ROS, MSE, assessment, plan, and any history sections. Paste it as-is &mdash; you do NOT need to de-identify it. It is processed transiently (BAA-covered) and never stored; only your PHI-free structure and style are saved."></textarea>
+      <div id="wiz-parse-bg" style="margin-top:14px;padding:12px 14px;background:var(--navy);border:1px solid var(--rule);border-radius:8px">
+        <div style="color:var(--cream);font-weight:600;font-size:.85rem;margin-bottom:4px">Background sections in your HPI</div>
+        <div class="hint" style="margin-bottom:8px">Most EHRs carry these forward on their own, so leaving them out keeps your HPI focused and faster. Check any you want kept <em>in your HPI</em>.</div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px 18px">
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:.83rem;color:var(--cream);cursor:pointer;text-transform:none;font-weight:400"><input type="checkbox" id="bg-pastmeds" checked style="width:auto;margin:0"> Past Medication trials</label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:.83rem;color:var(--cream);cursor:pointer;text-transform:none;font-weight:400"><input type="checkbox" id="bg-pmh" style="width:auto;margin:0"> Past Medical History</label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:.83rem;color:var(--cream);cursor:pointer;text-transform:none;font-weight:400"><input type="checkbox" id="bg-fhx" style="width:auto;margin:0"> Family History</label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:.83rem;color:var(--cream);cursor:pointer;text-transform:none;font-weight:400"><input type="checkbox" id="bg-soc" style="width:auto;margin:0"> Social History</label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:.83rem;color:var(--cream);cursor:pointer;text-transform:none;font-weight:400"><input type="checkbox" id="bg-meds" style="width:auto;margin:0"> Current Medications</label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:.83rem;color:var(--cream);cursor:pointer;text-transform:none;font-weight:400"><input type="checkbox" id="bg-hosp" style="width:auto;margin:0"> Hospitalizations</label>
+          <label style="display:inline-flex;align-items:center;gap:6px;font-size:.83rem;color:var(--cream);cursor:pointer;text-transform:none;font-weight:400"><input type="checkbox" id="bg-sub" style="width:auto;margin:0"> Substance Use History</label>
+        </div>
+      </div>
       <button class="btn" id="wiz-parse-start">Parse my note &rarr;</button>
     </div>
 
@@ -2217,11 +2230,13 @@ function resetParseFlow(){
   var n = document.getElementById('wiz-parse-note'); if(n) n.value = '';
   var r = document.getElementById('wiz-result'); if(r) r.innerHTML = '';
 }
-function parseNoteSystem(visitLabel){
+function parseNoteSystem(visitLabel, bg){
   var s = "You are helping a psychiatric prescriber turn ONE completed chart note into REUSABLE, PHI-FREE section templates for their AI Scribe. You are given a full " + visitLabel + " note. Split it into the clinician's reusable templates for the five sections below and DE-IDENTIFY everything.\n\n";
   s += "DE-IDENTIFICATION (critical): remove ALL patient-specific content, including names, ages, dates, quotes, specific symptoms and findings, specific histories, and the specific medications/doses unique to this patient. KEEP the clinician's reusable STRUCTURE and STYLE: section order, headings and labels, standard/boilerplate phrasing, canned 'associated symptoms include ...' menus, formatting, and voice. The result must contain NO patient information; it is a blank, reusable template.\n\n";
   s += "PRODUCE EACH SECTION:\n";
-  s += "- hpi: the HPI as a reusable template/scaffold in the clinician's structure and voice. Keep their section headings and standard opening phrasing; where patient-specific narrative was, leave a short bracketed cue or an empty placeholder (e.g. \"[ ]\"). Turn this patient's listed symptoms into a POSITIVE symptom MENU/checklist phrased as a reference the draft picks from, never as asserted findings. Preserve the clinician's label placement exactly (inline 'Heading:' vs a standalone heading line). Standard HISTORY sections present in the note (Past Medical History/PMHx, Family History/FHx, Social History/Soc Hx, Hospitalizations, Outpatient or Therapy History) are kept as headings but marked CONDITIONAL and CARRY-FORWARD: each renders ONLY if this visit documents something for it OR it is carried forward from a prior note (shown unchanged as continued background), and is omitted entirely when nothing is documented this visit and there is nothing to carry forward. Never re-ask or fabricate these. Add a short bracketed instruction under each such heading, e.g. '*[Include only if documented this visit or carried forward unchanged from a prior note; otherwise omit this heading entirely. Never fabricate.]*'. EXCEPTION: a Past Medications section (prior psychotropic trials and the patient's response) ALWAYS appears; mark it '*[Always include: prior psychotropic trials and response; carry forward unchanged if nothing new.]*'.\n";
+  s += "- hpi: the HPI as a reusable template/scaffold in the clinician's structure and voice. Keep their section headings and standard opening phrasing; where patient-specific narrative was, leave a short bracketed cue or an empty placeholder (e.g. \"[ ]\"). Turn this patient's listed symptoms into a POSITIVE symptom MENU/checklist phrased as a reference the draft picks from, never as asserted findings. Preserve the clinician's label placement exactly (inline 'Heading:' vs a standalone heading line).\n";
+  var inc = (bg && bg.length) ? bg.join('; ') : '(none - omit ALL background/history sections)';
+  s += "- BACKGROUND / HISTORY SECTIONS (clinician's choice): keep in the hpi template ONLY these background sections: " + inc + ". OMIT every other background or history section entirely (Past Medical History, Family History, Social History, Current Medications, Hospitalizations, Substance Use History, Outpatient/Therapy History): do NOT emit a heading or a placeholder for it, because the clinician's EHR carries those forward and they would only bloat the HPI and its tokens. For each background section you DO keep, mark it CONDITIONAL and CARRY-FORWARD: it renders only if documented this visit or carried forward unchanged from a prior note, and is omitted otherwise; never re-ask or fabricate. Use a bracket like '*[Include only if documented this visit or carried forward unchanged; otherwise omit. Never fabricate.]*'. IF 'Past Medications' is kept, it is the exception: ALWAYS-ON and AI-UPDATABLE. Always include the Past Medications list (prior psychotropic trials with response), carry it forward unchanged when nothing new, AND whenever the visit documents anything about past meds (a med stopped and the reason, a newly reported prior trial, a response, tolerance, or side effect), add it to the list with that detail. Mark it '*[Always include and keep updated: prior psychotropic trials with response/tolerance; carry forward unchanged if nothing new; add any med stopped this visit with the reason and the patient's response.]*'.\n";
   s += "- ros: the clinician's standard Review of Systems as a reusable macro. Keep their categories, items, and (-)/(+) sign format, presented as their DEFAULT list (their standard negatives), not this one patient's positives.\n";
   s += "- mse: the clinician's standard Mental Status Exam as a reusable macro: their normal/baseline exam wording, stripped of anything specific to this patient.\n";
   s += "- assessment: the clinician's assessment STYLE ONLY, meaning how they open, their diagnosis-list format, paragraph order, phrasing, and typical length. This is a STYLE/SKELETON, NOT this patient's assessment: remove the specific diagnoses, the clinical reasoning, and the medical content, and capture only the FORM so the reasoning engine can fill it. Never keep patient-specific clinical reasoning or diagnoses.\n";
@@ -2233,8 +2248,14 @@ function parseNoteSystem(visitLabel){
 function parseNoteUserMsg(note, visitLabel){
   return "FULL " + visitLabel.toUpperCase() + " NOTE (transient; de-identify; extract reusable templates only):\n\n" + note;
 }
-async function runParse(note, visitLabel){
-  var raw = await callAPI(parseNoteSystem(visitLabel), [{role:'user', content: parseNoteUserMsg(note, visitLabel)}], 8000);
+var parseBg = null; // background/history sections the clinician chose to keep in the HPI (captured on the eval pass, reused for follow-up)
+function getBgChoice(){
+  var map = [['bg-pastmeds','Past Medications (prior trials + response)'],['bg-pmh','Past Medical History'],['bg-fhx','Family History'],['bg-soc','Social History'],['bg-meds','Current Medications'],['bg-hosp','Hospitalizations'],['bg-sub','Substance Use History']];
+  var out=[]; map.forEach(function(m){ var el=document.getElementById(m[0]); if(el && el.checked) out.push(m[1]); });
+  return out;
+}
+async function runParse(note, visitLabel, bg){
+  var raw = await callAPI(parseNoteSystem(visitLabel, bg), [{role:'user', content: parseNoteUserMsg(note, visitLabel)}], 8000);
   var j = safeJSON(raw);
   if(!j || typeof j.hpi !== 'string'){ throw new Error('Could not read the note. Try again.'); }
   return j;
@@ -2247,7 +2268,7 @@ async function runParse(note, visitLabel){
     var note = (document.getElementById('wiz-parse-note').value||'').trim();
     if(note.length < 40){ errEl.innerHTML='<div class="err">Paste a complete note first.</div>'; return; }
     var btn=this; btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Parsing your note&hellip;';
-    try { renderParseReview(await runParse(note, 'new patient evaluation')); }
+    try { parseBg = getBgChoice(); renderParseReview(await runParse(note, 'new patient evaluation', parseBg)); }
     catch(err){ errEl.innerHTML='<div class="err">'+esc(err.message||err)+'</div>'; }
     finally { btn.disabled=false; btn.innerHTML='Parse my note &rarr;'; }
   });
@@ -2345,7 +2366,7 @@ function showFollowupPrompt(){
     if(note.length < 40){ errEl.innerHTML='<div class="err">Paste a complete follow-up note first.</div>'; return; }
     parseVisit='follow_up';
     var btn=this; btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Parsing&hellip;';
-    try { renderParseReview(await runParse(note, 'follow-up')); }
+    try { renderParseReview(await runParse(note, 'follow-up', parseBg)); }
     catch(err){ errEl.innerHTML='<div class="err">'+esc(err.message||err)+'</div>'; btn.disabled=false; btn.innerHTML='Parse my follow-up &rarr;'; }
   });
 }
