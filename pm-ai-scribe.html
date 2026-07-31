@@ -119,6 +119,11 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 .bubble{padding:10px 14px;border-radius:10px;margin-bottom:10px;font-size:.88rem;line-height:1.5;white-space:pre-wrap}
 .bubble.ai{background:var(--navy);border:1px solid var(--rule);color:var(--cream)}
 .bubble.me{background:var(--teal-glow);border:1px solid var(--teal);color:var(--white)}
+/* Consolidated template controls + styled hover cards */
+.tmpl-bar{margin-top:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.thint{position:relative;display:inline-block}
+.thint .thint-card{position:absolute;left:0;bottom:calc(100% + 8px);z-index:60;width:250px;max-width:78vw;padding:10px 12px;background:var(--navy);border:1px solid var(--teal);border-radius:8px;color:var(--cream);font-size:.78rem;line-height:1.45;font-weight:400;text-transform:none;letter-spacing:0;box-shadow:0 10px 28px rgba(0,0,0,.5);opacity:0;visibility:hidden;transform:translateY(4px);transition:opacity .14s ease,transform .14s ease;pointer-events:none}
+.thint:hover .thint-card,.thint:focus-within .thint-card{opacity:1;visibility:visible;transform:translateY(0)}
 </style>
 <script src="/auth-gate.js"></script>
 <script src="/note-engine.js"></script>
@@ -267,11 +272,25 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
       <div style="margin-top:16px">
         <button class="btn-ghost clearvisit-btn" id="new-patient" type="button" onclick="clearVisit()" style="border-color:var(--teal)">&#8635; New patient (clear notes)</button>
-        <button class="btn-ghost" id="open-wizard" type="button" style="margin-left:8px">Set up / edit my HPI templates</button>
-        <a href="/vault#hpi" class="btn-ghost" style="margin-left:8px;text-decoration:none;display:inline-block">Edit ROS, MSE, Plan &amp; Telehealth</a>
-        <a href="#" onclick="openOnboarding();return false;" class="hint" style="margin-left:10px;color:var(--teal)">Setup guide</a>
-        <a href="#" onclick="startScribeTour();return false;" class="hint" style="margin-left:10px;color:var(--teal)">&#9658; Show me how it works</a>
-        <div class="hint" style="margin-top:8px">Your Review of Systems, Mental Status Exam, Plan, and telehealth attestation live in your Vault (Note Templates tab) and attach to every note automatically.</div>
+      </div>
+      <div class="tmpl-bar">
+        <span class="hint" style="margin:0 2px 0 0;color:var(--cream)">Your templates:</span>
+        <span class="thint">
+          <button class="btn-ghost" type="button" onclick="openWizardParse()" style="margin:0">Redo my templates</button>
+          <span class="thint-card">Start fresh: paste a full note (or a blank template) and rebuild every section in your structure and voice.</span>
+        </span>
+        <span class="thint">
+          <a href="/vault#hpi" class="btn-ghost" style="margin:0;text-decoration:none;display:inline-block">Edit my templates</a>
+          <span class="thint-card">Open your saved templates and edit any section&rsquo;s text directly: HPI, ROS, MSE, Assessment, Plan, and Telehealth.</span>
+        </span>
+        <span class="thint">
+          <button class="btn-ghost" type="button" onclick="openWizardTroubleshoot()" style="margin:0">Troubleshoot</button>
+          <span class="thint-card">A note came out wrong? Paste it, tell me what&rsquo;s off, and I fix the template with you.</span>
+        </span>
+        <span class="thint">
+          <a href="#" onclick="startScribeTour();return false;" class="btn-ghost" style="margin:0;text-decoration:none;display:inline-block;color:var(--teal)">&#9658; Show me how it works</a>
+          <span class="thint-card">Take the guided walkthrough of the Scribe, hands-on, no reading required.</span>
+        </span>
       </div>
       <div id="err-box"></div>
     </div>
@@ -878,7 +897,7 @@ function renderTemplateStatus(){
   var t = vaultTemplates[visitType];
   var label = visitType==='new_eval' ? 'New patient evaluation' : 'Follow-up';
   if(t && t.trim()){
-    el.innerHTML = '<span class="ok">&#10003; Using your '+label+' template</span> <a href="#" onclick="openWizard();return false;">edit</a> &middot; <a href="#" onclick="openTemplateTest(\''+visitType+'\');return false;">test it on a sample</a>';
+    el.innerHTML = '<span class="ok">&#10003; Using your '+label+' template</span>';
   } else if((houseTemplates[visitType]||'').trim()){
     el.innerHTML = '<span class="ok">&#10003; Using our default '+label+' template</span> &mdash; a proven starting structure you can use as-is. <a href="#" onclick="openWizard();return false;">Make it your own</a>';
   } else {
@@ -1860,6 +1879,19 @@ function openWizardParse(){
   });
   switchWizMode('parse');
 }
+// Open the wizard straight into troubleshoot (refine) mode for the current visit type.
+function openWizardTroubleshoot(){
+  wiz.visit = visitType || 'follow_up';
+  document.querySelectorAll('#wiz-visit-opts .opt').forEach(function(o){
+    o.classList.toggle('sel', o.getAttribute('data-wizvisit')===wiz.visit);
+  });
+  document.getElementById('wizard').classList.add('open');
+  wizMode = 'refine';
+  document.querySelectorAll('#wiz-mode-opts .opt').forEach(function(o){
+    o.classList.toggle('sel', o.getAttribute('data-wizmode')==='refine');
+  });
+  switchWizMode('refine');
+}
 function closeWizard(){
   document.getElementById('wizard').classList.remove('open');
   // If the user X's out mid-onboarding, end the guided sequence (they can add the
@@ -1906,7 +1938,7 @@ function dismissSectionsReminder(){
   try{ localStorage.setItem('tbp_sections_reminder_off','1'); }catch(e){}
   var el=document.getElementById('sections-reminder'); if(el){ el.style.display='none'; el.innerHTML=''; }
 }
-document.getElementById('open-wizard').addEventListener('click', openWizard);
+(function(){ var _ow=document.getElementById('open-wizard'); if(_ow) _ow.addEventListener('click', openWizard); })();
 
 // ── First-run guided sequence: walk BOTH templates (new-eval, then follow-up) ──
 // Onboarding opens the wizard here instead of once, so a brand-new user is asked to
@@ -3935,8 +3967,8 @@ var TBP_TOUR = (function(){
      body:"Your psychotherapy add-on note — the ACT work documented separately from the E/M, in the structure the add-on needs. The time here reflects what you wrote in your note; if you didn't put one down, set it to the minutes you actually spent — that is what decides which add-on applies. The Coder confirms the code later; this just writes the note."},
     {postdraft:true, sel:'#demo-handoff', title:'From the note to the codes',
      body:"This finished note is exactly what flows to the Chart Audit and Coder — same patient, same visit. Open it there and watch it work: it catches a sleep contradiction in the note, lands on 99214 + 90833 with Modifier 25, and writes a chart-ready attestation."},
-    {sel:'#open-wizard', core:true, title:'Adjust anytime',
-     body:"Back on the main screen: change your template or sections whenever you like, right here. And the rule from the banner up top holds: review and sign every note yourself. You are always the clinician of record."}
+    {sel:'.tmpl-bar', core:true, title:'Adjust anytime',
+     body:"Back on the main screen: this is where your templates live. Redo them from a full note, edit any section directly, or troubleshoot a note that came out wrong, whenever you like. And the rule from the banner up top holds: review and sign every note yourself. You are always the clinician of record."}
   ];
   var i = 0, order = [], active = false, demoOpen = false, saved = null, deskMode = false, demoPdOpen = false, coachOpen = false, demoDrOpen = false, demoDraftTimer = null;
   function vis(el){ return el && el.offsetParent !== null; }
