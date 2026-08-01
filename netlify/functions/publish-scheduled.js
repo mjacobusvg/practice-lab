@@ -61,7 +61,8 @@ exports.handler = async function (event) {
           reaction_count: 0,
           post_type: 'discussion',
           is_pinned: !!s.pin,
-          free_visible: !!s.free_visible
+          free_visible: !!s.free_visible,
+          ce_candidate: !!s.ce_candidate   // carried from the scheduled row (ANCC needs-assessment evidence)
         };
         // Optional: publish under a pre-chosen id so a link can be handed out
         // (e.g. in an email) before the post goes live. Only when explicitly set.
