@@ -1819,6 +1819,8 @@
     <li><a href="/platform.html?join">Forum</a></li>
     <li><a href="https://thinkbeyondeducation.org" target="_blank">CE Courses</a></li>
     <li><a href="https://buy.stripe.com/cNicMYfkQb3gaQg1kgcEw01" target="_blank">Practice Toolkit</a></li>
+    <li><a href="/privacy-policy.html">Privacy Policy</a></li>
+    <li><a href="#" onclick="tbpOpenCookieSettings();return false;">Cookie Settings</a></li>
   </ul>
   <span class="footer-copy">&copy; 2026 Think Beyond Practice. All rights reserved.</span>
 </footer>
@@ -2054,24 +2056,39 @@
     }
     if(typeof fbq==='function'){ fbq('consent','grant'); }
   }
+  // Real withdrawal: pushing consent back to denied stops further analytics/ad
+  // storage and revokes the Meta Pixel. Lets someone who previously accepted
+  // turn it back off via "Cookie Settings" (GDPR: withdrawal as easy as consent).
+  function deny(){
+    if(typeof gtag==='function'){
+      gtag('consent','update',{
+        ad_storage:'denied',ad_user_data:'denied',
+        ad_personalization:'denied',analytics_storage:'denied'
+      });
+    }
+    if(typeof fbq==='function'){ fbq('consent','revoke'); }
+  }
   function store(v){ try{localStorage.setItem(KEY,v);}catch(e){} }
   function read(){ try{return localStorage.getItem(KEY);}catch(e){return null;} }
+  function hide(){ if(banner) banner.classList.remove('show'); }
+
+  // Re-open the banner from anywhere (footer "Cookie Settings" link) so a visitor
+  // can change or withdraw their choice at any time.
+  window.tbpOpenCookieSettings=function(){ if(banner) banner.classList.add('show'); };
+
+  // Attach button handlers unconditionally so the banner works every time it's
+  // reopened, not just on the first visit.
+  var acc=document.getElementById('tbp-cc-accept'), rej=document.getElementById('tbp-cc-reject');
+  if(acc) acc.addEventListener('click',function(){ grant(); store('granted'); hide(); });
+  if(rej) rej.addEventListener('click',function(){ deny(); store('denied'); hide(); });
 
   // If the browser sends a Global Privacy Control signal, treat as a decline and don't prompt.
-  if(window.__tbpGPC){ store('denied'); return; }
+  if(window.__tbpGPC){ store('denied'); deny(); return; }
 
   var prior=read();
-  if(prior==='granted'){ grant(); return; }
-  if(prior==='denied'){ return; }
-
-  // No prior choice: show the banner.
-  banner.classList.add('show');
-  document.getElementById('tbp-cc-accept').addEventListener('click',function(){
-    grant(); store('granted'); banner.classList.remove('show');
-  });
-  document.getElementById('tbp-cc-reject').addEventListener('click',function(){
-    store('denied'); banner.classList.remove('show');
-  });
+  if(prior==='granted'){ grant(); }        // re-apply their prior consent
+  else if(prior==='denied'){ deny(); }     // keep everything off
+  else if(banner){ banner.classList.add('show'); }  // no choice yet -> prompt
 })();
 </script>
 
