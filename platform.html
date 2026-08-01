@@ -3071,7 +3071,7 @@ async function viewPost(postId) {
     // Load comments (parent_comment_id drives the threaded tree below)
     var { data: comments, error: cErr } = await SB
       .from('forum_comments')
-      .select('id, author_id, parent_comment_id, body_html, body_plain, image_urls, created_at, accounts(name, avatar_url)')
+      .select('id, author_id, parent_comment_id, body_html, body_plain, image_urls, created_at, edited_at, accounts(name, avatar_url)')
       .eq('post_id', postId)
       .order('created_at', { ascending: true })
       .limit(200);
@@ -3248,6 +3248,8 @@ async function viewPost(postId) {
       var colors = ['#2aabb8','#c084fc','#fbbf24','#34d399','#fb923c','#60a5fa'];
       var color = colors[cName.length % colors.length];
       var canDelete = (myId && c.author_id === myId) || isAdmin();
+      var canEdit = canDelete; // author or admin may edit
+      try { (window.__commentPlain = window.__commentPlain || {})[c.id] = c.body_plain || ''; } catch (e) {}
       var cPic = (c.accounts && c.accounts.avatar_url)
         ? '<span style="width:28px;height:28px;border-radius:50%;overflow:hidden;flex-shrink:0;display:inline-block"><img src="' + esc(c.accounts.avatar_url) + '" alt="" loading="lazy" style="width:100%;height:100%;object-fit:cover"></span>'
         : '<div style="width:28px;height:28px;border-radius:50%;background:'+color+';display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--text-inverse)">' + cIni + '</div>';
@@ -3258,10 +3260,11 @@ async function viewPost(postId) {
       var cNameHtml = c.author_id
         ? '<strong class="clickable-author" style="color:var(--text-primary)" onclick="viewProfile(\'' + c.author_id + '\')">' + esc(cName) + '</strong>'
         : '<strong style="color:var(--text-primary)">' + esc(cName) + '</strong>';
-      out += '<div style="font-size:0.75rem;color:var(--text-secondary);flex:1">' + cNameHtml + ' &middot; ' + formatDate(c.created_at) + '</div>';
+      out += '<div style="font-size:0.75rem;color:var(--text-secondary);flex:1">' + cNameHtml + ' &middot; ' + formatDate(c.created_at) + (c.edited_at ? ' &middot; <span title="Edited">edited</span>' : '') + '</div>';
+      if (canEdit) out += '<button onclick="editComment(\'' + c.id + '\',\'' + post.id + '\')" title="Edit" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:0.72rem;padding:2px 4px">Edit</button>';
       if (canDelete) out += '<button onclick="deleteComment(\'' + c.id + '\',\'' + post.id + '\')" title="Delete" style="background:none;border:none;color:var(--text-secondary);cursor:pointer;font-size:0.72rem;padding:2px 4px">Delete</button>';
       out += '</div>';
-      out += '<div class="rich-body" style="font-size:0.84rem;color:var(--text-primary);line-height:1.6;word-wrap:break-word">' + (c.body_html || esc(c.body_plain || '')) + '</div>';
+      out += '<div class="rich-body" id="cbody-' + c.id + '" style="font-size:0.84rem;color:var(--text-primary);line-height:1.6;word-wrap:break-word">' + (c.body_html || esc(c.body_plain || '')) + '</div>';
       var cImgs = Array.isArray(c.image_urls) ? c.image_urls : [];
       if (cImgs.length) {
         out += '<div class="post-gallery" style="margin-top:10px">';
@@ -3380,6 +3383,40 @@ async function submitComment(postId) {
   } catch (e) {
     if (btn) { btn.disabled = false; btn.textContent = 'Post comment'; }
     if (errEl) { errEl.style.display = 'block'; errEl.textContent = e.message; }
+  }
+}
+
+// Edit a comment/reply (author or admin). Swaps the body for an inline editor
+// prefilled with the current text; Save patches it, Cancel re-renders the thread.
+function editComment(commentId, postId) {
+  var node = document.getElementById('cbody-' + commentId);
+  if (!node) return;
+  var cur = (window.__commentPlain && window.__commentPlain[commentId]) || '';
+  node.innerHTML =
+    '<textarea id="cedit-' + commentId + '" style="width:100%;min-height:96px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:0.84rem;line-height:1.5;resize:vertical"></textarea>' +
+    '<div style="display:flex;gap:8px;margin-top:6px"><button class="btn-primary" style="padding:6px 14px;font-size:0.8rem" onclick="saveCommentEdit(\'' + commentId + '\',\'' + postId + '\')">Save</button>' +
+    '<button class="btn-ghost" style="padding:6px 14px;font-size:0.8rem" onclick="viewPost(\'' + postId + '\')">Cancel</button>' +
+    '<span class="composer-status" id="cedit-status-' + commentId + '"></span></div>';
+  var ta = document.getElementById('cedit-' + commentId);
+  if (ta) { ta.value = cur; ta.focus(); ta.setSelectionRange(cur.length, cur.length); }
+}
+
+async function saveCommentEdit(commentId, postId) {
+  var ta = document.getElementById('cedit-' + commentId); if (!ta) return;
+  var body = ta.value.trim();
+  var st = document.getElementById('cedit-status-' + commentId);
+  if (!body) { if (st) { st.textContent = 'Cannot be empty.'; st.className = 'composer-status err'; } return; }
+  if (st) { st.textContent = 'Saving…'; st.className = 'composer-status'; }
+  try {
+    var res = await fetch('/.netlify/functions/create-comment', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), action: 'edit', comment_id: commentId, body: body })
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not save');
+    await viewPost(postId);
+  } catch (e) {
+    if (st) { st.textContent = e.message || 'Could not save.'; st.className = 'composer-status err'; }
   }
 }
 

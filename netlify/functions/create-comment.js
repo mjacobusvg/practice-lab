@@ -167,6 +167,33 @@ exports.handler = async function (event) {
       };
     }
 
+    if (p.action === 'edit') {
+      const commentId = String(p.comment_id || '').trim();
+      const raw = String(p.body || '').trim();
+      if (!commentId) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'comment_id required' }) };
+      if (!raw) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Comment cannot be empty' }) };
+      if (raw.length > MAX_COMMENT_CHARS) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Comment is too long' }) };
+
+      const rows = await sb('forum_comments?id=eq.' + encodeURIComponent(commentId) + '&select=id,author_id,post_id&limit=1', 'GET');
+      if (!rows || !rows.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'Comment not found' }) };
+      const target = rows[0];
+      // Only the comment's author or an admin may edit it.
+      if (target.author_id !== me.id && !me.is_admin) {
+        return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Not allowed' }) };
+      }
+
+      const mentioned = await resolveMentions(p.mention_ids);
+      const bodyHtml = linkifyMentions(toRichHtml(raw), mentioned);
+      const updated = await sb('forum_comments?id=eq.' + encodeURIComponent(commentId), 'PATCH',
+        { body_plain: raw, body_html: bodyHtml, edited_at: new Date().toISOString() }, 'return=representation');
+
+      // Re-index the edited comment into Ask the Archive (best-effort).
+      try { await require('./_lib/embed').triggerEmbedComment(commentId); } catch (e) { /* best-effort */ }
+
+      const c = (updated && updated[0]) || {};
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, comment: { id: commentId, body_html: c.body_html, body_plain: c.body_plain, edited_at: c.edited_at } }) };
+    }
+
     if (p.action === 'delete') {
       const commentId = String(p.comment_id || '').trim();
       if (!commentId) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'comment_id required' }) };
