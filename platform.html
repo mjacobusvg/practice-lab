@@ -3063,7 +3063,7 @@ async function viewPost(postId) {
     // Load post
     var { data: post, error } = await SB
       .from('forum_posts')
-      .select('id, author_id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, is_locked, image_urls, poll, attachments, canonical_synthesis, ce_candidate, free_visible, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name))')
+      .select('id, author_id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, edited_at, is_locked, image_urls, poll, attachments, canonical_synthesis, ce_candidate, free_visible, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name))')
       .eq('id', postId)
       .single();
     if (error) throw error;
@@ -3080,6 +3080,8 @@ async function viewPost(postId) {
     // Load reactions for the post and every loaded comment in two small reads
     // (reactions has a public SELECT policy; writes go through the endpoint).
     var myId = (S.user && S.user.id) || null;
+    window.__currentPost = post;   // stash for edit/react/synthesis actions
+    var canEditPost = ((myId && post.author_id === myId) || isAdmin());
     var commentIds = (comments || []).map(function(c) { return c.id; });
     var postReacts = [];
     try {
@@ -3109,12 +3111,13 @@ async function viewPost(postId) {
         h += '<button class="save-btn' + (following ? ' on' : '') + '" id="follow-btn" onclick="toggleFollow(\'post\',\'' + post.id + '\',\'follow-btn\')">' + (following ? '&#10003; Following' : '+ Follow thread') + '</button>';
       }
       h += '<button class="save-btn' + (isSaved ? ' on' : '') + '" id="save-btn" onclick="toggleSave(\'' + post.id + '\')">' + (isSaved ? '&#128278; Saved' : '&#128278; Save') + '</button>';
+      if (canEditPost) h += '<button class="save-btn" id="editpost-btn" onclick="editPost()">&#9998; Edit</button>';
       h += '</div>';
     }
     h += '</div>';
 
     // Title
-    h += '<h1 style="font-family:\'DM Serif Display\',serif;font-size:1.4rem;color:var(--text-heading);margin-bottom:12px;line-height:1.3">' + esc(post.title) + '</h1>';
+    h += '<h1 id="post-title-h1" style="font-family:\'DM Serif Display\',serif;font-size:1.4rem;color:var(--text-heading);margin-bottom:12px;line-height:1.3">' + esc(post.title) + '</h1>';
 
     // Author
     var authorName = post.accounts ? post.accounts.name : 'Unknown';
@@ -3129,6 +3132,7 @@ async function viewPost(postId) {
     h += '<div style="font-size:0.8rem;color:var(--text-secondary)"><strong style="color:var(--text-primary)">' + esc(authorName) + '</strong>';
     if (authorCreds) h += ' <span style="font-size:0.7rem;opacity:0.7">' + esc(authorCreds) + '</span>';
     h += '<br>' + formatDate(post.created_at);
+    if (post.edited_at) h += ' &middot; <span title="Edited">edited</span>';
     if (post.spaces) h += ' &middot; ' + esc(post.spaces.name);
     h += '</div></div>';
 
@@ -3156,7 +3160,7 @@ async function viewPost(postId) {
     var canComment = isPaidMember() || !!post.free_visible;
 
     // Body
-    h += '<div class="post-prose">';
+    h += '<div class="post-prose" id="post-body">';
     h += post.body_html || esc(post.body_plain || post.excerpt || '');
     h += '</div>';
 
@@ -3418,6 +3422,46 @@ async function saveCommentEdit(commentId, postId) {
   } catch (e) {
     if (st) { st.textContent = e.message || 'Could not save.'; st.className = 'composer-status err'; }
   }
+}
+
+// Edit a post (author or admin). Swaps the title + body for an inline editor.
+// Text-only: images/attachments/poll on the post are preserved (the server never
+// touches them on edit), so revising wording can't wipe them.
+function editPost() {
+  var post = window.__currentPost; if (!post) return;
+  var h1 = document.getElementById('post-title-h1'); if (h1) h1.style.display = 'none';
+  var eb = document.getElementById('editpost-btn'); if (eb) eb.style.display = 'none';
+  var body = document.getElementById('post-body'); if (!body) return;
+  body.className = '';
+  body.innerHTML =
+    '<label style="display:block;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-secondary);margin-bottom:5px">Title</label>' +
+    '<input id="epost-title" type="text" maxlength="200" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:0.95rem;margin-bottom:14px">' +
+    '<label style="display:block;font-size:0.68rem;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-secondary);margin-bottom:5px">Post</label>' +
+    '<textarea id="epost-body" style="width:100%;min-height:260px;padding:11px 13px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:0.9rem;line-height:1.6;resize:vertical"></textarea>' +
+    '<div style="display:flex;gap:8px;align-items:center;margin-top:10px"><button class="btn-primary" onclick="savePostEdit()">Save changes</button>' +
+    '<button class="btn-ghost" onclick="viewPost(\'' + post.id + '\')">Cancel</button>' +
+    '<span class="composer-status" id="epost-status"></span></div>';
+  var ti = document.getElementById('epost-title'); if (ti) ti.value = post.title || '';
+  var ta = document.getElementById('epost-body'); if (ta) { ta.value = post.body_plain || ''; ta.focus(); }
+  window.scrollTo(0, 0);
+}
+
+async function savePostEdit() {
+  var post = window.__currentPost; if (!post) return;
+  var ti = document.getElementById('epost-title'), ta = document.getElementById('epost-body');
+  var st = document.getElementById('epost-status');
+  var title = ti ? ti.value.trim() : '', body = ta ? ta.value.trim() : '';
+  if (!title || !body) { if (st) { st.textContent = 'Title and post are required.'; st.className = 'composer-status err'; } return; }
+  if (st) { st.textContent = 'Saving…'; st.className = 'composer-status'; }
+  try {
+    var res = await fetch('/.netlify/functions/create-member-post', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), action: 'edit', post_id: post.id, title: title, body: body })
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not save');
+    viewPost(post.id);
+  } catch (e) { if (st) { st.textContent = e.message || 'Could not save.'; st.className = 'composer-status err'; } }
 }
 
 // Delete a comment (author or admin). Reloads the thread on success.

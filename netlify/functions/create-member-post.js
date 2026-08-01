@@ -111,6 +111,39 @@ exports.handler = async function (event) {
   const email = String(session.claims.email || '').trim().toLowerCase();
   if (!email || email.indexOf('@') === -1) return { statusCode: 401, headers, body: JSON.stringify({ ok: false, error: 'Sign in first' }) };
 
+  // ── EDIT an existing member post (author or admin) ────────────────────────
+  // Text-only by design: updates title/body/excerpt and stamps edited_at, and
+  // deliberately does NOT touch image_urls / attachments / poll, so revising the
+  // wording can never silently wipe a post's images or an in-progress poll.
+  if (p.action === 'edit') {
+    const postId = String(p.post_id || '').trim();
+    const eTitle = String(p.title || '').trim();
+    const eBody = String(p.body || '').trim();
+    if (!postId) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'post_id required' }) };
+    if (!eTitle) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Title required' }) };
+    if (!eBody) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Body required' }) };
+    if (eTitle.length > MAX_TITLE_CHARS) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Title is too long' }) };
+    if (eBody.length > MAX_BODY_CHARS) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Post is too long' }) };
+    try {
+      const accts = await sb('accounts?email=eq.' + encodeURIComponent(email) + '&select=id,is_admin&limit=1', 'GET');
+      if (!accts || !accts.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'No account found.' }) };
+      const meId = accts[0].id, isAdmin = !!accts[0].is_admin;
+      const rows = await sb('forum_posts?id=eq.' + encodeURIComponent(postId) + '&select=id,author_id&limit=1', 'GET');
+      if (!rows || !rows.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'Post not found' }) };
+      if (rows[0].author_id !== meId && !isAdmin) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Not allowed' }) };
+
+      const mentioned = await resolveMentions(p.mention_ids);
+      const bodyHtml = linkifyMentions(toRichHtml(eBody), mentioned);
+      const excerpt = eBody.replace(/\s+/g, ' ').slice(0, 200);
+      await sb('forum_posts?id=eq.' + encodeURIComponent(postId), 'PATCH',
+        { title: eTitle, body_plain: eBody, body_html: bodyHtml, excerpt: excerpt, edited_at: new Date().toISOString() });
+      try { await require('./_lib/embed').triggerEmbed(postId); } catch (e) { /* best-effort */ }
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, post_id: postId }) };
+    } catch (e) {
+      return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: e.message }) };
+    }
+  }
+
   const space = String(p.space || '').trim();
   const title = String(p.title || '').trim();
   const rawBody = String(p.body || '').trim();
