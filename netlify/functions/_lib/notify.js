@@ -155,7 +155,22 @@ async function notifyNewPost(post, actor, opts) {
     if (!post || !post.id) return;
     const actorId = (actor && actor.id) || '00000000-0000-0000-0000-000000000000';
     const actorName = (actor && actor.name) || 'A member';
-    const recips = await sb('accounts?' + MEMBER_TIERS + '&id=neq.' + actorId + '&select=id,email,notify_email_posts,notify_push_posts', 'GET');
+
+    // Audience. Gated posts go to paid tiers only. A post opened to free members
+    // (free_visible) is also announced to the free tier, so free members hear
+    // about every post they're allowed to read instead of only finding it in
+    // Free Reads. The caller may pass free_visible on the post; if not, look it up.
+    let tierFilter = MEMBER_TIERS;
+    try {
+      let isFree = !!(post && post.free_visible);
+      if (post.free_visible === undefined) {
+        const prow = await sb('forum_posts?id=eq.' + encodeURIComponent(post.id) + '&select=free_visible', 'GET');
+        isFree = !!(prow && prow[0] && prow[0].free_visible);
+      }
+      if (isFree) tierFilter = 'tier=in.(free,forum,full)';
+    } catch (e) { /* on any lookup failure, fall back to paid tiers only */ }
+
+    const recips = await sb('accounts?' + tierFilter + '&id=neq.' + actorId + '&select=id,email,notify_email_posts,notify_push_posts', 'GET');
     if (!recips || !recips.length) return;
 
     const rows = recips.map(function (r) {

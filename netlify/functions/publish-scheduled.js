@@ -72,7 +72,7 @@ exports.handler = async function (event) {
 
         try {
           await notifyNewPost(
-            { id: postId, title: s.title, author_id: MICHAEL_ACCOUNT_ID },
+            { id: postId, title: s.title, author_id: MICHAEL_ACCOUNT_ID, free_visible: !!s.free_visible },
             { id: MICHAEL_ACCOUNT_ID, name: 'Michael Van Gelder' },
             { emailBlast: s.email_blast !== false }
           );

@@ -158,7 +158,7 @@ exports.handler = async function (event) {
       // Notify all members (in-app) and email opted-in members — admin post.
       try {
         await notifyNewPost(
-          { id: inserted[0].id, title: title, author_id: MICHAEL_ACCOUNT_ID },
+          { id: inserted[0].id, title: title, author_id: MICHAEL_ACCOUNT_ID, free_visible: !!(inserted[0] && inserted[0].free_visible) },
           { id: MICHAEL_ACCOUNT_ID, name: 'Michael Van Gelder' },
           { emailBlast: true }
         );
