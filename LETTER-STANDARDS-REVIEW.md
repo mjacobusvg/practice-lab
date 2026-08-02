@@ -88,9 +88,9 @@ The database is the source of truth. Prior hand-notes were behind the table.
   uses active-voice "I do not recommend psychiatric work restrictions as of
   {{RETURN_DATE}}," and keeps the job-demands carve-out fused into the scope line. Accepted
   as final on 2026-08-02.
+- `return_to_work/restricted_duty` (v1.1)
 
 ### Still v1.0 active (not yet through editorial review)
-- `return_to_work/restricted_duty`
 - `workplace_accommodation/standard`
 - `academic_accommodation/standard`
 - `continuation_of_care/standard`
@@ -145,6 +145,20 @@ Decisions locked in during review, kept here so the reasoning is not lost.
   service clinically inadvisable"); softened the case-material concern to be less categorical
   (now "Potential case material may worsen symptoms"); recorded an editorial_notes block. This
   also resolves the prior RTW-consistency gap (contact line and missing editorial_notes).
+
+### Return to Work, Restricted Duty (return_to_work/restricted_duty, v1.1)
+- Sibling of Full Duty. Removed clearance language for the active-voice "I recommend the
+  following temporary work limitations as of {{RETURN_DATE}}," and reused the Full Duty scope
+  line verbatim so the pair matches.
+- Reframed "accommodations/restrictions" as "temporary work limitations" to keep this letter
+  in the return-to-work lane. Renamed the list placeholder ACCOMMODATIONS_LIST to
+  WORK_LIMITATIONS_LIST; its hint routes environmental, remote-work, and ongoing scheduling
+  accommodations to the Workplace Accommodation letter and forbids stating treatment frequency.
+- Dropped the ongoing/indefinite duration option (kept only a set date or pending clinical
+  reassessment). Cut the contact boilerplate and the redundant clinical-observations sentence.
+  Removed the unused PATIENT_FIRST_NAME placeholder.
+- Open front-end item (optional): a visible banner above the limitations input reinforcing the
+  route-to-ADA boundary. The guidance currently rides in the field hint and description only.
 
 ## Hard rules (repo-wide, but they bite here)
 
