@@ -3063,7 +3063,7 @@ async function viewPost(postId) {
     // Load post
     var { data: post, error } = await SB
       .from('forum_posts')
-      .select('id, author_id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, edited_at, is_locked, image_urls, poll, attachments, canonical_synthesis, ce_candidate, free_visible, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name))')
+      .select('id, author_id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, edited_at, is_locked, image_urls, poll, attachments, canonical_synthesis, ce_candidate, free_visible, members_teaser, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name))')
       .eq('id', postId)
       .single();
     if (error) throw error;
@@ -3195,6 +3195,21 @@ async function viewPost(postId) {
       h += '<div class="poll" id="poll-' + post.id + '" data-post="' + post.id + '">' + pollHtml(post.id, post.poll, null, {}, 0) + '</div>';
     }
 
+    // Members-only "second half" (true-locked). Paid members get a placeholder we
+    // fill from the gated endpoint after render; free/anon see a teaser + unlock
+    // CTA. The locked body is never sent to a non-member's browser.
+    if (post.members_teaser) {
+      if (isPaidMember() || isAdmin()) {
+        h += '<div class="members-extra" id="members-extra" data-post="' + post.id + '" style="margin-top:20px"><div style="color:var(--text-secondary);font-size:0.82rem">Loading members-only section&hellip;</div></div>';
+      } else {
+        h += '<div class="members-lock" style="margin:24px 0;padding:22px 20px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);text-align:center">';
+        h += '<div style="font-size:0.72rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:var(--teal);margin-bottom:8px">&#128274; Members-only</div>';
+        h += '<div style="font-size:0.9rem;color:var(--text-primary);line-height:1.55;margin:0 auto 16px;max-width:520px">' + esc(post.members_teaser) + '</div>';
+        h += '<button class="btn-primary" onclick="showJoin(\'' + (post.spaces ? post.spaces.slug : '') + '\')">Unlock with membership</button>';
+        h += '</div>';
+      }
+    }
+
     // Reactions on the post itself (heart / helpful / insight) — paid members only.
     if (canReact) h += reactionBarHtml('post', post.id, aggregateReactions(postReacts, myId));
 
@@ -3323,6 +3338,8 @@ async function viewPost(postId) {
     h += '</div>';
 
     center.innerHTML = h;
+    var meEl = document.getElementById('members-extra');
+    if (meEl && meEl.dataset.post) loadMembersExtra(meEl.dataset.post);
     initRichField('comment-input');
     S.newCommentImages = [];   // fresh image tray for this thread's composer
     if (post.poll && Array.isArray(post.poll.options) && post.poll.options.length) fetchPollResults(post.id, post.poll);
@@ -3342,6 +3359,33 @@ function teaserHtml(post) {
   if (ps && ps.length) return ps.slice(0, 3).join('');
   var plain = (post.body_plain || post.excerpt || '').slice(0, 450);
   return plain ? '<p>' + esc(plain) + '</p>' : '';
+}
+
+// Paid members: fetch the true-locked "members-only second half" and inject it
+// under the free body. The body lives in a service-role-only table, so this
+// gated endpoint is the only way to get it; free/anon never reach here (they see
+// the unlock CTA instead). Any failure just hides the placeholder.
+async function loadMembersExtra(postId) {
+  var el = document.getElementById('members-extra');
+  if (!el) return;
+  try {
+    var res = await fetch('/.netlify/functions/post-members-extra', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), post_id: postId })
+    });
+    var data = await res.json();
+    if (res.ok && data.ok && data.html) {
+      el.innerHTML =
+        '<div style="display:flex;align-items:center;gap:10px;margin:24px 0 10px">' +
+          '<span style="flex:1;height:1px;background:var(--border)"></span>' +
+          '<span style="font-size:0.7rem;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:var(--teal)">&#128274; Members-only</span>' +
+          '<span style="flex:1;height:1px;background:var(--border)"></span>' +
+        '</div>' +
+        '<div class="post-prose">' + data.html + '</div>';
+    } else {
+      el.style.display = 'none';
+    }
+  } catch (e) { el.style.display = 'none'; }
 }
 
 // Admin: toggle whether free-tier members can read this whole post (vs. teaser).
@@ -6885,6 +6929,10 @@ function openComposer(mode, post) {
     var ce = document.getElementById('cp-email'); if (ce) ce.checked = true;
     var cpn = document.getElementById('cp-pin'); if (cpn) cpn.checked = false;
     var cpf = document.getElementById('cp-free'); if (cpf) cpf.checked = false;
+    var cphm = document.getElementById('cp-has-members'); if (cphm) cphm.checked = false;
+    var cpmw = document.getElementById('cp-members-wrap'); if (cpmw) cpmw.style.display = 'none';
+    var cpmt = document.getElementById('cp-members-teaser'); if (cpmt) cpmt.value = '';
+    var cpme = document.getElementById('cp-members-extra'); if (cpme) cpme.value = '';
     document.getElementById('cp-submit').textContent = 'Publish';
   } else {
     document.getElementById('composer-title').textContent = 'Michael\u2019s Take \u00b7 ' + (post.title.length > 50 ? post.title.slice(0,48)+'\u2026' : post.title);
@@ -6929,7 +6977,7 @@ async function openScheduledList() {
       h += '<div class="an-list">';
       items.forEach(function(s) {
         h += '<div class="an-row" style="cursor:default"><div class="an-row-title">' + esc(s.title) + '</div>';
-        h += '<div class="an-row-meta">' + new Date(s.publish_at).toLocaleString() + ' &middot; ' + esc(s.space) + (s.email_blast ? ' &middot; emails members' : '') + (s.pin ? ' &middot; pinned' : '') + (s.free_visible ? ' &middot; 🔓 free to read' : '') + '</div>';
+        h += '<div class="an-row-meta">' + new Date(s.publish_at).toLocaleString() + ' &middot; ' + esc(s.space) + (s.email_blast ? ' &middot; emails members' : '') + (s.pin ? ' &middot; pinned' : '') + (s.free_visible ? ' &middot; 🔓 free to read' : '') + (s.members_teaser ? ' &middot; 🔒 members section' : '') + '</div>';
         h += '<div style="margin-top:8px"><button class="tpl-btn locked" onclick="cancelScheduled(\'' + s.id + '\')">Cancel</button></div></div>';
       });
       h += '</div>';
@@ -6967,7 +7015,11 @@ async function submitComposer() {
     payload.title = document.getElementById('cp-title').value.trim();
     payload.body = document.getElementById('cp-body').value.trim();
     payload.free_visible = document.getElementById('cp-free').checked;
+    var hasMembers = document.getElementById('cp-has-members').checked;
+    payload.members_teaser = hasMembers ? document.getElementById('cp-members-teaser').value.trim() : '';
+    payload.members_extra = hasMembers ? document.getElementById('cp-members-extra').value.trim() : '';
     if (!payload.title || !payload.body) { status.textContent = 'Title and body are required.'; status.className = 'composer-status err'; return; }
+    if (hasMembers && (!payload.members_teaser || !payload.members_extra)) { status.textContent = 'A members-only section needs both a teaser and body.'; status.className = 'composer-status err'; return; }
 
     // Scheduled path: hand off to the scheduler instead of publishing now.
     var whenSel = document.getElementById('cp-when');
@@ -6982,7 +7034,8 @@ async function submitComposer() {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token: getAuthToken(), action: 'create', space: payload.space, title: payload.title, body: payload.body,
             publish_at: when.toISOString(), email_blast: document.getElementById('cp-email').checked, pin: document.getElementById('cp-pin').checked,
-            free_visible: document.getElementById('cp-free').checked })
+            free_visible: document.getElementById('cp-free').checked,
+            members_teaser: payload.members_teaser, members_extra: payload.members_extra })
         });
         var sdata = await sres.json();
         if (!sres.ok || !sdata.ok) throw new Error(sdata.error || 'Could not schedule');
@@ -7819,6 +7872,11 @@ checkAuth();
         <label class="composer-check"><input type="checkbox" id="cp-email" checked> Email all members when it goes live</label>
         <label class="composer-check"><input type="checkbox" id="cp-pin"> Pin to the top of its space</label>
         <label class="composer-check"><input type="checkbox" id="cp-free"> &#128275; Free to read (visible to free-tier members, not just paid)</label>
+        <label class="composer-check"><input type="checkbox" id="cp-has-members" onchange="document.getElementById('cp-members-wrap').style.display=this.checked?'':'none'"> &#128274; Add a members-only section (paid unlock at the bottom)</label>
+        <div id="cp-members-wrap" style="display:none;width:100%">
+          <input type="text" id="cp-members-teaser" placeholder="Teaser free readers see (one line: what's behind the lock)" style="width:100%;margin-bottom:8px;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:0.85rem">
+          <textarea id="cp-members-extra" rows="6" placeholder="Members-only content. Same formatting as the body. Only paid members ever receive this text." style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:0.85rem;line-height:1.5;resize:vertical"></textarea>
+        </div>
       </div>
       <div style="margin-top:6px"><a onclick="openScheduledList()" style="font-size:0.8rem;color:var(--teal);cursor:pointer">View scheduled posts &rarr;</a></div>
     </div>

@@ -65,6 +65,8 @@ exports.handler = async function (event) {
         pin: !!p.pin,
         free_visible: !!p.free_visible,   // carried to the published post (publish-scheduled reads it)
         ce_candidate: !!p.ce_candidate,   // carried to the published post (ANCC needs-assessment evidence)
+        members_teaser: (p.members_teaser && String(p.members_teaser).trim()) || null,   // locked-section teaser, carried through
+        members_extra: (p.members_extra && String(p.members_extra).trim()) || null,      // locked-section body, carried through
         created_by: email
       };
       const ins = await sb('scheduled_posts', 'POST', row, 'return=representation');
@@ -72,7 +74,7 @@ exports.handler = async function (event) {
     }
 
     if (p.action === 'list') {
-      const rows = await sb('scheduled_posts?status=eq.scheduled&order=publish_at.asc&select=id,space,title,publish_at,email_blast,pin,free_visible,ce_candidate', 'GET');
+      const rows = await sb('scheduled_posts?status=eq.scheduled&order=publish_at.asc&select=id,space,title,publish_at,email_blast,pin,free_visible,ce_candidate,members_teaser', 'GET');
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, items: rows || [] }) };
     }
 

@@ -62,7 +62,8 @@ exports.handler = async function (event) {
           post_type: 'discussion',
           is_pinned: !!s.pin,
           free_visible: !!s.free_visible,
-          ce_candidate: !!s.ce_candidate   // carried from the scheduled row (ANCC needs-assessment evidence)
+          ce_candidate: !!s.ce_candidate,   // carried from the scheduled row (ANCC needs-assessment evidence)
+          members_teaser: (s.members_teaser && String(s.members_teaser).trim()) || null   // signals a locked second half
         };
         // Optional: publish under a pre-chosen id so a link can be handed out
         // (e.g. in an email) before the post goes live. Only when explicitly set.
@@ -70,6 +71,12 @@ exports.handler = async function (event) {
         const inserted = await sb('forum_posts', 'POST', row, 'return=representation');
         const postId = inserted && inserted[0] && inserted[0].id;
         await sb('scheduled_posts?id=eq.' + s.id, 'PATCH', { published_post_id: postId, error: null }, 'return=minimal');
+
+        // Members-only "second half" (true-locked): store the body in the
+        // service-role-only table so free/anon browsers never receive it.
+        if (postId && s.members_extra && String(s.members_extra).trim()) {
+          try { await sb('post_members_extra', 'POST', { post_id: postId, body: String(s.members_extra) }, 'return=minimal'); } catch (e) { /* never fail the publish on the extra */ }
+        }
 
         try {
           await notifyNewPost(

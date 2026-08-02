@@ -152,9 +152,16 @@ exports.handler = async function (event) {
         canonical_synthesis: p.synthesis ? String(p.synthesis).trim() || null : null,
         ce_candidate: !!p.ce_candidate,
         free_visible: !!p.free_visible,   // admin flagged it readable by free-tier members
+        members_teaser: (p.members_teaser && String(p.members_teaser).trim()) || null,   // signals a locked second half
         post_type: 'discussion'
       };
       const inserted = await sb('forum_posts', 'POST', row, env);
+
+      // Members-only "second half" (true-locked): body goes to the service-role-
+      // only table, so free/anon browsers never receive it.
+      if (inserted && inserted[0] && inserted[0].id && p.members_extra && String(p.members_extra).trim()) {
+        try { await sb('post_members_extra', 'POST', { post_id: inserted[0].id, body: String(p.members_extra) }, env); } catch (e) { /* never block posting */ }
+      }
       // Notify all members (in-app) and email opted-in members — admin post.
       try {
         await notifyNewPost(
