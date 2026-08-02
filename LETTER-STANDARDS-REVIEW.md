@@ -157,8 +157,10 @@ Decisions locked in during review, kept here so the reasoning is not lost.
 - Dropped the ongoing/indefinite duration option (kept only a set date or pending clinical
   reassessment). Cut the contact boilerplate and the redundant clinical-observations sentence.
   Removed the unused PATIENT_FIRST_NAME placeholder.
-- Open front-end item (optional): a visible banner above the limitations input reinforcing the
-  route-to-ADA boundary. The guidance currently rides in the field hint and description only.
+- Front-end route-to-ADA banner: DONE. Added a data-driven `placeholder.notice` callout that
+  renders above a field's input in the Library fill form; the WORK_LIMITATIONS_LIST field
+  carries the notice routing environmental, remote-work, and ongoing scheduling accommodations
+  to the Workplace Accommodation letter. Any template can now attach a field notice via its row.
 
 ## Hard rules (repo-wide, but they bite here)
 
