@@ -80,10 +80,10 @@ own instincts. Do not "improve" a locked template on your own initiative.
 
 The database is the source of truth. Prior hand-notes were behind the table.
 
-### Locked at v1.1 (reviewed, framework applied; v1.0 deprecated)
-- `esa/standard`
-- `treatment_verification/general`
-- `jury_duty/deferral`
+### Locked (reviewed, framework applied; prior versions deprecated)
+- `esa/standard` (v1.1)
+- `treatment_verification/general` (v1.1)
+- `jury_duty/deferral` (v1.2)
 - `return_to_work/full_duty`: the active v1.1 resolves both original decision points. It
   uses active-voice "I do not recommend psychiatric work restrictions as of
   {{RETURN_DATE}}," and keeps the job-demands carve-out fused into the scope line. Accepted
@@ -129,7 +129,7 @@ Decisions locked in during review, kept here so the reasoning is not lost.
 - Avoids unnecessary future predictions.
 - Job-demands carve-out fused into the scope line rather than a separate clause.
 
-### Jury Duty (jury_duty/deferral, v1.1)
+### Jury Duty (jury_duty/deferral, v1.2)
 - Evolved from a static template into a clinical-judgment tool: the clinician checks the
   clinical concern(s) and the AI drafts one defensible rationale sentence (the
   CLINICAL_RATIONALE placeholder, source clinical_judgment). The drafting prompt forces
@@ -138,9 +138,13 @@ Decisions locked in during review, kept here so the reasoning is not lost.
 - Closing request hardcoded to excusal from the current jury summons (correct, since in
   practice essentially every such letter requests excusal) rather than asking the clinician
   what they want the court to do. Optional jury date via {{#IF jury_date_known=yes}}.
-- Open consistency item: this letter still carries a "contact my office directly" line and
-  records no editorial_notes block, whereas RTW-Full Duty cut that boilerplate and logged its
-  changes. Align during a library-wide consistency pass.
+- v1.2 (ChatGPT editorial pass, 2026-08-02): cut the "please contact my office directly"
+  line; tightened the scope paragraph to "This letter reflects my clinical opinion within the
+  treating relationship..." (removed the third restatement of purpose); reworded the
+  instability concern to drop the loaded word "stable" (now "Current symptoms make jury
+  service clinically inadvisable"); softened the case-material concern to be less categorical
+  (now "Potential case material may worsen symptoms"); recorded an editorial_notes block. This
+  also resolves the prior RTW-consistency gap (contact line and missing editorial_notes).
 
 ## Hard rules (repo-wide, but they bite here)
 
