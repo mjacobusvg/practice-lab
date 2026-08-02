@@ -52,3 +52,7 @@ serve the cached old file.
   Note Builder / coder pipeline. §0.3 / §0.3.1 hold the governing rule on what may be
   hardcoded vs. what must come from the clinician's Vault template — read it before changing
   any assessment or HPI prompt.
+- `LETTER-STANDARDS-REVIEW.md` governs the Letter Generator's clinical letter templates.
+  They live in the Supabase table `tbp_letter_standards`, not in the HTML, so editing a letter
+  is a SQL version bump, not a code change. Read it before touching any template or its
+  editorial review, and confirm before any Supabase write to those production rows.
