@@ -26,20 +26,44 @@ change.
   `{{#IF toggle=value}}...{{/IF}}` conditional syntax
 - `placeholders`: JSONB array of the placeholders the body uses
 
-## The editorial framework (canonical)
+## Library philosophy
 
-Applied to every template under review:
+This is a Letter Library, not a one-off Letter Generator. Each standard letter is reviewed
+against one consistent editorial philosophy so the whole library reads like it came from a
+single experienced psychiatric clinician, not a pile of unrelated templates. ESA Housing was
+the first fully reviewed letter and is the model for the rest.
 
-1. Every sentence must be legally or clinically necessary, materially patient-helpful, or
-   materially clinician-protective. Otherwise it is cut.
-2. Adversarial reader test: assume the least charitable reader (opposing counsel, a claims
+## Editorial style guide (canonical)
+
+The sentence test. Every sentence must earn its place by being at least one of:
+- legally or clinically necessary,
+- materially helpful to the patient,
+- materially protective of the clinician.
+
+If a sentence is none of these, cut it.
+
+Governing principles:
+
+1. Minimum necessary disclosure. Omit diagnosis, DOB, symptom detail, adherence and
+   "consistent engagement" language unless the receiving party genuinely needs it and the
+   clinician elects to include it.
+2. Describe, do not certify. Document the present-day clinical assessment or recommendation
+   within the treating relationship. Do not certify conclusions the clinician is not
+   performing (no "cleared," no "without restrictions," no fitness-for-duty determinations).
+3. Verification is not endorsement. A verification letter confirms a fact of treatment; it
+   does not vouch for the patient's conduct, credibility, or fitness.
+4. Clinician voice, not lawyer voice. Write as a treating clinician dictating, not as counsel.
+5. Adversarial reader test. Assume the least charitable reader (opposing counsel, a claims
    adjuster) and confirm no sentence can be turned against the patient or clinician.
-3. Description, not certification. State what the clinician observed or recommends within
-   the treating relationship. Do not certify conclusions the clinician is not performing
-   (no "cleared," no "without restrictions," no fitness-for-duty determinations).
+6. Only ask clinicians to make decisions that require clinical judgment. Everything else
+   (legal phrasing, standard requests, boilerplate) is drafted for them or hardcoded.
+7. Eliminate toggles whenever possible. Fewer choices means fewer ways to produce a bad letter.
+8. Default to documenting the present, not predicting the future. State today's assessment,
+   not a prognosis or recovery date, UNLESS the receiving form genuinely requires a prognosis
+   (e.g. FMLA).
 
-Template content comes from the human review (currently via a ChatGPT pass), not from the
-model's own instincts. Do not "improve" a locked template on your own initiative.
+Template content comes from the human review (currently a ChatGPT pass), not from the model's
+own instincts. Do not "improve" a locked template on your own initiative.
 
 ## Review workflow
 
@@ -77,7 +101,46 @@ The database is the source of truth. Prior hand-notes were behind the table.
 - `medicaid_private_pay/acknowledgment` (6.5 KB, much larger than the others; review separately)
 
 ### To build
-- FMLA (no row exists yet)
+- FMLA (no row exists yet). Note: FMLA is the recognized exception to principle 8, since the
+  form genuinely requires a prognosis.
+
+## Per-template decision log
+
+Decisions locked in during review, kept here so the reasoning is not lost.
+
+### ESA Housing (esa/standard, v1.1), the model letter
+- Removed diagnosis disclosure entirely.
+- Removed all optional toggles (zero toggles).
+- Minimum necessary disclosure throughout.
+- Replaced the generalized scientific claim ("such animals have been shown...") with the
+  clinician's own judgment. Settled line: "In my clinical judgment, the presence of this
+  animal helps alleviate symptoms associated with the patient's condition and supports their
+  ongoing treatment."
+
+### Treatment Verification, General (treatment_verification/general, v1.1)
+- Removed diagnosis, DOB, adherence language, and "consistent engagement."
+- Reduced to a simple verification letter with a strong scope limitation.
+- Principle established: verification is not endorsement.
+
+### Return to Work, Full Duty (return_to_work/full_duty, v1.1)
+- Replaced "cleared to return without restrictions" with "Based on my clinical assessment
+  within the treating relationship, I do not recommend psychiatric work restrictions as of
+  {{RETURN_DATE}}." Documents an opinion rather than certifying fitness.
+- Avoids unnecessary future predictions.
+- Job-demands carve-out fused into the scope line rather than a separate clause.
+
+### Jury Duty (jury_duty/deferral, v1.1)
+- Evolved from a static template into a clinical-judgment tool: the clinician checks the
+  clinical concern(s) and the AI drafts one defensible rationale sentence (the
+  CLINICAL_RATIONALE placeholder, source clinical_judgment). The drafting prompt forces
+  "In my clinical judgment," a present-day assessment, no future prediction, and no
+  diagnosis, medication, or symptom naming.
+- Closing request hardcoded to excusal from the current jury summons (correct, since in
+  practice essentially every such letter requests excusal) rather than asking the clinician
+  what they want the court to do. Optional jury date via {{#IF jury_date_known=yes}}.
+- Open consistency item: this letter still carries a "contact my office directly" line and
+  records no editorial_notes block, whereas RTW-Full Duty cut that boilerplate and logged its
+  changes. Align during a library-wide consistency pass.
 
 ## Hard rules (repo-wide, but they bite here)
 
