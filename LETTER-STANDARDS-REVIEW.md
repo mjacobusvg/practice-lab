@@ -92,12 +92,12 @@ The database is the source of truth. Prior hand-notes were behind the table.
 - `workplace_accommodation/standard` (v1.1)
 - `academic_accommodation/standard` (v1.1, "Postsecondary Academic Accommodation")
 - `treatment_verification/court` (v1.1)
+- `medication_travel/standard` (v1.1)
+- `medication_travel/controlled` (v1.1)
 
 ### Still v1.0 active (not yet through editorial review)
 - `continuation_of_care/standard`
 - `general_clinical_support/standard`
-- `medication_travel/standard`
-- `medication_travel/controlled`
 - `medicaid_private_pay/acknowledgment` (6.5 KB, much larger than the others; review separately)
 
 ### To build
@@ -118,6 +118,11 @@ The database is the source of truth. Prior hand-notes were behind the table.
   the exact question being answered). It should force the clinician to paste or identify the
   recipient's written request and confirm the response stays within the treating role, rather
   than exposing that content as optional toggles inside the verification letter. Not yet built.
+- Medication Travel: destination-specific additional-documentation pathway. Some countries
+  require extra details (total quantity, travel dates, days supply, generic names, diagnosis,
+  passport number, prescriber license). Keep these OUT of the standard travel letters; add a
+  separate "destination requires additional documentation" path driven by the actual
+  requirement the clinician or traveler supplies. Not yet built.
 
 ## Per-template decision log
 
@@ -248,6 +253,25 @@ Decisions locked in during review, kept here so the reasoning is not lost.
   expertise) and softened "assessed all relevant parties" to "methods and information
   appropriate to the specific legal question." No honorific, no pronoun engine (the letter
   names the patient once, then refers only to "this letter" and "the treatment relationship").
+
+### Medication Travel, Standard and Controlled (medication_travel/standard and /controlled, v1.1)
+- Governing principle for this pair: a travel letter verifies the prescription; it does not
+  instruct TSA or foreign customs, assert foreign legality, or certify medical necessity.
+- Both: removed the condition phrase (now "for personal medical use," no diagnosis by default),
+  cut "medically necessary" and the request that authorities permit carriage, reworded
+  original-container and carry-on as traveler guidance (not a directive to security), dropped
+  the first-name reference (no pronouns needed), relabeled DOB as "date of birth" (kept for
+  identity matching), and kept the contact-for-verification line (a real operational purpose
+  here, unlike the advocacy letters).
+- Controlled only: removed the DEA-registration sentence, the show_dea toggle, and the
+  DEA-number token (a US DEA registration says nothing about foreign legality and is needless
+  disclosure). Uses "classified as a controlled substance in the United States" and the
+  grammar-safe "Any controlled medication listed above ... its original labeled pharmacy
+  container."
+- The international country-law warning was moved OUT of the letter into the generator: a new
+  toggle-choice notice feature shows the caution beneath the "Will the patient be traveling
+  internationally?" toggle when Yes is selected. Quantity and days supply are omitted by
+  default.
 
 ## Hard rules (repo-wide, but they bite here)
 
