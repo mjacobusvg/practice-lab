@@ -271,6 +271,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 .lib-field-group textarea { min-height: 70px; resize: vertical; font-family: inherit; }
 .lib-field-group .lib-hint { font-size: 0.76rem; color: var(--cream-muted); margin-top: 4px; font-style: italic; }
 .lib-field-group .lib-field-notice { font-size: 0.8rem; color: var(--cream); background: rgba(42,171,184,0.12); border: 1px solid var(--teal); border-radius: 5px; padding: 8px 10px; margin-bottom: 8px; line-height: 1.4; }
+.lib-toggle-confirm { font-size: 0.76rem; color: var(--danger, #e8825a); font-weight: 600; margin-top: 6px; }
 .lib-source-badge { display: inline-block; font-size: 0.66rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 6px; border-radius: 3px; margin-left: 8px; vertical-align: middle; }
 .lib-source-badge.vault { background: rgba(212,166,71,0.15); color: var(--gold, #d4a647); }
 .lib-source-badge.parsing { background: rgba(42,171,184,0.15); color: var(--teal); }
@@ -2215,7 +2216,9 @@ function libSelectStandard(standardId, extractedValues) {
     }
   });
   (std.optional_toggles || []).forEach(function(t) {
-    LIB.toggleValues[t.key] = t.default_value;
+    // confirm_required toggles (e.g. pronouns) start UNSET so the clinician must actively
+    // confirm before generating; a silent default could misgender a known patient.
+    if (!t.confirm_required) LIB.toggleValues[t.key] = t.default_value;
   });
 
   libRenderFillScreen();
@@ -2344,7 +2347,8 @@ function libRenderFillScreen() {
   if (toggles.length) {
     document.getElementById('lib-toggle-fields').style.display = 'block';
     var toggleHtml = toggles.map(function(t) {
-      var current = LIB.toggleValues[t.key] || t.default_value;
+      // confirm_required toggles start with NO choice selected until the clinician confirms.
+      var current = t.confirm_required ? LIB.toggleValues[t.key] : (LIB.toggleValues[t.key] || t.default_value);
       var choicesHtml = (t.choices || []).map(function(c) {
         var isSelected = current === c.value;
         return '' +
@@ -2353,11 +2357,15 @@ function libRenderFillScreen() {
             '<span>' + libEsc(c.label) + '</span>' +
           '</label>';
       }).join('');
+      var confirmNote = (t.confirm_required && !LIB.toggleValues[t.key])
+        ? '<div class="lib-toggle-confirm" id="lib-confirm-' + t.key + '">' + libEsc(t.confirm_hint || 'Please confirm this selection before generating.') + '</div>'
+        : '';
       return '' +
         '<div class="lib-toggle-field">' +
           '<div class="lib-toggle-label">' + libEsc(t.label) + '</div>' +
           (t.description ? '<div class="lib-toggle-desc">' + libEsc(t.description) + '</div>' : '') +
           '<div class="lib-toggle-choices">' + choicesHtml + '</div>' +
+          confirmNote +
         '</div>';
     }).join('');
     document.getElementById('lib-toggle-list').innerHTML = toggleHtml;
@@ -2375,6 +2383,8 @@ function libUpdatePlaceholder(key, value) {
 
 function libSetToggle(key, value) {
   LIB.toggleValues[key] = value;
+  var _cn = document.getElementById('lib-confirm-' + key);
+  if (_cn) _cn.style.display = 'none';
   document.querySelectorAll('.lib-toggle-choice').forEach(function(el) {
     var input = el.querySelector('input');
     if (input && input.name === 'lib-tog-' + key) {
@@ -2780,6 +2790,15 @@ function libNormalizeValue(key, value, fmt) {
   return value; // 'none' / unknown: untouched
 }
 
+// Patient pronoun sets, selected by the 'pronouns' toggle. Templates keep the patient's
+// NAME in every subject slot, so pronoun tokens appear only in possessive/object positions
+// and there is no verb-agreement problem (no "they has"). Defaults to they/them.
+var PRONOUN_SETS = {
+  they_them: { SUBJECT: 'they', OBJECT: 'them', POSSESSIVE: 'their', POSSESSIVE_PRONOUN: 'theirs', REFLEXIVE: 'themselves' },
+  she_her:   { SUBJECT: 'she',  OBJECT: 'her',  POSSESSIVE: 'her',   POSSESSIVE_PRONOUN: 'hers',   REFLEXIVE: 'herself' },
+  he_him:    { SUBJECT: 'he',   OBJECT: 'him',  POSSESSIVE: 'his',   POSSESSIVE_PRONOUN: 'his',    REFLEXIVE: 'himself' }
+};
+
 // Template rendering engine — substitutes {{PLACEHOLDER}} and processes {{#IF toggle=value}}...{{/IF}}
 function libRenderTemplate(template, placeholders, toggles, placeholderDefs) {
   if (!template) return '';
@@ -2789,6 +2808,15 @@ function libRenderTemplate(template, placeholders, toggles, placeholderDefs) {
   var ifPattern = /\{\{#IF ([a-zA-Z_]+)=([a-zA-Z_]+)\}\}([\s\S]*?)\{\{\/IF\}\}/g;
   output = output.replace(ifPattern, function(match, toggleKey, value, content) {
     return toggles[toggleKey] === value ? content : '';
+  });
+
+  // Expand patient pronoun tokens ({{PATIENT_POSSESSIVE}}, {{PATIENT_OBJECT}}, and the
+  // _CAP variants) from the 'pronouns' toggle, defaulting to they/them.
+  var _pset = PRONOUN_SETS[(toggles && toggles.pronouns) || 'they_them'] || PRONOUN_SETS.they_them;
+  output = output.replace(/\{\{PATIENT_(SUBJECT|OBJECT|POSSESSIVE_PRONOUN|POSSESSIVE|REFLEXIVE)(_CAP)?\}\}/g, function(m, form, cap) {
+    var w = _pset[form] || '';
+    if (cap && w) w = w.charAt(0).toUpperCase() + w.slice(1);
+    return w;
   });
 
   // Build a required-lookup and format-lookup from placeholder definitions.
@@ -2837,6 +2865,16 @@ function libGenerateFinal() {
   });
   if (missing.length) {
     alert('Please fill in the required fields:\n\n' + missing.map(function(p) { return '• ' + p.label; }).join('\n'));
+    return;
+  }
+  // Require explicit confirmation for confirm_required toggles (e.g. pronouns), so a silent
+  // default cannot misgender a known patient.
+  var unconfirmed = (std.optional_toggles || []).filter(function(t) {
+    return t.confirm_required && !LIB.toggleValues[t.key];
+  });
+  if (unconfirmed.length) {
+    alert('Please confirm before generating:\n\n' + unconfirmed.map(function(t) { return '• ' + t.label; }).join('\n') +
+      '\n\nIf unsure, they/them is the safe default; select it to confirm.');
     return;
   }
   var finalText = libRenderTemplate(std.body_template, LIB.placeholderValues, LIB.toggleValues, std.placeholders);
