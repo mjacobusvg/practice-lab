@@ -106,8 +106,15 @@ With that, every clinical letter in the library has been through the framework. 
 net-new templates (see "To build"), not review of existing ones.
 
 ### To build
-- FMLA (no row exists yet). Note: FMLA is the recognized exception to principle 8, since the
-  form genuinely requires a prognosis.
+- FMLA / PFML: NOT a letter, do not build one. It is a certification FORM the provider fills
+  in: federal DOL form WH-380-E (or the employer's equivalent), plus state paid-family-and-
+  medical-leave forms with their own fields (e.g. WA PFML, and CA/MA/CO/OR/NY). A free-text
+  letter does not map onto fixed form fields and is usually rejected in place of the form.
+  Open decision: either leave FMLA out of the library entirely, or build a separate
+  FMLA/PFML Certification Prep worksheet (explicitly NOT the form) that helps the clinician
+  draft the defensible clinical content to transcribe onto whichever official form: diagnosis,
+  onset, probable duration, frequency and duration of incapacity or flare-ups, and work impact.
+  FMLA remains the one context where a prognosis is legitimately required.
 - Detailed Disability Documentation (postsecondary). A diagnosis-required pathway for
   institutions whose disability office demands a detailed form: diagnosis, date/duration,
   diagnostic method, current severity, treatment history, prognosis, and an explicit
