@@ -89,9 +89,9 @@ The database is the source of truth. Prior hand-notes were behind the table.
   {{RETURN_DATE}}," and keeps the job-demands carve-out fused into the scope line. Accepted
   as final on 2026-08-02.
 - `return_to_work/restricted_duty` (v1.1)
+- `workplace_accommodation/standard` (v1.1)
 
 ### Still v1.0 active (not yet through editorial review)
-- `workplace_accommodation/standard`
 - `academic_accommodation/standard`
 - `continuation_of_care/standard`
 - `general_clinical_support/standard`
@@ -161,6 +161,39 @@ Decisions locked in during review, kept here so the reasoning is not lost.
   renders above a field's input in the Library fill form; the WORK_LIMITATIONS_LIST field
   carries the notice routing environmental, remote-work, and ongoing scheduling accommodations
   to the Workplace Accommodation letter. Any template can now attach a field notice via its row.
+
+### Workplace ADA Accommodation (workplace_accommodation/standard, v1.1)
+- Now the designated home for accommodations the RTW-Restricted letter routes away.
+- Removed diagnosis entirely (no include_diagnosis toggle, no DIAGNOSIS_LABEL), per ESA and the
+  ADA minimum-necessary-disclosure principle.
+- Stopped adjudicating ADA eligibility: states the substantial limitation rather than
+  "constitutes a disability within the meaning of the ADA."
+- Split the old FUNCTIONAL_LIMITATIONS into MAJOR_LIFE_ACTIVITIES (EEOC-recognized activities)
+  and WORK_RELATED_EFFECTS (bounded workplace effects), with an explicit accommodation nexus.
+  Recommends "the following accommodations, or other effective accommodations identified
+  through the interactive process," and no longer claims to know essential functions (dropped
+  POSITION_OR_ROLE).
+- Duration is a genuine three-way field: through a date, ongoing with review as clinically
+  appropriate, or cannot be determined at this time.
+- Added the employer-role boundary ("The specific accommodations provided are determined
+  through the employer's interactive process") and cut both the standing offer to participate
+  and the contact boilerplate.
+- Adversarial-language guardrails ride as field notices on WORK_RELATED_EFFECTS and
+  ACCOMMODATIONS_LIST (avoid categorical inability language).
+- First reader of the pronoun engine (see below).
+
+## Library convention: name plus clinician-set pronouns
+- House style for referring to the patient: keep the patient's name in subject slots (so verbs
+  stay correct, no "they has") and use clinician-set pronouns only in possessive/object slots.
+  Default they/them, never inferred from the name, and confirmed before generating.
+- Implemented as a reusable engine in `pm-letter-generator.html`: PRONOUN_SETS plus token
+  expansion for `{{PATIENT_POSSESSIVE}}`, `{{PATIENT_OBJECT}}`, `{{PATIENT_SUBJECT}}` and their
+  `_CAP` variants, driven by a `pronouns` toggle. A `confirm_required` toggle starts unset,
+  shows a visible confirm note, and blocks generation until the clinician confirms. Opt-in per
+  template, so already-locked letters are untouched until revisited.
+- Follow-up (not yet done): revisit the already-locked letters (ESA, Treatment Verification,
+  the RTW pair, Jury Duty) to adopt name-plus-pronouns where they currently lean on
+  "the patient" / "this patient," so the whole library speaks in one voice.
 
 ## Hard rules (repo-wide, but they bite here)
 
