@@ -1148,8 +1148,8 @@ async function runDraft(sourceText, btn, errEl){
   errEl.innerHTML = '';
   if(!visitType){ errEl.innerHTML='<div class="err">Choose a visit type first (New patient evaluation or Follow-up) &mdash; it sets which of your templates is used.</div>'; return false; }
   if(!sourceText || sourceText.length < 15){ errEl.innerHTML='<div class="err">Paste your visit notes first, even rough ones.</div>'; return false; }
-  var label = btn.innerHTML; var ok = false;
-  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Drafting&hellip;';
+  var label = btn ? btn.innerHTML : ''; var ok = false;
+  if(btn){ btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Drafting&hellip;'; }
   document.getElementById('results').innerHTML='';
   tbpNotifyDesk('busy');
   try {
@@ -1157,7 +1157,7 @@ async function runDraft(sourceText, btn, errEl){
     if(!hpi){ throw new Error('No HPI came back. Try again.'); }
     // Show the draft immediately (feels fast), then finalize the review in the background.
     renderResultPreview(hpi);
-    btn.innerHTML = '<span class="spinner"></span>Reviewing&hellip;';
+    if(btn) btn.innerHTML = '<span class="spinner"></span>Reviewing&hellip;';
     var res = await verifyHpi(hpi);
     // MSE: the clinician's macro is the baseline; the AI updates ONLY the mental/behavioral
     // elements today's visit supports (mood, affect, thought process/content, perceptions),
@@ -1181,10 +1181,27 @@ async function runDraft(sourceText, btn, errEl){
   } catch(err){
     errEl.innerHTML = '<div class="err">'+esc(err.message||err)+'</div>';
   } finally {
-    btn.disabled = false; btn.innerHTML = label;
+    if(btn){ btn.disabled = false; btn.innerHTML = label; }
     tbpNotifyDesk(ok ? 'done' : 'idle');
   }
   return ok;
+}
+// Ambient fast path: auto-draft the HPI the moment transcription lands, so there is no manual
+// Draft click. Ambient-only (typed visits still click Draft). Guarded against double-fire.
+var _autoDraftInFlight = false;
+function tbpAutoDraftAmbient(){
+  if(_autoDraftInFlight) return;
+  if(sourceMode !== 'ambient') return;
+  try { var ov0=document.getElementById('focus-overlay'); if(ov0 && ov0.classList.contains('open') && typeof focusSyncBack==='function') focusSyncBack(); } catch(e){}
+  var raw = document.getElementById('raw');
+  var src = raw ? raw.value.trim() : '';
+  if(!src || src.length < 15){ setStatus('Done — transcript added to your notes. Review, then Draft.'); return; }
+  _autoDraftInFlight = true;
+  setStatus('Transcribed — drafting your HPI…');
+  var errEl = document.getElementById('err-box') || { innerHTML:'' };
+  Promise.resolve(runDraft(src, null, errEl)).then(function(ok){
+    if(ok){ try { var ov=document.getElementById('focus-overlay'); if(ov && ov.classList.contains('open') && typeof closeFocus==='function') closeFocus(); } catch(e){} }
+  }).catch(function(){}).then(function(){ _autoDraftInFlight = false; });
 }
 document.getElementById('generate').addEventListener('click', function(){
   if(tbpDemoBlock()) return;
@@ -3189,8 +3206,10 @@ function loadVaultTemplates(){
       try{ if(window.tbpTxClear) window.tbpTxClear(); }catch(e){}
       if(!transcript){ setStatus('No speech was recognized in the recording.', true); tbpNotifyDesk('idle'); resetBtn(); return; }
       appendTranscript(transcript);
-      setStatus('Done — transcript added to your notes. Review, then Draft.');
       tbpNotifyDesk('done');   // background tab shows the steady "ready to review" dot
+      // Ambient fast path: draft the HPI right away instead of waiting for a manual Draft click.
+      try { if(sourceMode==='ambient' && typeof tbpAutoDraftAmbient==='function') tbpAutoDraftAmbient(); else setStatus('Done — transcript added to your notes. Review, then Draft.'); }
+      catch(e){ setStatus('Done — transcript added to your notes. Review, then Draft.'); }
     } catch(err){
       setStatus((err.message || 'Transcription failed.')+recTag, true);
       tbpNotifyDesk('idle');
