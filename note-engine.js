@@ -576,7 +576,10 @@ async function runPlan(inp, planMacro){
   if(!base) return '';
   var msg = "CLINICIAN'S PLAN TEMPLATE:\n\n" + base +
     "\n\n---\n\nTODAY'S VISIT CONTEXT (source for medication actions and follow-up interval only):\n\n" + contextBlock(inp);
-  var t = await callAPI(PLAN_SYS, [{role:'user', content: msg}], 1400);
+  // Plan is a template-fill (fill med line + follow-up, preserve boilerplate) — A/B tested as a tie
+  // with Sonnet, so it runs on Haiku (cheaper). callAPI's 5th arg is a per-call model override; hosts
+  // whose callAPI ignores it (e.g. the Note Builder, which never calls runPlan) are unaffected.
+  var t = await callAPI(PLAN_SYS, [{role:'user', content: msg}], 1400, null, 'claude-haiku-4-5-20251001');
   return chartClean(String(t || base).trim());
 }
 
