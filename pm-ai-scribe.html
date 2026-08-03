@@ -296,6 +296,8 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
     </div>
   </div>
 
+  <div id="ambient-progress"></div>
+
   <div id="results"></div>
 
   <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription.</div>
@@ -1158,7 +1160,9 @@ async function runDraft(sourceText, btn, errEl, silent){
   // (its only job is to feed the preflight) and reveals the whole note AFTER preflight, so it shows
   // only a progress line, never the HPI typing itself out.
   if(silent){
-    document.getElementById('results').innerHTML = '<div class="out"><div class="hint"><span class="spinner"></span> Analyzing your visit&hellip;</div></div>';
+    // The ambient progress banner (above #results) is the visible signal during the silent draft,
+    // so don't paint a second spinner here — leave #results clean until the note reveals.
+    document.getElementById('results').innerHTML = '';
   } else {
     document.getElementById('results').innerHTML = '<div class="out"><div class="hint"><span class="spinner"></span> Drafting your HPI&hellip;</div><div id="hpi-stream" style="white-space:pre-wrap;margin-top:10px;color:var(--cream);line-height:1.6;font-size:.92rem"></div></div>';
   }
@@ -1170,6 +1174,7 @@ async function runDraft(sourceText, btn, errEl, silent){
     // Show the draft immediately (feels fast), then finalize the review in the background.
     if(!silent) renderResultPreview(hpi);
     if(btn) btn.innerHTML = '<span class="spinner"></span>Reviewing&hellip;';
+    if(silent && _ambientFlow) tbpAmbientProgress('review');   // advance the ambient banner
     var res = await verifyHpi(hpi);
     // MSE: the clinician's macro is the baseline; the AI updates ONLY the mental/behavioral
     // elements today's visit supports (mood, affect, thought process/content, perceptions),
@@ -1188,7 +1193,9 @@ async function runDraft(sourceText, btn, errEl, silent){
       finalHpi += "\n\nMental Status Exam:\n" + (mseText || mseBase);
     }
     renderResult(finalHpi, res.flags, res.verified !== false, silent ? {hideHpi:true} : null);
-    document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
+    // In the silent ambient flow the banner and the preflight cards own the scroll — don't yank the
+    // view down to the (hidden) HPI panel here. Typed drafts still scroll to their result.
+    if(!silent) document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
     ok = true;
   } catch(err){
     errEl.innerHTML = '<div class="err">'+esc(err.message||err)+'</div>';
@@ -1198,6 +1205,44 @@ async function runDraft(sourceText, btn, errEl, silent){
   }
   return ok;
 }
+// ── Ambient progress banner ──
+// The silent ambient draft has no HPI typing out to watch, so the ~1 minute of model calls felt
+// dead — you had to guess whether anything was happening. This banner sits right above the results,
+// scrolls itself into view the instant a recording stops, and visibly walks through each stage so
+// it never looks frozen, then clears itself when the preflight questions land.
+var _ambientFlow = false;
+function tbpAmbientProgress(stageKey, errMsg){
+  var el = document.getElementById('ambient-progress');
+  if(!el) return;
+  if(stageKey === 'clear'){ el.innerHTML = ''; return; }
+  var steps = [
+    { k:'draft',    label:'Drafting your HPI from the recording' },
+    { k:'review',   label:'Reviewing it against the visit' },
+    { k:'preflight',label:'Getting your quick questions ready' }
+  ];
+  var order = ['draft','review','preflight'];
+  if(stageKey === 'error'){
+    el.innerHTML = '<div class="out" style="border-color:var(--red)"><div class="hint" style="color:var(--red)">'
+      + esc(errMsg || 'Something went wrong drafting the note. Your transcript is safe below — press Draft my HPI to try again.') + '</div></div>';
+    try { el.scrollIntoView({ behavior:'smooth', block:'center' }); } catch(e){}
+    return;
+  }
+  var curIdx = order.indexOf(stageKey);
+  var rows = steps.map(function(s, i){
+    var mark, color;
+    if(i < curIdx){ mark = '&#10003;'; color = 'var(--teal)'; }          // done
+    else if(i === curIdx){ mark = '<span class="spinner"></span>'; color = 'var(--cream)'; }  // in progress
+    else { mark = '&#9675;'; color = 'var(--cream-dim)'; }               // pending
+    return '<div style="display:flex;align-items:center;gap:9px;margin:5px 0;color:'+color+'">'
+      + '<span style="width:16px;display:inline-flex;justify-content:center">'+mark+'</span>'
+      + '<span>'+s.label+(i===curIdx?'&hellip;':'')+'</span></div>';
+  }).join('');
+  var firstPaint = !el.innerHTML;
+  el.innerHTML = '<div class="out"><div style="font-weight:600;color:var(--cream);margin-bottom:8px">Building your note</div>'
+    + rows + '<div class="hint" style="margin-top:8px">No need to do anything &mdash; your questions appear here when it&rsquo;s ready.</div></div>';
+  if(firstPaint){ try { el.scrollIntoView({ behavior:'smooth', block:'center' }); } catch(e){} }
+}
+
 // Ambient fast path: auto-draft the HPI the moment transcription lands, so there is no manual
 // Draft click. Ambient-only (typed visits still click Draft). Guarded against double-fire.
 var _autoDraftInFlight = false;
@@ -1210,17 +1255,24 @@ function tbpAutoDraftAmbient(){
   var src = raw ? raw.value.trim() : '';
   if(!src || src.length < 15){ setStatus('Done — transcript added to your notes. Review, then Draft.'); return; }
   _autoDraftInFlight = true;
-  setStatus('Transcribed — drafting your HPI…');
+  _ambientFlow = true;
+  setStatus('Transcribed — building your note…');
+  tbpAmbientProgress('draft');   // paint the staged banner and scroll to it immediately, before any await
   var errEl = document.getElementById('err-box') || { innerHTML:'' };
   Promise.resolve(runDraft(src, null, errEl, true)).then(function(ok){
     if(ok){
       try { var ov=document.getElementById('focus-overlay'); if(ov && ov.classList.contains('open') && typeof closeFocus==='function') closeFocus(); } catch(e){}
+      tbpAmbientProgress('preflight');
       // Continue straight into preflight (surface the clinical calls) with no manual Build click.
       // For a follow-up with no prior note, buildAssessment shows its paste/prep reminder instead
       // of generating a thin, unreliable assessment — exactly the guard we want.
-      try { var bb=document.getElementById('build-assess'); if(bb && typeof buildAssessment==='function') buildAssessment(bb); } catch(e){}
+      try { var bb=document.getElementById('build-assess'); if(bb && typeof buildAssessment==='function') buildAssessment(bb); else { _ambientFlow=false; tbpAmbientProgress('clear'); } } catch(e){ _ambientFlow=false; tbpAmbientProgress('clear'); }
+    } else {
+      // runDraft already surfaced the error in err-box; reflect it in the banner and stop the flow.
+      _ambientFlow = false;
+      tbpAmbientProgress('error');
     }
-  }).catch(function(){}).then(function(){ _autoDraftInFlight = false; });
+  }).catch(function(){ _ambientFlow=false; tbpAmbientProgress('error'); }).then(function(){ _autoDraftInFlight = false; });
 }
 document.getElementById('generate').addEventListener('click', function(){
   if(tbpDemoBlock()) return;
@@ -1622,6 +1674,9 @@ async function buildAssessment(btn, force){
     if(g) g.addEventListener('click', function(){ var t=document.getElementById('context'); if(t){ t.scrollIntoView({behavior:'smooth',block:'center'}); t.focus(); } });
     var ba = document.getElementById('build-anyway');
     if(ba) ba.addEventListener('click', function(){ buildAssessment(btn, true); });
+    // Ambient auto-flow hit the "paste last visit first" guard: stop the banner and bring the guard
+    // (which is in assess-results, below the hidden HPI panel) into view so it isn't missed.
+    if(_ambientFlow){ _ambientFlow = false; tbpAmbientProgress('clear'); try { document.getElementById('assess-results').scrollIntoView({ behavior:'smooth', block:'center' }); } catch(e){} }
     return;
   }
   // Slice 4b: surface the provider-owned clinical calls (preflight) before writing.
@@ -1647,9 +1702,12 @@ async function buildAssessment(btn, force){
       }
     } catch(e){}
     var qs = (pf && pf.questions) ? pf.questions : [];
+    // The preflight is ready — the ambient banner has done its job, clear it so the questions stand alone.
+    if(_ambientFlow){ _ambientFlow = false; tbpAmbientProgress('clear'); }
     if(!qs.length){ await generateNote(inp, scope, {}, []); }   // nothing to confirm — generate directly
     else { renderPreflightCards(inp, scope, qs); box.scrollIntoView({ behavior:'smooth', block:'start' }); }
   } catch(err){
+    if(_ambientFlow){ _ambientFlow = false; tbpAmbientProgress('clear'); }
     box.innerHTML = '<div class="err">'+esc(err.message || 'Could not read the visit.')+'</div>';
   } finally {
     btn.disabled = false; btn.innerHTML = label;
