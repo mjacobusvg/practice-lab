@@ -1203,7 +1203,8 @@ async function runDraft(sourceText, btn, errEl, silent){
 var _autoDraftInFlight = false;
 function tbpAutoDraftAmbient(){
   if(_autoDraftInFlight) return;
-  if(sourceMode !== 'ambient') return;
+  sourceMode = 'ambient';   // reaching here means a recording just finished; draft it as a transcript
+  try { if(typeof closeAmbientSetup==='function') closeAmbientSetup(); } catch(e){}   // close the record modal so the drafting/preflight is visible
   try { var ov0=document.getElementById('focus-overlay'); if(ov0 && ov0.classList.contains('open') && typeof focusSyncBack==='function') focusSyncBack(); } catch(e){}
   var raw = document.getElementById('raw');
   var src = raw ? raw.value.trim() : '';
@@ -3243,8 +3244,10 @@ function loadVaultTemplates(){
       if(!transcript){ setStatus('No speech was recognized in the recording.', true); tbpNotifyDesk('idle'); resetBtn(); return; }
       appendTranscript(transcript);
       tbpNotifyDesk('done');   // background tab shows the steady "ready to review" dot
-      // Ambient fast path: draft the HPI right away instead of waiting for a manual Draft click.
-      try { if(sourceMode==='ambient' && typeof tbpAutoDraftAmbient==='function') tbpAutoDraftAmbient(); else setStatus('Done — transcript added to your notes. Review, then Draft.'); }
+      // Ambient fast path: reaching finalizeRecording IS an ambient visit, so auto-draft the HPI
+      // (no manual Draft click) — fire unconditionally, don't hinge on sourceMode. tbpAutoDraftAmbient
+      // closes the record modal so the drafting/preflight is visible on the main screen.
+      try { if(typeof tbpAutoDraftAmbient==='function') tbpAutoDraftAmbient(); else setStatus('Done — transcript added to your notes. Review, then Draft.'); }
       catch(e){ setStatus('Done — transcript added to your notes. Review, then Draft.'); }
     } catch(err){
       setStatus((err.message || 'Transcription failed.')+recTag, true);
