@@ -3235,6 +3235,13 @@ function loadVaultTemplates(){
     // would lose a COMPLETED recording. This makes a finished transcript survive reload and any
     // later draft-sync, and it is recoverable via crash-restore.
     try{ if(window.tbpSaveDraft) window.tbpSaveDraft(); }catch(e){}
+    // Auto-draft the moment a transcript lands, from the ONE place every transcript flows through.
+    // A recording can arrive two ways: the live finalizeRecording poll, OR the resume path
+    // (tbpResumePendingTx) when the transcription finishes after the iframe reloaded/suspended mid-poll
+    // — common in the tab-switching Patient Desk. Wiring the draft here (instead of at each call site)
+    // means neither path can silently drop the clinician on a dead "Review, then Draft" screen.
+    // Guarded (_autoDraftInFlight) so a double delivery can't double-fire.
+    try { if(typeof tbpAutoDraftAmbient==='function') tbpAutoDraftAmbient(); } catch(e){}
   }
   function azureCall(payload){
     payload.token = authToken;
@@ -3300,13 +3307,10 @@ function loadVaultTemplates(){
       var transcript = await pollTranscript(st.jobUrl, up.blobName);
       try{ if(window.tbpTxClear) window.tbpTxClear(); }catch(e){}
       if(!transcript){ setStatus('No speech was recognized in the recording.', true); tbpNotifyDesk('idle'); resetBtn(); return; }
-      appendTranscript(transcript);
       tbpNotifyDesk('done');   // background tab shows the steady "ready to review" dot
-      // Ambient fast path: reaching finalizeRecording IS an ambient visit, so auto-draft the HPI
-      // (no manual Draft click) — fire unconditionally, don't hinge on sourceMode. tbpAutoDraftAmbient
-      // closes the record modal so the drafting/preflight is visible on the main screen.
-      try { if(typeof tbpAutoDraftAmbient==='function') tbpAutoDraftAmbient(); else setStatus('Done — transcript added to your notes. Review, then Draft.'); }
-      catch(e){ setStatus('Done — transcript added to your notes. Review, then Draft.'); }
+      // appendTranscript is the single place the auto-draft fires (covers both this live path and the
+      // resume path), so just deliver the transcript — the draft + progress banner kick off there.
+      appendTranscript(transcript);
     } catch(err){
       setStatus((err.message || 'Transcription failed.')+recTag, true);
       tbpNotifyDesk('idle');
@@ -3394,7 +3398,9 @@ function loadVaultTemplates(){
       setStatus('Finishing a recording that was still transcribing…');
       var transcript = await pollTranscript(p.jobUrl, p.blobName);
       try{ if(window.tbpTxClear) window.tbpTxClear(); }catch(e){}
-      if(transcript){ appendTranscript(transcript); setStatus('Recovered your recording — transcript added to your notes. Review, then Draft.'); }
+      // appendTranscript now auto-drafts (and shows the progress banner), so don't overwrite its
+      // status with a stale "Review, then Draft" — that was the message stranding the resumed visit.
+      if(transcript){ appendTranscript(transcript); }
     }catch(e){
       try{ if(window.tbpTxClear) window.tbpTxClear(); }catch(_){}
     }
