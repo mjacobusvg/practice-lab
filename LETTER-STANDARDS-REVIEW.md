@@ -97,8 +97,13 @@ The database is the source of truth. Prior hand-notes were behind the table.
 - `continuation_of_care/standard` (v1.1)
 - `general_clinical_support/standard` (v1.1)
 
-### Still v1.0 active (not yet through editorial review)
-- `medicaid_private_pay/acknowledgment` (6.5 KB, much larger than the others; review separately)
+### Not in the editorial review track
+- `medicaid_private_pay/acknowledgment` (v1.0). A patient-facing financial acknowledgment, not a
+  To-Whom clinical letter. Already verified and currently single-user (Michael only). Left as-is,
+  intentionally outside this framework sweep. Do not "review" or rewrite it here.
+
+With that, every clinical letter in the library has been through the framework. Remaining work is
+net-new templates (see "To build"), not review of existing ones.
 
 ### To build
 - FMLA (no row exists yet). Note: FMLA is the recognized exception to principle 8, since the
