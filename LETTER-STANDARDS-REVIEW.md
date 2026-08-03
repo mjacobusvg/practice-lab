@@ -94,9 +94,9 @@ The database is the source of truth. Prior hand-notes were behind the table.
 - `treatment_verification/court` (v1.1)
 - `medication_travel/standard` (v1.1)
 - `medication_travel/controlled` (v1.1)
+- `continuation_of_care/standard` (v1.1)
 
 ### Still v1.0 active (not yet through editorial review)
-- `continuation_of_care/standard`
 - `general_clinical_support/standard`
 - `medicaid_private_pay/acknowledgment` (6.5 KB, much larger than the others; review separately)
 
@@ -272,6 +272,25 @@ Decisions locked in during review, kept here so the reasoning is not lost.
   toggle-choice notice feature shows the caution beneath the "Will the patient be traveling
   internationally?" toggle when Yes is selected. Quantity and days supply are omitted by
   default.
+
+### Continuation of Care (continuation_of_care/standard, v1.1)
+- The one letter type where full clinical content is correct: it is a clinician-to-clinician
+  handoff, so diagnoses and current medications are necessary, not over-disclosure. Kept them,
+  but time-anchored the headings ("ACTIVE DIAGNOSES AT TRANSFER," "MEDICATION REGIMEN AT
+  TRANSFER") so the data is not mistaken as current long after the handoff.
+- Two deterministic openings via a required treatment-status choice (ongoing vs ended), no
+  silent default, replacing "from START to present."
+- Added a KNOWN MEDICATION ALLERGIES OR CLINICALLY SIGNIFICANT ADVERSE REACTIONS section as a
+  required explicit choice (none documented / listed / not assessed). Silently omitting allergy
+  status on a medication handoff is a safety gap, so it uses the confirm gate.
+- Brief history renamed to BRIEF TREATMENT SUMMARY (default off), refocused on what changes
+  immediate care and explicitly discouraging unfocused narrative, trauma detail, negative
+  characterizations, and adherence speculation.
+- "Complete records upon signed release" became "additional relevant treatment records ...
+  appropriate authorization" (minimum necessary). Authorization basis is handled in the sending
+  workflow, not the letter body. Kept "Dear Receiving Provider" and the coordination contact
+  line (a real clinician-to-clinician need). Name only, no pronoun engine.
+- Reused engine features only (confirm gate, conditional blocks); no front-end change.
 
 ## Hard rules (repo-wide, but they bite here)
 
