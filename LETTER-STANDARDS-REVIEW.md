@@ -95,9 +95,9 @@ The database is the source of truth. Prior hand-notes were behind the table.
 - `medication_travel/standard` (v1.1)
 - `medication_travel/controlled` (v1.1)
 - `continuation_of_care/standard` (v1.1)
+- `general_clinical_support/standard` (v1.1)
 
 ### Still v1.0 active (not yet through editorial review)
-- `general_clinical_support/standard`
 - `medicaid_private_pay/acknowledgment` (6.5 KB, much larger than the others; review separately)
 
 ### To build
@@ -291,6 +291,24 @@ Decisions locked in during review, kept here so the reasoning is not lost.
   workflow, not the letter body. Kept "Dear Receiving Provider" and the coordination contact
   line (a real clinician-to-clinician need). Name only, no pronoun engine.
 - Reused engine features only (confirm gate, conditional blocks); no front-end change.
+
+### General Clinical Letter of Support (general_clinical_support/standard, v1.1)
+- The catch-all wrapper, and the easiest template to misuse (a clinician can write a forensic or
+  capacity opinion in the freeform body that no later disclaimer can neutralize). The v1.1 work
+  moved the real protection out of the fixed copy and into the workflow.
+- Broadened the scope opener to "based solely on information obtained within the treating
+  relationship" (covers patient-reported history and records, not just observations) with a
+  precise forensic/ultimate-decision boundary (custody, parenting capacity, legal competence,
+  credibility, fitness for any role, or any other legal or forensic question).
+- Cut the contact boilerplate and "at the patient's request" (authorization lives in the
+  workflow, not the letter); "Purpose:" is a scannable label. DOB optional, default off.
+- Required confirmation gate (reuses the confirm gate): the clinician must affirm that no more
+  specific template applies and that the letter is not a forensic/custody/capacity/credibility/
+  fitness opinion before Generate works.
+- Route-to-specific and stay-in-scope field notices, plus a new nonblocking keyword-alert
+  feature: template-specific routing messages fire as the clinician types the purpose or body
+  (jury duty, ESA, return to work, accommodation, custody/competence/credibility), matched with
+  word boundaries so "incompetence" does not trip "competence."
 
 ## Hard rules (repo-wide, but they bite here)
 
