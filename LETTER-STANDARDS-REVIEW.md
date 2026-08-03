@@ -90,9 +90,9 @@ The database is the source of truth. Prior hand-notes were behind the table.
   as final on 2026-08-02.
 - `return_to_work/restricted_duty` (v1.1)
 - `workplace_accommodation/standard` (v1.1)
+- `academic_accommodation/standard` (v1.1, "Postsecondary Academic Accommodation")
 
 ### Still v1.0 active (not yet through editorial review)
-- `academic_accommodation/standard`
 - `continuation_of_care/standard`
 - `general_clinical_support/standard`
 - `medication_travel/standard`
@@ -103,6 +103,15 @@ The database is the source of truth. Prior hand-notes were behind the table.
 ### To build
 - FMLA (no row exists yet). Note: FMLA is the recognized exception to principle 8, since the
   form genuinely requires a prognosis.
+- Detailed Disability Documentation (postsecondary). A diagnosis-required pathway for
+  institutions whose disability office demands a detailed form: diagnosis, date/duration,
+  diagnostic method, current severity, treatment history, prognosis, and an explicit
+  diagnosis-to-limitation-to-adjustment nexus. Companion to the standard Postsecondary letter,
+  which stays diagnosis-free. Not yet built.
+- K-12 school letter. Provider information supporting a school-district evaluation or 504/IEP
+  process, NOT a clinician-dictated set of finalized accommodations. Different eligibility and
+  service structure from postsecondary; the Postsecondary letter explicitly excludes K-12. Not
+  yet built.
 
 ## Per-template decision log
 
@@ -194,6 +203,28 @@ Decisions locked in during review, kept here so the reasoning is not lost.
 - Follow-up (not yet done): revisit the already-locked letters (ESA, Treatment Verification,
   the RTW pair, Jury Duty) to adopt name-plus-pronouns where they currently lean on
   "the patient" / "this patient," so the whole library speaks in one voice.
+
+### Postsecondary Academic Accommodation (academic_accommodation/standard, v1.1)
+- Education sibling of the ADA letter. Renamed from "Academic Accommodation" to
+  "Postsecondary Academic Accommodation" and scoped to college/university/graduate/professional
+  programs. K-12 is explicitly out of scope (it needs its own evaluation-support letter).
+- Removed diagnosis entirely (no include_diagnosis toggle, no DIAGNOSIS_LABEL). Institution
+  diagnostic requirements route to the planned Detailed Disability Documentation letter rather
+  than a toggle, because for academic offices that need is not rare.
+- Split FUNCTIONAL_LIMITATIONS into MAJOR_LIFE_ACTIVITIES and ACADEMIC_EFFECTS to force the
+  condition-to-limitation-to-effect-to-accommodation bridge.
+- "or other effective accommodations identified through the institution's accommodation
+  process" (works across access offices, student services, committees, private programs).
+- Removed the ADA/Section 504 citation from the body (the governing framework varies by
+  institution type; the clinician need not sort it out). Cut the redundant functional-impact
+  sentence and the contact boilerplate. Tightened the scope paragraph to "does not assess
+  overall academic ability or predict academic performance."
+- Omitted duration deliberately (the institution manages re-verification, term, and program
+  scope); a duration field would pressure false precision.
+- Name plus clinician-set pronouns (reuses the engine). Adversarial guardrails as field notices
+  against essential-standards language, plus cautions that attendance flexibility must be
+  confirmed clinically necessary and phrased subject to essential course requirements, and that
+  lecture recording is not universally appropriate.
 
 ## Hard rules (repo-wide, but they bite here)
 
