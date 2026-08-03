@@ -280,8 +280,11 @@ You will be told which sections are being generated (assessment, therapy, or bot
 OUTPUT FORMAT: Respond ONLY with a JSON object. No markdown, no backticks. Raw JSON.
 
 {
+  "planDetected": true | false,
   "questions": [ array of question objects ]
 }
+
+Set "planDetected" to true ONLY if the visit content (HPI / transcript / the "what are you doing this visit" input) already documents what the clinician DID this visit: a medication action (start, stop, increase, decrease, continue), a decision to hold, a lab or referral order, or an explicit "no changes." Set it to false when the visit does not make the plan clear and the clinician would need to state it. This flag only controls whether the app prompts the clinician to type the plan; it never changes your questions.
 
 Each question object: {"id": "short_id", "select": "single" | "multi", "text": "one sentence", "options": ["option 1", "option 2", "..."]}
 
@@ -469,7 +472,7 @@ async function runPreflight(inp, scope){
   if(scope==='assessment' || scope==='both'){
     questions.unshift(JSON.parse(JSON.stringify(LENGTH_CARD)));
   }
-  return { questions: questions };
+  return { questions: questions, planDetected: (parsed.planDetected === true) };
 }
 
 // Turn the provider's clinical-decision selections into the PROVIDER CLINICAL DECISIONS block.
