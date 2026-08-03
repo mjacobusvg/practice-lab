@@ -322,6 +322,28 @@ Decisions locked in during review, kept here so the reasoning is not lost.
   (jury duty, ESA, return to work, accommodation, custody/competence/credibility), matched with
   word boundaries so "incompetence" does not trip "competence."
 
+## Identified category gap: surgery / procedure psychiatric clearance letters
+
+These are NOT in the library and are a different stance from every reviewed letter. The
+reviewed letters are treating-provider documentation (describe, do not certify); these are
+assessment / clearance letters where the clinician legitimately renders an opinion that criteria
+are met. They are governed by external standards, so each needs its own careful template, and
+each must document an assessment the clinician actually performed (write it up, do not
+manufacture criteria). Unlike FMLA, these are genuinely letters and fit the generator. The
+pronoun engine is directly relevant, especially for the gender-affirming letter.
+
+- Gender-affirming surgery letter (WPATH SOC-8). SOC-8 moved most adult surgeries toward a
+  single letter from one qualified professional (away from the older two-letter model):
+  assessment relationship and clinician competence, persistent gender incongruence, capacity to
+  consent, and co-occurring mental health concerns reasonably managed. Surgeon and insurer
+  requirements vary and layer on top.
+- Bariatric surgery psychological clearance. Pre-surgical psychological evaluation commonly
+  required by surgeon and insurer: evaluation performed, capacity and understanding, readiness
+  and support, absence of contraindications, and any conditions or recommendations.
+- Likely siblings in the same category to consider later: other pre-procedure psychiatric
+  clearances (for example transplant, spinal-cord stimulator or other implantable-device
+  psychological evaluations).
+
 ## Hard rules (repo-wide, but they bite here)
 
 - No em dashes, anywhere, ever. Absolute, including letter copy.
