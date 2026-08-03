@@ -300,7 +300,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. <span style="opacity:.5">build ambient-9</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. <span style="opacity:.5">build ambient-10</span></div>
 </div>
 </div>
 
@@ -1151,9 +1151,10 @@ function tbpNotifyDesk(status){
 
 // ── Generate (Slice 1) — reusable so the top box AND the prep starting-note box can draft ──
 async function runDraft(sourceText, btn, errEl, silent){
+  if(silent) tbpDbg('runDraft: entered, visitType='+visitType+' srcLen='+((sourceText||'').length));
   errEl.innerHTML = '';
-  if(!visitType){ errEl.innerHTML='<div class="err">Choose a visit type first (New patient evaluation or Follow-up) &mdash; it sets which of your templates is used.</div>'; return false; }
-  if(!sourceText || sourceText.length < 15){ errEl.innerHTML='<div class="err">Paste your visit notes first, even rough ones.</div>'; return false; }
+  if(!visitType){ if(silent) tbpDbg('runDraft: BAILED — no visitType'); errEl.innerHTML='<div class="err">Choose a visit type first (New patient evaluation or Follow-up) &mdash; it sets which of your templates is used.</div>'; return false; }
+  if(!sourceText || sourceText.length < 15){ if(silent) tbpDbg('runDraft: BAILED — src too short'); errEl.innerHTML='<div class="err">Paste your visit notes first, even rough ones.</div>'; return false; }
   var label = btn ? btn.innerHTML : ''; var ok = false;
   if(btn){ btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Drafting&hellip;'; }
   // Typed visits stream the draft as it builds. The SILENT ambient flow drafts in the background
@@ -1169,7 +1170,9 @@ async function runDraft(sourceText, btn, errEl, silent){
   var streamEl = document.getElementById('hpi-stream');
   tbpNotifyDesk('busy');
   try {
+    if(silent) tbpDbg('runDraft: calling draft API…');
     var hpi = await callAPI(draftSystem(), [{role:'user', content: gatherSource(sourceText)}], 3400, silent ? undefined : function(partial){ if(streamEl) streamEl.textContent = partial; });
+    if(silent) tbpDbg('runDraft: draft API returned, hpiLen='+((hpi||'').length));
     if(!hpi){ throw new Error('No HPI came back. Try again.'); }
     // Show the draft immediately (feels fast), then finalize the review in the background.
     if(!silent) renderResultPreview(hpi);
@@ -1192,12 +1195,14 @@ async function runDraft(sourceText, btn, errEl, silent){
       try{ mseText = await window.NoteEngine.runMSE(res.hpi, mseBase); }catch(e){}
       finalHpi += "\n\nMental Status Exam:\n" + (mseText || mseBase);
     }
+    if(silent) tbpDbg('runDraft: rendering result (hpi hidden), then preflight');
     renderResult(finalHpi, res.flags, res.verified !== false, silent ? {hideHpi:true} : null);
     // In the silent ambient flow the banner and the preflight cards own the scroll — don't yank the
     // view down to the (hidden) HPI panel here. Typed drafts still scroll to their result.
     if(!silent) document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
     ok = true;
   } catch(err){
+    if(silent) tbpDbg('runDraft: ERROR — '+(err && (err.message||err)));
     errEl.innerHTML = '<div class="err">'+esc(err.message||err)+'</div>';
   } finally {
     if(btn){ btn.disabled = false; btn.innerHTML = label; }
@@ -1242,21 +1247,41 @@ function tbpAmbientProgress(stageKey, errMsg){
     + rows + '<div class="hint" style="margin-top:8px">No need to do anything &mdash; your questions appear here when it&rsquo;s ready.</div></div>';
   if(firstPaint){ try { el.scrollIntoView({ behavior:'smooth', block:'center' }); } catch(e){} }
 }
+// TEMP DIAGNOSTIC — a fixed on-screen trace so the ambient auto-draft flow reports exactly where it
+// stops, independent of scroll position or which panel renders. Remove once the flow is confirmed.
+function tbpDbg(msg){
+  try {
+    var box = document.getElementById('tbp-trace');
+    if(!box){
+      box = document.createElement('div');
+      box.id = 'tbp-trace';
+      box.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99999;max-width:70vw;max-height:45vh;overflow:auto;background:#0a1626;color:#7fe3c0;border:1px solid #2a4a5a;border-radius:8px;padding:8px 10px;font:12px/1.5 monospace;white-space:pre-wrap';
+      box.textContent = 'ambient trace (build ambient-10):\n';
+      document.body.appendChild(box);
+    }
+    box.textContent += msg + '\n';
+    box.scrollTop = box.scrollHeight;
+  } catch(e){}
+}
+try { window.tbpDbg = tbpDbg; } catch(e){}   // guarantee it's reachable from the recording IIFE scope
 
 // Ambient fast path: auto-draft the HPI the moment transcription lands, so there is no manual
 // Draft click. Ambient-only (typed visits still click Draft). Guarded against double-fire.
 var _autoDraftInFlight = false;
 function tbpAutoDraftAmbient(){
-  if(_autoDraftInFlight) return;
+  tbpDbg('autoDraft: entered, inflight='+_autoDraftInFlight);
+  if(_autoDraftInFlight) { tbpDbg('autoDraft: BAILED — already in flight'); return; }
   sourceMode = 'ambient';   // reaching here means a recording just finished; draft it as a transcript
   try { if(typeof closeAmbientSetup==='function') closeAmbientSetup(); } catch(e){}   // close the record modal so the drafting/preflight is visible
   try { var ov0=document.getElementById('focus-overlay'); if(ov0 && ov0.classList.contains('open') && typeof focusSyncBack==='function') focusSyncBack(); } catch(e){}
   var raw = document.getElementById('raw');
   var src = raw ? raw.value.trim() : '';
-  if(!src || src.length < 15){ setStatus('Done — transcript added to your notes. Review, then Draft.'); return; }
+  tbpDbg('autoDraft: rawFound='+(!!raw)+' srcLen='+src.length);
+  if(!src || src.length < 15){ tbpDbg('autoDraft: BAILED — src too short'); setStatus('Done — transcript added to your notes. Review, then Draft.'); return; }
   _autoDraftInFlight = true;
   _ambientFlow = true;
   setStatus('Transcribed — building your note…');
+  tbpDbg('autoDraft: painting banner + calling runDraft');
   tbpAmbientProgress('draft');   // paint the staged banner and scroll to it immediately, before any await
   var errEl = document.getElementById('err-box') || { innerHTML:'' };
   Promise.resolve(runDraft(src, null, errEl, true)).then(function(ok){
@@ -3241,7 +3266,8 @@ function loadVaultTemplates(){
     // — common in the tab-switching Patient Desk. Wiring the draft here (instead of at each call site)
     // means neither path can silently drop the clinician on a dead "Review, then Draft" screen.
     // Guarded (_autoDraftInFlight) so a double delivery can't double-fire.
-    try { if(typeof tbpAutoDraftAmbient==='function') tbpAutoDraftAmbient(); } catch(e){}
+    try { if(window.tbpDbg) window.tbpDbg('appendTranscript: done, wnMode='+wnMode+' rawLen='+((document.getElementById('raw')||{value:''}).value.length)+' typeofAuto='+(typeof tbpAutoDraftAmbient)); } catch(e){}
+    try { if(typeof tbpAutoDraftAmbient==='function') tbpAutoDraftAmbient(); else if(window.tbpDbg) window.tbpDbg('appendTranscript: tbpAutoDraftAmbient NOT a function'); } catch(e){ try{ if(window.tbpDbg) window.tbpDbg('appendTranscript: threw calling autoDraft — '+(e&&(e.message||e))); }catch(_){} }
   }
   function azureCall(payload){
     payload.token = authToken;
