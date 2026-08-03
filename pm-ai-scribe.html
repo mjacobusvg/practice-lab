@@ -1200,7 +1200,13 @@ function tbpAutoDraftAmbient(){
   setStatus('Transcribed — drafting your HPI…');
   var errEl = document.getElementById('err-box') || { innerHTML:'' };
   Promise.resolve(runDraft(src, null, errEl)).then(function(ok){
-    if(ok){ try { var ov=document.getElementById('focus-overlay'); if(ov && ov.classList.contains('open') && typeof closeFocus==='function') closeFocus(); } catch(e){} }
+    if(ok){
+      try { var ov=document.getElementById('focus-overlay'); if(ov && ov.classList.contains('open') && typeof closeFocus==='function') closeFocus(); } catch(e){}
+      // Continue straight into preflight (surface the clinical calls) with no manual Build click.
+      // For a follow-up with no prior note, buildAssessment shows its paste/prep reminder instead
+      // of generating a thin, unreliable assessment — exactly the guard we want.
+      try { var bb=document.getElementById('build-assess'); if(bb && typeof buildAssessment==='function') buildAssessment(bb); } catch(e){}
+    }
   }).catch(function(){}).then(function(){ _autoDraftInFlight = false; });
 }
 document.getElementById('generate').addEventListener('click', function(){
@@ -1595,8 +1601,8 @@ async function buildAssessment(btn, force){
   // top box, but let them build anyway (the HPI sometimes carries meds/diagnoses inline).
   if(visitType === 'follow_up' && dxprior.length < 40 && !force){
     document.getElementById('assess-results').innerHTML =
-      '<div class="flags"><div class="flags-h">Paste last visit\'s assessment first</div>'
-      + '<div class="hint" style="margin-top:6px;line-height:1.5">The assessment is built from the <strong style="color:var(--cream)">prior diagnosis list (with ICD-10 codes)</strong>, plus the full prior assessment and current meds if you have them. Paste last visit\'s note (with its assessment) into <strong style="color:var(--cream)">&ldquo;Last visit\'s note + assessment&rdquo;</strong> near the top, then build.</div>'
+      '<div class="flags"><div class="flags-h">Paste last visit\'s note first &mdash; or your diagnoses will be off</div>'
+      + '<div class="hint" style="margin-top:6px;line-height:1.5">A follow-up HPI alone is light on detail, so without last visit\'s <strong style="color:var(--cream)">diagnosis list and assessment</strong> the diagnoses and carry-forward will be <strong style="color:var(--cream)">limited and error-prone</strong>. Paste last visit\'s note (with its assessment) into <strong style="color:var(--cream)">&ldquo;Last visit\'s note + assessment&rdquo;</strong> near the top, then build. Prepping your visits ahead of time loads this automatically.</div>'
       + '<div style="margin-top:10px"><button class="btn-ghost" id="goto-carry">Jump to that box</button> '
       + '<button class="btn-ghost" id="build-anyway">Build without it anyway</button></div></div>';
     var g = document.getElementById('goto-carry');
