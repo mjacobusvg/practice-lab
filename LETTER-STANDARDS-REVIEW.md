@@ -322,27 +322,58 @@ Decisions locked in during review, kept here so the reasoning is not lost.
   (jury duty, ESA, return to work, accommodation, custody/competence/credibility), matched with
   word boundaries so "incompetence" does not trip "competence."
 
-## Identified category gap: surgery / procedure psychiatric clearance letters
+## The library sorts into three categories (not one)
 
-These are NOT in the library and are a different stance from every reviewed letter. The
-reviewed letters are treating-provider documentation (describe, do not certify); these are
-assessment / clearance letters where the clinician legitimately renders an opinion that criteria
-are met. They are governed by external standards, so each needs its own careful template, and
-each must document an assessment the clinician actually performed (write it up, do not
-manufacture criteria). Unlike FMLA, these are genuinely letters and fit the generator. The
-pronoun engine is directly relevant, especially for the gender-affirming letter.
+Working out the surgery gap made the real structure clear. Every item the Library touches
+falls into one of three classes, and the editorial posture differs by class:
 
-- Gender-affirming surgery letter (WPATH SOC-8). SOC-8 moved most adult surgeries toward a
-  single letter from one qualified professional (away from the older two-letter model):
-  assessment relationship and clinician competence, persistent gender incongruence, capacity to
-  consent, and co-occurring mental health concerns reasonably managed. Surgeon and insurer
-  requirements vary and layer on top.
-- Bariatric surgery psychological clearance. Pre-surgical psychological evaluation commonly
-  required by surgeon and insurer: evaluation performed, capacity and understanding, readiness
-  and support, absence of contraindications, and any conditions or recommendations.
-- Likely siblings in the same category to consider later: other pre-procedure psychiatric
-  clearances (for example transplant, spinal-cord stimulator or other implantable-device
-  psychological evaluations).
+1. **Treating-provider letters** (all 13 currently active: ESA, workplace + academic
+   accommodation, jury duty, RTW full + restricted, treatment verification court + general,
+   medication travel standard + controlled, continuation of care, medicaid/private-pay).
+   Posture: **describe, do not certify.** This is the framework the whole editorial sweep
+   applied.
+2. **Structured administrative documentation** (FMLA, disability forms, insurer forms,
+   institution-specific detailed documentation). Driven by recipient-required fields and
+   timeframes, not by our prose. FMLA is the flagged example: it is a form, not a letter.
+3. **Assessment-derived opinion letters** (the gap below). These legitimately carry an
+   evaluative conclusion, but only *after* a documented assessment the clinician actually
+   performed. They are governed by external professional standards, need their own careful
+   templates, and should probably be a distinct wizard class rather than just more rows in the
+   Letter Library. The rule that never bends: **never infer a criterion is met because a field
+   was left blank.**
+
+## Category 3 gap: assessment-derived opinion letters (NOT built)
+
+Different stance from every reviewed letter: the clinician renders a bounded opinion, governed
+by external standards, documenting an assessment actually performed (write it up, do not
+manufacture criteria). Unlike FMLA these are genuinely letters and fit the generator. The
+pronoun engine is directly relevant, especially for the gender-affirming letter. Build
+gender-affirming first (already contemplated in the original high-risk wizard concept; the user
+has prior forum/educational content to seed it; clearest anti-gatekeeping philosophy; pronoun
+machinery already built), then bariatric.
+
+- **Gender-Affirming Procedure Assessment / Referral Letter** (WPATH SOC-8 anchor). NOTE the
+  name: assessment / referral, NOT "clearance" — the tool must not frame the clinician as
+  granting permission or certifying surgery is risk-free. Bounded conclusion wording:
+  *"based on the assessment performed, the documented criteria relevant to the requested
+  procedure have been addressed, and no identified mental-health concern presently precludes
+  proceeding."* Elements: assessment relationship and clinician competence, persistent gender
+  incongruence, capacity to consent, co-occurring concerns reasonably managed, and
+  reproductive/fertility counseling documentation when the recipient requires it. DO NOT
+  hardcode "SOC-8 = one letter": SOC-8 changed the professional recommendation, but surgeons
+  and payers impose their own requirements that vary by procedure and jurisdiction. The
+  template asks for the actual surgeon/insurer requirement and treats SOC-8 as the standards
+  anchor, not a universal-document guarantee.
+- **Bariatric pre-surgical psychosocial evaluation.** More than a letter template: a guided
+  evaluation workflow (understanding of procedure and post-op demands, expectations, psychiatric
+  history and current symptoms, eating behavior, substance use, adherence history without
+  moralizing, cognitive capacity, support and practical readiness, modifiable risk factors,
+  contraindications or reasons to delay, perioperative recommendations). ASMBS anchors the
+  psychosocial-evaluation standard. The brief referral letter is ONE output of that evaluation,
+  not the whole product.
+- Likely siblings in the same category to consider later: transplant psychosocial evaluation,
+  spinal-cord stimulator / other implantable-device evaluations, possibly fertility-related
+  procedure-readiness evaluations.
 
 ## Hard rules (repo-wide, but they bite here)
 
