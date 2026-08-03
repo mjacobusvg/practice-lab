@@ -342,7 +342,13 @@ falls into one of three classes, and the editorial posture differs by class:
    Letter Library. The rule that never bends: **never infer a criterion is met because a field
    was left blank.**
 
-## Category 3 gap: assessment-derived opinion letters (NOT built)
+## Category 3 gap: assessment-derived opinion letters (DEFERRED to Letter Generator V2)
+
+**Decision (2026-08-03, Michael): the entire assessment-derived category is out of scope for
+V1 and saved for Version 2 of the Letter Generator.** Do not draft, do not touch
+`tbp_letter_standards`, do not build the wizard class for these until V2 is opened. The section
+below is the parked design spec so V2 can pick it up cold. When V2 starts, build
+gender-affirming first and seed it from Michael's Feb 2026 forum/educational content.
 
 Different stance from every reviewed letter: the clinician renders a bounded opinion, governed
 by external standards, documenting an assessment actually performed (write it up, do not
