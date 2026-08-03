@@ -300,7 +300,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. <span style="opacity:.5">build ambient-11</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. <span style="opacity:.5">build ambient-12</span></div>
 </div>
 </div>
 
@@ -1077,22 +1077,41 @@ function renderResult(hpi, flags, verified, opts){
   // Slice 4: build the assessment right here (same engine as the Note Builder), no copy-paste.
   // One upfront paste of last visit's full note (HPI + assessment) feeds everything: carry-forward,
   // the checklist, AND this assessment. So the assessment reads that same top box, no second paste.
-  html += '<div class="handoff">Ready to work up the assessment? Build it right here from this HPI.';
+  // In the silent ambient flow the clinician has NOT seen the HPI yet (it's revealed only after
+  // preflight), so this whole work-up block is hidden until the preflight questions land, then
+  // revealed BELOW them — and its copy never says "this HPI". In the typed flow it shows as before,
+  // above the preflight, with the manual Build button.
+  var hideHpi = !!(opts && opts.hideHpi);
+  var handoff = '<div class="handoff" id="assess-handoff"'+(hideHpi ? ' style="display:none"' : '')+'>';
+  handoff += hideHpi
+    ? '<div style="color:var(--cream);font-weight:600">Before you generate</div>'
+    : 'Ready to work up the assessment? Build it right here from this HPI.';
   if(visitType === 'follow_up'){
-    html += '<div class="hint" style="margin-top:8px" id="assess-prior-hint"></div>';
+    handoff += '<div class="hint" style="margin-top:8px" id="assess-prior-hint"></div>';
   }
-  html += '<label for="assess-plan" style="display:block;margin-top:14px;font-size:.85rem;color:var(--cream)">What are you doing this visit? <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(recommended &mdash; drives the assessment &amp; plan)</span></label>';
-  html += '<textarea id="assess-plan" style="min-height:70px;margin-top:6px" placeholder="What you did today and why — a med change (which, dose, rationale), a continuation, labs, a referral, or no changes. Add as little or as much as you want; the assessment and plan build the reasoning around it."></textarea>';
-  html += '<label style="display:inline-flex;align-items:center;gap:7px;margin-top:12px;cursor:pointer;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream-dim);font-size:.85rem"><input type="checkbox" id="assess-therapy"'+(therapyGuide?' checked':'')+' style="width:auto"> Include a psychotherapy add-on note</label>';
-  html += '<div style="margin-top:10px"><button class="btn-ghost" type="button" id="pmp-attest-btn" onclick="insertPmpAttestation()" style="border-color:#c9a227;color:#e8cf7a">&#43; PMP reviewed</button> <span class="hint" style="margin-left:6px">Controlled substance? One tap adds a dated PMP-reviewed attestation.</span></div>';
-  html += '<div style="margin-top:12px"><button class="btn" id="build-assess">Build assessment &amp; plan &rarr;</button> <button class="btn-ghost clearvisit-btn" type="button" onclick="clearVisit()" style="border-color:var(--teal)">&#8635; New patient (clear notes)</button></div>';
-  html += '<div class="hint" style="margin-top:8px">First it surfaces the clinical calls for you to confirm (diagnoses, length, therapy), then it writes. Or <a href="#" id="send-nb-link">open the standalone Clinical Note Builder</a> instead.</div></div>';
-  html += '<div id="assess-results"></div>';
+  handoff += '<label for="assess-plan" style="display:block;margin-top:14px;font-size:.85rem;color:var(--cream)">What are you doing this visit? <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">('+(hideHpi ? 'only if it wasn&rsquo;t already said in the visit' : 'recommended &mdash; drives the assessment &amp; plan')+')</span></label>';
+  handoff += '<textarea id="assess-plan" style="min-height:70px;margin-top:6px" placeholder="What you did today and why — a med change (which, dose, rationale), a continuation, labs, a referral, or no changes. Add as little or as much as you want; the assessment and plan build the reasoning around it."></textarea>';
+  // The therapy toggle sets scope BEFORE preflight runs, so in the ambient flow (where preflight has
+  // already run by the time this shows) it's read-only history — keep it in the DOM for buildAssessment
+  // to read, but hide it so a dead post-preflight toggle isn't offered.
+  handoff += '<label style="display:'+(hideHpi?'none':'inline-flex')+';align-items:center;gap:7px;margin-top:12px;cursor:pointer;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream-dim);font-size:.85rem"><input type="checkbox" id="assess-therapy"'+(therapyGuide?' checked':'')+' style="width:auto"> Include a psychotherapy add-on note</label>';
+  handoff += '<div style="margin-top:10px"><button class="btn-ghost" type="button" id="pmp-attest-btn" onclick="insertPmpAttestation()" style="border-color:#c9a227;color:#e8cf7a">&#43; PMP reviewed</button> <span class="hint" style="margin-left:6px">Controlled substance? One tap adds a dated PMP-reviewed attestation.</span></div>';
+  // The Build button drives the typed flow; the ambient flow auto-runs preflight, so it's hidden there
+  // (kept in the DOM because the auto-draft calls buildAssessment on this element).
+  handoff += '<div style="margin-top:12px"><button class="btn" id="build-assess"'+(hideHpi?' style="display:none"':'')+'>Build assessment &amp; plan &rarr;</button> <button class="btn-ghost clearvisit-btn" type="button" onclick="clearVisit()" style="border-color:var(--teal)">&#8635; New patient (clear notes)</button></div>';
+  if(!hideHpi){
+    handoff += '<div class="hint" style="margin-top:8px">First it surfaces the clinical calls for you to confirm (diagnoses, length, therapy), then it writes. Or <a href="#" id="send-nb-link">open the standalone Clinical Note Builder</a> instead.</div>';
+  }
+  handoff += '</div>';
+  // Ambient: preflight first, work-up block after it. Typed: work-up block first, then preflight.
+  html += hideHpi ? ('<div id="assess-results"></div>' + handoff) : (handoff + '<div id="assess-results"></div>');
 
   document.getElementById('results').innerHTML = html;
   refreshAssessPriorHint();
-  document.getElementById('build-assess').addEventListener('click', function(){ if(tbpDemoBlock()) return; buildAssessment(this); });
-  document.getElementById('send-nb-link').addEventListener('click', function(e){ e.preventDefault(); sendToNoteBuilder(); });
+  var baBtn = document.getElementById('build-assess');
+  if(baBtn) baBtn.addEventListener('click', function(){ if(tbpDemoBlock()) return; buildAssessment(this); });
+  var snl = document.getElementById('send-nb-link');
+  if(snl) snl.addEventListener('click', function(e){ e.preventDefault(); sendToNoteBuilder(); });
   var af = document.getElementById('apply-flags');
   if(af) af.addEventListener('click', function(){ if(tbpDemoBlock()) return; applyFlagFixes(flags); });
 }
@@ -1151,10 +1170,9 @@ function tbpNotifyDesk(status){
 
 // ── Generate (Slice 1) — reusable so the top box AND the prep starting-note box can draft ──
 async function runDraft(sourceText, btn, errEl, silent){
-  if(silent) tbpDbg('runDraft: entered, visitType='+visitType+' srcLen='+((sourceText||'').length));
   errEl.innerHTML = '';
-  if(!visitType){ if(silent) tbpDbg('runDraft: BAILED — no visitType'); errEl.innerHTML='<div class="err">Choose a visit type first (New patient evaluation or Follow-up) &mdash; it sets which of your templates is used.</div>'; return false; }
-  if(!sourceText || sourceText.length < 15){ if(silent) tbpDbg('runDraft: BAILED — src too short'); errEl.innerHTML='<div class="err">Paste your visit notes first, even rough ones.</div>'; return false; }
+  if(!visitType){ errEl.innerHTML='<div class="err">Choose a visit type first (New patient evaluation or Follow-up) &mdash; it sets which of your templates is used.</div>'; return false; }
+  if(!sourceText || sourceText.length < 15){ errEl.innerHTML='<div class="err">Paste your visit notes first, even rough ones.</div>'; return false; }
   var label = btn ? btn.innerHTML : ''; var ok = false;
   if(btn){ btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Drafting&hellip;'; }
   // Typed visits stream the draft as it builds. The SILENT ambient flow drafts in the background
@@ -1170,9 +1188,7 @@ async function runDraft(sourceText, btn, errEl, silent){
   var streamEl = document.getElementById('hpi-stream');
   tbpNotifyDesk('busy');
   try {
-    if(silent) tbpDbg('runDraft: calling draft API…');
     var hpi = await callAPI(draftSystem(), [{role:'user', content: gatherSource(sourceText)}], 3400, silent ? undefined : function(partial){ if(streamEl) streamEl.textContent = partial; });
-    if(silent) tbpDbg('runDraft: draft API returned, hpiLen='+((hpi||'').length));
     if(!hpi){ throw new Error('No HPI came back. Try again.'); }
     // Show the draft immediately (feels fast), then finalize the review in the background.
     if(!silent) renderResultPreview(hpi);
@@ -1195,14 +1211,12 @@ async function runDraft(sourceText, btn, errEl, silent){
       try{ mseText = await window.NoteEngine.runMSE(res.hpi, mseBase); }catch(e){}
       finalHpi += "\n\nMental Status Exam:\n" + (mseText || mseBase);
     }
-    if(silent) tbpDbg('runDraft: rendering result (hpi hidden), then preflight');
     renderResult(finalHpi, res.flags, res.verified !== false, silent ? {hideHpi:true} : null);
     // In the silent ambient flow the banner and the preflight cards own the scroll — don't yank the
     // view down to the (hidden) HPI panel here. Typed drafts still scroll to their result.
     if(!silent) document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
     ok = true;
   } catch(err){
-    if(silent) tbpDbg('runDraft: ERROR — '+(err && (err.message||err)));
     errEl.innerHTML = '<div class="err">'+esc(err.message||err)+'</div>';
   } finally {
     if(btn){ btn.disabled = false; btn.innerHTML = label; }
@@ -1220,9 +1234,11 @@ function tbpAmbientProgress(stageKey, errMsg){
   var el = document.getElementById('ambient-progress');
   if(!el) return;
   if(stageKey === 'clear'){ el.innerHTML = ''; return; }
+  // Deliberately generic — the clinician should feel the note is assembled all at once at the end,
+  // not watch an "HPI first, then questions" sequence (that would read like the old two-step flow).
   var steps = [
-    { k:'draft',    label:'Drafting your HPI from the recording' },
-    { k:'review',   label:'Reviewing it against the visit' },
+    { k:'draft',    label:'Reading your visit' },
+    { k:'review',   label:'Working through the details' },
     { k:'preflight',label:'Getting your quick questions ready' }
   ];
   var order = ['draft','review','preflight'];
@@ -1247,41 +1263,25 @@ function tbpAmbientProgress(stageKey, errMsg){
     + rows + '<div class="hint" style="margin-top:8px">No need to do anything &mdash; your questions appear here when it&rsquo;s ready.</div></div>';
   if(firstPaint){ try { el.scrollIntoView({ behavior:'smooth', block:'center' }); } catch(e){} }
 }
-// TEMP DIAGNOSTIC — a fixed on-screen trace so the ambient auto-draft flow reports exactly where it
-// stops, independent of scroll position or which panel renders. Remove once the flow is confirmed.
-function tbpDbg(msg){
-  try {
-    var box = document.getElementById('tbp-trace');
-    if(!box){
-      box = document.createElement('div');
-      box.id = 'tbp-trace';
-      box.style.cssText = 'position:fixed;left:8px;bottom:8px;z-index:99999;max-width:70vw;max-height:45vh;overflow:auto;background:#0a1626;color:#7fe3c0;border:1px solid #2a4a5a;border-radius:8px;padding:8px 10px;font:12px/1.5 monospace;white-space:pre-wrap';
-      box.textContent = 'ambient trace (build ambient-11):\n';
-      document.body.appendChild(box);
-    }
-    box.textContent += msg + '\n';
-    box.scrollTop = box.scrollHeight;
-  } catch(e){}
-}
-try { window.tbpDbg = tbpDbg; } catch(e){}   // guarantee it's reachable from the recording IIFE scope
+// tbpDbg — no-op. (A temporary on-screen trace lived here to localize the ambient auto-draft bug;
+// it found the out-of-scope setStatus and has been removed. Kept as a no-op so any stray call is safe.)
+function tbpDbg(){}
+try { window.tbpDbg = tbpDbg; } catch(e){}
 
 // Ambient fast path: auto-draft the HPI the moment transcription lands, so there is no manual
 // Draft click. Ambient-only (typed visits still click Draft). Guarded against double-fire.
 var _autoDraftInFlight = false;
 function tbpAutoDraftAmbient(){
-  tbpDbg('autoDraft: entered, inflight='+_autoDraftInFlight);
-  if(_autoDraftInFlight) { tbpDbg('autoDraft: BAILED — already in flight'); return; }
+  if(_autoDraftInFlight) return;
   sourceMode = 'ambient';   // reaching here means a recording just finished; draft it as a transcript
   try { if(typeof closeAmbientSetup==='function') closeAmbientSetup(); } catch(e){}   // close the record modal so the drafting/preflight is visible
   try { var ov0=document.getElementById('focus-overlay'); if(ov0 && ov0.classList.contains('open') && typeof focusSyncBack==='function') focusSyncBack(); } catch(e){}
   var raw = document.getElementById('raw');
   var src = raw ? raw.value.trim() : '';
-  tbpDbg('autoDraft: rawFound='+(!!raw)+' srcLen='+src.length);
-  if(!src || src.length < 15){ tbpDbg('autoDraft: BAILED — src too short'); if(window.setStatus) window.setStatus('Done — transcript added to your notes. Review, then Draft.'); return; }
+  if(!src || src.length < 15){ if(window.setStatus) window.setStatus('Done — transcript added to your notes. Review, then Draft.'); return; }
   _autoDraftInFlight = true;
   _ambientFlow = true;
   if(window.setStatus) window.setStatus('Transcribed — building your note…');
-  tbpDbg('autoDraft: painting banner + calling runDraft');
   tbpAmbientProgress('draft');   // paint the staged banner and scroll to it immediately, before any await
   var errEl = document.getElementById('err-box') || { innerHTML:'' };
   Promise.resolve(runDraft(src, null, errEl, true)).then(function(ok){
@@ -1728,7 +1728,11 @@ async function buildAssessment(btn, force){
     } catch(e){}
     var qs = (pf && pf.questions) ? pf.questions : [];
     // The preflight is ready — the ambient banner has done its job, clear it so the questions stand alone.
+    var wasAmbient = _ambientFlow;
     if(_ambientFlow){ _ambientFlow = false; tbpAmbientProgress('clear'); }
+    // Ambient: now that the questions are on screen, reveal the (previously hidden) work-up block
+    // BELOW them — the optional plan box (only if not detected), PMP, and clear-visit.
+    if(wasAmbient){ var ah=document.getElementById('assess-handoff'); if(ah) ah.style.display=''; }
     if(!qs.length){ await generateNote(inp, scope, {}, []); }   // nothing to confirm — generate directly
     else { renderPreflightCards(inp, scope, qs); box.scrollIntoView({ behavior:'smooth', block:'start' }); }
   } catch(err){
@@ -1829,6 +1833,9 @@ function renderPreflightCards(inp, scope, questions){
       }
     });
     var noTherapy = /no therapy/i.test(timeChoice);
+    // Re-read the plan box at generate time. inp.plan was captured before preflight (empty in the
+    // ambient auto-flow), so without this a plan typed AFTER the questions appear would be ignored.
+    try { var pe2=document.getElementById('assess-plan'); if(pe2 && pe2.style.display!=='none'){ inp.plan = pe2.value.trim(); } } catch(e){}
     generateNote(inp, scope, { clinBlock: window.NoteEngine.buildClinBlock(clinicalDecisions), lengthBlock: window.NoteEngine.buildLengthBlock(lengthChoice), lengthChoice: (lengthChoice||'Standard'), modality: modality, code: code, noTherapy: noTherapy }, clinicalDecisions);
   });
 }
@@ -3270,8 +3277,7 @@ function loadVaultTemplates(){
     // — common in the tab-switching Patient Desk. Wiring the draft here (instead of at each call site)
     // means neither path can silently drop the clinician on a dead "Review, then Draft" screen.
     // Guarded (_autoDraftInFlight) so a double delivery can't double-fire.
-    try { if(window.tbpDbg) window.tbpDbg('appendTranscript: done, wnMode='+wnMode+' rawLen='+((document.getElementById('raw')||{value:''}).value.length)+' typeofAuto='+(typeof tbpAutoDraftAmbient)); } catch(e){}
-    try { if(typeof tbpAutoDraftAmbient==='function') tbpAutoDraftAmbient(); else if(window.tbpDbg) window.tbpDbg('appendTranscript: tbpAutoDraftAmbient NOT a function'); } catch(e){ try{ if(window.tbpDbg) window.tbpDbg('appendTranscript: threw calling autoDraft — '+(e&&(e.message||e))); }catch(_){} }
+    try { if(typeof tbpAutoDraftAmbient==='function') tbpAutoDraftAmbient(); } catch(e){}
   }
   function azureCall(payload){
     payload.token = authToken;
