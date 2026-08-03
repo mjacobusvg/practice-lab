@@ -1044,10 +1044,12 @@ function renderResultPreview(hpi){
   document.getElementById('results').innerHTML = html;
 }
 
-function renderResult(hpi, flags, verified){
+function renderResult(hpi, flags, verified, opts){
   hpi = finalizeHpi(hpi);
   lastHpi = hpi;
-  var html = '';
+  // The HPI (draft + flags + review note) lives in its own panel so the silent ambient flow can
+  // hold it hidden while the clinician answers preflight, then reveal the whole note at once.
+  var html = '<div id="hpi-panel"'+((opts && opts.hideHpi) ? ' style="display:none"' : '')+'>';
   html += '<div class="out"><button class="btn-copy" onclick="copyOut(\'hpi-out\', this)">Copy</button>';
   html += '<h3>History of Present Illness</h3>';
   html += '<textarea class="hpi-edit" id="hpi-out">'+esc(hpi)+'</textarea>';
@@ -1068,6 +1070,7 @@ function renderResult(hpi, flags, verified){
   html += (verified === false)
     ? '<div class="hint" style="margin-top:14px;color:var(--amber)">&#9888; Automatic review could not be completed this time. Read this draft against your notes carefully before you use it.</div>'
     : '<div class="hint" style="margin-top:14px">&#10003; Auto-reviewed against your notes.</div>';
+  html += '</div>';   // /hpi-panel
 
   // Slice 4: build the assessment right here (same engine as the Note Builder), no copy-paste.
   // One upfront paste of last visit's full note (HPI + assessment) feeds everything: carry-forward,
@@ -1145,21 +1148,27 @@ function tbpNotifyDesk(status){
 }
 
 // ── Generate (Slice 1) — reusable so the top box AND the prep starting-note box can draft ──
-async function runDraft(sourceText, btn, errEl){
+async function runDraft(sourceText, btn, errEl, silent){
   errEl.innerHTML = '';
   if(!visitType){ errEl.innerHTML='<div class="err">Choose a visit type first (New patient evaluation or Follow-up) &mdash; it sets which of your templates is used.</div>'; return false; }
   if(!sourceText || sourceText.length < 15){ errEl.innerHTML='<div class="err">Paste your visit notes first, even rough ones.</div>'; return false; }
   var label = btn ? btn.innerHTML : ''; var ok = false;
   if(btn){ btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Drafting&hellip;'; }
-  // Stream the draft as it generates so the clinician watches the HPI build instead of a spinner.
-  document.getElementById('results').innerHTML = '<div class="out"><div class="hint"><span class="spinner"></span> Drafting your HPI&hellip;</div><div id="hpi-stream" style="white-space:pre-wrap;margin-top:10px;color:var(--cream);line-height:1.6;font-size:.92rem"></div></div>';
+  // Typed visits stream the draft as it builds. The SILENT ambient flow drafts in the background
+  // (its only job is to feed the preflight) and reveals the whole note AFTER preflight, so it shows
+  // only a progress line, never the HPI typing itself out.
+  if(silent){
+    document.getElementById('results').innerHTML = '<div class="out"><div class="hint"><span class="spinner"></span> Analyzing your visit&hellip;</div></div>';
+  } else {
+    document.getElementById('results').innerHTML = '<div class="out"><div class="hint"><span class="spinner"></span> Drafting your HPI&hellip;</div><div id="hpi-stream" style="white-space:pre-wrap;margin-top:10px;color:var(--cream);line-height:1.6;font-size:.92rem"></div></div>';
+  }
   var streamEl = document.getElementById('hpi-stream');
   tbpNotifyDesk('busy');
   try {
-    var hpi = await callAPI(draftSystem(), [{role:'user', content: gatherSource(sourceText)}], 3400, function(partial){ if(streamEl) streamEl.textContent = partial; });
+    var hpi = await callAPI(draftSystem(), [{role:'user', content: gatherSource(sourceText)}], 3400, silent ? undefined : function(partial){ if(streamEl) streamEl.textContent = partial; });
     if(!hpi){ throw new Error('No HPI came back. Try again.'); }
     // Show the draft immediately (feels fast), then finalize the review in the background.
-    renderResultPreview(hpi);
+    if(!silent) renderResultPreview(hpi);
     if(btn) btn.innerHTML = '<span class="spinner"></span>Reviewing&hellip;';
     var res = await verifyHpi(hpi);
     // MSE: the clinician's macro is the baseline; the AI updates ONLY the mental/behavioral
@@ -1178,7 +1187,7 @@ async function runDraft(sourceText, btn, errEl){
       try{ mseText = await window.NoteEngine.runMSE(res.hpi, mseBase); }catch(e){}
       finalHpi += "\n\nMental Status Exam:\n" + (mseText || mseBase);
     }
-    renderResult(finalHpi, res.flags, res.verified !== false);
+    renderResult(finalHpi, res.flags, res.verified !== false, silent ? {hideHpi:true} : null);
     document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
     ok = true;
   } catch(err){
@@ -1202,7 +1211,7 @@ function tbpAutoDraftAmbient(){
   _autoDraftInFlight = true;
   setStatus('Transcribed — drafting your HPI…');
   var errEl = document.getElementById('err-box') || { innerHTML:'' };
-  Promise.resolve(runDraft(src, null, errEl)).then(function(ok){
+  Promise.resolve(runDraft(src, null, errEl, true)).then(function(ok){
     if(ok){
       try { var ov=document.getElementById('focus-overlay'); if(ov && ov.classList.contains('open') && typeof closeFocus==='function') closeFocus(); } catch(e){}
       // Continue straight into preflight (surface the clinical calls) with no manual Build click.
@@ -1767,8 +1776,13 @@ async function generateNote(inp, scope, opt){
     var assess = _r[0], therapy = _r[1] || '', plan = _r[2] || '';
     // Stash context so length can be rebuilt in place (no need to exit the preflight).
     lastGen = { inp: inp, scope: scope, opt: opt, therapy: therapy, plan: plan };
+    // Was the HPI hidden (silent ambient flow)? Capture BEFORE renderAssessment reveals it.
+    var _hpiWasHidden = (function(){ var h=document.getElementById('hpi-panel'); return !!(h && h.style.display === 'none'); })();
     renderAssessment(assess ? assess.assessment : '', assess ? assess.flags : [], therapy, opt.code, plan);
-    box.scrollIntoView({ behavior:'smooth', block:'start' });
+    // Silent ambient flow: the HPI was just revealed, so scroll to the top of the whole note.
+    // Typed flow: the HPI was already on screen, so scroll to the new assessment output.
+    var _st = document.getElementById('hpi-panel');
+    ((_hpiWasHidden && _st) ? _st : box).scrollIntoView({ behavior:'smooth', block:'start' });
     genOk = true;
   } catch(err){
     box.innerHTML = '<div class="err">'+esc(err.message || 'Could not generate.')+'</div>';
@@ -1822,6 +1836,9 @@ function renderAssessment(assessment, flags, therapy, code, plan){
   (document.getElementById('assess-output') || document.getElementById('assess-results')).innerHTML = html;
   var cf = document.getElementById('copy-full');
   if(cf) cf.addEventListener('click', copyFullNote);
+  // Reveal the HPI now: the silent ambient draft held it hidden through preflight, so the whole
+  // note (HPI + assessment + therapy + plan) appears together once the clinician hits Generate.
+  try { var hp = document.getElementById('hpi-panel'); if(hp && hp.style.display === 'none') hp.style.display = ''; } catch(e){}
 }
 
 // Rebuild ONLY the assessment at a different length, in place. Preserves any edits the
