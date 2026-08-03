@@ -304,7 +304,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. <span style="opacity:.5">build ambient-13</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. <span style="opacity:.5">build ambient-14</span></div>
 </div>
 </div>
 
@@ -1007,11 +1007,9 @@ function draftSystem(){
   s += "=== OUTPUT FORMAT ===\n";
   s += "Output plain, chart-ready text for pasting into an EHR. Do NOT use Markdown: no # or ## headings, no --- or *** divider lines, no > blockquotes, no ** bold **. FOLLOW THE CLINICIAN'S TEMPLATE for how section labels are placed: if the template writes the label inline with a colon and the content on the same line (e.g. 'Counseling: continues weekly therapy...'), do exactly that; if the template puts labels on their own line, do that. Do not impose a layout the template does not use. Even if the template is written in Markdown, do not carry that syntax into the HPI.\n\n";
   s += "Add only minimal connective narrative needed to make the notes read as clinical prose. Connective wording must not introduce any new clinical fact. Output the HPI text only.";
-  if(rosOn){
-    var rosText = (rosMacro && rosMacro.trim()) ? rosMacro.trim() : DEFAULT_ROS;
-    s += "\n\n=== APPEND A REVIEW OF SYSTEMS ===\n";
-    s += "After the HPI, add a section headed exactly 'Review of Systems:' built from the clinician's STANDARD ROS below. Keep their categories, default items, and signs. Flip an item to (+) ONLY if today's notes indicate the patient reported that symptom; otherwise keep the clinician's default. Do NOT add items that are not in their list, and NEVER assert a positive the notes do not support. Reproduce their exact format.\n\nCLINICIAN'S STANDARD ROS:\n" + rosText + "\n";
-  }
+  // NOTE: Review of Systems and Mental Status Exam are NO LONGER produced here. The verify pass
+  // generates both (it already has the source + the drafted HPI in hand), so they come back in the
+  // same review call instead of costing the draft length + a separate MSE call. See verifySystem().
   return s;
 }
 
@@ -1027,7 +1025,25 @@ function verifySystem(){
   if(visitType === 'follow_up'){ s += "FOLLOW-UP CARRY-FORWARD: flag any current-visit assessment, especially SI/HI or self-harm, that the draft asserts as done today but that only the prior note supports and today's notes do not. A prior safety assessment must never read as if performed today. Standing items carried as 'continued/stable' are fine. Also flag anything the draft NEWLY marked as a 'Historical Note:' (i.e. promoted a finding to carried background this visit), briefly, so the clinician can confirm it should persist as background and drop out of the active assessment, or undo it.\n\n"; }
   if(isTranscriptMode(sourceMode)){ s += "The source is a transcript (dictation/ambient) with no clinician-written ground truth, so also flag likely mis-transcriptions and anything that reads as a transcription error.\n\n"; }
   s += "The corrected 'hpi' must stay plain, chart-ready text with NO Markdown (no #/## headings, no --- dividers, no ** bold **, no > blockquotes).\n\n";
-  s += "Respond ONLY with raw JSON, no code fence, in exactly this shape:\n{\"hpi\": \"<the verified HPI text>\", \"flags\": [\"short note about something to check\", \"...\"]}\nIf nothing is wrong, return the HPI unchanged and an empty flags array.";
+  // ── Also generate MSE and/or ROS in this same pass (moved out of the draft / the old separate MSE
+  //    call). The verifier already holds the source AND the drafted HPI, so it is the right place to
+  //    GENERATE these from the clinician's standard macros. Each is emitted as its own JSON field
+  //    (body only, no heading — the app adds the heading), so the HPI stays clean. ──
+  if(mseOn){
+    var mseText = (mseMacro && mseMacro.trim()) ? mseMacro.trim() : DEFAULT_MSE;
+    s += "=== ALSO PRODUCE TODAY'S MENTAL STATUS EXAM ===\n";
+    s += "Using the clinician's STANDARD MSE below as the baseline, produce today's MSE. UPDATE only the mental/behavioral elements TODAY'S SOURCE clearly supports — mood, affect, thought process, thought content, perceptions, suicidal/homicidal ideation, and speech when clearly indicated. KEEP the clinician's default wording, unchanged, for everything the source does not clearly support, ESPECIALLY the purely-observed elements you cannot know from notes or audio (appearance, grooming, eye contact, psychomotor activity, orientation, memory, attention, fund of knowledge, insight, judgment). NEVER invent a finding; if in doubt keep the default — under-changing is safe, fabricating an exam finding is not. Preserve the clinician's exact format and sentence order; edit in place. Output the MSE BODY only, no 'Mental Status Exam:' heading.\n\nCLINICIAN'S STANDARD MSE:\n" + mseText + "\n\n";
+  }
+  if(rosOn){
+    var rosText = (rosMacro && rosMacro.trim()) ? rosMacro.trim() : DEFAULT_ROS;
+    s += "=== ALSO PRODUCE TODAY'S REVIEW OF SYSTEMS ===\n";
+    s += "Using the clinician's STANDARD ROS below, produce today's ROS. Keep their categories, default items, and signs. Flip an item to (+) ONLY if today's source indicates the patient reported that symptom; otherwise keep the clinician's default. Do NOT add items not in their list, and NEVER assert a positive the source does not support. Reproduce their exact format. Output the ROS BODY only, no 'Review of Systems:' heading.\n\nCLINICIAN'S STANDARD ROS:\n" + rosText + "\n\n";
+  }
+  s += "Respond ONLY with raw JSON, no code fence, in exactly this shape:\n{\"hpi\": \"<the verified HPI text>\", \"flags\": [\"short note about something to check\", \"...\"]"
+    + (mseOn ? ", \"mse\": \"<today's MSE body>\"" : "")
+    + (rosOn ? ", \"ros\": \"<today's ROS body>\"" : "")
+    + "}\nIf nothing is wrong with the HPI, return it unchanged with an empty flags array"
+    + ((mseOn||rosOn) ? " (still fill the "+(mseOn&&rosOn?"mse and ros fields":(mseOn?"mse field":"ros field"))+")." : ".");
   return s;
 }
 
@@ -1199,9 +1215,6 @@ async function runDraft(sourceText, btn, errEl, silent){
     if(btn) btn.innerHTML = '<span class="spinner"></span>Reviewing&hellip;';
     if(silent && _ambientFlow) tbpAmbientProgress('review');   // advance the ambient banner
     var res = await verifyHpi(hpi);
-    // MSE: the clinician's macro is the baseline; the AI updates ONLY the mental/behavioral
-    // elements today's visit supports (mood, affect, thought process/content, perceptions),
-    // and keeps their observed-physical defaults. Falls back to the static macro on any error.
     var finalHpi = res.hpi;
     // Telehealth attestation: on a telehealth visit only, drop the clinician's saved statement
     // in right after the opening paragraph. Never on in-person. Only if they've saved one.
@@ -1209,11 +1222,17 @@ async function runDraft(sourceText, btn, errEl, silent){
     if(capNow === 'telehealth' && teleStatement && teleStatement.trim()){
       finalHpi = insertAfterFirstPara(finalHpi, teleStatement.trim());
     }
+    // ROS then MSE now come back FROM the verify pass (res.ros / res.mse) — one call instead of the
+    // draft carrying ROS and a separate runMSE call. If the verifier didn't return clean JSON
+    // (res.verified === false, so the fields are empty), fall back to the clinician's static
+    // macro/default so the sections still appear, just un-updated.
+    if(rosOn){
+      var rosOut = (res.ros && res.ros.trim()) ? res.ros.trim() : ((rosMacro && rosMacro.trim()) ? rosMacro.trim() : DEFAULT_ROS);
+      finalHpi += "\n\nReview of Systems:\n" + rosOut;
+    }
     if(mseOn){
-      var mseBase = (mseMacro && mseMacro.trim()) ? mseMacro.trim() : DEFAULT_MSE;
-      var mseText = mseBase;
-      try{ mseText = await window.NoteEngine.runMSE(res.hpi, mseBase); }catch(e){}
-      finalHpi += "\n\nMental Status Exam:\n" + (mseText || mseBase);
+      var mseOut = (res.mse && res.mse.trim()) ? res.mse.trim() : ((mseMacro && mseMacro.trim()) ? mseMacro.trim() : DEFAULT_MSE);
+      finalHpi += "\n\nMental Status Exam:\n" + mseOut;
     }
     renderResult(finalHpi, res.flags, res.verified !== false, silent ? {hideHpi:true} : null);
     // In the silent ambient flow the banner and the preflight cards own the scroll — don't yank the
@@ -1315,14 +1334,23 @@ document.getElementById('generate').addEventListener('click', function(){
 // ── Verify pass ──
 async function verifyHpi(hpi){
   var msg = gatherSource() + "\n\n---\n\nDRAFTED HPI TO AUDIT:\n\n" + hpi;
-  var raw = await callAPI(verifySystem(), [{role:'user', content: msg}], 3400);
+  // Higher cap than before: this one call now also returns the MSE and/or ROS bodies (plus JSON
+  // string-escaping overhead), not just the HPI. Headroom so a long HPI can't truncate the JSON.
+  var raw = await callAPI(verifySystem(), [{role:'user', content: msg}], 5200);
   try {
     var j = JSON.parse(raw);
-    if(j && typeof j.hpi === 'string') return { hpi: j.hpi, flags: Array.isArray(j.flags) ? j.flags : [], verified: true };
+    if(j && typeof j.hpi === 'string') return {
+      hpi: j.hpi,
+      flags: Array.isArray(j.flags) ? j.flags : [],
+      mse: (typeof j.mse === 'string') ? j.mse : '',
+      ros: (typeof j.ros === 'string') ? j.ros : '',
+      verified: true
+    };
   } catch(e){}
   // If the verifier did not return clean JSON, keep the original draft rather than lose it, but
   // report that the review did NOT complete so the UI never shows a false "auto-reviewed" state.
-  return { hpi: hpi, flags: [], verified: false };
+  // mse/ros come back empty here; runDraft falls back to the clinician's static macro/default.
+  return { hpi: hpi, flags: [], mse: '', ros: '', verified: false };
 }
 
 // ── "Set me up for this visit" — pre-visit prep (Bucket 1) ──
