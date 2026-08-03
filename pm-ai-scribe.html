@@ -304,7 +304,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. <span style="opacity:.5">build ambient-14</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. <span style="opacity:.5">build ambient-15</span></div>
 </div>
 </div>
 
@@ -655,11 +655,16 @@ function insertAfterFirstPara(hpi, block){
   if(idx === -1) return hpi + '\n\n' + block;
   return hpi.slice(0, idx) + '\n\n' + block + hpi.slice(idx);
 }
-// Built-in fallbacks so a clinician can turn ROS/MSE on WITHOUT writing one from scratch.
+// Built-in fallbacks so a clinician can turn ROS/MSE/Plan on WITHOUT writing one from scratch.
 // ROS default is ALL-NEGATIVE — the AI flips items to (+) only where today's notes support it.
 // MSE default is a generic normal exam (edit per visit — it is an attestation of what you observed).
 var DEFAULT_ROS = 'Constitutional: (-)fever, (-)night sweats, (-)fatigue\nRespiratory: (-)dyspnea, (-)cough, (-)wheezing\nCardiovascular: (-)chest pain, (-)palpitations\nNeurological: (-)headaches, (-)vertigo, (-)lightheadedness, (-)tremor\nPsychiatric: (-)depression, (-)anxiety, (-)sleep disturbance, (-)suicidal ideation, (-)delusions, (-)hallucinations';
 var DEFAULT_MSE = 'No abnormal movements noted. Speech is clear with normal rate, rhythm, volume, and amount. Mood is euthymic with full range of affect. Thought content is appropriate and free from preoccupations, perceptions, or delusions. Thought processes are coherent and goal-directed. Oriented to person, place, time, and situation. Insight and judgment are good.';
+// Plan default is the PLAIN style most prescribers use: the AI fills the medication line from the
+// visit's actual changes (or leaves the "no medications changed" line), fills the follow-up blank
+// when stated, and preserves the rest as verbatim boilerplate. NO refill-count / refill-date
+// bookkeeping — those are clinician-specific and belong in a custom Plan macro, not the house default.
+var DEFAULT_PLAN = 'No medications were changed today.\nContinue all current medications as prescribed.\nLabs and orders as indicated; results will be reviewed with the patient.\nReturn to clinic in ___, sooner if clinically needed.\nCrisis: call or text 988, or go to the nearest emergency room.';
 var vaultTemplates = { new_eval: '', follow_up: '' };
 var lastHpi = '';
 var lastGen = null; // last assessment-generation context, so length can be rebuilt in place
@@ -1896,8 +1901,12 @@ async function generateNote(inp, scope, opt){
     var therapyP = (scope==='both' && !opt.noTherapy)
       ? Promise.resolve(window.NoteEngine.runTherapy(inp, opt.modality || '', opt.code || '90833')).catch(function(){ return ''; })
       : Promise.resolve('');
-    var planP = (planOn && planSnippets && planSnippets.trim())
-      ? Promise.resolve(window.NoteEngine.runPlan(inp, planSnippets.trim())).catch(function(){ return planSnippets.trim(); })
+    // Plan macro: the clinician's own if they wrote one, otherwise the plain house default so
+    // turning Plan on Just Works (parity with ROS/MSE). runPlan fills med actions + follow-up
+    // from the visit; on failure fall back to the unfilled macro rather than dropping the section.
+    var planMacro = (planSnippets && planSnippets.trim()) ? planSnippets.trim() : DEFAULT_PLAN;
+    var planP = planOn
+      ? Promise.resolve(window.NoteEngine.runPlan(inp, planMacro)).catch(function(){ return planMacro; })
       : Promise.resolve('');
     var _r = await Promise.all([assessP, therapyP, planP]);
     var assess = _r[0], therapy = _r[1] || '', plan = _r[2] || '';
@@ -2115,7 +2124,7 @@ function renderSectionsReminder(){
   var el=document.getElementById('sections-reminder'); if(!el) return;
   var off=false; try{ off = localStorage.getItem('tbp_sections_reminder_off')==='1'; }catch(e){}
   var hasTemplate = (vaultTemplates.new_eval && vaultTemplates.new_eval.trim()) || (vaultTemplates.follow_up && vaultTemplates.follow_up.trim());
-  var hasSections = rosOn || mseOn || (planSnippets && planSnippets.trim());
+  var hasSections = rosOn || mseOn || planOn || (planSnippets && planSnippets.trim());
   if(off || !hasTemplate || hasSections){ el.style.display='none'; el.innerHTML=''; return; }
   el.style.display='block';
   el.innerHTML =
