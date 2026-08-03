@@ -715,7 +715,7 @@ function tbpLogError(message, stack){
 }
 
 // ── Streaming proxy call (mirrors the Note Builder / Chart Coder pattern) ──
-async function callAPI(systemPrompt, messages, maxTokens){
+async function callAPI(systemPrompt, messages, maxTokens, onDelta){
   // Hard backstop: in demo mode nothing is ever sent to the clinical backend. Live buttons are
   // already intercepted (tbpDemoBlock) so this rarely fires, but it guarantees no visitor content
   // can leave the browser through any code path.
@@ -772,6 +772,7 @@ async function callAPI(systemPrompt, messages, maxTokens){
           var evt = JSON.parse(dataStr);
           if(evt.type === 'content_block_delta' && evt.delta && typeof evt.delta.text === 'string'){
             assembled += evt.delta.text;
+            if(onDelta){ try{ onDelta(assembled); }catch(e3){} }
           }
         }catch(e2){}
       }
@@ -1150,10 +1151,12 @@ async function runDraft(sourceText, btn, errEl){
   if(!sourceText || sourceText.length < 15){ errEl.innerHTML='<div class="err">Paste your visit notes first, even rough ones.</div>'; return false; }
   var label = btn ? btn.innerHTML : ''; var ok = false;
   if(btn){ btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Drafting&hellip;'; }
-  document.getElementById('results').innerHTML='';
+  // Stream the draft as it generates so the clinician watches the HPI build instead of a spinner.
+  document.getElementById('results').innerHTML = '<div class="out"><div class="hint"><span class="spinner"></span> Drafting your HPI&hellip;</div><div id="hpi-stream" style="white-space:pre-wrap;margin-top:10px;color:var(--cream);line-height:1.6;font-size:.92rem"></div></div>';
+  var streamEl = document.getElementById('hpi-stream');
   tbpNotifyDesk('busy');
   try {
-    var hpi = await callAPI(draftSystem(), [{role:'user', content: gatherSource(sourceText)}], 3400);
+    var hpi = await callAPI(draftSystem(), [{role:'user', content: gatherSource(sourceText)}], 3400, function(partial){ if(streamEl) streamEl.textContent = partial; });
     if(!hpi){ throw new Error('No HPI came back. Try again.'); }
     // Show the draft immediately (feels fast), then finalize the review in the background.
     renderResultPreview(hpi);
@@ -1747,22 +1750,21 @@ async function generateNote(inp, scope, opt){
   tbpNotifyDesk('busy');
   var genOk = false;
   try {
-    var assess = null, therapy = '';
-    if(scope==='assessment' || scope==='both'){
-      assess = await window.NoteEngine.runAssessment(inp, opt.clinBlock || '', opt.lengthBlock || '', null, assessStyle);
-    }
-    if(scope==='both' && !opt.noTherapy){
-      // Pass modality through as-is (empty when it was skipped because the therapy is already
-      // documented); runTherapy drafts from the documented work and only then falls back to supportive.
-      therapy = await window.NoteEngine.runTherapy(inp, opt.modality || '', opt.code || '90833');
-    }
-    // Plan: the clinician's macro is the baseline; the AI fills medication actions and the
-    // follow-up interval from the visit, and leaves refill/date brackets for the clinician.
-    var plan = '';
-    if(planOn && planSnippets && planSnippets.trim()){
-      plan = planSnippets.trim();
-      try{ plan = await window.NoteEngine.runPlan(inp, planSnippets.trim()); }catch(e){}
-    }
+    // Assessment, therapy, and plan are independent (all read the finished HPI), so run them
+    // CONCURRENTLY — wall-clock becomes the slowest one instead of the sum of all three.
+    // Assessment failure is fatal (no note); therapy/plan failures degrade gracefully to empty
+    // so a hiccup in either never costs the assessment.
+    var assessP = (scope==='assessment' || scope==='both')
+      ? window.NoteEngine.runAssessment(inp, opt.clinBlock || '', opt.lengthBlock || '', null, assessStyle)
+      : Promise.resolve(null);
+    var therapyP = (scope==='both' && !opt.noTherapy)
+      ? Promise.resolve(window.NoteEngine.runTherapy(inp, opt.modality || '', opt.code || '90833')).catch(function(){ return ''; })
+      : Promise.resolve('');
+    var planP = (planOn && planSnippets && planSnippets.trim())
+      ? Promise.resolve(window.NoteEngine.runPlan(inp, planSnippets.trim())).catch(function(){ return planSnippets.trim(); })
+      : Promise.resolve('');
+    var _r = await Promise.all([assessP, therapyP, planP]);
+    var assess = _r[0], therapy = _r[1] || '', plan = _r[2] || '';
     // Stash context so length can be rebuilt in place (no need to exit the preflight).
     lastGen = { inp: inp, scope: scope, opt: opt, therapy: therapy, plan: plan };
     renderAssessment(assess ? assess.assessment : '', assess ? assess.flags : [], therapy, opt.code, plan);
