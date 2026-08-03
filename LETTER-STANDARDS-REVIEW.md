@@ -91,13 +91,13 @@ The database is the source of truth. Prior hand-notes were behind the table.
 - `return_to_work/restricted_duty` (v1.1)
 - `workplace_accommodation/standard` (v1.1)
 - `academic_accommodation/standard` (v1.1, "Postsecondary Academic Accommodation")
+- `treatment_verification/court` (v1.1)
 
 ### Still v1.0 active (not yet through editorial review)
 - `continuation_of_care/standard`
 - `general_clinical_support/standard`
 - `medication_travel/standard`
 - `medication_travel/controlled`
-- `treatment_verification/court`
 - `medicaid_private_pay/acknowledgment` (6.5 KB, much larger than the others; review separately)
 
 ### To build
@@ -112,6 +112,12 @@ The database is the source of truth. Prior hand-notes were behind the table.
   process, NOT a clinician-dictated set of finalized accommodations. Different eligibility and
   service structure from postsecondary; the Postsecondary letter explicitly excludes K-12. Not
   yet built.
+- Treating-Provider Clinical Summary for Legal Use. The high-warning home for the substantive
+  content stripped out of Treatment Verification-Court (diagnosis, dates or frequency,
+  attendance facts, observed clinical course, current status, limits of the information, and
+  the exact question being answered). It should force the clinician to paste or identify the
+  recipient's written request and confirm the response stays within the treating role, rather
+  than exposing that content as optional toggles inside the verification letter. Not yet built.
 
 ## Per-template decision log
 
@@ -225,6 +231,23 @@ Decisions locked in during review, kept here so the reasoning is not lost.
   against essential-standards language, plus cautions that attendance flexibility must be
   confirmed clinically necessary and phrased subject to essential course requirements, and that
   lecture recording is not universally appropriate.
+
+### Treatment Verification, Court / Legal Proceedings (treatment_verification/court, v1.1)
+- High-risk. Stripped to pure verification of the treatment relationship: removed diagnosis,
+  treatment modality, and every substantive clinical section (historical course, current
+  status, "no acute decompensation," attendance, adherence). The rationale: any substantive
+  field becomes a cross-examination handle the scope disclaimer cannot undo, so substantive
+  content moves to the separate planned Treating-Provider Clinical Summary for Legal Use.
+- Two deterministic openings avoid implying continuous treatment: current ("has received ...
+  with treatment beginning DATE, and is currently under my care") and past ("received ...
+  beginning in DATE").
+- currently_in_treatment is a required explicit choice with no silent default (reuses the
+  confirm_required gate), since a stale "currently under my care" is the statement most likely
+  to become inaccurate. DOB is optional (default off) for identity matching only.
+- Removed the AAPL citation from the body (reads as defensive lawyering, hints at forensic
+  expertise) and softened "assessed all relevant parties" to "methods and information
+  appropriate to the specific legal question." No honorific, no pronoun engine (the letter
+  names the patient once, then refers only to "this letter" and "the treatment relationship").
 
 ## Hard rules (repo-wide, but they bite here)
 
