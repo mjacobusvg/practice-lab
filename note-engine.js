@@ -180,9 +180,14 @@ Only surface items that require the provider's clinical judgment and that you ca
 Do NOT flag your own silent corrections. Do NOT flag stylistic preferences. If the provider already addressed an item in a clinical-decision block, do not flag it. If there is nothing a provider must act on, return no flags.
 
 === OUTPUT FORMAT ===
-Respond ONLY with raw JSON, no markdown, no backticks:
-{"assessment": "the clean, corrected assessment text — diagnosis list + formulation prose, ready to sign", "flags": ["short, specific item the provider should review", "..."]}
-The "assessment" value is always the full corrected assessment. "flags" is an array of zero or more short strings. Empty array if nothing needs attention.`;
+Respond in PLAIN TEXT with the section markers below, NOT JSON and NOT a code fence. Your output is a full assessment with quotes and line breaks, which JSON escaping makes unreliable; the markers do not. Emit EXACTLY these two sections, each marker on its OWN line, with nothing before the first marker and nothing after the last section:
+
+<<<ASSESSMENT>>>
+<the clean, corrected assessment text — diagnosis list + formulation prose, ready to sign, plain text, no Markdown>
+<<<FLAGS>>>
+<zero or more flags, ONE per line, short specific items the provider should review; leave this section EMPTY if nothing needs attention>
+
+Reproduce each marker EXACTLY as written (e.g. <<<ASSESSMENT>>>). Put the content on the line(s) after its marker. Do NOT wrap anything in backticks and do NOT emit JSON. The ASSESSMENT section is always the full corrected assessment.`;
 
 const THERAPY_SYS = `${VOICE}
 
@@ -425,12 +430,29 @@ async function runAssessment(inp, clinBlock, lengthBlock, lockDx, assessStyle){
   var reviewMsg = 'ORIGINAL SOURCE:\n\n' + contextBlock(inp) + clinBlock + lengthBlock + styleBlock + lockBlock +
     '\n\n---\n\nDRAFT ASSESSMENT:\n\n' + assessText;
   var reviewRaw = await callAPI(REVIEW_SYS, [{role:'user', content: reviewMsg}], 4000);
+  // The reviewer returns PLAIN TEXT with <<<ASSESSMENT>>> / <<<FLAGS>>> markers, NOT JSON. The
+  // assessment is full of patient quotes and line breaks; as JSON, one unescaped quote broke
+  // JSON.parse and silently dropped the whole review + its flags, falling back to the un-reviewed
+  // draft. Markers parse robustly regardless of quotes/newlines.
+  var rtxt = String(reviewRaw || '');
+  function raSection(name){
+    var re = new RegExp('<<<' + name + '>>>[ \\t]*\\r?\\n?([\\s\\S]*?)\\s*(?=<<<(?:ASSESSMENT|FLAGS)>>>|$)', 'i');
+    var m = rtxt.match(re); return m ? m[1] : null;
+  }
+  var revAssess = raSection('ASSESSMENT');
+  if(revAssess && revAssess.trim()){
+    var fRaw = raSection('FLAGS');
+    var flags = fRaw ? fRaw.split('\n').map(function(s){ return s.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').trim(); }).filter(Boolean) : [];
+    return { assessment: chartClean(revAssess.trim()), flags: flags };
+  }
+  // Fallback: if the model returned JSON (old format) despite the instruction, still honor it.
   try {
-    var j = JSON.parse(String(reviewRaw).replace(/```json|```/g,'').trim());
+    var j = JSON.parse(rtxt.replace(/```json|```/g,'').trim());
     if(j && typeof j.assessment==='string' && j.assessment.trim()){
       return { assessment: chartClean(j.assessment.trim()), flags: Array.isArray(j.flags)?j.flags:[] };
     }
   } catch(e){}
+  // Neither markers nor JSON: keep the un-reviewed draft rather than lose it.
   return { assessment: chartClean(assessText), flags: [] };
 }
 
