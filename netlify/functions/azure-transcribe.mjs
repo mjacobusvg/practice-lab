@@ -114,6 +114,9 @@ function sasFor(name, perms, minutes){
 }
 const safeBlob = (n) => typeof n==='string' && /^visit-[a-f0-9]{16,}\.(webm|ogg|mp4|wav|mp3)$/.test(n);
 const safeJob  = (u) => typeof u==='string' && u.indexOf(SPEECH_BASE + '/transcriptions/') === 0;
+// Fast-transcription (new-eval spike): the background function writes its result here; this fn polls it.
+const safeJobId = (n) => typeof n==='string' && /^[a-f0-9-]{16,64}$/i.test(n);
+const resName   = (jobId) => 'fastres-' + jobId + '.json';
 
 // Turn a batch-transcription result JSON into a speaker-labeled transcript.
 function formatBatch(result){
@@ -204,6 +207,22 @@ export default async function handler(request){
       const transcript = formatBatch(result);
       cleanup(body.jobUrl, body.blobName);
       return json({ status:'done', transcript });
+    }
+
+    // 4) FAST path (new-eval spike): poll for the result blob the background function writes.
+    //    Returns {status:'running'} until it appears, then the transcript + timing, and deletes
+    //    the result blob on read so the PHI transcript never lingers.
+    if(action==='fast-poll'){
+      if(!safeJobId(body.jobId)) return json({ error:'Bad reference.' }, 400);
+      const rc = containerClient().getBlockBlobClient(resName(body.jobId));
+      let buf;
+      try { buf = await rc.downloadToBuffer(); }
+      catch(e){ return json({ status:'running' }); }   // not written yet (or 404) → still working
+      let res; try { res = JSON.parse(buf.toString('utf8')); } catch(e){ res = null; }
+      // Delete the result blob now that we've read it (best-effort).
+      try { await rc.deleteIfExists(); } catch(e){}
+      if(!res) return json({ status:'failed', error:'Result unreadable.' });
+      return json(res);
     }
 
     return json({ error:'Unknown action.' }, 400);

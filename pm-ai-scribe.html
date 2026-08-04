@@ -3488,6 +3488,38 @@ function loadVaultTemplates(){
       body: JSON.stringify(payload)
     }).then(function(r){ return r.json().catch(function(){ throw new Error('Transcription service error.'); }); });
   }
+  // FAST path (new-eval spike) helpers ──────────────────────────────────────
+  function tbpNewJobId(){
+    try { if(crypto && crypto.randomUUID) return crypto.randomUUID().replace(/[^a-f0-9]/gi,''); } catch(e){}
+    return (Date.now().toString(16) + Math.floor(Math.random()*1e12).toString(16)).slice(0,32);
+  }
+  // Poll the result blob the background fast-transcription function writes. Surfaces the measured
+  // round-trip (audio size, audio length, fast-call seconds) so the spike yields a real number.
+  function pollFast(jobId){
+    return new Promise(function(resolve, reject){
+      var tries=0, MAX=300; // ~300 × 3s ≈ 15 min headroom (matches the background fn ceiling)
+      (function tick(){
+        tries++;
+        azureCall({ action:'fast-poll', jobId:jobId }).then(function(d){
+          if(d.status==='done'){
+            try {
+              var mb   = (d.audioBytes ? (d.audioBytes/1048576).toFixed(1)+'MB' : '?');
+              var mins = (d.durationMs  ? (d.durationMs/60000).toFixed(1)+'min' : '?');
+              var secs = (d.elapsedMs!=null ? (d.elapsedMs/1000).toFixed(1)+'s' : '?');
+              console.log('[fast-transcribe] audio '+mb+' / '+mins+' → '+secs+' fast-call round trip (jobId '+jobId+')');
+              window.tbpLastFastTiming = { audioBytes:d.audioBytes, durationMs:d.durationMs, elapsedMs:d.elapsedMs };
+            } catch(e){}
+            resolve(d.transcript||''); return;
+          }
+          if(d.status==='failed'){ reject(new Error((d.error||'Fast transcription failed.') + (d.detail? ' — '+d.detail : ''))); return; }
+          if(d.error && !d.status){ reject(new Error(d.error)); return; }
+          if(tries>=MAX){ reject(new Error('Transcription is taking unusually long — try again.')); return; }
+          setStatus('Transcribing the visit (fast)… ('+(tries*3)+'s)');
+          setTimeout(tick, 3000);
+        }).catch(function(e){ reject(e); });
+      })();
+    });
+  }
   // Poll the batch job until the transcript is ready (no length limit on the audio).
   function pollTranscript(jobUrl, blobName){
     return new Promise(function(resolve, reject){
@@ -3537,13 +3569,32 @@ function loadVaultTemplates(){
       }
       if(!put.ok) throw new Error('Storage rejected the upload ('+put.status+').');
       setStatus('Transcribing the visit…');
-      var st = await azureCall({ action:'start', blobName: up.blobName });
-      if(!st.jobUrl) throw new Error(st.error || 'Could not start transcription.');
-      // Persist the in-flight job so a tab close/reload DURING the (multi-minute) transcription can
-      // RESUME instead of losing the visit — the poll handle otherwise lives only in tab memory.
-      try{ if(window.tbpTxSave) window.tbpTxSave({ jobUrl: st.jobUrl, blobName: up.blobName }); }catch(e){}
-      var transcript = await pollTranscript(st.jobUrl, up.blobName);
-      try{ if(window.tbpTxClear) window.tbpTxClear(); }catch(e){}
+      var transcript;
+      // Spike gate: the fast path is OFF by default, so the live site is unchanged for everyone.
+      // Enable it per-browser to measure a real eval: localStorage.setItem('tbp_fast_tx','on').
+      var fastOn = false; try { fastOn = (localStorage.getItem('tbp_fast_tx') === 'on'); } catch(e){}
+      if(fastOn && visitType === 'new_eval'){
+        // FAST path (spike): new-patient evals are the long visits where the batch queue hurt, so
+        // route them to synchronous fast transcription (run in a background function). Follow-ups
+        // and everyone without the flag fall through to the unchanged batch path below.
+        var jobId = tbpNewJobId();
+        try{ if(window.tbpTxSave) window.tbpTxSave({ fast:true, jobId: jobId, blobName: up.blobName }); }catch(e){}
+        var kick = await fetch('/.netlify/functions/azure-transcribe-fast-background', {
+          method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
+          body: JSON.stringify({ token: authToken, blobName: up.blobName, jobId: jobId })
+        });
+        if(!(kick.status===202 || kick.ok)) throw new Error('Could not start fast transcription ('+kick.status+').');
+        transcript = await pollFast(jobId);
+        try{ if(window.tbpTxClear) window.tbpTxClear(); }catch(e){}
+      } else {
+        var st = await azureCall({ action:'start', blobName: up.blobName });
+        if(!st.jobUrl) throw new Error(st.error || 'Could not start transcription.');
+        // Persist the in-flight job so a tab close/reload DURING the (multi-minute) transcription can
+        // RESUME instead of losing the visit — the poll handle otherwise lives only in tab memory.
+        try{ if(window.tbpTxSave) window.tbpTxSave({ jobUrl: st.jobUrl, blobName: up.blobName }); }catch(e){}
+        transcript = await pollTranscript(st.jobUrl, up.blobName);
+        try{ if(window.tbpTxClear) window.tbpTxClear(); }catch(e){}
+      }
       if(!transcript){ setStatus('No speech was recognized in the recording.', true); tbpNotifyDesk('idle'); resetBtn(); return; }
       tbpNotifyDesk('done');   // background tab shows the steady "ready to review" dot
       // appendTranscript is the single place the auto-draft fires (covers both this live path and the
@@ -3634,7 +3685,7 @@ function loadVaultTemplates(){
     var p = (window.tbpTxGet && window.tbpTxGet()) || null; if(!p) return;
     try{
       setStatus('Finishing a recording that was still transcribing…');
-      var transcript = await pollTranscript(p.jobUrl, p.blobName);
+      var transcript = p.fast ? await pollFast(p.jobId) : await pollTranscript(p.jobUrl, p.blobName);
       try{ if(window.tbpTxClear) window.tbpTxClear(); }catch(e){}
       // appendTranscript now auto-drafts (and shows the progress banner), so don't overwrite its
       // status with a stale "Review, then Draft" — that was the message stranding the resumed visit.
@@ -4210,9 +4261,9 @@ function initTherapyCoach(){
   // In-flight transcription handle (per Desk tab), so a reload mid-transcription can resume the job
   // instead of losing the visit. 30-min TTL: an Azure batch job older than that is stale/gone.
   var PKEY = 'tbp_pendingtx_' + getSlot();
-  window.tbpTxSave  = function(o){ try{ if(o && o.jobUrl) localStorage.setItem(PKEY, JSON.stringify({ jobUrl:o.jobUrl, blobName:o.blobName, ts:Date.now() })); }catch(e){} };
+  window.tbpTxSave  = function(o){ try{ if(o && (o.jobUrl || (o.fast && o.jobId))) localStorage.setItem(PKEY, JSON.stringify({ jobUrl:o.jobUrl, blobName:o.blobName, fast:!!o.fast, jobId:o.jobId, ts:Date.now() })); }catch(e){} };
   window.tbpTxClear = function(){ try{ localStorage.removeItem(PKEY); }catch(e){} };
-  window.tbpTxGet   = function(){ try{ var s=localStorage.getItem(PKEY); if(!s) return null; var d=JSON.parse(s); if(d && d.jobUrl && d.ts && (Date.now()-d.ts) < 30*60*1000) return d; localStorage.removeItem(PKEY); return null; }catch(e){ return null; } };
+  window.tbpTxGet   = function(){ try{ var s=localStorage.getItem(PKEY); if(!s) return null; var d=JSON.parse(s); if(d && (d.jobUrl || (d.fast && d.jobId)) && d.ts && (Date.now()-d.ts) < 30*60*1000) return d; localStorage.removeItem(PKEY); return null; }catch(e){ return null; } };
   document.addEventListener('input', function(ev){
     var el = ev.target; if(!el) return;
     if(el.id === 'raw' || el.id === 'context' || el.id === 'focus-note' || ((''+el.className).indexOf('wn-ta') !== -1)) schedule();
