@@ -305,7 +305,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. <span style="opacity:.5">build ambient-25</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. <span style="opacity:.5">build ambient-26</span></div>
 </div>
 </div>
 
@@ -1488,7 +1488,12 @@ function prepSystem(){
   var tmpl = (vaultTemplates.follow_up || houseTemplates.follow_up || '').trim();
   var s = "You are helping a psychiatric prescriber PREP for a follow-up visit, before they see the patient. You are given LAST VISIT'S NOTE" + (tmpl ? " and the clinician's follow-up HPI template" : "") + ". Produce a starting point for today's note plus a short list of things to check or ask today.\n\n";
   if(tmpl){ s += "CLINICIAN'S FOLLOW-UP TEMPLATE (structure and any carry-forward classification):\n\n" + tmpl + "\n\n"; }
-  s += "Respond ONLY with raw JSON, no code fence:\n{\"snapshot\":\"<3-5 short labeled lines>\",\"startingNote\":\"<today's follow-up scaffold>\",\"checklist\":[\"...\"],\"foci\":[\"...\"]}\n\n";
+  s += "Respond in PLAIN TEXT with the four section markers below, NOT JSON and NOT a code fence. Your output reproduces the whole note and is full of the patient's quotes and line breaks, which routinely break JSON parsing on long notes; the markers never do. Emit the sections in EXACTLY this order, each marker ALONE on its own line, with nothing before the first marker and nothing after the last section:\n";
+  s += "<<<SNAPSHOT>>>\n(the 3-5 short labeled glance lines, each on its own line)\n";
+  s += "<<<STARTING_NOTE>>>\n(today's follow-up scaffold — the full carried-forward note in the clinician's structure)\n";
+  s += "<<<CHECKLIST>>>\n(one thing to check or ask today per LINE — no bullets, no numbering, just one item per line)\n";
+  s += "<<<FOCI>>>\n(the psychotherapy focus/foci; separate one focus from the next with a line containing only ~~~ ; leave empty if none)\n\n";
+  s += "Reproduce each marker EXACTLY as written (e.g. <<<STARTING_NOTE>>>). Put each section's content on the line(s) AFTER its marker. Do NOT wrap anything in ``` fences and do NOT emit JSON.\n\n";
   s += "PATIENT SNAPSHOT (\"snapshot\") — a VERY brief pre-visit rundown the clinician reads in a few seconds before walking in. This is NOT chart content and never goes in the note; it is a glance so they do not have to re-read the whole last note. 3 to 5 short lines, each labeled, derived ONLY from last visit's note (invent nothing; omit a line the note does not support):\n";
   s += "- 'Returning:' the reason for the visit and, when the note states them, the interval and whether medications were changed last visit. Do NOT pad with vague filler like 'interval since last visit' when no specific interval is documented; state only what the note actually says (e.g. 'Follow-up for ADHD and insomnia; no medication change last visit').\n";
   s += "- 'Diagnoses:' the active diagnosis list, short, with ICD-10 codes if the note has them.\n";
@@ -1510,12 +1515,12 @@ function prepSystem(){
   s += "- One clear, specific question per thread; phrase it as something to ask. Skip only truly static background that never changes. Derive from last visit's note; do not invent.\n\n";
   if(therapyGuide){
     s += "FOCI rules (the PSYCHOTHERAPY GUIDE) — offer 0 to 3 options that genuinely fit THIS patient's picture. Make each ACTIONABLE, not just a label.\n";
-    s += "CRITICAL FORMAT: each element of the foci array is a SINGLE JSON STRING, never an object. Put the parts on their own lines inside that one string using \\n. Do NOT return {\"technique\":...} objects.\n";
-    s += "Inside each string, include, each on its own line: (1) the technique/approach name (e.g. cognitive defusion, motivational interviewing, behavioral activation, supportive or insight-oriented exploration, ERP, stimulus-control/wind-down); (2) one short line on WHY it fits this patient right now; (3) an 'In session:' line with a concrete way to do it plus one or two sample prompts the clinician could actually say.\n";
-    s += "Example of one array element (a string): \"Motivational interviewing\\nHis ambivalence about ruminating on the lawsuit is a natural MI target.\\nIn session: explore the pros and cons he sees in dwelling on it. Try: 'What does staying angry about it get you, and what does it cost you?'\"\n";
-    s += "This also supports documentation: a named technique tied to a target is what makes the psychotherapy add-on defensible. Do NOT push a modality the patient's picture doesn't support; return an empty array if none genuinely fit.";
+    s += "FORMAT: put each focus as a few plain lines under the <<<FOCI>>> marker, and separate one focus from the next with a line containing only ~~~ (three tildes). No JSON, no objects, no bullet characters.\n";
+    s += "For each focus, put each part on its own line: (1) the technique/approach name (e.g. cognitive defusion, motivational interviewing, behavioral activation, supportive or insight-oriented exploration, ERP, stimulus-control/wind-down); (2) one short line on WHY it fits this patient right now; (3) an 'In session:' line with a concrete way to do it plus one or two sample prompts the clinician could actually say.\n";
+    s += "Example of one focus (three lines):\nMotivational interviewing\nHis ambivalence about ruminating on the lawsuit is a natural MI target.\nIn session: explore the pros and cons he sees in dwelling on it. Try: 'What does staying angry about it get you, and what does it cost you?'\n";
+    s += "This also supports documentation: a named technique tied to a target is what makes the psychotherapy add-on defensible. Do NOT push a modality the patient's picture doesn't support; leave the <<<FOCI>>> section empty if none genuinely fit.";
   } else {
-    s += "FOCI rules: the psychotherapy guide is OFF for this clinician. Return an empty foci array.";
+    s += "FOCI rules: the psychotherapy guide is OFF for this clinician. Leave the <<<FOCI>>> section empty.";
   }
   return s;
 }
@@ -1533,18 +1538,19 @@ document.getElementById('prep-btn').addEventListener('click', async function(){
   tbpNotifyDesk('busy');
   var prepOk = false;
   try {
-    // The model occasionally returns truncated or non-JSON output on a given attempt — that is a
-    // transient hiccup, not a problem with the note (the SAME note succeeds on a later try). Retry
-    // automatically so the clinician never has to re-click through a flake. Big carry-forward notes
-    // need room (8000), or the JSON truncates and won't parse.
+    // The model occasionally returns an unusable response on a given attempt — a transient hiccup, not
+    // a problem with the note (the SAME note succeeds on a later try). Retry automatically so the
+    // clinician never has to re-click through a flake. The prep output is MARKER-delimited plain text
+    // (parsePrep), not JSON: the starting note reproduces the whole visit and is full of the patient's
+    // quotes and line breaks, which used to break JSON escaping on long notes and fail the parse.
     var j = null, lastErr = null;
     for(var attempt = 0; attempt < 3 && !j; attempt++){
       if(attempt > 0){ hint.innerHTML = '<span style="color:var(--cream-dim)">One more try&hellip;</span>'; }
       try {
         var raw = await callAPI(prepSystem(), [{role:'user', content: "LAST VISIT'S NOTE:\n\n" + last}], 8000);
-        var cand = safeJSON(raw);
-        if(cand && typeof cand.startingNote === 'string'){ j = cand; }
-        else { lastErr = new Error('the prep came back in an unexpected format' + (raw ? ' (' + String(raw).length + ' characters — likely truncated on a long note)' : ' (empty response)')); }
+        var cand = parsePrep(raw);
+        if(cand && cand.startingNote){ j = cand; }
+        else { lastErr = new Error('the prep came back without a starting note' + (raw ? ' (' + String(raw).length + ' characters returned)' : ' (empty response)')); }
       } catch(e){ lastErr = e; /* keep the real cause instead of swallowing it */ }
     }
     if(!j){
@@ -3018,6 +3024,49 @@ function safeJSON(raw){
   try { return JSON.parse(raw); } catch(e){}
   var a = raw.indexOf('{'), b = raw.lastIndexOf('}');
   if(a !== -1 && b !== -1 && b > a){ try { return JSON.parse(raw.slice(a, b+1)); } catch(e2){} }
+  return null;
+}
+// Parse the "Set me up" prep output. Primary format is MARKER-delimited plain text (see prepSystem):
+// <<<SNAPSHOT>>> / <<<STARTING_NOTE>>> / <<<CHECKLIST>>> / <<<FOCI>>>. This is robust to the patient
+// quotes and line breaks that broke JSON escaping on long carry-forward notes. Returns
+// { snapshot, startingNote, checklist:[...], foci:[...] } or null if no starting note is present.
+// Falls back to JSON so a stray older-format response (or one that ignored the markers) still parses.
+function parsePrep(raw){
+  var t = String(raw || '');
+  if(!t.trim()) return null;
+  if(t.indexOf('<<<STARTING_NOTE>>>') !== -1){
+    // Slice the text between a marker and whichever of the given later markers appears first.
+    function section(name, laterMarkers){
+      var open = '<<<' + name + '>>>';
+      var start = t.indexOf(open);
+      if(start === -1) return '';
+      start += open.length;
+      var end = t.length;
+      for(var k = 0; k < laterMarkers.length; k++){
+        var p = t.indexOf('<<<' + laterMarkers[k] + '>>>', start);
+        if(p !== -1 && p < end) end = p;
+      }
+      return t.slice(start, end).replace(/^[ \t]*\r?\n/, '').replace(/\s+$/, '');
+    }
+    var startingNote = section('STARTING_NOTE', ['CHECKLIST', 'FOCI']);
+    if(!startingNote.trim()) return null;
+    var snapshot = section('SNAPSHOT', ['STARTING_NOTE', 'CHECKLIST', 'FOCI']);
+    var checklist = section('CHECKLIST', ['FOCI']).split('\n')
+      .map(function(x){ return x.replace(/^\s*(?:[-•*]|\d+[.)])\s+/, '').trim(); }).filter(Boolean);
+    var foci = section('FOCI', []).split(/\r?\n?[ \t]*~~~+[ \t]*\r?\n?/)
+      .map(function(x){ return x.trim(); }).filter(Boolean);
+    return { snapshot: snapshot.trim(), startingNote: startingNote.trim(), checklist: checklist, foci: foci };
+  }
+  // Fallback: a response that came back as JSON (older format, or a model that ignored the markers).
+  var cand = safeJSON(t);
+  if(cand && typeof cand.startingNote === 'string' && cand.startingNote.trim()){
+    return {
+      snapshot: (typeof cand.snapshot === 'string') ? cand.snapshot : '',
+      startingNote: cand.startingNote,
+      checklist: Array.isArray(cand.checklist) ? cand.checklist : [],
+      foci: Array.isArray(cand.foci) ? cand.foci : []
+    };
+  }
   return null;
 }
 function refineSystem(){
