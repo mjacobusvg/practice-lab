@@ -284,7 +284,7 @@ OUTPUT FORMAT: Respond ONLY with a JSON object. No markdown, no backticks. Raw J
   "questions": [ array of question objects ]
 }
 
-Set "planDetected" to true ONLY if the visit content (HPI / transcript / the "what are you doing this visit" input) already documents what the clinician DID this visit: a medication action (start, stop, increase, decrease, continue), a decision to hold, a lab or referral order, or an explicit "no changes." Set it to false when the visit does not make the plan clear and the clinician would need to state it. This flag only controls whether the app prompts the clinician to type the plan; it never changes your questions.
+Set "planDetected" to true ONLY if the visit content (HPI / transcript / the "what are you doing this visit" input) already documents what the clinician DID or PLANS to do this visit: a medication action (start, stop, increase, decrease, continue), a decision to hold, a lab or referral order, or an explicit "no changes." A documented INTENDED action counts as the plan being stated, whether phrased as done or as the change being made this visit — e.g. "today he is willing to decrease bupropion", "plan to lower the dose", "decreasing X", "will hold Y", "going to start Z" all mean the plan IS documented, so set planDetected true. Set it to false only when the visit genuinely does not make the plan clear and the clinician would need to state it. This flag only controls whether the app prompts the clinician to type the plan; it never changes your questions.
 
 Each question object: {"id": "short_id", "select": "single" | "multi", "text": "one sentence", "options": ["option 1", "option 2", "..."]}
 
