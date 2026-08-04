@@ -74,12 +74,30 @@ const MODEL_COST_PER_MTOK = {
   'claude-sonnet-4-6':         { in: 3.0, out: 15.0 },
   'claude-sonnet-4-5':         { in: 3.0, out: 15.0 }
 };
-function estCostUsd(model, inputTokens, outputTokens) {
+// Cache-aware. Prompt caching (below) bills cache writes at 2x input (1-hour TTL) and cache
+// reads at 0.1x input; plain input and output bill as usual. cacheCreation/cacheRead default to
+// 0, so a call without caching prices exactly as before.
+function estCostUsd(model, inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens) {
   const price = MODEL_COST_PER_MTOK[model];
   if (!price) return null;
   const inTok = Number(inputTokens) || 0;
   const outTok = Number(outputTokens) || 0;
-  return Math.round(((inTok * price.in + outTok * price.out) / 1e6) * 1e6) / 1e6;
+  const ccTok = Number(cacheCreationTokens) || 0;   // 1h cache write = 2x input
+  const crTok = Number(cacheReadTokens) || 0;        // cache read = 0.1x input
+  const cost = (inTok * price.in + ccTok * price.in * 2.0 + crTok * price.in * 0.1 + outTok * price.out) / 1e6;
+  return Math.round(cost * 1e6) / 1e6;
+}
+
+// Prompt caching: wrap a large, static system prompt in a cache_control block so repeat calls
+// within the cache window bill it at 0.1x instead of full price. We use the 1-HOUR TTL, chosen from
+// real traffic: notes cluster ~26 min apart (median), so ~75% land within an hour of a prior note
+// (a warm read) but only ~5% within 5 min — the 5-min default would pay the write premium and rarely
+// read. Only prompts at/above Sonnet's ~1024-token minimum (~4096 chars) are worth caching; shorter
+// ones (e.g. the Plan fill on Haiku) pass through as a plain string and never attempt a cache write.
+function cacheableSystem(sys) {
+  const text = (typeof sys === 'string') ? sys : '';
+  if (text.length < 4096) return sys || '';
+  return [{ type: 'text', text, cache_control: { type: 'ephemeral', ttl: '1h' } }];
 }
 const REFERER_TOOL_MAP = [
   ['pm-ai-scribe', 'AI Scribe'],
@@ -111,7 +129,13 @@ async function logUsage(row) {
     const model = row.model || null;
     const inputTokens = (row.inputTokens != null) ? Number(row.inputTokens) : null;
     const outputTokens = (row.outputTokens != null) ? Number(row.outputTokens) : null;
-    const cost = model ? estCostUsd(model, inputTokens, outputTokens) : null;
+    // With caching, Anthropic reports the cached prefix in separate fields; input_tokens is only the
+    // uncached remainder. Price all three (cache-aware) and log the TOTAL input so the token count
+    // still reflects the full prompt while est_cost reflects the caching discount.
+    const cacheCreation = (row.cacheCreationTokens != null) ? Number(row.cacheCreationTokens) : 0;
+    const cacheRead = (row.cacheReadTokens != null) ? Number(row.cacheReadTokens) : 0;
+    const cost = model ? estCostUsd(model, inputTokens, outputTokens, cacheCreation, cacheRead) : null;
+    const totalInput = (inputTokens != null) ? inputTokens + cacheCreation + cacheRead : null;
     await fetch(SUPABASE_URL + '/rest/v1/tool_usage', {
       method: 'POST',
       headers: {
@@ -128,7 +152,7 @@ async function logUsage(row) {
         account_email: email,
         tier: row.tier || null,
         model: model,
-        input_tokens: inputTokens,
+        input_tokens: totalInput,
         output_tokens: outputTokens,
         est_cost_usd: cost
       })
@@ -252,7 +276,7 @@ export default async function handler(request) {
   const payload = {
     model: (ALLOWED_MODELS.indexOf(body.model) !== -1 ? body.model : DEFAULT_MODEL),
     max_tokens: body.max_tokens || 1000,
-    system: body.system || '',
+    system: cacheableSystem(body.system),
     messages: body.messages || [],
     stream: true
   };
@@ -288,6 +312,8 @@ export default async function handler(request) {
   let sseBuf = '';
   let inputTokens = null;
   let outputTokens = null;
+  let cacheCreationTokens = null;   // prompt-cache write tokens (billed 2x, 1h TTL)
+  let cacheReadTokens = null;       // prompt-cache read tokens (billed 0.1x)
 
   const meter = new TransformStream({
     transform(chunk, controller) {
@@ -308,6 +334,8 @@ export default async function handler(request) {
               if (evt.type === 'message_start' && evt.message && evt.message.usage) {
                 if (typeof evt.message.usage.input_tokens === 'number') inputTokens = evt.message.usage.input_tokens;
                 if (typeof evt.message.usage.output_tokens === 'number') outputTokens = evt.message.usage.output_tokens;
+                if (typeof evt.message.usage.cache_creation_input_tokens === 'number') cacheCreationTokens = evt.message.usage.cache_creation_input_tokens;
+                if (typeof evt.message.usage.cache_read_input_tokens === 'number') cacheReadTokens = evt.message.usage.cache_read_input_tokens;
               } else if (evt.type === 'message_delta' && evt.usage && typeof evt.usage.output_tokens === 'number') {
                 outputTokens = evt.usage.output_tokens;
               }
@@ -325,7 +353,9 @@ export default async function handler(request) {
         tier: session.claims.tier,
         model: payload.model,
         inputTokens: inputTokens,
-        outputTokens: outputTokens
+        outputTokens: outputTokens,
+        cacheCreationTokens: cacheCreationTokens,
+        cacheReadTokens: cacheReadTokens
       });
     }
   });

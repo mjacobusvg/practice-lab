@@ -35,7 +35,7 @@
 | anthropic-proxy.js | claude-haiku-4-5-20251001 | Non-PHI (Practice Lab, chat tools). Logs usage to `tool_usage` with account_email + tier (from the signed token), model, real token counts, and est cost. |
 | anthropic-proxy-demo.js | claude-haiku-4-5-20251001 | Public Practice Lab demo (unauthenticated). Logs anonymous usage rows with token counts + cost. |
 | clinical-proxy.js | claude-haiku-4-5-20251001 | PHI tools (Letter Gen, Note Builder, Termination, Monitoring). Streams from Anthropic; logs USAGE METADATA ONLY (counts + cost + email/tier), never content. Covered by Anthropic API BAA. |
-| clinical-proxy-stream.mjs | claude-haiku-4-5-20251001 | Streaming PHI proxy. Tees the passthrough stream to read token counts; logs usage metadata only (counts + cost + email/tier), never content. |
+| clinical-proxy-stream.mjs | claude-haiku-4-5-20251001 | Streaming PHI proxy. Tees the passthrough stream to read token counts; logs usage metadata only (counts + cost + email/tier), never content. Wraps large (>~4096-char) system prompts in a **1-hour prompt-cache** block (`cache_control` ephemeral, ttl 1h) — chosen from real traffic (notes cluster ~26 min apart, ~75% within an hour). `est_cost_usd` is cache-aware (writes 2x, reads 0.1x); `input_tokens` logs total input incl. cache tokens. Verify caching via `cache_read_input_tokens` in the Anthropic usage. |
 
 ## Usage tracking (tracking overhaul, 2026-07)
 
