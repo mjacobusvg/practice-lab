@@ -305,7 +305,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. <span style="opacity:.5">build ambient-24</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. <span style="opacity:.5">build ambient-25</span></div>
 </div>
 </div>
 
@@ -1189,12 +1189,12 @@ function renderResult(hpi, flags, verified, opts){
   if(visitType === 'follow_up'){
     handoff += '<div class="hint" style="margin-top:8px" id="assess-prior-hint"></div>';
   }
-  handoff += '<label for="assess-plan" style="display:block;margin-top:14px;font-size:.85rem;color:var(--cream)">What are you doing this visit? <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">('+(hideHpi ? 'only if it wasn&rsquo;t already said in the visit' : 'recommended &mdash; drives the assessment &amp; plan')+')</span></label>';
-  handoff += '<textarea id="assess-plan" style="min-height:70px;margin-top:6px" placeholder="What you did today and why — a med change (which, dose, rationale), a continuation, labs, a referral, or no changes. Add as little or as much as you want; the assessment and plan build the reasoning around it."></textarea>';
-  // (Removed the old "Include a psychotherapy add-on note" checkbox: the psychotherapy decision is now
-  // the always-asked preflight modality question, with a "No psychotherapy this visit" option, so a
-  // separate pre-toggle is obsolete and only caused confusion with the prep-only psychotherapy guide.)
-  handoff += '<div style="margin-top:10px"><button class="btn-ghost" type="button" id="pmp-attest-btn" onclick="insertPmpAttestation()" style="border-color:#c9a227;color:#e8cf7a">&#43; PMP reviewed</button> <span class="hint" style="margin-left:6px">Controlled substance? One tap adds a dated PMP-reviewed attestation.</span></div>';
+  // The "What are you doing this visit?" input + PMP button used to live HERE, as their own box ABOVE
+  // the preflight — which meant the clinician kept scrolling past it and generating without it. They now
+  // render at the END of the "Confirm the clinical calls" step (see renderPreflightCards), just above the
+  // Generate button, so the input sits in the path to Generate and can't be missed.
+  // (The old "Include a psychotherapy add-on note" checkbox is also gone: the psychotherapy decision is
+  // the always-asked preflight modality question, with a "No psychotherapy this visit" option.)
   // The Build button drives the typed flow; the ambient flow auto-runs preflight, so it's hidden there
   // (kept in the DOM because the auto-draft calls buildAssessment on this element).
   handoff += '<div style="margin-top:12px"><button class="btn" id="build-assess"'+(hideHpi?' style="display:none"':'')+'>Build assessment &amp; plan &rarr;</button> <button class="btn-ghost clearvisit-btn" type="button" onclick="clearVisit()" style="border-color:var(--teal)">&#8635; New patient (clear notes)</button></div>';
@@ -1933,25 +1933,18 @@ async function buildAssessment(btn, force){
   try {
     var pf = await window.NoteEngine.runPreflight(inp, scope);
     // If the visit already documents the plan (e.g. the clinician said it aloud in an ambient visit),
-    // hide the still-empty "What are you doing this visit?" box so they aren't prompted to retype it.
-    try {
-      if(pf && pf.planDetected){
-        var pe = document.getElementById('assess-plan');
-        if(pe && !pe.value.trim()){
-          pe.style.display='none';
-          var pl = document.querySelector('label[for="assess-plan"]'); if(pl) pl.style.display='none';
-        }
-      }
-    } catch(e){}
+    // the plan input inside the confirm step below starts hidden so they aren't prompted to retype it
+    // (the PMP button still reveals it on demand). Pass the flag through.
+    var planDetected = !!(pf && pf.planDetected);
     var qs = ensureModalityCard((pf && pf.questions) ? pf.questions : []);
     // The preflight is ready — the ambient banner has done its job, clear it so the questions stand alone.
     var wasAmbient = _ambientFlow;
     if(_ambientFlow){ _ambientFlow = false; tbpAmbientProgress('clear'); }
-    // Ambient: now that the questions are on screen, reveal the (previously hidden) work-up block
-    // — the plan box (only if not detected), PMP, and clear-visit — which sits ABOVE the questions.
+    // Ambient: reveal the (previously hidden) work-up block — the clear-visit control and hint. The plan
+    // input itself now lives at the end of the confirm step, not in this block.
     if(wasAmbient){ var ah=document.getElementById('assess-handoff'); if(ah) ah.style.display=''; }
     if(!qs.length){ await generateNote(inp, scope, {}, []); }   // nothing to confirm — generate directly
-    else { renderPreflightCards(inp, scope, qs); box.scrollIntoView({ behavior:'smooth', block:'start' }); }
+    else { renderPreflightCards(inp, scope, qs, planDetected); box.scrollIntoView({ behavior:'smooth', block:'start' }); }
   } catch(err){
     if(_ambientFlow){ _ambientFlow = false; tbpAmbientProgress('clear'); }
     box.innerHTML = '<div class="err">'+esc(err.message || 'Could not read the visit.')+'</div>';
@@ -1962,7 +1955,7 @@ async function buildAssessment(btn, force){
 
 // ── Slice 4b: preflight choice-cards (single/multi + custom), rendered into #assess-results ──
 var pfState = {};
-function renderPreflightCards(inp, scope, questions){
+function renderPreflightCards(inp, scope, questions, planDetected){
   pfState = {};
   var html = '<div class="out"><h3>Confirm the clinical calls</h3>'
     + '<div class="hint" style="margin-bottom:14px">Based on what you documented, here is what fits. Confirm or adjust, then generate. Where more than one factor applies, select all that fit. These stay on screen &mdash; change any answer and regenerate anytime.</div>';
@@ -1979,6 +1972,15 @@ function renderPreflightCards(inp, scope, questions){
     if(multi){ pfState[qi] = []; }
     else { var first=(q.options||[]).find(function(o){return !/other\s*\/\s*enter my own/i.test(o);}); pfState[qi] = first || ''; }
   });
+  // "What are you doing this visit?" — the med decision + rationale — is the LAST item in this confirm
+  // step, right above Generate, so it sits in the path and is never missed (it used to be a separate box
+  // ABOVE the cards, which clinicians kept scrolling past). It starts hidden when the visit already
+  // documented the plan; the "+ PMP reviewed" button reveals it on demand (insertPmpAttestation).
+  html += '<div style="margin-bottom:16px;border-top:1px solid var(--rule);padding-top:14px">'
+    + '<label for="assess-plan" style="display:'+(planDetected?'none':'block')+';margin-bottom:8px;color:var(--cream)">What are you doing this visit? <span style="font-weight:400;text-transform:none;color:var(--cream-dim)">(only if it wasn&rsquo;t already said in the visit &mdash; the med change, a continuation, labs, a referral, or no changes)</span></label>'
+    + '<textarea id="assess-plan" style="min-height:70px;width:100%;'+(planDetected?'display:none;':'')+'background:var(--navy);border:1px solid var(--rule);border-radius:8px;color:var(--white);padding:10px 12px;font-size:.9rem" placeholder="What you did today and why. Add as little or as much as you want; the assessment and plan build the reasoning around it."></textarea>'
+    + '<div style="margin-top:10px"><button class="btn-ghost" type="button" id="pmp-attest-btn" onclick="insertPmpAttestation()" style="border-color:#c9a227;color:#e8cf7a">&#43; PMP reviewed</button> <span class="hint" style="margin-left:6px">Controlled substance? One tap adds a dated PMP-reviewed attestation.</span></div>'
+    + '</div>';
   var genLbl = 'Generate my note (HPI + Assessment' + (scope==='both' ? ' + Psychotherapy' : '') + (planOn ? ' + Plan' : '') + ')';
   html += '<button class="btn" id="pf-generate">' + genLbl + ' &rarr;</button></div>';
   // Output goes in its own container BELOW the preflight cards, so the cards (and their
