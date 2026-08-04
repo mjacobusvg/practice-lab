@@ -1815,6 +1815,47 @@ function refreshAssessPriorHint(){
     ? '&#10003; Built from last visit\'s assessment (diagnoses + meds) in the box up top.'
     : 'Built from last visit\'s assessment. Paste last visit\'s note (with its diagnoses + meds) into <strong style="color:var(--cream)">&ldquo;Last visit\'s note + assessment&rdquo;</strong> up top first.';
 }
+// The psychotherapy (modality) question is ALWAYS offered. The preflight model normally emits a
+// tailored modality card, but it can legitimately omit it (it judged the therapy already documented)
+// — and we never want the question to just vanish. So: guarantee a modality card exists, guarantee a
+// "No psychotherapy this visit" escape as its first option, and force multi-select (a visit can span
+// more than one modality, and multi avoids auto-selecting the escape). If the clinician picks a real
+// modality the add-on generates; if they pick the escape or leave it blank, no blurb is written.
+var NO_PSYCHOTHERAPY = 'No psychotherapy this visit';
+function ensureModalityCard(qs){
+  qs = Array.isArray(qs) ? qs.slice() : [];
+  var idx = -1;
+  for(var i=0;i<qs.length;i++){ var q=qs[i]||{}; if(q.id==='modality' || /modality/i.test(q.text||'')){ idx=i; break; } }
+  if(idx !== -1){
+    var mc = qs[idx];
+    mc.select = 'multi';
+    mc.options = Array.isArray(mc.options) ? mc.options.slice() : [];
+    if(!mc.options.some(function(o){ return /no (psycho)?therapy this visit/i.test(o); })) mc.options.unshift(NO_PSYCHOTHERAPY);
+    qs[idx] = mc;
+    return qs;
+  }
+  // Model omitted it (therapy read as already documented, or nothing therapeutic surfaced). Inject a
+  // deterministic card so the question is always there. Options cover the common orientations plus the
+  // escape; the clinician can always use "Other / enter my own".
+  qs.push({
+    id: 'modality',
+    select: 'multi',
+    text: 'Was psychotherapy performed this visit, and which modality or modalities? (Select all that fit, or "' + NO_PSYCHOTHERAPY + '".)',
+    options: [
+      NO_PSYCHOTHERAPY,
+      'Supportive psychotherapy',
+      'Insight-oriented / psychodynamic',
+      'CBT-informed',
+      'Behavioral activation',
+      'Motivational interviewing',
+      'Interpersonal-focused (IPT-informed)',
+      'Mindfulness-based',
+      'Other / enter my own'
+    ]
+  });
+  return qs;
+}
+
 async function buildAssessment(btn, force){
   if(!window.NoteEngine || typeof window.NoteEngine.runAssessment !== 'function'){
     document.getElementById('assess-results').innerHTML = '<div class="err">Assessment engine did not load. Hard-reload the page (Cmd/Ctrl+Shift+R) and try again.</div>';
@@ -1851,8 +1892,12 @@ async function buildAssessment(btn, force){
     return;
   }
   // Slice 4b: surface the provider-owned clinical calls (preflight) before writing.
-  var wantTherapy = (function(){ var t=document.getElementById('assess-therapy'); return t ? !!t.checked : !!therapyGuide; })();
-  var scope = wantTherapy ? 'both' : 'assessment';
+  // ALWAYS ask the psychotherapy question. Scope is 'both' regardless of the add-on toggle so the
+  // preflight surfaces a tailored modality card; whether an add-on blurb is actually generated is
+  // decided from the ANSWER at generate time (picking "No psychotherapy this visit" — or leaving it
+  // blank — skips the blurb). The old toggle-gated scope silently dropped the question on any visit
+  // where therapy wasn't pre-checked, which is exactly what we never want.
+  var scope = 'both';
   var planEl = document.getElementById('assess-plan');
   var inp = { hpi: hpi, dxprior: dxprior, plan: (planEl ? planEl.value.trim() : '') };
   var label = btn.innerHTML;
@@ -1872,7 +1917,7 @@ async function buildAssessment(btn, force){
         }
       }
     } catch(e){}
-    var qs = (pf && pf.questions) ? pf.questions : [];
+    var qs = ensureModalityCard((pf && pf.questions) ? pf.questions : []);
     // The preflight is ready — the ambient banner has done its job, clear it so the questions stand alone.
     var wasAmbient = _ambientFlow;
     if(_ambientFlow){ _ambientFlow = false; tbpAmbientProgress('clear'); }
@@ -1924,9 +1969,12 @@ function renderPreflightCards(inp, scope, questions){
       var qi = o.getAttribute('data-qi');
       var custom = box.querySelector('.pf-custom[data-qi="'+qi+'"]');
       if(isMulti){
-        var isPlain = /keep it plain/i.test(o.getAttribute('data-opt')||'');
+        // "Keep it plain" (char/attr cards) and "No psychotherapy this visit" (modality card) are
+        // EXCLUSIVE escapes: selecting one clears the others, and selecting any real option clears it.
+        var EXCL = /keep it plain|no (psycho)?therapy this visit/i;
+        var isPlain = EXCL.test(o.getAttribute('data-opt')||'');
         if(isPlain){ group.querySelectorAll('.opt').forEach(function(x){ if(x!==o) x.classList.remove('sel'); }); o.classList.toggle('sel'); }
-        else { group.querySelectorAll('.opt').forEach(function(x){ if(/keep it plain/i.test(x.getAttribute('data-opt')||'')) x.classList.remove('sel'); }); o.classList.toggle('sel'); }
+        else { group.querySelectorAll('.opt').forEach(function(x){ if(EXCL.test(x.getAttribute('data-opt')||'')) x.classList.remove('sel'); }); o.classList.toggle('sel'); }
         var picked = [];
         group.querySelectorAll('.opt.sel').forEach(function(x){ picked.push(x.getAttribute('data-custom') ? (custom.value.trim()||'(custom)') : x.getAttribute('data-opt')); });
         var customSel = !!group.querySelector('.opt.sel[data-custom]');
@@ -1962,6 +2010,8 @@ function renderPreflightCards(inp, scope, questions){
       } else if(q.id==='length'){ lengthChoice = (typeof val==='string') ? val : '';
       } else if(q.id==='modality' || /modality/i.test(q.text)){
         var mv = Array.isArray(val) ? val.filter(function(x){return x && x!=='(custom)';}) : (val ? [val] : []);
+        // Drop the "No psychotherapy this visit" escape — it is not a modality; it means no blurb.
+        mv = mv.filter(function(x){ return !/no (psycho)?therapy this visit/i.test(x); });
         modality = mv.map(function(m){ return String(m).split(' — ')[0].trim(); }).filter(Boolean).join(' + ');
       } else if(q.id==='clin_dx'){
         // New-patient diagnosis confirmation: the provider's picks ARE the diagnosis list.
@@ -1979,7 +2029,9 @@ function renderPreflightCards(inp, scope, questions){
         }
       }
     });
-    var noTherapy = /no therapy/i.test(timeChoice);
+    // No add-on blurb unless a real modality was picked: an empty modality means the clinician chose
+    // "No psychotherapy this visit" or left the question blank. Never fabricate therapy that wasn't declared.
+    var noTherapy = !modality || /no therapy/i.test(timeChoice);
     // Re-read the plan box at generate time. inp.plan was captured before preflight (empty in the
     // ambient auto-flow), so without this a plan typed AFTER the questions appear would be ignored.
     try { var pe2=document.getElementById('assess-plan'); if(pe2 && pe2.style.display!=='none'){ inp.plan = pe2.value.trim(); } } catch(e){}
