@@ -304,7 +304,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. <span style="opacity:.5">build ambient-21</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. <span style="opacity:.5">build ambient-22</span></div>
 </div>
 </div>
 
@@ -646,6 +646,10 @@ var therapyGuide = true;  // psychotherapy guide on/off — per-clinician (Vault
 // derivable); MSE is a pure macro insert (observed, never AI-fabricated); plan snippets feed the Plan.
 var rosOn = false, rosMacro = '', mseOn = false, mseMacro = '', planSnippets = '', planOn = false;
 var assessStyle = ''; // clinician's saved assessment STYLE (voice + skeleton), form only; blank = pure engine
+// Per-clinician DEFAULT assessment length, per visit type (Vault). Blank = fall back to the heuristic
+// (new-patient eval → Standard, follow-up → Brief). Any single note is still changeable with the
+// Brief/Standard/Thorough chips on the rendered assessment; this only sets where it starts.
+var assessLenEval = '', assessLenFollowup = '';
 var teleStatement = ''; // clinician's telehealth attestation (Vault); inserted only on telehealth visits
 // Insert a block right after the HPI's opening (reason-for-visit) paragraph. Deterministic,
 // so it lands verbatim in the right spot and the AI never touches or strips it.
@@ -941,16 +945,34 @@ function renderSectionsToggles(){
     return '<label style="display:inline-flex;align-items:center;gap:6px;margin-right:18px;cursor:pointer;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream);font-size:.85rem">'
       + '<input type="checkbox" id="'+id+'"'+(on?' checked':'')+' style="width:auto"> '+label+'</label>';
   }
+  // Per-visit-type default assessment length. Shows the clinician's saved preference, or the heuristic
+  // (eval → Standard, follow-up → Brief) when unset. Any single note is still one tap away on the chips.
+  function lenSel(id, cur){
+    return '<select id="'+id+'" style="background:var(--navy);border:1px solid var(--rule);border-radius:7px;color:var(--white);padding:4px 9px;font-size:.82rem;margin-left:6px">'
+      + ['Brief','Standard','Thorough'].map(function(x){ return '<option'+(cur===x?' selected':'')+'>'+x+'</option>'; }).join('')
+      + '</select>';
+  }
+  function lenRow(){
+    var ev = assessLenEval || 'Standard', fu = assessLenFollowup || 'Brief';
+    return '<div class="hint" style="margin-top:14px;margin-bottom:6px">Assessment length <span style="color:var(--cream-dim)">&mdash; where each note starts; change any single one with the chips on it</span></div>'
+      + '<label style="display:inline-flex;align-items:center;margin-right:20px;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream);font-size:.85rem">New patient'+lenSel('len-eval', ev)+'</label>'
+      + '<label style="display:inline-flex;align-items:center;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream);font-size:.85rem">Follow-up'+lenSel('len-fu', fu)+'</label>';
+  }
   el.innerHTML = '<div class="hint" style="margin-bottom:6px">Include in the note <span style="color:var(--cream-dim)">&mdash; saved to your Vault, change anytime</span></div>'
     + tog('sec-ros', rosOn, 'Review of Systems')
     + tog('sec-mse', mseOn, 'Mental Status Exam')
-    + tog('sec-plan', planOn, 'Plan');
+    + tog('sec-plan', planOn, 'Plan')
+    + lenRow();
   var r = document.getElementById('sec-ros');
   if(r) r.addEventListener('change', function(){ rosOn = this.checked; persistVaultField('hpiRos', rosOn?'on':'off'); });
   var m = document.getElementById('sec-mse');
   if(m) m.addEventListener('change', function(){ mseOn = this.checked; persistVaultField('hpiMse', mseOn?'on':'off'); });
   var p = document.getElementById('sec-plan');
   if(p) p.addEventListener('change', function(){ planOn = this.checked; persistVaultField('hpiPlanOn', planOn?'on':'off'); });
+  var le = document.getElementById('len-eval');
+  if(le) le.addEventListener('change', function(){ assessLenEval = this.value; persistVaultField('hpiAssessLenEval', this.value); });
+  var lf = document.getElementById('len-fu');
+  if(lf) lf.addEventListener('change', function(){ assessLenFollowup = this.value; persistVaultField('hpiAssessLenFollowup', this.value); });
 }
 
 // ── Build the draft system prompt ──
@@ -1919,7 +1941,10 @@ function renderPreflightCards(inp, scope, questions){
     // Re-read the plan box at generate time. inp.plan was captured before preflight (empty in the
     // ambient auto-flow), so without this a plan typed AFTER the questions appear would be ignored.
     try { var pe2=document.getElementById('assess-plan'); if(pe2 && pe2.style.display!=='none'){ inp.plan = pe2.value.trim(); } } catch(e){}
-    generateNote(inp, scope, { clinBlock: window.NoteEngine.buildClinBlock(clinicalDecisions), lengthBlock: window.NoteEngine.buildLengthBlock(lengthChoice), lengthChoice: (lengthChoice||'Standard'), modality: modality, code: code, noTherapy: noTherapy }, clinicalDecisions);
+    // Length is no longer asked in preflight; let generateNote apply the clinician's per-visit-type
+    // default (or heuristic). Pass a length only if one was somehow collected.
+    var _lenOpt = lengthChoice ? { lengthBlock: window.NoteEngine.buildLengthBlock(lengthChoice), lengthChoice: lengthChoice } : {};
+    generateNote(inp, scope, Object.assign({ clinBlock: window.NoteEngine.buildClinBlock(clinicalDecisions), modality: modality, code: code, noTherapy: noTherapy }, _lenOpt), clinicalDecisions);
   });
 }
 
@@ -1928,9 +1953,18 @@ async function generateNote(inp, scope, opt){
   opt = opt || {};
   // Length and the psychotherapy add-on code are no longer pre-asked (preflight only stops for
   // genuine clinical calls now). Default them here so every path — the straight-through generate and
-  // the preflight-cards generate — is consistent: Standard length, and the 90833 floor for the add-on
-  // (the conservative code; it can only be raised on the rendered note, never silently over-billed).
-  if(!opt.lengthChoice) opt.lengthChoice = 'Standard';
+  // the preflight-cards generate — is consistent.
+  // Length follows the clinician's per-visit-type Vault preference; if unset, the sensible heuristic:
+  // new-patient evals run Standard (more to establish), follow-ups run Brief. buildLengthBlock turns
+  // that into the actual instruction, so BOTH generate paths honor it (runAssessment reads lengthBlock).
+  if(!opt.lengthChoice){
+    var _lp = (visitType === 'new_eval') ? assessLenEval : assessLenFollowup;
+    opt.lengthChoice = _lp || (visitType === 'new_eval' ? 'Standard' : 'Brief');
+  }
+  if(!opt.lengthBlock && window.NoteEngine && window.NoteEngine.buildLengthBlock){
+    opt.lengthBlock = window.NoteEngine.buildLengthBlock(opt.lengthChoice);
+  }
+  // The add-on code defaults to the 90833 floor (conservative; only raised on the rendered note).
   if(!opt.code) opt.code = '90833';
   var box = document.getElementById('assess-output') || document.getElementById('assess-results');
   var gbtn = document.getElementById('pf-generate');
@@ -2987,6 +3021,8 @@ function loadVaultTemplates(){
     mseOn = (lv.hpiMse==='on'); mseMacro = lv.hpiMseMacro || '';
     planSnippets = lv.hpiPlanSnippets || '';
     assessStyle = lv.hpiAssessTemplate || '';
+    assessLenEval = lv.hpiAssessLenEval || '';
+    assessLenFollowup = lv.hpiAssessLenFollowup || '';
     planOn = (lv.hpiPlanOn!==undefined) ? (lv.hpiPlanOn===true || lv.hpiPlanOn==='on') : !!(planSnippets && planSnippets.trim());
     teleStatement = lv.hpiTeleStatement || '';
     if(lv.legalName) clinicianName = firstNameFrom(lv.legalName);
@@ -3042,6 +3078,8 @@ function loadVaultTemplates(){
       mseOn = (d.data.hpiMse==='on'); mseMacro = d.data.hpiMseMacro || '';
       planSnippets = d.data.hpiPlanSnippets || '';
       assessStyle = d.data.hpiAssessTemplate || '';
+      assessLenEval = d.data.hpiAssessLenEval || '';
+      assessLenFollowup = d.data.hpiAssessLenFollowup || '';
       planOn = (d.data.hpiPlanOn!==undefined) ? (d.data.hpiPlanOn===true || d.data.hpiPlanOn==='on') : !!(planSnippets && planSnippets.trim());
       teleStatement = d.data.hpiTeleStatement || '';
       if(d.data.legalName) clinicianName = firstNameFrom(d.data.legalName);
