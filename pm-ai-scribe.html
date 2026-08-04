@@ -1108,11 +1108,16 @@ function verifySystem(){
     s += "=== ALSO PRODUCE TODAY'S REVIEW OF SYSTEMS ===\n";
     s += "Using the clinician's STANDARD ROS below, produce today's ROS. Keep their categories, default items, and signs. Flip an item to (+) ONLY if today's source indicates the patient reported that symptom; otherwise keep the clinician's default. Do NOT add items not in their list, and NEVER assert a positive the source does not support. Reproduce their exact format. Output the ROS BODY only, no 'Review of Systems:' heading.\n\nCLINICIAN'S STANDARD ROS:\n" + rosText + "\n\n";
   }
-  s += "Respond ONLY with raw JSON, no code fence, in exactly this shape:\n{\"hpi\": \"<the verified HPI text>\", \"flags\": [\"only a genuine question you could not resolve yourself\", \"...\"]"
-    + (mseOn ? ", \"mse\": \"<today's MSE body>\"" : "")
-    + (rosOn ? ", \"ros\": \"<today's ROS body>\"" : "")
-    + "}\nflags holds ONLY genuine questions you could not resolve yourself (most often an empty array []) — never changes you already made, and never routine confirmations. Return the corrected HPI"
-    + ((mseOn||rosOn) ? " and fill the "+(mseOn&&rosOn?"mse and ros fields":(mseOn?"mse field":"ros field"))+"." : ".");
+  // OUTPUT FORMAT: plain text with section markers, NOT JSON. The HPI, MSE, and quotes are full of
+  // double-quotes and line breaks that routinely broke JSON parsing (and silently killed the whole
+  // review + the MSE fill). Markers are immune to that.
+  s += "=== OUTPUT FORMAT — READ CAREFULLY ===\n";
+  s += "Respond in PLAIN TEXT with the section markers below, NOT JSON and NOT a code fence. Your output contains many quotes and line breaks, so JSON is unreliable; the markers are not. Emit the sections in EXACTLY this order, each marker on its OWN line, with nothing before the first marker and nothing after the last section:\n\n";
+  s += "<<<HPI>>>\n<the full corrected, chart-ready HPI text, plain text, no Markdown>\n";
+  if(mseOn) s += "<<<MSE>>>\n<today's Mental Status Exam BODY only, no 'Mental Status Exam:' heading>\n";
+  if(rosOn) s += "<<<ROS>>>\n<today's Review of Systems BODY only, no 'Review of Systems:' heading>\n";
+  s += "<<<FLAGS>>>\n<zero or more flags, ONE per line, plain sentences with no bullets or numbering; leave this section EMPTY if there are none>\n\n";
+  s += "Rules: reproduce each marker EXACTLY as written (e.g. <<<HPI>>>). Put the actual section content on the line(s) after its marker. Do NOT wrap anything in ``` fences. Do NOT emit JSON. FLAGS holds ONLY genuine questions you could not resolve yourself (most often none at all) — never changes you already made, and never routine confirmations.";
   return s;
 }
 
@@ -1191,8 +1196,10 @@ function renderResult(hpi, flags, verified, opts){
     handoff += '<div class="hint" style="margin-top:8px">It writes the whole note straight through, stopping only when there\'s a genuine clinical call to confirm (a new-patient diagnosis, or a call the visit reads more than one way). Length and the add-on code you set on the finished note. Or <a href="#" id="send-nb-link">open the standalone Clinical Note Builder</a> instead.</div>';
   }
   handoff += '</div>';
-  // Ambient: preflight first, work-up block after it. Typed: work-up block first, then preflight.
-  html += hideHpi ? ('<div id="assess-results"></div>' + handoff) : (handoff + '<div id="assess-results"></div>');
+  // Work-up block (the "What are you doing this visit?" plan box + PMP) goes ABOVE the preflight
+  // questions in BOTH flows, so an input the clinician fills BEFORE generating never sits under the
+  // Generate button. #assess-results (the questions + the Generate button) follows it.
+  html += handoff + '<div id="assess-results"></div>';
 
   document.getElementById('results').innerHTML = html;
   refreshAssessPriorHint();
@@ -1440,20 +1447,33 @@ async function verifyHpi(hpi){
   // Verify stays on Sonnet for now: it must reliably ASK when it hits a question it genuinely cannot
   // resolve (an unresolvable garbled med/dose, a real ambiguity). Haiku under-flagged in the first A/B;
   // re-testing whether it asks appropriately under the corrected prompt before moving this back to Haiku.
-  var raw = await callAPI(verifySystem(), [{role:'user', content: msg}], 5200);
-  try {
-    var j = JSON.parse(raw);
-    if(j && typeof j.hpi === 'string') return {
-      hpi: j.hpi,
-      flags: Array.isArray(j.flags) ? j.flags : [],
-      mse: (typeof j.mse === 'string') ? j.mse : '',
-      ros: (typeof j.ros === 'string') ? j.ros : '',
+  var raw = await callAPI(verifySystem(), [{role:'user', content: msg}], 8000);
+  // The verifier returns PLAIN TEXT with <<<SECTION>>> markers, NOT JSON. These notes are full of
+  // patient quotes and line breaks; as raw JSON, a single unescaped quote broke JSON.parse, which
+  // silently failed the ENTIRE review — the "Automatic review could not be completed" warning — and
+  // left MSE/ROS as the clinician's unfilled macro (the [ ] brackets). Markers parse robustly
+  // regardless of quotes/newlines, and a truncated tail only costs the last section, not everything.
+  var txt = String(raw || '');
+  function vpSection(name){
+    var re = new RegExp('<<<' + name + '>>>[ \\t]*\\r?\\n?([\\s\\S]*?)\\s*(?=<<<(?:HPI|MSE|ROS|FLAGS)>>>|$)', 'i');
+    var m = txt.match(re); return m ? m[1] : null;
+  }
+  var hpiOut = vpSection('HPI');
+  if(hpiOut && hpiOut.trim()){
+    var flagsRaw = vpSection('FLAGS');
+    var flags = flagsRaw ? flagsRaw.split('\n').map(function(s){ return s.replace(/^\s*(?:[-*•]|\d+[.)])\s*/, '').trim(); }).filter(Boolean) : [];
+    var mseOut = vpSection('MSE'); var rosOut = vpSection('ROS');
+    return {
+      hpi: hpiOut.trim(),
+      flags: flags,
+      mse: (mseOut && mseOut.trim()) ? mseOut.trim() : '',
+      ros: (rosOut && rosOut.trim()) ? rosOut.trim() : '',
       verified: true
     };
-  } catch(e){}
-  // If the verifier did not return clean JSON, keep the original draft rather than lose it, but
-  // report that the review did NOT complete so the UI never shows a false "auto-reviewed" state.
-  // mse/ros come back empty here; runDraft falls back to the clinician's static macro/default.
+  }
+  // No <<<HPI>>> marker (unexpected format / severe truncation): keep the original draft rather than
+  // lose it, and report the review did NOT complete so the UI never shows a false "auto-reviewed"
+  // state. mse/ros come back empty; runDraft falls back to the clinician's static macro/default.
   return { hpi: hpi, flags: [], mse: '', ros: '', verified: false };
 }
 
@@ -1922,7 +1942,7 @@ async function buildAssessment(btn, force){
     var wasAmbient = _ambientFlow;
     if(_ambientFlow){ _ambientFlow = false; tbpAmbientProgress('clear'); }
     // Ambient: now that the questions are on screen, reveal the (previously hidden) work-up block
-    // BELOW them — the optional plan box (only if not detected), PMP, and clear-visit.
+    // — the plan box (only if not detected), PMP, and clear-visit — which sits ABOVE the questions.
     if(wasAmbient){ var ah=document.getElementById('assess-handoff'); if(ah) ah.style.display=''; }
     if(!qs.length){ await generateNote(inp, scope, {}, []); }   // nothing to confirm — generate directly
     else { renderPreflightCards(inp, scope, qs); box.scrollIntoView({ behavior:'smooth', block:'start' }); }
