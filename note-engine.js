@@ -289,10 +289,13 @@ Set "planDetected" to true ONLY if the visit content (HPI / transcript / the "wh
 Each question object: {"id": "short_id", "select": "single" | "multi", "text": "one sentence", "options": ["option 1", "option 2", "..."]}
 
 SELECT MODE — set this per card:
-- "single" for cards where exactly one answer applies: the time card, the modality card, and CARRY/DROP cards (you either carry, defer, or drop a thread — not several at once).
+- "single" for cards where exactly one answer applies: CARRY/DROP cards (you either carry, defer, or drop a thread — not several at once).
 - "multi" for CHARACTERIZATION and ATTRIBUTION cards. A symptom can have several simultaneous contributors, and the formulation should hold all the provider selects. The provider picks every option that applies. "Keep it plain" and "Other / enter my own" still appear; selecting "Keep it plain" means assign no label.
 
-=== THERAPY CARDS — only when a therapy blurb is being generated ===
+=== THERAPY CARDS — DISABLED, DO NOT EMIT ===
+Do NOT generate any therapy card — neither the "time"/add-on-code card nor the "modality" card — under any scope. The add-on code defaults to the 90833 floor and the modality is inferred when the note is written; the clinician confirms both ON the generated note, never here. Everything in this THERAPY CARDS block below is retained for reference only and MUST NOT be emitted as a question.
+
+=== THERAPY CARDS (REFERENCE ONLY — NEVER EMIT) ===
 
 Card — id "time": "Was psychotherapy performed, and which add-on code?"
 options: ["Yes — 90833 (16-37 min)", "Yes — 90836 (38-52 min)", "Yes — 90838 (53+ min)", "No therapy this visit"]
@@ -352,7 +355,7 @@ Three kinds of clinical-decision card:
 3. ATTRIBUTION (id "clin_attr"): When the HPI presents a finding that could be attributed to more than one documented cause and the attribution would change the formulation, ask. Same rules as characterization: options tied to documented evidence, always offer "Other / enter my own".
 
 === DISCIPLINE ===
-Surface only genuine, case-specific clinical decisions. Do NOT ask about section order, formatting, assessment style, carry-forward language, or the HPI itself. Do NOT propose a characterization or attribution unless the documented data supports more than one reasonable reading — if the provider's framing in the HPI is already clear, do not second-guess it with a card.`;
+DEFAULT TO WRITING THROUGH WITH NO CARDS. A stop is expensive — it interrupts the clinician on every visit — so it must earn its place. Emit a card ONLY for (a) the mandatory new-patient diagnosis card (clin_dx, when no prior diagnosis list was provided), or (b) a genuinely contestable clinical call where getting it wrong would put words in the provider's mouth: a diagnostic characterization the data reads more than one way, an attribution that changes the formulation, or a carried open thread the HPI does not resolve. If you can resolve something reasonably from the documentation, DO SO silently and let the assessment's own review flag anything worth a second look — do not stop to ask. Most visits should produce ZERO cards; a clean stable follow-up always produces zero. Surface only genuine, case-specific clinical decisions. Do NOT ask about section order, formatting, assessment style, carry-forward language, assessment length, therapy code or modality, or the HPI itself. Do NOT propose a characterization or attribution unless the documented data supports more than one reasonable reading — if the provider's framing in the HPI is already clear, do not second-guess it with a card.`;
 
 function contextBlock(inp){
   var s = 'HPI / visit narrative:\n\n' + inp.hpi;
@@ -445,9 +448,13 @@ const LENGTH_CARD = {
 
 function scopeNote(scope){
   return '\n\n---\n\nSECTIONS BEING GENERATED: ' +
-    (scope==='assessment' ? 'assessment only (generate clinical-decision cards if warranted; NO therapy cards)' :
-     scope==='therapy' ? 'therapy blurb only (generate therapy cards; NO clinical-decision cards)' :
-     'assessment AND therapy blurb (generate therapy cards AND clinical-decision cards if warranted)');
+    (scope==='assessment' ? 'assessment only.' :
+     scope==='therapy' ? 'therapy blurb only.' :
+     'assessment AND therapy blurb.') +
+    ' Do NOT generate therapy cards (a "time"/add-on-code card or a "modality" card) under any scope — the ' +
+    'psychotherapy add-on code defaults to the 90833 floor and the modality is inferred when the note is ' +
+    'written; both are confirmed by the clinician ON the generated note, not asked here. Generate ' +
+    'clinical-decision cards ONLY when an assessment is in scope AND a genuinely contestable call is present.';
 }
 
 // Preflight review: surface the provider-owned clinical decisions before anything is written.
@@ -473,9 +480,11 @@ async function runPreflight(inp, scope){
     else { throw e; }
   }
   var questions = Array.isArray(parsed.questions) ? parsed.questions : [];
-  if(scope==='assessment' || scope==='both'){
-    questions.unshift(JSON.parse(JSON.stringify(LENGTH_CARD)));
-  }
+  // Length is a preference, not a clinical judgment call, so it is NO LONGER a pre-stop: the note
+  // generates at the clinician's default (Standard) and the Brief/Standard/Thorough chips on the
+  // rendered assessment rebuild it in place. Kept LENGTH_CARD defined for reference. This is part of
+  // making preflight only stop when there is a genuine, contestable clinical call to own — a clean
+  // stable follow-up now sails straight through with zero stops.
   return { questions: questions, planDetected: (parsed.planDetected === true) };
 }
 
