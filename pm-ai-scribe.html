@@ -260,7 +260,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
         <button type="button" id="raw-fullscreen-btn" class="btn" style="margin-top:10px" onclick="openFocus('raw')">Open the working window &#8599;</button>
       </div>
       <div style="margin-top:16px">
-        <button class="btn" id="generate">Draft my HPI &rarr;</button>
+        <button class="btn" id="generate">Start my note &rarr;</button>
       </div>
       <!-- Therapy coach + screening scales live in the full-screen working note (the visit
            cockpit) only, not on this setup screen. This row now just carries the Patient Desk
@@ -304,7 +304,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. <span style="opacity:.5">build ambient-19</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. <span style="opacity:.5">build ambient-20</span></div>
 </div>
 </div>
 
@@ -331,7 +331,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
     </select>
     <button class="btn-ghost" id="focus-record" type="button" style="margin-top:0;border-color:var(--teal);color:var(--teal)" onclick="openAmbientSetup()">&#9679; Record</button>
     <button class="btn-ghost" style="margin-top:0" onclick="closeFocus()">&larr; Exit full screen</button>
-    <button class="btn" id="focus-draft">Draft my HPI &rarr;</button>
+    <button class="btn" id="focus-draft">Start my note &rarr;</button>
   </div>
   <!-- Always-visible recording/transcription status. The modal's #record-status is hidden once
        the clinician closes the setup to run the visit, so mirror it here in the working-note header
@@ -339,7 +339,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
   <div id="rec-hdr-status" style="display:none;margin:8px 0 0;padding:9px 13px;border-radius:8px;font-size:.85rem;font-weight:600;line-height:1.45"></div>
   <div id="focus-ref"></div>
   <div id="focus-sections" style="display:none"></div>
-  <textarea id="focus-note" placeholder="Work on your note here, full screen. Fill each section as you go, then Draft my HPI."></textarea>
+  <textarea id="focus-note" placeholder="Work on your note here, full screen. Fill each section as you go, then Start my note."></textarea>
   <div id="focus-err"></div>
 </div>
 
@@ -1276,7 +1276,7 @@ function tbpAmbientProgress(stageKey, errMsg){
   var order = ['draft','review','preflight'];
   if(stageKey === 'error'){
     el.innerHTML = '<div class="out" style="border-color:var(--red)"><div class="hint" style="color:var(--red)">'
-      + esc(errMsg || 'Something went wrong drafting the note. Your transcript is safe below — press Draft my HPI to try again.') + '</div></div>';
+      + esc(errMsg || 'Something went wrong drafting the note. Your transcript is safe below — press Start my note to try again.') + '</div></div>';
     try { el.scrollIntoView({ behavior:'smooth', block:'center' }); } catch(e){}
     return;
   }
@@ -1331,9 +1331,42 @@ function tbpAutoDraftAmbient(){
     }
   }).catch(function(){ _ambientFlow=false; tbpAmbientProgress('error'); }).then(function(){ _autoDraftInFlight = false; });
 }
+// Typed fast path: the "Start my note" button runs the SAME silent → preflight → reveal flow as the
+// ambient recording path — draft the HPI in the background, surface the clinical calls FIRST, reveal
+// the note only after they're confirmed — so typed and ambient behave identically. Crucially it does
+// NOT set sourceMode='ambient' (that stays 'typed'), so the verify pass still treats the notes as the
+// clinician's own written ground truth, not a transcript.
+var _typedDraftInFlight = false;
+function tbpTypedDraft(btn, src, errEl){
+  if(_typedDraftInFlight) return false;
+  errEl = errEl || document.getElementById('err-box') || { innerHTML:'' };
+  errEl.innerHTML = '';
+  if(!visitType){ errEl.innerHTML='<div class="err">Choose a visit type first (New patient evaluation or Follow-up) &mdash; it sets which of your templates is used.</div>'; return false; }
+  if(!src || src.length < 15){ errEl.innerHTML='<div class="err">Paste your visit notes first, even rough ones.</div>'; return false; }
+  _typedDraftInFlight = true;
+  _ambientFlow = true;   // reuse the silent/preflight-first machinery (progress banner + post-preflight reveal)
+  // If launched from the full-screen working note, close it onto the result once the draft lands
+  // (mirrors the ambient path) so the banner and preflight questions are visible.
+  var fromFocus = (function(){ var o=document.getElementById('focus-overlay'); return !!(o && o.classList.contains('open')); })();
+  tbpAmbientProgress('draft');   // paint the staged banner + scroll to it before any await
+  Promise.resolve(runDraft(src, btn, errEl, true)).then(function(ok){
+    if(ok){
+      if(fromFocus){ try { if(typeof closeFocus==='function') closeFocus(); } catch(e){} }
+      tbpAmbientProgress('preflight');
+      // Continue straight into preflight (surface the clinical calls) with no manual Build click —
+      // exactly the ambient behaviour, including its "paste last visit first" guard for a thin follow-up.
+      try { var bb=document.getElementById('build-assess'); if(bb && typeof buildAssessment==='function') buildAssessment(bb); else { _ambientFlow=false; tbpAmbientProgress('clear'); } } catch(e){ _ambientFlow=false; tbpAmbientProgress('clear'); }
+    } else {
+      // runDraft already surfaced the specific error in errEl; reflect it in the banner and stop.
+      _ambientFlow = false;
+      tbpAmbientProgress('error');
+    }
+  }).catch(function(){ _ambientFlow=false; tbpAmbientProgress('error'); }).then(function(){ _typedDraftInFlight = false; });
+  return true;
+}
 document.getElementById('generate').addEventListener('click', function(){
   if(tbpDemoBlock()) return;
-  runDraft(document.getElementById('raw').value.trim(), this, document.getElementById('err-box'));
+  tbpTypedDraft(this, document.getElementById('raw').value.trim(), document.getElementById('err-box'));
 });
 
 // ── Verify pass ──
@@ -1682,15 +1715,15 @@ function closeFocus(){
 document.addEventListener('keydown', function(e){
   if(e.key === 'Escape' && document.getElementById('focus-overlay').classList.contains('open')) closeFocus();
 });
-document.getElementById('focus-draft').addEventListener('click', async function(){
+document.getElementById('focus-draft').addEventListener('click', function(){
   if(tbpDemoBlock()) return;
   focusSyncBack();
-  // Keep full screen open (with the spinner visible) while drafting; close onto the result when done.
+  // Same silent → preflight → reveal flow as the top button; tbpTypedDraft closes the full screen
+  // onto the result once the draft lands (it sees the overlay is open).
   var src = (focusSourceId === 'raw' && wnMode === 'sections')
     ? document.getElementById('raw').value.trim()
     : document.getElementById('focus-note').value.trim();
-  var ok = await runDraft(src, this, document.getElementById('focus-err'));
-  if(ok) closeFocus();
+  tbpTypedDraft(this, src, document.getElementById('focus-err'));
 });
 
 // ── Slice 2: hand off to the Note Builder ──
@@ -1743,9 +1776,15 @@ async function buildAssessment(btn, force){
     if(g) g.addEventListener('click', function(){ var t=document.getElementById('context'); if(t){ t.scrollIntoView({behavior:'smooth',block:'center'}); t.focus(); } });
     var ba = document.getElementById('build-anyway');
     if(ba) ba.addEventListener('click', function(){ buildAssessment(btn, true); });
-    // Ambient auto-flow hit the "paste last visit first" guard: stop the banner and bring the guard
-    // (which is in assess-results, below the hidden HPI panel) into view so it isn't missed.
-    if(_ambientFlow){ _ambientFlow = false; tbpAmbientProgress('clear'); try { document.getElementById('assess-results').scrollIntoView({ behavior:'smooth', block:'center' }); } catch(e){} }
+    // Silent flow (ambient recording OR typed "Start my note") hit the "paste last visit first" guard:
+    // stop the banner, and reveal the HPI — the note itself IS ready; only the assessment is blocked,
+    // so the draft shouldn't sit stranded behind the guard. Then bring the guard into view. (After they
+    // paste last visit's note, "Build without it anyway" reads that freshly-pasted context and builds.)
+    if(_ambientFlow){
+      _ambientFlow = false; tbpAmbientProgress('clear');
+      try { var _hp=document.getElementById('hpi-panel'); if(_hp && _hp.style.display==='none') _hp.style.display=''; } catch(e){}
+      try { document.getElementById('assess-results').scrollIntoView({ behavior:'smooth', block:'center' }); } catch(e){}
+    }
     return;
   }
   // Slice 4b: surface the provider-owned clinical calls (preflight) before writing.
@@ -4180,20 +4219,14 @@ var TBP_TOUR = (function(){
      body:"The GAD-7 lands in its own Screeners section, each item ready to score inside the visit. Pull in another screener and it stacks right below, all in one place — no separate form, no copy-paste."},
     {fullscreen:true, cardLeft:true, onEnter:function(){ try{ demoOpenSelectList('clinical-tools-select','Clinical tools',4000); }catch(e){} }, sel:'#clinical-tools-select', title:'Your whole toolkit, one click away',
      body:"You never leave the note mid-visit. Open the interaction checker, a crisis and safety plan, LAI guidance, screeners, monitoring, or a letter, each in a new tab while your note keeps running here. You can even pin your own links, or suggest a tool for us to add."},
-    {fullscreen:true, onEnter:function(){ try{ demoDraftSpinner(); }catch(e){} }, sel:'#focus-draft', title:'Draft when the visit is done',
-     body:"When the visit's done, hit Draft — everything you filled in merges into a clean note in your structure and voice. Watch."},
-    {draftresult:true, sel:'#hpi-out', title:'Your HPI, drafted',
-     body:"It drops you back to the main screen with the HPI written out in your voice. Read it and edit any line — your changes are what get used."},
-    {draftresult:true, onEnter:function(){ try{ demoTypeAssessPlan(); }catch(e){} }, sel:'#assess-plan', title:'What are you doing this visit?',
-     body:"One line on what you did and why drives the whole assessment and plan — a med change and your rationale, a continuation, or just 'no changes today.' Add as little or as much as you want."},
-    {draftresult:true, sel:'#assess-therapy', title:'Add the psychotherapy note',
-     body:"Leave this checked and it also writes your psychotherapy add-on — the ACT work from the Therapy coach, documented separately from the E/M in the structure the add-on needs."},
-    {draftresult:true, sel:'#build-assess', title:'Build the assessment & plan',
-     body:"Now build the assessment and plan from the HPI and that one line. Here is what happens the moment you do."},
-    {postdraft:true, sel:'#demo-preflight', title:'It surfaces the calls, you confirm them',
-     body:"This is the part that answers the trust problem. Before it writes a word of the assessment, it reads the visit and surfaces the clinical decisions for you to confirm: how the diagnosis should read, whether therapy was done and which code, how to frame the fatigue. You decide, it does not. That is what keeps it from inventing anything."},
-    {postdraft:true, sel:'#demo-assessment', title:'Then it writes the assessment',
-     body:"From the calls you confirmed, it writes the assessment in your reasoning: the GAD refinement you chose, the medication decisions, the multifactorial sleep picture. Two paragraphs, because you picked Standard."},
+    {fullscreen:true, onEnter:function(){ try{ demoDraftSpinner(); }catch(e){} }, sel:'#focus-draft', title:'Start the note when the visit is done',
+     body:"When the visit's done, hit Start my note — it reads everything you filled in and, before it writes a word, surfaces the clinical calls for you to confirm. Watch."},
+    {postdraft:true, sel:'#demo-preflight', title:'First, it surfaces the calls — you confirm them',
+     body:"This is the part that answers the trust problem, and it happens BEFORE it writes anything, the HPI included. It reads the visit and surfaces the clinical decisions for you to confirm: how the diagnosis should read, whether therapy was done and which code, how to frame the sleep picture. You decide, it does not. That is what keeps it from inventing anything."},
+    {postdraft:true, sel:'#demo-hpi', title:'Then your HPI, in your voice',
+     body:"Only once you have confirmed the calls does it write, and the HPI comes first — reorganized from the visit into your structure and voice, using only what the visit documented. Read it and edit any line; your changes are what get used."},
+    {postdraft:true, sel:'#demo-assessment', title:'Then the assessment & plan',
+     body:"Built from the calls you confirmed: the diagnosis framing you chose, the medication decisions, the multifactorial sleep picture. Two paragraphs, because you picked Standard."},
     {postdraft:true, sel:'#demo-90833', title:'And the psychotherapy add-on',
      body:"Your psychotherapy add-on note — the ACT work documented separately from the E/M, in the structure the add-on needs. The time here reflects what you wrote in your note; if you didn't put one down, set it to the minutes you actually spent — that is what decides which add-on applies. The Coder confirms the code later; this just writes the note."},
     {postdraft:true, sel:'#demo-handoff', title:'From the note to the codes',
@@ -4366,6 +4399,7 @@ Past Medication: Wellbutrin, increased agitation.`
       + q('Appetite suppression and mild nausea are now present — how should the assessment attribute these findings? (select all that apply)', [['Expected Mounjaro side effect (started approximately 10 days ago at low dose; timing is consistent and patient reports tolerability)',1],['Vyvanse contribution cannot be excluded (stimulant-related appetite suppression was pre-existing; overlap with new GLP-1 agent makes attribution mixed)',1],['Keep it plain — note the appetite change and new medication context without formal attribution',0],['Other / enter my own',0]])
       + '</div>';
     body.innerHTML = pre
+      + '<div id="demo-hpi" style="' + card + '"><h3 style="' + head + '">Your HPI, written after you confirmed the calls</h3><div style="' + txt + '">' + esc(DEMO_HPI) + '</div></div>'
       + '<div id="demo-assessment" style="' + card + '"><h3 style="' + head + '">Assessment &amp; Plan</h3><div style="' + txt + '">' + esc(assessment) + '</div></div>'
       + '<div id="demo-90833" style="' + card + '"><h3 style="' + head + '">Psychotherapy add-on (90833)</h3><div style="' + txt + '">' + esc(pt) + '</div></div>'
       + '<div id="demo-handoff" class="handoff" style="margin-bottom:0">This finished note &mdash; the assessment and the timed 90833 &mdash; is exactly what flows into the <strong style="color:var(--cream)">Chart Audit &amp; Coder</strong>: same patient, same visit. See it audited and coded (99214 + 90833, Modifier 25), with a chart-ready attestation.<button class="btn" onclick="(window.top||window).location.href=\'/pm-chart-coder.html?demo=1\'">See it audited &amp; coded &rarr;</button></div>';
