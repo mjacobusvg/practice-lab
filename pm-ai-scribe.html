@@ -304,7 +304,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. <span style="opacity:.5">build ambient-16</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. <span style="opacity:.5">build ambient-17</span></div>
 </div>
 </div>
 
@@ -1020,15 +1020,15 @@ function draftSystem(){
 
 function verifySystem(){
   var s = HOUSE + "\n\n=== TASK ===\nYou are auditing a drafted HPI against its SOURCE (the clinician's raw notes, plus any prior-context block). Find anything in the HPI that is NOT supported by the source: invented or embellished symptoms, added denials or pertinent negatives, a diagnosis or characterization the notes did not state, altered timeframes, or a patient quote whose wording or meaning was changed (spelling fixes are fine; word substitutions or paraphrases are not).\n\n";
-  s += "Silently correct clear, unambiguous fabrications by removing or trimming them back to what the source supports. This pass runs FULLY SILENT (clinician preference): make every correction without comment and never raise a flag. For anything you cannot resolve from the source, leave it exactly as documented (do NOT guess a correction) for the clinician to catch on review.\n\n";
+  s += "Silently correct clear, unambiguous fabrications by removing or trimming them back to what the source supports, and do NOT narrate the changes you make. Raise a flag ONLY when you hit a GENUINE question you cannot resolve yourself (see the flags rule below); for everything you can resolve, fix it silently and move on.\n\n";
   s += "SCAFFOLD IS NOT EVIDENCE: the source may contain the tool's scaffolding, a 'CHECK / ASK TODAY' list of questions and a 'PSYCHOTHERAPY GUIDE' of suggested techniques with rationale and sample prompts. This scaffolding is NOT clinical evidence of what happened. A psychotherapy technique is supported when the clinician TYPED what they did / how the patient responded under it, OR when the ambient transcript documents the actual therapeutic delivery and the patient's response; the guide merely naming it does not count. A checklist topic is supported by the clinician's typed answer OR by the transcript, not by the question existing. If the draft asserts a technique that neither the clinician charted under NOR the transcript delivered, or answers a question with no typed answer and no transcript support, treat it as an unsupported fabrication: remove it (silently) and flag it.\n\n";
   s += "AMBIENT PSYCHOTHERAPY ADD-ON: if the psychotherapy documentation is supported by the ambient transcript rather than typed coach input, do NOT strip it and do NOT flag it as uncounted — the transcript is evidence. Instead flag it once, briefly, for the clinician to confirm the add-on's TIME (psychotherapy-only minutes) and that it was a DISTINCT service from the E/M. Do not treat 'not typed under the coach' as a reason the delivered therapy cannot be counted.\n\n";
   s += "AMBIENT TRANSCRIPT IS EVIDENCE: a 'TODAY'S VISIT — AMBIENT TRANSCRIPT' block is the actual recording of today's visit. Content the draft derived from it is SUPPORTED, not a fabrication — do not strip it. (Only the checklist/guide scaffolds are non-evidence.)\n\n";
-  s += "FULLY SILENT PASS (clinician preference): do NOT surface anything for the clinician to review and do NOT narrate or list changes you made. Make your corrections silently and return an EMPTY flags array. The clinician reviews and signs the finished note themselves; this pass never asks them to confirm anything.\n\n";
+  s += "SILENT BY DEFAULT, ASK ONLY WHEN GENUINELY STUCK: This pass fixes what it can and stays quiet. NEVER narrate changes you made, and NEVER ask the clinician to confirm something you already handled (a fabrication you removed, a documented risk you restored, a value the source let you correct) — just do it silently. RAISE A FLAG ONLY for a GENUINE question you cannot resolve yourself: a medication name, dose, or clinically consequential value that looks wrong or internally contradictory AND that the source does not let you fix, or a real clinical ambiguity that needs the clinician's judgment. Keep each flag to ONE sentence, and include only the genuinely unresolved ones. Most notes have zero flags; raise one only when you truly cannot settle it yourself.\n\n";
   s += "RISK: never let the draft add, drop, or soften any documented risk (SI, HI, self-harm, plan, intent). If the draft DROPPED or softened a risk the source documents, restore it to match the source exactly. If the draft ADDED a risk statement or denial the source does not document (e.g. a 'denies SI' the source never recorded), remove it. Do this silently, without a flag.\n";
-  s += "IMPLAUSIBILITY (do NOT fix, do NOT flag): if something clinically consequential looks wrong and the source gives no clear correction — an unrecognized or likely-misspelled MEDICATION name, an implausible dose/frequency/duration, a number that affects care, or an internal contradiction — do NOT guess or invent a correction and do NOT flag it. Preserve it EXACTLY as documented for the clinician to catch on review.\n\n";
+  s += "IMPLAUSIBILITY (ASK, do NOT fix): if something clinically consequential looks wrong and the source gives you no way to correct it — an unrecognized or likely-misspelled MEDICATION name, an implausible dose/frequency/duration, a number that affects care, or an internal contradiction you cannot resolve — do NOT guess or invent a correction; raise a one-sentence flag so the clinician can resolve it, and preserve the exact wording. A garbled NON-medication proper noun (a person, device, or place name) or a cosmetic date/spelling issue that does not change care: leave it as documented, no flag.\n\n";
   if(visitType === 'follow_up'){ s += "FOLLOW-UP CARRY-FORWARD: silently correct any current-visit assessment, especially SI/HI or self-harm, that the draft asserts as done today but that only the prior note supports and today's notes do not, so a prior safety assessment never reads as if performed today. Standing items carried as 'continued/stable' are fine. Do this silently, without a flag.\n\n"; }
-  if(isTranscriptMode(sourceMode)){ s += "The source is a transcript (dictation/ambient) with no clinician-written ground truth; leave likely mis-transcriptions exactly as documented (do NOT guess a correction) and do NOT flag them.\n\n"; }
+  if(isTranscriptMode(sourceMode)){ s += "The source is a transcript (dictation/ambient) with no clinician-written ground truth, so do NOT guess a correction for a likely mis-transcription. If a probable mis-transcription is clinically consequential and you cannot resolve it, raise a one-sentence flag; otherwise leave it as documented.\n\n"; }
   s += "The corrected 'hpi' must stay plain, chart-ready text with NO Markdown (no #/## headings, no --- dividers, no ** bold **, no > blockquotes).\n\n";
   // ── Also generate MSE and/or ROS in this same pass (moved out of the draft / the old separate MSE
   //    call). The verifier already holds the source AND the drafted HPI, so it is the right place to
@@ -1044,10 +1044,10 @@ function verifySystem(){
     s += "=== ALSO PRODUCE TODAY'S REVIEW OF SYSTEMS ===\n";
     s += "Using the clinician's STANDARD ROS below, produce today's ROS. Keep their categories, default items, and signs. Flip an item to (+) ONLY if today's source indicates the patient reported that symptom; otherwise keep the clinician's default. Do NOT add items not in their list, and NEVER assert a positive the source does not support. Reproduce their exact format. Output the ROS BODY only, no 'Review of Systems:' heading.\n\nCLINICIAN'S STANDARD ROS:\n" + rosText + "\n\n";
   }
-  s += "Respond ONLY with raw JSON, no code fence, in exactly this shape:\n{\"hpi\": \"<the verified HPI text>\", \"flags\": []"
+  s += "Respond ONLY with raw JSON, no code fence, in exactly this shape:\n{\"hpi\": \"<the verified HPI text>\", \"flags\": [\"only a genuine question you could not resolve yourself\", \"...\"]"
     + (mseOn ? ", \"mse\": \"<today's MSE body>\"" : "")
     + (rosOn ? ", \"ros\": \"<today's ROS body>\"" : "")
-    + "}\nThe flags array MUST ALWAYS be empty ([]) — this pass is fully silent by clinician preference; never put anything in it. Return the corrected HPI"
+    + "}\nflags holds ONLY genuine questions you could not resolve yourself (most often an empty array []) — never changes you already made, and never routine confirmations. Return the corrected HPI"
     + ((mseOn||rosOn) ? " and fill the "+(mseOn&&rosOn?"mse and ros fields":(mseOn?"mse field":"ros field"))+"." : ".");
   return s;
 }
@@ -1341,9 +1341,10 @@ async function verifyHpi(hpi){
   var msg = gatherSource() + "\n\n---\n\nDRAFTED HPI TO AUDIT:\n\n" + hpi;
   // Higher cap than before: this one call now also returns the MSE and/or ROS bodies (plus JSON
   // string-escaping overhead), not just the HPI. Headroom so a long HPI can't truncate the JSON.
-  // Verify runs on Haiku (faster + ~1/3 the cost) and fully silent — A/B tested to clean the HPI as
-  // well as Sonnet; it under-flags, which is the intended fully-silent behavior here. See MODEL-REGISTRY.md.
-  var raw = await callAPI(verifySystem(), [{role:'user', content: msg}], 5200, null, 'claude-haiku-4-5-20251001');
+  // Verify stays on Sonnet for now: it must reliably ASK when it hits a question it genuinely cannot
+  // resolve (an unresolvable garbled med/dose, a real ambiguity). Haiku under-flagged in the first A/B;
+  // re-testing whether it asks appropriately under the corrected prompt before moving this back to Haiku.
+  var raw = await callAPI(verifySystem(), [{role:'user', content: msg}], 5200);
   try {
     var j = JSON.parse(raw);
     if(j && typeof j.hpi === 'string') return {
