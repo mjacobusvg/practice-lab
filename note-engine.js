@@ -458,7 +458,11 @@ async function runPreflight(inp, scope){
   var dxSignal = (inp.dxprior && String(inp.dxprior).trim())
     ? '\n\n---\n\nPRIOR DIAGNOSIS LIST: provided above. Carry it forward; do NOT emit a clin_dx diagnosis-confirmation card.'
     : '\n\n---\n\nPRIOR DIAGNOSIS LIST: NONE provided. If an assessment is in scope, you MUST emit exactly one clin_dx diagnosis-confirmation card as specified.';
-  var raw = await callAPI(PREFLIGHT_SYS, [{role:'user', content: contextBlock(inp) + scopeNote(scope) + dxSignal}], 2000);
+  // Preflight runs on Haiku (faster — it's on the critical path, the card spinner). A/B vs Sonnet:
+  // hit the mandatory dx card + correct modalities; slightly thinner (missed one nuance attribution
+  // card, used an unspecified vs severity-specified code). On trial — flip back to Sonnet if the
+  // cards feel thin. callAPI's 5th arg is the per-call model override. See MODEL-REGISTRY.md.
+  var raw = await callAPI(PREFLIGHT_SYS, [{role:'user', content: contextBlock(inp) + scopeNote(scope) + dxSignal}], 2000, null, 'claude-haiku-4-5-20251001');
   var txt = String(raw).replace(/```json|```/g,'').trim();
   var parsed;
   try { parsed = JSON.parse(txt); }
