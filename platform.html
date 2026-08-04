@@ -1651,19 +1651,24 @@ a.file-chip:hover { border-color:var(--teal); }
   .topbar { padding: 0 14px; }
 }
 </style>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js" crossorigin="anonymous"></script>
+<!-- Supabase UMD. Load a same-origin, version-pinned copy FIRST: a local asset
+     cannot be blocked by a CDN outage or a third-party/corporate blocker, which
+     was our #1 client error ("failed to load from all CDNs"). jsDelivr then unpkg
+     stay as fallbacks in case the local file is ever missing after a deploy. -->
+<script src="/vendor/supabase-js-2.112.0.min.js"></script>
 <script>
-  // Resilience: the whole platform depends on the Supabase UMD global above.
-  // If the primary CDN (jsDelivr) fails to serve it, synchronously fall back to
-  // unpkg so a single CDN hiccup can't white-screen the app. document.write here
-  // runs during head parsing, so the fallback loads before any body script.
-  //
-  // crossorigin="anonymous" on both CDN tags: without it, any error thrown inside
-  // the Supabase lib reaches window.onerror as an opaque "Script error." with no
-  // message/stack (the browser's cross-origin mask). jsDelivr/unpkg both send
-  // Access-Control-Allow-Origin, so this attribute lets our log-error capture the
-  // REAL message + stack instead — turning future CDN errors from unreadable into
-  // diagnosable.
+  // Fallback 1 (jsDelivr): only if the local copy did not define the global. A
+  // document.write during head parsing loads it synchronously, before any body
+  // script runs. crossorigin="anonymous" on the CDN tags lets window.onerror
+  // capture the REAL message/stack from the lib instead of an opaque "Script
+  // error." (the browser's cross-origin mask); jsDelivr/unpkg both send
+  // Access-Control-Allow-Origin, so this keeps any future CDN error diagnosable.
+  if (typeof window.supabase === 'undefined') {
+    document.write('<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js" crossorigin="anonymous"><\/script>');
+  }
+</script>
+<script>
+  // Fallback 2 (unpkg): only if BOTH the local copy and jsDelivr failed.
   if (typeof window.supabase === 'undefined') {
     document.write('<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.min.js" crossorigin="anonymous"><\/script>');
   }
