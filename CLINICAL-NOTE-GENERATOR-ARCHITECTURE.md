@@ -192,18 +192,40 @@ surface before applying the rule:
   structure, verbosity, wording. Learn STYLE, not HABITS. Hardcode only integrity/safety.
   §0.3 applies as written.
 - **Reasoning surface — the Assessment.** The tool's **universal reasoning standard**
-  governs, and Vault personalization is a **liability, not a feature.** The assessment's
-  entire value is that it reasons better than a rushed clinician might; a *saved* preference
-  from a clinician who habitually writes thin assessments would encode that exact habit into
-  the one surface where it does the most damage. So the assessment stays hardcoded to a
-  universal standard and takes **no persistent Vault preferences.** This is the deliberate
-  exception to "verbosity is per-clinician" in §0.3 — assessment reasoning depth is NOT a
-  saved preference.
+  governs *which* clinical decisions, MDM, and safety elements get reasoned through, and
+  that **standard is hardcoded — never a saved preference.** The assessment's entire value
+  is that it reasons better than a rushed clinician might; a *saved* preference that let a
+  clinician who habitually writes thin assessments **drop or omit** live decisions would
+  encode that exact habit into the one surface where it does the most damage. So nothing a
+  clinician saves may reduce which decisions or safety elements the assessment reasons
+  through. That is the liability §0.3.1 guards against.
 
-The line that keeps this clean: a **per-visit output control** (the Brief/Thorough length
-selector) is allowed — it is the clinician's call for *this* note, bounded and non-persistent.
-A **saved Vault preference** that persistently reshapes the assessment's reasoning is banned.
-Per-visit dial: yes. Persistent personalization of the assessment: no.
+**But length and voice are NOT the reasoning standard — and they ARE savable.** Draw the
+line at the reasoning *standard* (banned as a saved preference), not at "any Vault
+preference." Two assessment surfaces are pure **form**, each with a hardcoded floor that
+forbids thinning the reasoning, so personalizing them — even persistently — cannot encode a
+thin-reasoning habit:
+
+  - **Output length** (Brief / Standard / Thorough). `buildLengthBlock` holds a floor at
+    every tier: Brief "compress[es] the reasoning, do[es] not omit a live decision," and no
+    tier may drop an active clinical question or safety element. The reasoning floor is
+    identical at every length; only verbosity changes.
+  - **Assessment style** (`assessStyleBlock`) — voice, opening, diagnosis-list format,
+    section order, phrasing, layout. Declared "FORM ONLY, NEVER CONTENT"; it "NEVER
+    authorizes dropping… the clinical reasoning, the medical decision-making… the
+    risk/safety content, or any diagnosis."
+
+  Because the reasoning floor survives every setting of both, a *saved* length/style default
+  personalizes only verbosity and voice (a §0.3 surface), never *which* decisions get made.
+  It adds no personalization that was not already available per-note: the preflight always
+  offered Brief/Standard/Thorough on every visit, changeable anytime — a Vault default just
+  makes the clinician's standing choice persistent instead of a repeated tap. So the length
+  default (e.g. per-clinician new-eval vs. follow-up defaults) and the style live in the
+  assessment Vault area, the per-note length chips still override the default for *this*
+  visit, and the reasoning **standard** stays hardcoded and universal.
+
+Per-visit dial: yes. Saved length/voice default: yes. Saved preference that reshapes the
+reasoning **standard** (what gets reasoned through): no.
 
 Why the no-reinventory rule (don't re-list symptoms the HPI already carries) is therefore
 hardcoded, not a dial: it's a reasoning-surface rule, and its three carve-outs (pivot of the
