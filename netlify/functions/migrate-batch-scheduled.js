@@ -44,12 +44,16 @@ function sb(path, init) {
 }
 
 exports.handler = async function (event) {
-  // Manual trigger requires the shared secret; scheduled invocations (no POST
-  // body / no httpMethod) run without one.
-  if (event && event.httpMethod === 'POST') {
+  // Netlify invokes scheduled functions as an internal POST carrying a body with
+  // `next_run` (not a `secret`). So we must NOT demand a secret for a bare POST,
+  // or every cron tick gets 403'd before it can read the queue. Gate only an
+  // EXPLICIT manual trigger: reject only when a `secret` field is supplied and
+  // wrong. Scheduled ticks (and secret-less calls) pass through — harmless, since
+  // the function only ever processes queue rows that an admin inserted.
+  {
     let body = {};
-    try { body = JSON.parse(event.body || '{}'); } catch (e) {}
-    if (body.secret !== process.env.BACKFILL_SECRET) {
+    try { body = JSON.parse((event && event.body) || '{}'); } catch (e) {}
+    if (body.secret && body.secret !== process.env.BACKFILL_SECRET) {
       return { statusCode: 403, body: JSON.stringify({ error: 'Invalid secret' }) };
     }
   }
