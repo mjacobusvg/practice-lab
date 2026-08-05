@@ -56,14 +56,15 @@ const STEPS = [
   },
   {
     n: 1, day: 2,
-    subject: "The note sections that have to survive an audit",
+    subject: "Watch the AI Scribe turn a visit into a finished note",
     html: function () {
       return shell(
-        "<p>In a psych note, the parts that get picked apart in an audit are usually the <strong>psychotherapy and assessment</strong> sections. This tool drafts those — and it's built so they hold up: the documentation supports the work, the elements an auditor looks for are actually there, and nothing critical is left implied.</p>" +
-        "<p>It's not trying to write the note in your voice — everyone charts differently, and that's fine. It's making sure the sections that carry your audit risk are defensible.</p>" +
-        "<p>See it work on a sample visit:</p>" +
-        btn(SITE + '/note-builder-demo', 'Try the Note Builder demo &rarr;') +
-        "<p>Michael</p>"
+        "<p>This is the one I'm proudest of, and the one I'd show a colleague first: the <strong>AI Scribe</strong>. It turns a visit into a finished, audit-ready note, drafted in your own structure instead of a generic template.</p>" +
+        "<p>It carries forward what mattered from the last visit, drafts the HPI, the assessment, and the plan, keeps the psychotherapy and assessment sections defensible, and hands the coder a note that already holds up. The parts that usually eat your evening, or your audit risk, are the parts it takes off your plate.</p>" +
+        "<p>You can watch it work on a sample visit right now, with a guided walkthrough, no setup and no login:</p>" +
+        btn(SITE + '/ai-scribe-workspace.html?demo=1', 'See the AI Scribe in action &rarr;') +
+        "<p>It's in active beta and getting sharper every week from prescriber feedback. If something feels off, or you want it to do something it doesn't yet, just reply. It comes straight to me.</p>" +
+        SIGNOFF
       );
     }
   },
@@ -81,12 +82,12 @@ const STEPS = [
   },
   {
     n: 3, day: 7,
-    subject: "What's coming, and what's behind the curtain",
+    subject: "What's real here, and what Full unlocks",
     html: function () {
       return shell(
         "<p>Two things.</p>" +
-        "<p>First — in the next couple of weeks we're launching the full <strong>AI Scribe workflow</strong>: it preps the visit, captures it ambiently, and drafts the whole note start to finish. I'll tell you the second it's live.</p>" +
-        "<p>Second — everything you've tried this week has been the free side. <strong>Full membership</strong> opens the real tools (not just demos), the whole community, and the complete archive, for about the cost of a couple of denied claims a month. If TBP's earned it this week, take a look:</p>" +
+        "<p>First, the tools you've tried this week, the AI Scribe, the Auditor and Coder, and Ask the Archive, are the real thing, in daily use by prescribers right now. The Scribe especially keeps getting sharper from their feedback.</p>" +
+        "<p>Second, everything you've tried this week has been the free side. <strong>Full membership</strong> opens the real tools (not just demos), the whole community, and the complete archive, for about the cost of a couple of denied claims a month. If TBP's earned it this week, take a look:</p>" +
         btn(SITE + '/platform.html?plan=full_monthly_119', 'See what Full includes &rarr;') +
         "<p>Either way — glad you're here. Reply anytime.</p>" +
         "<p>Michael</p>"
