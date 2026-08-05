@@ -32,6 +32,21 @@ exports.handler = async function (event) {
     return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Admin only' }) };
   }
 
+  // Clear (acknowledge) client errors: soft — sets cleared_at so they drop off the
+  // dashboard while the rows stay in the DB for history. Admin-only (gated above).
+  if (p.action === 'clear_errors') {
+    try {
+      const r = await fetch(URL + '/rest/v1/client_errors?cleared_at=is.null', {
+        method: 'PATCH',
+        headers: Object.assign({ 'Content-Type': 'application/json', Prefer: 'return=minimal' }, auth),
+        body: JSON.stringify({ cleared_at: new Date().toISOString() })
+      });
+      return { statusCode: r.ok ? 200 : 500, headers, body: JSON.stringify({ ok: r.ok }) };
+    } catch (e) {
+      return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: e.message }) };
+    }
+  }
+
   const sb = async (path) => {
     const res = await fetch(URL + '/rest/v1/' + path, { headers: Object.assign({ 'Content-Type': 'application/json' }, auth) });
     if (!res.ok) return [];
@@ -136,9 +151,9 @@ exports.handler = async function (event) {
 
     // ── Support signals: client errors + problem reports ─────────────────────
     const [errors_recent, reports_recent, errors_24h, reports_open] = await Promise.all([
-      sb('client_errors?select=message,page,email,tier,created_at&order=created_at.desc&limit=15'),
+      sb('client_errors?cleared_at=is.null&select=message,page,email,tier,created_at&order=created_at.desc&limit=15'),
       sb('problem_reports?select=message,page,email,tier,status,created_at&order=created_at.desc&limit=15'),
-      countOf('client_errors?created_at=gt.' + encodeURIComponent(iso(1)) + '&select=id'),
+      countOf('client_errors?cleared_at=is.null&created_at=gt.' + encodeURIComponent(iso(1)) + '&select=id'),
       countOf('problem_reports?status=eq.open&select=id')
     ]);
     const signals = {

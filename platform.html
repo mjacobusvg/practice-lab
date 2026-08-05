@@ -6429,7 +6429,10 @@ function renderAnalytics(d) {
   } else { h += '<div style="padding:10px;color:var(--text-secondary);font-size:0.85rem">No problem reports.</div>'; }
   h += '</div>';
   var errs = sig.errors_recent || [];
-  h += '<div class="an-section-h" style="font-size:0.82rem">Recent client errors</div><div class="an-list">';
+  h += '<div class="an-section-h" style="font-size:0.82rem;display:flex;align-items:center;justify-content:space-between;gap:10px">' +
+    '<span>Recent client errors</span>' +
+    (errs.length ? '<button class="btn-ghost" style="font-size:0.72rem;padding:4px 12px" onclick="clearClientErrors()">Clear errors</button>' : '') +
+    '</div><div class="an-list">';
   if (errs.length) {
     errs.forEach(function (er) {
       h += '<div class="an-row" style="cursor:default;align-items:flex-start"><div class="an-row-title" style="white-space:normal;color:#dc2626">' + esc((er.message || '').slice(0, 160)) +
@@ -6442,6 +6445,21 @@ function renderAnalytics(d) {
 }
 
 function toggleAnMine() { S.anShowMine = !S.anShowMine; if (S.analyticsData) renderAnalytics(S.analyticsData); }
+
+// Admin: acknowledge/clear the logged client errors. Soft — the server marks them
+// cleared_at (kept in the DB) and they drop off this list. New errors still appear.
+async function clearClientErrors() {
+  if (!window.confirm('Clear the client error list? They will be marked resolved and hidden here (the history stays in the database). New errors will still show up.')) return;
+  try {
+    var res = await fetch('/.netlify/functions/community-analytics', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), action: 'clear_errors' })
+    });
+    var d = await res.json();
+    if (!res.ok || !d.ok) { alert((d && d.error) || 'Could not clear errors.'); return; }
+    showAnalytics(); // re-fetch; cleared errors are now filtered out
+  } catch (e) { alert('Could not clear errors.'); }
+}
 
 // ════════════════════════════════════════
 // CONTACTS (admin): the community roster / CRM
