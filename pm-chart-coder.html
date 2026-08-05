@@ -394,12 +394,18 @@ THE BUNDLING DISTINCTION (the most important check):
 
 THE FIVE REQUIRED ELEMENTS (flag each that is missing or invalid):
 1. Modality — must be named AND tied to actual therapeutic work, not medication counseling. "Talk therapy," "counseling," or bare "psychotherapy" are too vague. "Individual psychotherapy via telehealth" names delivery format, not modality.
-2. Intervention — the specific active therapeutic technique inside the modality must be documented. Content topics alone are not an intervention. Flag when interventions read as passive/educational ("provided psychoeducation," "discussed," "advised") rather than active therapeutic work, OR when the documented intervention is actually medication counseling.
-3. Focus — must be a psychiatric symptom or behavior being therapeutically addressed (e.g. illness-related avoidance, executive-function challenges, emotional regulation, illness beliefs). Flag when the stated focus is medication-management topics (adherence, monitoring, affordability, side-effect tracking).
-4. Patient response — must be a response to a THERAPEUTIC intervention, not agreement with the medication plan. Flag "patient agreed with plan" / "engaged" when it responds to med management rather than therapy.
+2. Intervention — an identifiable active therapeutic MANEUVER must be present. CMS/CPT does NOT require a branded or manualized technique name ("cognitive restructuring," "functional analysis," etc.) — supportive and interpretive/insight-oriented interactions are themselves recognized psychotherapy maneuvers. Interpretive reflection, exploring the function of a maladaptive pattern, linking a behavior to affect/coping, and reinforcing adaptive alternatives all COUNT as interventions even when written as "explored," "examined," or "helped him recognize." Mark this element FAILED only when NO identifiable therapeutic maneuver is present — the content is medication counseling, generic reassurance, or passive discussion. Wanting the maneuver named more specifically is a wording nicety ("strengthen"), never a failed element.
+3. Focus — must be a psychiatric symptom or behavior being therapeutically addressed (e.g. illness-related avoidance, executive-function challenges, emotional regulation, illness beliefs). Medication-related BEHAVIOR can be a valid focus: the line is whether the psychological pattern is being treated (e.g. reliance on pharmacologic problem-solving as trauma-driven coping) versus merely discussing medication selection, dosing, risks, or adherence. Mark FAILED only for the latter.
+4. Patient response — must be a response to a THERAPEUTIC intervention, not agreement with the medication plan. Flag "patient agreed with plan" / "engaged" when it responds to med management rather than therapy. Medication negotiation ("okay with X if Y is prescribed") is an E/M response, not a therapeutic one — if it is the ONLY documented response, mark the element failed; if the rest of the response is genuinely therapeutic, treat it as a "strengthen" (move the negotiation detail to the E/M), not a failure.
 5. Time — psychotherapy-only minutes, documented separately from the E/M. Flag if missing.
 
-When flagging psychotherapy issues, name which of the five elements fail and whether the deeper problem is that the content is medication management rather than psychotherapy.
+DUPLICATE / OVERLAPPING PSYCHOTHERAPY (same-provider only): if the SAME billing provider documents a separate psychotherapy service they personally performed in this encounter (e.g. an EMDR session they conducted) AND also bills a 90833/90836/90838 add-on, flag possible double-counting of psychotherapy time. Do NOT flag when the other psychotherapy was performed by a DIFFERENT provider (e.g. the patient's own therapist) — referencing another clinician's session is coordination-of-care context, not a billing conflict, and does not weaken this add-on.
+
+ASSIGN A SUFFICIENCY VERDICT — this is the headline the provider sees, so calibrate it and do NOT over-escalate:
+- "insufficient": a required element is genuinely missing or invalid, OR the content is medication management rather than psychotherapy (set is_actually_em_only true). ONLY "insufficient" may read as "needs attention before billing." List the genuinely-failed elements in elements_failed.
+- "strengthen": the add-on IS billable and defensible as documented — an identifiable maneuver and a psychiatric/behavioral focus are present — but wording could be sharpened to better withstand aggressive audit (name the maneuver more directly, use less loaded behavior language, move medication-negotiation detail to the E/M). elements_failed MUST be empty for a "strengthen"; never phrase it as a failure.
+- "supports": billable and defensible with nothing to add.
+"Could be more concrete/specific" is NEVER "insufficient." Reserve "insufficient" for documentation with no identifiable therapeutic maneuver, or that is only medication education, medication decision-making, adherence/risk-benefit counseling, generic reassurance, or passive discussion.
 
 DO NOT flag (these are normal and must NOT generate issues):
 - Stylistic preferences or formatting.
@@ -439,9 +445,10 @@ Respond ONLY with JSON. No markdown, no backticks.
   ],
   "psychotherapy_issues": [
     {
+      "verdict": "supports" or "strengthen" or "insufficient",
       "elements_failed": ["modality" and/or "intervention" and/or "focus" and/or "patient_response" and/or "time"],
       "is_actually_em_only": true or false,
-      "detail": "Specific description: which elements fail, and whether the content is medication management rather than psychotherapy, with quotes from the note",
+      "detail": "Which elements (if any) genuinely fail, whether the content is medication management vs psychotherapy, and any optional wording to strengthen — with quotes from the note. elements_failed stays EMPTY unless verdict is insufficient.",
       "severity": "high" or "moderate" or "low",
       "audit_impact": "One sentence on the add-on denial / takeback risk"
     }
@@ -1078,14 +1085,21 @@ function renderResults(mdm, review) {
     // count on severity alone therefore mislabels a strong psychotherapy note as an item "to
     // address before signing." Gate on the concrete deficiency signals instead, so a positive
     // sufficiency summary counts toward neither the must-fix nor the optional headline total.
-    function ptDeficient(i){ return i && (i.is_actually_em_only === true || (Array.isArray(i.elements_failed) && i.elements_failed.length > 0)); }
+    // A psychotherapy add-on is DEFICIENT (hard "needs attention") only when the content is E/M-only or
+    // the verdict is "insufficient" (a required element genuinely missing/invalid). A "strengthen"
+    // verdict means the add-on is billable/defensible with only optional wording polish — it must NOT
+    // read as a failure. Legacy fallback: if the model returned no verdict, an old-style non-empty
+    // elements_failed still counts as deficient.
+    function ptDeficient(i){ return i && (i.is_actually_em_only === true || i.verdict === 'insufficient' || (i.verdict == null && Array.isArray(i.elements_failed) && i.elements_failed.length > 0)); }
+    function ptStrengthen(i){ return i && i.verdict === 'strengthen' && !ptDeficient(i); }
     var deficientPt = ptIssues.filter(ptDeficient);
+    var strengthenPt = ptIssues.filter(ptStrengthen);
     var actionablePt = deficientPt.filter(isActionable);
     var actionableTime = timeIssues.filter(isActionable);
 
     // must-fix count drives the headline
     var mustFixCount = mustFix.length + actionableTime.length + actionablePt.length;
-    var optionalCount = strengthen.length + minor.length + (deficientPt.length - actionablePt.length) + (timeIssues.length - actionableTime.length);
+    var optionalCount = strengthen.length + minor.length + (deficientPt.length - actionablePt.length) + strengthenPt.length + (timeIssues.length - actionableTime.length);
     var hasHigh = mustFixCount > 0;
 
     var auditColor = hasHigh ? 'var(--red)' : 'var(--amber)';
@@ -1144,15 +1158,20 @@ function renderResults(mdm, review) {
       html += '<div style="font-size:.75rem;font-weight:600;color:' + ptHeaderColor + ';margin-bottom:6px;margin-top:10px">PSYCHOTHERAPY ADD-ON SUFFICIENCY</div>';
       lastAudit.psychotherapy_issues.forEach(function(item) {
         var deficient = ptDeficient(item);
+        var strengthen = ptStrengthen(item);
         var badgeColor, badgeText, rowBg, rowBorder;
-        if (!deficient) {
-          badgeColor = 'var(--green)';
-          badgeText = '✓ WELL SUPPORTED — GOOD TO GO';
-          rowBg = 'rgba(52,211,153,0.06)'; rowBorder = 'rgba(52,211,153,0.25)';
-        } else {
+        if (deficient) {
           badgeColor = (String(item.severity||'').toLowerCase() === 'low') ? 'var(--amber)' : 'var(--red)';
           badgeText = item.is_actually_em_only ? 'CONTENT READS AS E/M-ONLY' : 'NEEDS ATTENTION BEFORE BILLING';
           rowBg = 'rgba(248,113,113,0.06)'; rowBorder = 'rgba(248,113,113,0.25)';
+        } else if (strengthen) {
+          badgeColor = 'var(--teal)';
+          badgeText = '✓ SUPPORTS THE ADD-ON — OPTIONAL STRENGTHENING';
+          rowBg = 'rgba(42,171,184,0.06)'; rowBorder = 'rgba(42,171,184,0.25)';
+        } else {
+          badgeColor = 'var(--green)';
+          badgeText = '✓ WELL SUPPORTED — GOOD TO GO';
+          rowBg = 'rgba(52,211,153,0.06)'; rowBorder = 'rgba(52,211,153,0.25)';
         }
         html += '<div style="background:' + rowBg + ';border:1px solid ' + rowBorder + ';border-radius:6px;padding:10px 14px;margin-bottom:8px">';
         html += '<div style="font-size:.78rem;color:' + badgeColor + ';font-weight:600;margin-bottom:4px">' + badgeText + '</div>';
