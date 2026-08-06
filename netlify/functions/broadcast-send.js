@@ -48,7 +48,11 @@ function sesClient() {
   return {
     client: new SESv2Client({ region, credentials: { accessKeyId, secretAccessKey } }),
     SendEmailCommand: SendEmailCommand,
-    from: process.env.SES_FROM || 'Think Beyond Practice <noreply@thinkbeyondpractice.com>'
+    from: process.env.SES_FROM || 'Think Beyond Practice <noreply@thinkbeyondpractice.com>',
+    // Where replies land. The From identity is a noreply on the sending domain,
+    // so without this every reply to a broadcast is lost. Defaults to the admin
+    // mailbox; per-broadcast override via p.reply_to.
+    replyTo: process.env.SES_REPLY_TO || 'michael@thinkbeyondpsych.com'
   };
 }
 
@@ -97,6 +101,7 @@ function buildRawEmail(opts) {
   var bodyB64 = Buffer.from(String(opts.html), 'utf8').toString('base64').replace(/(.{76})/g, '$1' + CRLF);
   var lines = [
     'From: ' + opts.from,
+    'Reply-To: ' + (opts.replyTo || opts.from),
     'To: ' + opts.to,
     'Subject: ' + encodeHeaderWord(opts.subject),
     'MIME-Version: 1.0',
@@ -250,6 +255,14 @@ exports.handler = async function (event) {
     const ses = sesClient();
     if (!ses) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'Email transport not configured' }) };
 
+    // Per-broadcast sender identity. A personal 1:1-style nudge should come from a
+    // human address with replies that reach a real mailbox, not the noreply brand
+    // identity used for routine list mail. Overridable per send (admin-gated above);
+    // the From address must be a verified SES identity (any @thinkbeyondpractice.com
+    // address is covered by domain verification).
+    const fromAddr = (p.from && String(p.from).trim()) || ses.from;
+    const replyToAddr = (p.reply_to && String(p.reply_to).trim()) || ses.replyTo;
+
     // Create the broadcast row FIRST (real sends only) so every email can carry
     // its broadcast id for open/click tracking. Test sends are not tracked.
     let bid = null;
@@ -278,9 +291,9 @@ exports.handler = async function (event) {
         // image-blockers suppress them (deflates). Clicks remain the truer signal.
         if (bid) { inner = trackLinks(inner, bid, token); inner = inner + pixelTag(bid, token); }
         let html = wrap(preheaderBlock() + inner + footer(c.email, bid));
-        const raw = buildRawEmail({ from: ses.from, to: c.email, subject: subject, html: html, unsub: unsubUrl(c.email, bid) });
+        const raw = buildRawEmail({ from: fromAddr, replyTo: replyToAddr, to: c.email, subject: subject, html: html, unsub: unsubUrl(c.email, bid) });
         return ses.client.send(new ses.SendEmailCommand({
-          FromEmailAddress: ses.from,
+          FromEmailAddress: fromAddr,
           Destination: { ToAddresses: [c.email] },
           Content: { Raw: { Data: raw } }
         })).then(function () { sent++; }).catch(function (e) { sendErrors.push((e && e.message) || 'send failed'); console.log('broadcast send error for one recipient:', e && e.message); });
