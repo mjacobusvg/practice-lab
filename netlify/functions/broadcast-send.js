@@ -50,9 +50,9 @@ function sesClient() {
     SendEmailCommand: SendEmailCommand,
     from: process.env.SES_FROM || 'Think Beyond Practice <noreply@thinkbeyondpractice.com>',
     // Where replies land. The From identity is a noreply on the sending domain,
-    // so without this every reply to a broadcast is lost. Defaults to the admin
-    // mailbox; per-broadcast override via p.reply_to.
-    replyTo: process.env.SES_REPLY_TO || 'michael@thinkbeyondpsych.com'
+    // so without this every reply to a broadcast is lost. Defaults to the monitored
+    // admin mailbox on the sending domain; per-broadcast override via p.reply_to.
+    replyTo: process.env.SES_REPLY_TO || 'michael@thinkbeyondpractice.com'
   };
 }
 
