@@ -197,7 +197,7 @@ async function hasActiveTrial(cmid, email) {
   try {
     const res = await fetch(
       SUPABASE_URL + '/rest/v1/note_builder_trials?community_member_id=eq.' +
-      encodeURIComponent(keyId) + '&select=started_at',
+      encodeURIComponent(keyId) + '&select=started_at,trial_version',
       { headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY } }
     );
     if (!res.ok) return false;
@@ -205,6 +205,9 @@ async function hasActiveTrial(cmid, email) {
     if (!Array.isArray(rows) || !rows.length) return false;
     const msInDay = 24 * 60 * 60 * 1000;
     for (let i = 0; i < rows.length; i++) {
+      // The Scribe trial lives in the same table but is its own 14-day product; never let
+      // it satisfy the 7-day gate for the OTHER clinical tools.
+      if (String(rows[i].trial_version || '').toLowerCase().indexOf('ai-scribe') === 0) continue;
       const started = new Date(rows[i].started_at).getTime();
       if (!isNaN(started) && (Date.now() - started) / msInDay < TRIAL_DAYS) return true;
     }
