@@ -2913,25 +2913,36 @@ function scribeHero() {
   var FEEDBACK_URL = '/platform?post=f7101242-cfb9-428a-8af0-a64cd97f0bcb';
   var TOOLS = [
     // The full combined AI Scribe: last-visit continuity, note, assessment, coding.
-    { name: 'AI Scribe', desc: 'The full visit workflow in one place: last-visit continuity, note, assessment, and coding.', real: '/ai-scribe-workspace.html', demo: '/ai-scribe-workspace.html?demo=1' },
+    { name: 'AI Scribe', desc: 'The full visit workflow in one place: last-visit continuity, note, assessment, and coding.', real: '/ai-scribe-workspace.html', demo: '/ai-scribe-workspace.html?demo=1', trial: true },
     { name: 'Chart Auditor + Coder', desc: 'Audit a note and get the defensible code.', real: '/pm-chart-coder', demo: '/chart-coder-demo' }
   ];
   var full = isFullMember();
+  var tier = (S.user && S.user.tier) || 'free';
+  // Forum AI Scribe beta window — keep in sync with SCRIBE_FORUM_BETA_UNTIL in the tool.
+  var forumBetaOpen = (tier === 'forum') && (Date.now() < Date.parse('2026-08-17T07:00:00Z'));
+  var subLine = full ? 'Pick a tool:' : (forumBetaOpen ? 'Open the AI Scribe, free during your beta:' : 'Start the AI Scribe free for two weeks:');
   var h = '<div class="scribe-hero">';
   h += '<div class="scribe-hero-head"><span class="scribe-hero-ic">&#129302;</span>' +
     '<div style="flex:1;min-width:0">' +
       '<div class="scribe-hero-title">AI Scribe <span class="scribe-beta-tag">BETA</span></div>' +
-      '<div class="scribe-hero-sub">Turn a visit into a finished, audit-ready note in minutes. ' + (full ? 'Pick a tool:' : 'See each tool in action:') + '</div>' +
+      '<div class="scribe-hero-sub">Turn a visit into a finished, audit-ready note in minutes. ' + subLine + '</div>' +
     '</div>' +
     '<a class="scribe-feedback-btn" href="' + FEEDBACK_URL + '">&#9888;&#65039; Report a bug or feedback</a>' +
     '</div>';
   h += '<div class="scribe-tools">';
   TOOLS.forEach(function (t) {
-    var target = full ? t.real : t.demo;
+    // The AI Scribe is trialable: full tier and forum-during-beta open it for real; free
+    // tier (and forum after the beta) get the 2-week self-serve trial, which the tool
+    // itself starts. Non-trialable tools (Chart Coder) stay demo + lock for non-full.
+    var canOpenReal = full || (t.trial && forumBetaOpen);
+    var isTrialCta = !canOpenReal && !!t.trial;
+    var target = (canOpenReal || isTrialCta) ? t.real : t.demo;
+    var locked = !canOpenReal && !isTrialCta;
+    var hint = canOpenReal ? 'Open &rarr;' : (isTrialCta ? 'Start your 2-week free trial &rarr;' : 'See it in action &rarr;');
     h += '<div class="scribe-tool" onclick="window.location.href=\'' + target + '\'">';
-    h += '<div class="scribe-tool-name">' + t.name + (full ? '' : ' <span style="font-size:0.62rem;color:var(--text-secondary)">&#128274;</span>') + '</div>';
+    h += '<div class="scribe-tool-name">' + t.name + (locked ? ' <span style="font-size:0.62rem;color:var(--text-secondary)">&#128274;</span>' : '') + '</div>';
     h += '<div class="scribe-tool-desc">' + t.desc + '</div>';
-    h += '<div class="scribe-tool-hint">' + (full ? 'Open &rarr;' : 'See it in action &rarr;') + '</div>';
+    h += '<div class="scribe-tool-hint">' + hint + '</div>';
     h += '</div>';
   });
   h += '</div></div>';
