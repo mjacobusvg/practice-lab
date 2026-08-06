@@ -69,26 +69,51 @@ async function migrateOne(stripe, subscriptionId, opts) {
     return { status: 'planned', dry_run: true, plan };
   }
 
-  // 2) Ensure an owned Price for this tier + amount + interval (find or create).
-  const ownedPriceId = await ensureOwnedPrice(stripe, tier, amount, interval);
-
-  // 3) Create the new OWNED subscription: no application fee, trial until the old
-  //    period ends, reuse the card. proration_behavior none: no immediate charge.
-  const newSub = await stripe.subscriptions.create({
-    customer: customerId,
-    items: [{ price: ownedPriceId }],
-    default_payment_method: defaultPm,
-    trial_end: periodEnd,
-    proration_behavior: 'none',
-    metadata: {
-      tbp_owned: 'true',
-      tbp_migrated_from: oldSub.id,
-      tbp_tier: tier,
-      tbp_account_email: email || ''
+  // 2) Idempotency: reuse an owned sub already created for this old sub. A prior
+  //    run can create the new sub and then fail at the cancel step (e.g. a
+  //    schedule-managed old sub — see step 4), leaving the new sub in place. On a
+  //    re-run we must NOT create a second one; find it by its tbp_migrated_from tag.
+  let newSub = null;
+  for await (const s of stripe.subscriptions.list({ customer: customerId, status: 'all', limit: 100 })) {
+    if (s.metadata && s.metadata.tbp_migrated_from === oldSub.id &&
+        s.status !== 'canceled' && s.status !== 'incomplete_expired') {
+      newSub = s;
+      break;
     }
-  });
+  }
+
+  // 3) Otherwise create the new OWNED subscription: no application fee, trial until
+  //    the old period ends, reuse the card. proration_behavior none: no immediate charge.
+  let ownedPriceId;
+  if (newSub) {
+    ownedPriceId = newSub.items.data[0].price.id;
+  } else {
+    ownedPriceId = await ensureOwnedPrice(stripe, tier, amount, interval);
+    newSub = await stripe.subscriptions.create({
+      customer: customerId,
+      items: [{ price: ownedPriceId }],
+      default_payment_method: defaultPm,
+      trial_end: periodEnd,
+      proration_behavior: 'none',
+      metadata: {
+        tbp_owned: 'true',
+        tbp_migrated_from: oldSub.id,
+        tbp_tier: tier,
+        tbp_account_email: email || ''
+      }
+    });
+  }
 
   // 4) Set the old Circle subscription to lapse at period end (hand-off instant).
+  //    If it is managed by a subscription schedule, Stripe rejects a direct
+  //    cancel_at_period_end edit ("update the schedule instead"), so release the
+  //    schedule first — this detaches future phases and leaves the sub on its
+  //    current period with no charge, after which we can lapse it normally. Guarded
+  //    by oldSub.schedule so re-runs (schedule already released) skip harmlessly.
+  if (oldSub.schedule) {
+    const schedId = typeof oldSub.schedule === 'string' ? oldSub.schedule : oldSub.schedule.id;
+    await stripe.subscriptionSchedules.release(schedId);
+  }
   const canceledOld = await stripe.subscriptions.update(oldSub.id, {
     cancel_at_period_end: true,
     metadata: Object.assign({}, oldSub.metadata, { tbp_migrated_to: newSub.id })
