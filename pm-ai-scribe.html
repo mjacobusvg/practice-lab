@@ -3952,31 +3952,94 @@ function maybeOnboard(){
 // (spaceId 2152658 — free tier is still blocked server-side); after it, full
 // membership is required so forum gets a clean door-wall instead of a draft-time
 // error. Keep this date in sync with SCRIBE_FORUM_BETA_UNTIL in
-// clinical-proxy-stream.mjs. End of Aug 9, 2026 (Pacific).
-var SCRIBE_FORUM_BETA_UNTIL = Date.parse('2026-08-10T07:00:00Z');
+// clinical-proxy-stream.mjs. End of Aug 16, 2026 (Pacific).
+var SCRIBE_FORUM_BETA_UNTIL = Date.parse('2026-08-17T07:00:00Z');
 var scribeBetaOpen = Date.now() < SCRIBE_FORUM_BETA_UNTIL;
+// Read the tier claim off the stored token (display/gating only; the server re-verifies).
+function scribeTokenInfo(){
+  try {
+    var tok = localStorage.getItem('tbp_auth_token') || '';
+    if(!tok) return { tier:'', token:'' };
+    var b64 = tok.split('.')[0].replace(/-/g,'+').replace(/_/g,'/'); while(b64.length%4) b64+='=';
+    var c = JSON.parse(decodeURIComponent(escape(atob(b64))));
+    return { tier:String(c.tier||'').toLowerCase(), token:tok };
+  } catch(e){ return { tier:'', token:'' }; }
+}
+// Full-page "your trial ended" wall. The server proxy is the real boundary; this is the
+// clean member-facing message so an expired trial user sees an upgrade path, not a draft error.
+function scribeTrialWall(){
+  document.body.classList.remove('tbp-gate-active');
+  document.body.style.display='block'; document.body.style.overflow='';
+  var o=document.createElement('div');
+  o.style.cssText='position:fixed;inset:0;z-index:99997;background:#0b1120;display:flex;align-items:center;justify-content:center;padding:20px;font-family:-apple-system,"DM Sans",sans-serif';
+  o.innerHTML='<div style="max-width:460px;width:100%;background:#111c30;border:1px solid rgba(42,171,184,.2);border-top:2px solid #2aabb8;border-radius:8px;padding:36px 32px;color:#e8e2d6;text-align:center">'
+    +'<div style="font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#2aabb8;margin-bottom:10px">Think Beyond Practice</div>'
+    +'<h1 style="font-size:20px;color:#f5f4f2;margin:0 0 10px">Your free Scribe trial has ended</h1>'
+    +'<p style="font-size:14px;color:#b0aa9e;line-height:1.6;margin:0 0 22px">Full membership keeps the AI Scribe and unlocks the entire clinical suite and the community for $119/mo. Your templates and settings are saved and waiting.</p>'
+    +'<a href="https://thinkbeyondpractice.com/platform?plan=full_monthly_119" style="display:inline-block;padding:13px 26px;background:#2aabb8;color:#0b1120;border-radius:6px;font-size:14px;font-weight:700;text-decoration:none">Upgrade to Full &rarr;</a>'
+    +'<p style="font-size:12px;color:#b0aa9e;margin:18px 0 0">Questions? michael@thinkbeyondpractice.com</p>'
+    +'</div>';
+  document.body.appendChild(o);
+}
+// Small non-blocking "N days left" pill with an upgrade link, shown during an active trial.
+function scribeTrialBanner(daysLeft){
+  try{
+    if(document.getElementById('scribe-trial-pill')) return;
+    var lbl = (daysLeft==null) ? 'Free Scribe trial' : (daysLeft + (daysLeft===1?' day':' days') + ' left in your free Scribe trial');
+    var p=document.createElement('div'); p.id='scribe-trial-pill';
+    p.style.cssText='position:fixed;bottom:14px;left:14px;z-index:90;background:rgba(217,164,65,.12);border:1px solid rgba(217,164,65,.5);color:#e8e2d6;font:600 12px/1 -apple-system,"DM Sans",sans-serif;padding:8px 13px;border-radius:20px;box-shadow:0 2px 10px rgba(0,0,0,.25)';
+    p.innerHTML=lbl+' &middot; <a href="https://thinkbeyondpractice.com/platform?plan=full_monthly_119" style="color:#2aabb8;text-decoration:none">Upgrade</a>';
+    document.body.appendChild(p);
+  }catch(e){}
+}
+// Gate the Scribe on entitlement before showing it. Full tier and forum-during-beta pass
+// straight through. Everyone else (free tier, or forum after the beta) runs the self-serve
+// 14-day trial: trial-check starts/continues the per-user clock. Only an explicit 'expired'
+// walls; any transient error falls through and lets the server proxy make the real call.
+function scribeEnsureAccess(proceed){
+  if(window.TBP_DEMO){ proceed(); return; }
+  var info = scribeTokenInfo();
+  if(info.tier === 'full'){ proceed(); return; }
+  if(info.tier === 'forum' && scribeBetaOpen){ proceed(); return; }
+  if(!info.token){ proceed(); return; } // no readable token — let the normal gates decide
+  fetch('/.netlify/functions/trial-check', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+info.token },
+    body: JSON.stringify({ token: info.token, trialVersion: 'ai-scribe-v1' })
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    if(d && d.status === 'expired'){ scribeTrialWall(); return; }
+    if(d && typeof d.daysLeft === 'number'){ scribeTrialBanner(d.daysLeft); }
+    proceed();
+  })
+  .catch(function(){ proceed(); });
+}
 TBPAuth.protect({
   toolName: 'AI Scribe',
-  requireFull: !scribeBetaOpen,
-  spaceId: scribeBetaOpen ? 2152658 : undefined,
+  // Any logged-in member reaches the door; entitlement (full / forum-beta / active trial)
+  // is decided by scribeEnsureAccess below and enforced for real by the server proxy.
+  requireFull: false,
   termsVersion: 'interim_v1',
   onVerified: function(){
     // Everyone works in the Patient Desk (multi-patient). The single-patient Scribe still runs
     // inside each Desk tab (framed); only the standalone top-level page hands off to the Desk.
     if(window.self === window.top){ window.location.replace('/ai-scribe-workspace.html' + (window.TBP_DEMO ? '?demo=1' : '')); return; }
-    document.body.classList.remove('tbp-gate-active');
-    document.body.style.display='block';
-    document.body.style.overflow='';
-    var tc=document.getElementById('tool-container');
-    tc.style.display='block';
-    tc.classList.add('tbp-shown');
-    try { authToken = localStorage.getItem('tbp_auth_token') || ''; } catch(e){}
-    try { userEmail = localStorage.getItem('tbp_verified_email') || ''; } catch(e){}
-    loadVaultTemplates();
-    try { if(typeof initTherapyCoach==='function') initTherapyCoach(); } catch(e){}
-    try { if(typeof tbpRestoreDraft==='function' && !TBP_DEMO) tbpRestoreDraft(); } catch(e){}
-    // After restoring the note, resume any transcription that was still running when the tab closed.
-    try { if(typeof window.tbpResumePendingTx==='function' && !TBP_DEMO) window.tbpResumePendingTx(); } catch(e){}
+    scribeEnsureAccess(function(){
+      document.body.classList.remove('tbp-gate-active');
+      document.body.style.display='block';
+      document.body.style.overflow='';
+      var tc=document.getElementById('tool-container');
+      tc.style.display='block';
+      tc.classList.add('tbp-shown');
+      try { authToken = localStorage.getItem('tbp_auth_token') || ''; } catch(e){}
+      try { userEmail = localStorage.getItem('tbp_verified_email') || ''; } catch(e){}
+      loadVaultTemplates();
+      try { if(typeof initTherapyCoach==='function') initTherapyCoach(); } catch(e){}
+      try { if(typeof tbpRestoreDraft==='function' && !TBP_DEMO) tbpRestoreDraft(); } catch(e){}
+      // After restoring the note, resume any transcription that was still running when the tab closed.
+      try { if(typeof window.tbpResumePendingTx==='function' && !TBP_DEMO) window.tbpResumePendingTx(); } catch(e){}
+    });
   }
 });
 </script>

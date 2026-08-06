@@ -66,7 +66,15 @@ function verifyToken(token) {
 }
 // ────────────────────────────────────────────────────────────────────────────
 
-const TRIAL_DAYS = 7;
+// Trial length depends on which tool's trial this is. The Note Builder / Chart Coder
+// clones run 7 days; the self-serve AI Scribe trial (version 'ai-scribe-v1', started
+// when a free/forum member first opens the Scribe) runs 14. Keyed off the version so
+// one endpoint serves all trials. Keep the Scribe length in sync with SCRIBE_TRIAL_DAYS
+// in clinical-proxy-stream.mjs.
+const TRIAL_DAYS_DEFAULT = 7;
+function trialDaysFor(version) {
+  return /^ai-scribe/i.test(String(version || '')) ? 14 : TRIAL_DAYS_DEFAULT;
+}
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -119,6 +127,7 @@ export default async (req) => {
   }
 
   const trialVersion = (payload.trialVersion || 'v1').toString().trim();
+  const TRIAL_DAYS = trialDaysFor(trialVersion);
 
   // Identity from the SIGNED token, never client-declared. Keying the trial to a verified
   // community member id (and verified email) stops trial-farming by varying memberId/email.
