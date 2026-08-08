@@ -57,21 +57,26 @@ function sesClient() {
   };
 }
 
-// Personalize a merge field for one recipient. {{signin_link}} becomes a per-recipient
-// one-click sign-in URL: clicking it lands them on the platform already logged in (no
-// "email me a link → check inbox" round-trip). Falls back to the plain platform URL if a
-// token can't be minted, so the email is never broken.
+// Personalize a merge field for one recipient. Two one-click sign-in tags:
+//   {{signin_link}}  — the FULL one-click URL (use in raw-HTML bodies).
+//   {{signin_token}} — just the signed token (use inside a Markdown link, e.g.
+//                      [Open →](https://thinkbeyondpractice.com/.netlify/functions/one-click-signin?t={{signin_token}}),
+//                      because the Markdown link renderer only accepts an http(s) URL at
+//                      conversion time — {{signin_link}} alone would render as dead text.
+// Either way the member lands on /platform already logged in (no inbox round-trip).
+// Falls back to the plain platform URL / empty token if one can't be minted.
 function personalize(html, contact) {
   const first = (contact.first_name || (contact.name || '').split(' ')[0] || 'there').trim();
   const name = (contact.name || first).trim();
-  let signin = SITE + '/platform';
+  let token = '', signin = SITE + '/platform';
   try {
-    if (contact.email) signin = SITE + '/.netlify/functions/one-click-signin?t=' + encodeURIComponent(mintSigninToken(contact.email));
+    if (contact.email) { token = mintSigninToken(contact.email); signin = SITE + '/.netlify/functions/one-click-signin?t=' + token; }
   } catch (e) { /* fall back to the plain platform link */ }
   return html
     .replace(/\{\{\s*first_name\s*\}\}/gi, esc(first))
     .replace(/\{\{\s*name\s*\}\}/gi, esc(name))
-    .replace(/\{\{\s*signin_link\s*\}\}/gi, signin);
+    .replace(/\{\{\s*signin_link\s*\}\}/gi, signin)
+    .replace(/\{\{\s*signin_token\s*\}\}/gi, token);
 }
 
 function b64url(s) {
