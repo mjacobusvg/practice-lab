@@ -83,13 +83,12 @@ exports.handler = async (event, context) => {
       .eq('email', email.toLowerCase())
       .single();
 
-    // If email doesn't exist, add it to Supabase and Circle
+    // If email doesn't exist, capture it in Supabase.
     if (!existingUser) {
-      // Add to Supabase
       const { error: insertError } = await supabase
         .from('public_users')
         .insert([
-          { 
+          {
             email: email.toLowerCase(),
             name: name || null
           }
@@ -97,35 +96,6 @@ exports.handler = async (event, context) => {
 
       if (insertError) {
         console.error('Supabase insert error:', insertError);
-      }
-
-      // Add to Circle using the correct Admin v2 API endpoint
-      try {
-        const circleResponse = await fetch('https://app.circle.so/api/admin/v2/community_members', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${process.env.CIRCLE_API_V2_TOKEN}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            email: email.toLowerCase(),
-            name: name || '',
-            skip_invitation: true
-          })
-        });
-
-        console.log('Circle API status:', circleResponse.status);
-        
-        if (circleResponse.ok) {
-          const circleData = await circleResponse.json();
-          console.log('Circle API success:', circleData);
-        } else {
-          const errorText = await circleResponse.text();
-          console.log('Circle API error:', errorText);
-        }
-      } catch (circleError) {
-        console.error('Circle API call failed:', circleError);
-        // Don't fail the whole function if Circle fails - Supabase capture still worked
       }
     }
 

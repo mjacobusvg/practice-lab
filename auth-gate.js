@@ -19,8 +19,11 @@
 
   var SESSION_KEY = 'tbp_auth_token';
   var SESSION_EXPIRY_KEY = 'tbp_auth_expiry';
-  var SESSION_DURATION_MS = 4 * 60 * 60 * 1000; // 4 hours
-  var REDIRECT_URL = 'https://thinkbeyondpractice.com/platform?join';
+  // The single sign-in path. An unauthenticated visitor is bounced to the
+  // platform's Supabase login (magic link / Google); platform.html mints the
+  // signed TBP token and redirects back to the tool they wanted (?returnTo).
+  // This replaced the old per-tool email box that verified against Circle.
+  var PLATFORM_URL = 'https://thinkbeyondpractice.com/platform';
 
   // Inject styles
   var style = document.createElement('style');
@@ -79,13 +82,6 @@
     return null;
   }
 
-  function setSessionToken(token) {
-    try {
-      localStorage.setItem(SESSION_KEY, token);
-      localStorage.setItem(SESSION_EXPIRY_KEY, (Date.now() + SESSION_DURATION_MS).toString());
-    } catch(e) {}
-  }
-
   function clearSession() {
     try {
       localStorage.removeItem(SESSION_KEY);
@@ -93,122 +89,45 @@
     } catch(e) {}
   }
 
-  function renderGate(toolName, requireFull, onVerified) {
-    document.body.style.overflow = 'hidden';
-    document.body.classList.add('tbp-gate-active');
+  // No local session → single Supabase login path via the platform. We preserve
+  // a returnTo so platform.html can send the member back to THIS tool once it has
+  // minted the signed token (see handleReturnTo in platform.html).
+  function redirectToLogin() {
+    var returnTo = '/';
+    // Preserve the full intended location — path, query AND hash — so a deep link
+    // like /pm-chart-coder.html?mode=foo#section survives the round trip.
+    try { returnTo = window.location.pathname + window.location.search + window.location.hash; } catch (e) {}
+    var url = PLATFORM_URL + '?returnTo=' + encodeURIComponent(returnTo);
+    try { window.location.replace(url); } catch (e) { window.location.href = url; }
+  }
 
-    var gate = document.createElement('div');
-    gate.id = 'tbp-gate';
-    gate.innerHTML = [
-      '<div class="gate-card">',
-        '<div class="gate-logo">',
-          '<svg viewBox="0 0 20 20"><path d="M10 2L3 7v11h5v-5h4v5h5V7z"/></svg>',
-        '</div>',
-        '<div class="gate-wordmark">Think Beyond Practice</div>',
-        '<h1>', toolName, '</h1>',
-        '<p class="gate-sub">Member access only.<br>Enter your member email to continue.</p>',
-        '<div class="gate-label">Your email</div>',
-        '<input class="gate-input" id="tbp-email" type="email" placeholder="you@example.com" autocomplete="email">',
-        '<button class="gate-btn" id="tbp-submit">',
-          '<div class="gate-spinner" id="tbp-spinner"></div>',
-          '<span id="tbp-btn-label">Verify access</span>',
-        '</button>',
-        '<div class="gate-error" id="tbp-error"></div>',
-        '<div class="gate-footer">',
-          'Not a member? <a href="', REDIRECT_URL, '" target="_blank">Join Think Beyond Practice</a>',
-        '</div>',
-      '</div>'
-    ].join('');
-
-    document.body.appendChild(gate);
-
-    var emailInput = document.getElementById('tbp-email');
-    var submitBtn = document.getElementById('tbp-submit');
-    var spinner = document.getElementById('tbp-spinner');
-    var btnLabel = document.getElementById('tbp-btn-label');
-    var errorDiv = document.getElementById('tbp-error');
-
-    function setLoading(on) {
-      submitBtn.disabled = on;
-      spinner.style.display = on ? 'block' : 'none';
-      btnLabel.textContent = on ? 'Verifying...' : 'Verify access';
+  // Authenticated, but this tool needs Full tier and the member is forum-only.
+  // Show an upgrade screen instead of redirecting — a redirect would loop, since
+  // the platform would just re-mint the same forum token and send them back.
+  function renderUpgrade(toolName) {
+    function paint() {
+      document.body.style.overflow = 'hidden';
+      document.body.classList.add('tbp-gate-active');
+      var gate = document.createElement('div');
+      gate.id = 'tbp-gate';
+      gate.innerHTML = [
+        '<div class="gate-card">',
+          '<div class="gate-logo">',
+            '<svg viewBox="0 0 20 20"><path d="M10 2L3 7v11h5v-5h4v5h5V7z"/></svg>',
+          '</div>',
+          '<div class="gate-wordmark">Think Beyond Practice</div>',
+          '<h1>', toolName, '</h1>',
+          '<p class="gate-sub">This tool is part of the $119/month Full plan.<br>Your current plan doesn\'t include it.</p>',
+          '<a class="gate-btn" style="text-decoration:none" href="', PLATFORM_URL, '">Upgrade to Full</a>',
+          '<div class="gate-footer">',
+            'Questions? <a href="mailto:michael@thinkbeyondpractice.com">michael@thinkbeyondpractice.com</a>',
+          '</div>',
+        '</div>'
+      ].join('');
+      document.body.appendChild(gate);
     }
-
-    function showError(msg) {
-      emailInput.classList.add('error');
-      errorDiv.textContent = msg;
-      errorDiv.style.display = 'block';
-    }
-
-    function clearError() {
-      emailInput.classList.remove('error');
-      errorDiv.style.display = 'none';
-    }
-
-    function removeGate() {
-      document.body.removeChild(gate);
-      document.body.style.overflow = '';
-      document.body.classList.remove('tbp-gate-active');
-    }
-
-    function verify() {
-      clearError();
-      var email = emailInput.value.trim().toLowerCase();
-      if (!email || !email.includes('@')) {
-        showError('Please enter a valid email address.');
-        return;
-      }
-
-      setLoading(true);
-
-      var requestBody = { email: email };
-      if (requireFull) requestBody.requireFull = true;
-
-      fetch('/.netlify/functions/circle-auth', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
-      })
-      .then(function(res) { return res.json(); })
-      .then(function(data) {
-        setLoading(false);
-        if (data.verified && data.token) {
-          // Store ONLY the real signed token. No email fallback — an email is
-          // not a valid session token and the hardened backends would reject it.
-          setSessionToken(data.token);
-          try {
-            localStorage.setItem('tbp_verified_email', email);
-            if (data.tier) localStorage.setItem('tbp_tier', data.tier);
-            if (data.memberToken) localStorage.setItem('tbp_member_jwt', data.memberToken);
-            if (data.communityMemberId) localStorage.setItem('tbp_member_id', String(data.communityMemberId));
-          } catch(e) {}
-          removeGate();
-          onVerified();
-        } else if (data.redirect) {
-          window.location.href = REDIRECT_URL;
-        } else {
-          showError(data.message || 'Access could not be verified. Check your email and try again.');
-        }
-      })
-      .catch(function() {
-        setLoading(false);
-        showError('Connection error. Please try again.');
-      });
-    }
-
-    emailInput.addEventListener('keydown', function(e) {
-      if (e.key === 'Enter') verify();
-    });
-    submitBtn.addEventListener('click', verify);
-    setTimeout(function() {
-      var storedEmail = '';
-      try { storedEmail = localStorage.getItem('tbp_verified_email') || ''; } catch(e) {}
-      if (storedEmail) {
-        emailInput.value = storedEmail;
-      } else {
-        emailInput.focus();
-      }
-    }, 100);
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', paint);
+    else paint();
   }
 
   // Public API
@@ -256,26 +175,25 @@
         };
       }
 
-      // Skip the email gate when a valid session token already exists:
+      // A valid signed session token already present? Let them straight in:
       //  - community tools: any member token passes
       //  - full-tier tools: the token must carry tier 'full'
       // The clinical backends re-verify the signed token on every call, so
       // trusting the tier claim here is a UX shortcut, not the security boundary.
-      // This is what stops every tool from re-asking for your email.
       var existing = getSessionToken();
       if (existing) {
         var claims = parseToken(existing) || {};
         var tier = String(claims.tier || '').toLowerCase();
         if (!requireFull || tier === 'full') { onVerified(); return; }
+        // Authenticated, but forum-only on a Full-tier tool → upgrade screen.
+        renderUpgrade(toolName);
+        return;
       }
 
-      if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', function() {
-          renderGate(toolName, requireFull, onVerified);
-        });
-      } else {
-        renderGate(toolName, requireFull, onVerified);
-      }
+      // No local session → bounce to the platform's Supabase login. It mints the
+      // signed token and returns the member to this tool. No token is ever minted
+      // here anymore (the old email/Circle gate is gone).
+      redirectToLogin();
     },
 
     clearSession: clearSession

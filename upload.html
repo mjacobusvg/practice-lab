@@ -81,27 +81,18 @@ var chosen = null;
 function showUpload(){ authCard.classList.add('hide'); upCard.classList.remove('hide'); }
 function setMsg(el, txt, kind){ el.textContent = txt; el.className = 'msg ' + kind; }
 
-// If a valid-looking token is already stored, skip straight to upload (validated for real on submit).
+// Single sign-in path: a valid token → straight to upload (validated for real on
+// submit); otherwise bounce to the platform's Supabase login, which mints the
+// signed token and returns here (?returnTo). The server (admin-doc-upload) is the
+// real gate — it re-verifies the token and admin rights on every call.
+function goPlatformLogin() {
+  var url = 'https://thinkbeyondpractice.com/platform?returnTo=' + encodeURIComponent('/upload.html');
+  try { window.location.replace(url); } catch (e) { window.location.href = url; }
+}
 if (TOKEN) showUpload();
-try { var pe = localStorage.getItem('tbp_verified_email'); if (pe) document.getElementById('admin-email').value = pe; } catch(e){}
+else goPlatformLogin();
 
-document.getElementById('auth-btn').addEventListener('click', function(){
-  var email = (document.getElementById('admin-email').value || '').trim().toLowerCase();
-  if (!email || email.indexOf('@') === -1) { setMsg(authMsg, 'Enter a valid email.', 'err'); return; }
-  this.disabled = true; this.textContent = 'Checking…';
-  var self = this;
-  fetch('/.netlify/functions/circle-auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email: email }) })
-    .then(function(r){ return r.json(); })
-    .then(function(d){
-      self.disabled = false; self.textContent = 'Continue';
-      if (d && d.verified && d.token) {
-        TOKEN = d.token;
-        try { localStorage.setItem('tbp_auth_token', d.token); localStorage.setItem('tbp_verified_email', email); } catch(e){}
-        showUpload();
-      } else { setMsg(authMsg, (d && d.message) || 'Not authorized.', 'err'); }
-    })
-    .catch(function(){ self.disabled = false; self.textContent = 'Continue'; setMsg(authMsg, 'Connection error, try again.', 'err'); });
-});
+document.getElementById('auth-btn').addEventListener('click', goPlatformLogin);
 
 drop.addEventListener('click', function(){ fileInput.click(); });
 drop.addEventListener('dragover', function(e){ e.preventDefault(); drop.classList.add('over'); });

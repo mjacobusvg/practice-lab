@@ -3073,7 +3073,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-heig
 
 <script>
 /* ── Auth token injector ───────────────────────────────────────────────
-   Practice Lab billing makes many anthropic-proxy calls (and one circle-comment).
+   Practice Lab billing makes many anthropic-proxy calls (and one tool-feedback).
    All gated backends now require the signed session token. Rather than edit each
    call site, wrap fetch once: for our own /.netlify/functions/ endpoints, add the
    Authorization: Bearer header and merge token into the JSON body. */
@@ -9886,13 +9886,10 @@ function goNextPsychStage(){var next=psychCurrentStage+1;if(next<=3)startPsychSt
 function backToPsychStages(){showPsychView('psych-stage-select');updatePsychStageCards();}
 
 
-// ── FEEDBACK / CIRCLE COMMENT POSTING ──────────────────────────────────────
-
-// Wire in post IDs after Circle posts go live
-// Format: get post ID from the Circle post URL (number at end of URL)
-var CIRCLE_MEMBER_THREAD_POST_ID = 31095927;   // Member Thread (private space)
-var CIRCLE_PUBLIC_POST_ID = 31181578;           // "What Members Are Saying" (public space)
-var CIRCLE_DOMAIN_POST = 'think-beyond-practice.circle.so';
+// ── FEEDBACK CAPTURE ───────────────────────────────────────────────────────
+// Feedback lands in the Supabase tool_feedback table (via /tool-feedback), which
+// the team reads directly. This replaced the old Circle comment posting when the
+// platform migrated off Circle. Identity comes from the signed session token.
 
 function updateFeedbackPlaceholder(source) {
   var catId = source === 'sim' ? 'sim-feedback-category' : 'drill-feedback-category';
@@ -9923,24 +9920,18 @@ function submitFeedback(source) {
     return;
   }
 
-  // Route: "This was helpful" goes to public post, everything else to member thread
+  // "This was helpful" is flagged as shareable; everything else is private feedback.
   var isPublic = (category === 'This was helpful');
-  var targetPostId = isPublic ? CIRCLE_PUBLIC_POST_ID : CIRCLE_MEMBER_THREAD_POST_ID;
 
-  if (!targetPostId) {
-    if (statusEl) { statusEl.textContent = 'Feedback posting goes live April 1. Thanks for trying it out!'; statusEl.style.color = 'var(--text3)'; }
-    return;
-  }
+  var authToken = '';
+  try { authToken = localStorage.getItem('tbp_auth_token') || ''; } catch(e) {}
 
-  var memberJwt = '';
-  try { memberJwt = sessionStorage.getItem('tbp_member_jwt') || ''; } catch(e) {}
-
-  if (!memberJwt) {
+  if (!authToken) {
     if (statusEl) { statusEl.textContent = 'Session expired. Please refresh and sign in again.'; statusEl.style.color = 'var(--red)'; }
     return;
   }
 
-  // Build comment body — include context about which mode/drill
+  // Build a context label about which mode/drill this came from.
   var context;
   if (source === 'drill') {
     if (isPublic) {
@@ -9952,29 +9943,28 @@ function submitFeedback(source) {
   } else {
     context = 'Scenario: ' + (currentScenarioId || 'S1');
   }
-  var closingQuestion = '\n\nWhat would you have done differently \u2014 or would you have made the same call?';
-  var body = '[' + category + ' \u2014 ' + context + ']\n\n' + text.trim() + (isPublic ? '' : closingQuestion);
+  if (statusEl) { statusEl.textContent = 'Sending...'; statusEl.style.color = 'var(--text3)'; }
 
-  if (statusEl) { statusEl.textContent = 'Posting...'; statusEl.style.color = 'var(--text3)'; }
-
-  fetch('/.netlify/functions/circle-comment', {
+  fetch('/.netlify/functions/tool-feedback', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
     body: JSON.stringify({
-      postId: targetPostId,
-      body: body,
-      memberJwt: memberJwt
+      token: authToken,
+      source: source,
+      category: category,
+      context: context,
+      is_public: isPublic,
+      body: text.trim()
     })
   })
   .then(function(r) { return r.json(); })
   .then(function(data) {
     if (data.success) {
-      var msg = isPublic ? 'Posted publicly. Thank you.' : 'Posted to the member thread.';
-      if (statusEl) { statusEl.textContent = msg; statusEl.style.color = 'var(--green)'; }
+      if (statusEl) { statusEl.textContent = 'Thanks \u2014 your feedback was sent to the team.'; statusEl.style.color = 'var(--green)'; }
       var textEl = document.getElementById(textId);
       if (textEl) textEl.value = '';
     } else {
-      if (statusEl) { statusEl.textContent = data.message || 'Failed to post. Try again.'; statusEl.style.color = 'var(--red)'; }
+      if (statusEl) { statusEl.textContent = data.message || 'Failed to send. Try again.'; statusEl.style.color = 'var(--red)'; }
     }
   })
   .catch(function() {

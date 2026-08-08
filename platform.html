@@ -2078,10 +2078,15 @@ async function signInGoogle() {
 }
 
 async function signOut() {
+  // Invalidate the local tool session too, so a tool token can't outlive the
+  // platform session. Clears everything the tool gate reads.
   try {
     localStorage.removeItem('tbp_auth_token');
     localStorage.removeItem('tbp_auth_expiry');
     localStorage.removeItem('tbp_verified_email');
+    localStorage.removeItem('tbp_tier');
+    localStorage.removeItem('tbp_member_id');
+    localStorage.removeItem('tbp_member_jwt');
   } catch(e) {}
   await SB.auth.signOut();
   window.location.reload();
@@ -2161,6 +2166,33 @@ function bootPreview() {
   } catch (e) { /* preview is best-effort chrome */ }
 }
 
+function clearReturnTo() {
+  try { localStorage.removeItem('tbp_return_to'); localStorage.removeItem('tbp_return_to_ts'); } catch (e) {}
+}
+
+// Send a member back to the tool that bounced them here to sign in. Only fires
+// once we hold a real signed member token (a free/no-account visitor can't satisfy
+// a member-gated tool, so we keep them on the platform — no redirect loop). The
+// target must be a same-origin path (leading single "/") to prevent open redirects,
+// and the stash must be fresh (guards against an old bounce hijacking a later visit).
+function handleReturnTo() {
+  var raw = '', ts = 0;
+  try { raw = localStorage.getItem('tbp_return_to') || ''; ts = parseInt(localStorage.getItem('tbp_return_to_ts') || '0', 10); } catch (e) {}
+  if (!raw) return false;
+  if (!ts || (Date.now() - ts) > 30 * 60 * 1000) { clearReturnTo(); return false; }
+  var tok = '';
+  try { tok = localStorage.getItem('tbp_auth_token') || ''; } catch (e) {}
+  if (!tok) { clearReturnTo(); return false; }
+  // Same-origin path only: must start with "/" but not "//" or "/\" (both parse as
+  // protocol-relative → open redirect). And never bounce back to the platform
+  // itself, which would just re-enter this flow.
+  if (raw.charAt(0) !== '/' || raw.charAt(1) === '/' || raw.charAt(1) === '\\') { clearReturnTo(); return false; }
+  if (/^\/platform(\b|[/?#.]|$)/.test(raw)) { clearReturnTo(); return false; }
+  clearReturnTo();
+  try { window.location.replace(raw); } catch (e) { window.location.href = raw; }
+  return true;
+}
+
 async function checkAuth() {
   if (isPreviewMode()) { bootPreview(); return; }
   // Capture a ?post=<id> deep link (e.g. from a broadcast email) up front, so it
@@ -2176,9 +2208,16 @@ async function checkAuth() {
   // Capture a ?buy=<template_id> deep link (the marketing "Get the toolkit" button)
   // so the in-platform purchase opens once the visitor has an account.
   try { var _by = new URLSearchParams(window.location.search).get('buy'); if (_by) { localStorage.setItem('tbp_pending_buy', _by); localStorage.setItem('tbp_pending_buy_ts', String(Date.now())); } } catch (e) {}
+  // Capture a ?returnTo=<tool path> from the shared tool gate (auth-gate.js), which
+  // bounces a logged-out member here to sign in. Stashed so it survives the magic-
+  // link / OAuth round trip; consumed by handleReturnTo once a token is minted.
+  try { var _rt = new URLSearchParams(window.location.search).get('returnTo'); if (_rt) { localStorage.setItem('tbp_return_to', _rt); localStorage.setItem('tbp_return_to_ts', String(Date.now())); } } catch (e) {}
   var ok = await loadIdentity();
   if (ok && S.user) {
     document.getElementById('gate').classList.add('hidden');
+    // A tool sent this member here to sign in — bounce them straight back now that
+    // loadIdentity has minted the signed token. Returns true if it redirected.
+    if (handleReturnTo()) return;
     checkMember(); updateTopbar(); init();
     maybeShowWelcome();
     handlePurchaseReturn();

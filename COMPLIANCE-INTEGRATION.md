@@ -77,11 +77,17 @@ TBPAuth.protect({
 
 ### What the gate does, in order
 
-1. Member identity. Verifies the Circle email via the `circle-auth` function.
-   On success it stores, in localStorage:
+1. Member identity. Authentication is Supabase-only (Circle is retired). If a
+   valid signed `tbp_auth_token` is already in localStorage, the gate proceeds.
+   If not, it redirects to `/platform?returnTo=<this tool>`, where the member
+   signs in via Supabase (magic link / Google); `platform-auth.js` mints the
+   signed token from the verified Supabase session and returns them to the tool.
+   The platform login sets, in localStorage:
    - `tbp_verified_email` (the canonical identity key every backend reads)
-   - `tbp_auth_token` + `tbp_auth_expiry` (4-hour session)
-   - `tbp_member_id`, and `tbp_member_jwt` when present
+   - `tbp_auth_token` + `tbp_auth_expiry`
+   - `tbp_tier`
+   If a member holds a token but lacks the required tier (forum-only on a Full
+   tool), the gate shows an upgrade screen rather than redirecting.
 2. If not `skipPHIGate`, runs the PHI gate (`runPHIGate`):
    - BAA check via `check-baa-status`. Requires the CURRENT version by exact
      string match. A member who signed an older version (e.g. 1.0) does NOT
@@ -116,7 +122,7 @@ column default. If you build or touch the BAA-signing function, confirm it passe
 
 ### Endpoints the gate calls (must exist)
 
-- `/.netlify/functions/circle-auth` (membership + tier verification)
+- `/.netlify/functions/platform-auth` (Supabase session -> signed token, tier)
 - `/.netlify/functions/check-baa-status` (returns `{ hasBaa, baaVersion }`)
 - `/.netlify/functions/record-terms-acceptance` (check + record)
 
@@ -254,12 +260,14 @@ For saving per-user, per-tool state, use the generic `user-tool-data` function.
 Do not create a new table per tool unless the data is genuinely relational.
 
 - Function: `/.netlify/functions/user-tool-data`, actions `load` / `save` /
-  `delete`, body `{ email, toolId, action, data }`.
-- It verifies the email is an active Circle member before any operation.
+  `delete`, body `{ token, toolId, action, data }`.
+- Identity comes from the SIGNED session token (verified server-side via
+  `_lib/session.js`); the client no longer supplies its own email. The old
+  email + Circle round-trip has been removed entirely.
 - Table `user_tool_data`: id, email, tool_id, data (jsonb), created_at,
   updated_at. Upsert on conflict (email, tool_id). RLS enabled; the function uses
   the service key.
-- Reads `email` from the client's `tbp_verified_email`.
+- The email stored on each row is derived from the verified token, not the client.
 
 ---
 
@@ -267,19 +275,21 @@ Do not create a new table per tool unless the data is genuinely relational.
 
 Identity key everywhere: `tbp_verified_email` (localStorage, set by the gate).
 
-Tiers (live `accounts.tier` enum, backfilled from Circle June 2026):
+Tiers (live `accounts.tier` enum; the authoritative source, driven by Stripe):
 - `free` = open-registration teaser tier
 - `forum` = $50 grandfathered forum + Ask the Archive only (NO Practice Manager)
 - `full` = everything
 
-Circle space IDs used for gating:
-- Full tier: `2546298`
-- All-member (forum-only): `2152658`
+Legacy full-tier marker: `2546298`. This was the Circle full-space id; it now
+survives only as a client-side "require full tier" flag some tool pages still
+pass (`spaceId:2546298`), treated as `requireFull:true`. Tier itself comes from
+the signed token claim / `accounts.tier`, never a Circle lookup.
 
 Environment variables (already set in Netlify; never hardcode secrets):
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_KEY` (service role; server-side only; bypasses RLS)
-- `CIRCLE_API_V2_TOKEN` (and other CIRCLE_* tokens) for membership verification
+- `SUPABASE_ANON_KEY` (routes the platform-auth session-verify call)
+- `SESSION_SIGNING_SECRET` (HMAC key for signed tokens; server-side only)
 - `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` for model calls
 - `RESEND_API_KEY` / SES credentials for send functions
 - `STRIPE_SECRET_KEY` for payments
