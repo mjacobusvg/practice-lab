@@ -21,6 +21,7 @@
 const { verifyToken } = require('./_lib/session');
 const { toRichHtml, esc } = require('./_lib/richtext');
 const { mintPrefsToken } = require('./_lib/prefs-token');
+const { mintSigninToken } = require('./_lib/signin-token');
 
 const ADMIN_EMAILS = ['michael@thinkbeyondpsych.com'];
 const SITE = 'https://thinkbeyondpractice.com';
@@ -56,11 +57,21 @@ function sesClient() {
   };
 }
 
-// Personalize a merge field for one recipient.
+// Personalize a merge field for one recipient. {{signin_link}} becomes a per-recipient
+// one-click sign-in URL: clicking it lands them on the platform already logged in (no
+// "email me a link → check inbox" round-trip). Falls back to the plain platform URL if a
+// token can't be minted, so the email is never broken.
 function personalize(html, contact) {
   const first = (contact.first_name || (contact.name || '').split(' ')[0] || 'there').trim();
   const name = (contact.name || first).trim();
-  return html.replace(/\{\{\s*first_name\s*\}\}/gi, esc(first)).replace(/\{\{\s*name\s*\}\}/gi, esc(name));
+  let signin = SITE + '/platform';
+  try {
+    if (contact.email) signin = SITE + '/.netlify/functions/one-click-signin?t=' + encodeURIComponent(mintSigninToken(contact.email));
+  } catch (e) { /* fall back to the plain platform link */ }
+  return html
+    .replace(/\{\{\s*first_name\s*\}\}/gi, esc(first))
+    .replace(/\{\{\s*name\s*\}\}/gi, esc(name))
+    .replace(/\{\{\s*signin_link\s*\}\}/gi, signin);
 }
 
 function b64url(s) {
