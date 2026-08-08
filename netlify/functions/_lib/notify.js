@@ -209,7 +209,7 @@ async function notifyNewPost(post, actor, opts) {
       } catch (e) { /* enrichment best-effort */ }
       const card = postEmailCard({
         title: post.title || '', author: actorName, space: spaceName,
-        avatarUrl: avatarUrl, snippet: makeSnippet(bodyPlain, 240),
+        avatarUrl: avatarUrl, snippet: makeSnippet(bodyPlain, 500),
         url: PLATFORM_URL + '?post=' + encodeURIComponent(post.id)
       });
       await emailEach(emails, 'New post: ' + (post.title || 'Think Beyond Practice'), function (email) { return card + prefsFooter(email); });
