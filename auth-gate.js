@@ -118,7 +118,7 @@
           '<div class="gate-wordmark">Think Beyond Practice</div>',
           '<h1>', toolName, '</h1>',
           '<p class="gate-sub">This tool is part of the $119/month Full plan.<br>Your current plan doesn\'t include it.</p>',
-          '<a class="gate-btn" style="text-decoration:none" href="', PLATFORM_URL, '">Upgrade to Full</a>',
+          '<a class="gate-btn" style="text-decoration:none" href="', PLATFORM_URL, '?plan=full_monthly_119">Upgrade to Full</a>',
           '<div class="gate-footer">',
             'Questions? <a href="mailto:michael@thinkbeyondpractice.com">michael@thinkbeyondpractice.com</a>',
           '</div>',
