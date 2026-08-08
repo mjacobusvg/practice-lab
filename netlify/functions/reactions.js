@@ -45,7 +45,10 @@ exports.handler = async function (event) {
   const token = (p.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
   const session = verifyToken(token);
   if (!session.valid) return { statusCode: 401, headers, body: JSON.stringify({ ok: false, error: 'Sign in first' }) };
-  if (session.claims.scope !== 'member') return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Members only' }) };
+  // 'member' (forum/full) may react anywhere; 'free' may react only on posts
+  // opened to free members (enforced per-target below). Nothing else.
+  const scope = String(session.claims.scope || '');
+  if (scope !== 'member' && scope !== 'free') return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Members only' }) };
   const email = String(session.claims.email || '').trim().toLowerCase();
   if (!email || email.indexOf('@') === -1) return { statusCode: 401, headers, body: JSON.stringify({ ok: false, error: 'Sign in first' }) };
 
@@ -61,6 +64,23 @@ exports.handler = async function (event) {
     const meRows = await sb('accounts?email=eq.' + encodeURIComponent(email) + '&select=id&limit=1', 'GET');
     if (!meRows || !meRows.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'No account found.' }) };
     const meId = meRows[0].id;
+
+    // Free-tier accounts may react only on posts opened to free members (mirror
+    // create-comment). For a comment target, the parent post's flag governs.
+    if (scope !== 'member') {
+      let pv = null;
+      if (targetType === 'post') {
+        const pr = await sb('forum_posts?id=eq.' + encodeURIComponent(targetId) + '&select=free_visible&limit=1', 'GET');
+        pv = pr && pr[0];
+      } else {
+        const cr = await sb('forum_comments?id=eq.' + encodeURIComponent(targetId) + '&select=post_id&limit=1', 'GET');
+        if (cr && cr[0]) {
+          const pr = await sb('forum_posts?id=eq.' + encodeURIComponent(cr[0].post_id) + '&select=free_visible&limit=1', 'GET');
+          pv = pr && pr[0];
+        }
+      }
+      if (!pv || !pv.free_visible) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Join to react to this thread' }) };
+    }
 
     const existing = await sb('reactions?account_id=eq.' + meId + '&' + col + '=eq.' + encodeURIComponent(targetId) + '&select=id,reaction_type&limit=1', 'GET');
     let myKind = null;
