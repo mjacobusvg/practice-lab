@@ -15,6 +15,7 @@
 
 const { verifyToken } = require('./_lib/session');
 const { toRichHtml } = require('./_lib/richtext');
+const { hasUnlock } = require('./_lib/unlocks');
 
 const ADMIN_EMAILS = ['michael@thinkbeyondpsych.com'];
 
@@ -44,11 +45,24 @@ exports.handler = async function (event) {
   // pass so the author can see their own locked section.
   const scope = String(session.claims.scope || '');
   const email = String(session.claims.email || '').toLowerCase();
-  const allowed = scope === 'member' || ADMIN_EMAILS.indexOf(email) !== -1;
-  if (!allowed) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, locked: true, error: 'Members only' }) };
-
   const postId = String(p.post_id || '').trim();
   if (!postId) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'post_id required' }) };
+
+  // Paid (scope 'member') and admins always pass. A free member passes only for a
+  // post they've spent their monthly free unlock on (D) — checked against their
+  // account id, so the client can never fake entitlement.
+  let allowed = scope === 'member' || ADMIN_EMAILS.indexOf(email) !== -1;
+  if (!allowed && scope === 'free' && email.indexOf('@') !== -1) {
+    try {
+      const meRes = await fetch(
+        SUPABASE_URL + '/rest/v1/accounts?email=eq.' + encodeURIComponent(email) + '&select=id&limit=1',
+        { headers: { apikey: KEY, Authorization: 'Bearer ' + KEY } }
+      );
+      const meRows = meRes.ok ? await meRes.json() : [];
+      if (meRows && meRows[0]) allowed = await hasUnlock(SUPABASE_URL, KEY, meRows[0].id, postId);
+    } catch (e) { /* fail closed */ }
+  }
+  if (!allowed) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, locked: true, error: 'Members only' }) };
 
   try {
     const res = await fetch(

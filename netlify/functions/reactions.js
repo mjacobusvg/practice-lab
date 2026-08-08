@@ -7,6 +7,7 @@
 // Action: { token, action:'toggle', target_type:'post'|'comment', target_id, kind }
 
 const { verifyToken } = require('./_lib/session');
+const { hasUnlock } = require('./_lib/unlocks');
 
 const KINDS = ['heart', 'helpful', 'insight'];
 
@@ -68,18 +69,24 @@ exports.handler = async function (event) {
     // Free-tier accounts may react only on posts opened to free members (mirror
     // create-comment). For a comment target, the parent post's flag governs.
     if (scope !== 'member') {
-      let pv = null;
+      let pv = null, parentPostId = null;
       if (targetType === 'post') {
+        parentPostId = targetId;
         const pr = await sb('forum_posts?id=eq.' + encodeURIComponent(targetId) + '&select=free_visible&limit=1', 'GET');
         pv = pr && pr[0];
       } else {
         const cr = await sb('forum_comments?id=eq.' + encodeURIComponent(targetId) + '&select=post_id&limit=1', 'GET');
         if (cr && cr[0]) {
-          const pr = await sb('forum_posts?id=eq.' + encodeURIComponent(cr[0].post_id) + '&select=free_visible&limit=1', 'GET');
+          parentPostId = cr[0].post_id;
+          const pr = await sb('forum_posts?id=eq.' + encodeURIComponent(parentPostId) + '&select=free_visible&limit=1', 'GET');
           pv = pr && pr[0];
         }
       }
-      if (!pv || !pv.free_visible) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Join to react to this thread' }) };
+      // Allowed on a free_visible post, or on a post this member has unlocked.
+      const okFree = pv && pv.free_visible;
+      if (!okFree && !(await hasUnlock(URL, KEY, meId, parentPostId))) {
+        return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Join to react to this thread' }) };
+      }
     }
 
     const existing = await sb('reactions?account_id=eq.' + meId + '&' + col + '=eq.' + encodeURIComponent(targetId) + '&select=id,reaction_type&limit=1', 'GET');

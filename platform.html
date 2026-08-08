@@ -3239,6 +3239,37 @@ async function viewPost(postId) {
     // Follow state for the Follow-thread button (cached after first load).
     if (isPaidMember()) { try { await fetchFollows(); } catch (e) {} }
 
+    // One-free-unlock-per-month (D). For a signed-in FREE member on locked content
+    // (a member-only body or a members-only section), check whether they've already
+    // spent their unlock on this post, and whether they still have one available.
+    // Cached in S.unlocked so a re-render after unlocking is instant.
+    S.unlocked = S.unlocked || {};
+    var unlocked = !!S.unlocked[post.id];
+    var unlockUsedElsewhere = false;
+    if (!unlocked && S.user && !isPaidMember() && (!post.free_visible || post.members_teaser)) {
+      try {
+        var _us = await fetch('/.netlify/functions/post-unlock', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: getAuthToken(), post_id: post.id, action: 'status' })
+        }).then(function (r) { return r.json(); });
+        if (_us && _us.ok) {
+          unlocked = !!_us.this_post_unlocked;
+          if (unlocked) S.unlocked[post.id] = true;
+          unlockUsedElsewhere = !unlocked && !_us.has_unlock_available;
+        }
+      } catch (e) {}
+    }
+    // Offer the free unlock to anyone who is not paid and hasn't already unlocked
+    // this post — unless a free member has already spent this month's unlock. An
+    // anonymous click routes to free signup (the anon guard), then they can unlock.
+    var showUnlockBtn = !isPaidMember() && !unlocked && !unlockUsedElsewhere;
+    var unlockBtnHtml = showUnlockBtn
+      ? '<button class="btn-primary" data-anon-allow onclick="doUnlock(\'' + post.id + '\')" style="margin-left:8px;background:transparent;color:var(--teal);border:1px solid var(--teal)">Unlock free (1 this month)</button>'
+      : '';
+    var unlockUsedNote = unlockUsedElsewhere
+      ? '<p class="tg-sub" style="margin-top:10px;opacity:0.85">You have used your free unlock this month. It resets next month.</p>'
+      : '';
+
     var h = '';
     // Back button
     h += '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px">';
@@ -3283,12 +3314,14 @@ async function viewPost(postId) {
     // Non-members: excerpt teaser + join gate instead of the full thread.
     // (First few paragraphs prove the answer is good, then convert.) A post
     // flagged free_visible is exempt: free members read it in full.
-    if (!isPaidMember() && !post.free_visible) {
+    if (!isPaidMember() && !post.free_visible && !unlocked) {
       h += '<div class="post-prose teaser-fade">' + teaserHtml(post) + '</div>';
       h += '<div class="teaser-gate">';
       h += '<div class="tg-title">Keep reading</div>';
       h += '<p class="tg-sub">This is a members’ thread. Join to read the full post' + (post.comment_count ? ' and all ' + post.comment_count + ' ' + (post.comment_count === 1 ? 'reply' : 'replies') : '') + '.</p>';
       h += '<button class="btn-primary" onclick="showJoin(\'' + (post.spaces ? post.spaces.slug : '') + '\')">Join Think Beyond Practice</button>';
+      h += unlockBtnHtml;
+      h += unlockUsedNote;
       h += '</div>';
       center.innerHTML = h; window.scrollTo(0, 0); return;
     }
@@ -3296,11 +3329,12 @@ async function viewPost(postId) {
     // Paid members can react and comment anywhere they can read. A signed-in free
     // member reading a free_visible post can also comment AND react (nobody pays
     // just to react). Anonymous guests get neither until they create a free account.
-    var canReact = !!S.user && (isPaidMember() || !!post.free_visible);
+    var canReact = !!S.user && (isPaidMember() || !!post.free_visible || unlocked);
     // Require a real signed-in account: a logged-out guest reading a free_visible
     // post must NOT get a live composer (they'd have no identity to post under).
-    // They fall into the existing "join to comment" CTA instead.
-    var canComment = !!S.user && (isPaidMember() || !!post.free_visible);
+    // They fall into the existing "join to comment" CTA instead. A free member who
+    // unlocked this post (D) can comment/react on it too.
+    var canComment = !!S.user && (isPaidMember() || !!post.free_visible || unlocked);
 
     // Body
     h += '<div class="post-prose" id="post-body">';
@@ -3342,7 +3376,7 @@ async function viewPost(postId) {
     // fill from the gated endpoint after render; free/anon see a teaser + unlock
     // CTA. The locked body is never sent to a non-member's browser.
     if (post.members_teaser) {
-      if (isPaidMember() || isAdmin()) {
+      if (isPaidMember() || isAdmin() || unlocked) {
         h += '<div class="members-extra" id="members-extra" data-post="' + post.id + '" style="margin-top:20px"><div style="color:var(--text-secondary);font-size:0.82rem">Loading members-only section&hellip;</div></div>';
       } else {
         h += '<div class="members-lock" style="margin:24px 0;padding:22px 20px;border:1px solid var(--border);border-radius:10px;background:var(--bg-card);text-align:center">';
@@ -3350,6 +3384,8 @@ async function viewPost(postId) {
         h += '<div style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:10px">There is more to this post below, open to members.</div>';
         h += '<div style="font-size:0.9rem;color:var(--text-primary);line-height:1.55;margin:0 auto 16px;max-width:520px">' + esc(post.members_teaser) + '</div>';
         h += '<button class="btn-primary" onclick="showJoin(\'' + (post.spaces ? post.spaces.slug : '') + '\')">Unlock with membership</button>';
+        h += unlockBtnHtml;
+        h += unlockUsedNote;
         h += '</div>';
       }
     }
@@ -3516,6 +3552,32 @@ function teaserHtml(post) {
 // under the free body. The body lives in a service-role-only table, so this
 // gated endpoint is the only way to get it; free/anon never reach here (they see
 // the unlock CTA instead). Any failure just hides the placeholder.
+// Spend this month's free unlock on a post (D). Anonymous visitors have no
+// account to meter, so send them to free signup first; once signed in as a free
+// member the button works. On success we re-render the post fully open.
+async function doUnlock(postId) {
+  var token = getAuthToken();
+  if (!token) { anonSignup(); return; }
+  try {
+    var res = await fetch('/.netlify/functions/post-unlock', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: token, post_id: postId, action: 'unlock' })
+    });
+    var data = await res.json();
+    if (res.ok && data.ok && data.unlocked) {
+      S.unlocked = S.unlocked || {};
+      S.unlocked[postId] = true;
+      viewPost(postId);   // re-render: full body + members-only section now open
+      return;
+    }
+    if (res.status === 403 && data.used_this_month) {
+      alert('You have already used your free unlock this month. It resets at the start of next month.');
+      return;
+    }
+    alert((data && data.error) || 'Could not unlock. Please try again.');
+  } catch (e) { alert('Could not unlock. Please try again.'); }
+}
+
 async function loadMembersExtra(postId) {
   var el = document.getElementById('members-extra');
   if (!el) return;

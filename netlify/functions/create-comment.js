@@ -19,6 +19,7 @@ const { verifyToken } = require('./_lib/session');
 const { notifyNewComment } = require('./_lib/notify');
 const { resolveMentions, linkifyMentions, notifyMentions } = require('./_lib/mentions');
 const { toRichHtml } = require('./_lib/richtext');
+const { hasUnlock } = require('./_lib/unlocks');
 
 const MAX_COMMENT_CHARS = 8000;
 const MAX_COMMENT_IMAGES = 4;
@@ -98,8 +99,11 @@ exports.handler = async function (event) {
       const posts = await sb('forum_posts?id=eq.' + encodeURIComponent(postId) + '&select=id,title,author_id,comment_count,is_locked,free_visible&limit=1', 'GET');
       if (!posts || !posts.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'Post not found' }) };
       if (posts[0].is_locked) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'This thread is locked' }) };
-      // Free-tier accounts may comment only on posts opened to free members.
-      if (scope !== 'member' && !posts[0].free_visible) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Join to comment on this thread' }) };
+      // Free-tier accounts may comment on posts opened to free members, or on a
+      // post they've spent their monthly free unlock on.
+      if (scope !== 'member' && !posts[0].free_visible && !(await hasUnlock(SUPABASE_URL, KEY, me.id, postId))) {
+        return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Join to comment on this thread' }) };
+      }
 
       // Optional threaded reply: the parent must belong to the same post.
       let parentId = null;
