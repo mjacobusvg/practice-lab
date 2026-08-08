@@ -1460,6 +1460,26 @@ a.file-chip:hover { border-color:var(--teal); }
   display: flex; align-items: center; justify-content: center;
 }
 .gate.hidden { display: none; }
+
+/* ── Anonymous shared-post reader (focused single-post view, B/C) ── */
+body.anon-mode .sidebar,
+body.anon-mode .rail,
+body.anon-mode .rail-toggle,
+body.anon-mode .hamburger { display: none !important; }
+body.anon-mode .layout { grid-template-columns: 1fr; }
+body.anon-mode .center { max-width: 760px; margin: 0 auto; padding-bottom: 108px; }
+.anon-capture-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 95;
+  display: flex; align-items: center; justify-content: center; gap: 14px; flex-wrap: wrap;
+  padding: 12px 18px;
+  background: var(--bg-card); border-top: 1px solid var(--border);
+  box-shadow: 0 -3px 14px rgba(0,0,0,0.14);
+}
+.anon-capture-bar .acb-text { font-size: 0.82rem; color: var(--text-primary); max-width: 620px; line-height: 1.45; }
+.anon-capture-bar .acb-dismiss {
+  background: none; border: none; color: var(--text-secondary);
+  font-size: 1.2rem; line-height: 1; cursor: pointer; padding: 4px 8px;
+}
 .acct-wrap { position: relative; }
 .acct-menu { position: absolute; top: 44px; right: 0; min-width: 190px; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0,0,0,0.4); padding: 6px; display: none; z-index: 120; }
 .acct-menu.open { display: block; }
@@ -2193,6 +2213,65 @@ function handleReturnTo() {
   return true;
 }
 
+// ── Anonymous shared-post reader (B/C) ─────────────────────────────────────
+// A logged-out visitor who lands on /platform?post=<id> reads THAT one post
+// instead of hitting the login wall. Free-visible posts render in full; member-
+// only posts show the existing teaser. A persistent, dismissible bar invites a
+// free account, and every in-app nav / member action routes to free signup via
+// a capture-phase click guard. The signed-in member boot path is untouched —
+// this only runs on the not-logged-in branch of checkAuth.
+function anonSignup() {
+  var g = document.getElementById('gate');
+  if (!g) return;
+  g.classList.remove('hidden');
+  g.classList.add('anon-dismissable');   // backdrop click returns to the post
+  gateMode('signup');
+  try { var e = document.getElementById('gate-email'); if (e) e.focus(); } catch (x) {}
+}
+
+function dismissAnonCaptureBar() {
+  var b = document.getElementById('anon-capture-bar'); if (b) b.style.display = 'none';
+}
+
+function renderAnonCaptureBar() {
+  if (document.getElementById('anon-capture-bar')) return;
+  var bar = document.createElement('div');
+  bar.id = 'anon-capture-bar';
+  bar.className = 'anon-capture-bar';
+  bar.innerHTML =
+    '<span class="acb-text"><strong>Reading as a guest.</strong> Create a free account to comment, save posts, and read the full library of free posts. Just your email, no password.</span>' +
+    '<button class="btn-primary" data-anon-allow onclick="anonSignup()">Create your free account</button>' +
+    '<button class="acb-dismiss" data-anon-allow onclick="dismissAnonCaptureBar()" aria-label="Dismiss">×</button>';
+  document.body.appendChild(bar);
+}
+
+// Capture-phase guard: reading works (plain clicks, post-body links, images, the
+// theme toggle) but every in-app nav and member action opens free signup instead.
+function anonClickGuard(e) {
+  var el = e.target && e.target.closest && e.target.closest('a,button,[onclick]');
+  if (!el) return;                                                       // plain text/image = reading
+  if (el.closest('#gate,.anon-capture-bar,.theme-btn,[data-anon-allow]')) return; // allowed controls
+  var href = el.getAttribute && el.getAttribute('href');
+  if (el.tagName === 'A' && href && href !== '#' && href.slice(0, 10) !== 'javascript') return; // real links navigate
+  e.preventDefault(); e.stopPropagation();
+  anonSignup();
+}
+
+function bootAnonPost(postId) {
+  try { document.body.classList.add('anon-mode'); } catch (e) {}
+  var g = document.getElementById('gate'); if (g) g.classList.add('hidden');
+  S.user = null;
+  document.addEventListener('click', anonClickGuard, true);
+  if (g && !g.__anonWired) {
+    g.__anonWired = true;
+    g.addEventListener('click', function (e) {
+      if (e.target === g && g.classList.contains('anon-dismissable')) g.classList.add('hidden');
+    });
+  }
+  renderAnonCaptureBar();
+  viewPost(postId);
+}
+
 async function checkAuth() {
   if (isPreviewMode()) { bootPreview(); return; }
   // Capture a ?post=<id> deep link (e.g. from a broadcast email) up front, so it
@@ -2232,7 +2311,13 @@ async function checkAuth() {
     // Deep link from the marketing site (/platform.html?join) opens straight into
     // free-account creation; otherwise default to the returning-member view.
     var _q = new URLSearchParams(window.location.search);
-    if (_q.get('join') !== null || _q.get('free') !== null || _q.get('plan') !== null || _q.get('buy') !== null || window.location.hash === '#join') {
+    var _anonPost = _q.get('post');
+    if (_anonPost) {
+      // Anonymous shared-post reader (B/C): let a logged-out visitor read the
+      // shared post instead of walling it behind login. The ?post= id was already
+      // stashed above, so signing up returns them to this post.
+      bootAnonPost(_anonPost);
+    } else if (_q.get('join') !== null || _q.get('free') !== null || _q.get('plan') !== null || _q.get('buy') !== null || window.location.hash === '#join') {
       gateMode('signup');
       // Carry an email typed on the marketing site straight into the signup form,
       // so the visitor only has to add their name and hit the button.
@@ -3212,7 +3297,10 @@ async function viewPost(postId) {
     // post can also comment/reply (the engagement on-ramp), but reactions stay a
     // paid perk. Free readers of a gated post get neither.
     var canReact = isPaidMember();
-    var canComment = isPaidMember() || !!post.free_visible;
+    // Require a real signed-in account: a logged-out guest reading a free_visible
+    // post must NOT get a live composer (they'd have no identity to post under).
+    // They fall into the existing "join to comment" CTA instead.
+    var canComment = !!S.user && (isPaidMember() || !!post.free_visible);
 
     // Body
     h += '<div class="post-prose" id="post-body">';
