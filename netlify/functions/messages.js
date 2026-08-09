@@ -211,12 +211,69 @@ exports.handler = async function (event) {
         return { statusCode: 200, headers, body: JSON.stringify({ ok: true, other: other, messages: [] }) };
       }
       const convId = convs[0].id;
-      const messages = await sb('dm_messages?conversation_id=eq.' + convId + '&order=created_at.asc&limit=500&select=id,sender_id,recipient_id,body_html,image_urls,created_at', 'GET');
+      const messages = await sb('dm_messages?conversation_id=eq.' + convId + '&order=created_at.asc&limit=500&select=id,sender_id,recipient_id,body_html,body_plain,image_urls,edited_at,created_at', 'GET');
 
       // Mark messages TO me as read.
       await sb('dm_messages?conversation_id=eq.' + convId + '&recipient_id=eq.' + me.id + '&read_at=is.null', 'PATCH', { read_at: new Date().toISOString() }, 'return=minimal');
 
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, conversation_id: convId, other: other, messages: messages || [] }) };
+    }
+
+    if (p.action === 'edit_message') {
+      const msgId = String(p.message_id || '').trim();
+      const raw = String(p.body || '').trim();
+      if (!msgId) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'message_id required' }) };
+      if (!raw) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Message is empty' }) };
+      if (raw.length > MAX_BODY) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Message is too long' }) };
+
+      const rows = await sb('dm_messages?id=eq.' + encodeURIComponent(msgId) + '&select=id,sender_id,conversation_id&limit=1', 'GET');
+      if (!rows || !rows.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'Message not found' }) };
+      // Only the sender may edit their own message.
+      if (rows[0].sender_id !== me.id) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Not allowed' }) };
+
+      const bodyHtml = toHtml(raw);
+      const upd = await sb('dm_messages?id=eq.' + encodeURIComponent(msgId), 'PATCH',
+        { body_plain: raw, body_html: bodyHtml, edited_at: new Date().toISOString() }, 'return=representation');
+
+      // Keep the conversation preview honest if this is the latest message.
+      try {
+        const convId = rows[0].conversation_id;
+        const last = await sb('dm_messages?conversation_id=eq.' + convId + '&order=created_at.desc&limit=1&select=id', 'GET');
+        if (last && last[0] && last[0].id === msgId) {
+          await sb('dm_conversations?id=eq.' + convId, 'PATCH', { last_message_preview: raw.replace(/\s+/g, ' ').slice(0, 140) }, 'return=minimal');
+        }
+      } catch (e) { /* preview refresh is best-effort */ }
+
+      const m = (upd && upd[0]) || {};
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, message: { id: msgId, body_html: m.body_html || bodyHtml, edited_at: m.edited_at } }) };
+    }
+
+    if (p.action === 'delete_message') {
+      const msgId = String(p.message_id || '').trim();
+      if (!msgId) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'message_id required' }) };
+
+      const rows = await sb('dm_messages?id=eq.' + encodeURIComponent(msgId) + '&select=id,sender_id,conversation_id&limit=1', 'GET');
+      if (!rows || !rows.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'Message not found' }) };
+      // Only the sender may delete their own message.
+      if (rows[0].sender_id !== me.id) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Not allowed' }) };
+      const convId = rows[0].conversation_id;
+
+      await sb('dm_messages?id=eq.' + encodeURIComponent(msgId), 'DELETE', null, 'return=minimal');
+
+      // Recompute the conversation's last-message summary so the inbox preview
+      // never points at a deleted message.
+      try {
+        const last = await sb('dm_messages?conversation_id=eq.' + convId + '&order=created_at.desc&limit=1&select=body_plain,image_urls,created_at,sender_id', 'GET');
+        if (last && last.length) {
+          const lm = last[0];
+          const preview = (String(lm.body_plain || '').replace(/\s+/g, ' ').slice(0, 140)) || ((lm.image_urls && lm.image_urls.length) ? '📷 Photo' : '');
+          await sb('dm_conversations?id=eq.' + convId, 'PATCH', { last_message_at: lm.created_at, last_message_preview: preview, last_sender_id: lm.sender_id }, 'return=minimal');
+        } else {
+          await sb('dm_conversations?id=eq.' + convId, 'PATCH', { last_message_at: null, last_message_preview: null, last_sender_id: null }, 'return=minimal');
+        }
+      } catch (e) { /* best-effort */ }
+
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
     }
 
     if (p.action === 'unread_count') {

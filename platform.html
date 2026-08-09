@@ -1266,6 +1266,8 @@ a.file-chip:hover { border-color:var(--teal); }
 .dm-attach-btn:hover { border-color:var(--teal); }
 .dm-images { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
 .dm-images img { max-width:180px; max-height:220px; border-radius:8px; display:block; object-fit:cover; }
+.dm-msg-act { color:var(--teal); text-decoration:none; }
+.dm-msg-act:hover { text-decoration:underline; }
 /* Notification bell + panel */
 .notif-wrap { position:relative; display:inline-flex; }
 .notif-bell { position:relative; background:transparent; border:none; color:var(--text-primary); cursor:pointer; font-size:18px; line-height:1; padding:4px; display:flex; align-items:center; }
@@ -6019,13 +6021,20 @@ function renderThread(data) {
   if (!data.messages || !data.messages.length) {
     h += '<div style="padding:16px;color:var(--text-secondary);font-size:0.85rem;text-align:center">No messages yet. Say hello.</div>';
   } else {
+    S.dmMsgPlain = {};
     data.messages.forEach(function (m) {
       var mine = m.sender_id === myId;
+      S.dmMsgPlain[m.id] = m.body_plain || '';
       var imgs = Array.isArray(m.image_urls) ? m.image_urls : [];
       var imgHtml = imgs.length
         ? '<div class="dm-images">' + imgs.map(function (u) { return '<a href="' + esc(u) + '" target="_blank" rel="noopener"><img src="' + esc(u) + '" alt="" loading="lazy"></a>'; }).join('') + '</div>'
         : '';
-      h += '<div class="dm-msg ' + (mine ? 'mine' : 'theirs') + '"><div class="dm-bubble">' + (m.body_html || '') + imgHtml + '</div><div class="dm-msg-time">' + timeAgo(m.created_at) + '</div></div>';
+      var meta = timeAgo(m.created_at) + (m.edited_at ? ' &middot; edited' : '');
+      if (mine) {
+        meta += ' &middot; <a href="#" class="dm-msg-act" onclick="editDM(\'' + m.id + '\');return false">Edit</a>'
+              + ' &middot; <a href="#" class="dm-msg-act" onclick="deleteDMMsg(\'' + m.id + '\');return false">Delete</a>';
+      }
+      h += '<div class="dm-msg ' + (mine ? 'mine' : 'theirs') + '" id="dm-msg-' + m.id + '"><div class="dm-bubble">' + (m.body_html || '') + imgHtml + '</div><div class="dm-msg-time">' + meta + '</div></div>';
     });
   }
   h += '</div>';
@@ -6115,6 +6124,41 @@ async function onDMImagePick(ev) {
       if (status) status.textContent = e.message;
     }
   }
+}
+
+// Edit / delete your OWN direct messages (sender-only; the server re-checks).
+function editDM(id) {
+  var el = document.getElementById('dm-msg-' + id); if (!el) return;
+  var cur = (S.dmMsgPlain && S.dmMsgPlain[id]) || '';
+  el.innerHTML = '<div class="dm-bubble">' +
+    '<textarea id="dm-edit-' + id + '" style="width:100%;min-height:64px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--bg-card);color:var(--text-primary);font-family:inherit;font-size:0.9rem;line-height:1.5;resize:vertical">' + esc(cur) + '</textarea>' +
+    '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">' +
+      '<button type="button" class="dm-attach-btn" style="height:auto;padding:6px 12px;font-size:0.8rem" onclick="openThread(S.threadWith)">Cancel</button>' +
+      '<button type="button" class="btn-primary" style="padding:6px 14px;font-size:0.8rem" onclick="saveDMEdit(\'' + id + '\')">Save</button>' +
+    '</div></div>';
+  var ta = document.getElementById('dm-edit-' + id);
+  if (ta) { ta.focus(); try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (e) {} }
+}
+
+async function saveDMEdit(id) {
+  var ta = document.getElementById('dm-edit-' + id); if (!ta) return;
+  var body = ta.value.trim(); if (!body) return;
+  try {
+    var res = await fetch('/.netlify/functions/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: getAuthToken(), action: 'edit_message', message_id: id, body: body }) });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not edit');
+    await openThread(S.threadWith);
+  } catch (e) { alert(e.message); }
+}
+
+async function deleteDMMsg(id) {
+  if (!confirm('Delete this message? This cannot be undone.')) return;
+  try {
+    var res = await fetch('/.netlify/functions/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: getAuthToken(), action: 'delete_message', message_id: id }) });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not delete');
+    await openThread(S.threadWith);
+  } catch (e) { alert(e.message); }
 }
 
 // ════════════════════════════════════════
