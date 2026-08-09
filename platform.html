@@ -1262,6 +1262,10 @@ a.file-chip:hover { border-color:var(--teal); }
 .dm-compose { display:flex; gap:8px; align-items:flex-end; margin-top:14px; border-top:1px solid var(--border); padding-top:12px; }
 .dm-compose textarea { flex:1; min-height:96px; max-height:340px; padding:11px 13px; border:1px solid var(--border); border-radius:10px; background:var(--bg-card); color:var(--text-primary); font-family:inherit; font-size:0.9rem; line-height:1.5; resize:vertical; }
 .dm-compose .btn-primary { flex-shrink:0; }
+.dm-attach-btn { flex-shrink:0; background:transparent; border:1px solid var(--border); color:var(--text-primary); border-radius:10px; padding:0 15px; height:44px; font-size:1.1rem; cursor:pointer; }
+.dm-attach-btn:hover { border-color:var(--teal); }
+.dm-images { display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; }
+.dm-images img { max-width:180px; max-height:220px; border-radius:8px; display:block; object-fit:cover; }
 /* Notification bell + panel */
 .notif-wrap { position:relative; display:inline-flex; }
 .notif-bell { position:relative; background:transparent; border:none; color:var(--text-primary); cursor:pointer; font-size:18px; line-height:1; padding:4px; display:flex; align-items:center; }
@@ -6017,15 +6021,27 @@ function renderThread(data) {
   } else {
     data.messages.forEach(function (m) {
       var mine = m.sender_id === myId;
-      h += '<div class="dm-msg ' + (mine ? 'mine' : 'theirs') + '"><div class="dm-bubble">' + (m.body_html || '') + '</div><div class="dm-msg-time">' + timeAgo(m.created_at) + '</div></div>';
+      var imgs = Array.isArray(m.image_urls) ? m.image_urls : [];
+      var imgHtml = imgs.length
+        ? '<div class="dm-images">' + imgs.map(function (u) { return '<a href="' + esc(u) + '" target="_blank" rel="noopener"><img src="' + esc(u) + '" alt="" loading="lazy"></a>'; }).join('') + '</div>'
+        : '';
+      h += '<div class="dm-msg ' + (mine ? 'mine' : 'theirs') + '"><div class="dm-bubble">' + (m.body_html || '') + imgHtml + '</div><div class="dm-msg-time">' + timeAgo(m.created_at) + '</div></div>';
     });
   }
   h += '</div>';
   // No PHI banner in private 1:1 DMs — it's overkill for direct messages. The
   // forum feed + post composers still carry it where public posting happens.
-  h += '<div class="dm-compose"><textarea id="dm-input" rows="4" maxlength="5000" placeholder="Write a message..." onkeydown="dmKey(event)" oninput="dmAutoGrow(this)"></textarea><button class="btn-primary" id="dm-send" onclick="sendMessage()">Send</button></div>';
+  h += '<div id="dm-image-previews" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px"></div>';
+  h += '<div class="dm-compose">'
+     + '<textarea id="dm-input" rows="4" maxlength="5000" placeholder="Write a message..." onkeydown="dmKey(event)" oninput="dmAutoGrow(this)"></textarea>'
+     + '<input type="file" id="dm-image-input" accept="image/*" multiple style="display:none" onchange="onDMImagePick(event)">'
+     + '<button type="button" class="dm-attach-btn" title="Attach a photo" onclick="document.getElementById(\'dm-image-input\').click()">&#128206;</button>'
+     + '<button class="btn-primary" id="dm-send" onclick="sendMessage()">Send</button>'
+     + '</div>';
+  h += '<div id="dm-image-status" style="font-size:0.75rem;color:var(--text-secondary);margin-top:4px"></div>';
   h += '<div id="dm-error" style="display:none;color:#c0392b;font-size:0.78rem;margin-top:6px"></div>';
   center.innerHTML = h;
+  S.dmImages = [];   // fresh image tray for this thread's composer
   var mc = document.getElementById('dm-messages'); if (mc) mc.scrollTop = mc.scrollHeight;
 }
 
@@ -6037,18 +6053,67 @@ function dmAutoGrow(el) { if (!el) return; el.style.height = 'auto'; el.style.he
 async function sendMessage() {
   var ta = document.getElementById('dm-input'); if (!ta) return;
   var body = ta.value.trim();
+  var imgs = (S.dmImages || []).map(function (im) { return im.url; });
   var errEl = document.getElementById('dm-error'); if (errEl) errEl.style.display = 'none';
-  if (!body) return;
+  if (!body && !imgs.length) return;
   var btn = document.getElementById('dm-send'); if (btn) btn.disabled = true;
   try {
-    var res = await fetch('/.netlify/functions/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: getAuthToken(), action: 'send', to_id: S.threadWith, body: body }) });
+    var res = await fetch('/.netlify/functions/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: getAuthToken(), action: 'send', to_id: S.threadWith, body: body, image_urls: imgs }) });
     var data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Could not send');
     ta.value = '';
+    S.dmImages = [];
     await openThread(S.threadWith);
   } catch (e) {
     if (btn) btn.disabled = false;
     if (errEl) { errEl.style.display = 'block'; errEl.textContent = e.message; }
+  }
+}
+
+// DM image attachments. Mirrors the comment image picker: uploads via the shared
+// upload-post-image endpoint (same post-images bucket) and tracks URLs in
+// S.dmImages, sent with the message. Backend validates the bucket + caps count.
+var MAX_DM_IMAGES = 6;
+function renderDMImagePreviews() {
+  var wrap = document.getElementById('dm-image-previews');
+  if (!wrap) return;
+  var imgs = S.dmImages || [];
+  wrap.innerHTML = imgs.map(function (im, i) {
+    return '<div class="mp-thumb"><img src="' + esc(im.url) + '" alt="">' +
+      '<button type="button" class="mp-thumb-x" title="Remove" onclick="removeDMImage(' + i + ')">&times;</button></div>';
+  }).join('');
+}
+function removeDMImage(i) {
+  if (!S.dmImages) return;
+  S.dmImages.splice(i, 1);
+  renderDMImagePreviews();
+}
+async function onDMImagePick(ev) {
+  var input = ev.target;
+  var files = Array.prototype.slice.call(input.files || []);
+  input.value = '';
+  if (!files.length) return;
+  if (!S.dmImages) S.dmImages = [];
+  var status = document.getElementById('dm-image-status');
+  for (var f = 0; f < files.length; f++) {
+    if (S.dmImages.length >= MAX_DM_IMAGES) { if (status) status.textContent = 'Up to ' + MAX_DM_IMAGES + ' images.'; break; }
+    var file = files[f];
+    if (file.size > 6 * 1024 * 1024) { if (status) status.textContent = '"' + file.name + '" is over 6 MB.'; continue; }
+    if (status) status.textContent = 'Uploading ' + file.name + '...';
+    try {
+      var dataUrl = await readFileAsDataURL(file);
+      var res = await fetch('/.netlify/functions/upload-post-image', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: getAuthToken(), data: dataUrl, content_type: file.type })
+      });
+      var data = await res.json();
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Upload failed');
+      S.dmImages.push({ url: data.url });
+      renderDMImagePreviews();
+      if (status) status.textContent = '';
+    } catch (e) {
+      if (status) status.textContent = e.message;
+    }
   }
 }
 

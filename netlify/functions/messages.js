@@ -18,6 +18,18 @@ const { sendToAccounts } = require('./_lib/webpush');
 const { linkifyMentions } = require('./_lib/mentions');
 
 const MAX_BODY = 5000;
+const MAX_DM_IMAGES = 6;
+
+// Only accept image URLs from our own public post-images bucket (the same bucket
+// the post/comment composers upload to), so a client can never inject an
+// arbitrary or javascript: URL into a stored, later-rendered message.
+function cleanImageUrls(urls) {
+  const base = String(process.env.SUPABASE_URL || '').replace(/\/+$/, '') + '/storage/v1/object/public/post-images/';
+  return (Array.isArray(urls) ? urls : [])
+    .map(function (u) { return String(u || '').trim(); })
+    .filter(function (u) { return u.indexOf(base) === 0 && u.length < 500; })
+    .slice(0, MAX_DM_IMAGES);
+}
 
 function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -98,9 +110,10 @@ exports.handler = async function (event) {
     if (p.action === 'send') {
       const toId = String(p.to_id || '').trim();
       const raw = String(p.body || '').trim();
+      const images = cleanImageUrls(p.image_urls);
       if (!toId) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Recipient required' }) };
       if (toId === me.id) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'You cannot message yourself' }) };
-      if (!raw) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Message is empty' }) };
+      if (!raw && !images.length) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Message is empty' }) };
       if (raw.length > MAX_BODY) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Message is too long' }) };
 
       const recRows = await sb('accounts?id=eq.' + encodeURIComponent(toId) + '&select=id,name,is_admin,email,notify_email_dms,notify_push_dms&limit=1', 'GET');
@@ -117,13 +130,13 @@ exports.handler = async function (event) {
         convId = created[0].id;
       }
 
-      const preview = raw.replace(/\s+/g, ' ').slice(0, 140);
+      const preview = (raw.replace(/\s+/g, ' ').slice(0, 140)) || (images.length ? '📷 Photo' : '');
       // In a 1:1 DM the only mentionable person is the recipient; linkify their
       // name for visual consistency (no extra notification — they get the DM).
       const dmBodyHtml = linkifyMentions(toHtml(raw), [{ id: rec.id, name: rec.name }]);
       const inserted = await sb('dm_messages', 'POST', {
         conversation_id: convId, sender_id: me.id, recipient_id: toId,
-        body_plain: raw, body_html: dmBodyHtml
+        body_plain: raw, body_html: dmBodyHtml, image_urls: images
       });
       const msg = inserted[0];
 
@@ -154,7 +167,7 @@ exports.handler = async function (event) {
 
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, message: {
         id: msg.id, conversation_id: convId, sender_id: me.id, recipient_id: toId,
-        body_html: msg.body_html, created_at: msg.created_at
+        body_html: msg.body_html, image_urls: msg.image_urls || images, created_at: msg.created_at
       } }) };
     }
 
@@ -198,7 +211,7 @@ exports.handler = async function (event) {
         return { statusCode: 200, headers, body: JSON.stringify({ ok: true, other: other, messages: [] }) };
       }
       const convId = convs[0].id;
-      const messages = await sb('dm_messages?conversation_id=eq.' + convId + '&order=created_at.asc&limit=500&select=id,sender_id,recipient_id,body_html,created_at', 'GET');
+      const messages = await sb('dm_messages?conversation_id=eq.' + convId + '&order=created_at.asc&limit=500&select=id,sender_id,recipient_id,body_html,image_urls,created_at', 'GET');
 
       // Mark messages TO me as read.
       await sb('dm_messages?conversation_id=eq.' + convId + '&recipient_id=eq.' + me.id + '&read_at=is.null', 'PATCH', { read_at: new Date().toISOString() }, 'return=minimal');
