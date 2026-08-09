@@ -2046,11 +2046,30 @@ async function sendMagicLink(mode) {
     meta.name = document.getElementById('gate-name').value.trim();
     meta.creds = document.getElementById('gate-creds').value;
   }
-  var { error } = await SB.auth.signInWithOtp({
-    email: email,
-    options: { emailRedirectTo: REDIRECT_TO, data: meta }
-  });
-  if (error) { statusEl.textContent = error.message; return; }
+  // Carry any deep-link intent (a tool the gate bounced them from, a shared post,
+  // a plan/toolkit) THROUGH the magic link, so it survives even when the email is
+  // opened in a different browser than the one they started in. Those intents were
+  // stashed in localStorage by checkAuth; the landing checkAuth re-captures them
+  // from the URL. If the redirect-with-params is not permitted by Supabase's
+  // redirect allow list, the first call errors before sending and we fall back to
+  // the bare (always-allowed) redirect — login never breaks; it just degrades to
+  // the same-browser localStorage path.
+  var redirect = REDIRECT_TO;
+  try {
+    var _p = [];
+    var _rt = localStorage.getItem('tbp_return_to'); if (_rt) _p.push('returnTo=' + encodeURIComponent(_rt));
+    var _pp = localStorage.getItem('tbp_pending_post'); if (_pp) _p.push('post=' + encodeURIComponent(_pp));
+    var _pl = localStorage.getItem('tbp_pending_plan'); if (_pl) _p.push('plan=' + encodeURIComponent(_pl));
+    var _by = localStorage.getItem('tbp_pending_buy'); if (_by) _p.push('buy=' + encodeURIComponent(_by));
+    if (_p.length) redirect = REDIRECT_TO + '?' + _p.join('&');
+  } catch (e) {}
+
+  var res = await SB.auth.signInWithOtp({ email: email, options: { emailRedirectTo: redirect, data: meta } });
+  if (res.error && redirect !== REDIRECT_TO) {
+    // Enriched redirect rejected (allow list) — retry with the bare redirect.
+    res = await SB.auth.signInWithOtp({ email: email, options: { emailRedirectTo: REDIRECT_TO, data: meta } });
+  }
+  if (res.error) { statusEl.textContent = res.error.message; return; }
   statusEl.innerHTML = '<strong style="color:var(--teal)">Check your email.</strong> We sent a secure sign-in link to ' + email + '. Click it and you are in.';
 }
 
