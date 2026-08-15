@@ -25,6 +25,15 @@
   // This replaced the old per-tool email box that verified against Circle.
   var PLATFORM_URL = 'https://thinkbeyondpractice.com/platform';
 
+  // Current Terms of Use version. BUMP THIS when the ToS document is materially
+  // updated (e.g. when the attorney-finalized ToS replaces the interim version).
+  // The acceptance check matches on (email, version), so changing the string
+  // re-prompts every member to read and accept the new Terms at the clinical-tool
+  // gate, and records a fresh timestamped/IP-stamped acceptance against the new
+  // version. Keep in sync with CURRENT_TERMS_VERSION in
+  // netlify/functions/record-terms-acceptance.js.
+  var TBP_TERMS_VERSION = 'interim_v1';
+
   // Inject styles
   var style = document.createElement('style');
   style.textContent = [
@@ -159,7 +168,7 @@
       var requireFull = (options.requireFull === true) || (Number(options.spaceId) === FULL_SPACE_ID);
       var onVerified = options.onVerified || function() {};
       var skipPHIGate = options.skipPHIGate === true;
-      var termsVersion = options.termsVersion || 'interim_v1';
+      var termsVersion = options.termsVersion || TBP_TERMS_VERSION;
       var baaVersion = options.baaVersion || '3.0';
 
       // OPT-OUT PHI gate. The BAA + Terms gate runs by DEFAULT for every tool.
