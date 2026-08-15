@@ -96,9 +96,16 @@ exports.handler = async function (event) {
       if (raw.length > MAX_COMMENT_CHARS) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Comment is too long' }) };
 
       // Post must exist and be open to replies.
-      const posts = await sb('forum_posts?id=eq.' + encodeURIComponent(postId) + '&select=id,title,author_id,comment_count,is_locked,free_visible&limit=1', 'GET');
+      const posts = await sb('forum_posts?id=eq.' + encodeURIComponent(postId) + '&select=id,title,author_id,comment_count,is_locked,free_visible,free_readonly&limit=1', 'GET');
       if (!posts || !posts.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'Post not found' }) };
       if (posts[0].is_locked) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'This thread is locked' }) };
+      // Read-only previews (e.g. Case Discussions opened to free members as a
+      // conversion shelf) are free_visible but never accept free-tier comments —
+      // participation stays a paid feature. Paid (member scope) is unaffected, and
+      // a monthly unlock cannot buy commenting here either.
+      if (scope !== 'member' && posts[0].free_readonly) {
+        return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Join to comment on this thread' }) };
+      }
       // Free-tier accounts may comment on posts opened to free members, or on a
       // post they've spent their monthly free unlock on.
       if (scope !== 'member' && !posts[0].free_visible && !(await hasUnlock(SUPABASE_URL, KEY, me.id, postId))) {

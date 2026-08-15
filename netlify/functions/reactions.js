@@ -72,15 +72,20 @@ exports.handler = async function (event) {
       let pv = null, parentPostId = null;
       if (targetType === 'post') {
         parentPostId = targetId;
-        const pr = await sb('forum_posts?id=eq.' + encodeURIComponent(targetId) + '&select=free_visible&limit=1', 'GET');
+        const pr = await sb('forum_posts?id=eq.' + encodeURIComponent(targetId) + '&select=free_visible,free_readonly&limit=1', 'GET');
         pv = pr && pr[0];
       } else {
         const cr = await sb('forum_comments?id=eq.' + encodeURIComponent(targetId) + '&select=post_id&limit=1', 'GET');
         if (cr && cr[0]) {
           parentPostId = cr[0].post_id;
-          const pr = await sb('forum_posts?id=eq.' + encodeURIComponent(parentPostId) + '&select=free_visible&limit=1', 'GET');
+          const pr = await sb('forum_posts?id=eq.' + encodeURIComponent(parentPostId) + '&select=free_visible,free_readonly&limit=1', 'GET');
           pv = pr && pr[0];
         }
+      }
+      // Read-only previews (Case Discussions opened to free members) never accept
+      // free-tier reactions, even with a monthly unlock — participation stays paid.
+      if (pv && pv.free_readonly) {
+        return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Join to react to this thread' }) };
       }
       // Allowed on a free_visible post, or on a post this member has unlocked.
       const okFree = pv && pv.free_visible;

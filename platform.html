@@ -3228,7 +3228,7 @@ async function viewPost(postId) {
     // Load post
     var { data: post, error } = await SB
       .from('forum_posts')
-      .select('id, author_id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, edited_at, is_locked, image_urls, poll, attachments, canonical_synthesis, ce_candidate, free_visible, members_teaser, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name))')
+      .select('id, author_id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, edited_at, is_locked, image_urls, poll, attachments, canonical_synthesis, ce_candidate, free_visible, free_readonly, members_teaser, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name))')
       .eq('id', postId)
       .single();
     if (error) throw error;
@@ -3354,12 +3354,14 @@ async function viewPost(postId) {
     // Paid members can react and comment anywhere they can read. A signed-in free
     // member reading a free_visible post can also comment AND react (nobody pays
     // just to react). Anonymous guests get neither until they create a free account.
-    var canReact = !!S.user && (isPaidMember() || !!post.free_visible || unlocked);
+    // free_readonly posts (Case Discussion previews) let free members READ but not
+    // participate: paid members react as normal; a free/unlocked reader gets neither.
+    var canReact = !!S.user && (isPaidMember() || (!post.free_readonly && (!!post.free_visible || unlocked)));
     // Require a real signed-in account: a logged-out guest reading a free_visible
     // post must NOT get a live composer (they'd have no identity to post under).
     // They fall into the existing "join to comment" CTA instead. A free member who
     // unlocked this post (D) can comment/react on it too.
-    var canComment = !!S.user && (isPaidMember() || !!post.free_visible || unlocked);
+    var canComment = !!S.user && (isPaidMember() || (!post.free_readonly && (!!post.free_visible || unlocked)));
 
     // Body
     h += '<div class="post-prose" id="post-body">';
@@ -3516,6 +3518,15 @@ async function viewPost(postId) {
     // free_visible post gets a Join CTA instead of the composer.
     if (post.is_locked) {
       h += '<div style="font-size:0.78rem;color:var(--text-secondary);font-style:italic;margin-top:8px">This thread is locked. New comments are closed.</div>';
+    } else if (!canComment && S.user && post.free_readonly) {
+      // A signed-in free member reading a Case Discussion preview: reading is free,
+      // but posting/replying is a paid feature. This IS the conversion moment — they
+      // clicked into a real case and want to weigh in.
+      h += '<div class="teaser-gate" style="margin-top:16px">';
+      h += '<div class="tg-title">Join the discussion</div>';
+      h += '<p class="tg-sub">Free members can read selected Case Discussions. To post your own cases and reply here, upgrade your membership.</p>';
+      h += '<button class="btn-primary" onclick="showJoin(\'' + (post.spaces ? post.spaces.slug : '') + '\')">Upgrade to participate</button>';
+      h += '</div>';
     } else if (!canComment) {
       // Anonymous guest on a free post (logged-in free members get the composer).
       // Push a FREE account, which is all commenting needs, and stay accurate about
