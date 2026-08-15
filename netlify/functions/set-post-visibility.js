@@ -1,9 +1,13 @@
 // netlify/functions/set-post-visibility.js
-// Admin-only: toggle a post's free_visible flag. When true, free-tier members
-// read the full post instead of the teaser (for rotating "free post of the
-// week" lead-magnets). Writes with the service key.
+// Admin-only: toggle a post's free_visible / free_readonly flags. free_visible
+// true lets free-tier members read the full post instead of the teaser (for
+// rotating "free post of the week" lead-magnets). free_readonly true (only
+// meaningful alongside free_visible) further restricts free members to READING —
+// no commenting or reacting — for Case Discussion conversion previews. Either
+// field may be sent; only the provided fields are updated. Writes with the
+// service key.
 //
-// Body: { token, post_id, free_visible }
+// Body: { token, post_id, free_visible?, free_readonly? }
 
 const { verifyToken } = require('./_lib/session');
 
@@ -31,19 +35,26 @@ exports.handler = async function (event) {
 
   const postId = String(p.post_id || '').trim();
   if (!postId) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'post_id required' }) };
-  const freeVisible = !!p.free_visible;
+
+  // Update only the flag(s) explicitly provided in the body.
+  const patch = {};
+  if (Object.prototype.hasOwnProperty.call(p, 'free_visible')) patch.free_visible = !!p.free_visible;
+  if (Object.prototype.hasOwnProperty.call(p, 'free_readonly')) patch.free_readonly = !!p.free_readonly;
+  // A read-only post must be free-visible to be readable by free members at all.
+  if (patch.free_readonly === true) patch.free_visible = true;
+  if (!Object.keys(patch).length) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Nothing to update' }) };
 
   try {
     const res = await fetch(URL + '/rest/v1/forum_posts?id=eq.' + encodeURIComponent(postId), {
       method: 'PATCH',
       headers: { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json', Prefer: 'return=representation' },
-      body: JSON.stringify({ free_visible: freeVisible })
+      body: JSON.stringify(patch)
     });
     const text = await res.text();
     if (!res.ok) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'Supabase ' + res.status + ': ' + text.slice(0, 150) }) };
     const rows = text ? JSON.parse(text) : [];
     if (!rows.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'Post not found' }) };
-    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, free_visible: freeVisible }) };
+    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, free_visible: rows[0].free_visible, free_readonly: rows[0].free_readonly }) };
   } catch (e) {
     return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: e.message }) };
   }

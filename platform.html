@@ -3427,6 +3427,9 @@ async function viewPost(postId) {
       h += '<button onclick="openComposer(\'synthesis\', window.__currentPost)">' + (post.canonical_synthesis ? 'Edit summary' : '+ Add summary') + '</button>';
       h += '<button class="' + (post.ce_candidate ? 'on' : '') + '" onclick="toggleCE()">' + (post.ce_candidate ? '\u2713 CE candidate' : 'Mark CE candidate') + '</button>';
       h += '<button class="' + (post.free_visible ? 'on' : '') + '" onclick="togglePostFree()">' + (post.free_visible ? '\ud83d\udd13 Free to read' : '\ud83d\udd12 Members-only') + '</button>';
+      // Read-only-for-free toggle (Case Discussion preview): free members read but
+      // can't comment/react. Turning it on also makes the post free-visible.
+      h += '<button class="' + (post.free_readonly ? 'on' : '') + '" onclick="togglePostReadonly()">' + (post.free_readonly ? '\ud83d\udc41\ufe0f Read-only preview' : '\ud83d\udc41\ufe0f Make read-only') + '</button>';
       h += '</div>';
     }
 
@@ -3642,14 +3645,37 @@ async function loadMembersExtra(postId) {
 async function togglePostFree() {
   var post = window.__currentPost; if (!post) return;
   var next = !post.free_visible;
+  // A members-only post can't also be a read-only-free preview: clear it when hiding.
+  var payload = { token: getAuthToken(), post_id: post.id, free_visible: next };
+  if (!next) payload.free_readonly = false;
   try {
     var res = await fetch('/.netlify/functions/set-post-visibility', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: getAuthToken(), post_id: post.id, free_visible: next })
+      body: JSON.stringify(payload)
     });
     var data = await res.json();
     if (!res.ok || !data.ok) { alert((data && data.error) || 'Could not update visibility.'); return; }
-    post.free_visible = next;
+    post.free_visible = (data.free_visible !== undefined) ? data.free_visible : next;
+    if (data.free_readonly !== undefined) post.free_readonly = data.free_readonly;
+    viewPost(post.id);
+  } catch (e) { alert('Could not update visibility.'); }
+}
+
+// Admin: toggle read-only-for-free (Case Discussion preview). Free members can
+// read the thread but not comment or react; paid members are unaffected. Turning
+// it on also makes the post free-visible (enforced server-side).
+async function togglePostReadonly() {
+  var post = window.__currentPost; if (!post) return;
+  var next = !post.free_readonly;
+  try {
+    var res = await fetch('/.netlify/functions/set-post-visibility', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), post_id: post.id, free_readonly: next })
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) { alert((data && data.error) || 'Could not update visibility.'); return; }
+    post.free_readonly = (data.free_readonly !== undefined) ? data.free_readonly : next;
+    if (data.free_visible !== undefined) post.free_visible = data.free_visible;
     viewPost(post.id);
   } catch (e) { alert('Could not update visibility.'); }
 }
