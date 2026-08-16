@@ -128,6 +128,10 @@ export default async (req) => {
 
   const trialVersion = (payload.trialVersion || 'v1').toString().trim();
   const TRIAL_DAYS = trialDaysFor(trialVersion);
+  // Read-only mode: report status WITHOUT ever starting a trial. Used by perk pages
+  // (e.g. the EPS Quick Reference) that unlock for an already-active trial but must
+  // not consume a trial just by being viewed. Returns status 'none' when no row exists.
+  const peek = payload.peek === true;
 
   // Identity from the SIGNED token, never client-declared. Keying the trial to a verified
   // community member id (and verified email) stops trial-farming by varying memberId/email.
@@ -164,6 +168,11 @@ export default async (req) => {
         return json(200, { status: 'active', daysLeft });
       }
       return json(200, { status: 'expired' });
+    }
+
+    // No row yet. In peek mode, report 'none' and do NOT start a trial.
+    if (peek) {
+      return json(200, { status: 'none' });
     }
 
     // No row yet: start the trial now.
