@@ -1014,10 +1014,26 @@ function nameStyleDirective(tmpl){
   return out.join(' ');
 }
 
+// Third-party naming directive (spouses, family, therapists, other providers, coworkers) — mirrors
+// nameStyleDirective. Finds the canonical "THIRD-PARTY NAMES:" tag and returns it verbatim; returns
+// '' when the template states none, in which case the caller applies the privacy default (relationship,
+// never name). Separate from the patient's own NAME/PRONOUN STYLE.
+function thirdPartyDirective(tmpl){
+  tmpl = String(tmpl || '');
+  if(!tmpl) return '';
+  var lines = tmpl.split('\n');
+  var canon = /^\s*[*>\-\s]*third[-\s]*part(y|ies)\b[^:]*:/i;
+  for(var i=0;i<lines.length;i++){
+    if(canon.test(lines[i])) return lines[i].replace(/^\s*[*>\-\s]+/,'').trim();
+  }
+  return '';
+}
+
 function draftSystem(){
   var label = visitType==='new_eval' ? 'new patient psychiatric evaluation' : 'psychiatric follow-up visit';
   var tmpl = (vaultTemplates[visitType] || houseTemplates[visitType] || '').trim();
   var nameDir = nameStyleDirective(tmpl);
+  var thirdDir = thirdPartyDirective(tmpl);
   var s = HOUSE + "\n\n=== TASK ===\n";
   s += "Draft the History of Present Illness (HPI) for a " + label + " from the clinician's RAW, as-they-went visit notes. The notes are fragments, shorthand, and patient quotes captured in the order the clinician asked their questions. Your job is to reorganize that raw stream into a clean, chart-ready HPI. This is the reorganization the clinician would otherwise do in their head; it is the entire value of the tool.\n\n";
   s += "=== ABSOLUTE ANTI-FABRICATION RULE ===\n";
@@ -1080,6 +1096,14 @@ function draftSystem(){
   } else {
     s += "- NAME & PRONOUN STYLE: the template states no explicit house style for referring to the patient, so write about a person, not a case file — use the patient's documented first name naturally and their actual pronouns (so a patient reading their own note feels seen, not processed), rather than repeating 'the patient' as if anonymous. If the template's example sentences use a specific gender (e.g. 'She'), do NOT inherit it; use the patient's documented pronouns, or they/them if unknown. NEVER invent a name or pronoun the notes do not support: if the first name is not documented use the pronoun; if the pronoun is unknown use they/them.\n\n";
   }
+  if(thirdDir){
+    s += "=== THIRD-PARTY NAMES (clinician directive) ===\n";
+    s += "  >> " + thirdDir + "\n";
+    s += "Apply this to everyone who is NOT the patient. It is SEPARATE from the patient's own name/pronoun style above, which is unaffected.\n\n";
+  } else {
+    s += "=== THIRD-PARTY NAMES (default: relationship, not name) ===\n";
+    s += "Refer to anyone other than the patient (spouse, partner, children, parents, other relatives, friends, therapists, other providers, coworkers) ONLY by their relationship or role to the patient, e.g. 'his wife', 'her therapist', 'the patient's aunt' — NEVER by name, even when the raw notes give a name. Silently drop third-party names and keep the relationship. This is a non-patient privacy default, SEPARATE from the patient's own name/pronoun style above, which is unaffected.\n\n";
+  }
   s += "=== OUTPUT FORMAT ===\n";
   s += "Output plain, chart-ready text for pasting into an EHR. Do NOT use Markdown: no # or ## headings, no --- or *** divider lines, no > blockquotes, no ** bold **. FOLLOW THE CLINICIAN'S TEMPLATE for how section labels are placed: if the template writes the label inline with a colon and the content on the same line (e.g. 'Counseling: continues weekly therapy...'), do exactly that; if the template puts labels on their own line, do that. Do not impose a layout the template does not use. Even if the template is written in Markdown, do not carry that syntax into the HPI.\n\n";
   s += "Add only minimal connective narrative needed to make the notes read as clinical prose. Connective wording must not introduce any new clinical fact. Output the HPI text only.";
@@ -1091,6 +1115,7 @@ function draftSystem(){
 
 function verifySystem(){
   var nameDir = nameStyleDirective((vaultTemplates[visitType] || houseTemplates[visitType] || '').trim());
+  var thirdDir = thirdPartyDirective((vaultTemplates[visitType] || houseTemplates[visitType] || '').trim());
   var s = HOUSE + "\n\n=== TASK ===\nYou are auditing a drafted HPI against its SOURCE (the clinician's raw notes, plus any prior-context block). Find anything in the HPI that is NOT supported by the source: invented or embellished symptoms, added denials or pertinent negatives, a diagnosis or characterization the notes did not state, altered timeframes, or a patient quote whose wording or meaning was changed (spelling fixes are fine; word substitutions or paraphrases are not).\n\n";
   s += "Silently correct clear, unambiguous fabrications by removing or trimming them back to what the source supports, and do NOT narrate the changes you make. Raise a flag ONLY when you hit a GENUINE question you cannot resolve yourself (see the flags rule below); for everything you can resolve, fix it silently and move on.\n\n";
   s += "SCAFFOLD IS NOT EVIDENCE: the source may contain the tool's scaffolding, a 'CHECK / ASK TODAY' list of questions and a 'PSYCHOTHERAPY GUIDE' of suggested techniques with rationale and sample prompts. This scaffolding is NOT clinical evidence of what happened. A psychotherapy technique is supported when the clinician TYPED what they did / how the patient responded under it, OR when the ambient transcript documents the actual therapeutic delivery and the patient's response; the guide merely naming it does not count. A checklist topic is supported by the clinician's typed answer OR by the transcript, not by the question existing. If the draft asserts a technique that neither the clinician charted under NOR the transcript delivered, or answers a question with no typed answer and no transcript support, treat it as an unsupported fabrication: remove it (silently) and flag it.\n\n";
@@ -1102,6 +1127,11 @@ function verifySystem(){
   if(visitType === 'follow_up'){ s += "FOLLOW-UP CARRY-FORWARD: silently correct any current-visit assessment, especially SI/HI or self-harm, that the draft asserts as done today but that only the prior note supports and today's notes do not, so a prior safety assessment never reads as if performed today. Standing items carried as 'continued/stable' are fine. Do this silently, without a flag.\n\n"; }
   if(isTranscriptMode(sourceMode)){ s += "The source is a transcript (dictation/ambient) with no clinician-written ground truth, so do NOT guess a correction for a likely mis-transcription. If a probable mis-transcription is clinically consequential and you cannot resolve it, raise a one-sentence flag; otherwise leave it as documented.\n\n"; }
   s += "The corrected 'hpi' must stay plain, chart-ready text with NO Markdown (no #/## headings, no --- dividers, no ** bold **, no > blockquotes).\n\n";
+  if(thirdDir){
+    s += "THIRD-PARTY NAMES: apply the clinician's directive (" + thirdDir + ") to everyone who is NOT the patient. If the draft departs from it (e.g. names a non-patient when the directive says relationship-only), fix it silently, no flag. The patient's own name is unaffected.\n\n";
+  } else {
+    s += "THIRD-PARTY NAMES (default): if the draft names anyone other than the patient (spouse, partner, family, friend, therapist, other provider, coworker), silently replace the name with that person's relationship/role to the patient ('his wife', 'her therapist') and drop the name. Do this silently, no flag. The patient's own name is unaffected.\n\n";
+  }
   if(nameDir){
     s += "PRESERVE THE NAME & PRONOUN STYLE: how the HPI refers to the patient is set by the clinician's directive (" + nameDir + "), NOT by the source notes. Keep it. Do NOT switch between the first name and 'the patient', and do NOT change pronouns to match a gender inferred from the source. If the draft already follows the directive, leave its naming untouched; only fix a place that DEPARTS from it. This is a style-preservation rule, not a fabrication check.\n\n";
   }
@@ -2494,6 +2524,7 @@ function wizardSystem(){
   s += "Encode the carry-forward classification (which sections are dynamic / standing / historical) from the CLINICIAN'S STATED INTENT (their elicited answers or preferences), NOT from how a completed example note happens to handle carry-forward, since the example may reflect habits the tool is meant to improve. In the template's guidance, apply proper continued/stable framing for standing and historical items regardless of the example's style. If intent was not captured, use best-practice defaults and note them as adjustable. Learn only STRUCTURE, ORDER, and VOICE from a completed example.\n\n";
   s += "Encode the clinician's elicited NAME/PRONOUN HOUSE-STYLE as an explicit directive on its OWN LINE, beginning with the exact literal tag \"NAME/PRONOUN STYLE:\" (capitalized, that exact prefix) so the draft engine can deterministically find it. After the tag, state their choice: the patient's first name + their pronouns, OR 'the patient' / 'client' / they-them throughout / no gendered pronouns / no first name. This one tagged line controls how the finished DRAFT and ASSESSMENT refer to the patient, and is SEPARATE from writing the template's own example sentences neutrally (which you ALWAYS do for privacy). Because the saved template body is de-identified and neutralized to 'the patient', this tagged line is the ONLY place the clinician's real naming preference is recorded, so it MUST always be present. If they stated no preference, still emit the line and default it to the patient's first name and their actual pronouns, noted as adjustable — never to another clinician's personal style.\n\n";
   s += "Encode the clinician's elicited SELF-REFERENCE VOICE (first-person singular 'I', first-person plural / collaborative 'we', or neutral third person) as its own explicit directive line, framed as governing the ASSESSMENT and the note's clinician voice (e.g. \"Clinician voice: first-person plural / collaborative ('we'); do not use 'I'\"). This is separate from the patient name/pronoun style. If no preference was stated, do not force one; leave the engine's default.\n\n";
+  s += "Encode the clinician's THIRD-PARTY NAME preference as its own directive line beginning with the exact literal tag \"THIRD-PARTY NAMES:\" (that exact prefix) so the draft engine can deterministically find it. State their choice: either 'refer to non-patients by relationship/role only, never by name' (the privacy default) OR 'keep third-party names as written'. If no preference was stated, still emit the line and default it to relationship/role only. This governs how the note refers to everyone who is NOT the patient, and is SEPARATE from the NAME/PRONOUN STYLE line.\n\n";
   s += "FORMAT AS CLEAN, CHART-READY TEXT, NOT AN OUTLINE: do NOT use Markdown headers (#, ##, ###), horizontal rules (---), or bold (**). PRESERVE THE CLINICIAN'S OWN HEADER STYLE from their scaffold: MAJOR section headers they wrote on their own line (e.g. ALL-CAPS section titles like 'MEDICATIONS' or 'HISTORY OF PRESENT ILLNESS') stay on their own line, with a single blank line before each for separation; SUB-labels within a section (e.g. Mood, Anxiety, Sleep) go inline with a colon and the narrative on the SAME line (e.g. 'Mood: ...') so the note stays tight and readable. Do not turn a standalone major header into an inline label or vice versa, and do not invent a header scheme the clinician did not use. Keep spacing tight: one blank line between major sections, never double-blank gaps.\n\n";
   s += "Output the template text only, no preamble: clear directives plus the retained generic section scaffold and symptom menus.";
   return s;
@@ -2517,6 +2548,7 @@ function elicitSystem(){
   s += "- Medication naming: keep exactly as they type it vs convert to generic.\n";
   s += "- Safety: how they like SI/HI framed when it IS documented (note internally: the system never carries safety forward regardless).\n";
   s += "- HOW TO REFER TO THE PATIENT (ask explicitly — clinicians have a firm preference, and it must NOT silently default to anyone else's style): do they want the patient's FIRST NAME with their actual pronouns, or a neutral style — 'the patient', 'client', they/them throughout, no gendered pronouns, or no first name at all? Offer those as concrete options. Whatever they choose, ENCODE it as an explicit house-style line in the template (e.g. \"Name/pronoun style: refer to the patient as 'the patient' and use they/them throughout; do not use the first name or gendered pronouns\") so the draft AND the assessment follow it exactly.\n";
+  s += "- THIRD-PARTY NAMES (other people who appear in the notes): ask whether the names of NON-patients (spouses, partners, family, friends, therapists, other providers, coworkers) should be KEPT as written, or replaced with the person's relationship/role only ('his wife', 'her therapist', 'the patient's aunt'). Most clinicians prefer relationship-only for privacy, so offer that as the default to confirm. Encode their choice as a house-style line.\n";
   s += "- HOW THEY REFER TO THEMSELVES AND THEIR ACTIONS (the clinician's voice, which matters most in the ASSESSMENT): do they write in the first person singular ('I continued...', 'I elected...'), the first-person plural / collaborative ('we continued...', 'we discussed...'), or neutral third person ('the plan is to continue...')? Offer those three as concrete options. This is separate from how they refer to the patient. Encode the choice as an explicit voice directive, e.g. \"Clinician voice: first-person plural / collaborative ('we'); do not use 'I'\".\n";
   if(isFu){
     s += "- FOLLOW-UP CARRY-FORWARD (the most important, and clinicians rarely specify it): for each of their sections, whether it is DYNAMIC (reassessed every visit, today drives it), STANDING (not re-asked every visit, carried forward as stable when unchanged), or HISTORICAL / chronic-known background. Elicit this clearly, section by section if useful. Explain the idea in plain terms, and OFFER SENSIBLE BEST-PRACTICE DEFAULTS to react to (e.g. mood, sleep, and side effects are usually reassessed each visit; substance use, exercise, and history are often carried as stable) so a clinician who has not thought about it has something concrete to confirm or adjust. This is a place to gently improve their practice, not just record it.\n";
