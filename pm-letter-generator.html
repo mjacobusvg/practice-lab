@@ -746,6 +746,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
           <button onclick="libDownloadAsPDF()" id="lib-download-pdf-btn" style="background: rgba(42,171,184,0.18); border-color: var(--teal); color: var(--cream); font-weight: 600;">⬇ Download as PDF<span id="lib-download-pdf-note" style="display:block;font-size:.72rem;color:var(--cream-muted);margin-top:3px;font-weight:400">on your letterhead</span></button>
           <button onclick="openSendPreview('email')">✉ Email to recipient</button>
           <button onclick="openSendPreview('fax')">📠 Fax to recipient</button>
+          <button onclick="libOpenChargeReminder()" id="lib-charge-btn" style="display:none;background:rgba(84,182,164,0.16);border-color:rgba(84,182,164,0.5);color:var(--cream);font-weight:600">💳 Charge patient for this letter</button>
           <button onclick="libCopyText()">📋 Copy letter text</button>
           <button onclick="libDownloadText()">📄 Download as plain text (.txt)</button>
           <button onclick="libPrintLetter()">🖨 Print</button>
@@ -1127,6 +1128,46 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
         <button class="send-cancel" onclick="closeSendPreview()">Cancel</button>
       </div>
       <div class="send-status" id="send-preview-status"></div>
+    </div>
+  </div>
+
+  <!-- Per-letter patient charging: Medicaid reminder (fires before the charge panel) -->
+  <div class="send-overlay" id="lib-charge-reminder-overlay" onclick="if(event.target===this)libCloseChargeReminder()">
+    <div class="send-dialog" style="max-width:440px;width:94%">
+      <h3 style="display:flex;align-items:center;gap:9px">⚠️ Before you charge this patient</h3>
+      <p style="margin-bottom:8px">This tool can't see anyone's coverage, so this is on you to confirm.</p>
+      <p style="margin-bottom:14px">Is this patient <strong>Medicaid / Apple Health</strong>? If so, you generally <strong>cannot charge</strong> them for a covered service. Only continue if you have confirmed this patient's coverage allows a private charge for this letter.</p>
+      <div class="send-actions">
+        <button class="send-primary" onclick="libChargeReminderContinue()">I've confirmed, continue</button>
+        <button class="send-cancel" onclick="libCloseChargeReminder()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Per-letter patient charging: charge panel -->
+  <div class="send-overlay" id="lib-charge-overlay" onclick="if(event.target===this)libCloseCharge()">
+    <div class="send-dialog" style="max-width:480px;width:94%">
+      <h3>💳 Charge for this letter</h3>
+      <p style="margin-bottom:14px">Set the amount for <strong>this letter only</strong>, based on the time it took. The letter is held until the patient pays, then released to them automatically.</p>
+
+      <label style="display:block;font-size:.8rem;color:var(--cream-dim);margin-bottom:3px">Amount for this letter</label>
+      <input type="text" id="lib-charge-amount" inputmode="decimal" placeholder="45.00" style="width:100%;margin-bottom:4px">
+      <div style="font-size:.7rem;color:var(--cream-muted);margin-bottom:10px">Set per letter. Nothing is pre-saved as a fixed fee.</div>
+
+      <label style="display:block;font-size:.8rem;color:var(--cream-dim);margin-bottom:3px">What the patient sees (line item)</label>
+      <input type="text" id="lib-charge-desc" placeholder="e.g. ESA letter, administrative time" style="width:100%;margin-bottom:10px">
+
+      <label style="display:block;font-size:.8rem;color:var(--cream-dim);margin-bottom:3px">Patient email (receives the pay link)</label>
+      <input type="email" id="lib-charge-email" placeholder="patient@example.com" style="width:100%;margin-bottom:4px">
+      <div style="font-size:.7rem;color:var(--cream-muted);margin-bottom:12px">Defaults from the delivery email if you entered one. The letter is emailed here automatically once paid.</div>
+
+      <div style="font-size:.76rem;color:var(--cream);background:rgba(84,182,164,0.13);border:1px solid rgba(84,182,164,0.28);border-radius:6px;padding:11px 13px;margin-bottom:6px;line-height:1.45">Funds go <strong>100% to your own Stripe</strong>. The platform takes nothing. <span style="color:var(--cream-muted)">You connect Stripe once, the first time.</span></div>
+
+      <div class="send-actions" style="margin-top:14px">
+        <button class="send-primary" onclick="libSubmitCharge()">Create payment request</button>
+        <button class="send-cancel" onclick="libCloseCharge()">Cancel</button>
+      </div>
+      <div class="send-status" id="lib-charge-status" style="margin-top:10px"></div>
     </div>
   </div>
 
@@ -2965,6 +3006,9 @@ function libGenerateFinal() {
   if (schedBtn) {
     schedBtn.style.display = (std.standard_key === 'medicaid_private_pay') ? 'block' : 'none';
   }
+
+  // Optional per-letter patient charging is a preview-gated feature (see libChargeReveal).
+  if (typeof libChargeReveal === 'function') libChargeReveal();
 
   // Track usage (silent fail)
   libTrackUsage(std);
@@ -6836,6 +6880,70 @@ function stopLoadingTips() {
 <script>
 function tbpToggleTheme(){var c=document.documentElement.getAttribute('data-theme')||'dark';var n=c==='light'?'dark':'light';document.documentElement.setAttribute('data-theme',n);try{localStorage.setItem('tbp_theme',n);}catch(e){}var b=document.getElementById('tbp-theme-fab');if(b)b.innerHTML=n==='light'?'&#9728;':'&#9790;';}
 (function(){var b=document.getElementById('tbp-theme-fab');if(b){var c=document.documentElement.getAttribute('data-theme')||'dark';b.innerHTML=c==='light'?'&#9728;':'&#9790;';}})();
+</script>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════
+// Per-letter patient charging — FRONTEND / UX ONLY.
+// The "Create payment request" action is an honest stub: no payment backend
+// (Stripe Connect) is wired yet, so nothing is charged and no request is sent.
+// The feature is hidden behind a preview flag so it never appears to clinicians
+// on the live tool until the backend and the clinician's Stripe are connected.
+//   Turn on:  add ?charge=1 to the URL (persists via localStorage)
+//   Turn off: add ?charge=0
+// ══════════════════════════════════════════════════════════════════════════
+(function(){
+  try {
+    if (/[?&]charge=1(&|$)/.test(location.search)) localStorage.setItem('lg_charge_preview','1');
+    else if (/[?&]charge=0(&|$)/.test(location.search)) localStorage.removeItem('lg_charge_preview');
+    window.LG_CHARGE_ENABLED = localStorage.getItem('lg_charge_preview') === '1';
+  } catch(e) { window.LG_CHARGE_ENABLED = false; }
+})();
+
+function libChargeReveal(){
+  var btn = document.getElementById('lib-charge-btn');
+  if (btn) btn.style.display = window.LG_CHARGE_ENABLED ? 'block' : 'none';
+}
+
+// Default the patient email from wherever one was already entered for delivery.
+function _lgPatientEmailGuess(){
+  var el = document.getElementById('send-preview-to');
+  var v = el && el.value ? el.value.trim() : '';
+  return (v && v.indexOf('@') !== -1) ? v : '';
+}
+
+function libOpenChargeReminder(){
+  document.getElementById('lib-charge-reminder-overlay').classList.add('active');
+}
+function libCloseChargeReminder(){
+  document.getElementById('lib-charge-reminder-overlay').classList.remove('active');
+}
+function libChargeReminderContinue(){
+  libCloseChargeReminder();
+  var pe = document.getElementById('lib-charge-email');
+  if (pe && !pe.value) pe.value = _lgPatientEmailGuess();
+  var st = document.getElementById('lib-charge-status');
+  if (st) st.textContent = '';
+  document.getElementById('lib-charge-overlay').classList.add('active');
+  var amt = document.getElementById('lib-charge-amount');
+  if (amt) amt.focus();
+}
+function libCloseCharge(){
+  document.getElementById('lib-charge-overlay').classList.remove('active');
+}
+function libSubmitCharge(){
+  var status = document.getElementById('lib-charge-status');
+  var amount = (document.getElementById('lib-charge-amount').value || '').trim();
+  var email = (document.getElementById('lib-charge-email').value || '').trim();
+  var amtNum = parseFloat(amount.replace(/[^0-9.]/g,''));
+  if (!amtNum || amtNum <= 0) { status.style.color = '#e0a85e'; status.textContent = 'Enter an amount greater than $0.'; return; }
+  if (!email || email.indexOf('@') === -1) { status.style.color = '#e0a85e'; status.textContent = 'Enter the patient email that will receive the pay link.'; return; }
+  // PREVIEW STUB — no money moves. Wiring this to a Netlify function that creates
+  // a Stripe Checkout on the clinician's connected account (and holds the letter
+  // until the webhook marks it paid) is the next build step.
+  status.style.color = 'var(--cream-muted)';
+  status.textContent = 'Preview only: the payments backend (Stripe Connect) is not connected yet, so nothing was charged and no link was sent. This is the flow you approved. Real payment is the next step.';
+}
 </script>
 </body>
 </html>
