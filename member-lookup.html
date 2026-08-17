@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Member Lookup — Think Beyond Practice</title>
+<style>
+  :root {
+    --bg:#f6f7f9; --card:#fff; --ink:#1b1f24; --muted:#6b7280; --line:#e5e7eb;
+    --pay:#0a7c42; --pay-bg:#e7f6ee; --fail:#b42318; --fail-bg:#fde8e6;
+    --comp:#7c3aed; --comp-bg:#f1e9fe; --free:#6b7280; --free-bg:#eef0f2;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:15px/1.5 -apple-system,Segoe UI,Roboto,Arial,sans-serif; }
+  .wrap { max-width:1100px; margin:0 auto; padding:28px 18px 80px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:13px; margin:0 0 22px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px; }
+  input, button { font:inherit; }
+  input[type=password], input[type=search] {
+    width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  button { padding:10px 16px; border:0; border-radius:8px; background:var(--ink); color:#fff; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  .err { color:var(--fail); font-size:13px; margin-top:10px; display:none; }
+
+  .stats { display:flex; flex-wrap:wrap; gap:10px; margin:0 0 16px; }
+  .stat { background:var(--card); border:1px solid var(--line); border-radius:10px;
+          padding:12px 16px; min-width:130px; }
+  .stat b { display:block; font-size:21px; }
+  .stat span { color:var(--muted); font-size:12px; }
+
+  .controls { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:0 0 14px; }
+  .controls input[type=search] { flex:1; min-width:240px; }
+  .chip { padding:7px 13px; border:1px solid var(--line); border-radius:999px;
+          background:var(--card); color:var(--ink); font-size:13px; cursor:pointer; }
+  .chip.on { background:var(--ink); color:#fff; border-color:var(--ink); }
+
+  .scroll { overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:10px; }
+  table { border-collapse:collapse; width:100%; }
+  th, td { padding:10px 14px; text-align:left; border-bottom:1px solid var(--line);
+           font-size:13px; white-space:nowrap; }
+  th { background:#fafbfc; font-weight:600; position:sticky; top:0; cursor:pointer; user-select:none; }
+  tbody tr:hover { background:#fafbfc; }
+  td.name { white-space:normal; font-weight:600; }
+  td.email { color:var(--muted); }
+  .badge { display:inline-block; padding:2px 9px; border-radius:999px; font-size:12px; font-weight:600; }
+  .b-paying { background:var(--pay-bg); color:var(--pay); }
+  .b-card { background:var(--fail-bg); color:var(--fail); }
+  .b-comped { background:var(--comp-bg); color:var(--comp); }
+  .b-free { background:var(--free-bg); color:var(--free); }
+  .note { color:var(--muted); font-size:12px; }
+  .empty { padding:26px; text-align:center; color:var(--muted); }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171a; --card:#1c2024; --ink:#e8eaed; --muted:#9aa3ad; --line:#2c3238;
+            --pay-bg:#0f2b1e; --fail-bg:#331a18; --comp-bg:#241a3a; --free-bg:#24292e; }
+    th { background:#20252a; }
+    tbody tr:hover { background:#20252a; }
+    input[type=password], input[type=search] { background:#14171a; color:var(--ink); }
+    button { background:#e8eaed; color:#14171a; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Member Lookup</h1>
+  <p class="sub">Who is on which paid plan, live from our records. Admin only — this page is noindex and needs the admin key.</p>
+
+  <div id="gate" class="card">
+    <label for="secret" style="display:block;font-size:13px;margin-bottom:6px">Admin key</label>
+    <div style="display:flex;gap:10px">
+      <input type="password" id="secret" placeholder="admin key" autocomplete="current-password">
+      <button id="load-btn">Load</button>
+    </div>
+    <div class="err" id="error"></div>
+  </div>
+
+  <div id="app" style="display:none">
+    <div class="stats" id="stats"></div>
+    <div class="controls">
+      <input type="search" id="q" placeholder="Search name or email — e.g. Faiza">
+      <button class="chip on" data-f="all">All</button>
+      <button class="chip" data-f="paying">Paying</button>
+      <button class="chip" data-f="card failing">Card failing</button>
+      <button class="chip" data-f="comped">Comped</button>
+      <button class="chip" data-f="free">Free</button>
+    </div>
+    <div class="scroll">
+      <table>
+        <thead><tr>
+          <th data-s="name">Name</th>
+          <th data-s="email">Email</th>
+          <th data-s="access">Access</th>
+          <th data-s="plan">Paying</th>
+          <th data-s="state">Status</th>
+          <th data-s="renews">Renews</th>
+          <th data-s="last_seen_at">Last seen</th>
+        </tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="empty" id="empty" style="display:none">No one matches that.</div>
+    </div>
+    <p class="note" id="count" style="margin-top:10px"></p>
+  </div>
+</div>
+
+<script>
+(function () {
+  var ALL = [], filter = 'all', sortKey = 'name', sortDir = 1;
+
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c];
+    });
+  };
+  var day = function (iso) {
+    if (!iso) return '—';
+    var d = new Date(iso);
+    return isNaN(d) ? '—' : d.toISOString().slice(0, 10);
+  };
+  var usd = function (cents) { return '$' + (cents / 100).toFixed(2).replace(/\.00$/, ''); };
+
+  async function load() {
+    var secret = $('secret').value.trim();
+    if (!secret) return;
+    $('load-btn').disabled = true;
+    $('error').style.display = 'none';
+    try {
+      var resp = await fetch('/.netlify/functions/admin-dashboard', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secret: secret, action: 'members' })
+      });
+      var data = await resp.json();
+      if (!resp.ok || data.error) throw new Error(data.error || ('HTTP ' + resp.status));
+      try { sessionStorage.setItem('tbp_admin_key', secret); } catch (e) {}
+      ALL = data.members || [];
+      $('gate').style.display = 'none';
+      $('app').style.display = 'block';
+      renderStats(data.summary || {});
+      render();
+    } catch (e) {
+      $('error').textContent = e.message;
+      $('error').style.display = 'block';
+    }
+    $('load-btn').disabled = false;
+  }
+
+  function renderStats(s) {
+    $('stats').innerHTML =
+      stat(s.paying_accounts, 'paying accounts') +
+      stat(usd(s.mrr_cents || 0), 'per month') +
+      stat(s.card_failing, 'card failing') +
+      stat(s.comped, 'comped') +
+      stat(s.accounts, 'accounts total');
+  }
+  function stat(v, label) {
+    return '<div class="stat"><b>' + esc(v) + '</b><span>' + esc(label) + '</span></div>';
+  }
+
+  function render() {
+    var q = $('q').value.trim().toLowerCase();
+    var rows = ALL.filter(function (m) {
+      if (filter !== 'all' && m.state !== filter) return false;
+      if (!q) return true;
+      return (m.name + ' ' + m.email).toLowerCase().indexOf(q) !== -1;
+    });
+
+    rows.sort(function (a, b) {
+      var x = a[sortKey], y = b[sortKey];
+      if (sortKey === 'plan') { x = a.monthly_cents; y = b.monthly_cents; }
+      if (x == null) x = ''; if (y == null) y = '';
+      return (x < y ? -1 : x > y ? 1 : 0) * sortDir;
+    });
+
+    $('rows').innerHTML = rows.map(function (m) {
+      var cls = m.state === 'paying' ? 'b-paying'
+              : m.state === 'card failing' ? 'b-card'
+              : m.state === 'comped' ? 'b-comped' : 'b-free';
+      var comp = m.comp_reason
+        ? '<div class="note">' + esc(m.comp_reason) +
+          (m.comp_expires ? ' · ends ' + day(m.comp_expires) : '') + '</div>'
+        : '';
+      var ending = m.ending ? ' <span class="note">(ends)</span>' : '';
+      return '<tr>' +
+        '<td class="name">' + esc(m.name || '—') + comp + '</td>' +
+        '<td class="email">' + esc(m.email) + '</td>' +
+        '<td>' + esc(m.access) + '</td>' +
+        '<td>' + esc(m.plan) + ending + '</td>' +
+        '<td><span class="badge ' + cls + '">' + esc(m.state) + '</span></td>' +
+        '<td>' + day(m.renews) + '</td>' +
+        '<td>' + day(m.last_seen_at) + '</td>' +
+      '</tr>';
+    }).join('');
+
+    $('empty').style.display = rows.length ? 'none' : 'block';
+    var mrr = rows.reduce(function (n, m) { return n + m.monthly_cents; }, 0);
+    $('count').textContent = rows.length + ' shown · ' + usd(mrr) + '/mo among them';
+  }
+
+  $('load-btn').addEventListener('click', load);
+  $('secret').addEventListener('keydown', function (e) { if (e.key === 'Enter') load(); });
+  $('q').addEventListener('input', render);
+
+  Array.prototype.forEach.call(document.querySelectorAll('.chip'), function (c) {
+    c.addEventListener('click', function () {
+      Array.prototype.forEach.call(document.querySelectorAll('.chip'), function (o) {
+        o.classList.remove('on');
+      });
+      c.classList.add('on');
+      filter = c.getAttribute('data-f');
+      render();
+    });
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('th[data-s]'), function (th) {
+    th.addEventListener('click', function () {
+      var k = th.getAttribute('data-s');
+      sortDir = (sortKey === k) ? -sortDir : 1;
+      sortKey = k;
+      render();
+    });
+  });
+
+  try {
+    var saved = sessionStorage.getItem('tbp_admin_key');
+    if (saved) { $('secret').value = saved; load(); }
+  } catch (e) {}
+})();
+</script>
+</body>
+</html>

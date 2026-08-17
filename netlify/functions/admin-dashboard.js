@@ -32,6 +32,92 @@ exports.handler = async function(event, context) {
     return res.ok ? res.json() : [];
   }
 
+  // ========== ACTION: members ==========
+  // Roster behind member-lookup.html: who is on which paid plan RIGHT NOW, so
+  // "is this person full, forum-on-a-trial, comped, or free?" is answerable
+  // without opening Stripe.
+  //
+  // Reads amount_cents, never the product: one product carries $89/$119/$149 and
+  // the annuals, so the product cannot tell you what somebody actually pays.
+  if (body.action === 'members') {
+    const ACCESS = ['active', 'trialing', 'past_due'];
+    const accounts = await query(
+      'accounts?select=id,email,name,tier,tier_override,tier_override_reason,' +
+      'tier_override_expires_at,last_seen_at,created_at,stripe_customer_id,' +
+      'subscriptions(status,amount_cents,billing_interval,is_grandfathered,' +
+      'current_period_end,canceled_at)&order=name.asc&limit=2000'
+    );
+
+    const money = function (cents, interval) {
+      return '$' + Math.round(cents / 100) + (interval === 'year' ? '/yr' : '/mo');
+    };
+
+    const members = (accounts || []).map(function (a) {
+      const live = (a.subscriptions || []).filter(function (s) {
+        return ACCESS.indexOf(s.status) !== -1 && s.amount_cents != null;
+      });
+
+      // Someone mid-migration holds the old subscription AND its trialing
+      // replacement at the same price. Dedupe on price so that reads as one
+      // plan; someone genuinely holding two different memberships still shows
+      // both.
+      const seen = {};
+      const plans = [];
+      live.forEach(function (s) {
+        const k = s.amount_cents + '|' + s.billing_interval;
+        if (seen[k]) return;
+        seen[k] = true;
+        plans.push({
+          label: money(s.amount_cents, s.billing_interval) + (s.is_grandfathered ? ' grandfathered' : ''),
+          amount_cents: s.amount_cents,
+          interval: s.billing_interval,
+          renews: s.current_period_end,
+          ending: !!s.canceled_at
+        });
+      });
+      plans.sort(function (x, y) { return y.amount_cents - x.amount_cents; });
+
+      const comped = !!a.tier_override;
+      const failing = live.some(function (s) { return s.status === 'past_due'; });
+
+      return {
+        name: a.name || '',
+        email: a.email,
+        access: comped ? a.tier_override : a.tier,
+        state: failing ? 'card failing' : (plans.length ? 'paying' : (comped ? 'comped' : 'free')),
+        plan: plans.length
+          ? plans.map(function (p) { return p.label; }).join(' + ')
+          : (comped ? 'comped — not paying' : 'no paid plan'),
+        renews: plans.length ? plans[0].renews : null,
+        ending: plans.some(function (p) { return p.ending; }),
+        comp_reason: a.tier_override_reason || null,
+        comp_expires: a.tier_override_expires_at || null,
+        monthly_cents: plans.reduce(function (n, p) {
+          return n + (p.interval === 'year' ? Math.round(p.amount_cents / 12) : p.amount_cents);
+        }, 0),
+        last_seen_at: a.last_seen_at,
+        created_at: a.created_at,
+        stripe_customer_id: a.stripe_customer_id || null
+      };
+    });
+
+    const paying = members.filter(function (m) { return m.monthly_cents > 0; });
+    return {
+      statusCode: 200,
+      headers: CORS,
+      body: JSON.stringify({
+        members: members,
+        summary: {
+          accounts: members.length,
+          paying_accounts: paying.length,
+          mrr_cents: paying.reduce(function (n, m) { return n + m.monthly_cents; }, 0),
+          card_failing: members.filter(function (m) { return m.state === 'card failing'; }).length,
+          comped: members.filter(function (m) { return m.state === 'comped'; }).length
+        }
+      })
+    };
+  }
+
   // ========== ACTION: update_referral ==========
   if (body.action === 'update_referral') {
     const { id, day_16_status, payout_status } = body;
