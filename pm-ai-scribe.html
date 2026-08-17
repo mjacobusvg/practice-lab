@@ -259,6 +259,11 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
         <label for="raw" id="raw-label" style="margin-top:16px">Paste an existing note or transcript <span style="text-transform:none;font-weight:400;color:var(--cream-dim)">(optional &mdash; you chart in the working window below)</span></label>
         <textarea id="raw" style="min-height:110px" placeholder="Optional. Already have a rough HPI or an outside transcript? Paste it here and the tool cleans it up. Otherwise skip this and open the working window &mdash; that's where you actually chart the visit."></textarea>
         <button type="button" id="raw-fullscreen-btn" class="btn" style="margin-top:10px" onclick="openFocus('raw')">Open the working window &#8599;</button>
+        <div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button type="button" class="btn-ghost" id="upload-transcript-btn" style="border-color:var(--teal);color:var(--teal);margin:0">&#8593; Upload a transcript</button>
+          <span class="hint" id="transcript-file-status" style="margin:0"></span>
+        </div>
+        <input type="file" id="transcript-file" accept=".txt,.md,.vtt,.srt,.text,text/plain,text/vtt" style="display:none">
       </div>
       <div style="margin-top:16px">
         <button class="btn" id="generate">Start my note &rarr;</button>
@@ -4079,6 +4084,65 @@ TBPAuth.protect({
     });
   }
 });
+</script>
+<script>
+/* Upload a transcript (e.g. Krisp) — route it through the SAME path a finished recording uses:
+   wrap it as "TODAY'S VISIT — AMBIENT TRANSCRIPT" and flip sourceMode to 'ambient', so the draft
+   synthesizes the dialogue (stripping speaker labels) and the verify pass stays cautious about
+   likely mis-transcriptions. The file is read LOCALLY in the browser; nothing is uploaded. */
+(function(){
+  var btn = document.getElementById('upload-transcript-btn');
+  var inp = document.getElementById('transcript-file');
+  var st  = document.getElementById('transcript-file-status');
+  if(!btn || !inp) return;
+  function setSt(m){ if(st) st.textContent = m || ''; }
+  // Strip caption scaffolding from .vtt/.srt (WEBVTT header, cue-index lines, timestamp lines).
+  function cleanCaptions(txt){
+    return txt.split(/\r?\n/).filter(function(l){
+      var t = l.trim();
+      if(/^WEBVTT/i.test(t)) return false;
+      if(/^\d+$/.test(t)) return false;   // srt cue index
+      if(/-->/.test(t)) return false;     // timestamp cue line
+      return true;
+    }).join('\n').replace(/\n{3,}/g,'\n\n').trim();
+  }
+  btn.addEventListener('click', function(){
+    if(typeof tbpDemoBlock==='function' && tbpDemoBlock()) return;
+    setSt(''); inp.value=''; inp.click();
+  });
+  inp.addEventListener('change', function(){
+    var f = inp.files && inp.files[0]; if(!f) return;
+    if(f.size > 2*1024*1024){ setSt('That file is over 2 MB - please upload a text transcript (.txt, .vtt, .srt).'); return; }
+    setSt('Reading ' + f.name + '...');
+    var rd = new FileReader();
+    rd.onerror = function(){ setSt('Could not read that file. Try a plain-text .txt transcript.'); };
+    rd.onload = function(){
+      var text = String(rd.result || '').trim();
+      if(/\.(vtt|srt)$/i.test(f.name) || /^WEBVTT/i.test(text)) text = cleanCaptions(text);
+      if(!text){ setSt('That file looked empty.'); return; }
+      var HDR = "=== TODAY'S VISIT — AMBIENT TRANSCRIPT ===\n";
+      if(typeof wnMode!=='undefined' && wnMode==='sections' && typeof wnSections==='object' && wnSections){
+        var t0 = wnSections.transcript || '';
+        wnSections.transcript = t0 + (t0 && !/\n$/.test(t0) ? '\n' : '') + text;
+        try{ if(typeof syncRawFromSections==='function') syncRawFromSections(); }catch(e){}
+        try{ var ov=document.getElementById('focus-overlay'); if(ov && ov.classList.contains('open') && typeof buildFocusSections==='function') buildFocusSections(); }catch(e){}
+      } else {
+        var raw = document.getElementById('raw');
+        if(raw){
+          var base = raw.value.trim();
+          raw.value = HDR + text + (base ? "\n\n" + base : "");
+          try{ var ov2=document.getElementById('focus-overlay'); var fn=document.getElementById('focus-note');
+            if(ov2 && ov2.classList.contains('open') && fn && typeof focusSourceId!=='undefined' && focusSourceId==='raw'){ fn.value = raw.value; } }catch(e){}
+        }
+      }
+      try{ sourceMode = 'ambient'; }catch(e){}   // treat an uploaded transcript exactly like a recorded one
+      try{ if(typeof renderMode==='function') renderMode(); }catch(e){}
+      try{ if(window.tbpSaveDraft) window.tbpSaveDraft(); }catch(e){}
+      setSt('Transcript loaded from ' + f.name + '. Review it, then Start my note.');
+    };
+    rd.readAsText(f);
+  });
+})();
 </script>
 <button id="tbp-theme-fab" class="tbp-theme-fab" onclick="tbpToggleTheme()" title="Toggle light/dark" aria-label="Toggle light or dark theme">&#9790;</button>
 <script>
