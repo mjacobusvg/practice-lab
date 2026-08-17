@@ -256,6 +256,9 @@ async function handleSubscriptionEvent(sub, stripe) {
     is_grandfathered: isGrandfathered(amount, interval),
     stripe_subscription_id: sub.id,
     stripe_customer_id: customerId || null,
+    stripe_price_id: (price && price.id) || null,
+    amount_cents: amount,             // what they actually pay; product alone can't tell $89 from $119
+    billing_interval: interval,
     current_period_start: toIso((item && item.current_period_start) || sub.current_period_start),
     current_period_end: toIso((item && item.current_period_end) || sub.current_period_end),
     canceled_at: toIso(sub.canceled_at),

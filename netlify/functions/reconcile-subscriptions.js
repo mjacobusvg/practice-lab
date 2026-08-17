@@ -98,6 +98,9 @@ exports.handler = async function (event) {
     // perAccount: account.id -> { account, subs:[...] }
     const perAccount = new Map();
     const unmatched = [];
+    // Census of who pays what. Keyed person|amount|interval — see the note at the
+    // push site for why that exact key is the one that counts correctly.
+    const censusSeen = new Set();
     for (const s of subs) {
       const item = s.items && s.items.data && s.items.data[0];
       const price = item && item.price;
@@ -124,6 +127,22 @@ exports.handler = async function (event) {
         created: s.created || 0,
         stripe_subscription_id: s.id
       };
+
+      // Count this toward the price-point census before the matched/unmatched
+      // split, so a payer with no account still shows up in the revenue picture.
+      //
+      // Key on person + amount + interval, NOT on product and NOT on the raw
+      // subscription. One product now carries several price points ($89, $119,
+      // $149 and the annuals all sit on TBP Membership: Full), so counting by
+      // product silently merges price tiers. Counting raw subscriptions instead
+      // double-counts everyone mid-migration, who holds the old sub and its
+      // trialing replacement at once. Person+price gets both right: it counts a
+      // migrating member once, while still counting someone who deliberately
+      // holds two different memberships (a $50 fallback under a $119) twice.
+      if (ACCESS_STATUSES.has(s.status) && amount != null) {
+        const who = account ? account.id : 'stripe:' + (customer.id || email || s.id);
+        censusSeen.add(who + '|' + amount + '|' + (interval || 'month'));
+      }
 
       if (!account) {
         // Only surface unmatched subs that would grant access (active/past_due);
@@ -180,12 +199,29 @@ exports.handler = async function (event) {
       }
     }
 
+    // 4b) Collapse the census into one row per price point, cheapest first.
+    const byPrice = new Map();
+    for (const key of censusSeen) {
+      const parts = key.split('|');
+      const k = parts[1] + '|' + parts[2];
+      byPrice.set(k, (byPrice.get(k) || 0) + 1);
+    }
+    const pricePoints = Array.from(byPrice.entries())
+      .map(function (e) {
+        const parts = e[0].split('|');
+        const cents = Number(parts[0]);
+        return { amount: money(cents, parts[1]), people: e[1], cents: cents };
+      })
+      .sort(function (a, b) { return a.cents - b.cents; })
+      .map(function (r) { return { amount: r.amount, people: r.people }; });
+
     const issueCount = paymentFailing.length + paidNoActive.length + underProvisioned.length + unmatched.length;
     const report = {
       generated_at: new Date().toISOString(),
       stripe_subscriptions_scanned: subs.length,
       accounts_scanned: accounts.length,
       issue_count: issueCount,
+      price_points: pricePoints,
       payment_failing: paymentFailing,
       paid_tier_no_active_payment: paidNoActive,
       under_provisioned: underProvisioned,
@@ -225,8 +261,14 @@ function buildEmail(report) {
     '<p style="margin:0 0 12px;color:#666;font-size:13px">Scanned ' + report.stripe_subscriptions_scanned +
     ' Stripe subscriptions and ' + report.accounts_scanned + ' accounts. This report only flags — it never changes anyone’s access.</p>';
 
+  const b0 = table(
+    'Who pays what',
+    'One row per price point, counted by PERSON. Someone mid-migration holds two subscriptions at the same price and is counted once; someone deliberately holding two different memberships is counted in both rows.',
+    [{ key: 'amount', label: 'Price' }, { key: 'people', label: 'People' }],
+    report.price_points || []);
+
   if (report.issue_count === 0) {
-    return head + '<p style="font-size:15px">✓ Everything reconciles. No failing cards, no paid tiers without payment, nothing under-provisioned.</p></div>';
+    return head + b0 + '<p style="font-size:15px;margin-top:22px">✓ Everything reconciles. No failing cards, no paid tiers without payment, nothing under-provisioned.</p></div>';
   }
 
   const b1 = table(
@@ -253,5 +295,5 @@ function buildEmail(report) {
     [{ key: 'email', label: 'Customer email' }, { key: 'status', label: 'Status' }, { key: 'amount', label: 'Amount' }, { key: 'stripe_subscription_id', label: 'Sub ID' }],
     report.unmatched_active_stripe_subs);
 
-  return head + b1 + b2 + b3 + b4 + '</div>';
+  return head + b0 + b1 + b2 + b3 + b4 + '</div>';
 }

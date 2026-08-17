@@ -154,6 +154,9 @@ exports.handler = async function (event) {
         is_grandfathered: grandfathered,
         stripe_subscription_id: s.id,
         stripe_customer_id: customer.id || null,
+        stripe_price_id: (price && price.id) || null,
+        amount_cents: amount,             // what they actually pay; product alone can't tell $89 from $119
+        billing_interval: interval,
         current_period_start: toIso(periodStart),
         current_period_end: toIso(periodEnd),
         canceled_at: toIso(s.canceled_at),
