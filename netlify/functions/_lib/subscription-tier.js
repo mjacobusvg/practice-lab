@@ -23,11 +23,16 @@ const PRODUCT_TIER = {
 // emails mint a separate customer per checkout, so one human can appear as two
 // customers with two subscriptions. Map the extra customer id to the canonical
 // account's circle_member_id so BOTH subscriptions land on ONE account.
-// Elijah Miller: $119 full bought under a second masked email, merged onto his
-// original $50 forum account (Michael, 2026-07). Tell Elijah at the Circle cutover.
-const CUSTOMER_ALIAS_CMID = {
-  cus_UZntPvjoQPMmyI: '43513695'
-};
+//
+// Only add an entry here when the member wants ONE account. A member who
+// deliberately keeps separate memberships gets separate accounts instead, each
+// with its own login, tier and stripe_customer_id — no alias.
+//
+// Elijah Miller was previously aliased here to merge his $119 full onto his $50
+// forum account. He wants them kept separate, so the alias is removed and he now
+// has two accounts: manufacturedinterest.r759p@slmails.com (forum, cus_StR7D4X5GvUZwJ)
+// and fullthinkbeyondpractice.edf5b@slmails.com (full, cus_UZntPvjoQPMmyI).
+const CUSTOMER_ALIAS_CMID = {};
 
 const TIER_RANK = { free: 0, forum: 1, full: 2 };
 
