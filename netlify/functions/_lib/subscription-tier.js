@@ -11,6 +11,7 @@
 // Stripe product -> the access tier that product grants.
 const PRODUCT_TIER = {
   prod_SnR5gmEzqzf4QY: 'forum', // Full Forum Access ($50/$525)
+  prod_UsGONinGJ14n0S: 'forum', // TBP Membership: Forum — LIVE product behind the forum_monthly_50_grandfathered lookup key (migration target)
   prod_TVA3ySjsPUYqFu: 'forum', // 7-Day Trial -> $50 forum
   prod_TItCoEzHwGexN3: 'forum', // Toolkit Buyers trial -> $50 forum
   prod_UsGONpNmNr3Fq9: 'full',  // Full Membership ($119/mo, $1,190/yr) — LIVE product behind the full_monthly_119 / full_annual_1190 lookup keys
