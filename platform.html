@@ -5761,6 +5761,9 @@ async function viewProfile(accountId) {
     if (isMe) h += '<button class="rm-add-btn" style="margin-top:12px" onclick="openProfileEdit()">Edit profile</button>';
     else if (S.user) h += '<button class="rm-add-btn" style="margin-top:12px" onclick="openThread(\'' + acct.id + '\')">&#9993; Message</button>';
     h += '</div></div>';
+    // Admin-only billing panel. This just reserves the slot; the data is fetched
+    // separately and authorized server-side (see loadAdminBilling).
+    if (isAdmin()) h += '<div id="admin-billing"></div>';
     if (acct.bio) h += '<div class="profile-bio">' + esc(acct.bio).replace(/\n/g, '<br>') + '</div>';
 
     h += '<div class="profile-section-title">' + (isMe ? 'Your posts' : 'Posts') + '</div>';
@@ -5771,9 +5774,75 @@ async function viewProfile(accountId) {
 
     center.innerHTML = h;
     window.scrollTo(0, 0);
+    if (isAdmin()) loadAdminBilling(acct.id);
   } catch (e) {
     console.error('viewProfile:', e);
     center.innerHTML = '<div style="padding:28px;color:var(--text-secondary)">Could not load this profile.</div>';
+  }
+}
+
+// Billing panel on a member profile — visible to admins only.
+//
+// isAdmin() here decides whether to ASK; member-billing.js decides whether to
+// ANSWER. It re-verifies the session and re-reads is_admin server-side, so a
+// non-admin who flips the flag in devtools gets a 403 and no data.
+//
+// Shows what someone actually PAYS, which is not the same as what they're
+// granted: a comped member reads as full access on a $50 plan, and a member
+// mid-migration reads as one plan rather than two subscriptions.
+async function loadAdminBilling(accountId) {
+  var slot = document.getElementById('admin-billing');
+  if (!slot) return;
+  try {
+    var sess = await SB.auth.getSession();
+    var accessToken = sess && sess.data && sess.data.session && sess.data.session.access_token;
+    if (!accessToken) return;
+
+    var resp = await fetch('/.netlify/functions/member-billing', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ access_token: accessToken, account_id: accountId })
+    });
+    if (!resp.ok) return;                       // not an admin, or nothing to show
+    var b = (await resp.json()).billing;
+    if (!b) return;
+
+    var COLORS = {
+      'paying':       ['#0a7c42', 'rgba(10,124,66,.12)'],
+      'card failing': ['#b42318', 'rgba(180,35,24,.12)'],
+      'comped':       ['#7c3aed', 'rgba(124,58,237,.12)'],
+      'free':         ['var(--text-secondary)', 'rgba(128,128,128,.12)']
+    };
+    var c = COLORS[b.state] || COLORS.free;
+
+    function row(label, value) {
+      return '<div style="display:flex;gap:10px;padding:3px 0;font-size:0.82rem">' +
+        '<span style="color:var(--text-secondary);min-width:96px">' + label + '</span>' +
+        '<span>' + value + '</span></div>';
+    }
+    function day(iso) {
+      if (!iso) return '&mdash;';
+      var d = new Date(iso);
+      return isNaN(d) ? '&mdash;' : formatDate(iso);
+    }
+
+    var h = '<div style="margin:14px 0;padding:13px 15px;border:1px dashed var(--border,rgba(128,128,128,.35));border-radius:10px;background:' + c[1] + '">';
+    h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:7px">';
+    h += '<span style="font-size:0.68rem;letter-spacing:.08em;text-transform:uppercase;color:var(--text-secondary)">Admin &middot; billing</span>';
+    h += '<span style="font-weight:700;font-size:0.78rem;color:' + c[0] + '">' + esc(b.state) + '</span>';
+    h += '</div>';
+    h += row('Paying', '<b>' + esc(b.plan) + '</b>' + (b.ending ? ' <span style="color:var(--text-secondary)">(ends at period end)</span>' : ''));
+    h += row('Access', esc(b.access) + (b.comped ? ' <span style="color:#7c3aed">(comped)</span>' : ''));
+    if (b.comped && b.comp_reason) {
+      h += row('Comp', esc(b.comp_reason) + (b.comp_expires ? ' &middot; ends ' + day(b.comp_expires) : ''));
+    }
+    if (b.renews) h += row('Renews', day(b.renews));
+    h += row('Email', esc(b.email));
+    h += '</div>';
+
+    slot.innerHTML = h;
+  } catch (e) {
+    console.error('admin billing:', e);
   }
 }
 
