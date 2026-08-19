@@ -1148,7 +1148,7 @@ function verifySystem(){
   if(mseOn){
     var mseText = (mseMacro && mseMacro.trim()) ? mseMacro.trim() : DEFAULT_MSE;
     s += "=== ALSO PRODUCE TODAY'S MENTAL STATUS EXAM ===\n";
-    s += "Using the clinician's STANDARD MSE below as the baseline, produce today's MSE. UPDATE only the mental/behavioral elements TODAY'S SOURCE clearly supports — mood, affect, thought process, thought content, perceptions, suicidal/homicidal ideation, and speech when clearly indicated. KEEP the clinician's default wording, unchanged, for everything the source does not clearly support, ESPECIALLY the purely-observed elements you cannot know from notes or audio (appearance, grooming, eye contact, psychomotor activity, orientation, memory, attention, fund of knowledge, insight, judgment). NEVER invent a finding; if in doubt keep the default — under-changing is safe, fabricating an exam finding is not. Preserve the clinician's exact format and sentence order; edit in place. Output the MSE BODY only, no 'Mental Status Exam:' heading.\n\nCLINICIAN'S STANDARD MSE:\n" + mseText + "\n\n";
+    s += "Using the clinician's STANDARD MSE below as the baseline, produce today's MSE. UPDATE only the mental/behavioral elements TODAY'S SOURCE clearly supports — mood, affect, thought process, thought content, perceptions, suicidal/homicidal ideation, and speech when clearly indicated. KEEP the clinician's default wording, unchanged, for everything the source does not clearly support, ESPECIALLY the purely-observed elements you cannot know from notes or audio (appearance, grooming, eye contact, psychomotor activity, orientation, memory, attention, fund of knowledge, insight, judgment). NEVER invent a finding; if in doubt keep the default — under-changing is safe, fabricating an exam finding is not. BRACKETED PLACEHOLDERS ARE MANDATORY FILLS, NOT DEFAULTS TO KEEP: the standard MSE may contain bracketed blanks (e.g. 'Mood is [ ]', 'Thought content is notable for [ ]', '[describe...]') marking the elements the clinician fills every visit. You MUST replace EVERY bracket with today's finding drawn from the source (the HPI / transcript). Mood, affect, and thought content are patient-reported or derivable, so they can always be filled from the documented visit — fill them. The final MSE must contain ZERO brackets or blanks: never emit '[ ]', '[...]', an empty slot, or a bracket of any kind, and never treat a bracket as the 'default' to keep. If a bracketed element genuinely cannot be determined from the source, replace it with the least-assumptive wording that is consistent with the note (e.g. mood 'euthymic' only if the visit supports it, otherwise the plainest accurate descriptor the source allows) — but a bracket must NEVER appear in the output. Preserve the clinician's exact format and sentence order; edit in place. Output the MSE BODY only, no 'Mental Status Exam:' heading.\n\nCLINICIAN'S STANDARD MSE:\n" + mseText + "\n\n";
   }
   if(rosOn){
     var rosText = (rosMacro && rosMacro.trim()) ? rosMacro.trim() : DEFAULT_ROS;
@@ -1354,6 +1354,13 @@ async function runDraft(sourceText, btn, errEl, silent){
     }
     if(mseOn){
       var mseOut = (res.mse && res.mse.trim()) ? res.mse.trim() : ((mseMacro && mseMacro.trim()) ? mseMacro.trim() : DEFAULT_MSE);
+      // Safety net: a signed MSE must NEVER contain an unfilled bracket placeholder. If one slipped
+      // through (model kept a macro blank, or we fell back to the raw macro), flag it loudly so the
+      // clinician can't sign a blank.
+      if(/\[[^\]]*\]/.test(mseOut)){
+        if(!Array.isArray(res.flags)) res.flags = [];
+        res.flags.push('MSE has an unfilled blank (a bracketed placeholder). Fill it in before signing.');
+      }
       finalHpi += "\n\nMental Status Exam:\n" + mseOut;
     }
     renderResult(finalHpi, res.flags, res.verified !== false, silent ? {hideHpi:true} : null);
