@@ -17,7 +17,14 @@ const PRODUCT_TIER = {
   prod_UsGONpNmNr3Fq9: 'full',  // Full Membership ($119/mo, $1,190/yr) — LIVE product behind the full_monthly_119 / full_annual_1190 lookup keys
   prod_UG0R8KspOn5vFe: 'full',  // Full Access ($119/mo, $1,190/yr) — earlier/alt Full product, kept mapped
   prod_Tync5rANzosLJR: 'full',  // Member Upgrade to $89 (Full CE Access, grandfathered)
-  prod_Typ4Rae4Jdk2fY: 'full'   // $89 with CEs (grandfathered)
+  prod_Typ4Rae4Jdk2fY: 'full',  // $89 with CEs (grandfathered)
+  // TBP Payments account (acct_1RQbmgIuQAALcBPY) — membership products that the
+  // Circle→TBP billing migration recreates every member's subscription under.
+  // Must be mapped here so the webhook grants the right tier once STRIPE_SECRET_KEY
+  // / STRIPE_WEBHOOK_SECRET point at TBP Payments (otherwise full members fall back
+  // to 'forum' at line ~254 and get downgraded).
+  prod_V6BCxs0i6e64Qt: 'full',  // TBP Membership: Full (TBP Payments) — full_monthly_119 / _890 / _1140 / _1190 / legacy_8900
+  prod_V6BCJ4Bc25Aw4B: 'forum'  // TBP Membership: Forum (TBP Payments) — forum_monthly_50 / forum_annual_525
 };
 
 // Members who transact under more than one Stripe identity. Circle privacy-relay
