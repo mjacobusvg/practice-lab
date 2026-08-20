@@ -25,9 +25,13 @@
 // Env: STRIPE_SECRET_KEY, BACKFILL_SECRET
 
 // Existing tier products the webhook already maps (see _lib/subscription-tier.js).
+// These are the TBP Payments (acct_1RQbmgIuQAALcBPY) membership products — the
+// account STRIPE_SECRET_KEY now points at after the Circle->TBP billing migration.
+// (Old Circle IDs were prod_UG0R8KspOn5vFe / prod_SnR5gmEzqzf4QY, which don't
+// exist on TBP Payments, so a legacy price create would 404 against them.)
 const TIER_PRODUCT = {
-  full: 'prod_UG0R8KspOn5vFe',  // Full Access ($119/mo, $1,190/yr)
-  forum: 'prod_SnR5gmEzqzf4QY'  // Full Forum Access ($50/$525)
+  full: 'prod_V6BCxs0i6e64Qt',  // TBP Membership: Full
+  forum: 'prod_V6BCJ4Bc25Aw4B'  // TBP Membership: Forum
 };
 
 exports.handler = async function (event) {
