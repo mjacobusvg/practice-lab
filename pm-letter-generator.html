@@ -744,7 +744,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
             <span>Sign this letter<span id="lib-sign-note" style="display:block;font-size:.72rem;color:var(--cream-muted);margin-top:2px">Composites your saved signature onto the PDF. Leave off to produce an unsigned draft for review.</span></span>
           </label>
           <button onclick="libDownloadAsPDF()" id="lib-download-pdf-btn" style="background: rgba(42,171,184,0.18); border-color: var(--teal); color: var(--cream); font-weight: 600;">⬇ Download as PDF<span id="lib-download-pdf-note" style="display:block;font-size:.72rem;color:var(--cream-muted);margin-top:3px;font-weight:400">on your letterhead</span></button>
-          <button onclick="libEmailAction()">✉ Email to recipient</button>
+          <button onclick="openSendPreview('email')">✉ Email to recipient</button>
           <button onclick="openSendPreview('fax')">📠 Fax to recipient</button>
           <button onclick="libCopyText()">📋 Copy letter text</button>
           <button onclick="libDownloadText()">📄 Download as plain text (.txt)</button>
@@ -1122,6 +1122,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 
       <div class="send-actions" style="margin-top:14px;flex-wrap:wrap">
         <button class="send-btn" id="send-preview-send-btn" onclick="confirmSendFromPreview()" disabled>Send</button>
+        <button class="send-btn" id="send-preview-charge-btn" onclick="libChargeFromPreview()" disabled style="display:none;background:rgba(84,182,164,0.22);border-color:rgba(84,182,164,0.6)">💳 Charge the patient instead</button>
         <button class="send-cancel" onclick="downloadFromPreview()">Download PDF</button>
         <button class="send-cancel" onclick="copyMessageFromPreview()">Copy message</button>
         <button class="send-cancel" onclick="closeSendPreview()">Cancel</button>
@@ -5990,6 +5991,11 @@ async function openSendPreview(mode) {
     sendBtn.textContent = 'Send fax';
   }
 
+  // Offer "Charge the patient instead" only in the email flow and only when charging is
+  // enabled — the clinician finalizes the letter here first, THEN chooses send vs charge.
+  var chargeBtn = document.getElementById('send-preview-charge-btn');
+  if (chargeBtn) chargeBtn.style.display = (mode === 'email' && window.LG_CHARGE_ENABLED) ? '' : 'none';
+
   // Require an explicit review before sending. Reset on every open.
   var reviewed = document.getElementById('send-preview-reviewed');
   if (reviewed) reviewed.checked = false;
@@ -6012,8 +6018,11 @@ function _spDefaultMessage(mode, vault) {
 
 function _spUpdateSendEnabled() {
   var reviewed = document.getElementById('send-preview-reviewed');
+  var ok = !!(reviewed && reviewed.checked);
   var sendBtn = document.getElementById('send-preview-send-btn');
-  if (sendBtn) sendBtn.disabled = !(reviewed && reviewed.checked);
+  if (sendBtn) sendBtn.disabled = !ok;
+  var chargeBtn = document.getElementById('send-preview-charge-btn');
+  if (chargeBtn) chargeBtn.disabled = !ok;
 }
 
 function downloadFromPreview() {
@@ -6977,6 +6986,24 @@ function libChargeReminderContinue(){
 }
 function libCloseCharge(){
   document.getElementById('lib-charge-overlay').classList.remove('active');
+  window._lgPreviewChargePdf = null;   // drop the reused finalized PDF
+}
+
+// Charge entry point from INSIDE the send preview: the clinician has finalized the letter
+// (reviewed + signed as they chose), then picks "Charge the patient instead". We reuse the
+// exact finalized PDF the preview built — no rebuild, no separate sign step.
+function libChargeFromPreview(){
+  if (!_sendPreview.pdfBytes) { _spSetStatus('Preview isn’t ready yet — give it a second.', 'error'); return; }
+  var reviewed = document.getElementById('send-preview-reviewed');
+  if (!(reviewed && reviewed.checked)) { _spSetStatus('Confirm you’ve reviewed the letter first.', 'error'); return; }
+  window._lgPreviewChargePdf = { bytes: _sendPreview.pdfBytes, filename: _sendPreview.filename || 'letter.pdf' };
+  var to = (document.getElementById('send-preview-to').value || '').trim();
+  closeSendPreview();
+  var pe = document.getElementById('lib-charge-email');
+  if (pe) pe.value = (to && to.indexOf('@') !== -1) ? to : (pe.value || _lgPatientEmailGuess());
+  // Finalization already happened in the preview, so skip the sign gate; go to the
+  // Medicaid reminder, then the amount/email panel.
+  document.getElementById('lib-charge-reminder-overlay').classList.add('active');
 }
 // Uint8Array -> base64, chunked so large PDFs don't blow the call stack.
 function _lgBytesToB64(bytes){
@@ -7003,8 +7030,14 @@ async function libSubmitCharge(){
   if (btn) btn.disabled = true;
 
   try {
-    // Composite the final letter PDF (same builder the download/send flow uses).
-    var out = await libBuildLetterPDF();
+    // Use the exact finalized PDF from the send preview if we came from there; otherwise
+    // composite it now with the same builder the download/send flow uses.
+    var out;
+    if (window._lgPreviewChargePdf && window._lgPreviewChargePdf.bytes) {
+      out = { bytes: window._lgPreviewChargePdf.bytes, filename: window._lgPreviewChargePdf.filename };
+    } else {
+      out = await libBuildLetterPDF();
+    }
     var pdfB64 = _lgBytesToB64(out.bytes);
     var letterType = null;
     try { var st = LIB.selectedStandard; letterType = st ? (st.title || st.standard_key) : null; } catch(e){}
