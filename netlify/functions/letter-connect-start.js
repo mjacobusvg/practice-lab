@@ -80,10 +80,23 @@ exports.handler = async function (event) {
     // ---- Ensure a Standard connected account exists ----
     if (!connectedAccount) {
       var acct;
+      // A customer-facing business name (business_profile.name) must exist before
+      // Stripe will let the account run Checkout. Set it at creation so the account is
+      // chargeable immediately (in test mode) and so a clinician who hasn't finished
+      // onboarding never hits Stripe's "set a business name" error. Prefer a name the
+      // caller supplies (their practice name); fall back to something sensible.
+      var bizName = String((payload.business_name || '')).trim().slice(0, 120) ||
+        (clinicianEmail.split('@')[0] || 'Clinical services');
       try {
         acct = await stripe.accounts.create({
           type: 'standard',
           email: clinicianEmail,
+          business_profile: {
+            name: bizName,
+            product_description: 'Clinical letters and documentation',
+            url: 'https://thinkbeyondpractice.com',
+            mcc: '8099'
+          },
           metadata: { tbp: 'letter_connect', clinician_email: clinicianEmail }
         });
       } catch (e) {
