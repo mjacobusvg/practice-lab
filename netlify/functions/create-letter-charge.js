@@ -26,12 +26,64 @@
 
 var crypto = require('crypto');
 var { verifyToken } = require('./_lib/session');
+var { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
 
 var RETENTION_DAYS = 30;               // patient has this long to pay + retrieve the letter
 var MAX_AMOUNT_CENTS = 500000;         // $5,000 sanity cap on an ad-hoc letter charge
+var FROM_NAME = 'Think Beyond Practice';
+var FROM_ADDRESS = 'support@thinkbeyondpractice.com';
 
 function resp(headers, status, obj) {
   return { statusCode: status, headers: headers, body: JSON.stringify(obj) };
+}
+
+function sesClient() {
+  var region = process.env.SES_AWS_REGION || process.env.AWS_REGION || 'us-east-1';
+  var accessKeyId = process.env.SES_AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
+  var secretAccessKey = process.env.SES_AWS_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
+  var cfg = { region: region };
+  if (accessKeyId && secretAccessKey) cfg.credentials = { accessKeyId: accessKeyId, secretAccessKey: secretAccessKey };
+  return new SESv2Client(cfg);
+}
+
+// Email the PATIENT the pay request (no PHI: clinician name, generic line item, amount,
+// and the Checkout link only — never the letter itself). The letter is released to the
+// patient by letter-charge-webhook.js after payment.
+async function sendPatientPayRequest(toEmail, payUrl, fromName, lineItem, amountCents, testMode) {
+  var who = (fromName && String(fromName).trim()) || 'your clinician';
+  var amount = '$' + (amountCents / 100).toFixed(2);
+  var item = lineItem || 'Clinical letter';
+  var testNote = testMode ? '\n\n(Test mode — use Stripe test card 4242 4242 4242 4242.)' : '';
+  var text = [
+    who + ' has prepared a letter for you.',
+    '',
+    'To receive it, please complete payment of ' + amount + ' for "' + item + '" here:',
+    payUrl,
+    '',
+    'As soon as your payment goes through, your letter will be emailed to you automatically.' + testNote,
+    '',
+    'Think Beyond Practice'
+  ].join('\n');
+  var html = '<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;color:#1a2430">' +
+    '<h2 style="font-size:19px;margin:0 0 10px">Your letter is ready to send</h2>' +
+    '<p style="font-size:15px;line-height:1.6">' + escapeHtml(who) + ' has prepared a letter for you. To receive it, please complete payment of <strong>' + amount + '</strong> for &ldquo;' + escapeHtml(item) + '&rdquo;.</p>' +
+    '<p style="margin:20px 0"><a href="' + payUrl + '" style="background:#2aabb8;color:#fff;text-decoration:none;border-radius:8px;padding:12px 22px;font-size:15px">Pay &amp; receive your letter</a></p>' +
+    '<p style="font-size:13px;line-height:1.6;color:#5a6672">As soon as your payment goes through, your letter is emailed to you automatically.' + (testMode ? ' (Test mode — use card 4242 4242 4242 4242.)' : '') + '</p>' +
+    '<p style="font-size:13px;color:#8a94a0">Think Beyond Practice</p></div>';
+  await sesClient().send(new SendEmailCommand({
+    FromEmailAddress: FROM_NAME + ' <' + FROM_ADDRESS + '>',
+    Destination: { ToAddresses: [toEmail] },
+    Content: { Simple: {
+      Subject: { Data: 'A letter is ready for you — payment required' },
+      Body: { Text: { Data: text }, Html: { Data: html } }
+    } }
+  }));
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+  });
 }
 
 exports.handler = async function (event) {
@@ -76,6 +128,8 @@ exports.handler = async function (event) {
     var pdfBase64 = payload.pdf_base64 ? String(payload.pdf_base64) : null;
     if (!pdfBase64) return resp(headers, 400, { error: 'Missing the letter to hold for release.' });
     var pdfFilename = String(payload.pdf_filename || 'letter.pdf').slice(0, 160);
+    // Clinician/practice name to show the patient in the pay-request email (no PHI).
+    var fromName = payload.from_name ? String(payload.from_name).slice(0, 120) : null;
 
     var SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
     var SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -178,10 +232,23 @@ exports.handler = async function (event) {
       body: JSON.stringify({ stripe_checkout_session_id: checkout.id })
     });
 
+    // ---- Email the PATIENT the pay request (the clinician no longer copy/pastes a link) ----
+    var patientEmailed = false;
+    try {
+      await sendPatientPayRequest(patientEmail, checkout.url, fromName, lineItem, amountCents, !live);
+      patientEmailed = true;
+    } catch (e) {
+      // Don't fail the charge if the email bounces — return the link so the clinician can
+      // still deliver it manually, and surface that the auto-send didn't go.
+      patientEmailed = false;
+    }
+
     return resp(headers, 200, {
       ok: true,
       charge_id: chargeId,
-      pay_url: checkout.url,       // clinician sends this to the patient
+      pay_url: checkout.url,           // fallback: clinician can still send this if needed
+      patient_email: patientEmail,
+      patient_emailed: patientEmailed, // true = the tool emailed the pay request to the patient
       test_mode: !live
     });
   } catch (err) {

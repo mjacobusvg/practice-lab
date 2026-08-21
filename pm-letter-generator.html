@@ -745,8 +745,8 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
           </label>
           <button onclick="libDownloadAsPDF()" id="lib-download-pdf-btn" style="background: rgba(42,171,184,0.18); border-color: var(--teal); color: var(--cream); font-weight: 600;">⬇ Download as PDF<span id="lib-download-pdf-note" style="display:block;font-size:.72rem;color:var(--cream-muted);margin-top:3px;font-weight:400">on your letterhead</span></button>
           <button onclick="openSendPreview('email')">✉ Email to recipient</button>
+          <button onclick="libOpenChargeReminder()" id="lib-charge-btn" style="display:none;background:rgba(84,182,164,0.16);border-color:rgba(84,182,164,0.5);color:var(--cream);font-weight:600">💳 Email a pay request to the patient</button>
           <button onclick="openSendPreview('fax')">📠 Fax to recipient</button>
-          <button onclick="libOpenChargeReminder()" id="lib-charge-btn" style="display:none;background:rgba(84,182,164,0.16);border-color:rgba(84,182,164,0.5);color:var(--cream);font-weight:600">💳 Charge patient for this letter</button>
           <button onclick="libCopyText()">📋 Copy letter text</button>
           <button onclick="libDownloadText()">📄 Download as plain text (.txt)</button>
           <button onclick="libPrintLetter()">🖨 Print</button>
@@ -1157,14 +1157,14 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
       <label style="display:block;font-size:.8rem;color:var(--cream-dim);margin-bottom:3px">What the patient sees (line item)</label>
       <input type="text" id="lib-charge-desc" placeholder="e.g. ESA letter, administrative time" style="width:100%;margin-bottom:10px">
 
-      <label style="display:block;font-size:.8rem;color:var(--cream-dim);margin-bottom:3px">Patient email (receives the pay link)</label>
+      <label style="display:block;font-size:.8rem;color:var(--cream-dim);margin-bottom:3px">Patient email</label>
       <input type="email" id="lib-charge-email" placeholder="patient@example.com" style="width:100%;margin-bottom:4px">
-      <div style="font-size:.7rem;color:var(--cream-muted);margin-bottom:12px">Defaults from the delivery email if you entered one. The letter is emailed here automatically once paid.</div>
+      <div style="font-size:.7rem;color:var(--cream-muted);margin-bottom:12px">We email the patient the pay request here. Once they pay, their letter is emailed to them automatically — you don’t send anything.</div>
 
       <div style="font-size:.76rem;color:var(--cream);background:rgba(84,182,164,0.13);border:1px solid rgba(84,182,164,0.28);border-radius:6px;padding:11px 13px;margin-bottom:6px;line-height:1.45">Funds go <strong>100% to your own Stripe</strong>. The platform takes nothing. <span style="color:var(--cream-muted)">You connect Stripe once, the first time.</span></div>
 
       <div class="send-actions" style="margin-top:14px">
-        <button class="send-primary" onclick="libSubmitCharge()">Create payment request</button>
+        <button class="send-primary" onclick="libSubmitCharge()">Email pay request to patient</button>
         <button class="send-cancel" onclick="libCloseCharge()">Cancel</button>
       </div>
       <div class="send-status" id="lib-charge-status" style="margin-top:10px"></div>
@@ -6913,6 +6913,14 @@ function _lgPatientEmailGuess(){
 }
 
 function libOpenChargeReminder(){
+  // Finalize gate: whatever the letter looks like now is exactly what the patient
+  // receives after paying. If it isn't signed, make the clinician confirm before charging.
+  var signBox = document.getElementById('lib-sign-letter');
+  if (signBox && !signBox.checked) {
+    if (!confirm('This letter isn’t signed yet. The patient will receive it exactly as it is now — unsigned.\n\nCheck “Sign this letter” first if it needs your signature. Charge anyway?')) {
+      return;
+    }
+  }
   document.getElementById('lib-charge-reminder-overlay').classList.add('active');
 }
 function libCloseChargeReminder(){
@@ -6962,6 +6970,8 @@ async function libSubmitCharge(){
     var letterType = null;
     try { var st = LIB.selectedStandard; letterType = st ? (st.title || st.standard_key) : null; } catch(e){}
 
+    var _fromName = '';
+    try { _fromName = (window.vault && (vault.practiceName || vault.legalName)) || ''; } catch(e){}
     var res = await fetch('/.netlify/functions/create-letter-charge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
@@ -6970,6 +6980,7 @@ async function libSubmitCharge(){
         patient_email: email,
         line_item: desc || 'Clinical letter',
         letter_type: letterType,
+        from_name: _fromName,
         pdf_base64: pdfB64,
         pdf_filename: out.filename || 'letter.pdf'
       })
@@ -6995,17 +7006,31 @@ async function libSubmitCharge(){
       return;
     }
 
-    // Success: show the pay link for the clinician to send the patient.
-    var testNote = data.test_mode ? '<div style="font-size:.72rem;color:var(--cream-muted);margin-top:6px">Test mode — no real charge. Use Stripe test card 4242 4242 4242 4242.</div>' : '';
+    // Success. The backend already emailed the pay request to the patient; the letter
+    // releases (is emailed) to them automatically once they pay. Show the link only as a
+    // fallback for when the auto-send couldn't go through.
+    var emailedTo = data.patient_email || email;
+    var testNote = data.test_mode ? '<div style="font-size:.72rem;color:var(--cream-muted);margin-top:8px">Test mode — no real charge. The patient pays with test card 4242 4242 4242 4242.</div>' : '';
     status.style.color = 'var(--cream)';
-    status.innerHTML =
-      '<div style="background:rgba(84,182,164,0.13);border:1px solid rgba(84,182,164,0.30);border-radius:8px;padding:12px 13px">' +
-        '<div style="font-weight:600;margin-bottom:6px">Payment link ready</div>' +
-        '<div style="font-size:.8rem;color:var(--cream-muted);margin-bottom:8px">Send this to the patient. The letter releases to them automatically once they pay.</div>' +
-        '<input id="lib-charge-payurl" readonly value="' + data.pay_url + '" style="width:100%;font-size:.78rem;margin-bottom:8px" onclick="this.select()">' +
-        '<button class="send-primary" style="padding:7px 14px;font-size:.82rem" onclick="(function(b){navigator.clipboard.writeText(document.getElementById(\'lib-charge-payurl\').value).then(function(){b.textContent=\'Copied ✓\';},function(){});})(this)">Copy link</button>' +
-        testNote +
-      '</div>';
+    if (data.patient_emailed) {
+      status.innerHTML =
+        '<div style="background:rgba(84,182,164,0.13);border:1px solid rgba(84,182,164,0.30);border-radius:8px;padding:12px 13px">' +
+          '<div style="font-weight:600;margin-bottom:6px">✓ Pay request sent to the patient</div>' +
+          '<div style="font-size:.8rem;color:var(--cream-muted)">We emailed <strong>' + emailedTo + '</strong> a secure link to pay. The moment they pay, their letter is emailed to them automatically — you don’t need to do anything else.</div>' +
+          '<details style="margin-top:8px"><summary style="font-size:.75rem;color:var(--cream-muted);cursor:pointer">Need the link yourself?</summary>' +
+            '<input id="lib-charge-payurl" readonly value="' + data.pay_url + '" style="width:100%;font-size:.78rem;margin-top:6px" onclick="this.select()"></details>' +
+          testNote +
+        '</div>';
+    } else {
+      status.innerHTML =
+        '<div style="background:rgba(224,168,94,0.13);border:1px solid rgba(224,168,94,0.35);border-radius:8px;padding:12px 13px">' +
+          '<div style="font-weight:600;margin-bottom:6px">Pay request created — but we couldn’t email it</div>' +
+          '<div style="font-size:.8rem;color:var(--cream-muted);margin-bottom:8px">Send this link to <strong>' + emailedTo + '</strong> yourself. The letter still releases automatically once they pay.</div>' +
+          '<input id="lib-charge-payurl" readonly value="' + data.pay_url + '" style="width:100%;font-size:.78rem;margin-bottom:8px" onclick="this.select()">' +
+          '<button class="send-primary" style="padding:7px 14px;font-size:.82rem" onclick="(function(b){navigator.clipboard.writeText(document.getElementById(\'lib-charge-payurl\').value).then(function(){b.textContent=\'Copied ✓\';},function(){});})(this)">Copy link</button>' +
+          testNote +
+        '</div>';
+    }
     if (btn) btn.disabled = false;
   } catch (e) {
     status.style.color = '#e0a85e';
