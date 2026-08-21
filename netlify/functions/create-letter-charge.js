@@ -50,31 +50,41 @@ function sesClient() {
 // and the Checkout link only — never the letter itself). The letter is released to the
 // patient by letter-charge-webhook.js after payment.
 async function sendPatientPayRequest(toEmail, payUrl, fromName, lineItem, amountCents, testMode) {
-  var who = (fromName && String(fromName).trim()) || 'your clinician';
+  var provider = (fromName && String(fromName).trim()) || '';
+  var who = provider || 'your clinician';
   var amount = '$' + (amountCents / 100).toFixed(2);
   var item = lineItem || 'Clinical letter';
   var testNote = testMode ? '\n\n(Test mode — use Stripe test card 4242 4242 4242 4242.)' : '';
+  // Put the provider's name on the sender and subject so the patient recognizes it and it
+  // doesn't read as spam. The From address must stay the verified domain.
+  var fromDisplay = provider ? (provider + ' (via Think Beyond Practice)') : FROM_NAME;
+  var subject = provider
+    ? ('A letter from ' + provider + ' is ready — payment required')
+    : 'A letter is ready for you — payment required';
   var text = [
-    who + ' has prepared a letter for you.',
+    'This is a secure request from ' + who + ', sent through Think Beyond Practice.',
     '',
-    'To receive it, please complete payment of ' + amount + ' for "' + item + '" here:',
+    who + ' has prepared a letter for you. To receive it, please complete payment of ' + amount + ' for "' + item + '":',
     payUrl,
     '',
-    'As soon as your payment goes through, your letter will be emailed to you automatically.' + testNote,
+    'As soon as your payment goes through, your letter is emailed to you automatically.' + testNote,
     '',
-    'Think Beyond Practice'
+    'If you weren\'t expecting this, you can ignore it — you won\'t be charged unless you complete payment.',
+    '',
+    'Sent on behalf of ' + who + ' · Think Beyond Practice'
   ].join('\n');
   var html = '<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:520px;color:#1a2430">' +
-    '<h2 style="font-size:19px;margin:0 0 10px">Your letter is ready to send</h2>' +
-    '<p style="font-size:15px;line-height:1.6">' + escapeHtml(who) + ' has prepared a letter for you. To receive it, please complete payment of <strong>' + amount + '</strong> for &ldquo;' + escapeHtml(item) + '&rdquo;.</p>' +
+    '<div style="font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:#8a94a0;margin-bottom:6px">Secure request from ' + escapeHtml(who) + '</div>' +
+    '<h2 style="font-size:19px;margin:0 0 10px">' + escapeHtml(who) + ' has prepared a letter for you</h2>' +
+    '<p style="font-size:15px;line-height:1.6">To receive it, please complete payment of <strong>' + amount + '</strong> for &ldquo;' + escapeHtml(item) + '&rdquo;.</p>' +
     '<p style="margin:20px 0"><a href="' + payUrl + '" style="background:#2aabb8;color:#fff;text-decoration:none;border-radius:8px;padding:12px 22px;font-size:15px">Pay &amp; receive your letter</a></p>' +
     '<p style="font-size:13px;line-height:1.6;color:#5a6672">As soon as your payment goes through, your letter is emailed to you automatically.' + (testMode ? ' (Test mode — use card 4242 4242 4242 4242.)' : '') + '</p>' +
-    '<p style="font-size:13px;color:#8a94a0">Think Beyond Practice</p></div>';
+    '<p style="font-size:12px;line-height:1.6;color:#8a94a0">If you weren’t expecting this, you can ignore it — you won’t be charged unless you complete payment.<br>Sent on behalf of ' + escapeHtml(who) + ' through Think Beyond Practice’s secure letter service.</p></div>';
   await sesClient().send(new SendEmailCommand({
-    FromEmailAddress: FROM_NAME + ' <' + FROM_ADDRESS + '>',
+    FromEmailAddress: fromDisplay + ' <' + FROM_ADDRESS + '>',
     Destination: { ToAddresses: [toEmail] },
     Content: { Simple: {
-      Subject: { Data: 'A letter is ready for you — payment required' },
+      Subject: { Data: subject },
       Body: { Text: { Data: text }, Html: { Data: html } }
     } }
   }));
