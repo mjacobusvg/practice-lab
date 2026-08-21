@@ -6931,18 +6931,82 @@ function libChargeReminderContinue(){
 function libCloseCharge(){
   document.getElementById('lib-charge-overlay').classList.remove('active');
 }
-function libSubmitCharge(){
+// Uint8Array -> base64, chunked so large PDFs don't blow the call stack.
+function _lgBytesToB64(bytes){
+  var CH = 0x8000, out = '';
+  for (var i = 0; i < bytes.length; i += CH) {
+    out += String.fromCharCode.apply(null, bytes.subarray(i, i + CH));
+  }
+  return btoa(out);
+}
+
+async function libSubmitCharge(){
   var status = document.getElementById('lib-charge-status');
+  var btn = document.querySelector('#lib-charge-overlay .send-primary');
   var amount = (document.getElementById('lib-charge-amount').value || '').trim();
   var email = (document.getElementById('lib-charge-email').value || '').trim();
+  var desc = (document.getElementById('lib-charge-desc').value || '').trim();
   var amtNum = parseFloat(amount.replace(/[^0-9.]/g,''));
   if (!amtNum || amtNum <= 0) { status.style.color = '#e0a85e'; status.textContent = 'Enter an amount greater than $0.'; return; }
   if (!email || email.indexOf('@') === -1) { status.style.color = '#e0a85e'; status.textContent = 'Enter the patient email that will receive the pay link.'; return; }
-  // PREVIEW STUB — no money moves. Wiring this to a Netlify function that creates
-  // a Stripe Checkout on the clinician's connected account (and holds the letter
-  // until the webhook marks it paid) is the next build step.
+
   status.style.color = 'var(--cream-muted)';
-  status.textContent = 'Preview only: the payments backend (Stripe Connect) is not connected yet, so nothing was charged and no link was sent. This is the flow you approved. Real payment is the next step.';
+  status.textContent = 'Preparing the letter and payment link…';
+  if (btn) btn.disabled = true;
+
+  try {
+    // Composite the final letter PDF (same builder the download/send flow uses).
+    var out = await libBuildLetterPDF();
+    var pdfB64 = _lgBytesToB64(out.bytes);
+    var letterType = null;
+    try { var st = LIB.selectedStandard; letterType = st ? (st.title || st.standard_key) : null; } catch(e){}
+
+    var res = await fetch('/.netlify/functions/create-letter-charge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
+      body: JSON.stringify({
+        amount_cents: Math.round(amtNum * 100),
+        patient_email: email,
+        line_item: desc || 'Clinical letter',
+        letter_type: letterType,
+        pdf_base64: pdfB64,
+        pdf_filename: out.filename || 'letter.pdf'
+      })
+    });
+    var data = {};
+    try { data = await res.json(); } catch(e){}
+
+    if (res.status === 409 || data.error === 'connect_required') {
+      status.style.color = '#e0a85e';
+      status.innerHTML = 'Connect your Stripe account once before you can charge for a letter. ' +
+        '<span style="color:var(--cream-muted)">(Stripe connection is coming to this screen.)</span>';
+      if (btn) btn.disabled = false;
+      return;
+    }
+    if (!res.ok || !data.pay_url) {
+      status.style.color = '#e0a85e';
+      status.textContent = (data && data.error) ? ('Could not create the payment link: ' + data.error) : 'Could not create the payment link. Please try again.';
+      if (btn) btn.disabled = false;
+      return;
+    }
+
+    // Success: show the pay link for the clinician to send the patient.
+    var testNote = data.test_mode ? '<div style="font-size:.72rem;color:var(--cream-muted);margin-top:6px">Test mode — no real charge. Use Stripe test card 4242 4242 4242 4242.</div>' : '';
+    status.style.color = 'var(--cream)';
+    status.innerHTML =
+      '<div style="background:rgba(84,182,164,0.13);border:1px solid rgba(84,182,164,0.30);border-radius:8px;padding:12px 13px">' +
+        '<div style="font-weight:600;margin-bottom:6px">Payment link ready</div>' +
+        '<div style="font-size:.8rem;color:var(--cream-muted);margin-bottom:8px">Send this to the patient. The letter releases to them automatically once they pay.</div>' +
+        '<input id="lib-charge-payurl" readonly value="' + data.pay_url + '" style="width:100%;font-size:.78rem;margin-bottom:8px" onclick="this.select()">' +
+        '<button class="send-primary" style="padding:7px 14px;font-size:.82rem" onclick="(function(b){navigator.clipboard.writeText(document.getElementById(\'lib-charge-payurl\').value).then(function(){b.textContent=\'Copied ✓\';},function(){});})(this)">Copy link</button>' +
+        testNote +
+      '</div>';
+    if (btn) btn.disabled = false;
+  } catch (e) {
+    status.style.color = '#e0a85e';
+    status.textContent = 'Something went wrong preparing the charge: ' + (e.message || e);
+    if (btn) btn.disabled = false;
+  }
 }
 </script>
 </body>

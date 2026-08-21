@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Your letter — Think Beyond Practice</title>
+<style>
+  :root { --ink:#1a2430; --muted:#5a6672; --teal:#2aabb8; --line:#e3e8ee; --bg:#f5f7fa; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:820px; margin:0 auto; padding:24px 16px 48px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:22px; box-shadow:0 1px 3px rgba(20,36,48,0.05); }
+  .brand { font-size:13px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); margin-bottom:14px; }
+  h1 { font-size:21px; margin:0 0 8px; }
+  p { font-size:15px; line-height:1.6; color:var(--muted); margin:0 0 12px; }
+  .ok { color:#1e874b; font-weight:600; }
+  .btn { display:inline-block; background:var(--teal); color:#fff; text-decoration:none; border:0; border-radius:8px; padding:12px 22px; font-size:15px; cursor:pointer; }
+  .btn.secondary { background:#eef2f6; color:var(--ink); }
+  .frame { width:100%; height:70vh; min-height:420px; border:1px solid var(--line); border-radius:8px; margin-top:16px; background:#fff; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; }
+  .center { text-align:center; padding:26px 8px; }
+  .spin { display:inline-block; width:22px; height:22px; border:3px solid var(--line); border-top-color:var(--teal); border-radius:50%; animation:s .8s linear infinite; }
+  @keyframes s { to { transform:rotate(360deg); } }
+  @media (max-width:560px){ .frame{ height:62vh; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="brand">Think Beyond Practice</div>
+    <div id="content"><div class="center"><span class="spin"></span></div></div>
+  </div>
+</div>
+<script>
+(function(){
+  var params = new URLSearchParams(location.search);
+  var token = (params.get('c') || '').trim();
+  var paid = params.get('paid') === '1';
+  var canceled = params.get('canceled') === '1';
+  var content = document.getElementById('content');
+
+  function show(html){ content.innerHTML = html; }
+
+  if (canceled) {
+    show('<h1>Payment canceled</h1>' +
+      '<p>No charge was made. If you still want your letter, open the payment link your clinician sent you and try again.</p>');
+    return;
+  }
+  if (!token) {
+    show('<h1>Nothing to show</h1><p>This page needs the secure link your clinician or your email provided.</p>');
+    return;
+  }
+
+  var viewUrl = '/.netlify/functions/letter-view?c=' + encodeURIComponent(token);
+
+  fetch(viewUrl)
+    .then(function(r){
+      if (r.status === 200) return r.blob().then(function(b){ return { ok:true, blob:b }; });
+      return r.json().catch(function(){ return {}; }).then(function(j){ return { ok:false, status:r.status, error:(j && j.error) || '' }; });
+    })
+    .then(function(res){
+      if (res.ok) {
+        var url = URL.createObjectURL(res.blob);
+        var head = paid
+          ? '<h1><span class="ok">Payment received.</span> Your letter is ready.</h1><p>We also emailed you this secure link. Please download and save a copy.</p>'
+          : '<h1>Your letter</h1><p>Download and save a copy for your records.</p>';
+        show(head +
+          '<div class="row">' +
+            '<a class="btn" href="' + url + '" download="letter.pdf">Download PDF</a>' +
+            '<a class="btn secondary" href="' + url + '" target="_blank" rel="noopener">Open in new tab</a>' +
+          '</div>' +
+          '<iframe class="frame" src="' + url + '" title="Your letter"></iframe>');
+        return;
+      }
+      if (res.status === 402) {
+        show('<h1>Not paid yet</h1><p>This letter is waiting on payment. Open the payment link your clinician sent you to complete it.</p>');
+      } else if (res.status === 410) {
+        show('<h1>This link has expired</h1><p>' + (res.error || 'For your privacy, the secure link is no longer available.') + ' Please contact your clinician for a new copy.</p>');
+      } else if (res.status === 404) {
+        show('<h1>Link not found</h1><p>This letter link is not valid. Please check the link your clinician or email provided.</p>');
+      } else {
+        show('<h1>Something went wrong</h1><p>Please try again in a moment, or contact your clinician.</p>');
+      }
+    })
+    .catch(function(){
+      show('<h1>Connection problem</h1><p>We could not load your letter. Please refresh to try again.</p>');
+    });
+})();
+</script>
+</body>
+</html>

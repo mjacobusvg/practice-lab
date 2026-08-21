@@ -157,8 +157,8 @@ exports.handler = async function (event) {
           metadata: { tbp: 'letter_charge', letter_charge_id: chargeId }
         },
         metadata: { tbp: 'letter_charge', letter_charge_id: chargeId },
-        success_url: base + '/letter-paid.html?c=' + encodeURIComponent(accessToken),
-        cancel_url: base + '/letter-payment-canceled.html'
+        success_url: base + '/letter.html?c=' + encodeURIComponent(accessToken) + '&paid=1',
+        cancel_url: base + '/letter.html?canceled=1'
       }, { stripeAccount: connectedAccount });
     } catch (e) {
       // Roll the row back to canceled so a failed Checkout create doesn't leave a stuck pending.
