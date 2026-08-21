@@ -1,32 +1,41 @@
 // netlify/functions/letter-connect-start.js
 //
-// Letter Generator — clinician Stripe onboarding, step 1: begin (or resume) Connect.
-// The clinician (full member) clicks "Connect Stripe" once. This function:
-//   1. Verifies the clinician session (full tier only).
-//   2. Ensures they have a Standard connected account (creates one if not) and stores
-//      its acct_ id on their accounts row — in the column for the current MODE.
-//   3. Creates a single-use Account Link (account_onboarding) and returns its URL.
-// The frontend then redirects the clinician into Stripe's hosted onboarding.
+// Letter Generator — clinician Stripe connect, step 1: begin OAuth ("Connect with Stripe").
 //
-// Standard accounts + direct charges: onboarding is Stripe-hosted, KYC is Stripe's,
-// and money from letter charges lands 100% in the clinician's own account. We use
-// the modern create-account + Account Link flow (NOT OAuth, which Stripe now
-// discourages under its single-platform policy).
+// We use Stripe Connect OAuth instead of creating a brand-new account + Account Link. A
+// clinician who already has Stripe (most established practices) just logs into their
+// EXISTING account and authorizes us in one click — no new account, no re-running KYC, no
+// email guessing. Clinicians without Stripe can sign up from the same screen.
 //
-// MODE (fail-safe, mirrors create-letter-charge.js): defaults to TEST. A Standard
-// account created with the sandbox key is a sandbox account whose acct_ id does not
-// work with the live key, so each mode reads/writes its OWN column:
-//   test -> STRIPE_CONNECT_TEST_SECRET_KEY, accounts.stripe_connect_account_id_test
-//   live -> STRIPE_SECRET_KEY,              accounts.stripe_connect_account_id
+// This function verifies the clinician session and returns the Stripe OAuth authorize URL.
+// The browser is sent there; Stripe redirects back to letter-connect-callback.js with a
+// code, which we exchange for the connected account id (stripe_user_id) and store.
 //
-// Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, STRIPE_SECRET_KEY,
-//      STRIPE_CONNECT_TEST_SECRET_KEY, LETTER_PAY_MODE,
+// MODE (fail-safe): defaults to TEST. Each mode has its own OAuth client id and its own
+// account column, mirroring create-letter-charge.js:
+//   test -> STRIPE_CONNECT_CLIENT_ID_TEST, accounts.stripe_connect_account_id_test
+//   live -> STRIPE_CONNECT_CLIENT_ID,      accounts.stripe_connect_account_id
+//
+// Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, SESSION_SIGNING_SECRET,
+//      STRIPE_CONNECT_CLIENT_ID, STRIPE_CONNECT_CLIENT_ID_TEST, LETTER_PAY_MODE,
 //      PUBLIC_BASE_URL (defaults to https://thinkbeyondpractice.com)
 
+var crypto = require('crypto');
 var { verifyToken } = require('./_lib/session');
+
+var STATE_TTL_MS = 15 * 60 * 1000;   // the OAuth round-trip must complete within 15 min
 
 function resp(headers, status, obj) {
   return { statusCode: status, headers: headers, body: JSON.stringify(obj) };
+}
+
+// Sign a short-lived state that ties the OAuth callback back to this clinician, since the
+// callback is a browser redirect from Stripe with no session token of its own.
+function signState(email) {
+  var secret = process.env.SESSION_SIGNING_SECRET || '';
+  var payload = Buffer.from(JSON.stringify({ email: email, exp: Date.now() + STATE_TTL_MS })).toString('base64url');
+  var sig = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
+  return payload + '.' + sig;
 }
 
 exports.handler = async function (event) {
@@ -43,7 +52,6 @@ exports.handler = async function (event) {
     var payload = {};
     try { payload = JSON.parse(event.body || '{}'); } catch (e) {}
 
-    // AUTH: full-tier member only, identity from the signed token.
     var authHeader = event.headers.authorization || event.headers.Authorization || '';
     var sessionToken = (payload.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
     var session = verifyToken(sessionToken);
@@ -54,111 +62,31 @@ exports.handler = async function (event) {
     var clinicianEmail = String(session.claims.email || '').toLowerCase().trim();
     if (!clinicianEmail) return resp(headers, 400, { error: 'No email on session.' });
 
-    var SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
-    var SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-    if (!SUPABASE_URL || !SERVICE_KEY) return resp(headers, 500, { error: 'Server configuration error.' });
-    var sbHeaders = {
-      'Content-Type': 'application/json',
-      'apikey': SERVICE_KEY,
-      'Authorization': 'Bearer ' + SERVICE_KEY
-    };
-
-    // ---- MODE + Stripe key + which account column this mode owns ----
     var live = process.env.LETTER_PAY_MODE === 'live';
-    var stripeKey = live ? process.env.STRIPE_SECRET_KEY : process.env.STRIPE_CONNECT_TEST_SECRET_KEY;
-    if (!stripeKey) return resp(headers, 500, { error: 'Payments are not configured for this mode.' });
-    var acctCol = live ? 'stripe_connect_account_id' : 'stripe_connect_account_id_test';
-    var stripe = require('stripe')(stripeKey);
+    var clientId = live ? process.env.STRIPE_CONNECT_CLIENT_ID : process.env.STRIPE_CONNECT_CLIENT_ID_TEST;
+    if (!clientId) return resp(headers, 500, { error: 'Stripe Connect is not configured for this mode yet.' });
 
-    // ---- Load (or find) the clinician's account row + any existing connected acct ----
-    var acctRes = await fetch(SUPABASE_URL + '/rest/v1/accounts?email=eq.' +
-      encodeURIComponent(clinicianEmail) + '&select=email,' + acctCol + '&limit=1', { headers: sbHeaders });
-    var accts = acctRes.ok ? await acctRes.json() : [];
-    var rowExists = !!(accts[0] && accts[0].email);
-    var connectedAccount = accts[0] && accts[0][acctCol];
-
-    // ---- Ensure a Standard connected account exists ----
-    if (!connectedAccount) {
-      var acct;
-      // A customer-facing business name (business_profile.name) must exist before
-      // Stripe will let the account run Checkout. Set it at creation so the account is
-      // chargeable immediately (in test mode) and so a clinician who hasn't finished
-      // onboarding never hits Stripe's "set a business name" error. Prefer a name the
-      // caller supplies (their practice name); fall back to something sensible.
-      var bizName = String((payload.business_name || '')).trim().slice(0, 120) ||
-        (clinicianEmail.split('@')[0] || 'Clinical services');
-      try {
-        acct = await stripe.accounts.create({
-          type: 'standard',
-          email: clinicianEmail,
-          business_profile: {
-            name: bizName,
-            product_description: 'Clinical letters and documentation',
-            url: 'https://thinkbeyondpractice.com',
-            mcc: '8099'
-          },
-          metadata: { tbp: 'letter_connect', clinician_email: clinicianEmail }
-        });
-      } catch (e) {
-        return resp(headers, 502, { error: 'Stripe could not start onboarding: ' + e.message });
-      }
-      connectedAccount = acct.id;
-
-      // Persist it in the mode's column (update if the row exists, else insert).
-      var body = {}; body[acctCol] = connectedAccount;
-      var saveOk = false;
-      if (rowExists) {
-        var upd = await fetch(SUPABASE_URL + '/rest/v1/accounts?email=eq.' + encodeURIComponent(clinicianEmail), {
-          method: 'PATCH', headers: Object.assign({}, sbHeaders, { 'Prefer': 'return=minimal' }),
-          body: JSON.stringify(body)
-        });
-        saveOk = upd.ok;
-      } else {
-        body.email = clinicianEmail;
-        var ins = await fetch(SUPABASE_URL + '/rest/v1/accounts', {
-          method: 'POST', headers: Object.assign({}, sbHeaders, { 'Prefer': 'return=minimal' }),
-          body: JSON.stringify(body)
-        });
-        saveOk = ins.ok;
-      }
-      if (!saveOk) {
-        // We created the acct at Stripe but couldn't record it — surface it so a retry
-        // doesn't orphan another account. (Retry will re-create; acceptable in sandbox.)
-        return resp(headers, 500, { error: 'Could not save the Stripe connection. Please try again.' });
-      }
-    }
-
-    // ---- Is this account already able to accept charges? ----
-    // In test mode a freshly created account is chargeable immediately, so the frontend
-    // can skip the hosted-onboarding redirect entirely. In live mode it won't be, so we
-    // fall through to the Account Link below.
-    var chargesEnabled = false;
-    try {
-      var chk = await stripe.accounts.retrieve(connectedAccount);
-      chargesEnabled = !!chk.charges_enabled;
-    } catch (e) { /* treat as not-yet-enabled */ }
-
-    // ---- Create a single-use Account Link (hosted onboarding) ----
-    // Always returned so the clinician can complete/refresh onboarding when needed.
     var base = (process.env.PUBLIC_BASE_URL || 'https://thinkbeyondpractice.com').replace(/\/$/, '');
-    var link;
-    try {
-      link = await stripe.accountLinks.create({
-        account: connectedAccount,
-        type: 'account_onboarding',
-        return_url: base + '/pm-letter-generator.html?connect=return',
-        refresh_url: base + '/pm-letter-generator.html?connect=refresh'
-      });
-    } catch (e) {
-      return resp(headers, 502, { error: 'Stripe could not create the onboarding link: ' + e.message });
-    }
+    var redirectUri = base + '/.netlify/functions/letter-connect-callback';
+
+    // Build the OAuth authorize URL. read_write is the standard scope for accepting charges
+    // on the connected account; prefilling the email nudges an existing user to log in.
+    var params = [
+      'response_type=code',
+      'client_id=' + encodeURIComponent(clientId),
+      'scope=read_write',
+      'redirect_uri=' + encodeURIComponent(redirectUri),
+      'state=' + encodeURIComponent(signState(clinicianEmail)),
+      'stripe_user[email]=' + encodeURIComponent(clinicianEmail),
+      'stripe_user[business_type]=company'
+    ].join('&');
+    var authorizeUrl = 'https://connect.stripe.com/oauth/authorize?' + params;
 
     return resp(headers, 200, {
       ok: true,
-      url: link.url,                     // frontend redirects here when onboarding is needed
-      account_id: connectedAccount,
-      test_mode: !live,
-      charges_enabled: chargesEnabled    // if true (test mode), frontend skips the redirect
+      url: authorizeUrl,   // frontend redirects the clinician here to connect their Stripe
+      oauth: true,
+      test_mode: !live
     });
   } catch (err) {
     return resp(headers, 500, { error: err.message });

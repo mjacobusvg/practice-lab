@@ -7172,21 +7172,32 @@ async function libConnectStripe(btnEl){
       return;
     }
 
-    if (c === 'return') {
+    if (c === 'oauth_denied') {
       stripConnectParam();
-      // Confirm status; a returned clinician may still have outstanding requirements.
+      _lgConnectToast('Stripe connection was canceled. Reopen the charge panel and click “Connect Stripe” to try again.', false);
+      return;
+    }
+    if (c === 'oauth_error') {
+      stripConnectParam();
+      _lgConnectToast('Something went wrong connecting Stripe. Please try “Connect Stripe” again.', false);
+      return;
+    }
+
+    if (c === 'return' || c === 'oauth_done') {
+      stripConnectParam();
+      // Confirm status; an OAuth-connected account is normally chargeable immediately.
       fetch('/.netlify/functions/letter-connect-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
         body: JSON.stringify({ token: _lgTok() })
       }).then(function(r){ return r.json().catch(function(){ return {}; }); }).then(function(s){
         var msg, resume = false;
-        if (s && s.charges_enabled) msg = 'Stripe connected. You can now charge patients for letters.';
-        else if (s && s.connected) { msg = 'Stripe onboarding started but not finished — a few details are still needed before you can charge.'; resume = true; }
-        else msg = 'Stripe onboarding didn\'t complete. You can try connecting again.';
+        if (s && s.charges_enabled) msg = '✓ Stripe connected. You can now charge patients for letters — reopen the letter and choose “Charge the patient.”';
+        else if (s && s.connected) { msg = 'Stripe is connected but needs a couple more details in your Stripe dashboard before it can accept charges.'; resume = false; }
+        else msg = 'Stripe didn’t finish connecting. Reopen the charge panel and click “Connect Stripe” to try again.';
         _lgConnectToast(msg, resume);
       }).catch(function(){
-        _lgConnectToast('Returned from Stripe. Reopen the charge panel to continue.', false);
+        _lgConnectToast('Back from Stripe. Reopen the charge panel to continue.', false);
       });
     }
   } catch(e){}
