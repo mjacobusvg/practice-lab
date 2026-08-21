@@ -744,8 +744,7 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
             <span>Sign this letter<span id="lib-sign-note" style="display:block;font-size:.72rem;color:var(--cream-muted);margin-top:2px">Composites your saved signature onto the PDF. Leave off to produce an unsigned draft for review.</span></span>
           </label>
           <button onclick="libDownloadAsPDF()" id="lib-download-pdf-btn" style="background: rgba(42,171,184,0.18); border-color: var(--teal); color: var(--cream); font-weight: 600;">⬇ Download as PDF<span id="lib-download-pdf-note" style="display:block;font-size:.72rem;color:var(--cream-muted);margin-top:3px;font-weight:400">on your letterhead</span></button>
-          <button onclick="openSendPreview('email')">✉ Email to recipient</button>
-          <button onclick="libOpenChargeReminder()" id="lib-charge-btn" style="display:none;background:rgba(84,182,164,0.16);border-color:rgba(84,182,164,0.5);color:var(--cream);font-weight:600">💳 Charge the patient for this letter</button>
+          <button onclick="libEmailAction()">✉ Email to recipient</button>
           <button onclick="openSendPreview('fax')">📠 Fax to recipient</button>
           <button onclick="libCopyText()">📋 Copy letter text</button>
           <button onclick="libDownloadText()">📄 Download as plain text (.txt)</button>
@@ -1128,6 +1127,25 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
         <button class="send-cancel" onclick="closeSendPreview()">Cancel</button>
       </div>
       <div class="send-status" id="send-preview-status"></div>
+    </div>
+  </div>
+
+  <!-- Email flow: send free vs charge the patient (shown when charging is enabled) -->
+  <div class="send-overlay" id="lib-email-choice-overlay" onclick="if(event.target===this)libCloseEmailChoice()">
+    <div class="send-dialog" style="max-width:460px;width:94%">
+      <h3>How do you want to deliver this letter?</h3>
+      <p style="margin-bottom:16px">Send it now at no charge, or have the patient pay before they receive it.</p>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <button class="send-primary" style="text-align:left;padding:13px 15px;line-height:1.35" onclick="libChooseEmailSend()">
+          ✉ <strong>Send the letter now</strong><span style="display:block;font-size:.76rem;color:var(--navy);opacity:.8;margin-top:2px">Email it free to the patient, a landlord, an employer — anyone.</span>
+        </button>
+        <button class="send-cancel" style="text-align:left;padding:13px 15px;line-height:1.35;border-color:rgba(84,182,164,0.5)" onclick="libChooseEmailCharge()">
+          💳 <strong>Charge the patient first</strong><span style="display:block;font-size:.76rem;color:var(--cream-muted);margin-top:2px">We email the patient a pay request; their letter is sent automatically once they pay.</span>
+        </button>
+      </div>
+      <div class="send-actions" style="margin-top:14px">
+        <button class="send-cancel" onclick="libCloseEmailChoice()">Cancel</button>
+      </div>
     </div>
   </div>
 
@@ -6901,8 +6919,29 @@ function tbpToggleTheme(){var c=document.documentElement.getAttribute('data-them
 })();
 
 function libChargeReveal(){
-  var btn = document.getElementById('lib-charge-btn');
-  if (btn) btn.style.display = window.LG_CHARGE_ENABLED ? 'block' : 'none';
+  // Charging now lives INSIDE the email flow (see libEmailAction) rather than as its own
+  // button, so there's nothing to reveal here. Kept for backwards-compat callers.
+}
+
+// "Email to recipient" entry point. When charging is enabled, first ask whether to send
+// the letter free or charge the patient for it; otherwise go straight to the send flow.
+function libEmailAction(){
+  if (window.LG_CHARGE_ENABLED) {
+    document.getElementById('lib-email-choice-overlay').classList.add('active');
+  } else {
+    openSendPreview('email');
+  }
+}
+function libCloseEmailChoice(){
+  document.getElementById('lib-email-choice-overlay').classList.remove('active');
+}
+function libChooseEmailSend(){
+  libCloseEmailChoice();
+  openSendPreview('email');
+}
+function libChooseEmailCharge(){
+  libCloseEmailChoice();
+  libOpenChargeReminder();
 }
 
 // Default the patient email from wherever one was already entered for delivery.
