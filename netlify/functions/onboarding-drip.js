@@ -22,6 +22,7 @@
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, SES_*, BACKFILL_SECRET
 
 const { prefsFooter } = require('./_lib/notify');
+const { mintSigninToken } = require('./_lib/signin-token');
 
 // Only free accounts created on/after this instant are eligible — this is the
 // line between the 300-ish pre-created contacts (May 24 + Jul 19 batches) and
@@ -32,6 +33,30 @@ const REPLY_TO = 'michael@thinkbeyondpractice.com';
 
 function btn(href, label) {
   return '<p style="margin:22px 0"><a href="' + href + '" style="display:inline-block;background:#0d3b4f;color:#fff;text-decoration:none;font-weight:700;font-size:15px;padding:13px 26px;border-radius:6px">' + label + '</a></p>';
+}
+
+// Route member-gated links through one-click-signin so a new member lands ALREADY
+// signed in, not at the cold magic-link gate. Public demos, signup routes, and links
+// already one-click are left alone. (Same rule as broadcast-send.oneClickify.)
+function needsAuth(path) {
+  if (/^\/start-scribe/i.test(path)) return false;
+  if (/[?&]join(&|=|$)/i.test(path)) return false;
+  if (/[?&]demo=1(&|$)/i.test(path)) return false;
+  return /^\/platform(\.html)?([\/?#]|$)/i.test(path)
+      || /^\/pm-/i.test(path)
+      || /^\/ai-scribe-workspace\.html/i.test(path)
+      || /^\/eps-quick-reference/i.test(path);
+}
+function oneClickify(html, email) {
+  if (!email) return html;
+  var token;
+  try { token = mintSigninToken(email); } catch (e) { return html; }
+  return String(html).replace(/href="(https?:\/\/thinkbeyondpractice\.com(\/[^"]*)?)"/gi, function (m, full, path) {
+    if (/one-click-signin/i.test(full)) return m;
+    path = path || '/';
+    if (!needsAuth(path)) return m;
+    return 'href="' + SITE + '/.netlify/functions/one-click-signin?t=' + token + '&r=' + encodeURIComponent(path) + '"';
+  });
 }
 function shell(inner) {
   return '<div style="max-width:560px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.6;color:#222">' + inner + '</div>';
@@ -133,7 +158,8 @@ function makeClients() {
 async function sendOneStep(sb, ses, account, step) {
   const email = String(account.email || '').toLowerCase();
   if (!email || email.indexOf('@') === -1) return false;
-  const html = step.html().replace(/\{first_name\}/g, firstName(account.name)) + prefsFooter(email);
+  const body = step.html().replace(/\{first_name\}/g, firstName(account.name));
+  const html = oneClickify(body, email) + prefsFooter(email);
   await ses.client.send(new ses.SendEmailCommand({
     FromEmailAddress: ses.from,
     Destination: { ToAddresses: [email] },

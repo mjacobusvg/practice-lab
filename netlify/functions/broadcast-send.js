@@ -79,6 +79,35 @@ function personalize(html, contact) {
     .replace(/\{\{\s*signin_token\s*\}\}/gi, token);
 }
 
+// A member clicking a plain /platform link in an email hits the cold magic-link gate
+// ("enter your email → check inbox → click → come back"), and that round-trip is where
+// dormant members bounce. So rewrite member-GATED links to route through one-click-signin
+// with this recipient's token: they land ALREADY signed in on the intended page. Public
+// and marketing pages, signup routes (?join, /start-scribe), and links already routed
+// through one-click-signin are left untouched (wrapping a public page would force a
+// pointless login). Runs per-recipient, before link tracking, so clicks still count.
+function needsAuth(path) {
+  if (/^\/start-scribe/i.test(path)) return false;    // signup entry (logged-out)
+  if (/[?&]join(&|=|$)/i.test(path)) return false;    // signup deep link
+  if (/[?&]demo=1(&|$)/i.test(path)) return false;    // public demo, no login needed
+  return /^\/platform(\.html)?([\/?#]|$)/i.test(path)
+      || /^\/pm-/i.test(path)
+      || /^\/ai-scribe-workspace\.html/i.test(path)
+      || /^\/eps-quick-reference/i.test(path);
+}
+function oneClickify(html, contact) {
+  var email = contact && contact.email;
+  if (!email) return html;
+  var token;
+  try { token = mintSigninToken(email); } catch (e) { return html; }
+  return String(html).replace(/href="(https?:\/\/thinkbeyondpractice\.com(\/[^"]*)?)"/gi, function (m, full, path) {
+    if (/one-click-signin/i.test(full)) return m;   // already a one-click link
+    path = path || '/';
+    if (!needsAuth(path)) return m;
+    return 'href="' + SITE + '/.netlify/functions/one-click-signin?t=' + token + '&r=' + encodeURIComponent(path) + '"';
+  });
+}
+
 function b64url(s) {
   return Buffer.from(String(s), 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
@@ -302,6 +331,8 @@ exports.handler = async function (event) {
       await Promise.all(batch.map(function (c) {
         const token = mintPrefsToken(c.email);
         let inner = personalize(bodyHtml, c);
+        // Land member-gated clicks already signed in, instead of at the cold login gate.
+        inner = oneClickify(inner, c);
         // Click tracking (exact) + open-tracking pixel. NOTE: open rates are
         // directional only — Apple Mail Privacy pre-fetches images (inflates) and
         // image-blockers suppress them (deflates). Clicks remain the truer signal.
