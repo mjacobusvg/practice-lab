@@ -7138,7 +7138,7 @@ async function libConnectStripe(btnEl){
       if (status) { status.style.color = 'var(--cream-muted)'; status.textContent = 'Stripe connected. Creating your payment link…'; }
       return libSubmitCharge();
     }
-    if (res.ok && data.url) { window.location.href = data.url; return; }
+    if (res.ok && data.url) { _lgSaveLetterDraft(); window.location.href = data.url; return; }
     var msg = (data && data.error) ? data.error : 'Could not start Stripe onboarding. Please try again.';
     if (btnEl) { btnEl.disabled = false; btnEl.textContent = 'Connect Stripe'; }
     if (status) { status.style.color = '#e0a85e'; status.textContent = msg; }
@@ -7146,6 +7146,59 @@ async function libConnectStripe(btnEl){
     if (btnEl) { btnEl.disabled = false; btnEl.textContent = 'Connect Stripe'; }
     if (status) { status.style.color = '#e0a85e'; status.textContent = 'Could not reach Stripe. Please try again.'; }
   }
+}
+
+// Persist the finished letter before the Connect redirect leaves the page, so it survives
+// the round-trip to Stripe. The composed letter lives in #lib-output-letter; the actions
+// (charge/send/download) rebuild the PDF from that text + LIB.selectedStandard, so those
+// plus the sign toggle and subtitle are all we need to fully restore the output view.
+function _lgSaveLetterDraft(){
+  try {
+    var letterEl = document.getElementById('lib-output-letter');
+    if (!letterEl || !letterEl.textContent) return;
+    var subEl = document.getElementById('lib-output-subtitle');
+    var signEl = document.getElementById('lib-sign-letter');
+    localStorage.setItem('lg_letter_draft', JSON.stringify({
+      text: letterEl.textContent,
+      subtitle: subEl ? subEl.textContent : '',
+      std: (window.LIB && LIB.selectedStandard) || null,
+      sign: !!(signEl && signEl.checked),
+      savedAt: Date.now()
+    }));
+  } catch(e){}
+}
+
+// Restore that letter after returning from Stripe. Auth gates the app behind an async
+// check, so poll until #app-root is visible and the output view exists, then re-render it.
+function _lgRestoreLetterDraft(attempt){
+  attempt = attempt || 0;
+  var raw = null;
+  try { raw = localStorage.getItem('lg_letter_draft'); } catch(e){}
+  if (!raw) return false;
+  var d;
+  try { d = JSON.parse(raw); } catch(e){ try{ localStorage.removeItem('lg_letter_draft'); }catch(_){ } return false; }
+  if (!d || !d.text || (Date.now() - (d.savedAt || 0)) > 30*60*1000) { try{ localStorage.removeItem('lg_letter_draft'); }catch(_){ } return false; }
+
+  var appRoot = document.getElementById('app-root');
+  var letterEl = document.getElementById('lib-output-letter');
+  var ready = letterEl && appRoot && appRoot.style.display !== 'none';
+  if (!ready) {
+    if (attempt < 60) setTimeout(function(){ _lgRestoreLetterDraft(attempt + 1); }, 150); // up to ~9s
+    return false;
+  }
+
+  try {
+    if (window.LIB && d.std) LIB.selectedStandard = d.std;
+    letterEl.textContent = d.text;
+    var subEl = document.getElementById('lib-output-subtitle');
+    if (subEl && d.subtitle) subEl.textContent = d.subtitle;
+    var signEl = document.getElementById('lib-sign-letter');
+    if (signEl) signEl.checked = !!d.sign;
+    if (typeof libShowView === 'function') libShowView('output');
+    if (typeof libChargeReveal === 'function') libChargeReveal();
+    localStorage.removeItem('lg_letter_draft');
+    return true;
+  } catch(e){ return false; }
 }
 
 // Handle the clinician coming back from Stripe's hosted onboarding.
@@ -7185,6 +7238,8 @@ async function libConnectStripe(btnEl){
 
     if (c === 'return' || c === 'oauth_done') {
       stripConnectParam();
+      // Bring back the letter the clinician was working on before the Stripe redirect.
+      var restored = _lgRestoreLetterDraft();
       // Confirm status; an OAuth-connected account is normally chargeable immediately.
       fetch('/.netlify/functions/letter-connect-status', {
         method: 'POST',
@@ -7192,12 +7247,14 @@ async function libConnectStripe(btnEl){
         body: JSON.stringify({ token: _lgTok() })
       }).then(function(r){ return r.json().catch(function(){ return {}; }); }).then(function(s){
         var msg, resume = false;
-        if (s && s.charges_enabled) msg = '✓ Stripe connected. You can now charge patients for letters — reopen the letter and choose “Charge the patient.”';
+        if (s && s.charges_enabled) msg = restored
+          ? '✓ Stripe connected — and your letter is right where you left it. Choose Email to recipient → “Charge the patient.”'
+          : '✓ Stripe connected. You can now charge patients — open a letter and choose Email to recipient → “Charge the patient.”';
         else if (s && s.connected) { msg = 'Stripe is connected but needs a couple more details in your Stripe dashboard before it can accept charges.'; resume = false; }
         else msg = 'Stripe didn’t finish connecting. Reopen the charge panel and click “Connect Stripe” to try again.';
         _lgConnectToast(msg, resume);
       }).catch(function(){
-        _lgConnectToast('Back from Stripe. Reopen the charge panel to continue.', false);
+        _lgConnectToast('Back from Stripe. Your letter is restored — choose Email to recipient → “Charge the patient.”', false);
       });
     }
   } catch(e){}
