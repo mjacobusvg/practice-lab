@@ -6977,9 +6977,13 @@ async function libSubmitCharge(){
     try { data = await res.json(); } catch(e){}
 
     if (res.status === 409 || data.error === 'connect_required') {
-      status.style.color = '#e0a85e';
-      status.innerHTML = 'Connect your Stripe account once before you can charge for a letter. ' +
-        '<span style="color:var(--cream-muted)">(Stripe connection is coming to this screen.)</span>';
+      status.style.color = 'var(--cream)';
+      status.innerHTML =
+        '<div style="background:rgba(84,182,164,0.13);border:1px solid rgba(84,182,164,0.30);border-radius:8px;padding:12px 13px">' +
+          '<div style="font-weight:600;margin-bottom:6px">Connect your Stripe first</div>' +
+          '<div style="font-size:.8rem;color:var(--cream-muted);margin-bottom:10px">One-time setup. You\'ll be sent to Stripe to connect (or create) your account, then brought right back here. Funds go 100% to you.</div>' +
+          '<button class="send-primary" style="padding:8px 16px;font-size:.85rem" onclick="libConnectStripe(this)">Connect Stripe</button>' +
+        '</div>';
       if (btn) btn.disabled = false;
       return;
     }
@@ -7007,6 +7011,88 @@ async function libSubmitCharge(){
     status.textContent = 'Something went wrong preparing the charge: ' + (e.message || e);
     if (btn) btn.disabled = false;
   }
+}
+
+// Begin (or resume) Stripe Connect onboarding, then redirect the clinician to Stripe.
+// Called from the "Connect Stripe" button shown when a charge needs a connected account,
+// and from the ?connect=refresh return path (Stripe expires account links quickly).
+async function libConnectStripe(btnEl){
+  var status = document.getElementById('lib-charge-status');
+  if (btnEl) { btnEl.disabled = true; btnEl.textContent = 'Opening Stripe…'; }
+  else if (status) { status.style.color = 'var(--cream-muted)'; status.textContent = 'Opening Stripe…'; }
+  try {
+    var res = await fetch('/.netlify/functions/letter-connect-start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
+      body: JSON.stringify({ token: _lgTok() })
+    });
+    var data = {};
+    try { data = await res.json(); } catch(e){}
+    if (res.ok && data.url) { window.location.href = data.url; return; }
+    var msg = (data && data.error) ? data.error : 'Could not start Stripe onboarding. Please try again.';
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = 'Connect Stripe'; }
+    if (status) { status.style.color = '#e0a85e'; status.textContent = msg; }
+  } catch (e) {
+    if (btnEl) { btnEl.disabled = false; btnEl.textContent = 'Connect Stripe'; }
+    if (status) { status.style.color = '#e0a85e'; status.textContent = 'Could not reach Stripe. Please try again.'; }
+  }
+}
+
+// Handle the clinician coming back from Stripe's hosted onboarding.
+//   ?connect=refresh  -> the account link expired/was revisited; mint a fresh one.
+//   ?connect=return   -> they finished (or paused); confirm whether charging is enabled.
+(function(){
+  try {
+    var qp = new URLSearchParams(location.search);
+    var c = qp.get('connect');
+    if (!c) return;
+
+    function stripConnectParam(){
+      try {
+        qp.delete('connect');
+        var qs = qp.toString();
+        history.replaceState(null, '', location.pathname + (qs ? '?' + qs : '') + location.hash);
+      } catch(e){}
+    }
+
+    if (c === 'refresh') {
+      // The link Stripe redirected here for is stale; start a new one immediately.
+      stripConnectParam();
+      libConnectStripe();
+      return;
+    }
+
+    if (c === 'return') {
+      stripConnectParam();
+      // Confirm status; a returned clinician may still have outstanding requirements.
+      fetch('/.netlify/functions/letter-connect-status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _lgTok() },
+        body: JSON.stringify({ token: _lgTok() })
+      }).then(function(r){ return r.json().catch(function(){ return {}; }); }).then(function(s){
+        var msg, resume = false;
+        if (s && s.charges_enabled) msg = 'Stripe connected. You can now charge patients for letters.';
+        else if (s && s.connected) { msg = 'Stripe onboarding started but not finished — a few details are still needed before you can charge.'; resume = true; }
+        else msg = 'Stripe onboarding didn\'t complete. You can try connecting again.';
+        _lgConnectToast(msg, resume);
+      }).catch(function(){
+        _lgConnectToast('Returned from Stripe. Reopen the charge panel to continue.', false);
+      });
+    }
+  } catch(e){}
+})();
+
+// Lightweight post-onboarding banner (the charge overlay may be closed on return).
+function _lgConnectToast(msg, resume){
+  var d = document.createElement('div');
+  d.style.cssText = 'position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:9999;max-width:520px;width:calc(100% - 32px);background:#12303a;color:var(--cream,#eef6f4);border:1px solid rgba(84,182,164,0.5);border-radius:10px;padding:14px 16px;box-shadow:0 8px 30px rgba(0,0,0,.35);font-size:.9rem;line-height:1.5';
+  d.innerHTML = '<div style="display:flex;gap:12px;align-items:flex-start">' +
+    '<div style="flex:1">' + msg + '</div>' +
+    '<button style="background:none;border:0;color:inherit;font-size:1.1rem;cursor:pointer;line-height:1;opacity:.7" onclick="this.closest(\'div\').parentNode.remove()">✕</button>' +
+    '</div>' +
+    (resume ? '<div style="margin-top:10px"><button class="send-primary" style="padding:7px 14px;font-size:.82rem" onclick="libConnectStripe(this)">Finish Stripe setup</button></div>' : '');
+  document.body.appendChild(d);
+  if (!resume) setTimeout(function(){ if (d.parentNode) d.parentNode.removeChild(d); }, 9000);
 }
 </script>
 </body>

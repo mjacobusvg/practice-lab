@@ -86,17 +86,20 @@ exports.handler = async function (event) {
       'Authorization': 'Bearer ' + SERVICE_KEY
     };
 
-    // ---- MODE + Stripe key (fail-safe: test unless explicitly live) ----
+    // ---- MODE + Stripe key + account column (fail-safe: test unless explicitly live) ----
+    // Each mode owns its own connected-account column: a sandbox acct_ from the test key
+    // is not usable with the live key, so test and live must not share one column.
     var live = process.env.LETTER_PAY_MODE === 'live';
     var stripeKey = live ? process.env.STRIPE_SECRET_KEY : process.env.STRIPE_CONNECT_TEST_SECRET_KEY;
     if (!stripeKey) return resp(headers, 500, { error: 'Payments are not configured for this mode.' });
+    var acctCol = live ? 'stripe_connect_account_id' : 'stripe_connect_account_id_test';
     var stripe = require('stripe')(stripeKey);
 
     // ---- Resolve the clinician's connected account ----
     var acctRes = await fetch(SUPABASE_URL + '/rest/v1/accounts?email=eq.' +
-      encodeURIComponent(clinicianEmail) + '&select=stripe_connect_account_id&limit=1', { headers: sbHeaders });
+      encodeURIComponent(clinicianEmail) + '&select=' + acctCol + '&limit=1', { headers: sbHeaders });
     var accts = acctRes.ok ? await acctRes.json() : [];
-    var connectedAccount = accts[0] && accts[0].stripe_connect_account_id;
+    var connectedAccount = accts[0] && accts[0][acctCol];
     // Testing convenience only: before onboarding is built, allow a configured sandbox
     // connected account so the charge/release loop is exercisable. Never used in live mode.
     if (!connectedAccount && !live && process.env.LETTER_TEST_CONNECTED_ACCOUNT) {
