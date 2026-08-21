@@ -128,8 +128,18 @@ exports.handler = async function (event) {
       }
     }
 
-    // ---- Create a single-use Account Link and return its URL ----
-    // return_url / refresh_url come back to the Letter Generator; the page handles both.
+    // ---- Is this account already able to accept charges? ----
+    // In test mode a freshly created account is chargeable immediately, so the frontend
+    // can skip the hosted-onboarding redirect entirely. In live mode it won't be, so we
+    // fall through to the Account Link below.
+    var chargesEnabled = false;
+    try {
+      var chk = await stripe.accounts.retrieve(connectedAccount);
+      chargesEnabled = !!chk.charges_enabled;
+    } catch (e) { /* treat as not-yet-enabled */ }
+
+    // ---- Create a single-use Account Link (hosted onboarding) ----
+    // Always returned so the clinician can complete/refresh onboarding when needed.
     var base = (process.env.PUBLIC_BASE_URL || 'https://thinkbeyondpractice.com').replace(/\/$/, '');
     var link;
     try {
@@ -145,9 +155,10 @@ exports.handler = async function (event) {
 
     return resp(headers, 200, {
       ok: true,
-      url: link.url,             // frontend redirects the clinician here
+      url: link.url,                     // frontend redirects here when onboarding is needed
       account_id: connectedAccount,
-      test_mode: !live
+      test_mode: !live,
+      charges_enabled: chargesEnabled    // if true (test mode), frontend skips the redirect
     });
   } catch (err) {
     return resp(headers, 500, { error: err.message });
