@@ -114,11 +114,13 @@ sequencing) — disproportionate risk for 2–4 sessions/mo. **Revisit once the 
 Everything defaults to **test mode** and moves no real money until `MARKETPLACE_PAY_MODE`
 (or `LETTER_PAY_MODE`) is `live`.
 
-1. **Stripe Connect webhook (new endpoint).** Register a *Connect* webhook (events on
-   connected accounts) → `/.netlify/functions/marketplace-charge-webhook`, event
-   `checkout.session.completed`. Put its signing secret in
-   `STRIPE_MARKETPLACE_CONNECT_WEBHOOK_SECRET` (or reuse `STRIPE_CONNECT_WEBHOOK_SECRET`).
-   This is separate from the letter charge webhook (different URL).
+1. **Stripe Connect webhook — nothing new required.** Marketplace direct charges land on
+   the **existing letter Connect webhook** (`letter-charge-webhook.js`), which now delegates
+   them to the shared fulfillment. So the Connect webhook you already registered covers the
+   marketplace too — no new endpoint, no new secret. (Optional: if you'd rather run a
+   dedicated endpoint, `marketplace-charge-webhook.js` still exists; register it as a Connect
+   webhook on `checkout.session.completed` with secret
+   `STRIPE_MARKETPLACE_CONNECT_WEBHOOK_SECRET`.)
 2. **Platform webhook — already done.** The free-month trial (Step 2) rides the existing
    platform webhook (`stripe-webhook.js`, `STRIPE_WEBHOOK_SECRET`); it already receives
    `checkout.session.completed` + `customer.subscription.*`. No new platform webhook.

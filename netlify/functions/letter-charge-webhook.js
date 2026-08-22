@@ -50,6 +50,16 @@ exports.handler = async function (event) {
     return { statusCode: 200, headers, body: JSON.stringify({ received: true, ignored: stripeEvent.type }) };
   }
   const s = stripeEvent.data.object;
+  // Marketplace direct charges land on this same Connect endpoint. Delegate them to
+  // the shared marketplace fulfillment so no second Stripe webhook must be registered.
+  if (s.metadata && s.metadata.tbp === 'marketplace') {
+    try {
+      const result = await require('./_lib/marketplace-fulfill').fulfillMarketplaceCheckout(s);
+      return { statusCode: 200, headers, body: JSON.stringify(result) };
+    } catch (e) {
+      return { statusCode: 200, headers, body: JSON.stringify({ received: true, error: e.message }) };
+    }
+  }
   if (!(s.metadata && s.metadata.tbp === 'letter_charge' && s.metadata.letter_charge_id)) {
     return { statusCode: 200, headers, body: JSON.stringify({ received: true, not_letter_charge: true }) };
   }
