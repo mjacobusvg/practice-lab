@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mentor Dashboard · Think Beyond Practice</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--teal:#2aabb8;--ink:#1a2430;--ink2:#5a6672;--line:#e7ecef;--bg:#f6f9fa;--card:#fff;--green:#2e9e6b;--red:#d9534f;--amber:#c98a1b}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg);line-height:1.6}
+  .wrap{max-width:860px;margin:0 auto;padding:28px 20px 80px}
+  h1,h2{font-family:'DM Serif Display',Georgia,serif;font-weight:400}
+  h1{font-size:30px;margin:8px 0}
+  h2{font-size:21px;margin:26px 0 10px}
+  .brand{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink2)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-top:14px}
+  button,.btn{font:inherit;cursor:pointer;border:0;border-radius:10px;padding:10px 18px;background:var(--teal);color:#fff;font-weight:600}
+  button.ghost{background:#fff;color:var(--teal);border:1px solid var(--teal)}
+  button.mini{padding:6px 12px;font-size:13px}
+  button.danger{background:#fff;color:var(--red);border:1px solid var(--red)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  label{display:block;font-size:14px;font-weight:600;margin:12px 0 6px}
+  input{font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:end}
+  .pill{display:inline-block;font-size:12px;font-weight:600;border-radius:999px;padding:3px 10px}
+  .pill.ok{color:var(--green);background:rgba(46,158,107,.12)}
+  .pill.warn{color:var(--amber);background:rgba(201,138,27,.12)}
+  .pill.off{color:var(--red);background:rgba(217,83,79,.1)}
+  table{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
+  th,td{text-align:left;padding:8px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--ink2);font-weight:600}
+  .muted{color:var(--ink2);font-size:14px}
+  .slotline{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .err{color:var(--red);font-size:14px}
+  .hide{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="brand">Think Beyond Practice</div>
+  <h1>Mentor dashboard</h1>
+
+  <div id="signin" class="card hide">
+    <p>Please <a href="/platform.html">sign in</a> to manage your mentoring.</p>
+  </div>
+  <div id="notseller" class="card hide">
+    <p>Your account is not set up as a mentor yet. If you expect to see this, contact Michael.</p>
+  </div>
+
+  <div id="app" class="hide">
+    <!-- Payments connection -->
+    <div class="card">
+      <h2 style="margin-top:0">Payments</h2>
+      <p id="connect-status" class="muted">Checking…</p>
+      <p id="connect-actions"></p>
+      <p class="muted">You are paid directly by Stripe. Think Beyond Practice takes nothing from your session fee; on a Practice Launch bundle we keep half of the toolkit price as a platform fee.</p>
+    </div>
+
+    <!-- Add availability -->
+    <div class="card">
+      <h2 style="margin-top:0">Add availability</h2>
+      <div class="row">
+        <div><label for="d">Date</label><input id="d" type="date"></div>
+        <div><label for="t">Start time</label><input id="t" type="time"></div>
+        <div><label for="dur">Minutes</label><input id="dur" type="number" value="60" min="15" step="15" style="width:90px"></div>
+        <div><button id="add-btn">Add slot</button></div>
+      </div>
+      <p class="muted" id="tz-note"></p>
+      <p class="err hide" id="add-err"></p>
+    </div>
+
+    <!-- Open slots -->
+    <div class="card">
+      <h2 style="margin-top:0">Open times</h2>
+      <div id="open-slots"><p class="muted">Loading…</p></div>
+    </div>
+
+    <!-- Bookings -->
+    <div class="card">
+      <h2 style="margin-top:0">Bookings</h2>
+      <div id="bookings"><p class="muted">Loading…</p></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  var $ = function(id){ return document.getElementById(id); };
+  var token = null; try { token = localStorage.getItem('tbp_auth_token'); } catch(e){}
+  var tz = 'America/New_York'; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || tz; } catch(e){}
+  var fmt = function(iso){ try { return new Intl.DateTimeFormat('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZone:tz}).format(new Date(iso)); } catch(e){ return new Date(iso).toLocaleString(); } };
+  var api = function(path, body){ return fetch('/.netlify/functions/' + path, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(Object.assign({token:token}, body||{})) }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok, status:r.status, d:d}; }); }); };
+
+  if (!token){ $('signin').classList.remove('hide'); return; }
+  $('tz-note').textContent = 'Times are in your timezone (' + tz + ').';
+
+  // ---- Connect status ----
+  function loadConnect(){
+    api('letter-connect-status').then(function(res){
+      if (!res.ok){ $('connect-status').innerHTML = '<span class="pill off">Unavailable</span> ' + ((res.d && res.d.error) || ''); return; }
+      var d = res.d;
+      if (d.connected && d.charges_enabled){
+        $('connect-status').innerHTML = '<span class="pill ok">Connected</span> Your Stripe account is ready to accept bookings.';
+        $('connect-actions').innerHTML = '';
+      } else if (d.connected && !d.charges_enabled){
+        $('connect-status').innerHTML = '<span class="pill warn">Finish onboarding</span> Stripe needs a bit more info before you can be paid.';
+        $('connect-actions').innerHTML = '<button class="ghost" id="connect-btn">Resume Stripe onboarding</button>';
+        wireConnect();
+      } else {
+        $('connect-status').innerHTML = '<span class="pill off">Not connected</span> Connect your Stripe account once to start taking bookings.';
+        $('connect-actions').innerHTML = '<button id="connect-btn">Connect with Stripe</button>';
+        wireConnect();
+      }
+    });
+  }
+  function wireConnect(){
+    var b = $('connect-btn'); if (!b) return;
+    b.onclick = function(){ b.disabled = true; api('letter-connect-start').then(function(res){ if (res.ok && res.d.url) location.href = res.d.url; else { b.disabled=false; alert((res.d && res.d.error) || 'Could not start Stripe connect.'); } }); };
+  }
+
+  // ---- Slots + bookings ----
+  function loadAll(){
+    fetch('/.netlify/functions/marketplace-slots', { headers:{ 'Authorization':'Bearer ' + token } })
+      .then(function(r){ return r.json().then(function(d){ return {ok:r.ok, status:r.status, d:d}; }); })
+      .then(function(res){
+        if (res.status === 403){ $('app').classList.add('hide'); $('notseller').classList.remove('hide'); return; }
+        $('app').classList.remove('hide');
+        renderSlots(res.d.slots || []);
+        renderBookings(res.d.bookings || []);
+        loadConnect();
+      })
+      .catch(function(){ $('app').classList.remove('hide'); });
+  }
+
+  function renderSlots(slots){
+    var open = slots.filter(function(s){ return s.status === 'open'; })
+      .sort(function(a,b){ return new Date(a.starts_at) - new Date(b.starts_at); });
+    var box = $('open-slots');
+    if (!open.length){ box.innerHTML = '<p class="muted">No open times. Add some above.</p>'; return; }
+    box.innerHTML = '';
+    open.forEach(function(s){
+      var row = document.createElement('div'); row.className = 'slotline';
+      var span = document.createElement('span'); span.textContent = fmt(s.starts_at);
+      var btn = document.createElement('button'); btn.className = 'danger mini'; btn.textContent = 'Remove';
+      btn.onclick = function(){ btn.disabled = true; api('marketplace-slots', {action:'remove', slot_id:s.id}).then(function(r){ if (r.ok) loadAll(); else { btn.disabled=false; alert((r.d && (r.d.error||r.d.message))||'Could not remove'); } }); };
+      row.appendChild(span); row.appendChild(btn); box.appendChild(row);
+    });
+  }
+
+  function renderBookings(bookings){
+    var box = $('bookings');
+    var up = bookings.filter(function(b){ return b.status === 'confirmed' || b.status === 'completed'; })
+      .sort(function(a,b){ return new Date(a.starts_at) - new Date(b.starts_at); });
+    if (!up.length){ box.innerHTML = '<p class="muted">No bookings yet.</p>'; return; }
+    var html = '<table><tr><th>When</th><th>Buyer</th><th>Type</th><th>Topic</th></tr>';
+    up.forEach(function(b){
+      html += '<tr><td>' + esc(fmt(b.starts_at)) + '</td><td>' + esc(b.buyer_email||'') + '</td><td>' +
+        (b.toolkit_included ? 'Practice Launch' : 'Session') + '</td><td>' + esc(b.topic||'') + '</td></tr>';
+    });
+    html += '</table>';
+    box.innerHTML = html;
+  }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+  // ---- Add slot ----
+  $('add-btn').addEventListener('click', function(){
+    $('add-err').classList.add('hide');
+    var d = $('d').value, t = $('t').value, dur = parseInt($('dur').value,10) || 60;
+    if (!d || !t){ showAddErr('Pick a date and time.'); return; }
+    // Interpret the entered wall-clock time in the mentor's local timezone -> absolute instant.
+    var local = new Date(d + 'T' + t);
+    if (isNaN(local.getTime())){ showAddErr('Invalid date/time.'); return; }
+    if (local.getTime() < Date.now()){ showAddErr('That time is in the past.'); return; }
+    $('add-btn').disabled = true;
+    api('marketplace-slots', { action:'add', starts_at: local.toISOString(), duration_minutes: dur }).then(function(r){
+      $('add-btn').disabled = false;
+      if (r.ok){ $('t').value=''; loadAll(); } else showAddErr((r.d && (r.d.error||r.d.message)) || 'Could not add slot.');
+    });
+  });
+  function showAddErr(m){ var e=$('add-err'); e.textContent=m; e.classList.remove('hide'); }
+
+  loadAll();
+})();
+</script>
+</body>
+</html>
