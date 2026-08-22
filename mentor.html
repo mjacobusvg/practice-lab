@@ -103,6 +103,9 @@
     <div class="freemonth" id="freemonth">
       New to Think Beyond Practice? Your purchase includes a <strong>free month of full TBP access</strong> (community, tools, and the AI Scribe), activated after checkout. Members are billed nothing extra.
     </div>
+    <div class="freemonth" id="joinline" style="margin-top:-8px">
+      Prefer to join now? <a href="/platform.html?join" style="color:var(--teal);font-weight:700">Become a member for $119/mo</a> and get member pricing on every session ($180 sessions, $599 launch package), plus the full platform and AI Scribe.
+    </div>
 
     <div id="booking" class="panel hide">
       <h2>Book your time</h2>
@@ -128,6 +131,15 @@
   var mpOrder = params.get('mp_order') || '';
   var token = null;
   try { token = localStorage.getItem('tbp_auth_token'); } catch(e){}
+  // Paid member? Decode the signed token's payload for scope/tier (display only; the
+  // server re-checks at checkout). Free-tier signed-in users are treated as non-members.
+  function isPaidMember(){
+    if (!token) return false;
+    try {
+      var p = JSON.parse(atob(token.split('.')[0].replace(/-/g,'+').replace(/_/g,'/')));
+      return p.scope === 'member' || p.tier === 'forum' || p.tier === 'full';
+    } catch(e){ return true; }
+  }
   var tz = 'America/New_York';
   try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || tz; } catch(e){}
 
@@ -216,9 +228,10 @@
     else { av.textContent = String(s.display_name||'?').split(/\s+/).map(function(w){return w[0]||'';}).join('').slice(0,2).toUpperCase(); }
     $('tz-note').textContent = '(times shown in your timezone)';
 
-    if (token) {
+    if (isPaidMember()) {
       $('signin-row').innerHTML = 'Signed in. Member pricing is applied automatically at checkout.';
       $('freemonth').classList.add('hide');
+      var jl = document.getElementById('joinline'); if (jl) jl.classList.add('hide');
       Array.prototype.forEach.call(document.querySelectorAll('.freeline'), function(el){ el.style.display = 'none'; });
     } else {
       $('signin-row').innerHTML = 'Already a TBP member? <a href="/platform.html">Sign in</a> for member pricing.';
