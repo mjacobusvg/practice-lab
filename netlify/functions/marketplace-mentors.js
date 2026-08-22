@@ -6,11 +6,11 @@
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY
 
-const { sb } = require('./_lib/marketplace');
+const { sb, callerFromEvent } = require('./_lib/marketplace');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
   'Content-Type': 'application/json'
 };
@@ -21,7 +21,24 @@ exports.handler = async function (event) {
 
   try {
     const sellers = await sb('marketplace_sellers?status=eq.active' +
-      '&select=id,slug,display_name,bio,expertise,avatar_url&order=created_at.asc&limit=100');
+      '&select=id,slug,display_name,bio,expertise,avatar_url,status&order=created_at.asc&limit=100');
+
+    // Preview: a signed-in caller also sees their OWN hidden profile; an admin sees
+    // every hidden profile. These are flagged `hidden:true` so the UI can badge them.
+    const caller = await callerFromEvent(event);
+    const hiddenIds = new Set();
+    if (caller) {
+      const previewable = caller.isAdmin
+        ? await sb('marketplace_sellers?status=eq.hidden' +
+            '&select=id,slug,display_name,bio,expertise,avatar_url,status&order=created_at.asc&limit=100')
+        : (caller.accountId
+            ? await sb('marketplace_sellers?status=eq.hidden&account_id=eq.' + encodeURIComponent(caller.accountId) +
+                '&select=id,slug,display_name,bio,expertise,avatar_url,status&order=created_at.asc&limit=100')
+            : []);
+      for (const h of (previewable || [])) {
+        if (!sellers.some(function (s) { return s.id === h.id; })) { sellers.push(h); hiddenIds.add(h.id); }
+      }
+    }
 
     const nowIso = new Date().toISOString();
     const out = [];
@@ -39,7 +56,8 @@ exports.handler = async function (event) {
         expertise: s.expertise,
         avatar_url: s.avatar_url,
         bookable: !!(slots && slots.length),
-        from_price_cents: off && off[0] ? off[0].price_public_cents : null
+        from_price_cents: off && off[0] ? off[0].price_public_cents : null,
+        hidden: hiddenIds.has(s.id) || s.status === 'hidden'
       });
     }
 

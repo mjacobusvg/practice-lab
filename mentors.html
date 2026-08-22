@@ -40,6 +40,8 @@
   .become{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;margin-top:26px}
   .become h2{font-size:22px;margin:0 0 6px}
   .tag{display:inline-block;font-size:12px;font-weight:600;color:var(--teal);background:rgba(42,171,184,.1);border-radius:999px;padding:3px 10px;margin-bottom:6px}
+  .hidden-badge{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:#a78bfa;background:rgba(139,92,246,.14);border:1px solid rgba(139,92,246,.4);border-radius:999px;padding:1px 7px;vertical-align:middle;margin-left:6px}
+  .hidden-note{font-size:12px;color:#a78bfa;margin-top:8px}
 </style>
 <script src="/theme-toggle.js"></script>
 </head>
@@ -74,7 +76,9 @@
   var esc = function(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); };
   var initials = function(name){ return String(name||'?').split(/\s+/).map(function(w){return w[0]||'';}).join('').slice(0,2).toUpperCase(); };
 
-  fetch('/.netlify/functions/marketplace-mentors')
+  var authTok = '';
+  try { authTok = localStorage.getItem('tbp_auth_token') || ''; } catch(e){}
+  fetch('/.netlify/functions/marketplace-mentors', authTok ? { headers: { Authorization: 'Bearer ' + authTok } } : {})
     .then(function(r){ return r.json(); })
     .then(function(d){
       var mentors = (d && d.mentors) || [];
@@ -89,10 +93,13 @@
           ? '<a class="btn" href="/mentors/'+esc(m.slug)+'">View &amp; book</a>'
           : '<a class="btn" href="/mentors/'+esc(m.slug)+'">View profile</a>';
         var from = (m.from_price_cents!=null && m.bookable) ? ('<span class="from">from '+money(m.from_price_cents)+'</span>') : (m.bookable ? '' : '<span class="from" style="color:var(--ink2)">availability coming soon</span>');
+        var nameBadge = m.hidden ? ' <span class="hidden-badge">Hidden</span>' : '';
+        var hiddenNote = m.hidden ? '<div class="hidden-note">Only you can see this. Hidden from members until you go live.</div>' : '';
         html += '<div class="m-card">' +
-          '<div class="m-top"><div class="m-av">'+av+'</div><div><div class="m-name">'+esc(m.display_name)+'</div>' +
+          '<div class="m-top"><div class="m-av">'+av+'</div><div><div class="m-name">'+esc(m.display_name)+nameBadge+'</div>' +
           (m.expertise ? '<div class="m-spec">'+esc(m.expertise)+'</div>' : '') + '</div></div>' +
           (m.bio ? '<div class="m-bio">'+esc(m.bio)+'</div>' : '<div class="m-bio"></div>') +
+          hiddenNote +
           '<div class="m-foot">'+from+cta+'</div>' +
         '</div>';
       });

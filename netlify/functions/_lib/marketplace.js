@@ -180,8 +180,34 @@ function priceOffering(offering, kind, isMember) {
   };
 }
 
+// Resolve the signed-in caller from an optional Bearer token / body token.
+// Returns { email, accountId, isAdmin } when a valid session is present, else null.
+// Used to let a hidden seller (or an admin) PREVIEW hidden mentor listings/pages
+// that the public directory omits. Never throws: absent/invalid token -> null.
+async function callerFromEvent(event) {
+  try {
+    const { verifyToken } = require('./session');
+    const authHeader = event.headers && (event.headers.authorization || event.headers.Authorization) || '';
+    let bodyTok = '';
+    try { bodyTok = (JSON.parse(event.body || '{}').token) || ''; } catch (e) {}
+    const token = (bodyTok || authHeader.replace(/^Bearer\s+/i, '')).trim();
+    if (!token) return null;
+    const session = verifyToken(token);
+    if (!session.valid) return null;
+    const email = String(session.claims.email || '').toLowerCase().trim();
+    if (!email) return null;
+    const accts = await sb('accounts?email=eq.' + encodeURIComponent(email) + '&select=id,is_admin&limit=1');
+    const acct = accts && accts[0];
+    if (!acct) return { email: email, accountId: null, isAdmin: false };
+    return { email: email, accountId: acct.id, isAdmin: !!acct.is_admin };
+  } catch (e) {
+    return null;
+  }
+}
+
 module.exports = {
   SUPABASE_URL, sb, sbHeaders,
   payMode, isLive, connectAcctColumn, platformStripe,
-  resolveBuyer, hasUsedPromoMonth, priceOffering, ensureAccount
+  resolveBuyer, hasUsedPromoMonth, priceOffering, ensureAccount,
+  callerFromEvent
 };

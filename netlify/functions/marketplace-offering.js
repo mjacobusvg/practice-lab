@@ -8,7 +8,7 @@
 // Query: ?slug=<seller slug>  OR  ?seller=<seller uuid>
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY
 
-const { sb } = require('./_lib/marketplace');
+const { sb, callerFromEvent } = require('./_lib/marketplace');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -30,10 +30,19 @@ exports.handler = async function (event) {
     const filter = sellerId
       ? 'id=eq.' + encodeURIComponent(sellerId)
       : 'slug=eq.' + encodeURIComponent(slug);
+    // Fetch regardless of status; gate hidden ones to the owner/admin below (preview).
     const sellers = await sb('marketplace_sellers?' + filter +
-      '&status=eq.active&select=id,slug,display_name,bio,expertise,avatar_url,timezone&limit=1');
+      '&select=id,slug,display_name,bio,expertise,avatar_url,timezone,status,account_id&limit=1');
     const seller = sellers && sellers[0];
     if (!seller) return { statusCode: 404, headers: CORS, body: JSON.stringify({ error: 'Not found' }) };
+
+    // Hidden mentors are visible only to their owner or an admin (self-preview).
+    if (seller.status !== 'active') {
+      const caller = await callerFromEvent(event);
+      const isOwner = caller && caller.accountId && caller.accountId === seller.account_id;
+      const isAdmin = caller && caller.isAdmin;
+      if (!isOwner && !isAdmin) return { statusCode: 404, headers: CORS, body: JSON.stringify({ error: 'Not found' }) };
+    }
 
     const offerings = await sb('marketplace_offerings?seller_id=eq.' + seller.id +
       '&status=eq.active&type=eq.service&select=id,title,description,duration_minutes,' +
@@ -62,7 +71,8 @@ exports.handler = async function (event) {
           timezone: seller.timezone
         },
         offering: offering || null,
-        slots: openSlots
+        slots: openSlots,
+        hidden: seller.status !== 'active'
       })
     };
   } catch (e) {

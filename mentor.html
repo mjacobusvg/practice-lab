@@ -214,10 +214,11 @@
   // ---- Load the seller + offering + slots ----
   function load(){
     var qs = sellerParam ? ('seller=' + encodeURIComponent(sellerParam)) : ('slug=' + encodeURIComponent(slug));
-    fetch('/.netlify/functions/marketplace-offering?' + qs)
+    // Send the session token so an owner/admin can PREVIEW their own hidden page.
+    fetch('/.netlify/functions/marketplace-offering?' + qs, token ? { headers: { Authorization: 'Bearer ' + token } } : {})
       .then(function(r){ if(!r.ok) throw new Error('nf'); return r.json(); })
       .then(function(d){
-        state.seller = d.seller; state.offering = d.offering; state.slots = d.slots || [];
+        state.seller = d.seller; state.offering = d.offering; state.slots = d.slots || []; state.hidden = !!d.hidden;
         render();
       })
       .catch(function(){ $('loading').classList.add('hide'); $('notfound').classList.remove('hide'); });
@@ -227,6 +228,17 @@
     var s = state.seller, o = state.offering;
     $('loading').classList.add('hide');
     $('main').classList.remove('hide');
+    if (state.hidden){
+      var pv = document.getElementById('preview-banner');
+      if (!pv){
+        pv = document.createElement('div');
+        pv.id = 'preview-banner';
+        pv.style.cssText = 'background:rgba(139,92,246,.12);border:1px solid rgba(139,92,246,.45);color:#a78bfa;border-radius:12px;padding:10px 14px;margin:0 0 14px;font-size:14px;font-weight:600';
+        pv.textContent = 'Preview: this profile is hidden. Only you (and admins) can see it until you go live.';
+        var main = document.getElementById('main');
+        main.insertBefore(pv, main.firstChild);
+      }
+    }
     $('s-name').textContent = s.display_name;
     $('s-expertise').textContent = s.expertise || '';
     $('s-bio').textContent = s.bio || '';
