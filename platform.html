@@ -6912,13 +6912,33 @@ function renderAnalytics(d) {
   var h = '<div class="space-head"><div class="space-accent" style="background:#60a5fa"></div><h1>Analytics</h1>';
   h += '<p class="space-tagline">Community health at a glance. Refreshes each time you open it.</p></div>';
 
-  h += '<div class="an-section-h">Members</div><div class="an-grid">';
-  h += statCard('Total members', m.total || 0);
-  h += statCard('Full tier', m.full || 0);
-  h += statCard('Forum tier', m.forum || 0);
-  h += statCard('Free tier', m.free || 0);
+  // Reconciled membership: tier vs the actual active PAID subscription, with owner
+  // alts + comps set aside and annual subs normalized to monthly. This replaces the
+  // raw tier counts, which lumped comps, alts, grandfathered $89 fulls, past-dues,
+  // and annual subs together and read as inflated.
+  var mt = d.membership || {};
+  var fullMix = Object.keys(mt.full_by_price || {}).sort(function (a, b) { return parseFloat(a) - parseFloat(b); })
+    .map(function (p) { return (mt.full_by_price[p]) + ' @ $' + Math.round(parseFloat(p)); }).join(', ');
+  h += '<div class="an-section-h">Membership</div><div class="an-grid">';
+  h += statCard('Paying members', mt.paying || 0, (mt.paying_full || 0) + ' full · ' + (mt.paying_forum || 0) + ' forum');
+  h += statCard('MRR', '$' + Number(mt.mrr || 0).toLocaleString(undefined, { maximumFractionDigits: 0 }), 'real · annuals normalized');
+  h += statCard('Full (paying)', mt.paying_full || 0, fullMix);
+  h += statCard('Forum (paying)', mt.paying_forum || 0);
+  h += statCard('Free', mt.free || 0, (m.total || 0) + ' total accounts');
   h += statCard('New this week', m.new_7d || 0, (m.new_30d || 0) + ' in 30 days');
   h += '</div>';
+  h += '<div style="padding:6px 2px 2px;color:var(--text-secondary);font-size:0.82rem">Set aside from paying: ' +
+    (mt.comp || 0) + ' comp · ' + (mt.owner_alt || 0) + ' owner alts' +
+    (mt.access_no_sub ? ' · ' + mt.access_no_sub + ' access-no-sub (review)' : '') + '.</div>';
+  var pd = mt.past_due || [];
+  if (pd.length) {
+    h += '<div class="an-section-h">Past due &mdash; needs attention</div><div class="an-list">';
+    pd.forEach(function (x) {
+      h += '<div class="an-row"><div class="an-row-title">' + esc(x.name || x.email || 'Member') + ' &middot; $' + esc(String(x.usd)) + ' ' + esc(x.tier) + '</div>' +
+        '<div class="an-row-meta">payment failing &middot; ' + esc(x.email || '') + '</div></div>';
+    });
+    h += '</div>';
+  }
 
   // Net-new PAID members who were never on Circle — real post-launch growth, distinct
   // from migrated members renewing. Watch for a name/practice that matches an existing

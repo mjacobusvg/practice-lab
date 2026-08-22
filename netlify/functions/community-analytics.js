@@ -104,6 +104,30 @@ exports.handler = async function (event) {
     // matches an existing Circle member here may be a second account.
     const net_new_paid = await sb('accounts?circle_member_id=is.null&tier=in.(forum,full)&select=name,email,tier,created_at&order=created_at.desc&limit=50');
 
+    // ── Real membership truth ────────────────────────────────────────────────
+    // Tier reconciled against the active PAID subscription, with owner alts + comps
+    // set aside and annual subs normalized to monthly. THIS is what "paying members"
+    // and "MRR" actually mean — unlike the raw tier counts above, which lump comps,
+    // alts, grandfathered $89 fulls, past-dues, and annual subs together.
+    const mtRows = await sb('membership_truth?select=email,name,status_truth,mrr_usd,price_usd');
+    const truth = {
+      paying: 0, paying_full: 0, paying_forum: 0, free: 0, comp: 0, owner_alt: 0,
+      past_due_full: 0, past_due_forum: 0, access_no_sub: 0, mrr: 0, full_by_price: {}, past_due: []
+    };
+    (mtRows || []).forEach(function (r) {
+      const st = r.status_truth, mrr = Number(r.mrr_usd) || 0;
+      if (st === 'paying_full') { truth.paying_full++; truth.mrr += mrr; const k = String(r.price_usd); truth.full_by_price[k] = (truth.full_by_price[k] || 0) + 1; }
+      else if (st === 'paying_forum') { truth.paying_forum++; truth.mrr += mrr; }
+      else if (st === 'free') truth.free++;
+      else if (st === 'comp') truth.comp++;
+      else if (st === 'owner_alt') truth.owner_alt++;
+      else if (st === 'past_due_full') { truth.past_due_full++; truth.past_due.push({ name: r.name, email: r.email, tier: 'full', usd: r.price_usd }); }
+      else if (st === 'past_due_forum') { truth.past_due_forum++; truth.past_due.push({ name: r.name, email: r.email, tier: 'forum', usd: r.price_usd }); }
+      else if (st === 'access_no_active_sub') truth.access_no_sub++;
+    });
+    truth.paying = truth.paying_full + truth.paying_forum;
+    truth.mrr = Math.round(truth.mrr * 100) / 100;
+
     // New signups per day, last 14 days.
     const signupRows = await sb('accounts?created_at=gt.' + encodeURIComponent(iso(14)) + '&select=created_at&limit=2000');
     const daily = {};
@@ -165,6 +189,7 @@ exports.handler = async function (event) {
       statusCode: 200, headers, body: JSON.stringify({
         ok: true,
         members: { total: total, free: free, forum: forum, full: full, new_7d: new7, new_30d: new30 },
+        membership: truth,
         activity: { views_7d: views7, views_30d: views30, active_7d: Object.keys(set7).length, active_30d: Object.keys(set30).length },
         content: { posts_total: posts_total, posts_7d: posts7, comments_total: comments_total, comments_7d: comments7, reactions_total: reactions_total, dms_7d: dms7 },
         ai: { calls_7d: ai7, calls_30d: ai30 },
