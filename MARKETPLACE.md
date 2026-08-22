@@ -109,6 +109,31 @@ account** (platform→connected cloning is allowed) to run his direct charge. No
 because it's a custom cross-account payment flow (PM cloning + possible second 3DS auth + rollback
 sequencing) — disproportionate risk for 2–4 sessions/mo. **Revisit once the funnel is proven to convert.**
 
+## Go-live checklist (what Michael configures)
+
+Everything defaults to **test mode** and moves no real money until `MARKETPLACE_PAY_MODE`
+(or `LETTER_PAY_MODE`) is `live`.
+
+1. **Stripe Connect webhook (new endpoint).** Register a *Connect* webhook (events on
+   connected accounts) → `/.netlify/functions/marketplace-charge-webhook`, event
+   `checkout.session.completed`. Put its signing secret in
+   `STRIPE_MARKETPLACE_CONNECT_WEBHOOK_SECRET` (or reuse `STRIPE_CONNECT_WEBHOOK_SECRET`).
+   This is separate from the letter charge webhook (different URL).
+2. **Platform webhook — already done.** The free-month trial (Step 2) rides the existing
+   platform webhook (`stripe-webhook.js`, `STRIPE_WEBHOOK_SECRET`); it already receives
+   `checkout.session.completed` + `customer.subscription.*`. No new platform webhook.
+3. **Env vars** (all reused from the letter Connect work): `STRIPE_SECRET_KEY`,
+   `STRIPE_CONNECT_TEST_SECRET_KEY`, `STRIPE_CONNECT_CLIENT_ID(_TEST)`,
+   `STRIPE_CONNECT_WEBHOOK_SECRET`, plus the new
+   `STRIPE_MARKETPLACE_CONNECT_WEBHOOK_SECRET`. Optional `MARKETPLACE_PAY_MODE`.
+4. **Denis onboards:** sign in → `/mentor-dashboard.html` → **Connect with Stripe**
+   (reuses the letter OAuth flow; writes `accounts.stripe_connect_account_id[_test]`).
+   He then adds availability slots there.
+5. **Denis's public link:** `https://thinkbeyondpractice.com/mentors/denis-grigorov`.
+6. **Test-mode caveat:** the direct-charge → booking → toolkit path is fully testable in
+   sandbox. The Step-2 trial needs the `full_monthly_119` price to exist on whichever
+   platform account the mode points at; verify it resolves (it exists on live TBP Payments).
+
 ## Not for the pilot (per spec §33)
 
 Multi-seller cart, course authoring, open seller registration, ratings/reviews, Google/Outlook calendar

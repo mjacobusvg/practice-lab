@@ -21,7 +21,10 @@ exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') return { statusCode: 405, headers: H, body: JSON.stringify({ error: 'Method not allowed' }) };
 
   const stripe = require('stripe')(process.env.STRIPE_CONNECT_TEST_SECRET_KEY || process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder');
-  const secret = process.env.STRIPE_CONNECT_WEBHOOK_SECRET;
+  // This is a SEPARATE connect webhook endpoint from the letter one, so it has its
+  // own signing secret. Falls back to the shared letter secret if a dedicated one
+  // isn't set (e.g. while both point at one endpoint during testing).
+  const secret = process.env.STRIPE_MARKETPLACE_CONNECT_WEBHOOK_SECRET || process.env.STRIPE_CONNECT_WEBHOOK_SECRET;
   if (!secret) return { statusCode: 500, headers: H, body: JSON.stringify({ error: 'Webhook not configured' }) };
 
   let ev;

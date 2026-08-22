@@ -115,6 +115,14 @@ exports.handler = async function (event) {
       priced.allocations.map(function (a) { return Object.assign({ order_id: order.id }, a); }),
       'return=minimal');
 
+    // Best-effort: stamp this order onto the visitor's attribution row (first-touch).
+    const visitorId = body.visitor_id ? String(body.visitor_id).slice(0, 80) : '';
+    if (visitorId) {
+      await sb('marketplace_attribution?seller_id=eq.' + seller.id +
+        '&visitor_id=eq.' + encodeURIComponent(visitorId) + '&order_id=is.null',
+        'PATCH', { buyer_email: email, order_id: order.id }, 'return=minimal').catch(function () {});
+    }
+
     // ---- Booking row (pending_payment) ----
     const bookingRows = await sb('marketplace_bookings', 'POST', {
       order_id: order.id,

@@ -126,6 +126,24 @@
   var tz = 'America/New_York';
   try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || tz; } catch(e){}
 
+  // Stable per-visitor id for attribution (first-touch).
+  var visitorId = null;
+  try {
+    visitorId = localStorage.getItem('tbp_mp_vid');
+    if (!visitorId){ visitorId = 'v' + Date.now().toString(36) + Math.random().toString(36).slice(2,8); localStorage.setItem('tbp_mp_vid', visitorId); }
+  } catch(e){}
+
+  function trackVisit(){
+    try {
+      fetch('/.netlify/functions/marketplace-track', {
+        method:'POST', headers:{'Content-Type':'application/json'}, keepalive:true,
+        body: JSON.stringify({ slug: slug, seller_id: sellerParam || undefined, visitor_id: visitorId,
+          utm_source: params.get('utm_source'), utm_medium: params.get('utm_medium'),
+          utm_campaign: params.get('utm_campaign'), referrer: document.referrer || null })
+      });
+    } catch(e){}
+  }
+
   var state = { seller:null, offering:null, slots:[], kind:null, slotId:null };
   var money = function(c){ return '$' + (c/100).toFixed(c % 100 ? 2 : 0); };
   var fmtSlot = function(iso){
@@ -134,9 +152,21 @@
   };
 
   // ---- Post-payment: offer the free-month activation (nonmembers) ----
-  function handlePostPay(){
+  function allSet(){
+    $('postpay-title').textContent = "You're all set.";
+    $('postpay-body').textContent = 'Your session is booked and a confirmation with a calendar invite is on its way to your inbox.';
+    $('postpay-actions').innerHTML = '';
+  }
+  function handlePostPay(attempt){
+    attempt = attempt || 0;
     $('loading').classList.add('hide');
     $('postpay').classList.remove('hide');
+    if (params.get('trial') === 'done'){
+      $('postpay-title').textContent = 'Welcome to Think Beyond Practice';
+      $('postpay-body').textContent = 'Your free month is active and your session is booked. Head to the platform to explore.';
+      $('postpay-actions').innerHTML = '<a class="btn" href="/platform.html">Go to the platform</a>';
+      return;
+    }
     var base = location.origin + location.pathname + '?slug=' + encodeURIComponent(slug);
     fetch('/.netlify/functions/marketplace-activate-trial', {
       method:'POST', headers:{'Content-Type':'application/json'},
@@ -146,14 +176,15 @@
         $('postpay-title').textContent = 'One more step: activate your free month';
         $('postpay-body').textContent = 'Your session is booked and confirmed by email. Activate your included free month of Think Beyond Practice to get the community, tools, and CE. It is $0 today.';
         $('postpay-actions').innerHTML = '<a class="btn" href="'+d.url+'">Activate my free month</a>';
+      } else if (d && d.error === 'not_paid' && attempt < 6){
+        // The fulfillment webhook may not have landed yet — retry briefly.
+        $('postpay-title').textContent = 'Finishing up…';
+        $('postpay-body').textContent = 'Confirming your payment.';
+        setTimeout(function(){ handlePostPay(attempt + 1); }, 2000);
       } else {
-        $('postpay-title').textContent = "You're all set.";
-        $('postpay-body').textContent = 'Your session is booked and a confirmation with a calendar invite is on its way to your inbox.';
+        allSet(); // member, promo already used, or nothing to activate
       }
-    }).catch(function(){
-      $('postpay-title').textContent = "You're all set.";
-      $('postpay-body').textContent = 'Your session is booked. A confirmation email is on its way.';
-    });
+    }).catch(function(){ allSet(); });
   }
 
   // ---- Load the seller + offering + slots ----
@@ -238,7 +269,7 @@
       body: JSON.stringify({
         offering_id: state.offering.id, slot_id: state.slotId, kind: state.kind,
         buyer_email: email, buyer_timezone: tz, topic: $('topic').value.trim(),
-        token: token || undefined,
+        token: token || undefined, visitor_id: visitorId || undefined,
         success_url: base, cancel_url: base
       })
     }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok, d:d}; }); })
@@ -258,6 +289,7 @@
   });
   $('book-btn').addEventListener('click', book);
 
+  trackVisit();
   if (mpOrder) handlePostPay(); else load();
 })();
 </script>
