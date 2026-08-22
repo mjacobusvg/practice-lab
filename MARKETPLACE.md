@@ -109,6 +109,44 @@ account** (platform→connected cloning is allowed) to run his direct charge. No
 because it's a custom cross-account payment flow (PM cloning + possible second 3DS auth + rollback
 sequencing) — disproportionate risk for 2–4 sessions/mo. **Revisit once the funnel is proven to convert.**
 
+## Phase 2 (spec only, NOT built) — AI Session Snapshot for 1:1s
+
+An **opt-in** ambient assistant for mentorship calls that produces a **Session Snapshot** (a written
+recap plus action items) the mentor keeps and can share with the mentee, with optional follow-up
+reminders. On-thesis with the CLINICAL-OS "capture context once, reuse it intentionally" principle,
+but applied to a coaching call, not a clinical encounter. **Do not build until the booking/payment
+pilot is actually transacting** (Denis connected, `MARKETPLACE_PAY_MODE=live`, real sessions
+happening). Bolting AI on before a single real booking is premature.
+
+**Hard constraints (these are requirements, not niceties):**
+
+1. **NOT a clinical/PHI encounter.** These are provider-to-provider coaching calls. Do **not** route
+   audio/transcript through the BAA `clinical-proxy-stream.mjs` pipe (that pipe is for patient PHI).
+   Use a separate, access-controlled path. A mentee may still reference a de-identified case or their
+   own practice details, so treat transcripts as sensitive and scope access to the two parties.
+2. **Two-party consent, logged.** Recording/transcribing triggers two-party-consent law in many
+   states. Require explicit, timestamped consent from **both** mentor and mentee before anything
+   listens. Store consent (who, when) with the session. No consent → no capture, no exceptions.
+3. **Mentorship-specific template, NOT the clinical one.** The Scribe's HPI/assessment structure is
+   wrong here. Snapshot fields: topics discussed, advice/decisions given, action items (owner + due),
+   resources recommended, and next-step/follow-up date. Keep it simple and coaching-shaped.
+4. **Device-mic first; no Zoom bot in phase 2.** The 1:1s run over Zoom. Phase 2 = the mentor runs
+   the existing browser-mic Scribe on their own device during the call (reuses current capture +
+   transcription). A bot that joins the Zoom (Recall.ai-style) is a much larger integration and is
+   explicitly out of phase 2.
+
+**Sketch (when built):**
+- `marketplace_bookings.snapshot_opt_in` (bool, mentor toggle) + a consent record per session.
+- New `marketplace_session_snapshots` table: `booking_id`, `transcript_ref` (access-controlled
+  storage, not the BAA bucket), `summary_json` (the fields in constraint 3), `shared_with_mentee_at`,
+  `created_at`. Additive only.
+- Model calls reuse the existing non-clinical proxy + a new mentorship-summary prompt. Log cost per
+  session; transcripts and snapshots are storage + a maintenance surface, so weigh both.
+- Delivery + follow-up reminders ride the existing SES/notification layer
+  (`marketplace-notify.js`): email the mentee the snapshot on share; schedule the follow-up nudge.
+- **Retention angle:** the snapshot is a tangible artifact the mentee keeps, which reinforces the
+  free-month → stay conversion. That is the product reason to build it, once the funnel is proven.
+
 ## Go-live checklist (what Michael configures)
 
 Everything defaults to **test mode** and moves no real money until `MARKETPLACE_PAY_MODE`
