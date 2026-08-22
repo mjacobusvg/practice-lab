@@ -113,6 +113,21 @@ async function resolveBuyer(email) {
   return out;
 }
 
+// Ensure a (free) account exists for a buyer email so entitlements (toolkit) and
+// membership can key to an account_id. Idempotent on email. Returns the id or null.
+async function ensureAccount(email, knownId) {
+  if (knownId) return knownId;
+  const clean = String(email || '').toLowerCase().trim();
+  if (!clean || clean.indexOf('@') === -1) return null;
+  const existing = await sb('accounts?email=eq.' + encodeURIComponent(clean) + '&select=id&limit=1');
+  if (existing && existing[0]) return existing[0].id;
+  const rows = await sb('accounts', 'POST', { email: clean, tier: 'free' }, 'return=representation')
+    .catch(function () { return null; });
+  if (rows && rows[0]) return rows[0].id;
+  const again = await sb('accounts?email=eq.' + encodeURIComponent(clean) + '&select=id&limit=1');
+  return again && again[0] ? again[0].id : null;
+}
+
 // Whether this email has already used its one lifetime marketplace promo month.
 async function hasUsedPromoMonth(email) {
   const clean = String(email || '').toLowerCase().trim();
@@ -168,5 +183,5 @@ function priceOffering(offering, kind, isMember) {
 module.exports = {
   SUPABASE_URL, sb, sbHeaders,
   payMode, isLive, connectAcctColumn, platformStripe,
-  resolveBuyer, hasUsedPromoMonth, priceOffering
+  resolveBuyer, hasUsedPromoMonth, priceOffering, ensureAccount
 };

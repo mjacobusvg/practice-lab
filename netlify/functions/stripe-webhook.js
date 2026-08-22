@@ -93,6 +93,9 @@ exports.handler = async function (event) {
       if (s.metadata && s.metadata.tbp_purchase === 'template') {
         return await handleTemplatePurchase(s, headers, stripe);
       }
+      if (s.metadata && s.metadata.tbp_purchase === 'marketplace_trial') {
+        return await handleMarketplaceTrial(s, headers);
+      }
       return await handleCertifiedMailCheckout(s, headers);
     }
 
@@ -143,6 +146,42 @@ async function handleTemplatePurchase(session, headers, stripe) {
     return { statusCode: 200, headers, body: JSON.stringify({ received: true, template_purchase: true }) };
   } catch (e) {
     console.error('handleTemplatePurchase error:', e.message);
+    return { statusCode: 200, headers, body: JSON.stringify({ received: true, error: e.message }) };
+  }
+}
+
+// A marketplace nonmember activated their free month (Step 2 of the buyer flow).
+// The subscription's tier is synced by handleSubscriptionEvent like any other; this
+// only records the promo-month grant + seller attribution for the funnel, and is
+// idempotent (one grant per email). See MARKETPLACE.md.
+async function handleMarketplaceTrial(session, headers) {
+  try {
+    const email = ((session.metadata && session.metadata.tbp_account_email) || session.customer_email || '').toLowerCase().trim();
+    if (!email) return { statusCode: 200, headers, body: JSON.stringify({ received: true, skipped: 'no email' }) };
+
+    const existing = await sbGet('marketplace_trial_grants?buyer_email=eq.' + encodeURIComponent(email) + '&select=id&limit=1');
+    if (existing && existing[0]) return { statusCode: 200, headers, body: JSON.stringify({ received: true, already_granted: true }) };
+
+    const accts = await sbGet('accounts?email=eq.' + encodeURIComponent(email) + '&select=id&limit=1');
+    const accountId = accts && accts[0] ? accts[0].id : null;
+
+    await sb('marketplace_trial_grants', {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        account_id: accountId,
+        buyer_email: email,
+        source_order_id: (session.metadata && session.metadata.source_order_id) || null,
+        source_seller_id: (session.metadata && session.metadata.source_seller_id) || null,
+        stripe_subscription_id: session.subscription || null,
+        granted_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        status: 'trialing'
+      })
+    });
+    return { statusCode: 200, headers, body: JSON.stringify({ received: true, marketplace_trial: true }) };
+  } catch (e) {
+    console.error('handleMarketplaceTrial error:', e.message);
     return { statusCode: 200, headers, body: JSON.stringify({ received: true, error: e.message }) };
   }
 }

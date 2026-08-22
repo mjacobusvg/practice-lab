@@ -12,7 +12,7 @@
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, STRIPE_CONNECT_WEBHOOK_SECRET,
 //      STRIPE_CONNECT_TEST_SECRET_KEY / STRIPE_SECRET_KEY (SDK only)
 
-const { sb } = require('./_lib/marketplace');
+const { sb, ensureAccount } = require('./_lib/marketplace');
 
 const H = { 'Content-Type': 'application/json' };
 
@@ -98,18 +98,3 @@ exports.handler = async function (event) {
     return { statusCode: 500, headers: H, body: JSON.stringify({ error: err.message }) };
   }
 };
-
-// Ensure a (free) account exists for the buyer so toolkit entitlement can be keyed
-// to an account_id. Nonmembers who buy a bundle get a lightweight account here;
-// they claim it via the normal sign-in link. Idempotent on email.
-async function ensureAccount(email, knownId) {
-  if (knownId) return knownId;
-  const clean = String(email || '').toLowerCase().trim();
-  if (!clean) return null;
-  const existing = await sb('accounts?email=eq.' + encodeURIComponent(clean) + '&select=id&limit=1');
-  if (existing && existing[0]) return existing[0].id;
-  const rows = await sb('accounts', 'POST', { email: clean, tier: 'free' }, 'return=representation').catch(function () { return null; });
-  if (rows && rows[0]) return rows[0].id;
-  const again = await sb('accounts?email=eq.' + encodeURIComponent(clean) + '&select=id&limit=1');
-  return again && again[0] ? again[0].id : null;
-}
