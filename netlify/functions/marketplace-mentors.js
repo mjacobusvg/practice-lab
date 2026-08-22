@@ -21,7 +21,7 @@ exports.handler = async function (event) {
 
   try {
     const sellers = await sb('marketplace_sellers?status=eq.active' +
-      '&select=id,slug,display_name,bio,expertise,avatar_url,status&order=created_at.asc&limit=100');
+      '&select=id,slug,display_name,bio,expertise,avatar_url,status,account_id&order=created_at.asc&limit=100');
 
     // Preview: a signed-in caller also sees their OWN hidden profile; an admin sees
     // every hidden profile. These are flagged `hidden:true` so the UI can badge them.
@@ -30,10 +30,10 @@ exports.handler = async function (event) {
     if (caller) {
       const previewable = caller.isAdmin
         ? await sb('marketplace_sellers?status=eq.hidden' +
-            '&select=id,slug,display_name,bio,expertise,avatar_url,status&order=created_at.asc&limit=100')
+            '&select=id,slug,display_name,bio,expertise,avatar_url,status,account_id&order=created_at.asc&limit=100')
         : (caller.accountId
             ? await sb('marketplace_sellers?status=eq.hidden&account_id=eq.' + encodeURIComponent(caller.accountId) +
-                '&select=id,slug,display_name,bio,expertise,avatar_url,status&order=created_at.asc&limit=100')
+                '&select=id,slug,display_name,bio,expertise,avatar_url,status,account_id&order=created_at.asc&limit=100')
             : []);
       for (const h of (previewable || [])) {
         if (!sellers.some(function (s) { return s.id === h.id; })) { sellers.push(h); hiddenIds.add(h.id); }
@@ -57,7 +57,8 @@ exports.handler = async function (event) {
         avatar_url: s.avatar_url,
         bookable: !!(slots && slots.length),
         from_price_cents: off && off[0] ? off[0].price_public_cents : null,
-        hidden: hiddenIds.has(s.id) || s.status === 'hidden'
+        hidden: hiddenIds.has(s.id) || s.status === 'hidden',
+        mine: !!(caller && caller.accountId && s.account_id === caller.accountId)
       });
     }
 
