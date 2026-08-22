@@ -56,3 +56,9 @@ serve the cached old file.
   They live in the Supabase table `tbp_letter_standards`, not in the HTML, so editing a letter
   is a SQL version bump, not a code change. Read it before touching any template or its
   editorial review, and confirm before any Supabase write to those production rows.
+- `MARKETING-SPINE.md` is the **canonical, approved marketing narrative** for the AI Scribe and
+  the Think Beyond Practice membership. Read it before drafting ANY pitch, ad, post, reply,
+  email, landing page, or sales copy about the Scribe/membership, and reuse it rather than
+  reinventing the pitch. It holds the master narrative, the compact (Facebook/forum) cut, and
+  the landing-page headline. House style: no em-dashes; lead with the **audit** differentiator;
+  do not claim "no other scribe audits notes" as an absolute.
