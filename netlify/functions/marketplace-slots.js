@@ -35,7 +35,7 @@ async function sellerForRequest(event) {
   const acct = accts && accts[0];
   if (!acct) return { error: j(403, { error: 'No account.' }) };
   const sellers = await sb('marketplace_sellers?account_id=eq.' + acct.id +
-    '&select=id,display_name,slug,status,timezone,meeting_instructions&limit=1');
+    '&select=id,display_name,slug,status,timezone,meeting_instructions,bio,expertise,avatar_url&limit=1');
   const seller = sellers && sellers[0];
   if (!seller) return { error: j(403, { error: 'You are not a seller.' }) };
   return { seller: seller };
@@ -74,6 +74,20 @@ exports.handler = async function (event) {
         status: 'open'
       }, 'return=representation');
       return j(200, { ok: true, slot: rows && rows[0] });
+    }
+
+    if (action === 'update_profile') {
+      // The mentor edits their own public page fields.
+      const patch = {};
+      if (body.display_name != null) patch.display_name = String(body.display_name).slice(0, 120);
+      if (body.expertise != null) patch.expertise = String(body.expertise).slice(0, 400);
+      if (body.bio != null) patch.bio = String(body.bio).slice(0, 4000);
+      if (body.meeting_instructions != null) patch.meeting_instructions = String(body.meeting_instructions).slice(0, 500);
+      if (body.timezone != null) patch.timezone = String(body.timezone).slice(0, 64);
+      if (!Object.keys(patch).length) return j(400, { error: 'Nothing to update' });
+      patch.updated_at = new Date().toISOString();
+      const rows = await sb('marketplace_sellers?id=eq.' + seller.id, 'PATCH', patch, 'return=representation');
+      return j(200, { ok: true, seller: rows && rows[0] });
     }
 
     if (action === 'remove') {

@@ -59,6 +59,21 @@
       <p class="muted">You are paid directly by Stripe. Think Beyond Practice takes nothing from your session fee; on a Practice Launch bundle we keep half of the toolkit price as a platform fee.</p>
     </div>
 
+    <!-- Public page / profile -->
+    <div class="card">
+      <h2 style="margin-top:0">Your public page</h2>
+      <p class="muted" id="page-link"></p>
+      <label for="p-name">Display name</label>
+      <input id="p-name" type="text" style="width:100%" maxlength="120">
+      <label for="p-spec">Specialty / what you help with</label>
+      <input id="p-spec" type="text" style="width:100%" maxlength="400" placeholder="e.g. Private practice startup, credentialing, billing, operations">
+      <label for="p-bio">Bio</label>
+      <textarea id="p-bio" style="width:100%;min-height:110px" maxlength="4000" placeholder="A few sentences on who you are and how you help."></textarea>
+      <label for="p-meet">Meeting link / instructions (shared with buyers after booking)</label>
+      <input id="p-meet" type="text" style="width:100%" maxlength="500" placeholder="Your Zoom link, or how you'll meet">
+      <p style="margin-top:14px"><button id="save-profile">Save my page</button> <span class="muted" id="save-note"></span></p>
+    </div>
+
     <!-- Add availability -->
     <div class="card">
       <h2 style="margin-top:0">Add availability</h2>
@@ -128,6 +143,7 @@
       .then(function(res){
         if (res.status === 403){ $('app').classList.add('hide'); $('notseller').classList.remove('hide'); return; }
         $('app').classList.remove('hide');
+        renderProfile(res.d.seller || {});
         renderSlots(res.d.slots || []);
         renderBookings(res.d.bookings || []);
         loadConnect();
@@ -164,6 +180,26 @@
     box.innerHTML = html;
   }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+
+  // ---- Profile ----
+  function renderProfile(seller){
+    if (seller.slug) $('page-link').innerHTML = 'Live at <a href="/mentors/'+seller.slug+'" target="_blank">/mentors/'+seller.slug+'</a>';
+    $('p-name').value = seller.display_name || '';
+    $('p-spec').value = seller.expertise || '';
+    $('p-bio').value = seller.bio || '';
+    $('p-meet').value = seller.meeting_instructions || '';
+  }
+  $('save-profile').addEventListener('click', function(){
+    var btn = $('save-profile'); btn.disabled = true; $('save-note').textContent = 'Saving…';
+    api('marketplace-slots', { action:'update_profile',
+      display_name: $('p-name').value.trim(), expertise: $('p-spec').value.trim(),
+      bio: $('p-bio').value.trim(), meeting_instructions: $('p-meet').value.trim()
+    }).then(function(r){
+      btn.disabled = false;
+      $('save-note').textContent = r.ok ? 'Saved.' : ((r.d && (r.d.error||r.d.message)) || 'Could not save.');
+      setTimeout(function(){ $('save-note').textContent=''; }, 3000);
+    });
+  });
 
   // ---- Add slot ----
   $('add-btn').addEventListener('click', function(){
