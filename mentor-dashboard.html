@@ -63,6 +63,10 @@
     <div class="card">
       <h2 style="margin-top:0">Your public page</h2>
       <p class="muted" id="page-link"></p>
+      <div style="display:flex;gap:14px;align-items:center;margin:8px 0 4px">
+        <div id="av-preview" style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#2aabb8,#34d399);color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;overflow:hidden;flex:0 0 auto"></div>
+        <div><label style="margin:0">Profile photo</label><input type="file" id="av-file" accept="image/png,image/jpeg,image/webp" style="font-size:13px"><div class="muted" id="av-note" style="font-size:12px"></div></div>
+      </div>
       <label for="p-name">Display name</label>
       <input id="p-name" type="text" style="width:100%" maxlength="120">
       <label for="p-spec">Specialty / what you help with</label>
@@ -182,13 +186,41 @@
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
 
   // ---- Profile ----
+  function mpInitials(name){ return String(name||'?').split(/\s+/).map(function(w){return w[0]||'';}).join('').slice(0,2).toUpperCase(); }
+  function setAvatar(url, name){
+    var el = $('av-preview');
+    if (url) el.innerHTML = '<img src="'+url+'" alt="" style="width:100%;height:100%;object-fit:cover">';
+    else el.textContent = mpInitials(name);
+  }
   function renderProfile(seller){
     if (seller.slug) $('page-link').innerHTML = 'Live at <a href="/mentors/'+seller.slug+'" target="_blank">/mentors/'+seller.slug+'</a>';
     $('p-name').value = seller.display_name || '';
     $('p-spec').value = seller.expertise || '';
     $('p-bio').value = seller.bio || '';
     $('p-meet').value = seller.meeting_instructions || '';
+    setAvatar(seller.avatar_url, seller.display_name);
   }
+
+  // Photo upload: reuse the existing image uploader, then save the URL to the profile.
+  $('av-file').addEventListener('change', function(){
+    var f = this.files && this.files[0]; if (!f) return;
+    if (f.size > 6*1024*1024){ $('av-note').textContent = 'Image too large (max 6 MB).'; return; }
+    $('av-note').textContent = 'Uploading…';
+    var reader = new FileReader();
+    reader.onload = function(){
+      fetch('/.netlify/functions/upload-post-image', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ token: token, data: reader.result, content_type: f.type })
+      }).then(function(r){ return r.json(); }).then(function(u){
+        if (!u.ok || !u.url){ $('av-note').textContent = u.error || 'Upload failed.'; return; }
+        api('marketplace-slots', { action:'update_profile', avatar_url: u.url }).then(function(r){
+          if (r.ok){ setAvatar(u.url, $('p-name').value); $('av-note').textContent = 'Photo saved.'; setTimeout(function(){ $('av-note').textContent=''; }, 3000); }
+          else $('av-note').textContent = (r.d && (r.d.error||r.d.message)) || 'Could not save photo.';
+        });
+      }).catch(function(){ $('av-note').textContent = 'Upload failed.'; });
+    };
+    reader.readAsDataURL(f);
+  });
   $('save-profile').addEventListener('click', function(){
     var btn = $('save-profile'); btn.disabled = true; $('save-note').textContent = 'Saving…';
     api('marketplace-slots', { action:'update_profile',

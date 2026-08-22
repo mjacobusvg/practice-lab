@@ -84,6 +84,7 @@ exports.handler = async function (event) {
       if (body.bio != null) patch.bio = String(body.bio).slice(0, 4000);
       if (body.meeting_instructions != null) patch.meeting_instructions = String(body.meeting_instructions).slice(0, 500);
       if (body.timezone != null) patch.timezone = String(body.timezone).slice(0, 64);
+      if (body.avatar_url != null) patch.avatar_url = String(body.avatar_url).slice(0, 500);
       if (!Object.keys(patch).length) return j(400, { error: 'Nothing to update' });
       patch.updated_at = new Date().toISOString();
       const rows = await sb('marketplace_sellers?id=eq.' + seller.id, 'PATCH', patch, 'return=representation');
