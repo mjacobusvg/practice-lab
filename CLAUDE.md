@@ -62,3 +62,11 @@ serve the cached old file.
   reinventing the pitch. It holds the master narrative, the compact (Facebook/forum) cut, and
   the landing-page headline. House style: no em-dashes; lead with the **audit** differentiator;
   do not claim "no other scribe audits notes" as an absolute.
+- `CLINICAL-OS-STRATEGY.md` is the **living product-direction doc** for where TBP is heading (the
+  "operating system for psychiatric practice" thesis: the Scribe as encounter-context layer that
+  orchestrates the existing tools). It is a starting point, NOT a frozen spec or permission to
+  build everything in it. Read it before any Scribe-orchestration, cross-tool-handoff, clinical-
+  guidance/evidence, forms/PA, or lab-ordering work. Its own rules bind: inspect what already
+  exists in the repo before building, detect cheaply and call AI only when needed, keep
+  structured data / retrieved evidence / AI synthesis separate, and surface tradeoffs to Michael
+  before consequential product decisions.
