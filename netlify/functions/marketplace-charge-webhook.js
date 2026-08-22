@@ -13,6 +13,7 @@
 //      STRIPE_CONNECT_TEST_SECRET_KEY / STRIPE_SECRET_KEY (SDK only)
 
 const { sb, ensureAccount } = require('./_lib/marketplace');
+const { sendBuyerConfirmation, sendSellerNotification } = require('./_lib/marketplace-notify');
 
 const H = { 'Content-Type': 'application/json' };
 
@@ -60,18 +61,23 @@ exports.handler = async function (event) {
 
     // Confirm the booking + book the slot.
     const bookings = await sb('marketplace_bookings?order_id=eq.' + order.id +
-      '&select=id,availability_id,seller_id&limit=1');
+      '&select=id,availability_id,seller_id,starts_at,ends_at,buyer_email,buyer_timezone,topic,kind,toolkit_included&limit=1');
     const booking = bookings && bookings[0];
+    let seller = null, sellerEmail = null;
     if (booking) {
-      // meeting instructions live on the seller row
-      let meetingUrl = null;
-      const sel = await sb('marketplace_sellers?id=eq.' + booking.seller_id + '&select=meeting_instructions&limit=1');
-      if (sel && sel[0]) meetingUrl = sel[0].meeting_instructions || null;
+      const sel = await sb('marketplace_sellers?id=eq.' + booking.seller_id +
+        '&select=display_name,timezone,meeting_instructions,account_id&limit=1');
+      seller = sel && sel[0] ? sel[0] : null;
+      const meetingUrl = seller ? (seller.meeting_instructions || null) : null;
       await sb('marketplace_bookings?id=eq.' + booking.id, 'PATCH',
         { status: 'confirmed', meeting_url: meetingUrl }, 'return=minimal').catch(function () {});
       if (booking.availability_id) {
         await sb('marketplace_availability?id=eq.' + booking.availability_id, 'PATCH',
           { status: 'booked', hold_expires_at: null }, 'return=minimal').catch(function () {});
+      }
+      if (seller && seller.account_id) {
+        const sa = await sb('accounts?id=eq.' + seller.account_id + '&select=email&limit=1').catch(function () { return null; });
+        sellerEmail = sa && sa[0] ? sa[0].email : null;
       }
     }
 
@@ -90,6 +96,36 @@ exports.handler = async function (event) {
             stripe_session_id: s.id
           }, 'resolution=merge-duplicates,return=minimal').catch(function () {});
         }
+      }
+    }
+
+    // Notifications (best-effort — never fail the webhook on an email issue).
+    if (booking) {
+      const base = (process.env.PUBLIC_BASE_URL || 'https://thinkbeyondpractice.com').replace(/\/$/, '');
+      try {
+        await sendBuyerConfirmation({
+          toEmail: booking.buyer_email,
+          bookingId: booking.id,
+          sellerName: seller ? seller.display_name : null,
+          startIso: booking.starts_at, endIso: booking.ends_at,
+          buyerTz: booking.buyer_timezone || (seller ? seller.timezone : 'America/New_York'),
+          meetingUrl: seller ? seller.meeting_instructions : null,
+          kind: booking.kind, toolkitIncluded: !!booking.toolkit_included,
+          signInUrl: base + '/platform.html'
+        });
+      } catch (e) { console.error('buyer confirmation email failed:', e.message); }
+      if (sellerEmail) {
+        try {
+          await sendSellerNotification({
+            toEmail: sellerEmail,
+            sellerName: seller ? seller.display_name : null,
+            buyerEmail: booking.buyer_email,
+            startIso: booking.starts_at,
+            sellerTz: seller ? seller.timezone : 'America/New_York',
+            kind: booking.kind, toolkitIncluded: !!booking.toolkit_included,
+            topic: booking.topic
+          });
+        } catch (e) { console.error('seller notification email failed:', e.message); }
       }
     }
 

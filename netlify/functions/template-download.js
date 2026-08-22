@@ -50,19 +50,9 @@ exports.handler = async function (event) {
     if (!tpls || !tpls.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'Template not found' }) };
     const tpl = tpls[0];
 
-    // Limited-time comp/trial accounts get full access to the tools but NOT to
-    // template downloads (templates are permanent paid products). Admins exempt.
-    if (ADMIN_EMAILS.indexOf(email) === -1) {
-      try {
-        const accRes = await fetch(URL + '/rest/v1/accounts?email=eq.' + encodeURIComponent(email) + '&select=templates_blocked&limit=1', { headers: sbHeaders });
-        const accRows = await accRes.json();
-        if (accRows && accRows[0] && accRows[0].templates_blocked) {
-          return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Templates are not included with your trial access.' }) };
-        }
-      } catch (e) { /* if the check fails, fall through to normal access rules */ }
-    }
-
-    // Did the signed-in member individually purchase this template?
+    // Did the signed-in member individually purchase this template? Resolve this
+    // FIRST: an owner always gets what they bought, even a comp/trial account whose
+    // templates are otherwise blocked (e.g. a marketplace bundle buyer).
     const ownsTemplate = async function () {
       try {
         const meRes = await fetch(URL + '/rest/v1/accounts?email=eq.' + encodeURIComponent(email) + '&select=id&limit=1', { headers: sbHeaders });
@@ -73,6 +63,20 @@ exports.handler = async function (event) {
         return !!(pur && pur.length);
       } catch (e) { return false; }
     };
+    const owns = await ownsTemplate();
+
+    // Limited-time comp/trial accounts get full access to the tools but NOT to
+    // template downloads (templates are permanent paid products) — UNLESS they own
+    // this specific one. Admins exempt.
+    if (!owns && ADMIN_EMAILS.indexOf(email) === -1) {
+      try {
+        const accRes = await fetch(URL + '/rest/v1/accounts?email=eq.' + encodeURIComponent(email) + '&select=templates_blocked&limit=1', { headers: sbHeaders });
+        const accRows = await accRes.json();
+        if (accRows && accRows[0] && accRows[0].templates_blocked) {
+          return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Templates are not included with your trial access.' }) };
+        }
+      } catch (e) { /* if the check fails, fall through to normal access rules */ }
+    }
 
     // Access model:
     //  - Admins/owner: everything.
@@ -86,14 +90,16 @@ exports.handler = async function (event) {
     let allowed = false;
     if (ADMIN_EMAILS.indexOf(email) !== -1) {
       allowed = true;
+    } else if (owns) {
+      allowed = true;
     } else if (memberPriced) {
-      allowed = await ownsTemplate();
+      allowed = false; // premium item, not owned -> must purchase
     } else if (paying) {
       allowed = true;
     } else if (!tpl.is_paid && (TIER_RANK[tier] || 0) >= (TIER_RANK[tpl.min_tier] || 2)) {
       allowed = true;
     } else if (tpl.is_paid) {
-      allowed = await ownsTemplate();
+      allowed = false; // paid item, not owned
     }
     if (!allowed) {
       return { statusCode: tpl.is_paid ? 402 : 403, headers, body: JSON.stringify({ ok: false, error: tpl.is_paid ? 'Purchase or join to download this template' : 'Join to download this template' }) };
