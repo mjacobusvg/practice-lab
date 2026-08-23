@@ -147,6 +147,32 @@ happening). Bolting AI on before a single real booking is premature.
 - **Retention angle:** the snapshot is a tangible artifact the mentee keeps, which reinforces the
   free-month → stay conversion. That is the product reason to build it, once the funnel is proven.
 
+## Phase 2 (spec only, NOT built) — Video + calendar automation
+
+**What already works (pilot):** booking confirmations carry a real `.ics` invite to **both**
+parties (`marketplace-notify.js`), with the meeting link in the event `LOCATION`. The meeting link
+is the mentor's **static room link** from the dashboard `meeting_instructions` field (reused for
+every booking). This is the recommended v1: zero integration, works end to end. Its limits: emailed
+`.ics` is not a live two-way sync (a later reschedule inside Google/Outlook does not propagate), and
+one static room means no per-session isolation.
+
+**Per-booking Zoom (first automation to add).** Mint a unique Zoom meeting per booking instead of a
+static room. Sketch:
+- Zoom **OAuth per mentor** (each seller connects their own Zoom, mirroring the Stripe Connect
+  pattern): store `accounts.zoom_refresh_token` (additive), refresh on demand.
+- On booking fulfillment (`marketplace-fulfill.js`), if the seller has Zoom connected, call
+  `POST /users/me/meetings` to create the session and write the join URL to
+  `marketplace_bookings.meeting_url` (column already exists). The existing notify path already emails
+  `meeting_url` and puts it in the ICS, so no notification changes needed.
+- Fallback stays the static `meeting_instructions` link when Zoom is not connected. Never block a
+  booking on Zoom failure: on API error, fall back to the static link and log.
+- Out of scope even here: auto-reschedule/cancel syncing the Zoom meeting when a slot moves.
+
+**True calendar sync (later, if ever).** Google/Outlook Calendar API with OAuth per mentor for
+two-way sync + free/busy. On the "not for the pilot" list; Google Calendar `conferenceData` would
+also mint a Meet link, folding video + sync into one integration if we go Google-first. Large build;
+revisit only if mentors ask for real calendar sync.
+
 ## Go-live checklist (what Michael configures)
 
 Everything defaults to **test mode** and moves no real money until `MARKETPLACE_PAY_MODE`
