@@ -40,6 +40,14 @@ function audienceFilter(a) {
   }
 }
 
+// Usage-based audiences: resolved from public.tool_usage (who actually USED a tool),
+// NOT from membership tier. This lets a broadcast reach exactly the people using a tool
+// — e.g. everyone currently drafting in the AI Scribe, trial users included, regardless
+// of tier — instead of every full member whether they touch the tool or not. The value
+// is the exact tool_usage.tool label the tool logs (see _lib/usage.js / clinical-proxy-stream).
+const USAGE_AUDIENCES = { scribe: 'AI Scribe' };
+function usageToolFor(a) { return USAGE_AUDIENCES[String(a || '').toLowerCase()] || null; }
+
 function sesClient() {
   const accessKeyId = process.env.SES_AWS_ACCESS_KEY_ID || process.env.SES_ACCESS_KEY_ID;
   const secretAccessKey = process.env.SES_AWS_SECRET_ACCESS_KEY || process.env.SES_SECRET_ACCESS_KEY;
@@ -220,8 +228,9 @@ exports.handler = async function (event) {
   const preheader = String(p.preheader || '').trim().slice(0, 200);
 
   const isCustom = String(p.audience || '').toLowerCase() === 'custom';
+  const usageTool = usageToolFor(p.audience);
   const filter = audienceFilter(p.audience);
-  if (filter === null && !isCustom) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Bad audience' }) };
+  if (filter === null && !isCustom && !usageTool) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Bad audience' }) };
 
   // Schedule for later instead of sending now (admin UI; real sends only, never a
   // test). The send-scheduled-broadcasts cron sends it when its time comes.
@@ -284,6 +293,39 @@ exports.handler = async function (event) {
         crows.forEach(function (r) { byEmail[String(r.email).toLowerCase()] = r; });
       }
       recipients = uniq.map(function (e) { const c = byEmail[e] || {}; return { email: e, name: c.name || '', first_name: c.first_name || '' }; });
+    } else if (usageTool) {
+      // Everyone who actually USED this tool (drafted with it) within the window, from
+      // public.tool_usage, then intersected with SUBSCRIBED contacts so opt-outs are
+      // respected and we have a name to personalize. Tier-agnostic on purpose: a trial
+      // user drafting in the Scribe is exactly who a Scribe-change note must reach, even
+      // though their tier is free/forum. Default window 90 days; override with used_since_days.
+      const days = Math.max(1, Math.min(3650, Number(p.used_since_days) || 90));
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      const ur = await fetch(URL + '/rest/v1/tool_usage?tool=eq.' + encodeURIComponent(usageTool) + '&created_at=gte.' + encodeURIComponent(since) + '&account_email=not.is.null&select=account_email&limit=100000', { headers: Object.assign({ 'Content-Type': 'application/json' }, auth) });
+      const urows = ur.ok ? await ur.json() : [];
+      const usedEmails = Array.from(new Set(urows.map(function (r) { return String(r.account_email || '').toLowerCase().trim(); })
+        .filter(function (e) { return e.indexOf('@') !== -1 && !isDisposable(e); })));
+      // Active users may live in accounts (real signed-in users) but not on the marketing
+      // contacts list. Include them anyway — they're exactly who a tool-change note must reach —
+      // pulling a name from contacts first, then accounts. Only EXPLICIT opt-outs
+      // (contacts.subscribed=false) are dropped; a user with no contacts row hasn't opted out.
+      const contactByEmail = {}, acctByEmail = {};
+      for (let start = 0; start < usedEmails.length; start += 400) {
+        const chunk = usedEmails.slice(start, start + 400);
+        const inList = chunk.map(function (e) { return '"' + e.replace(/"/g, '') + '"'; }).join(',');
+        const cr = await fetch(URL + '/rest/v1/contacts?email=in.(' + encodeURIComponent(inList) + ')&select=email,name,first_name,subscribed', { headers: Object.assign({ 'Content-Type': 'application/json' }, auth) });
+        (cr.ok ? await cr.json() : []).forEach(function (r) { contactByEmail[String(r.email).toLowerCase()] = r; });
+        const ar = await fetch(URL + '/rest/v1/accounts?email=in.(' + encodeURIComponent(inList) + ')&select=email,name', { headers: Object.assign({ 'Content-Type': 'application/json' }, auth) });
+        (ar.ok ? await ar.json() : []).forEach(function (r) { acctByEmail[String(r.email).toLowerCase()] = r; });
+      }
+      recipients = usedEmails
+        .filter(function (e) { const c = contactByEmail[e]; return !(c && c.subscribed === false); })
+        .map(function (e) {
+          const c = contactByEmail[e] || {}, a = acctByEmail[e] || {};
+          const name = c.name || a.name || '';
+          const first = c.first_name || (name.split(' ')[0]) || '';
+          return { email: e, name: name, first_name: first };
+        });
     } else {
       const qs = ['select=email,name,first_name', 'subscribed=eq.true', 'limit=10000'];
       if (filter) qs.push(filter);
