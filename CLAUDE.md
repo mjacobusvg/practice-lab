@@ -70,3 +70,11 @@ serve the cached old file.
   exists in the repo before building, detect cheaply and call AI only when needed, keep
   structured data / retrieved evidence / AI synthesis separate, and surface tradeoffs to Michael
   before consequential product decisions.
+- **The community is NOT on Circle anymore.** TBP runs its own platform (`platform.html` +
+  `netlify/functions/`), with members and contacts in Supabase (`public.contacts`, tiers
+  `free` / `forum` / `full`). The many `Circle`-named files and the Circle MCP connector are
+  **legacy** — do not treat them as the live system. Member **broadcasts are email**, sent via
+  `netlify/functions/broadcast-send.js` (AWS SES to `public.contacts`; audiences `all` /
+  `members` / `nonmembers` / `free` / `forum` / `full`; supports `test_email` preview and
+  `dry_run`) from the admin area in `platform.html`, with scheduling via
+  `send-scheduled-broadcasts.js`. Never route a broadcast, post, or member action through Circle.
