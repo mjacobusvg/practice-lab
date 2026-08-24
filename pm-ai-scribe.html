@@ -130,7 +130,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 #ambient-progress .out{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal),0 12px 34px rgba(0,0,0,.45)}
 </style>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-35"></script>
+<script src="/note-engine.js?v=ambient-36"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -355,7 +355,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-35</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-36</span></div>
 </div>
 </div>
 
@@ -1843,6 +1843,37 @@ function serializeSections(){
   return out;
 }
 function syncRawFromSections(){ var r=document.getElementById('raw'); if(r) r.value = serializeSections(); }
+// Reverse of serializeSections(): recover the structured wnSections from serialized scaffold text.
+// Needed so a working note whose #raw already holds the serialized sections (e.g. a draft saved by
+// an older build and restored after a hard reload, before wnMode/wnSections were persisted) rebuilds
+// as the colored, movable panels instead of one flat blob.
+function wnLabelKey(label){
+  var L = (label || '').toUpperCase();
+  if(L.indexOf('AMBIENT TRANSCRIPT') !== -1) return 'transcript';
+  if(L.indexOf('CHECK / ASK') !== -1 || L.indexOf('CHECK/ASK') !== -1) return 'checklist';
+  if(L.indexOf('PSYCHOTHERAPY GUIDE') !== -1) return 'guide';
+  if(L.indexOf('THERAPY COACH') !== -1) return 'coach';
+  if(L.indexOf('SCREENERS') !== -1) return 'screeners';
+  if(L.indexOf('YOUR NOTE') !== -1) return 'note';
+  return null;
+}
+function wnParseSerialized(text){
+  if(!text || text.indexOf(WN_RULE) === -1) return null;
+  var lines = text.split('\n'), n = lines.length, i = 0;
+  var out = {}, found = 0;
+  function isRule(s){ return (s || '').replace(/\s+$/,'') === WN_RULE; }
+  while(i < n){
+    if(isRule(lines[i])){
+      var label = (lines[i+1] || '').trim();      // label line follows the opening rule
+      var j = i + 2; while(j < n && !isRule(lines[j])) j++;   // skip sub line(s) to the closing rule
+      var body = [], m = j + 1; while(m < n && !isRule(lines[m])) { body.push(lines[m]); m++; }
+      var key = wnLabelKey(label);
+      if(key){ out[key] = body.join('\n').replace(/^\n+/,'').replace(/\s+$/,''); found++; }
+      i = m;   // resume at the next opening rule
+    } else { i++; }
+  }
+  return found ? out : null;
+}
 // On build, fit each panel to its full content so nothing is clipped. On typing, grow only
 // (never shrink), so a panel the clinician dragged taller stays put and content never clips.
 function wnFit(ta){ ta.style.height='auto'; ta.style.height=(ta.scrollHeight+6)+'px'; }
@@ -1904,6 +1935,20 @@ function buildFocusSections(){
 function openFocus(sourceId){
   focusSourceId = sourceId;
   var useSections = (sourceId === 'raw' && wnMode === 'sections');
+  // Self-heal a plain/serialized desync: if we're about to render the note PLAIN but #raw already
+  // holds serialized section scaffold (checklist / guide / your-note), rebuild the colored panels
+  // instead of dumping that serialized text into one flat textarea. This covers notes saved by an
+  // older build and restored after a hard reload, where wnMode/wnSections weren't persisted.
+  if(!useSections && sourceId === 'raw'){
+    var rawEl = document.getElementById('raw');
+    var recovered = wnParseSerialized(rawEl ? rawEl.value : '');
+    if(recovered && (recovered.checklist || recovered.guide || recovered.transcript || recovered.coach || recovered.screeners || (recovered.note && recovered.note.trim()))){
+      wnSections = { checklist:'', guide:'', note:'' };
+      for(var rk in recovered){ if(recovered.hasOwnProperty(rk)) wnSections[rk] = recovered[rk]; }
+      wnMode = 'sections';
+      useSections = true;
+    }
+  }
   document.getElementById('focus-err').innerHTML = '';
   // Pre-visit rundown pinned above the note when working the prepped note (never in the draft text).
   document.getElementById('focus-ref').innerHTML = (prepSnapshot && sourceId === 'raw') ? tbpSnapshotBannerHtml(prepSnapshot) : '';
