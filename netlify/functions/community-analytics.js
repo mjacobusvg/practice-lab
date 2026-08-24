@@ -140,7 +140,9 @@ exports.handler = async function (event) {
     // admin's own account, disposable test accounts, and pre-attribution
     // (email-less) events, so "who actually uses the tools" is answerable.
     const ADMIN_SET = ADMIN_EMAILS.map(function (e) { return e.toLowerCase(); });
-    const isTest = function (e) { return /@slmails\.com$/i.test(e) || /\+test/i.test(e); };
+    // Only plus-addressed +test aliases are test noise. @slmails.com is a real email privacy
+    // relay used by real members, not a test/disposable domain — count those as real usage.
+    const isTest = function (e) { return /\+test/i.test(e); };
     const tuRows = await sb('tool_usage?select=account_email,tool,tier,created_at&order=created_at.desc&limit=20000');
     const memberByEmail = {}, memberByTool = {}, youByTool = {};
     let youEvents = 0, anonEvents = 0, testEvents = 0, memberEvents = 0;

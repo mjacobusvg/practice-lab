@@ -26,7 +26,10 @@ const { mintSigninToken } = require('./_lib/signin-token');
 const ADMIN_EMAILS = ['michael@thinkbeyondpsych.com'];
 const SITE = 'https://thinkbeyondpractice.com';
 
-function isDisposable(e) { return /@slmails\.com$/i.test(e) || /\+test/i.test(e); }
+// Exclude only DELIBERATE test aliases (plus-addressed +test). @slmails.com is a legitimate
+// email privacy relay that real members use (it forwards to their real inbox), NOT a disposable
+// domain — do not exclude it, those are real subscribers who must receive broadcasts.
+function isDisposable(e) { return /\+test/i.test(e); }
 
 function audienceFilter(a) {
   switch (String(a || '').toLowerCase()) {
