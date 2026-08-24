@@ -140,6 +140,27 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 <script>(function(){try{if(window.self!==window.top)document.documentElement.classList.add('in-desk');}catch(e){document.documentElement.classList.add('in-desk');}})();</script>
 </head>
 <body>
+<style>
+#setup-scrim{position:fixed;inset:0;z-index:9500;background:rgba(6,10,20,.66);display:flex;align-items:flex-start;justify-content:center;padding:34px 14px;overflow:auto}
+#setup-scrim.hidden{display:none!important}
+#setup-scrim #scribe-form{max-width:660px;width:100%;margin:0;box-shadow:0 22px 60px rgba(0,0,0,.5)}
+</style>
+<script>
+/* Present the setup panel as a modal over the working note, so the working note is the one home
+   base and setup is a transient step. Reparent #scribe-form into a scrim; hidden while the
+   full-screen working note is open (see openFocus/closeFocus). Pure reparent — all IDs unchanged. */
+(function(){
+  function build(){
+    var form=document.getElementById('scribe-form');
+    if(!form || document.getElementById('setup-scrim')) return;
+    var scrim=document.createElement('div'); scrim.id='setup-scrim';
+    form.parentNode.insertBefore(scrim, form); scrim.appendChild(form);
+    window.tbpShowSetup=function(){ scrim.classList.remove('hidden'); };
+    window.tbpHideSetup=function(){ scrim.classList.add('hidden'); };
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',build); else build();
+})();
+</script>
 <div id="tool-container">
 <div>
   <a href="/practice-manager.html" class="back">&larr; Practice Manager</a>
@@ -206,6 +227,14 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
         <div class="hint" style="margin-top:6px;line-height:1.5"><strong style="color:var(--cream)">Start from your intake template.</strong> Open your new-patient scaffold full screen and fill each section live during the intake, then draft straight from it.</div>
         <button class="btn" id="neweval-setup-btn" style="margin-top:8px">Start my intake note (full screen) &rarr;</button>
         <span class="hint" id="neweval-hint" style="margin-left:8px"></span>
+      </div>
+
+      <!-- BLANK path (Prep off): one button into the single working note. For a follow-up with last
+           visit pasted, we still fetch the quick snapshot; the note itself opens as the blank template. -->
+      <div id="open-blank-block" style="display:none;margin-top:16px">
+        <button class="btn" id="open-blank-btn">Open my working note &rarr;</button>
+        <span class="hint" id="open-blank-hint" style="margin-left:8px">Your note template, empty. Type, paste, upload, or record right inside it.</span>
+        <div class="hint" style="margin-top:10px;line-height:1.5;color:var(--cream-dim)">From inside the working note you can record, upload a transcript (Krisp or other), type, or paste. Everything is in that one place.</div>
       </div>
 
       <!-- ALWAYS-VISIBLE record entry. Recording is available for every visit type and whether or not
@@ -903,8 +932,12 @@ function renderStyleBar(){
   // Capture is no longer an upfront either/or. Typing/pasting is always available and needs no
   // button; recording is an on-demand action via the "Record this visit" buttons (main view +
   // working-note header). This bar now just carries the Prep-from-last-note toggle.
-  var html = '<label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream);font-size:.9rem">'
-        + '<input type="checkbox" id="wf-prep"'+(prepOn?' checked':'')+' style="width:auto"> <span>Prep from last note <span style="color:var(--cream-dim)">&mdash; carry last visit forward and get today\'s checklist (works whether you record or type)</span></span></label>';
+  var isNewV = (visitType==='new_eval');
+  var togText = isNewV
+    ? 'Start from my intake template <span style="color:var(--cream-dim)">&mdash; open your new-patient scaffold to fill live, or paste/dictate/upload and it organizes into your sections</span>'
+    : 'Prep from last note <span style="color:var(--cream-dim)">&mdash; carry last visit forward and get today\'s checklist</span>';
+  var html = '<label style="display:inline-flex;align-items:flex-start;gap:8px;cursor:pointer;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream);font-size:.9rem">'
+        + '<input type="checkbox" id="wf-prep"'+(prepOn?' checked':'')+' style="width:auto;margin-top:3px"> <span>'+togText+'</span></label>';
   bar.innerHTML = html;
   var pc = document.getElementById('wf-prep');
   if(pc) pc.addEventListener('change', function(){ prepOn = this.checked; persistVaultField('hpiPrep', prepOn?'on':'off'); renderMode(); });
@@ -920,35 +953,20 @@ function renderMode(){
   // Last-visit note: available for any follow-up (required input when Prep is on; optional carry-forward otherwise).
   show('carry-block', isFu);
   var cl = document.getElementById('carry-label');
-  if(cl){ cl.innerHTML = prepOn
-    ? "Last visit's HPI + assessment &mdash; paste to carry forward and set up"
-    : "Last visit's HPI + assessment <span style=\"text-transform:none;font-weight:400;color:var(--cream-dim)\">(carries sections forward &amp; powers the assessment)</span>"; }
+  if(cl){ cl.innerHTML = "Last visit's HPI + assessment <span style=\"text-transform:none;font-weight:700;color:var(--teal)\">&mdash; powers your diagnoses &amp; assessment</span>"; }
 
-  // Prep controls (Set me up) depend on the PREP toggle, not the capture mode.
+  // GUIDED path: prep controls (carry-forward note + checklist + guide). Depends on the Prep toggle.
   show('prep-controls', prepOn && isFu);
   show('neweval-scaffold', prepOn && isNew);
-  // Record is available for EVERY visit type and prep state, so its button is always on the main
-  // screen once a visit type is chosen (fixes New-patient-eval having no visible record button).
-  show('record-always', !!visitType);
-  var rl = document.getElementById('raw-label');
-  if(rl){ rl.innerHTML = "Paste an existing note or transcript <span style=\"text-transform:none;font-weight:400;color:var(--cream-dim)\">(optional &mdash; a recording also lands here; you chart in the working window below)</span>"; }
+  // BLANK path: a single "Open a blank note" entry when Prep is OFF and a visit type is chosen.
+  show('open-blank-block', !prepOn && !!visitType);
 
-  // The working-notes box competes with the Set me up flow. While Prep is on and nothing has been
-  // built into the box yet, hide it; it reappears the moment Set me up (or an ambient transcript)
-  // fills it, or immediately if the clinician is NOT prepping.
-  var rawEl = document.getElementById('raw');
-  var hasNotes = rawEl && typeof rawEl.value === 'string' && rawEl.value.trim().length > 0;
-  show('notes-block', !prepOn || hasNotes);
-  // When Prep hides notes-block (and its Upload button), point Krisp/outside-transcript users at
-  // where the upload path went, so a checked Prep box doesn't strand them with nowhere to paste.
-  show('prep-upload-hint', prepOn && !hasNotes && !!visitType);
-  // Name the correct button for the current visit type: follow-up prep uses "Set me up",
-  // new-patient prep uses "Start my intake note (full screen)".
-  var puBtn = document.getElementById('prep-upload-btnname');
-  if(puBtn) puBtn.textContent = isNew ? 'Start my intake note (full screen)' : 'Set me up for this visit';
-  // In structured mode the "Set me up" confirmation panel is the single entry to the full-screen
-  // editor, so hide the plain textarea here (leaving just the Draft button); show it otherwise.
-  show('notes-plain', wnMode !== 'sections');
+  // Everything content-entry now lives in the ONE working note (record / upload / paste / type),
+  // so the old setup-screen surfaces are retired from the modal. #raw stays in the DOM (hidden) as
+  // the canonical backing store the working note reads and writes.
+  show('record-always', false);
+  show('notes-block', false);
+  show('prep-upload-hint', false);
 }
 
 // ── Template status line ──
@@ -1674,6 +1692,28 @@ document.getElementById('neweval-setup-btn').addEventListener('click', async fun
   openFocus('raw');
 });
 
+// ── BLANK path: open the working note as the blank template. For a follow-up with last visit
+//    pasted, still fetch the quick snapshot (but NO carried-forward scaffold, checklist, or guide). ──
+function snapshotSystem(){
+  return "You are helping a psychiatric prescriber PREP for a follow-up visit. You are given LAST VISIT'S NOTE. Produce ONLY a very brief pre-visit snapshot (3 to 5 short labeled lines) the clinician reads in a few seconds before walking in. Derive it ONLY from last visit's note; invent nothing; omit any line the note does not support. Use these labels, each on its own line: 'Returning:' the reason for the visit and, when stated, the interval and whether meds changed last visit; 'Diagnoses:' the active diagnosis list, short, with ICD-10 codes if present; 'Meds:' current medications with dose and any recent change; 'Watch:' 1 to 2 open threads or items to follow up. MEDICATION-CHANGE TIMING: only say a med was added, started, or changed 'last visit' if the note's narrative explicitly says so; never infer it from EHR edit-metadata like '(Edited on DATE)'. Output the labeled lines only, no name, no other text.";
+}
+document.getElementById('open-blank-btn').addEventListener('click', async function(){
+  if(tbpDemoBlock()) return;
+  wnMode = 'plain';
+  var ctx = document.getElementById('context');
+  var last = ctx ? ctx.value.trim() : '';
+  if(visitType === 'follow_up' && last.length >= 40){
+    var btn = this; var prev = btn.innerHTML; btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Getting your snapshot&hellip;';
+    try {
+      var snap = await callAPI(snapshotSystem(), [{role:'user', content: "LAST VISIT'S NOTE:\n\n" + last}], 1200);
+      if(snap && snap.trim()){ prepSnapshot = snap.trim(); }
+    } catch(e){ /* the snapshot is a nicety; never block opening the note */ }
+    btn.disabled = false; btn.innerHTML = prev;
+  }
+  openFocus('raw');
+});
+
 function renderPrep(j){
   var note = finalizeHpi(j.startingNote);
   // Prep is inherently a follow-up; make sure the draft uses follow-up carry-forward.
@@ -1851,6 +1891,7 @@ function openFocus(sourceId){
   // Open the overlay BEFORE building the panels so the textareas are visible and autosize
   // to their real scrollHeight (a hidden element reports height 0).
   document.getElementById('focus-overlay').classList.add('open');
+  try{ if(window.tbpHideSetup) tbpHideSetup(); }catch(e){}   // working note is the home; tuck the setup modal away
   var fab = document.getElementById('tbp-theme-fab'); if(fab) fab.style.display = 'none'; // don't cover the Exit control
   if(useSections){
     buildFocusSections();
@@ -1878,6 +1919,7 @@ function focusSyncBack(){
 function closeFocus(){
   focusSyncBack();
   document.getElementById('focus-overlay').classList.remove('open');
+  try{ if(window.tbpShowSetup) tbpShowSetup(); }catch(e){}   // back out to the setup modal
   var fab = document.getElementById('tbp-theme-fab'); if(fab) fab.style.display = '';
 }
 document.addEventListener('keydown', function(e){
