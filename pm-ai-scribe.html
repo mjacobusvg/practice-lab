@@ -130,7 +130,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 #ambient-progress .out{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal),0 12px 34px rgba(0,0,0,.45)}
 </style>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-36"></script>
+<script src="/note-engine.js?v=ambient-37"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -355,7 +355,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-36</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-37</span></div>
 </div>
 </div>
 
@@ -4807,8 +4807,10 @@ function initTherapyCoach(){
 <script>
 var TBP_TOUR = (function(){
   var STEPS = [
-    {sel:'#focus-setup-btn', notehome:true, title:'Your working note — home base',
-     body:"You land right here for every patient: your working note. Type as you go, paste an outside transcript, upload one, or record — it all happens in this one place. When you want to prep before the visit, carrying last visit forward and getting today's checklist, you start from Set up this visit, right here in the header. Let me open it."},
+    {sel:'#focus-note', notehome:true, title:'This is your working note',
+     body:"Home base for one patient — the tab up top, with its own separate memory, so nothing crosses between patients. Everything happens right here in this one note: type as you go, paste an outside transcript, upload one, or record the visit. When you're done, Draft final note turns it into a clean note in your voice. Two controls live in the header above it — let me show you both."},
+    {sel:'#focus-setup-btn', notehome:true, title:'Set up this visit — prep before you start',
+     body:"When you want to prep before the visit — carry last visit forward and build today's checklist — you start from Set up this visit, right here in the header. Let me open it."},
     {sel:'#visit-opts', core:true, title:'Set up this visit',
      body:'This is what Set up this visit opens. Pick New patient or Follow-up and the right template loads automatically. Everything below is optional and saved to your Vault, so you set it once and it sticks.'},
     {sel:'#__rec_demo__', demoOnly:true, title:'Recording is on demand',
@@ -4868,6 +4870,10 @@ var TBP_TOUR = (function(){
      body:"Open Set up this visit anytime and your templates are right there: redo them from a full note, edit any section directly, or troubleshoot a note that came out wrong. And the rule from the banner up top holds: review and sign every note yourself. You are always the clinician of record."}
   ];
   var i = 0, order = [], active = false, demoOpen = false, saved = null, deskMode = false, demoPdOpen = false, coachOpen = false, demoDrOpen = false, demoDraftTimer = null;
+  // When the Desk drives the tour, it passes how many finale steps follow this one (tailCount), so the
+  // step counter reads as one continuous walkthrough (1 of N ... N of N) across the two documents
+  // instead of resetting at the hand-off. 0 when the Scribe tour runs standalone.
+  var tailCount = 0;
   function vis(el){ return el && el.offsetParent !== null; }
   function target(s){ return document.querySelector(s.sel); }
   function el(id){ return document.getElementById(id); }
@@ -5325,9 +5331,9 @@ Counseling: Continues without counseling at this time.`;
     var t = target(s);
     el('tbp-tour-title').textContent = s.title;
     el('tbp-tour-body').textContent = s.body;
-    el('tbp-tour-step').textContent = (i+1) + ' of ' + order.length;
+    el('tbp-tour-step').textContent = (i+1) + ' of ' + (order.length + tailCount);
     el('tbp-tour-back').style.visibility = i === 0 ? 'hidden' : 'visible';
-    el('tbp-tour-next').textContent = i === order.length - 1 ? 'Done' : 'Next';
+    el('tbp-tour-next').textContent = i === order.length - 1 ? (tailCount > 0 ? 'Next' : 'Done') : 'Next';
     var anchored = t && vis(t) && t.offsetHeight > 10;
     if(anchored){
       // For the coach step, keep the modal pinned to its top so the heading and "Find from my note"
@@ -5358,9 +5364,10 @@ Counseling: Continues without counseling at this time.`;
     if(card && card.contains(e.target)) return; // let Next/Back/close through
     e.preventDefault(); e.stopPropagation();
   }
-  function _start(mode){
+  function _start(mode, tail){
     if(active) return;
     active = true;
+    tailCount = tail || 0;
     try { window.__tbpScribeTourActive = true; } catch(e){}
     try { var _ob = document.getElementById('onboarding'); if(_ob) _ob.classList.remove('open'); } catch(e){} // the walkthrough replaces the onboarding modal
     deskMode = (mode === 'desk');
@@ -5382,7 +5389,7 @@ Counseling: Continues without counseling at this time.`;
       // walkthrough as the finale; otherwise just close.
       var wasDesk = deskMode;
       _close();
-      if(wasDesk){ try { window.parent.postMessage({ tbp:'tbp-scribe-tour-done' }, location.origin); } catch(e){} }
+      if(wasDesk){ try { window.parent.postMessage({ tbp:'tbp-scribe-tour-done', scribeLen: order.length }, location.origin); } catch(e){} }
       return;
     }
     i++; place();
@@ -5431,7 +5438,7 @@ window.addEventListener('message', function(e){
   var d = e.data;
   // Desk's explicit hand-off: start THIS Scribe tour directly. (Not startScribeTour(),
   // which when framed bounces back to the Desk to orchestrate — that would loop.)
-  if(d && d.tbp === 'tbp-start-scribe-tour'){ try { TBP_TOUR.start(d.mode || null); } catch(_){} }
+  if(d && d.tbp === 'tbp-start-scribe-tour'){ try { TBP_TOUR.start(d.mode || null, d.finaleLen || 0); } catch(_){} }
 });
 (function(){
   if(document.documentElement.classList.contains('in-desk')) return;

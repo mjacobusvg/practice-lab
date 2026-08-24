@@ -347,7 +347,7 @@ function addPatient(autoName, slot, label){
   // ?v= is a build tag: bump it whenever the framed Scribe changes so the iframe loads the NEW file
   // instead of a browser-cached copy (an iframe can serve stale JS even after a parent hard-reload,
   // which stranded the ambient auto-draft on old code across several deploys).
-  frame.src = SCRIBE_URL + '?slot=' + encodeURIComponent(slot) + '&v=ambient-36' + (TBP_DEMO ? '&demo=1' : '');   // per-tab autosave key
+  frame.src = SCRIBE_URL + '?slot=' + encodeURIComponent(slot) + '&v=ambient-37' + (TBP_DEMO ? '&demo=1' : '');   // per-tab autosave key
   frame.title = label;
   // Let the isolated Scribe use the mic (ambient) and screen share (telehealth) and clipboard.
   frame.setAttribute('allow', 'microphone; camera; display-capture; clipboard-write; clipboard-read');
@@ -455,6 +455,9 @@ var DESK_TOUR = (function(){
   ];
   var STEPS = INTRO, phase = 'intro';
   var i = 0, active = false;
+  // How many steps preceded this phase in the single continuous walkthrough (the Scribe steps that
+  // ran before the finale), so the counter reads N+1 of TOTAL instead of resetting to 1 at hand-off.
+  var headOffset = 0;
   function el(id){ return document.getElementById(id); }
   function target(s){ return document.querySelector(s.sel); }
   function vis(t){ return t && t.offsetParent !== null; }
@@ -477,7 +480,7 @@ var DESK_TOUR = (function(){
     var s = STEPS[i], t = target(s);
     el('dk-tour-title').textContent = s.title;
     el('dk-tour-body').textContent = s.body;
-    el('dk-tour-step').textContent = (i+1)+' of '+STEPS.length;
+    el('dk-tour-step').textContent = (headOffset+i+1)+' of '+(headOffset+STEPS.length);
     el('dk-tour-back').style.visibility = i===0 ? 'hidden' : 'visible';
     el('dk-tour-next').textContent = (i===STEPS.length-1) ? (phase==='intro' ? 'Next' : (TBP_DEMO ? 'Start your free 14-day trial →' : 'Done')) : 'Next';
     // Surface the next-tool (Chart Audit + Coder) demo right on the final step, so it is a
@@ -580,7 +583,7 @@ var DESK_TOUR = (function(){
     active = false;
     try{ localStorage.setItem('tbp_desk_tour_seen','1'); }catch(e){}
   }
-  function _start(which){ if(active) return; phase = (which==='finale') ? 'finale' : 'intro'; STEPS = (phase==='finale') ? FINALE : INTRO; demoDone = {}; active=true; i=0; document.addEventListener('click', blockPageClicks, true); window.addEventListener('scroll', onScroll, true); window.addEventListener('resize', onScroll); document.addEventListener('keydown', escFn); place(); }
+  function _start(which, offset){ if(active) return; phase = (which==='finale') ? 'finale' : 'intro'; STEPS = (phase==='finale') ? FINALE : INTRO; headOffset = offset || 0; demoDone = {}; active=true; i=0; document.addEventListener('click', blockPageClicks, true); window.addEventListener('scroll', onScroll, true); window.addEventListener('resize', onScroll); document.addEventListener('keydown', escFn); place(); }
   function _next(){
     if(i>=STEPS.length-1){
       _hide();
@@ -591,7 +594,7 @@ var DESK_TOUR = (function(){
     i++; place();
   }
   function _prev(){ if(i>0){ i--; place(); } }
-  return { start:_start, next:_next, prev:_prev, close:_hide };
+  return { start:_start, next:_next, prev:_prev, close:_hide, finaleCount:function(){ return FINALE.length; } };
 })();
 // End-of-demo hand-off: you finished a note in the AI Scribe; the Chart Audit + Coder is the next
 // tool in the kit. Offer to see it (its own public demo) or to join now.
@@ -613,7 +616,7 @@ function showCoderHandoff(){
   var cl=o.querySelector('#tbp-coder-handoff-close');
   if(cl) cl.addEventListener('click',function(ev){ ev.preventDefault(); if(o.parentNode) o.parentNode.removeChild(o); });
 }
-function startDeskTour(){ DESK_TOUR.start(); }
+function startDeskTour(){ handoffToScribe(); }
 
 // ── Walkthrough orchestration (Desk-intro → Scribe → Desk-finale) ──
 // First load: the Desk plays a short INTRO spotlighting this patient's real tab, then hands the tour
@@ -630,7 +633,7 @@ function handoffToScribe(){
     try{ ready = fr && fr.contentDocument && fr.contentDocument.readyState === 'complete' && fr.contentWindow; }catch(e){ ready = false; }
     if(ready){
       launched = true; clearInterval(iv);
-      setTimeout(function(){ try{ fr.contentWindow.postMessage({ tbp:'tbp-start-scribe-tour', mode:'desk' }, location.origin); }catch(e){} }, 250);
+      setTimeout(function(){ try{ fr.contentWindow.postMessage({ tbp:'tbp-start-scribe-tour', mode:'desk', finaleLen: DESK_TOUR.finaleCount() }, location.origin); }catch(e){} }, 250);
     } else if(tries > 80){ clearInterval(iv); }
   }, 250);
 }
@@ -638,13 +641,16 @@ function handoffToScribe(){
   // Demo always runs the tour (prospects should always see it); real members see it once.
   if(!TBP_DEMO){ try{ if(localStorage.getItem('tbp_desk_tour_seen')) return; }catch(e){ return; } }
   try{ localStorage.setItem('tbp_desk_tour_seen','1'); }catch(e){}   // one-shot: bailing early won't re-trigger
-  // Start with the Desk intro once the first tab exists; its Next hands off to the Scribe.
+  // One continuous walkthrough: start directly in the first patient's working note (the Scribe tour),
+  // then the Desk plays the multi-patient finale. There is no longer a separate one-step Desk intro —
+  // the tab / separate-memory context now opens the Scribe tour's first step and is reinforced in the
+  // finale, so the whole thing reads as a single numbered tour instead of a beginning/middle/end.
   var tries = 0;
   var iv = setInterval(function(){
     tries++;
     if(typeof patients !== 'undefined' && patients.length && document.querySelector('.tab')){
       clearInterval(iv);
-      setTimeout(function(){ try{ DESK_TOUR.start('intro'); }catch(e){} }, 300);
+      setTimeout(function(){ try{ handoffToScribe(); }catch(e){} }, 300);
     } else if(tries > 80){ clearInterval(iv); }
   }, 250);
 })();
@@ -652,12 +658,12 @@ function handoffToScribe(){
 window.addEventListener('message', function(e){
   if(e.origin !== window.location.origin) return;
   var d = e.data;
-  if(d && d.tbp === 'tbp-scribe-tour-done'){ try{ DESK_TOUR.start('finale'); }catch(_){} }
+  if(d && d.tbp === 'tbp-scribe-tour-done'){ try{ DESK_TOUR.start('finale', d.scribeLen || 0); }catch(_){} }
   // "Show me how it works" inside a framed Scribe asks the Desk to run the WHOLE
   // orchestrated walkthrough from the top (Desk intro → Scribe → Desk finale), so a
   // member launching it manually gets the same sequence a demo visitor does — not just
   // the middle Scribe steps. start('intro') ignores the once-only localStorage guard.
-  if(d && d.tbp === 'tbp-start-desk-walkthrough'){ try{ DESK_TOUR.start('intro'); }catch(_){} }
+  if(d && d.tbp === 'tbp-start-desk-walkthrough'){ try{ handoffToScribe(); }catch(_){} }
 });
 </script>
 <!-- ===== Cookie Consent Banner ===== -->
