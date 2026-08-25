@@ -130,7 +130,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 #ambient-progress .out{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal),0 12px 34px rgba(0,0,0,.45)}
 </style>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-46"></script>
+<script src="/note-engine.js?v=ambient-47"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -355,7 +355,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-46</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-47</span></div>
 </div>
 </div>
 
@@ -1945,13 +1945,30 @@ function buildFocusSections(){
   });
   wnRefreshMoveBtns();
   host.querySelectorAll('.wn-ta').forEach(function(ta){
-    wnFit(ta);
     ta.addEventListener('input', function(){ wnSections[ta.getAttribute('data-key')] = ta.value; syncRawFromSections(); wnGrow(ta); });
   });
-  // Re-fit AFTER layout flushes. Measuring scrollHeight immediately after innerHTML often under-
-  // reports (the textarea hasn't been laid out at its real width yet), which pinned every section
-  // to its 90px min-height and truncated them into tiny internal scrollboxes.
-  requestAnimationFrame(function(){ try{ host.querySelectorAll('.wn-ta').forEach(wnFit); }catch(e){} });
+  wnFitSoon(host);
+}
+// Size every section to its full content, but ONLY once the textareas actually have layout width.
+// Measuring scrollHeight while the overlay is still hidden or zero-width under-reports and pins each
+// section to its 90px min-height — that is the truncation bug. So retry across animation frames until
+// the textareas are really laid out, THEN fit, and fit again after paint and after fonts settle.
+function wnFitSoon(host){
+  host = host || document.getElementById('focus-sections');
+  if(!host) return;
+  var tries = 0;
+  (function attempt(){
+    var tas = host.querySelectorAll('.wn-ta');
+    var laidOut = tas.length && tas[0].clientWidth > 0;   // 0 while hidden/unlaid — don't measure yet
+    if(laidOut){
+      tas.forEach(wnFit);
+      requestAnimationFrame(function(){ try{ tas.forEach(wnFit); }catch(e){} });  // after paint
+      setTimeout(function(){ try{ tas.forEach(wnFit); }catch(e){} }, 250);          // after fonts swap
+      return;
+    }
+    if(tries++ < 60){ requestAnimationFrame(attempt); }
+    else { tas.forEach(wnFit); }
+  })();
 }
 function openFocus(sourceId){
   focusSourceId = sourceId;
