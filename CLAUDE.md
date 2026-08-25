@@ -43,6 +43,20 @@ Pushing to `main` triggers the Netlify redeploy. After pushing a front-end chang
 owner to **hard-reload** (Cmd/Ctrl+Shift+R) once the build finishes, since a normal reload can
 serve the cached old file.
 
+## Build tag + update nudge (bump together every deploy)
+
+The Scribe iframe is cache-busted by a `?v=ambient-NN` build tag. When you change `pm-ai-scribe.html`
+or `ai-scribe-workspace.html`, bump that number **and keep three things in lockstep**, all to the
+SAME `ambient-NN`:
+1. `note-engine.js?v=ambient-NN` and the visible `build ambient-NN` in `pm-ai-scribe.html`, and the
+   iframe `&v=ambient-NN` in `ai-scribe-workspace.html` (the existing build tag).
+2. `version.json` → `{"build":"ambient-NN"}` (served `no-store`; it is the deployed-build source of truth).
+3. `TBP_BUILD = 'ambient-NN'` in `ai-scribe-workspace.html` (the running tab's build constant).
+
+A long-open tab polls `version.json` and shows a "Refresh now" bar when the deployed build is
+**numerically newer** than `TBP_BUILD`. If you bump the build tag but forget `version.json`/`TBP_BUILD`,
+the nudge silently stops working (or, if only one moves, misfires). Move all three together.
+
 ## Notes
 
 - Clinical tools stream PHI through `clinical-proxy-stream.mjs` (BAA-covered); models are
