@@ -130,7 +130,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 #ambient-progress .out{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal),0 12px 34px rgba(0,0,0,.45)}
 </style>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-40"></script>
+<script src="/note-engine.js?v=ambient-41"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -355,7 +355,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-40</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-41</span></div>
 </div>
 </div>
 
@@ -736,6 +736,11 @@ var DEFAULT_MSE = 'No abnormal movements noted. Speech is clear with normal rate
 // bookkeeping — those are clinician-specific and belong in a custom Plan macro, not the house default.
 var DEFAULT_PLAN = 'No medications were changed today.\nContinue all current medications as prescribed.\nLabs and orders as indicated; results will be reviewed with the patient.\nReturn to clinic in ___, sooner if clinically needed.\nCrisis: call or text 988, or go to the nearest emergency room.';
 var vaultTemplates = { new_eval: '', follow_up: '' };
+// Cached CLEAN fillable scaffolds derived from the templates above. A saved template is really a
+// template+prompt (it carries drafting directives), so it can't be dropped into the working note
+// as-is. We compute the blank fillable form ONCE (first new-patient use), cache it here and in the
+// Vault, and insert it instantly forever after. Cleared whenever the underlying template changes.
+var vaultScaffolds = { new_eval: '', follow_up: '' };
 var lastHpi = '';
 var lastGen = null; // last assessment-generation context, so length can be rebuilt in place
 var authToken = '';
@@ -1693,18 +1698,38 @@ function newEvalScaffoldSystem(){
   s += "Output only the blank scaffold.";
   return s;
 }
-document.getElementById('neweval-setup-btn').addEventListener('click', function(){
+document.getElementById('neweval-setup-btn').addEventListener('click', async function(){
   if(tbpDemoBlock()) return;
   var raw = document.getElementById('raw');
   var hint = document.getElementById('neweval-hint');
   hint.innerHTML = '';
-  // Drop the clinician's saved intake template STRAIGHT into the working note — instant, no AI call.
-  // The stored template is PHI-free structure (a blank scaffold), so it is safe to insert as-is; a
-  // completed example is never stored (see CLINICAL-NOTE-GENERATOR-ARCHITECTURE.md §0.3 / C). Only
-  // fill an empty note so we never clobber work already in progress.
+  // Only fill an empty note so we never clobber work already in progress.
   if(!raw.value.trim()){
-    var tmpl = (vaultTemplates.new_eval || houseTemplates.new_eval || '').trim();
-    if(tmpl){ raw.value = finalizeHpi(tmpl); renderMode(); try{ if(window.tbpSaveDraft) window.tbpSaveDraft(); }catch(e){} }
+    // Fast path: a clean fillable scaffold is already cached (computed on a prior visit or at save),
+    // so drop it in INSTANTLY, no AI call, no wait.
+    var cached = (vaultScaffolds.new_eval || '').trim();
+    if(cached){
+      raw.value = finalizeHpi(cached); renderMode();
+      try{ if(window.tbpSaveDraft) window.tbpSaveDraft(); }catch(e){}
+    } else {
+      // First time only: the saved template carries drafting directives, so strip it down to a clean
+      // blank form ONCE, then cache it (Vault + memory) so every future new patient is instant.
+      var btn = this; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Building your intake scaffold&hellip;';
+      try {
+        var scaffold = await callAPI(newEvalScaffoldSystem(), [{role:'user', content: 'Produce the blank intake scaffold now.'}], 1500);
+        if(scaffold && scaffold.trim()){
+          var clean = finalizeHpi(scaffold);
+          raw.value = clean; vaultScaffolds.new_eval = clean;
+          try{ persistVaultField('hpiScaffoldEval', clean); }catch(e){}   // cache so next time is instant
+          renderMode();
+          try{ if(window.tbpSaveDraft) window.tbpSaveDraft(); }catch(e){}
+        }
+      } catch(err){
+        hint.innerHTML = '<span style="color:var(--red)">'+esc(err.message||err)+'</span>';
+      } finally {
+        btn.disabled = false; btn.innerHTML = 'Start my intake note (full screen) &rarr;';
+      }
+    }
   }
   openFocus('raw');
 });
@@ -2819,13 +2844,17 @@ async function buildTemplate(qaBlock){
 // localStorage, and update in-memory so the next draft uses it immediately.
 async function persistTemplate(text, visitKey){
   var key = visitKey==='new_eval' ? 'hpiTemplateEval' : 'hpiTemplateFollowup';
+  // The template changed, so any cached fillable scaffold derived from it is now stale — drop it so
+  // it recomputes from the new template on the next new-patient use.
+  var scafKey = visitKey==='new_eval' ? 'hpiScaffoldEval' : 'hpiScaffoldFollowup';
   // Mirror locally + in memory FIRST, so the template is never lost even if the server is unreachable.
   try {
-    var lv = JSON.parse(localStorage.getItem('tbp_vault')||'{}'); lv[key]=text;
+    var lv = JSON.parse(localStorage.getItem('tbp_vault')||'{}'); lv[key]=text; lv[scafKey]='';
     localStorage.setItem('tbp_vault', JSON.stringify(lv));
     localStorage.setItem('credentialing-hub-profile', JSON.stringify(lv));
   } catch(e){}
   vaultTemplates[visitKey] = text;
+  vaultScaffolds[visitKey] = '';
   renderTemplateStatus();
   // Load-modify-save. The server does a FULL replace of the data object, so client-side merge is
   // the only thing preserving the other fields. If we cannot definitively read the current Vault,
@@ -2840,6 +2869,7 @@ async function persistTemplate(text, visitKey){
   } catch(e){}
   if(!loadedOk) return false;
   current[key] = text;
+  current[scafKey] = '';   // invalidate the cached scaffold server-side too
   var sr = await fetch('/.netlify/functions/user-tool-data', {
     method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
     body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'save', data: current })
@@ -3380,6 +3410,8 @@ function loadVaultTemplates(){
     var lv = JSON.parse(localStorage.getItem('tbp_vault')||'{}');
     vaultTemplates.new_eval = lv.hpiTemplateEval || '';
     vaultTemplates.follow_up = lv.hpiTemplateFollowup || '';
+    vaultScaffolds.new_eval = lv.hpiScaffoldEval || '';
+    vaultScaffolds.follow_up = lv.hpiScaffoldFollowup || '';
     if(lv.hpiWorkflow) workflow = migrateWf(lv.hpiWorkflow);
     if(lv.hpiPrep!==undefined) prepOn = (lv.hpiPrep===true || lv.hpiPrep==='on');
     else if(lv.hpiWorkflow==='prep') prepOn = true; // legacy 'prep' implied prep-on
@@ -3410,6 +3442,8 @@ function loadVaultTemplates(){
       // Authoritative per-account profile (overrides the shared localStorage mirror).
       vaultTemplates.new_eval = d.data.hpiTemplateEval || '';
       vaultTemplates.follow_up = d.data.hpiTemplateFollowup || '';
+      vaultScaffolds.new_eval = d.data.hpiScaffoldEval || '';
+      vaultScaffolds.follow_up = d.data.hpiScaffoldFollowup || '';
       // SELF-HEAL: if the server has no template for a visit type but THIS browser still holds one
       // (an earlier save reached localStorage but not the server, or the server copy was lost),
       // keep the local template and push it back up, so a template is never silently dropped.
