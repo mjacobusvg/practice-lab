@@ -130,7 +130,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 #ambient-progress .out{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal),0 12px 34px rgba(0,0,0,.45)}
 </style>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-49"></script>
+<script src="/note-engine.js?v=ambient-50"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -156,8 +156,8 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
     var scrim=document.createElement('div'); scrim.id='setup-scrim';
     form.parentNode.insertBefore(scrim, form); scrim.appendChild(form);
     scrim.classList.add('hidden');   // note is home base on load; setup opens on demand (or on load in demo)
-    window.tbpShowSetup=function(){ scrim.classList.remove('hidden'); };
-    window.tbpHideSetup=function(){ scrim.classList.add('hidden'); };
+    window.tbpShowSetup=function(){ scrim.classList.remove('hidden'); try{ tbpUpdateSetupNudge(); }catch(e){} };
+    window.tbpHideSetup=function(){ scrim.classList.add('hidden'); try{ tbpUpdateSetupNudge(); }catch(e){} };
     // A close (X) and a click on the dark backdrop dismiss setup and return to the note, so opening
     // "Set up this visit" to peek never traps you into completing a setup action.
     form.insertAdjacentHTML('afterbegin', '<button type="button" id="setup-close-btn" title="Close setup, back to your note" style="position:absolute;top:9px;right:12px;background:none;border:0;color:var(--cream-dim);font-size:26px;line-height:1;cursor:pointer;padding:2px 7px;z-index:3">&times;</button>');
@@ -355,7 +355,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-49</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-50</span></div>
 </div>
 </div>
 
@@ -397,6 +397,12 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
     New here or need your templates? <a href="#" onclick="openOnboarding();return false;" style="color:var(--teal);text-decoration:none;font-weight:600">Set up my templates</a>
     &middot; <a href="#" onclick="startScribeTour();return false;" style="color:var(--teal);text-decoration:none">Show me how it works</a>
     &middot; <a href="#" onclick="openWizardTroubleshoot();return false;" style="color:var(--teal);text-decoration:none">Fix a template</a>
+  </div>
+  <!-- Empty-note nudge: the last-visit paste box now lives inside "Set up this visit", so a clinician
+       who starts typing in the note can miss it. Shown only when the note is empty and not yet set up. -->
+  <div id="focus-setup-nudge" style="display:none;margin:10px 0 6px;padding:12px 14px;border:1px solid var(--teal);border-left:3px solid var(--teal);background:var(--teal-glow);border-radius:9px;font-size:.9rem;line-height:1.5;color:var(--cream)">
+    <strong>Set up this visit first.</strong> Following up? Open it and paste last visit's HPI, assessment, and meds. That carries the patient forward and drives your diagnoses, your assessment, and today's questions. New patient? It loads your template. Or just start typing below.
+    <div style="margin-top:9px"><button type="button" class="btn" style="margin:0;padding:8px 16px" onclick="tbpShowSetup()">&#9881; Set up this visit</button> <a href="#" onclick="tbpDismissSetupNudge();return false;" style="color:var(--cream-dim);margin-left:10px;text-decoration:none;font-size:.85rem">Not now</a></div>
   </div>
   <div id="focus-sections" style="display:none"></div>
   <textarea id="focus-note" placeholder="This is your working note. Click 'Set up this visit' above to carry last visit forward and build your checklist — or just type, paste, upload a transcript, or record right here, then Draft final note."></textarea>
@@ -2007,7 +2013,27 @@ function openFocus(sourceId){
   } else {
     fn.focus();
   }
+  try{ tbpUpdateSetupNudge(); }catch(e){}
 }
+// Show the "Set up this visit first" nudge only while the working note is genuinely empty and
+// unprepared — a follow-up whose last-visit note hasn't been pasted is exactly who misses it. It
+// disappears the moment they set up, paste last visit, type anything, or dismiss it.
+function tbpUpdateSetupNudge(){
+  var n = document.getElementById('focus-setup-nudge'); if(!n) return;
+  var fo = document.getElementById('focus-overlay');
+  var fn = document.getElementById('focus-note');
+  var open = fo && fo.classList.contains('open');
+  var empty = fn && !((fn.value||'').trim());
+  var plain = (typeof wnMode === 'undefined' || wnMode !== 'sections');
+  var pastedLast = false;
+  try{ var ctx = document.getElementById('context'); if(ctx && (ctx.value||'').trim()) pastedLast = true; }catch(e){}
+  var demo = (typeof TBP_DEMO !== 'undefined' && TBP_DEMO);
+  var touring = (window.__tbpScribeTourActive === true);   // the walkthrough drives an empty note; don't clutter it
+  var dismissed = (window.__tbpSetupNudgeDismissed === true);
+  n.style.display = (open && empty && plain && !pastedLast && !dismissed && !demo && !touring) ? '' : 'none';
+}
+function tbpDismissSetupNudge(){ window.__tbpSetupNudgeDismissed = true; var n = document.getElementById('focus-setup-nudge'); if(n) n.style.display='none'; }
+(function(){ var fn = document.getElementById('focus-note'); if(fn) fn.addEventListener('input', function(){ try{ tbpUpdateSetupNudge(); }catch(e){} }); })();
 function tbpSnapshotBannerHtml(snap){
   return '<div id="focus-snap" class="focus-snap open">'
     + '<div class="focus-snap-head" onclick="tbpToggleSnap()"><span>Quick rundown before you walk in</span><span class="fs-chev">&#9650;</span></div>'
