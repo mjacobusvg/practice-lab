@@ -319,6 +319,20 @@ async function handleSubscriptionEvent(sub, stripe) {
   }
 
   const newTier = await recomputeAccountTier(accountId);
+
+  // A member just became (or renewed as) an ACTIVE paying member. Send the one-time
+  // paid welcome — but only for a genuinely paying, active subscription, and never
+  // for the toolkit free-month trial (that flow has its own emails). Idempotent per
+  // account inside sendPaidWelcomeIfNew, so renewals never re-email. Best-effort:
+  // a send failure must not affect the webhook's 200.
+  if (sub.status === 'active' && (newTier === 'full' || newTier === 'forum') &&
+      !(sub.metadata && sub.metadata.tbp_source === 'toolkit_trial')) {
+    try {
+      const { sendPaidWelcomeIfNew } = require('./_lib/paid-welcome');
+      await sendPaidWelcomeIfNew({ accountId: accountId, tier: newTier });
+    } catch (e) { console.warn('paid welcome failed:', e && e.message); }
+  }
+
   return { matched: true, account_id: accountId, status: sub.status, tier: newTier };
 }
 
