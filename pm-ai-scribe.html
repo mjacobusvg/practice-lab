@@ -130,7 +130,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 #ambient-progress .out{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal),0 12px 34px rgba(0,0,0,.45)}
 </style>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-53"></script>
+<script src="/note-engine.js?v=ambient-54"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -355,7 +355,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-53</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-54</span></div>
 </div>
 </div>
 
@@ -811,7 +811,9 @@ function tbpLogError(message, stack){
 }
 
 // ── Streaming proxy call (mirrors the Note Builder / Chart Coder pattern) ──
+var _lastCallTruncated = false;   // set true when the model stopped because it hit max_tokens (note cut off)
 async function callAPI(systemPrompt, messages, maxTokens, onDelta, model){
+  _lastCallTruncated = false;
   // Hard backstop: in demo mode nothing is ever sent to the clinical backend. Live buttons are
   // already intercepted (tbpDemoBlock) so this rarely fires, but it guarantees no visitor content
   // can leave the browser through any code path.
@@ -869,6 +871,8 @@ async function callAPI(systemPrompt, messages, maxTokens, onDelta, model){
           if(evt.type === 'content_block_delta' && evt.delta && typeof evt.delta.text === 'string'){
             assembled += evt.delta.text;
             if(onDelta){ try{ onDelta(assembled); }catch(e3){} }
+          } else if(evt.type === 'message_delta' && evt.delta && evt.delta.stop_reason === 'max_tokens'){
+            _lastCallTruncated = true;   // the note was cut off at the token ceiling
           }
         }catch(e2){}
       }
@@ -1417,8 +1421,15 @@ async function runDraft(sourceText, btn, errEl, silent){
   var streamEl = document.getElementById('hpi-stream');
   tbpNotifyDesk('busy');
   try {
-    var hpi = await callAPI(draftSystem(), [{role:'user', content: gatherSource(sourceText)}], 3400, silent ? undefined : function(partial){ if(streamEl) streamEl.textContent = partial; });
+    // 8000, matching the other whole-note carry-forward calls (prep, verify, note-parse). At 3400 a
+    // long follow-up that carries the entire prior note forward was TRUNCATED mid-note — it ran out of
+    // output budget partway down the template and silently dropped every section after it (including
+    // Substance Use and SI/HI). The clinical note must never be cut off by the token ceiling.
+    var hpi = await callAPI(draftSystem(), [{role:'user', content: gatherSource(sourceText)}], 8000, silent ? undefined : function(partial){ if(streamEl) streamEl.textContent = partial; });
     if(!hpi){ throw new Error('No HPI came back. Try again.'); }
+    // Belt and suspenders: if the model still hit the ceiling on an exceptionally long note, say so
+    // LOUDLY rather than let a truncated note look complete (see _lastCallTruncated in callAPI).
+    var _hpiTruncated = (typeof _lastCallTruncated !== 'undefined' && _lastCallTruncated);
     // Show the draft immediately (feels fast), then finalize the review in the background.
     if(!silent) renderResultPreview(hpi);
     if(btn) btn.innerHTML = '<span class="spinner"></span>Reviewing&hellip;';
@@ -1449,6 +1460,10 @@ async function runDraft(sourceText, btn, errEl, silent){
         res.flags.push('MSE has an unfilled blank (a bracketed placeholder). Fill it in before signing.');
       }
       finalHpi += "\n\nMental Status Exam:\n" + mseOut;
+    }
+    if(_hpiTruncated){
+      if(!Array.isArray(res.flags)) res.flags = [];
+      res.flags.unshift('The note was too long and got CUT OFF before the end — one or more sections after the cutoff are missing. Do NOT sign as-is. Shorten the carried-forward note (or trim older Historical Notes) and Draft again, then confirm every section is present.');
     }
     renderResult(finalHpi, res.flags, res.verified !== false, silent ? {hideHpi:true} : null);
     // In the silent ambient flow the banner and the preflight cards own the scroll — don't yank the
@@ -3242,7 +3257,7 @@ async function draftSampleHpi(visitKey){
     if(visitKey === 'follow_up' && s.prior){
       src += "\n\n---\n\nPRIOR HPI / ASSESSMENT (continuity context only; not today's documented content):\n\n" + s.prior;
     }
-    var hpi = await callAPI(draftSystem(), [{role:'user', content: src}], 3400);
+    var hpi = await callAPI(draftSystem(), [{role:'user', content: src}], 8000);   // 8000: never truncate the note (see runDraft)
     return finalizeHpi(hpi || '');
   } finally { visitType = prev; }
 }
