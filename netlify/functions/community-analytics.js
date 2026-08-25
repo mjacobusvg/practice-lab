@@ -175,6 +175,25 @@ exports.handler = async function (event) {
       you_by_tool: you_by_tool
     };
 
+    // ── Why members joined (paid-welcome one-click survey) ───────────────────
+    // signup_reasons is written by signup-reason.js when a new paying member taps
+    // an answer in the welcome email. Aggregate into a labeled breakdown so the
+    // Analytics tab shows WHY people actually convert, not just that they did.
+    const REASON_LABELS = {
+      scribe: 'AI Scribe', coding: 'Coding & audit', community: 'Community & archive',
+      tools: 'Practice & credentialing tools', all: 'Total package', other: 'Other'
+    };
+    const srRows = await sb('signup_reasons?select=reason&limit=5000');
+    const srCounts = {};
+    (srRows || []).forEach(function (r) { const k = r.reason || 'other'; srCounts[k] = (srCounts[k] || 0) + 1; });
+    const srTotal = Object.keys(srCounts).reduce(function (n, k) { return n + srCounts[k]; }, 0);
+    const signup_reasons = {
+      total: srTotal,
+      breakdown: Object.keys(srCounts).map(function (k) {
+        return { reason: k, label: REASON_LABELS[k] || k, count: srCounts[k], pct: srTotal ? Math.round(srCounts[k] / srTotal * 100) : 0 };
+      }).sort(function (a, b) { return b.count - a.count; })
+    };
+
     // ── Support signals: client errors + problem reports ─────────────────────
     const [errors_recent, reports_recent, errors_24h, reports_open] = await Promise.all([
       sb('client_errors?cleared_at=is.null&select=message,page,email,tier,created_at&order=created_at.desc&limit=15'),
@@ -199,6 +218,7 @@ exports.handler = async function (event) {
         new_members: new_members || [],
         net_new_paid: net_new_paid || [],
         signups_daily: signups_daily,
+        signup_reasons: signup_reasons,
         tools: tools,
         signals: signals
       })
