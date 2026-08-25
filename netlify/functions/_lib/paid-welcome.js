@@ -58,7 +58,12 @@ function surveyBlock(token) {
 }
 
 function buildEmail(account, token) {
-  var scribe = SITE + '/pm-ai-scribe.html';
+  // Route the CTA through one-click-signin so the member lands in the Scribe ALREADY
+  // signed in, not at the cold magic-link gate. Falls back to the plain gated URL
+  // (which still works, just via the normal sign-in) if no token could be minted.
+  var scribe = token
+    ? SITE + '/.netlify/functions/one-click-signin?t=' + token + '&r=' + encodeURIComponent('/pm-ai-scribe.html')
+    : SITE + '/pm-ai-scribe.html';
   var inner =
     "<p>Michael here, founder of Think Beyond Practice. I saw you came on as a paying member, and I wanted to reach out personally. Thank you, genuinely.</p>" +
     "<p>You've got the real tools now, not demos, plus the full community and the complete archive. The fastest way to feel the value today is the one I'm proudest of: the <strong>AI Scribe</strong>.</p>" +
