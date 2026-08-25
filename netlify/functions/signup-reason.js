@@ -12,7 +12,7 @@ const { verifySigninToken } = require('./_lib/signin-token');
 
 const SITE = 'https://thinkbeyondpractice.com';
 // Keep in sync with REASONS in _lib/paid-welcome.js.
-const ALLOWED = { scribe: 1, coding: 1, community: 1, tools: 1, other: 1 };
+const ALLOWED = { scribe: 1, coding: 1, community: 1, tools: 1, all: 1, other: 1 };
 
 exports.handler = async function (event) {
   const q = event.queryStringParameters || {};

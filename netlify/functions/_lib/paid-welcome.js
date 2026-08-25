@@ -32,7 +32,8 @@ const REASONS = [
   { slug: 'scribe', label: 'The AI Scribe (documentation)' },
   { slug: 'coding', label: 'Coding & audit support' },
   { slug: 'community', label: 'The community & archive' },
-  { slug: 'tools', label: 'Practice & credentialing tools' }
+  { slug: 'tools', label: 'Practice & credentialing tools' },
+  { slug: 'all', label: 'All of it, the total package' }
 ];
 
 function btn(href, label) {
