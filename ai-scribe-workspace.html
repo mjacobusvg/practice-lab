@@ -347,7 +347,7 @@ function addPatient(autoName, slot, label){
   // ?v= is a build tag: bump it whenever the framed Scribe changes so the iframe loads the NEW file
   // instead of a browser-cached copy (an iframe can serve stale JS even after a parent hard-reload,
   // which stranded the ambient auto-draft on old code across several deploys).
-  frame.src = SCRIBE_URL + '?slot=' + encodeURIComponent(slot) + '&v=ambient-47' + (TBP_DEMO ? '&demo=1' : '');   // per-tab autosave key
+  frame.src = SCRIBE_URL + '?slot=' + encodeURIComponent(slot) + '&v=ambient-48' + (TBP_DEMO ? '&demo=1' : '');   // per-tab autosave key
   frame.title = label;
   // Let the isolated Scribe use the mic (ambient) and screen share (telehealth) and clipboard.
   frame.setAttribute('allow', 'microphone; camera; display-capture; clipboard-write; clipboard-read');
@@ -736,6 +736,51 @@ window.addEventListener('message', function(e){
   if(prior==='granted'){ grant(); }        // re-apply their prior consent
   else if(prior==='denied'){ deny(); }     // keep everything off
   else if(banner){ banner.classList.add('show'); }  // no choice yet -> prompt
+})();
+</script>
+
+<!-- ── New-version nudge ────────────────────────────────────────────────────────
+     A long-open tab can run an old build for days (the must-revalidate cache headers only
+     help on an actual reload). This polls /version.json (served no-store) and, if the deployed
+     build is newer than the one this tab is running, shows a small refresh bar. Bump TBP_BUILD
+     with every deploy, in lockstep with version.json and the ambient build tags. -->
+<script>
+(function(){
+  var TBP_BUILD = 'ambient-48';   // this tab's build; must match version.json at deploy time
+  function refreshNow(){
+    try{ var u = new URL(location.href); u.searchParams.set('_v', Date.now()); location.replace(u.toString()); }
+    catch(e){ location.reload(); }
+  }
+  function showBar(newBuild){
+    if(document.getElementById('tbp-update-banner')) return;
+    var bar = document.createElement('div');
+    bar.id = 'tbp-update-banner';
+    bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:200000;background:#2aabb8;color:#04222a;'
+      + 'font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;font-weight:600;padding:11px 16px;'
+      + 'display:flex;align-items:center;justify-content:center;gap:16px;box-shadow:0 -3px 14px rgba(0,0,0,.35)';
+    bar.innerHTML = '<span>A newer version of the AI Scribe is available.</span>'
+      + '<button type="button" id="tbp-update-refresh" style="background:#04222a;color:#eafcff;border:0;border-radius:7px;padding:8px 18px;font:600 13px inherit;cursor:pointer">Refresh now</button>'
+      + '<button type="button" id="tbp-update-x" title="Not now" style="background:transparent;border:0;color:#04222a;font-size:20px;line-height:1;cursor:pointer;padding:0 6px">&times;</button>';
+    document.body.appendChild(bar);
+    document.getElementById('tbp-update-refresh').addEventListener('click', refreshNow);
+    document.getElementById('tbp-update-x').addEventListener('click', function(){ bar.remove(); });
+  }
+  function check(){
+    try{
+      fetch('/version.json?cb=' + Date.now(), { cache:'no-store' })
+        .then(function(r){ return r.ok ? r.json() : null; })
+        .then(function(d){ if(d && d.build && d.build !== TBP_BUILD) showBar(d.build); })
+        .catch(function(){});   // network hiccup: never nag on a failed check
+    }catch(e){}
+  }
+  // Don't check in the public demo (prospects aren't running a long clinical session), and give
+  // the app a moment to settle before the first check. Then poll every 5 minutes.
+  try{
+    if(!(window.TBP_DEMO)){
+      setTimeout(check, 4000);
+      setInterval(check, 5 * 60 * 1000);
+    }
+  }catch(e){}
 })();
 </script>
 
