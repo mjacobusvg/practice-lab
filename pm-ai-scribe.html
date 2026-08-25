@@ -130,7 +130,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 #ambient-progress .out{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal),0 12px 34px rgba(0,0,0,.45)}
 </style>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-51"></script>
+<script src="/note-engine.js?v=ambient-52"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -355,7 +355,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-51</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-52</span></div>
 </div>
 </div>
 
@@ -1341,7 +1341,9 @@ function reviseHpiSystem(){
   s += "RULES:\n";
   s += "- Change ONLY what the instructions direct. Leave every other part of the HPI exactly as it is, word for word.\n";
   s += "- Put each change where it belongs (an alleviating-factors edit goes in that section, a sleep edit in sleep, etc.).\n";
-  s += "- Do the instruction faithfully but NEVER fabricate clinical facts beyond what it directs. If it asks to restore or keep something (e.g. 'keep that he enjoys it too'), state it as documented, not as a new invented finding.\n";
+  s += "- You are given the clinician's ORIGINAL VISIT NOTES (the raw source the HPI was drafted from) and, when available, their TEMPLATE (section structure and headings). When an instruction says a section or heading is MISSING, was DROPPED, or that the HPI 'missed' something: RESTORE it. Pull the relevant content from the ORIGINAL VISIT NOTES and write it under the correct heading from the template, in the clinician's voice. Adding or restoring sections and detail that the ORIGINAL VISIT NOTES support is not fabrication — it is exactly your job here.\n";
+  s += "- The ONLY hard limit is the source: never state anything the ORIGINAL VISIT NOTES do not support. If an instruction asks for a section the notes genuinely say nothing about, add the heading and a brief 'Not addressed this visit.' rather than inventing findings.\n";
+  s += "- Do every other instruction faithfully but never fabricate beyond the source. If it asks to keep something (e.g. 'keep that he enjoys it too'), state it as documented, not as a new invented finding.\n";
   s += "- Preserve all risk/safety content and every medication name and dose exactly, unless an instruction specifically changes them.\n";
   s += "- Output plain, chart-ready text, no Markdown. Output ONLY the revised HPI, nothing else.\n";
   return s;
@@ -1361,7 +1363,17 @@ async function applyFlagFixes(flags){
   tbpNotifyDesk('busy');
   var ok = false;
   try {
-    var msg = "CURRENT HPI:\n\n" + hpiEl.value + "\n\n---\n\nCLINICIAN INSTRUCTIONS (each responds to a review flag; apply each):\n"
+    // Give the reviser the SOURCE (the clinician's original working note) and their TEMPLATE, so an
+    // instruction like "you missed my Sleep / Energy headings" can be honored by RESTORING that
+    // content from what they actually wrote — instead of the reviser refusing and asking them to
+    // re-type what is already in their note.
+    var srcNotes = (document.getElementById('raw') || {}).value || '';
+    var tmpl = '';
+    try { tmpl = (vaultTemplates[visitType] || houseTemplates[visitType] || ''); } catch(e){}
+    var msg = "CURRENT HPI:\n\n" + hpiEl.value + "\n\n---\n\n"
+      + "CLINICIAN'S ORIGINAL VISIT NOTES (the raw source the HPI was drafted from; use these to restore anything the current HPI dropped, and never go beyond them):\n\n" + srcNotes + "\n\n---\n\n"
+      + (tmpl && tmpl.trim() ? "CLINICIAN'S TEMPLATE (the section structure and headings the HPI should follow):\n\n" + tmpl + "\n\n---\n\n" : "")
+      + "CLINICIAN INSTRUCTIONS (each responds to a review flag; apply each):\n"
       + fixes.map(function(x){ return "- Flag: " + x.flag + "\n  Do: " + x.instruction; }).join("\n");
     var revised = await callAPI(reviseHpiSystem(), [{role:'user', content: msg}], 3400);
     if(!revised || !revised.trim()){ throw new Error('Nothing came back. Try again.'); }
