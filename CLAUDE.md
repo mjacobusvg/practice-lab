@@ -59,6 +59,12 @@ the nudge silently stops working (or, if only one moves, misfires). Move all thr
 
 ## Notes
 
+- **Before proposing or beginning substantial new product functionality, read `ROADMAP.md`**
+  and make sure the work fits the current focus and clears the NOT NOW gate. `ROADMAP.md` is
+  the executive statefile (what we're proving, building, and deliberately not building now);
+  the current strategic priority is *improve/integrate/prove/market what already exists*, not
+  add breadth. Ideas that are not current work live in `FUTURE-OPPORTUNITIES.md` (preserved,
+  not approved for build) — add good ideas there rather than starting them.
 - Clinical tools stream PHI through `clinical-proxy-stream.mjs` (BAA-covered); models are
   `claude-sonnet-4-6` and `claude-haiku-4-5-20251001`. See `MODEL-REGISTRY.md` for the
   authoritative per-tool model list — update it when you change a tool's model usage.
