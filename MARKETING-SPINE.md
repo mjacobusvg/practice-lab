@@ -114,3 +114,35 @@ It also helps before and during the visit, not just after. It preps you off the 
 One thing worth knowing going in: the $119/month is not just the scribe. It is the whole Think Beyond Practice membership, which also includes the Chart Audit + Coder, billing and coding training, letter generation, medication interaction tools, monthly CEs, and case discussion with other solo PMHNPs, which honestly helps a lot when you are newer to all of this.
 
 There is a free 2-week trial, and a walkthrough on the site you can click through without signing up, so you can run it against your own workflow and see if it earns its place. Happy to answer any questions. thinkbeyondpractice.com
+
+---
+
+## Experience-led pitch (day-in-the-life) — sell the two "holy shit" moments
+
+Use this for landing sections, ads, emails, and posts where you have room to show the
+EXPERIENCE rather than list features. It leads with the moment of relief (it already knows
+what to follow up on) and lands the audit/coding as the second payoff. **Grounding rule:**
+the pre-visit rundown works off the **prior note the clinician brings in**, NOT a live EHR
+or automatic lab trends (that is the future EHR-integration vision — do not imply it exists
+yet). Keep the input honest ("bring in your last note, and…").
+
+Bring in your last note, and before you walk in, Think Beyond Practice gives you a focused rundown so you are not opening the chart trying to remember where you left off:
+
+**Since you last saw this patient**
+Carries diagnoses of OCD and ADHD. Vyvanse 30 mg was started at the last visit. Last documented labs (Jan 25): A1c 5.7%, up from 5.4%. Last visit the patient reported improvement in intrusive thoughts but continued avoidance around contamination exposures. You planned to reassess medication response, appetite, ERP progress, side effects, and functional improvement.
+
+**Ask today**
+- How has Vyvanse affected attention and functioning?
+- Any appetite suppression, insomnia, or activation?
+- How often are the contamination compulsions happening now?
+- Which ERP exposures is she working on, and has the avoidance kept decreasing?
+- Is updated metabolic monitoring due?
+
+Think Beyond Practice does that.
+
+And that is only the start. After the visit it drafts the note in your own documentation style. Then, before you sign, the Chart Audit reads what you actually documented, the way an auditor would. It flags contradictions between the HPI, assessment, med list, ROS, MSE, and plan; clinical claims that are not well supported; and whether your MDM actually holds up the level you are about to bill.
+
+And it does not just hand you a code. It shows you WHY. So when you are staring at a tough follow-up wondering "is this really a 99215, or still a 99214?", it walks the reasoning with you, and if the documentation does not support the higher level, it shows you what is missing. Not to inflate the code, but so you document the work you actually did and get sharper at coding over time. That is one of the things clinicians use it for most.
+
+**Prepare for the visit. Document the care. Audit the chart. Understand the code.**
+That is Think Beyond Practice.
