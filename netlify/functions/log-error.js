@@ -32,6 +32,18 @@ exports.handler = async function (event) {
   const message = clip(p.message, 1000);
   if (!message) return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
 
+  // Drop known browser/extension noise before it reaches the admin error panel:
+  // crypto-wallet injectors (window.ethereum / selectedAddress), Firefox reader
+  // internals (__firefox__), extension frames (chrome-/moz-/safari-extension),
+  // benign ResizeObserver loops, and the opaque cross-origin "Script error."
+  // placeholder. These fire inside the member's own extensions, never our code,
+  // cannot affect the member, and only bury real bugs. Swallowed (never stored).
+  const noiseHay = message + ' ' + (p.stack || '');
+  const NOISE = /window\.ethereum|selectedAddress|__firefox__|ResizeObserver loop|chrome-extension:\/\/|moz-extension:\/\/|safari-web-extension:\/\/|metamask/i;
+  if (NOISE.test(noiseHay) || /^\s*script error\.?\s*$/i.test(message)) {
+    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, skipped: 'noise' }) };
+  }
+
   let email = null, tier = null;
   try {
     const authHeader = event.headers.authorization || event.headers.Authorization || '';
