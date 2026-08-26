@@ -347,7 +347,7 @@ function addPatient(autoName, slot, label){
   // ?v= is a build tag: bump it whenever the framed Scribe changes so the iframe loads the NEW file
   // instead of a browser-cached copy (an iframe can serve stale JS even after a parent hard-reload,
   // which stranded the ambient auto-draft on old code across several deploys).
-  frame.src = SCRIBE_URL + '?slot=' + encodeURIComponent(slot) + '&v=ambient-58' + (TBP_DEMO ? '&demo=1' : '');   // per-tab autosave key
+  frame.src = SCRIBE_URL + '?slot=' + encodeURIComponent(slot) + '&v=ambient-59' + (TBP_DEMO ? '&demo=1' : '');   // per-tab autosave key
   frame.title = label;
   // Let the isolated Scribe use the mic (ambient) and screen share (telehealth) and clipboard.
   frame.setAttribute('allow', 'microphone; camera; display-capture; clipboard-write; clipboard-read');
@@ -746,7 +746,7 @@ window.addEventListener('message', function(e){
      with every deploy, in lockstep with version.json and the ambient build tags. -->
 <script>
 (function(){
-  var TBP_BUILD = 'ambient-58';   // this tab's build; must match version.json at deploy time
+  var TBP_BUILD = 'ambient-59';   // this tab's build; must match version.json at deploy time
   function refreshNow(){
     try{ var u = new URL(location.href); u.searchParams.set('_v', Date.now()); location.replace(u.toString()); }
     catch(e){ location.reload(); }
@@ -772,12 +772,15 @@ window.addEventListener('message', function(e){
         .then(function(r){ return r.ok ? r.json() : null; })
         .then(function(d){
           if(!d || !d.build) return;
-          // Only nudge when the DEPLOYED build is strictly newer than this tab's. Comparing the
-          // ambient numbers (not just string inequality) means a lagging version.json can never
-          // wrongly tell an already-current tab to refresh.
-          var rn = buildNum(d.build), ln = buildNum(TBP_BUILD);
-          var newer = (!isNaN(rn) && !isNaN(ln)) ? (rn > ln) : (d.build !== TBP_BUILD);
-          if(newer) showBar(d.build);
+          // Nudge only for builds worth interrupting a clinical session over. version.json carries
+          // a separate "notify" tag = the newest build we actually want people to refresh onto.
+          // Minor tweaks bump "build" (cache-bust) but leave "notify" alone, so they deploy silently;
+          // an important fix bumps "notify" too and THEN the bar shows. Fall back to "build" if no
+          // notify tag is present. Comparing ambient numbers keeps a lagging file from mis-nagging.
+          var target = (typeof d.notify === 'string' && d.notify) ? d.notify : d.build;
+          var rn = buildNum(target), ln = buildNum(TBP_BUILD);
+          var newer = (!isNaN(rn) && !isNaN(ln)) ? (rn > ln) : (target !== TBP_BUILD);
+          if(newer) showBar(target);
         })
         .catch(function(){});   // network hiccup: never nag on a failed check
     }catch(e){}

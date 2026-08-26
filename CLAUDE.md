@@ -53,9 +53,24 @@ SAME `ambient-NN`:
 2. `version.json` → `{"build":"ambient-NN"}` (served `no-store`; it is the deployed-build source of truth).
 3. `TBP_BUILD = 'ambient-NN'` in `ai-scribe-workspace.html` (the running tab's build constant).
 
-A long-open tab polls `version.json` and shows a "Refresh now" bar when the deployed build is
-**numerically newer** than `TBP_BUILD`. If you bump the build tag but forget `version.json`/`TBP_BUILD`,
+A long-open tab polls `version.json` and shows a "Refresh now" bar when the **notify** build is
+numerically newer than `TBP_BUILD`. If you bump the build tag but forget `version.json`/`TBP_BUILD`,
 the nudge silently stops working (or, if only one moves, misfires). Move all three together.
+
+### `notify` — only nag for updates worth interrupting a clinical session
+
+`version.json` carries a SECOND tag: `{"build":"ambient-NN","notify":"ambient-MM"}`. `build` is the
+cache-bust and always bumps every deploy (in lockstep as above). `notify` is the newest build we
+actually want open tabs to refresh onto, and the refresh bar fires only when `notify` (not `build`)
+is numerically newer than the tab's `TBP_BUILD`. Because minor tweaks ship several times a day, the
+default is:
+- **Minor tweak:** bump the `build`/lockstep tags only. Leave `notify` unchanged. Deploys silently;
+  a long-open tab picks it up on its next natural reload, no nag.
+- **Important fix users should get now** (a live bug, data-loss fix, workflow change): ALSO set
+  `notify` to the new build number. Then lagging tabs get the bar.
+
+If `notify` is absent the nudge falls back to comparing `build` (old always-nag behavior), so never
+delete it; just leave it in place and only advance it when a deploy is worth interrupting people for.
 
 ## Notes
 
