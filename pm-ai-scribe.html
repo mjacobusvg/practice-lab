@@ -130,7 +130,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 #ambient-progress .out{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal),0 12px 34px rgba(0,0,0,.45)}
 </style>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-57"></script>
+<script src="/note-engine.js?v=ambient-58"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -355,7 +355,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-57</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-58</span></div>
 </div>
 </div>
 
@@ -1843,6 +1843,37 @@ function renderPrep(j){
   try{ openFocus('raw'); }catch(e){}
 }
 
+// Self-heal a MISSING snapshot: the pre-visit rundown was in-memory only in older builds, so a
+// reload/refresh/recovery could lose it while the note itself survived. If we have the source
+// (last visit's note in #context, or the carried-forward YOUR NOTE section) but no snapshot,
+// regenerate it once from that stored source and persist it, so it survives the next reload too.
+var _snapRegenTried = {};
+async function tbpEnsureSnapshot(){
+  try{
+    if(typeof TBP_DEMO !== 'undefined' && TBP_DEMO) return;                 // never in the walkthrough
+    if(prepSnapshot && prepSnapshot.trim()) return;                          // already have one
+    if(typeof visitType !== 'undefined' && visitType && visitType !== 'follow_up') return;
+    var ctx = document.getElementById('context');
+    var src = (ctx && ctx.value && ctx.value.trim()) ? ctx.value.trim()
+      : ((typeof wnSections !== 'undefined' && wnSections && wnSections.note) ? String(wnSections.note).trim() : '');
+    if(!src || src.length < 40) return;                                      // no usable source to rebuild from
+    var key = src.length + ':' + src.slice(0, 80);
+    if(_snapRegenTried[key]) return;                                         // one attempt per source
+    _snapRegenTried[key] = 1;
+    var fr = document.getElementById('focus-ref');
+    var fo = document.getElementById('focus-overlay');
+    var open = fo && fo.classList.contains('open');
+    if(fr && open){ fr.innerHTML = '<div style="background:var(--teal-glow);border:1px solid var(--teal);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:.85rem;color:var(--cream)"><span class="spinner"></span>Rebuilding your snapshot&hellip;</div>'; }
+    var snap = await callAPI(snapshotSystem(), [{role:'user', content:"LAST VISIT'S NOTE:\n\n"+src}], 1200);
+    if(snap && snap.trim()){
+      prepSnapshot = snap.trim();
+      try{ if(window.tbpSaveDraft) window.tbpSaveDraft(); }catch(e){}         // persist so it survives future reloads
+      var fr2 = document.getElementById('focus-ref'), fo2 = document.getElementById('focus-overlay');
+      if(fr2 && fo2 && fo2.classList.contains('open') && typeof tbpSnapshotBannerHtml === 'function'){ fr2.innerHTML = tbpSnapshotBannerHtml(prepSnapshot); }
+    } else if(fr && open){ fr.innerHTML = ''; }
+  }catch(e){ try{ var frx = document.getElementById('focus-ref'); if(frx && !(prepSnapshot && prepSnapshot.trim())) frx.innerHTML=''; }catch(_){}
+  }
+}
 // ── Full-screen focus editor: work one big note like your EHR, one Draft button ──
 var focusSourceId = null;
 var prepChecklist = [];
@@ -2053,6 +2084,9 @@ function openFocus(sourceId){
   document.getElementById('focus-err').innerHTML = '';
   // Pre-visit rundown pinned above the note when working the prepped note (never in the draft text).
   document.getElementById('focus-ref').innerHTML = (prepSnapshot && sourceId === 'raw') ? tbpSnapshotBannerHtml(prepSnapshot) : '';
+  // If this prepped note lost its snapshot to an older-build reload, rebuild it from the stored
+  // prior note so the banner comes back (and is persisted so it can't be lost again).
+  if(sourceId === 'raw' && !(prepSnapshot && prepSnapshot.trim())){ try{ tbpEnsureSnapshot(); }catch(e){} }
   document.getElementById('focus-hint').textContent = '';
   var fn = document.getElementById('focus-note');
   var fs = document.getElementById('focus-sections');
