@@ -130,7 +130,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 #ambient-progress .out{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal),0 12px 34px rgba(0,0,0,.45)}
 </style>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-56"></script>
+<script src="/note-engine.js?v=ambient-57"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -355,7 +355,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-56</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-57</span></div>
 </div>
 </div>
 
@@ -4857,6 +4857,7 @@ function initTherapyCoach(){
       visitType: (typeof visitType !== 'undefined' ? visitType : null),
       wnMode: (typeof wnMode !== 'undefined' ? wnMode : 'plain'),
       wnSections: (typeof wnSections !== 'undefined' ? wnSections : null),
+      snap: (typeof prepSnapshot !== 'undefined' ? prepSnapshot : ''),   // pre-visit rundown banner; in-memory only otherwise, so a reload/refresh-nudge/recovery would drop it
       ts: Date.now()
     };
   }
@@ -4891,10 +4892,14 @@ function initTherapyCoach(){
       if(d.visitType){ var opt = document.querySelector('#visit-opts [data-visit="' + d.visitType + '"]'); if(opt) opt.click(); }
       if(typeof wnMode !== 'undefined' && d.wnMode) wnMode = d.wnMode;
       if(typeof wnSections !== 'undefined' && d.wnSections) wnSections = d.wnSections;
+      if(typeof prepSnapshot !== 'undefined' && d.snap) prepSnapshot = d.snap;   // bring the pre-visit rundown banner back with the note
       var r = document.getElementById('raw'); if(r && d.raw) r.value = d.raw;
       var c = document.getElementById('context'); if(c && d.context) c.value = d.context;
       var f = document.getElementById('focus-note'); if(f && d.focus) f.value = d.focus;
       try{ if(typeof renderMode === 'function') renderMode(); }catch(e){}
+      // If the working note is already open when we restore, repaint the snapshot banner now
+      // (openFocus paints it on open; this covers a restore into an already-open overlay).
+      try{ var fr = document.getElementById('focus-ref'); var fo = document.getElementById('focus-overlay'); if(fr && fo && fo.classList.contains('open') && prepSnapshot && typeof tbpSnapshotBannerHtml === 'function'){ fr.innerHTML = tbpSnapshotBannerHtml(prepSnapshot); } }catch(e){}
       var box = document.getElementById('recovery-banner') || document.getElementById('err-box');
       if(box){
         box.style.display = '';
@@ -4907,6 +4912,8 @@ function initTherapyCoach(){
           ['raw','context','focus-note'].forEach(function(id){ var el = document.getElementById(id); if(el) el.value=''; });
           if(typeof wnSections !== 'undefined') wnSections = {checklist:'',guide:'',note:''};
           if(typeof wnMode !== 'undefined') wnMode = 'plain';
+          if(typeof prepSnapshot !== 'undefined') prepSnapshot = '';
+          try{ var fr2 = document.getElementById('focus-ref'); if(fr2) fr2.innerHTML=''; }catch(_){}
           try{ if(typeof renderMode === 'function') renderMode(); }catch(_){}
           box.innerHTML = ''; box.style.display = 'none';
         });
