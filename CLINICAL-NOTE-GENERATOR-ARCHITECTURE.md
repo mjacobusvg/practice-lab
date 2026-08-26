@@ -649,6 +649,26 @@ Pipeline of focused calls (the "reason better" pattern, kept):
      also **prunes stale content** (stale quotes → third-person, one-time/past-dated/out-of-season
      events removed). This gives the follow-up path real behavior (previously thin) and is the
      anti-clone-note / audit-integrity safeguard.
+   - **Preserve durable dated context (added after testing — "write the note for next visit's
+     you").** Because there is no chart integration yet, the drafted note *is* the only memory the
+     next visit inherits when the clinician pastes it forward. So on a follow-up the engine keeps
+     **dated clinical data points** dated as they carry forward, placed in the sections that already
+     hold them — never a new section, never a data dump, and only what the source documents (a date
+     is attached ONLY when the source supplies one; dates are never guessed). Four kinds, in priority
+     order: **(1) med trajectory** — each medication's start/stop/dose change with its date and a
+     one-phrase reason, as a compact dated line in the medication / Past Medications section (prior
+     dated med history is preserved and today's change appended, not re-litigated into prose);
+     **(2) monitoring / labs with dates** — documented values kept with their date in the
+     assessment/plan where they live, prior value carried so the trend is visible, plus what is now
+     due; **(3) risk history with dates** — a *past* risk episode carried as a dated `Historical
+     Note:` under its heading, while today's live risk status stays in the active safety section
+     under the SI/HI-never-carried rule (the dated line is background, never a substitute for
+     assessing risk today); **(4) quantified progress** — screener scores / functional metrics kept
+     with their date so the next visit can compare. This is enforced against the prune-stale rule by
+     an explicit **exception: a durable dated clinical data point is never pruned** even when not
+     re-discussed today — it is the trajectory the next visit needs, not stale chatter. The principle
+     is bounded by the same anti-fabrication integrity as everything else: capture only what the
+     source states, invent no value/date/trend, and keep the note a clean signable chart note.
    - **Pre-visit prep (Bucket 1, BUILT):** the "Set me up for this visit" button — paste
      last visit's note and it returns (a) a **carry-forward starting note** (standing/
      historical items pre-filled as continued/stable, dynamic sections left as labeled
