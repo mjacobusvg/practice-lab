@@ -2231,7 +2231,18 @@ async function sendMagicLink(mode) {
     // Enriched redirect rejected (allow list) — retry with the bare redirect.
     res = await SB.auth.signInWithOtp({ email: email, options: { emailRedirectTo: REDIRECT_TO, data: meta } });
   }
-  if (res.error) { statusEl.textContent = res.error.message; return; }
+  if (res.error) {
+    statusEl.textContent = res.error.message;
+    // Record the failure so login problems (especially email rate-limit blocks) are
+    // countable instead of invisible. Best-effort, never blocks the UI.
+    try {
+      fetch('/.netlify/functions/log-error', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind: 'signin_email', message: String(res.error.message || '').slice(0, 300), email: email, page: location.pathname })
+      }).catch(function () {});
+    } catch (e) {}
+    return;
+  }
   statusEl.innerHTML = '<strong style="color:var(--teal)">Check your email.</strong> We sent a secure sign-in link to ' + email + '. Click it and you are in.';
 }
 
@@ -7098,6 +7109,7 @@ function renderAnalytics(d) {
   h += '<div class="an-section-h">Support &amp; errors</div><div class="an-grid">';
   h += statCard('Client errors (24h)', sig.errors_24h || 0);
   h += statCard('Open problem reports', sig.reports_open || 0);
+  h += statCard('Sign-in email fails (24h)', sig.signin_fail_24h || 0, (sig.signin_fail_7d || 0) + ' in 7 days');
   h += '</div>';
   var reps = sig.reports_recent || [];
   h += '<div class="an-section-h" style="font-size:0.82rem">Recent problem reports</div><div class="an-list">';

@@ -32,6 +32,24 @@ exports.handler = async function (event) {
   const message = clip(p.message, 1000);
   if (!message) return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
 
+  // Failed "email me a sign-in link" attempts get their own table so login problems
+  // (especially email rate-limit blocks) are countable, not mixed with JS errors.
+  if (p.kind === 'signin_email') {
+    try {
+      await fetch(URL + '/rest/v1/signin_email_failures', {
+        method: 'POST',
+        headers: { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          email: clip(String(p.email || '').toLowerCase(), 200),
+          error: message,
+          page: clip(p.page, 300),
+          user_agent: clip(p.ua || event.headers['user-agent'], 400)
+        })
+      });
+    } catch (e) { /* best-effort */ }
+    return { statusCode: 200, headers, body: JSON.stringify({ ok: true }) };
+  }
+
   // Drop known browser/extension noise before it reaches the admin error panel:
   // crypto-wallet injectors (window.ethereum / selectedAddress), Firefox reader
   // internals (__firefox__), extension frames (chrome-/moz-/safari-extension),

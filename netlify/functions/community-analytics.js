@@ -194,15 +194,18 @@ exports.handler = async function (event) {
       }).sort(function (a, b) { return b.count - a.count; })
     };
 
-    // ── Support signals: client errors + problem reports ─────────────────────
-    const [errors_recent, reports_recent, errors_24h, reports_open] = await Promise.all([
+    // ── Support signals: client errors + problem reports + sign-in failures ───
+    const [errors_recent, reports_recent, errors_24h, reports_open, signin_fail_24h, signin_fail_7d] = await Promise.all([
       sb('client_errors?cleared_at=is.null&select=message,page,email,tier,created_at&order=created_at.desc&limit=15'),
       sb('problem_reports?select=message,page,email,tier,status,created_at&order=created_at.desc&limit=15'),
       countOf('client_errors?cleared_at=is.null&created_at=gt.' + encodeURIComponent(iso(1)) + '&select=id'),
-      countOf('problem_reports?status=eq.open&select=id')
+      countOf('problem_reports?status=eq.open&select=id'),
+      countOf('signin_email_failures?created_at=gt.' + encodeURIComponent(iso(1)) + '&select=id'),
+      countOf('signin_email_failures?created_at=gt.' + d7 + '&select=id')
     ]);
     const signals = {
       errors_24h: errors_24h, reports_open: reports_open,
+      signin_fail_24h: signin_fail_24h, signin_fail_7d: signin_fail_7d,
       errors_recent: errors_recent || [], reports_recent: reports_recent || []
     };
 
