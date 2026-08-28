@@ -1,9 +1,15 @@
 # Membership pricing & plan-switching spec
 
-Status: **spec for future work.** The standard $89 / $149 tiers described here do **not
-exist yet.** This doc records the pricing model, the switching rules Michael wants, and
-the two design decisions that must be locked **before** any of it is built. Nothing in
-this doc is live except the "Current state" section.
+Status: **spec for future work.** The standard $50 Forum / $89 Plus / $149 Full tiers
+described here do **not exist yet.** This doc records the pricing model, the switching rules
+Michael wants, and the design decisions that must be locked **before** any of it is built.
+Nothing in this doc is live except the "Current state" section.
+
+Structure in one line (the canonical ladder — read this before re-deriving it):
+**Free (lurk) → $50 Forum (community only) → $89 Plus (everything EXCEPT the AI Scribe) →
+$149 Full (everything, incl. the AI Scribe).** The only thing separating Plus from Full is
+the AI Scribe. The $50 Forum is a re-open of the original forum-only membership (proven:
+~47 members before tools existed). Grandfathered $50 members stay forum-only — no bump.
 
 Billing runs on the **TBP Payments** Stripe account (`acct_1RQbmgIuQAALcBPY`) after the
 Circle→TBP migration. Access tiers are driven from Stripe subscription status via
@@ -47,23 +53,44 @@ standard `full` only (`create-membership-checkout.js` PURCHASABLE = `full_monthl
 
 ## 2. Target model (future)
 
-Two **standard** tiers:
+Three **standard** tiers. Above them sits the existing **free** tier (read / lurk +
+one member-post unlock per month); below "standard" sit the legacy grandfathered rates.
 
-- **$89/mo — "Plus": forum + tools + CE, no AI**
-- **$149/mo — "Full": everything, incl. AI**
+- **$50/mo — "Forum": community only.** No tools, no sims, no CE, no AI Scribe. This is a
+  deliberate re-open of the platform's original forum-only membership, which grew to ~47
+  paying members before any tools existed — so there is proven standalone demand for a
+  low-friction "just read and participate" tier. It exists to catch two segments $89 is too
+  steep for: people who only want community, and people who already own an AI scribe and
+  won't pay up for ours.
+- **$89/mo — "Plus": EVERYTHING except the AI Scribe.** Community + tools + sims + CEs — the
+  entire product minus the Scribe. The *only* thing gated out of Plus is the AI Scribe.
+- **$149/mo — "Full": everything, incl. the AI Scribe.**
 
-Members may switch **only between $89 and $149.** Those are the only two prices ever
-offered as a switch target.
+**The whole ladder in one sentence:** Free (lurk) → $50 Forum (community) → $89 Plus
+(everything but the Scribe) → $149 Full (+ the Scribe). Full = Plus + one capability (AI).
+
+Members may switch among the **standard** prices only ($50 Forum, $89 Plus, $149 Full);
+those are the only prices ever offered as a switch target. (Whether a Plus/Full member can
+self-serve *down* to $50 Forum, or only at signup, and the proration on each direction, is
+an open implementation choice — see §5.)
 
 Legacy rates stay honored for whoever is on them ($50 forum, $525/yr forum, $119 full,
 $890/$1,140 annual full, legacy $89 full), but they are **exit-only** — see the ratchet.
+
+**On the grandfathered $50 cohort:** re-opening a $50 Forum does **not** change what the
+existing grandfathered $50 members get. They stay forum-only, same as the new standard $50.
+Do **not** hand them extra entitlements (tools/sims) as a "loyalty bump" — it sets a $50
+anchor on tooling that undercuts Plus, gives them a reason never to climb, and creates a
+$50 dollar-collision for no gain. (Unlike the $89 collision in Decision B, the standard $50
+and legacy $50 grant the *same* tier — forum — so they are only distinct prices for
+bookkeeping/phase, not for entitlement. Harmless.)
 
 **On the interim $119:** $119 is not a permanent standard — it is the **interim** Full
 price offered *while ANCC accreditation is pending*. When accreditation lands and monthly
 CEs ship, standard Full becomes **$149 (final)** and the $119 rate converts to
 grandfathered (exit-only) like the others. So members never switch *onto* $119; a $119
-member can stay put or jump to a standard price and lose $119 forever. The two eternal
-standard switch targets are **$89 Plus ↔ $149 Full**. ($149 over $145 is deliberate: it's
+member can stay put or jump to a standard price and lose $119 forever. The eternal standard
+switch targets are **$50 Forum / $89 Plus / $149 Full**. ($149 over $145 is deliberate: it's
 the charm price just under the $150 threshold — same buyer perception, ~$4/member/mo more.)
 
 ---
@@ -76,8 +103,8 @@ legacy rate.
 
 Worked examples Michael gave:
 
-- Grandfathered **$119 full** downgrades to **$89 Plus** (tools+CE, no AI) → they **cannot**
-  return to $119-with-AI. Their only path to AI is standard **$149 Full**.
+- Grandfathered **$119 full** downgrades to **$89 Plus** (everything but the AI Scribe) →
+  they **cannot** return to $119-with-AI. Their only path to AI is standard **$149 Full**.
 - **$50 forum** grandfathered → moving to any other tier drops the $50 rate forever.
 - Legacy **$89/mo "everything"** → moving off it drops that rate forever.
 
@@ -102,21 +129,27 @@ lookup_keys and reject everything else.
 
 ## 4. Two design decisions to lock BEFORE building
 
-### Decision A — access levels: 2 → 3 (or add an AI capability flag)
+### Decision A — access levels — DECIDED: three tiers + an `ai_enabled` capability flag
 
-Today: `forum` / `full`. The target needs to distinguish **three** things:
+Today: `forum` / `full`. The target distinguishes **three** standard levels:
 
-1. `forum` — legacy $50 (community only)
-2. **Plus** — $89 tools + CE, **no AI**
-3. **Full** — $149 everything, **incl. AI**
+1. **Forum** — $50 community only (new standard $50; legacy $50 also lands here)
+2. **Plus** — $89 everything **except** the AI Scribe
+3. **Full** — $149 everything **incl.** the AI Scribe
 
-Two viable shapes:
-- **Third tier**: add e.g. `plus` between `forum` and `full` in `TIER_RANK` and
-  `PRODUCT_TIER`, and gate AI on tier ≥ `full`. Simple ordering, but every tier check in
-  the app must learn the new rank.
-- **Capability flag**: keep `forum`/`full` and add a separate `ai_enabled` boolean (or an
-  entitlements set) that $149 grants and $89 doesn't. Cleaner if "AI" is the only thing
-  that separates Plus from Full and more tiers/features are coming.
+**Decision:** because the **only** difference between Plus and Full is the AI Scribe, model
+it as a **capability flag**, not a linear rank you have to gate feature-by-feature:
+
+- Add a `plus` tier so the ordering is `free < forum < plus < full` (this cleanly expresses
+  Forum-vs-Plus, which *is* a real access-breadth step — Plus unlocks all tools/sims/CE).
+- Gate the **AI Scribe alone** on a single `ai_enabled` capability (equivalently `tier ===
+  'full'`), and make that flag the **one** source of truth every AI surface reads
+  (HPI Generator / Note Builder / Letter Generator AI / `clinical-proxy-stream`). Do **not**
+  scatter `tier >= X` checks for AI across the app.
+
+Rationale: Forum→Plus is a genuine breadth jump (community → whole toolkit), so it earns a
+tier. Plus→Full is a *single* capability (AI), so it earns a flag, not a second broad rank.
+This keeps "can this member use the AI tools" answerable in exactly one place.
 
 Pick one and make it the single source of truth for "can this member use the AI tools."
 The AI tools (HPI Generator / Note Builder / Letter Generator AI, clinical-proxy-stream)
