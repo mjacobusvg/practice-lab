@@ -35,6 +35,8 @@ the dollar amount.
 |---|---|---|---|---|
 | `full_monthly_119` | `price_1U5yqhIuQAALcBPYw94o615V` | $119/mo | **standard** | full |
 | `full_annual_1190` | `price_1U5yqoIuQAALcBPYYI2hFBE6` | $1,190/yr | **standard** | full |
+| `forum_monthly_50` | `price_1U9Z6iIuQAALcBPYzr8yuKsq` | $50/mo | **standard** | forum |
+| `forum_annual_525` | `price_1U9Z90IuQAALcBPYr3jXNnb9` | $525/yr | **standard** | forum |
 | `legacy_full_monthly_8900` | `price_1U5yqwIuQAALcBPY1VrhVV6y` | $89/mo | grandfathered | full |
 | `full_annual_890_grandfathered` | `price_1U5yr3IuQAALcBPYJ73k52dg` | $890/yr | grandfathered | full |
 | `full_annual_1140_grandfathered` | `price_1U5yr9IuQAALcBPYEclwfNuT` | $1,140/yr | grandfathered | full |
@@ -45,9 +47,12 @@ the dollar amount.
 > future standard $89 (tools+CE, **no AI**). They are different products/entitlements —
 > see Decision B.
 
-Today the system has **two** access levels: `forum` and `full`. New signups/upgrades buy
-standard `full` only (`create-membership-checkout.js` PURCHASABLE = `full_monthly_119`,
-`full_annual_1190`; `upgrade-membership.js` mirrors it).
+Today the system has **two** access levels: `forum` and `full`. New signups buy standard
+`full` ($119/mo, $1,190/yr) **or** standard `forum` ($50/mo, $525/yr — reopened Aug 2026;
+see §6) via `create-membership-checkout.js` PURCHASABLE (`full_monthly_119`,
+`full_annual_1190`, `forum_monthly_50`, `forum_annual_525`). `upgrade-membership.js` still
+handles the in-place forum→full upgrade. The $89 Plus / $149 Full standard tiers remain
+future work (they need the `plus` tier + `ai_enabled` flag — Decision A).
 
 ---
 

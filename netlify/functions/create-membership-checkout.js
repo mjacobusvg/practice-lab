@@ -8,9 +8,13 @@
 // Auth: requires a valid signed session token (Bearer or body.token). The member's
 // email comes from the verified token, never from client input.
 //
-// Only plans in PURCHASABLE are allowed, enforced here in code. Today that is Full
-// only ($119/mo, $1,190/yr); the post-accreditation Forum and $149 plans exist as
-// Stripe Prices but are not open to new checkout until added to this list.
+// Only plans in PURCHASABLE are allowed, enforced here in code. Open today: Full
+// ($119/mo, $1,190/yr) and the re-opened standard Forum tier ($50/mo, $525/yr —
+// community only). The $89 Plus and $149 Full plans are held out until ANCC
+// accreditation. Standard Forum prices (no tbp_phase) — created alongside the
+// grandfathered pair, which is left untouched for legacy members:
+//   forum_monthly_50  -> price_1U9Z6iIuQAALcBPYzr8yuKsq  ($50/mo)
+//   forum_annual_525  -> price_1U9Z90IuQAALcBPYr3jXNnb9  ($525/yr)
 //
 // POST body: { plan, success_url, cancel_url, token? }
 //   plan: a Stripe Price lookup_key (see PURCHASABLE)
