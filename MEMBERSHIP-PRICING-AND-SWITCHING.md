@@ -191,6 +191,16 @@ dollar amount, opposite entitlement.
   only choices. Choosing a standard option is the irreversible exit.
 - **Annuals**: decide whether Plus/Full standard also offer annual, and mirror the same
   ratchet (annual legacy → standard only).
+- **Known code gap (fix during the Plus/switching build):** `stripe-webhook.js` currently
+  stamps the `subscriptions.is_grandfathered` column from an **amount threshold**
+  (`isGrandfathered(amount, interval)` = anything under $119/mo). That mislabels a **new
+  standard $50 Forum** member as `is_grandfathered: true`. It is harmless *today* (access +
+  tier come from the Forum product → `forum`; the reopened standard $50 and the legacy $50
+  grant the identical entitlement, so the legacy/standard distinction is moot for Forum) —
+  but before switching launches, change this to read the price's **`tbp_phase` metadata**
+  (§3: "rely on `tbp_phase`, not the dollar amount"), since $89 Plus at a below-$119 amount
+  would otherwise also be mislabeled. Do it deliberately, with Stripe verification that every
+  legacy price actually carries `tbp_phase=grandfathered`, so existing members aren't flipped.
 
 ---
 

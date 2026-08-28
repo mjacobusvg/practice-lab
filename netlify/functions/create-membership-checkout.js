@@ -19,7 +19,10 @@
 const { verifyToken } = require('./_lib/session');
 
 // New-member purchasable plans (Stripe Price lookup_keys). Enforced allowlist.
-const PURCHASABLE = ['full_monthly_119', 'full_annual_1190'];
+// Full ($119/mo interim, $1,190/yr) + the re-opened standard Forum tier ($50/mo,
+// $525/yr — community only, maps to the `forum` tier via the Forum product).
+// $89 Plus + $149 Full are held out of this list until ANCC accreditation.
+const PURCHASABLE = ['full_monthly_119', 'full_annual_1190', 'forum_monthly_50', 'forum_annual_525'];
 
 exports.handler = async function (event) {
   const CORS = {

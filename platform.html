@@ -1944,6 +1944,9 @@ body.show-promo .platform-promo{display:flex}
     <div style="font-size:0.82rem;color:var(--teal);font-weight:700;margin:2px 0 10px;line-height:1.4">Lock in $119/mo now &mdash; the price goes to $149 once ANCC-accredited monthly CE launches. Join at $119 and your rate stays locked for as long as you keep it.</div>
     <button class="btn-primary" onclick="startCheckout('full_monthly_119')">Join Think Beyond Practice for $119/mo</button>
     <button class="btn-primary" onclick="startCheckout('full_annual_1190')" style="margin-top:8px;background:transparent;border:1px solid var(--teal);color:var(--teal)">Or $1,190/yr (2 months free)</button>
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);font-size:0.82rem;color:var(--text-secondary);line-height:1.5">
+      Primarily here for the community? <a onclick="startCheckout('forum_monthly_50')" style="color:var(--teal);font-weight:600;cursor:pointer">Join Forum for $50/mo</a> <span style="opacity:0.7">(or <a onclick="startCheckout('forum_annual_525')" style="color:var(--teal);cursor:pointer">$525/yr</a>)</span> &mdash; full community access, no tools or AI Scribe.
+    </div>
     <button class="dismiss" onclick="closeJoin()">Continue browsing</button>
   </div>
 </div>
@@ -8066,11 +8069,21 @@ function handlePendingPlan() {
     // surprise-launch checkout on some unrelated later sign-in.
     var ts = parseInt(localStorage.getItem('tbp_pending_plan_ts') || '0', 10);
     if (ts && (Date.now() - ts) > 3600000) { clearPending(); return; }
-    if (['full_monthly_119', 'full_annual_1190'].indexOf(plan) === -1) { clearPending(); return; }
+    var FULL_PLANS = ['full_monthly_119', 'full_annual_1190'];
+    var FORUM_PLANS = ['forum_monthly_50', 'forum_annual_525'];
+    if (FULL_PLANS.indexOf(plan) === -1 && FORUM_PLANS.indexOf(plan) === -1) { clearPending(); return; }
     // Not signed in yet: KEEP the intent so checkout resumes after sign-in. (Do NOT
     // consume it here — that was the bug that dropped the plan for logged-out visitors.)
     if (!getAuthToken()) return;
     clearPending();                               // signed in — consume the intent now
+    if (FORUM_PLANS.indexOf(plan) !== -1) {
+      // Forum ($50) intent: any existing paying member already has >= forum access,
+      // so there's nothing to buy. Only a free/unsubscribed account checks out.
+      if (isPaidMember()) return;
+      startCheckout(plan);
+      return;
+    }
+    // Full intent.
     if (isFullMember()) return;                   // already Full — nothing to buy
     if (isForumMember()) { upgradeMembership(); return; } // paying already: upgrade in place, never a 2nd sub
     startCheckout(plan);
