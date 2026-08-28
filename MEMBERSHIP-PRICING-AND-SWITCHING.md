@@ -194,7 +194,116 @@ dollar amount, opposite entitlement.
 
 ---
 
-## 6. Related files
+## 6. Go-to-market: presentation, sequencing & what to measure
+
+This section is the settled positioning strategy (triangulated across several analyses,
+Aug 2026). The tier *structure* is §2; this is how to *sell* it without letting a multi-tier
+page optimize the site for "pick the cheapest acceptable plan."
+
+### Presentation — de-emphasize the cheaper tiers, do NOT hide them
+
+The failure mode is a **four-equal-box price table** (Free / $50 / $89 / $149 side by side):
+it trains every visitor to comparison-shop down-price, and a "Recommended" ribbon on Full
+barely dents it. The opposite mistake is *hiding* the cheaper plans behind an objection
+click, which reads as concealment. The answer is **visible but visually subordinate**:
+
+- **Full is the hero.** One product, one price, the primary CTA, plus the founding-rate
+  urgency ($119→$149) already live on the site.
+- **Plus and Forum sit beneath it, smaller, each tied to a specific objection:**
+
+  ```
+  Full — $149/month
+  The complete Think Beyond Practice experience. Everything, including AI Scribe.
+  [Start Full]
+
+  ── much smaller, below ──
+  Already have a scribe you love?   Plus gives you everything else for $89/mo.  [See Plus]
+  Primarily here for the community? Join Forum for $50/mo.                      [See Forum]
+  ```
+
+A visitor arriving ready to buy Full is never *presented* a cheaper plan to talk themselves
+into; a visitor about to bounce because Full doesn't fit finds the right door. Transparent,
+not a membership Expedia.
+
+### Route-dependent merchandising — same prices, different hero by entry point
+
+"How aggressively to expose $50/$89" is not one global setting; it's per traffic source.
+This is segment-specific *merchandising* of one consistent price list, not inconsistent
+pricing:
+
+- **Cold homepage / AI-Scribe campaign** → **Full** leads (off-ramps beneath).
+- **"Already have a scribe" campaign** → **Plus** is the hero on that landing page.
+- **Community / Facebook clinical-discussion acquisition** → **Forum** can be the first ask.
+
+### Plus → Full upgrade motion — contextual, never a permanent nag
+
+Some Plus members will never upgrade (they genuinely don't need our Scribe) and that is a
+*fine* outcome — $1,068/yr beats the $0 we'd get by forcing $149. Do **not** run a persistent
+"🚨 you're missing the Scribe" banner. Surface the upgrade at **moments of relevance**, reusing
+the in-place `upgrade-membership.js` switch:
+
+- Inside Chart Audit: *"Want the visit drafted before you audit it? AI Scribe is included with Full."*
+- From the visit workspace: *"Add AI Scribe to your membership → $149/month."*
+
+Cannibalization does not "self-heal" automatically; a built, well-placed upgrade path is what
+recaptures softened Full revenue over time.
+
+### Value-ladder story (use in copy)
+
+The spacing tells a clean value story — lead with it rather than a feature matrix:
+
+```
+Community              $50
++ the practice platform   +$39  (tools, sims, CE — essentially everything)
++ integrated AI docs      +$60  (the AI Scribe)   → Full $149
+```
+
+That implicitly prices the Scribe at ~$60/mo for an existing Plus member — competitive with
+standalone scribes, and ours is integrated with the rest of the platform, not isolated.
+
+### Sequencing (confirmed)
+
+- **Now:** reopen **$50 Forum**. This is not an experiment — the forum-only product already
+  reached ~47 paying members before any tools existed. It needs no CE, no `ai_enabled` flag,
+  no $149 transition; it rides the existing Forum product → `forum` tier + the checkout
+  allowlist. Lowest-risk piece.
+- **At ANCC accreditation:** launch **$89 Plus** and move public **Full $119 → $149**, while
+  the existing $119 members stay grandfathered at $119. Waiting means Plus launches with a
+  *complete* value prop (CE is real), not "everything except Scribe, plus CE eventually." One
+  clean "**Three ways to join** — Community $50 / Plus $89 / Full $149" announcement, where
+  $149 sits at the top of an understandable ladder instead of looking like a jump from $50.
+
+### What to measure once Plus launches (this ends the cannibalization debate)
+
+Track, and read at 90–180 days:
+- new Full conversion
+- new Plus conversion
+- **Full → Plus downgrades** (the real risk isn't new buyers picking $89 — it's *existing*
+  Full members who already use another scribe asking "why am I paying $149?")
+- Plus → Full upgrades
+- Forum → Plus/Full upgrades
+- churn by tier
+
+If Plus expands the market it shows here; if it mostly cannibalizes Full it shows here too.
+Data decides, not philosophy.
+
+### Legacy $50 messaging at launch
+
+New standard $50 Forum grants the *same* thing existing grandfathered $50 members already
+have, so do **not** dress grandfathering up as a loyalty perk ("you keep your rate" is empty
+when new members pay the same $50). Just reassure, plainly: *"If you're already a Forum
+member, nothing changes. Your membership continues exactly as it does today."*
+
+### Strategic optionality (note, do not build around it)
+
+Separating *platform value* from *one AI capability* (the `ai_enabled` flag) keeps later
+cross-specialty configurations and partner/licensing arrangements flexible — a collaborator
+could access specific infrastructure without consuming the full psych community/CE layer.
+Not a current build; the structure simply doesn't box us in. See `FUTURE-OPPORTUNITIES.md`.
+
+---
+
+## 7. Related files
 
 - `netlify/functions/_lib/subscription-tier.js` — product→tier map, `TIER_RANK`,
   `isGrandfathered`. Decision A changes this.
