@@ -1,6 +1,6 @@
 # Membership pricing & plan-switching spec
 
-Status: **spec for future work.** The standard $89 / $145 tiers described here do **not
+Status: **spec for future work.** The standard $89 / $149 tiers described here do **not
 exist yet.** This doc records the pricing model, the switching rules Michael wants, and
 the two design decisions that must be locked **before** any of it is built. Nothing in
 this doc is live except the "Current state" section.
@@ -50,13 +50,21 @@ standard `full` only (`create-membership-checkout.js` PURCHASABLE = `full_monthl
 Two **standard** tiers:
 
 - **$89/mo — "Plus": forum + tools + CE, no AI**
-- **$145/mo — "Full": everything, incl. AI**
+- **$149/mo — "Full": everything, incl. AI**
 
-Members may switch **only between $89 and $145.** Those are the only two prices ever
+Members may switch **only between $89 and $149.** Those are the only two prices ever
 offered as a switch target.
 
 Legacy rates stay honored for whoever is on them ($50 forum, $525/yr forum, $119 full,
 $890/$1,140 annual full, legacy $89 full), but they are **exit-only** — see the ratchet.
+
+**On the interim $119:** $119 is not a permanent standard — it is the **interim** Full
+price offered *while ANCC accreditation is pending*. When accreditation lands and monthly
+CEs ship, standard Full becomes **$149 (final)** and the $119 rate converts to
+grandfathered (exit-only) like the others. So members never switch *onto* $119; a $119
+member can stay put or jump to a standard price and lose $119 forever. The two eternal
+standard switch targets are **$89 Plus ↔ $149 Full**. ($149 over $145 is deliberate: it's
+the charm price just under the $150 threshold — same buyer perception, ~$4/member/mo more.)
 
 ---
 
@@ -69,7 +77,7 @@ legacy rate.
 Worked examples Michael gave:
 
 - Grandfathered **$119 full** downgrades to **$89 Plus** (tools+CE, no AI) → they **cannot**
-  return to $119-with-AI. Their only path to AI is standard **$145 Full**.
+  return to $119-with-AI. Their only path to AI is standard **$149 Full**.
 - **$50 forum** grandfathered → moving to any other tier drops the $50 rate forever.
 - Legacy **$89/mo "everything"** → moving off it drops that rate forever.
 
@@ -79,11 +87,11 @@ Worked examples Michael gave:
 if you obey one rule:
 
 > The only prices ever offered as a **switch target** are the two **standard** prices
-> (`$89 Plus`, `$145 Full`). Grandfathered prices are **never** switch targets.
+> (`$89 Plus`, `$149 Full`). Grandfathered prices are **never** switch targets.
 
 Consequences, for free:
 - A legacy member's only moves are: **stay put**, or **jump to a standard price.**
-- Once on a standard price, they bounce only between $89 ↔ $145.
+- Once on a standard price, they bounce only between $89 ↔ $149.
 - No code path re-selects a legacy price, so **nobody can climb back onto one.**
 
 The `tbp_phase = "grandfathered"` metadata is how the switch endpoint recognizes and
@@ -100,14 +108,14 @@ Today: `forum` / `full`. The target needs to distinguish **three** things:
 
 1. `forum` — legacy $50 (community only)
 2. **Plus** — $89 tools + CE, **no AI**
-3. **Full** — $145 everything, **incl. AI**
+3. **Full** — $149 everything, **incl. AI**
 
 Two viable shapes:
 - **Third tier**: add e.g. `plus` between `forum` and `full` in `TIER_RANK` and
   `PRODUCT_TIER`, and gate AI on tier ≥ `full`. Simple ordering, but every tier check in
   the app must learn the new rank.
 - **Capability flag**: keep `forum`/`full` and add a separate `ai_enabled` boolean (or an
-  entitlements set) that $145 grants and $89 doesn't. Cleaner if "AI" is the only thing
+  entitlements set) that $149 grants and $89 doesn't. Cleaner if "AI" is the only thing
   that separates Plus from Full and more tiers/features are coming.
 
 Pick one and make it the single source of truth for "can this member use the AI tools."
@@ -136,7 +144,7 @@ dollar amount, opposite entitlement.
   invoices, customer info, and (optionally) cancel.
 - **Do the switch server-side**, extending the existing `upgrade-membership.js` pattern
   into a `switch-membership` endpoint:
-  - Allowlist = exactly the standard lookup_keys (`plus_monthly_89`, `full_monthly_145`,
+  - Allowlist = exactly the standard lookup_keys (`plus_monthly_89`, `full_monthly_149`,
     plus any annual variants). **Reject any grandfathered lookup_key / any price with
     `tbp_phase=grandfathered`.**
   - Resolve target price by lookup_key (same as checkout), update the subscription item,
