@@ -251,7 +251,7 @@ async function handleSubscriptionEvent(sub, stripe) {
   // then the merged-identity alias, then this customer's stored id, then the
   // customer's email / Circle id.
   let accountId = null;
-  const existingRows = await sbGet('subscriptions?stripe_subscription_id=eq.' + encodeURIComponent(sub.id) + '&select=id,account_id');
+  const existingRows = await sbGet('subscriptions?stripe_subscription_id=eq.' + encodeURIComponent(sub.id) + '&select=id,account_id,status,tier');
   const existing = existingRows[0] || null;
   if (existing) accountId = existing.account_id;
 
@@ -319,6 +319,57 @@ async function handleSubscriptionEvent(sub, stripe) {
   }
 
   const newTier = await recomputeAccountTier(accountId);
+
+  // ── Classify this transition into a typed membership event (best-effort) ─────
+  // This is what the admin "membership activity" feed reads. Only real transitions
+  // are logged; a plain renewal or a migration re-sync (same status + same tier)
+  // logs nothing, so it can never masquerade as a "new member" again.
+  try {
+    const prevStatus = existing ? existing.status : null;
+    const prevTier = existing ? existing.tier : null;
+    const nowActive = (sub.status === 'active');
+    const nowTrialing = (sub.status === 'trialing');
+    const paidTier = (newTier === 'full' || newTier === 'forum');
+    const isToolkitTrial = !!(sub.metadata && sub.metadata.tbp_source === 'toolkit_trial');
+    let evt = null;
+
+    // Whether the account has ANY other paid subscription (i.e. is it their first?).
+    const firstEverPaid = async function () {
+      try {
+        const others = await sbGet('subscriptions?account_id=eq.' + accountId
+          + '&tier=in.(forum,full)&stripe_subscription_id=neq.' + encodeURIComponent(sub.id) + '&select=id&limit=1');
+        return !(others && others.length);
+      } catch (e) { return false; }
+    };
+
+    if (!existing) {
+      // First time we've seen THIS subscription id.
+      if ((nowActive || nowTrialing) && paidTier && !isToolkitTrial) {
+        evt = (await firstEverPaid()) ? (nowTrialing ? 'trial_started' : 'new_member') : 'resubscribed';
+      }
+    } else if (prevStatus !== sub.status) {
+      if (prevStatus === 'active' && (sub.status === 'past_due' || sub.status === 'unpaid')) evt = 'payment_failing';
+      else if ((prevStatus === 'past_due' || prevStatus === 'unpaid') && nowActive) evt = 'recovered';
+      else if ((prevStatus === 'incomplete' || prevStatus === 'incomplete_expired') && (nowActive || nowTrialing) && paidTier && !isToolkitTrial) {
+        evt = (await firstEverPaid()) ? 'new_member' : 'resubscribed';
+      }
+      else if ((prevStatus === 'active' || prevStatus === 'trialing') && sub.status === 'canceled') evt = 'churned';
+      else if (prevStatus === 'canceled' && (nowActive || nowTrialing)) evt = 'reactivated';
+      else if (prevStatus === 'trialing' && nowActive) evt = 'trial_converted';
+    } else if (prevTier && newTier && prevTier !== newTier) {
+      if (newTier === 'full' && prevTier === 'forum') evt = 'upgraded';
+      else if (newTier === 'forum' && prevTier === 'full') evt = 'downgraded';
+    }
+    // else: same status + same tier = renewal / re-sync = noise, not logged.
+
+    if (evt) {
+      await sb('membership_events', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({
+        account_id: accountId, event_type: evt,
+        from_status: prevStatus, to_status: sub.status, from_tier: prevTier, to_tier: newTier,
+        amount_cents: amount, stripe_subscription_id: sub.id
+      }) });
+    }
+  } catch (e) { console.warn('membership event log failed:', e && e.message); }
 
   // A member just became (or renewed as) an ACTIVE paying member. Send the one-time
   // paid welcome — but only for a genuinely paying, active subscription, and never

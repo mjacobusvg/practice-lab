@@ -128,6 +128,26 @@ exports.handler = async function (event) {
     truth.paying = truth.paying_full + truth.paying_forum;
     truth.mrr = Math.round(truth.mrr * 100) / 100;
 
+    // ── Membership activity feed (typed events from the Stripe webhook) ───────
+    // Each row is a classified transition (new_member, recovered, reactivated,
+    // upgraded, downgraded, payment_failing, churned, trial_converted, ...) so the
+    // admin can tell them apart. Renewals and migration re-syncs are never logged,
+    // so nothing can masquerade as a "new member" anymore.
+    const meRows = await sb('membership_events?select=event_type,amount_cents,created_at,from_tier,to_tier,accounts(name,email)&order=created_at.desc&limit=20');
+    const member_events = (meRows || []).map(function (r) {
+      const acc = r.accounts || {};
+      return {
+        type: r.event_type, amount: r.amount_cents, at: r.created_at,
+        from_tier: r.from_tier, to_tier: r.to_tier,
+        name: acc.name || acc.email || 'Member'
+      };
+    });
+    const [new_members_7d, new_members_30d] = await Promise.all([
+      countOf('membership_events?event_type=eq.new_member&created_at=gt.' + d7 + '&select=id'),
+      countOf('membership_events?event_type=eq.new_member&created_at=gt.' + d30 + '&select=id')
+    ]);
+    const membership_activity = { events: member_events, new_members_7d: new_members_7d, new_members_30d: new_members_30d };
+
     // New signups per day, last 14 days.
     const signupRows = await sb('accounts?created_at=gt.' + encodeURIComponent(iso(14)) + '&select=created_at&limit=2000');
     const daily = {};
@@ -221,6 +241,7 @@ exports.handler = async function (event) {
         new_members: new_members || [],
         net_new_paid: net_new_paid || [],
         signups_daily: signups_daily,
+        membership_activity: membership_activity,
         signup_reasons: signup_reasons,
         tools: tools,
         signals: signals

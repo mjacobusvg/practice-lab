@@ -6983,6 +6983,39 @@ function renderAnalytics(d) {
     h += '</div>';
   }
 
+  // Membership activity — TYPED events (new_member, recovered, reactivated,
+  // upgraded, payment_failing, churned, ...) so "did I get a new member?" is
+  // answerable at a glance. Renewals and migration re-syncs are never logged, so
+  // nothing can masquerade as new. This is the fix for the recurring confusion.
+  var ma = d.membership_activity || {};
+  var mev = ma.events || [];
+  var EVENT_META = {
+    new_member:      { icon: '\u{1F7E2}', label: 'New member' },
+    trial_started:   { icon: '\u{1F9EA}', label: 'Trial started' },
+    trial_converted: { icon: '\u{1F7E2}', label: 'Trial → paid' },
+    resubscribed:    { icon: '\u{1F535}', label: 'Re-subscribed' },
+    recovered:       { icon: '\u{1F4B3}', label: 'Card recovered' },
+    reactivated:     { icon: '↩️', label: 'Reactivated' },
+    upgraded:        { icon: '⬆️', label: 'Upgraded' },
+    downgraded:      { icon: '⬇️', label: 'Downgraded' },
+    payment_failing: { icon: '⚠️', label: 'Payment failing' },
+    churned:         { icon: '❌', label: 'Canceled' }
+  };
+  h += '<div class="an-section-h">Membership activity <span style="font-weight:400;color:var(--text-secondary)">(' + (ma.new_members_7d || 0) + ' genuinely new this week)</span></div>';
+  if (mev.length) {
+    h += '<div class="an-list">';
+    mev.forEach(function (e) {
+      var m = EVENT_META[e.type] || { icon: '•', label: e.type };
+      var amt = e.amount ? ' &middot; $' + Math.round(e.amount / 100) : '';
+      h += '<div class="an-row" style="cursor:default">' +
+        '<div class="an-row-title">' + m.icon + ' ' + esc(m.label) + ': ' + esc(e.name || 'Member') + amt + '</div>' +
+        '<div class="an-row-meta">' + formatDate(e.at) + '</div></div>';
+    });
+    h += '</div>';
+  } else {
+    h += '<div style="padding:8px 2px 4px;color:var(--text-secondary);font-size:0.85rem">No membership changes logged yet. New members, recoveries, upgrades, and cancellations appear here as they happen.</div>';
+  }
+
   // Net-new PAID members who were never on Circle — real post-launch growth, distinct
   // from migrated members renewing. Watch for a name/practice that matches an existing
   // member: that's likely a duplicate second account (double subscription).
