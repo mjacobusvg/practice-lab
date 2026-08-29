@@ -14,6 +14,53 @@ Only eligible **members** can sell (Denis qualifies via his lifetime forum acces
 membership privilege, gated by admin approval (quality bar: "if it's offered through TBP, it's worth
 looking at").
 
+## Who can sell — archetypes, seating, and the money principle
+
+The "only members sell" rule above was written for **Denis** (a member-mentor) and is correct
+for peer clinical depth. It is **too narrow** for operational vendors. Generalize it as
+follows — this changes **no** locked Denis economics, it only widens *who* can sell beyond him.
+
+### The money principle (what TBP takes, and what it does not)
+
+**Earn only on value TBP actually contributes — its IP, its platform/audience, its curation.
+Take nothing on the expert's raw time.** This is not "take no cut"; it is usually *more
+generous*. In the Denis pilot, concretely:
+- **0%** of Denis's session fee ($200/$180) — his labor, his money, no application fee.
+- **50%** of the toolkit in the bundle — but the toolkit is *TBP's own product*, and TBP is
+  *giving away the other half* of revenue it would otherwise keep 100%. The expert makes
+  money *from* TBP (its IP, platform, setup), not the other way round.
+
+So the money flow is the **opposite** of a predatory platform: TBP funds experts off its own
+product; it does not tax members or tax the experts' time. That is the concrete answer to the
+"is this predatory?" worry — the platform pays the experts, it does not rent-seek them.
+
+### Three lanes
+
+1. **Member-experts (peer/clinical depth — the Denis lane).** Must be members. Here the
+   membership requirement is a *feature*: it keeps clinical mentorship as community peers
+   helping peers (not outside vultures) and makes selling a membership privilege.
+2. **Vetted operational vendors (credentialing, EHR setup, billing, VAs).** External pros,
+   often not clinicians. Do **not** force a clinical membership. Vet by track record +
+   references + a **fair, transparent rate** (vetting the *rate* is the anti-grift move). TBP
+   earns only on bundled TBP IP (e.g. the Credentialing Hub), nothing on their hours.
+3. **Partners / collaborators (cross-specialty, e.g. Mallory).** Not marketplace sellers —
+   separate bilateral deals (cross-promo, rev-share, content). The members-only rule does not
+   apply to them.
+
+### Seating: comp a Forum membership
+
+Every seller is seated as a **member**, but experts/vendors get a **comped $50 Forum
+membership** (community tier) rather than being made to pay. This makes "only members sell"
+true in spirit and in the database, gives them forum presence to contribute and build trust
+(the flywheel), and — since the standard $50 Forum tier is now live (Aug 2026) — is a real,
+available seat. Comp **Forum, not Full**: they need community presence, not the clinical
+toolkit.
+
+**Governance:** a comped seller seat must **not** count as a paying member. Mark it with
+`internal_label` (the same flag that keeps internal accounts out of the activation nudges) so
+it grants forum access but stays out of paying-member counts and MRR — the same rule already
+applied to promo-trials (§9: a promo-trial `full` does not count as paid).
+
 ## Locked decisions (do not silently change — these are agreed economics)
 
 | Decision | Value |
@@ -172,6 +219,29 @@ static room. Sketch:
 two-way sync + free/busy. On the "not for the pilot" list; Google Calendar `conferenceData` would
 also mint a Meet link, folding video + sync into one integration if we go Google-first. Large build;
 revisit only if mentors ask for real calendar sync.
+
+## Phase 2 (spec only, NOT built) — Expert question routing
+
+Problem: comped experts/vendors will not camp in the forum. Pull them in on demand. When a
+member posts a question matching an expert's declared topics, notify that expert (email/text)
+with the question + a one-click link to answer — so they show up when they're actually needed,
+not constantly.
+
+- **Manual version first (no build).** When a good question lands, an admin taps the relevant
+  expert by hand (@mention / DM / email: "can you take this one?"). This learns which topics
+  recur and — critically — which experts actually respond when pinged (the same reliability
+  vet used everywhere else). Automate only once experts reliably answer and volume justifies
+  it. Do things that don't scale first.
+- **Guardrail — this is the Lisa line: the alert prompts ANSWERING, not selling.** Set the
+  norm with experts explicitly: you're tapped to help in the free forum, not to funnel the
+  asker into a paid 1:1. If experts use alerts as a sales trigger, the free forum becomes bait
+  and the free-lane-stays-sufficient guardrail breaks. Answer first; paid depth stays
+  available but unpushed.
+- **When automated, reuse what exists:** `marketplace_sellers.expertise` (topic tags already
+  in the schema), the SES notify layer (`_lib/notify.js`), post `?post=<id>` deep-links +
+  one-click sign-in. Throttle to avoid alert fatigue: digest or per-expert cap, relevant
+  spaces only, and prefer "still unanswered after N hours" over "every post" so it reads as
+  *questions that need you*, not noise. Additive only; nothing existing changes.
 
 ## Go-live checklist (what Michael configures)
 
