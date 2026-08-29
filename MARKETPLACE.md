@@ -77,6 +77,11 @@ and agreement to the **answer-don't-sell** norm. First concrete hires to target:
 **credentialing** expert and one **PracticeQ / EHR-setup** person — the two most acute pains
 members are voicing right now.
 
+**Saved idea — capture EHR on member profiles.** Add an "EHR you use" field to member profiles
+(and simply ask members). Cheap to collect, high-value matching data: it tells you which EHRs
+to source setup/training help for, lets members on the same EHR help each other directly, and
+feeds the expert-routing match later. Low-lift, do when convenient.
+
 ## Locked decisions (do not silently change — these are agreed economics)
 
 | Decision | Value |
