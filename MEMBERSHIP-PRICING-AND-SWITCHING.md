@@ -240,6 +240,29 @@ A visitor arriving ready to buy Full is never *presented* a cheaper plan to talk
 into; a visitor about to bounce because Full doesn't fit finds the right door. Transparent,
 not a membership Expedia.
 
+**Subordinate means a smaller button, not a sentence.** "De-emphasized" was first shipped on
+the homepage membership card as a one-line text link, and in practice it was invisible: you
+had to already know where it was to find it. The $50 tier is meant to *grow* — it feeds the
+community that makes everything else worth joining — so it must be impossible to miss even
+while it stays clearly secondary. The working hierarchy on the card is:
+
+1. **Full** — filled primary button (`.fork-cta .fork-cta-primary`).
+2. **Forum** — outlined secondary button, same width, under a small prompt line
+   (`.fork-cta .fork-cta-outline`). A real button, not a link.
+3. **Free account** — small teal text link.
+4. **"See everything included"** — dim text link.
+
+Visible, not hidden. Secondary, not ashamed.
+
+**Each price answers exactly one objection — do not cross-wire them.** "Already have a scribe"
+belongs to **Plus**, permanently. It is tempting to point that objection at Forum in the
+interim (Plus does not exist yet), but doing so teaches the market a mapping we then have to
+*un-teach* at launch — and it is wrong on the merits: someone who already has a scribe and
+wants our tools is an $89 Plus customer, not a $50 community customer. **Until Plus ships,
+that objection gets no off-ramp at all**; Forum is advertised on community intent only
+("Here mainly for the community?"). When Plus launches, the card gains a second outlined
+button above Forum's, and only then does "Already have a scribe you love?" appear on the site.
+
 ### Route-dependent merchandising — same prices, different hero by entry point
 
 "How aggressively to expose $50/$89" is not one global setting; it's per traffic source.
