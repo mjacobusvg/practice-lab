@@ -53,6 +53,67 @@ ambitious AI recommendations (`CLINICAL-OS-STRATEGY.md` §12-15).
 
 ---
 
+### TBP Adult ADHD Evaluation Framework (three original instruments + AI synthesis)
+
+A first-principles alternative to licensing somebody else's questionnaire. Three
+TBP-original tools feeding one evidence map:
+
+1. **Adult ADHD Patient History Questionnaire** (pre-visit) — gathers current examples,
+   childhood recollections, impairment, compensatory systems, education/work history,
+   substance and sleep chronology. Deliberately no positive/negative cutoff.
+2. **ADHD Collateral History Questionnaire** — for a parent, partner, sibling or friend,
+   branching on whether the informant knew the patient in childhood, adulthood, or both.
+   Asks what they observed ("did someone have to remind them about assignments,
+   belongings, appointments"), not whether a criterion is met.
+3. **Adult ADHD Clinical Interview Guide** (in the Scribe) — semi-structured and dynamic,
+   organized around the symptom constructs plus onset, settings, impairment, chronology,
+   differential, and diagnostic uncertainty.
+
+**The paradigm, which is the actual point:** questionnaires gather evidence, the interview
+establishes meaning, collateral tests the history, the clinician makes the diagnosis. The
+output is an evidence map (what is established, by which source, what argues against, what
+is still uncertain), never a global score. Inventing a "TBP ADHD Score ≥ 42 = positive"
+would imply psychometric validation we do not have.
+
+**AI behavior spec — synthesis first, gap detection second.** The guide is *not* a
+completeness checker. Its primary job is to independently synthesize the history and say
+how strongly the evidence supports an ADHD formulation, why, what argues against it, and
+what remains uncertain — in ordinary clinical language ("I would keep ADHD high on the
+differential"), never a probability. It must be able to disagree with the clinician gently
+in both directions. Missing information is framed as *things worth clarifying*, never as
+MISSING REQUIRED ELEMENTS.
+
+Three distinct states, never treated alike:
+- **Soft gap** — more information would increase confidence.
+- **Meaningful uncertainty** — competing explanations remain unresolved.
+- **Contradictory evidence** — something in the history actively argues against the
+  diagnosis (e.g. no attentional difficulty until a TBI at 31; concentration problems only
+  during discrete manic episodes).
+
+And the governing rule: **"not documented" ≠ "not present" ≠ "not assessed."** A history
+describing lost homework, parental reminders and midnight project completion supports
+childhood onset even if nobody wrote "before age 12." The question is whether the total
+history reasonably establishes the construct, not whether every checklist item was asked.
+
+- **Why it matters** — Part 1 and Part 2 of the ADHD posts argue that measurement is not
+  diagnosis. This is that thesis built as a product, and it is a strong demonstration of
+  what the Scribe is supposed to be: a second clinical brain, not a hall monitor.
+- **Prerequisite** — the two ADHD posts published; the existing assessment-suite send
+  infrastructure (tokenized one-time links, `assessment-create.js`) extended to collateral
+  informants. Draft the items from the construct level and clinical literature; do **not**
+  build by paraphrasing ASRS/DIVA/DSM items side by side, and do not brand it as an
+  "ASRS-like" or "DIVA alternative" tool. Label it plainly as a structured clinical-history
+  and interview aid, not a validated psychometric test.
+- **Note on licensing** — this is *not* driven by licensing pressure. ASRS v1.1 (WHO, free
+  with attribution) and WFIRS-S (UBC 2011, public domain, unmodified with notice retained)
+  are both already shipped legitimately in `assessment-instruments.js`. The licensing
+  argument only bites for a structured diagnostic interview like DIVA. The real case for
+  building this is clinical: the existing paradigm collects endorsements when what the
+  diagnosis needs is context, chronology and meaning.
+- **Business model** — member-facing differentiator inside the Scribe; a candidate for
+  eventual validation study (inter-rater agreement, concordance with expert diagnosis).
+- **Status** — strategic option, not active roadmap.
+
 ## 2. Practice / organization product
 
 Path beyond the individual-PMHNP membership ceiling.
