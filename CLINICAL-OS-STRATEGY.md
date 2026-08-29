@@ -826,7 +826,103 @@ And the clinician should increasingly feel:
 
 That is the operating-system vision.
 
-## 32. This document is intentionally incomplete
+## 32. Previsit intelligence: the missing front half
+
+Everything §2 lists as "what the Scribe already knows" is downstream of the microphone. For a
+follow-up that is fine, because last visit's note carries the context in. For a **new
+evaluation the Scribe currently starts blind**, and that is the largest remaining gap in the
+encounter-context thesis.
+
+### The asymmetry, as it actually exists in the code
+
+There are two prep paths in `pm-ai-scribe.html`, and they are not symmetric:
+
+| | input | output |
+|---|---|---|
+| `prepSystem()` (follow-up) | last visit's note | SNAPSHOT / STARTING_NOTE / CHECKLIST / FOCI |
+| `newEvalScaffoldSystem()` (new eval) | **nothing** (`'Produce the blank intake scaffold now.'`) | an empty sectioned form |
+
+The new-eval scaffold is blind *by design*: its prompt says "Invent NO clinical content: no
+symptoms, no findings, no history, no denials. Empty sections only," and the result is cached
+in the Vault because it is the same blank form every time. That was correct when there was
+nothing to feed it.
+
+So the work is not "build a previsit feature." It is: **give the new-eval prep call a source,
+and it becomes `prepSystem` for new patients.** The follow-up path already proves the output
+shape — a glance snapshot plus a checklist of what to ask today is exactly what a previsit
+evaluation guide needs to produce.
+
+### Two routes into previsit context
+
+Do not force clinicians to duplicate an intake system their EHR already runs.
+
+1. **Bring existing intake in.** Paste or upload the intake packet, referral, or prior
+   records. Cheapest to build, works for clinicians whose EHR already gathers good history,
+   and it is close to free: the working note already accepts pasted text and uploads. What is
+   missing is making that content visible to the *prep* call, which currently runs before it
+   and reads only a prior note.
+2. **Send a TBP previsit packet.** For clinicians whose EHR does not gather what they need.
+   Reuses the Assessment Suite send infrastructure (tokenized one-time links,
+   `assessment-create.js`), extended to collateral informants.
+
+Route 1 first. It is smaller, it serves more clinicians, and it de-risks route 2.
+
+### Reasoning checkpoints, not a continuously thinking AI
+
+The model does not sit and think between calls. Continuous background re-analysis would add
+cost, latency and UI churn, and would risk telling the clinician to establish childhood onset
+while they are mid-sentence asking about childhood. Reject it.
+
+Instead, discrete calls at moments the clinician controls:
+
+1. **Prep** — one call before the visit over whatever previsit context exists. Produces the
+   snapshot and the high-yield areas for today.
+2. **The visit** — captured normally. No AI in the loop.
+3. **Optional checkpoint** — a button ("Clinical read so far"), pressed when the clinician
+   wants a second opinion, run against everything captured to that point. Returns the current
+   formulation, strongest evidence, real contradictions, unresolved uncertainty, and two to
+   four highest-value next questions.
+4. **Final synthesis** — end of visit, over the complete record.
+
+This is not novel architecture. The Scribe already has ~15 distinct reasoning call sites
+(`draftSystem`, `verifySystem`, `refineSystem`, `elicitSystem`, `wizardSystem`,
+`snapshotSystem`, …). The checkpoint is one more.
+
+> **Constraint that decides build order: the checkpoint does not work in ambient mode.**
+> Transcription happens *after* Stop (see the "Ambient fast path" comment in
+> `pm-ai-scribe.html`), so mid-visit there is no transcript in the browser to reason over. The
+> checkpoint is real for a clinician typing into the working note, and collapses into the
+> final synthesis for an ambient visit. Prep and final synthesis work in every mode. Build
+> those first, and do not lead marketing with the mid-visit moment.
+
+### Naming
+
+"Assessment Suite" is becoming the wrong container. Standardized instruments (PHQ-9, GAD-7,
+ASRS, WFIRS), clinical history forms, evaluation modules, and collateral questionnaires are
+four different kinds of thing. A surface like **Intake & Assessments**, with the Assessment
+Suite living inside it, describes the actual shape better.
+
+### ADHD as the first module
+
+The two ADHD evaluation posts are the clinical spec for the first evaluation module, and the
+instrument design and AI behavior spec are recorded in `FUTURE-OPPORTUNITIES.md` (synthesis
+first, gap detection second; soft gap vs meaningful uncertainty vs contradictory evidence;
+"not documented" ≠ "not present" ≠ "not assessed").
+
+One discipline carried over from those posts: the previsit packet must not become a
+fourteen-page form. Two posts arguing that questionnaires are not diagnosis cannot be answered
+with a 127-item questionnaire. Gather what is cheap for the patient to give and expensive for
+the clinician to obtain manually — concrete examples, chronology, what systems they rely on,
+when it was better or absent — and let the model summarize it so the clinician does not read
+fourteen pages either.
+
+### Marketing constraint
+
+Any copy promising the Scribe works from "history, questionnaires and collateral already
+gathered" is describing route 1 or route 2. Until one of them ships, that claim is not true
+yet, and the honest version is prep plus final synthesis.
+
+## 33. This document is intentionally incomplete
 
 This is a starting point.
 
