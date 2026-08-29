@@ -1229,6 +1229,14 @@ html.preview-mode ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15)
 .tagpill.on { background:var(--teal); border-color:var(--teal); color:var(--text-inverse); }
 .tagpicker { display:flex; flex-wrap:wrap; gap:6px; margin-top:2px; }
 .post-tags { display:flex; flex-wrap:wrap; gap:6px; margin:14px 0 4px; }
+/* "Part of <collection>" wayfinding chip on post detail. A reader who lands on a
+   single post from search or a topic chip otherwise never learns the curated
+   reading path exists, because collections only render on their home space. */
+.collection-badge { display:inline-flex; align-items:center; gap:8px; margin:12px 0 4px; padding:7px 12px; border-radius:8px; border:1px solid var(--border); background:transparent; color:var(--text-secondary); font-size:0.76rem; cursor:pointer; transition:all 0.15s; }
+.collection-badge:hover { border-color:var(--teal); color:var(--teal); }
+.collection-badge b { color:var(--text-primary); font-weight:600; }
+.collection-badge:hover b { color:var(--teal); }
+.collection-badge .cb-go { opacity:0.65; white-space:nowrap; }
 /* Reactions + reply actions */
 .react-bar { display:inline-flex; gap:6px; margin:12px 0 2px; flex-wrap:wrap; }
 .react-btn { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:999px; border:1px solid var(--border); background:transparent; color:var(--text-secondary); cursor:pointer; font-size:0.82rem; line-height:1; transition:all 0.15s; }
@@ -3524,7 +3532,7 @@ async function viewPost(postId) {
     // Load post
     var { data: post, error } = await SB
       .from('forum_posts')
-      .select('id, author_id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, edited_at, is_locked, image_urls, poll, attachments, canonical_synthesis, ce_candidate, free_visible, free_readonly, members_teaser, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name))')
+      .select('id, author_id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, edited_at, is_locked, image_urls, poll, attachments, canonical_synthesis, ce_candidate, free_visible, free_readonly, members_teaser, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name)), post_collection_items(post_collections(id, name, spaces(slug)))')
       .eq('id', postId)
       .single();
     if (error) throw error;
@@ -3631,6 +3639,18 @@ async function viewPost(postId) {
     // Topic tags (clickable -> cross-space topic view)
     var postTags = (post.post_tags || []).map(function(pt) { return pt.tags; }).filter(Boolean);
     h += postTagPillsHtml(postTags);
+
+    // If this post sits in a curated collection, surface the path back to it.
+    // Collections only render on their home space, so without this a reader who
+    // arrived from search or a topic chip never discovers the rest of the series.
+    (post.post_collection_items || [])
+      .map(function(ci) { return ci.post_collections; })
+      .filter(function(c) { return c && c.id && c.spaces && c.spaces.slug; })
+      .forEach(function(c) {
+        h += '<div class="collection-badge" onclick="event.stopPropagation();openCollection(\'' + esc(c.spaces.slug) + '\',\'' + esc(c.id) + '\')">';
+        h += 'Part of <b>' + esc(c.name) + '</b><span class="cb-go">View all &rarr;</span>';
+        h += '</div>';
+      });
 
     // Non-members: excerpt teaser + join gate instead of the full thread.
     // (First few paragraphs prove the answer is good, then convert.) A post
@@ -7995,6 +8015,26 @@ async function loadSpaceCollections(slug, spaceDef) {
     el.innerHTML = h;
     return collectionPostIds;
   } catch(e) { console.error('loadSpaceCollections:', e); return new Set(); }
+}
+
+// Jump from a post to the collection it belongs to: navigate to the collection's
+// home space, then expand and scroll to it. go() renders the space synchronously
+// but loadSpaceCollections() fills it in async, so poll briefly for the element
+// rather than assuming it is there. Gives up after ~4s instead of spinning.
+function openCollection(spaceSlug, collectionId) {
+  if (!spaceSlug || !collectionId) return;
+  go(spaceSlug);
+  var tries = 0;
+  var timer = setInterval(function() {
+    var el = document.getElementById('col-' + collectionId);
+    if (el) {
+      clearInterval(timer);
+      el.classList.add('open');
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else if (++tries > 40) {
+      clearInterval(timer);
+    }
+  }, 100);
 }
 
 function toggleCollection(id) {
