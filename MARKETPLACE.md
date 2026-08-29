@@ -61,6 +61,22 @@ toolkit.
 it grants forum access but stays out of paying-member counts and MRR — the same rule already
 applied to promo-trials (§9: a promo-trial `full` does not count as paid).
 
+### Sourcing providers (near-term, manual — start here)
+
+Finding trustworthy providers is the chronic cultivation, and it starts **by hand, now** — no
+build. Channels, in order of trust:
+
+1. **Referrals from trusted members.** Members who share the community-not-grift value (e.g.
+   Lisa Heredia, who explicitly asked for exactly this) are the best source — their
+   recommendation is itself a vetting signal, and asking makes them co-owners of the idea.
+   Ask who they'd trust for credentialing, EHR/PracticeQ setup + training, billing, VAs.
+2. **Michael's own network + candidates who've done the work** (references checkable).
+
+Vetting bar for any candidate: real track record + references + a **fair, transparent rate**,
+and agreement to the **answer-don't-sell** norm. First concrete hires to target: one
+**credentialing** expert and one **PracticeQ / EHR-setup** person — the two most acute pains
+members are voicing right now.
+
 ## Locked decisions (do not silently change — these are agreed economics)
 
 | Decision | Value |
