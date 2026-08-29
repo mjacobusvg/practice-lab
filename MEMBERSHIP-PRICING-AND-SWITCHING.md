@@ -254,6 +254,40 @@ while it stays clearly secondary. The working hierarchy on the card is:
 
 Visible, not hidden. Secondary, not ashamed.
 
+**Every membership CTA names its tier, its price, and what it includes.** The first cut of
+this card paired a vague primary ("Join Think Beyond Practice") with a specific secondary
+("Join Forum for $50/mo"), which made the *cheaper* option the only one that told you what
+you were buying. Both buttons carry `Join <Tier> — $<price>/mo`, and each is followed by one
+small line of substance:
+
+```
+[ Join Full — $119/mo ]            ← filled primary
+  Everything, including the AI Scribe.
+
+Here mainly for the community?
+[ Join Forum — $50/mo ]            ← outlined secondary
+  Full community access: post, reply, join case discussions, peer Q&A, and
+  member conversations. No tools, CE, or AI Scribe.
+
+Not ready to commit? Start with a free account →
+```
+
+Naming the tier ("Join **Full**") also establishes that these are *levels of one membership*
+rather than TBP versus some separate forum product. Say "Join Forum", never "Forum only" —
+"only" makes it sound lesser before the reader knows what it contains; the subline draws the
+boundary. And the subline must state what the tier **does** include before what it doesn't,
+so $50 reads as a real product rather than a crippled Full. When Full moves to $149, only
+the number in the label changes.
+
+At Plus launch the stack becomes four rungs, still one filled button and the rest subordinate:
+
+```
+[ Join Full — $149/mo ]   Everything, including the AI Scribe.
+Already have a scribe you love?   [ Plus — $89/mo ]
+Here mainly for the community?    [ Forum — $50/mo ]
+Just looking around?              Free account →
+```
+
 **Each price answers exactly one objection — do not cross-wire them.** "Already have a scribe"
 belongs to **Plus**, permanently. It is tempting to point that objection at Forum in the
 interim (Plus does not exist yet), but doing so teaches the market a mapping we then have to
