@@ -288,6 +288,23 @@ Here mainly for the community?    [ Forum — $50/mo ]
 Just looking around?              Free account →
 ```
 
+**The same rules apply in-app, not just on the marketing page.** A signed-in `free` member
+reaches checkout through several surfaces, and the first pass shipped $50 on only one of them
+(the join modal, as a text link). Every upgrade surface aimed at a free member offers both
+tiers, each naming tier and price:
+
+- **Account menu** (`platform.html`, `updateTopbar()`) — free members get `Join Full — $119/mo`
+  *and* `Join Forum — $50/mo`. Forum members keep `Upgrade to Full — $119/mo` (the in-place
+  `upgradeMembership()` switch, not a new checkout).
+- **Join modal** (`showJoin()`, opened by ~10 content gates) — Full filled, Forum outlined
+  beneath with the community-access subline, Forum annual as a small link.
+
+**The one deliberate exception: the founding-rate promo bar stays Full-only.** That bar exists
+to make one claim — the $119 rate expires — and putting a cheaper alternative inside a
+"lock this in before it rises" message defeats the message. Urgency copy for a specific price
+is the one place where offering the other door undercuts the door you are pointing at. Free
+members have two other paths to $50, so nothing is hidden by keeping this one single-purpose.
+
 **Each price answers exactly one objection — do not cross-wire them.** "Already have a scribe"
 belongs to **Plus**, permanently. It is tempting to point that objection at Forum in the
 interim (Plus does not exist yet), but doing so teaches the market a mapping we then have to
