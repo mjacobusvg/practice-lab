@@ -194,6 +194,18 @@
         var claims = parseToken(existing) || {};
         var tier = String(claims.tier || '').toLowerCase();
         if (!requireFull || tier === 'full') { onVerified(); return; }
+        // Authenticated, forum-only on a Full-tier tool. Before the upgrade wall,
+        // honor a per-feature entitlement (a hand-granted trial pass) if this tool
+        // declares one via options.feature. UX only: the clinical backend re-checks
+        // the same entitlement and fails closed, so a bug here cannot grant real
+        // access or burn credits — worst case a valid trialer sees the wall.
+        if (options.feature) {
+          checkFeatureEntitlement(existing, options.feature, function (active) {
+            if (active) { onVerified(); return; }
+            renderUpgrade(toolName);
+          });
+          return;
+        }
         // Authenticated, but forum-only on a Full-tier tool → upgrade screen.
         renderUpgrade(toolName);
         return;
@@ -207,6 +219,19 @@
 
     clearSession: clearSession
   };
+
+  // Ask the server whether this member holds an active per-feature entitlement (a
+  // hand-granted trial pass, e.g. a week of the Letter Generator). UX only; fails
+  // closed to the upgrade wall on any error. cb(true|false).
+  function checkFeatureEntitlement(token, feature, cb) {
+    try {
+      fetch('/.netlify/functions/check-entitlement?feature=' + encodeURIComponent(feature), {
+        headers: { 'Authorization': 'Bearer ' + token }
+      }).then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (d) { cb(!!(d && d.active)); })
+        .catch(function () { cb(false); });
+    } catch (e) { cb(false); }
+  }
 
   // ── PHI gate: BAA then Terms, both required, fail closed ──
   function getVerifiedEmail() {

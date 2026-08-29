@@ -554,6 +554,9 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
     TBPAuth.protect({
       toolName: 'Letter Generator',
       requireFull: true,
+      // Forum members with a hand-granted trial pass (feature_entitlements) get in
+      // here too; the clinical backend re-checks the same entitlement, fail-closed.
+      feature: 'letter_generator',
       onVerified: function() {
         document.getElementById('app-root').style.display = 'block';
         try { _lgUserEmail = localStorage.getItem('tbp_verified_email') || ''; } catch(e) {}
@@ -561,9 +564,37 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
         loadVault();
         // Initialize the new wizard flow (populates diagnosis/status dropdowns, progress bar)
         if (typeof initWizard === 'function') initWizard();
+        maybeShowLetterTrialBanner();
       }
     });
   });
+
+  // If this member is here on a trial pass (an active letter_generator entitlement),
+  // show a friendly "complimentary access" banner with the expiry and a one-click
+  // path to keep it via Full. Full members have no entitlement row, so check-
+  // entitlement returns active:false for them and the banner never shows.
+  function maybeShowLetterTrialBanner() {
+    var token = '';
+    try { token = localStorage.getItem('tbp_auth_token') || ''; } catch (e) {}
+    if (!token) return;
+    fetch('/.netlify/functions/check-entitlement?feature=letter_generator', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) {
+      if (!d || !d.active) return;
+      var until = '';
+      try {
+        until = new Date(d.expires_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+      } catch (e) {}
+      var bar = document.createElement('div');
+      bar.style.cssText = 'background:linear-gradient(90deg,#ffe066,#ffd60a);color:#1a1200;font-weight:700;font-size:.9rem;line-height:1.45;padding:12px 18px;border-radius:10px;margin:0 0 18px;display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:center;text-align:center';
+      bar.innerHTML = '<span>&#10024; <strong>Letter Generator trial</strong>' +
+        (until ? ' &mdash; complimentary access through <strong>' + until + '</strong>.' : '.') +
+        ' Normally part of Full membership.</span>' +
+        '<a href="/platform.html?plan=full_monthly_119" style="background:#0b1120;color:#ffd60a;padding:7px 14px;border-radius:7px;text-decoration:none;font-weight:800;white-space:nowrap">Keep it &mdash; upgrade to Full &rarr;</a>';
+      var root = document.getElementById('app-root');
+      if (root) root.insertBefore(bar, root.firstChild);
+    }).catch(function () {});
+  }
   </script>
 
   <!-- Header -->

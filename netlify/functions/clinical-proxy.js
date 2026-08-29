@@ -56,6 +56,39 @@ async function hasActiveTrial(cmid, email) {
   }
 }
 
+// READ-ONLY: does this member hold an unexpired entitlement for a specific feature?
+// Lets a forum-tier member through the full-tier gate for ONE named tool (e.g. a
+// hand-granted "try the Letter Generator for a week" pass) without touching their
+// tier or Stripe. SELECT only; grants live in feature_entitlements, seeded by admin
+// action, and expire automatically at expires_at (nothing to remember to revoke).
+async function hasActiveEntitlement(email, feature) {
+  var SUPABASE_URL = process.env.SUPABASE_URL;
+  var SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
+  if (!SUPABASE_URL || !SERVICE_KEY) return false;
+  var em = (email || '').toString().trim().toLowerCase();
+  if (!em || !feature) return false;
+  try {
+    var nowIso = new Date().toISOString();
+    var res = await fetch(
+      SUPABASE_URL + '/rest/v1/feature_entitlements?email=eq.' + encodeURIComponent(em) +
+      '&feature=eq.' + encodeURIComponent(feature) +
+      '&expires_at=gt.' + encodeURIComponent(nowIso) + '&select=id&limit=1',
+      { headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY } }
+    );
+    if (!res.ok) return false;
+    var rows = await res.json();
+    return Array.isArray(rows) && rows.length > 0;
+  } catch (e) {
+    return false;
+  }
+}
+
+// Which entitlement feature unlocks a given usage-tool label. ONLY tools listed here
+// can be opened by a per-feature entitlement; every other clinical tool stays
+// full-tier-only. This map is the feature-scope guard: a 'letter_generator'
+// entitlement can open the Letter Generator and nothing else.
+const FEATURE_BY_TOOL = { 'Letter Generator': 'letter_generator' };
+
 // Models this proxy is permitted to call. Locks out caller-chosen expensive models.
 const ALLOWED_MODELS = ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'];
 const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
@@ -111,9 +144,19 @@ exports.handler = async function (event, context) {
     return { statusCode: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'This tool requires the full Think Beyond Practice membership.' }) };
   }
   if (session.claims.tier !== 'full') {
-    // Forum-tier: allow only if a live trial exists (shared 7-day clock).
+    // Forum-tier: allow if a live shared-clock trial exists, OR a per-feature
+    // entitlement for THIS specific tool. Feature-scoped via FEATURE_BY_TOOL so a
+    // single-tool pass (e.g. a hand-granted Letter Generator trial) can never open
+    // the Scribe, Coder, or any other Full tool. Fail-closed: an unknown/absent tool
+    // maps to no feature, so it falls straight through to the 403.
+    const gateReferer = event.headers.referer || event.headers.Referer || '';
+    const gateTool = body.tool || toolFromReferer(gateReferer) || '';
+    const gateFeature = FEATURE_BY_TOOL[gateTool] || null;
     const trialOk = await hasActiveTrial(session.claims.cmid, session.claims.email);
-    if (!trialOk) {
+    const entitledOk = (!trialOk && gateFeature)
+      ? await hasActiveEntitlement(session.claims.email, gateFeature)
+      : false;
+    if (!trialOk && !entitledOk) {
       return { statusCode: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' }, body: JSON.stringify({ error: 'This tool requires the full Think Beyond Practice membership.' }) };
     }
   }
