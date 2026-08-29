@@ -293,6 +293,11 @@ reaches checkout through several surfaces, and the first pass shipped $50 on onl
 (the join modal, as a text link). Every upgrade surface aimed at a free member offers both
 tiers, each naming tier and price:
 
+- **Platform Home** (`showHome()`, non-paid members only) — a "Become a member" card in the
+  scroll path, under the AI Scribe hero. This is the one that makes Forum *discoverable*: the
+  account menu is behind an avatar click and the join modal only fires on a content gate, so
+  without it a free member can browse for weeks, hit a join button already primed on $119, and
+  never learn a $50 door existed. Full filled, Forum outlined beneath, both with sublines.
 - **Account menu** (`platform.html`, `updateTopbar()`) — free members get `Join Full — $119/mo`
   *and* `Join Forum — $50/mo`. Forum members keep `Upgrade to Full — $119/mo` (the in-place
   `upgradeMembership()` switch, not a new checkout).
