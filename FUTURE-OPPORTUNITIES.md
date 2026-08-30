@@ -114,6 +114,76 @@ history reasonably establishes the construct, not whether every checklist item w
   eventual validation study (inter-rater agreement, concordance with expert diagnosis).
 - **Status** — strategic option, not active roadmap.
 
+---
+
+### Medication Intelligence / point-of-care reference layer
+
+A structured psychiatric medication data layer that supports multiple TBP workflows, rather
+than another collection of standalone reference tools.
+
+Potential capabilities: medication reference pages, side-by-side comparison, switching and
+tapering guidance, equivalency tools, metabolism / CYP information, adverse-effect
+considerations, monitoring, pregnancy and lactation, available formulations, and links to
+relevant TBP clinical content and CE.
+
+**The design principle, which is the point of the entry.** This must support clinical
+reasoning, not encourage medication selection by simplistic rankings such as "lowest weight
+gain" or "least EPS." Adverse-effect profiles are one part of an individualized risk-benefit
+analysis and frequently trade against efficacy, potency, prior response, indication, and
+patient preference. Olanzapine to aripiprazole is the standing example: more metabolic risk,
+but also more potency, and the lower-risk option is not automatically the better one for a
+given patient. Where TBP provides comparisons it must make those tradeoffs visible rather
+than imply that lower theoretical risk equals a better medication.
+
+**Build one dataset, not seven tools.** The architectural case is stronger than the product
+case. Today the same clinical facts would end up maintained separately in the Interaction
+Interpreter, the Monitoring Protocol, clinical guidance, the After-Visit Medication Plan, and
+any future augmentation or switching work. One structured medication service that all of them
+call is the version worth building. Possible eventual UI: Medication Reference -> Compare ->
+Switch / Taper -> patient-specific considerations. Directly relevant to `ROADMAP.md` Lane 2
+(Monitoring Protocol) and Lane 3 (Interaction Interpreter), which are current work and would
+be the first two consumers.
+
+**Where the actual differentiation is.** Not in the reference content. There is already
+abundant psychiatric reference material available, and reproducing it is a large ongoing
+content-maintenance obligation for something clinicians can get elsewhere. The differentiator
+is patient context: a static reference answers "tell me about aripiprazole," whereas the
+Scribe already knows the current regimen, prior trials and failures, BMI, diagnoses, and what
+changed today. "Given this patient's history, what are the tradeoffs" is a different class of
+product from a drug card, and it is the only version worth diverting development for.
+
+**On equivalency calculators specifically.** Benzodiazepine equivalencies, stimulant
+conversions, and antipsychotic dose equivalents are approximate and source-dependent. If TBP
+builds these, they should show an estimated equivalent range, the source and method, and the
+limitations, explicitly not a milligram-for-milligram conversion. False precision in a
+calculator is worse than no calculator.
+
+- **Why it matters** — it is infrastructure for work already on the roadmap, not breadth. It
+  also thickens the Plus tier: reference plus compare plus switch/taper alongside the
+  Interaction Interpreter, Monitoring Protocol, Chart Audit and Coder, letters and CE.
+- **Prerequisite** — Lanes 2 and 3 far enough along to know what shape of structured drug
+  data they actually need, so the schema is derived from real consumers rather than guessed.
+  Build from FDA labels, open government data, primary literature, and appropriately licensed
+  guidelines only. Start with the drugs psychiatric prescribers use constantly; do not chase
+  a headline count of medications or diagnoses.
+- **Business model** — member-facing depth inside the existing tiers; no separate product.
+- **Status** — parking lot / later. Preserved because it could become foundational
+  infrastructure, not because there is an urgent gap. Worth being honest that the reference
+  half of this is a "meh" on its own merits.
+
+**Market note (Aug 2026).** Prompted by Sigmund Psych, a psychiatric point-of-care reference
+app built by two PMHNPs (Sigmund Psych LLC, Florida, formed 3 Feb 2026). Advertises 92
+diagnoses, 189 medications across 21 classes, treatment pathways, comparison and equivalency
+calculators, coping-skill guidance, supplements, and CE, at $19.99/month or $199/year, with a
+CE tier at $289/year. Useful mainly as evidence that clinicians will pay for the reference
+slice alone, and their terms explicitly disclaim patient-specific recommendations and tell
+users not to enter PHI, which is exactly the ceiling TBP's encounter context is positioned
+above. Do not create a trial account to copy their drug cards, pathway wording, database, or
+UI: their terms claim ownership of that content. The product concepts are not theirs;
+independently sourced data with TBP's own provenance standards is the better path regardless.
+
+---
+
 ## 2. Practice / organization product
 
 Path beyond the individual-PMHNP membership ceiling.

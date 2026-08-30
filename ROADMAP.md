@@ -325,6 +325,8 @@ proving the current psychiatric product. The full, organized idea tree lives in
 - EHR integrations
 - enterprise / team workflows
 - advanced clinical guidance / evidence layer
+- medication intelligence layer (one structured drug dataset under Lanes 2 and 3, rather than
+  separate reference / compare / switch / taper tools)
 - electronic lab ordering
 - expanded forms / PA automation
 - mentorship and supervision marketplace expansion
