@@ -176,9 +176,27 @@
       // Scheduled-maintenance gate: block every PHI/clinical tool up front (before
       // demo or auth), so nothing loads and no clinical content can be submitted.
       // Non-PHI pages pass skipPHIGate:true and are unaffected.
+      // BYPASS for testing: the owner's own logged-in account passes through (so he can
+      // verify a fix on the live site while everyone else still sees maintenance), and a
+      // localStorage escape hatch (set tbp_maint_bypass='1', or visit any tool once with
+      // ?maintbypass=1) lets a chosen browser through. The clinical backends still verify
+      // the signed token on every call, so a bypass cannot grant anyone real access.
       if (TBP_MAINTENANCE && options && options.skipPHIGate !== true) {
-        renderMaintenance(options.toolName || 'Think Beyond Practice');
-        return;
+        var maintBypass = false;
+        try {
+          if (/[?&]maintbypass=1(?:&|$)/.test(location.search)) localStorage.setItem('tbp_maint_bypass', '1');
+          if (localStorage.getItem('tbp_maint_bypass') === '1') maintBypass = true;
+        } catch (e) {}
+        try {
+          var _mtok = localStorage.getItem(SESSION_KEY);
+          var _mcl = _mtok ? parseToken(_mtok) : null;
+          var _mem = (_mcl && _mcl.email) ? String(_mcl.email).toLowerCase().trim() : '';
+          if (_mem === 'michael.vangelder@gmail.com' || _mem === 'michael@thinkbeyondpractice.com') maintBypass = true;
+        } catch (e) {}
+        if (!maintBypass) {
+          renderMaintenance(options.toolName || 'Think Beyond Practice');
+          return;
+        }
       }
       // ── Public demo mode (?demo=1) ──
       // Opens the tool with NO login, on baked-in demo content only. Two things make this safe:
