@@ -2,8 +2,10 @@
 // Paste this as the function's index.mjs. Runtime: Node.js 20.x or 24.x.
 // Deploy with a Function URL, Invoke mode = RESPONSE_STREAM, Auth type = NONE
 // (auth is enforced in-code via the signed session token, same as Netlify).
-// Do NOT also enable CORS on the Function URL: this handler emits CORS itself,
-// and a second Access-Control-Allow-Origin would break the browser.
+// ENABLE CORS on the Function URL (AWS answers the OPTIONS preflight and adds the
+// Access-Control-Allow-Origin header). This handler deliberately does NOT emit CORS
+// itself: on a streamed response the preflight header doesn't survive reliably, and
+// a duplicate Access-Control-Allow-Origin would break the browser.
 //
 // Env vars required: ANTHROPIC_API_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY,
 // SESSION_SIGNING_SECRET.
