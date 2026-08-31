@@ -46,10 +46,13 @@ function verifyToken(token){
   return { valid:true, claims };
 }
 
-const ACCOUNT = process.env.AZURE_STORAGE_ACCOUNT || '';
-const STORAGE_KEY = process.env.AZURE_STORAGE_KEY || '';
-const SPEECH_KEY = process.env.AZURE_SPEECH_KEY || '';
-const REGION = process.env.AZURE_SPEECH_REGION || 'eastus';
+// .trim() every env var: a stray leading/trailing space (easy to paste into the
+// console by accident) in REGION or ACCOUNT builds a malformed URL that fetch rejects,
+// and in a key silently breaks signing/auth. Trimming is safe for base64 keys and slugs.
+const ACCOUNT = (process.env.AZURE_STORAGE_ACCOUNT || '').trim();
+const STORAGE_KEY = (process.env.AZURE_STORAGE_KEY || '').trim();
+const SPEECH_KEY = (process.env.AZURE_SPEECH_KEY || '').trim();
+const REGION = (process.env.AZURE_SPEECH_REGION || 'eastus').trim();
 const CONTAINER = 'ambient-audio';
 const SPEECH_BASE = 'https://' + REGION + '.api.cognitive.microsoft.com/speechtotext/v3.2';
 const SAS_VERSION = '2020-08-04';
