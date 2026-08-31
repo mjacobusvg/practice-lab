@@ -130,7 +130,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 #ambient-progress .out{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal),0 12px 34px rgba(0,0,0,.45)}
 </style>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-63"></script>
+<script src="/note-engine.js?v=ambient-64"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -355,7 +355,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-63</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-64</span></div>
 </div>
 </div>
 
@@ -2242,13 +2242,16 @@ function ensureModalityCard(qs){
 }
 
 async function buildAssessment(btn, force){
+  // Every early exit below must also stop the ambient "Building your note" banner, or a
+  // drafted note can sit stranded behind a still-spinning banner (looks stuck).
   if(!window.NoteEngine || typeof window.NoteEngine.runAssessment !== 'function'){
+    _ambientFlow = false; tbpAmbientProgress('clear');
     document.getElementById('assess-results').innerHTML = '<div class="err">Assessment engine did not load. Hard-reload the page (Cmd/Ctrl+Shift+R) and try again.</div>';
     return;
   }
   var hpiEl = document.getElementById('hpi-out');
   var hpi = (hpiEl && typeof hpiEl.value === 'string' && hpiEl.value.trim()) ? hpiEl.value.trim() : lastHpi;
-  if(!hpi){ document.getElementById('assess-results').innerHTML = '<div class="err">No HPI to work from yet.</div>'; return; }
+  if(!hpi){ _ambientFlow = false; tbpAmbientProgress('clear'); document.getElementById('assess-results').innerHTML = '<div class="err">No HPI to work from yet.</div>'; return; }
   // The prior assessment (diagnosis list above all) drives today's diagnosis list. It comes from the
   // one upfront box (last visit's full note + assessment) that also powers carry-forward and the checklist.
   var dxprior = '';
@@ -2269,11 +2272,12 @@ async function buildAssessment(btn, force){
     // stop the banner, and reveal the HPI — the note itself IS ready; only the assessment is blocked,
     // so the draft shouldn't sit stranded behind the guard. Then bring the guard into view. (After they
     // paste last visit's note, "Build without it anyway" reads that freshly-pasted context and builds.)
-    if(_ambientFlow){
-      _ambientFlow = false; tbpAmbientProgress('clear');
-      try { var _hp=document.getElementById('hpi-panel'); if(_hp && _hp.style.display==='none') _hp.style.display=''; } catch(e){}
-      try { document.getElementById('assess-results').scrollIntoView({ behavior:'smooth', block:'center' }); } catch(e){}
-    }
+    // Done UNCONDITIONALLY (not gated on _ambientFlow) so the "Building your note" banner can never be
+    // left spinning above a note that is actually ready. In a manual (non-ambient) build the banner is
+    // already empty and the panel already visible, so this is a harmless no-op there.
+    _ambientFlow = false; tbpAmbientProgress('clear');
+    try { var _hp=document.getElementById('hpi-panel'); if(_hp && _hp.style.display==='none') _hp.style.display=''; } catch(e){}
+    try { document.getElementById('assess-results').scrollIntoView({ behavior:'smooth', block:'center' }); } catch(e){}
     return;
   }
   // Slice 4b: surface the provider-owned clinical calls (preflight) before writing.
