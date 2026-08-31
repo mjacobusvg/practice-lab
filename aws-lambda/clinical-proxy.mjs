@@ -246,11 +246,14 @@ export const handler = async (event) => {
   if (session.claims.scope !== 'member') return json(403, { error: 'This tool requires the full Think Beyond Practice membership.' });
 
   const referer = getH('referer') || getH('referrer') || '';
+  // Cross-origin requests to the Function URL strip the Referer PATH, so the tool label
+  // (used for entitlement gating and usage attribution) can't be derived from it. Callers
+  // pass it as a ?tool= query param on the Function URL instead; body.tool wins if present.
+  const qsTool = (event.queryStringParameters && event.queryStringParameters.tool) || '';
   if (session.claims.tier !== 'full') {
     // Forum-tier: allow a live shared-clock trial, OR a per-feature entitlement for
-    // THIS specific tool. Cross-origin strips the Referer path, so the frontend sends
-    // an explicit body.tool; fall back to referer for callers that don't.
-    const gateTool = body.tool || toolFromReferer(referer) || '';
+    // THIS specific tool.
+    const gateTool = body.tool || qsTool || toolFromReferer(referer) || '';
     const gateFeature = FEATURE_BY_TOOL[gateTool] || null;
     const trialOk = await hasActiveTrial(session.claims.cmid, session.claims.email);
     const entitledOk = (!trialOk && gateFeature) ? await hasActiveEntitlement(session.claims.email, gateFeature) : false;
@@ -266,7 +269,7 @@ export const handler = async (event) => {
   };
   if (body.tools && Array.isArray(body.tools)) payload.tools = body.tools;
 
-  const usageTool = body.tool || toolFromReferer(referer) || 'Clinical Tool';
+  const usageTool = body.tool || qsTool || toolFromReferer(referer) || 'Clinical Tool';
   const usageMode = body.mode || null;
 
   try {
