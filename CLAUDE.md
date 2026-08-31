@@ -80,9 +80,15 @@ delete it; just leave it in place and only advance it when a deploy is worth int
   the current strategic priority is *improve/integrate/prove/market what already exists*, not
   add breadth. Ideas that are not current work live in `FUTURE-OPPORTUNITIES.md` (preserved,
   not approved for build) — add good ideas there rather than starting them.
-- Clinical tools stream PHI through `clinical-proxy-stream.mjs` (BAA-covered); models are
-  `claude-sonnet-4-6` and `claude-haiku-4-5-20251001`. See `MODEL-REGISTRY.md` for the
-  authoritative per-tool model list — update it when you change a tool's model usage.
+- **PHI now flows through AWS (Bedrock/Lambda/SES) under the AWS BAA and Azure under the Microsoft
+  BAA — NOT through Netlify or a direct Anthropic API.** Clinical text tools call AWS Lambda Function
+  URLs (`tbp-clinical-proxy-stream` / `tbp-clinical-proxy`) which invoke Claude via **Amazon Bedrock**
+  (`us.anthropic.claude-sonnet-4-6`, `us.anthropic.claude-haiku-4-5-20251001-v1:0`); transcription
+  goes to Azure AI Speech via `tbp-azure-transcribe`. **Read `BAA-AND-PHI-ROUTING.md` before touching
+  any clinical data path, BAA, subprocessor page, or privacy policy** — it is the source of truth for
+  which BAA covers what and how every kind of PHI is routed. The Netlify `clinical-proxy*.mjs` /
+  `azure-transcribe*.mjs` files are OFF-BAA rollback-only; do not point traffic at them or at
+  `api.anthropic.com`. See `MODEL-REGISTRY.md` for the per-tool model list.
 - `CLINICAL-NOTE-GENERATOR-ARCHITECTURE.md` is the living design doc for the HPI Generator /
   Note Builder / coder pipeline. §0.3 / §0.3.1 hold the governing rule on what may be
   hardcoded vs. what must come from the clinician's Vault template — read it before changing
