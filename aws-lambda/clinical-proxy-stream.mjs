@@ -159,16 +159,15 @@ async function hasActiveScribeTrial(cmid, email) {
   } catch (e) { return false; }
 }
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS'
-};
+// CORS is handled by the Lambda Function URL's built-in CORS config (which also
+// answers the OPTIONS preflight), so this handler does NOT emit CORS headers —
+// emitting them here too would produce a duplicate Access-Control-Allow-Origin
+// on the streamed response and the browser would reject it.
 
 function respondJson(responseStream, status, obj) {
   const s = awslambda.HttpResponseStream.from(responseStream, {
     statusCode: status,
-    headers: { ...CORS, 'Content-Type': 'application/json' }
+    headers: { 'Content-Type': 'application/json' }
   });
   s.write(JSON.stringify(obj));
   s.end();
@@ -180,7 +179,7 @@ export const handler = awslambda.streamifyResponse(async (event, responseStream,
   const getH = (name) => headers[name] || headers[name.toLowerCase()] || '';
 
   if (method === 'OPTIONS') {
-    const s = awslambda.HttpResponseStream.from(responseStream, { statusCode: 200, headers: CORS });
+    const s = awslambda.HttpResponseStream.from(responseStream, { statusCode: 200, headers: {} });
     s.end();
     return;
   }
@@ -245,7 +244,7 @@ export const handler = awslambda.streamifyResponse(async (event, responseStream,
   // Stream the Anthropic SSE straight through; meter usage counts inline.
   const out = awslambda.HttpResponseStream.from(responseStream, {
     statusCode: 200,
-    headers: { ...CORS, 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache' }
+    headers: { 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache' }
   });
 
   const decoder = new TextDecoder();
