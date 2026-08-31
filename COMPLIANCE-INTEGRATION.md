@@ -11,7 +11,7 @@ update this file in the SAME commit. Same discipline as MODEL-REGISTRY.md.
 
 Last verified against live code and Supabase schema: June 2026.
 BAA version + AI Scribe classification re-verified against live code: July 2026
-(BAA now 3.0; pm-ai-scribe added to the PHI-gated list).
+(BAA now 3.1; pm-ai-scribe added to the PHI-gated list).
 
 ---
 
@@ -99,12 +99,20 @@ TBPAuth.protect({
 
 ### Current versions (authoritative)
 
-- BAA version required by the gate: **3.0**
-  (in `auth-gate.js`, `baaVersion = options.baaVersion || '3.0'`)
-  Bumped 2.0 -> 3.0 (June 2026 agreement). The whole chain is aligned at 3.0:
-  `baa-sign.html` (`BAA_VERSION = '3.0'`) -> `process-baa-signature.js` writes
-  `baa_version: '3.0'` -> `check-baa-status` returns the latest signature ->
-  the gate exact-matches '3.0'. A member on 1.0/2.0 is correctly routed to re-sign.
+- BAA version required by the gate: **3.1**
+  (in `auth-gate.js`, `baaVersion = options.baaVersion || '3.1'`)
+  Bumped 3.0 -> 3.1 (August 2026). 3.1 NARROWS Business Associate's rights over
+  de-identified/aggregated data (§3.1.4, §3.3): such data may be used ONLY to
+  monitor/measure/improve the quality, safety, and performance of the Services;
+  it may NOT be used to train external/third-party AI models or be sold/licensed;
+  any research use requires the Covered Entity's separate written opt-in. 3.1 also
+  reflects the AI-processing authorization captured at signing (baa-sign.html
+  `aiAuthCheckbox`, the §3.1.4 prior-written-permission). The whole chain is aligned
+  at 3.1: `baa-sign.html` (`BAA_VERSION = '3.1'`) -> `process-baa-signature.js`
+  writes `baa_version: '3.1'` -> `check-baa-status` returns the latest signature ->
+  the gate exact-matches '3.1'. A member on an earlier version is routed to re-sign.
+  NOTE: the signed PDF template (`baa-template.pdf`) is a binary and must be
+  regenerated to v3.1 to match the web version and the signing flow.
 - Terms version: **interim_v1**
   (in `auth-gate.js`, `termsVersion = options.termsVersion || 'interim_v1'`,
   and `record-terms-acceptance.js`, `CURRENT_TERMS_VERSION = 'interim_v1'`)
