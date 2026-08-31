@@ -34,6 +34,15 @@
   // netlify/functions/record-terms-acceptance.js.
   var TBP_TERMS_VERSION = 'interim_v1';
 
+  // ── MAINTENANCE MODE ──────────────────────────────────────────────────────
+  // When true, every PHI/clinical tool (anything that runs the PHI gate, i.e. not
+  // skipPHIGate) shows a full-screen "down for maintenance" notice and DOES NOT load
+  // the tool, so no clinical content can be submitted to any backend. Non-PHI pages
+  // (skipPHIGate: Practice Lab, Ask the Archive, marketing/platform) are unaffected.
+  // Flip to false and push to main to bring the clinical tools back.
+  var TBP_MAINTENANCE = true;
+  var TBP_MAINTENANCE_MSG = 'Our clinical tools are briefly offline for a scheduled infrastructure upgrade. They will be back shortly. No patient data is affected. Thank you for your patience.';
+
   // Inject styles
   var style = document.createElement('style');
   style.textContent = [
@@ -139,9 +148,38 @@
     else paint();
   }
 
+  // Full-screen "scheduled maintenance" notice. Painted for PHI tools when
+  // TBP_MAINTENANCE is on; the tool itself never loads behind it.
+  function renderMaintenance(toolName) {
+    function paint() {
+      try { document.body.style.overflow = 'hidden'; } catch (e) {}
+      var o = document.createElement('div');
+      o.id = 'tbp-maintenance';
+      o.style.cssText = 'position:fixed;inset:0;z-index:99999;background:var(--tbp-navy,#0b1120);display:flex;align-items:center;justify-content:center;padding:20px;font-family:-apple-system,"DM Sans",sans-serif;';
+      o.innerHTML = [
+        '<div style="max-width:460px;width:100%;background:var(--tbp-navy-mid,#111c30);border:1px solid var(--tbp-rule,rgba(42,171,184,0.2));border-top:2px solid var(--tbp-teal,#2aabb8);border-radius:8px;padding:40px 34px;text-align:center;color:var(--tbp-cream,#e8e2d6);">',
+          '<div style="font-size:11px;font-weight:700;letter-spacing:.16em;text-transform:uppercase;color:var(--tbp-teal,#2aabb8);margin-bottom:14px">Think Beyond Practice</div>',
+          '<h1 style="font-size:20px;color:var(--tbp-white,#f5f4f2);margin:0 0 12px">Scheduled maintenance</h1>',
+          '<p style="font-size:14px;color:var(--tbp-cream-dim,#b0aa9e);line-height:1.65;margin:0 0 22px">', TBP_MAINTENANCE_MSG, '</p>',
+          '<p style="font-size:12px;color:var(--tbp-cream-dim,#b0aa9e);margin:0">Questions? <a href="mailto:michael@thinkbeyondpractice.com" style="color:var(--tbp-teal,#2aabb8);text-decoration:none">michael@thinkbeyondpractice.com</a></p>',
+        '</div>'
+      ].join('');
+      document.body.appendChild(o);
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', paint);
+    else paint();
+  }
+
   // Public API
   window.TBPAuth = {
     protect: function(options) {
+      // Scheduled-maintenance gate: block every PHI/clinical tool up front (before
+      // demo or auth), so nothing loads and no clinical content can be submitted.
+      // Non-PHI pages pass skipPHIGate:true and are unaffected.
+      if (TBP_MAINTENANCE && options && options.skipPHIGate !== true) {
+        renderMaintenance(options.toolName || 'Think Beyond Practice');
+        return;
+      }
       // ── Public demo mode (?demo=1) ──
       // Opens the tool with NO login, on baked-in demo content only. Two things make this safe:
       // (1) the clinical backends re-verify a signed full-tier token on every call and fail closed,
