@@ -203,7 +203,11 @@ export const handler = awslambda.streamifyResponse(async (event, responseStream,
   const claimScope = session.claims.scope;
   const claimTier = session.claims.tier;
   const referer = getH('referer') || getH('referrer') || '';
-  const isScribe = toolFromReferer(referer) === 'AI Scribe';
+  // Cross-origin requests to the Function URL strip the Referer path, so the Scribe
+  // sends an explicit body.tool the frontend controls; fall back to referer for callers
+  // that don't. Without this, the Scribe's trial-user access (which depends on isScribe)
+  // would break once traffic is cross-origin.
+  const isScribe = (body.tool === 'AI Scribe') || (toolFromReferer(referer) === 'AI Scribe');
 
   const deny = () => respondJson(responseStream, 403, { error: 'This tool requires the full Think Beyond Practice membership.' });
   if (isScribe) {
