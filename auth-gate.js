@@ -40,7 +40,7 @@
   // the tool, so no clinical content can be submitted to any backend. Non-PHI pages
   // (skipPHIGate: Practice Lab, Ask the Archive, marketing/platform) are unaffected.
   // Flip to false and push to main to bring the clinical tools back.
-  var TBP_MAINTENANCE = true;
+  var TBP_MAINTENANCE = false;
   var TBP_MAINTENANCE_MSG = 'Our clinical tools are briefly offline for a scheduled infrastructure upgrade. They will be back shortly. No patient data is affected. Thank you for your patience.';
 
   // Inject styles
