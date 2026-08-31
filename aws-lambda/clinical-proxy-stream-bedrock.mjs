@@ -191,6 +191,17 @@ function respondJson(responseStream, status, obj) {
   s.end();
 }
 
+// Prompt caching: mark a large system prompt as an ephemeral cache breakpoint so calls that
+// reuse the same system prompt within the cache window are billed at ~10% on the cached tokens.
+// Standard ephemeral cache (supported on Bedrock for these Claude models; no beta flag needed).
+// A small prompt is left as a plain string (below the cache minimum, caching would not apply).
+function cacheableSystem(sys) {
+  const text = (typeof sys === 'string') ? sys : '';
+  if (!text) return undefined;
+  if (text.length < 4096) return text;
+  return [{ type: 'text', text, cache_control: { type: 'ephemeral' } }];
+}
+
 const bedrock = new BedrockRuntimeClient({ region: REGION });
 
 export const handler = awslambda.streamifyResponse(async (event, responseStream, context) => {
@@ -250,8 +261,8 @@ export const handler = awslambda.streamifyResponse(async (event, responseStream,
     max_tokens: body.max_tokens || 2000,
     messages: body.messages || []
   };
-  const sys = (typeof body.system === 'string') ? body.system : '';
-  if (sys) payloadObj.system = sys;
+  const sysBlock = cacheableSystem(body.system);
+  if (sysBlock) payloadObj.system = sysBlock;
   if (body.tools && Array.isArray(body.tools)) payloadObj.tools = body.tools;
 
   const usageTool = body.tool || toolFromReferer(referer) || 'Clinical Tool';

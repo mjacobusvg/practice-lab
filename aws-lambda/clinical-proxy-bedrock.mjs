@@ -157,6 +157,16 @@ async function hasActiveEntitlement(email, feature) {
 }
 const FEATURE_BY_TOOL = { 'Letter Generator': 'letter_generator' };
 
+// Prompt caching: mark a large system prompt as an ephemeral cache breakpoint so calls that
+// reuse the same system prompt within the cache window are billed at ~10% on the cached tokens.
+// Standard ephemeral cache (supported on Bedrock for these Claude models; no beta flag needed).
+function cacheableSystem(sys) {
+  const text = (typeof sys === 'string') ? sys : '';
+  if (!text) return undefined;
+  if (text.length < 4096) return text;
+  return [{ type: 'text', text, cache_control: { type: 'ephemeral' } }];
+}
+
 const bedrock = new BedrockRuntimeClient({ region: REGION });
 
 // Invoke Claude on Bedrock and reassemble the streamed events into one text answer
@@ -235,8 +245,8 @@ export const handler = async (event) => {
     max_tokens: body.max_tokens || 1000,
     messages: body.messages || []
   };
-  const sys = (typeof body.system === 'string') ? body.system : '';
-  if (sys) payloadObj.system = sys;
+  const sysBlock = cacheableSystem(body.system);
+  if (sysBlock) payloadObj.system = sysBlock;
   if (body.tools && Array.isArray(body.tools)) payloadObj.tools = body.tools;
 
   const usageTool = body.tool || qsTool || toolFromReferer(referer) || 'Clinical Tool';
