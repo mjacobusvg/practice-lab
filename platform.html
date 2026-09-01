@@ -2276,11 +2276,31 @@ function applyScribeTrialFraming() {
 
 var REDIRECT_TO = window.location.origin + '/platform';
 
+// After a sign-in link is requested, hold the button on a visible 60s countdown so
+// an impatient re-click can't hit Supabase's per-user send cooldown (the source of
+// the "sign-in email fails" pile-up). Clicking the restored button re-sends.
+function tbpBtnCooldown(btn, secs) {
+  if (!btn) return;
+  var n = secs;
+  btn.disabled = true; btn.style.opacity = '0.6'; btn.style.cursor = 'default';
+  btn.innerHTML = 'Resend in ' + n + 's';
+  var iv = setInterval(function () {
+    n--;
+    if (n > 0) { btn.innerHTML = 'Resend in ' + n + 's'; return; }
+    clearInterval(iv);
+    btn.disabled = false; btn.style.opacity = ''; btn.style.cursor = '';
+    btn.innerHTML = btn.dataset.origLabel || 'Resend';
+  }, 1000);
+}
+
 async function sendMagicLink(mode) {
   var emailEl = document.getElementById(mode === 'login' ? 'login-email' : 'gate-email');
   var statusEl = document.getElementById(mode === 'login' ? 'login-status' : 'signup-status');
   var email = emailEl.value.trim().toLowerCase();
   if (!email || email.indexOf('@') === -1) { statusEl.textContent = 'Enter a valid email.'; return; }
+  var _btn = statusEl.parentElement ? statusEl.parentElement.querySelector('button.btn-primary') : null;
+  if (_btn && !_btn.dataset.origLabel) _btn.dataset.origLabel = _btn.innerHTML;
+  if (_btn) { _btn.disabled = true; _btn.style.opacity = '0.6'; _btn.style.cursor = 'default'; }
   statusEl.textContent = 'Sending\u2026';
   var meta = {};
   if (mode === 'signup') {
@@ -2312,6 +2332,7 @@ async function sendMagicLink(mode) {
   }
   if (res.error) {
     statusEl.textContent = res.error.message;
+    if (_btn) { _btn.disabled = false; _btn.style.opacity = ''; _btn.style.cursor = ''; _btn.innerHTML = _btn.dataset.origLabel || 'Try again'; }
     // Record the failure so login problems (especially email rate-limit blocks) are
     // countable instead of invisible. Best-effort, never blocks the UI.
     try {
@@ -2322,7 +2343,8 @@ async function sendMagicLink(mode) {
     } catch (e) {}
     return;
   }
-  statusEl.innerHTML = '<strong style="color:var(--teal)">Check your email.</strong> We sent a secure sign-in link to ' + email + '. Click it and you are in.';
+  statusEl.innerHTML = '<div style="background:#fff3bf;border:1px solid #e6c200;border-radius:8px;padding:13px 15px;color:#4a3b00;font-size:0.95rem;line-height:1.55;margin-top:8px;text-align:left"><strong style="color:#5a4700;font-size:1.02rem">✓ Sign-in link sent to ' + email + '</strong><br>Check your inbox now. If it is not there within a minute, <strong>look in your spam or junk folder.</strong> Add support@thinkbeyondpractice.com to your contacts so it reaches your inbox next time. This link works once.</div>';
+  tbpBtnCooldown(_btn, 60);
 }
 
 // "Forgot which email you used?" — swap the sign-in form for a name-based recovery.
