@@ -113,6 +113,13 @@ history reasonably establishes the construct, not whether every checklist item w
 - **Business model** — member-facing differentiator inside the Scribe; a candidate for
   eventual validation study (inter-rater agreement, concordance with expert diagnosis).
 - **Status** — strategic option, not active roadmap.
+- **Where the rest of the design lives** — this entry holds the *instruments* and the *AI
+  behavior spec*. The delivery architecture is `CLINICAL-OS-STRATEGY.md` §32, "Previsit
+  intelligence: the missing front half," which records the `prepSystem()` / `newEvalScaffoldSystem()`
+  asymmetry in `pm-ai-scribe.html`, the two routes into previsit context, why the work has to sit
+  on discrete reasoning checkpoints rather than a live stream (ambient transcription runs after
+  Stop, not during), and the discipline that the previsit packet must not become a fourteen-page
+  form. Read both before starting: neither half is buildable on its own.
 
 ---
 
