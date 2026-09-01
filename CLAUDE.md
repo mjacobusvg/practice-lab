@@ -37,6 +37,19 @@ because different sessions usually touch different files.
 `main` file as a backup *before* a major change that alters behavior you might want to revert
 to. That's the only sanctioned use of a branch here.
 
+### Exception in force: AI Scribe development is on a branch
+
+Until Michael says otherwise, the AI Scribe is being developed and tested on
+`claude/ai-scribe-dev-setup-cpyqfl`, NOT on `main`. He wants to try changes on a copy before
+they reach the file real members are using.
+
+So: **do not edit `pm-ai-scribe.html`, `ai-scribe-workspace.html`, `note-engine.js` or
+`scales-data.js` on `main`.** Check out the branch, edit there, push there. Bug fixes urgent
+enough to need shipping today are the one exception, and they go to `main` and then get
+merged forward into the branch so it does not drift.
+
+Everything else in this repo still follows rule 2 and goes straight to `main`.
+
 ## 3. Deploy = push to `main`
 
 Pushing to `main` triggers the Netlify redeploy. After pushing a front-end change, tell the
