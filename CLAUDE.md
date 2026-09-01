@@ -37,16 +37,28 @@ because different sessions usually touch different files.
 `main` file as a backup *before* a major change that alters behavior you might want to revert
 to. That's the only sanctioned use of a branch here.
 
-### Exception in force: AI Scribe development is on a branch
+### In force: try Scribe changes on the practice copy first
 
-Until Michael says otherwise, the AI Scribe is being developed and tested on
-`scribe-dev`, NOT on `main`. He wants to try changes on a copy before
-they reach the file real members are using.
+Michael wants Scribe changes tried on a copy before they reach the file members are using.
+That copy is NOT a branch (branch deploys do not work here: `auth-gate.js` hardcodes sign-in
+to `https://thinkbeyondpractice.com/platform`, so logging in on a branch domain bounces you
+back to production). It is three files on `main`, at `/practice`:
 
-So: **do not edit `pm-ai-scribe.html`, `ai-scribe-workspace.html`, `note-engine.js` or
-`scales-data.js` on `main`.** Check out the branch, edit there, push there. Bug fixes urgent
-enough to need shipping today are the one exception, and they go to `main` and then get
-merged forward into the branch so it does not drift.
+| live (members use this) | practice copy |
+|---|---|
+| `pm-ai-scribe.html` | `ai-scribe-practice.html` |
+| `ai-scribe-workspace.html` | `ai-scribe-practice-workspace.html` |
+| `note-engine.js` | `note-engine-practice.js` |
+
+The copies reference only each other, so editing them cannot affect the live Scribe. They are
+noindexed, disallowed in `robots.txt`, and unlinked.
+
+So: **for a Scribe change Michael wants to try before it goes live, edit the practice copy,
+push to `main`, and let him test at `/practice`.** Once he approves it, port the same change
+into the live file. An urgent production bug fix still goes straight to the live file.
+
+The build-tag lockstep rules below apply to the LIVE files only. The practice desk pins
+`TBP_BUILD` high on purpose so a deploy never fires the update nudge inside it; leave it.
 
 Everything else in this repo still follows rule 2 and goes straight to `main`.
 
