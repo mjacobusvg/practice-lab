@@ -122,6 +122,21 @@ p.lead{color:var(--cream-dim);font-size:.9rem;margin-bottom:6px}
 
 <script>
 var TOKEN = new URLSearchParams(window.location.search).get('t') || '';
+// Patient responses now flow to AWS (DynamoDB) under the AWS BAA via a single
+// Lambda Function URL, routed in-code by `op`. Public (no auth). Rollback to the
+// legacy Netlify/Supabase path with ?tbp_force_netlify=1 or the localStorage flag.
+var TBP_ASSESS_LAMBDA = 'https://c3oupcy2z75idwzvif72pqapq40bevtf.lambda-url.us-east-1.on.aws/';
+function tbpForceNetlify(){
+  try { return /[?&]tbp_force_netlify=1(?:&|$)/.test(location.search) || localStorage.getItem('tbp_force_netlify') === '1'; }
+  catch(e){ return false; }
+}
+function assessPublic(op, extra){
+  var onLambda = !tbpForceNetlify();
+  var url = onLambda ? TBP_ASSESS_LAMBDA : ('/.netlify/functions/assessment-' + op);
+  var body = Object.assign({}, extra || {});
+  if(onLambda) body.op = op;
+  return fetch(url, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
+}
 var INSTRUMENTS = [];
 var RESPONSES = {};   // { instrumentId: { itemId: value } }
 
@@ -136,10 +151,7 @@ function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').rep
 async function init(){
   if(!TOKEN){ unavail('This questionnaire link is missing required information. Please contact your provider\u2019s office.'); return; }
   try{
-    var res = await fetch('/.netlify/functions/assessment-fetch',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ token: TOKEN })
-    });
+    var res = await assessPublic('fetch', { token: TOKEN });
     var data = await res.json();
     if(!data.ok){ unavail(data.message || 'This questionnaire link is not available.'); return; }
     INSTRUMENTS = data.instruments || [];
@@ -323,10 +335,7 @@ async function submitForm(){
   err.style.display = 'none';
   btn.disabled = true; btn.textContent = 'Submitting…';
   try{
-    var res = await fetch('/.netlify/functions/assessment-submit',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ token: TOKEN, responses: RESPONSES, consent: true })
-    });
+    var res = await assessPublic('submit', { token: TOKEN, responses: RESPONSES, consent: true });
     var data = await res.json();
     if(data.ok){
       show('submitted');
