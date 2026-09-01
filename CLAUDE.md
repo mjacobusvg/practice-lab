@@ -40,7 +40,7 @@ to. That's the only sanctioned use of a branch here.
 ### Exception in force: AI Scribe development is on a branch
 
 Until Michael says otherwise, the AI Scribe is being developed and tested on
-`claude/ai-scribe-dev-setup-cpyqfl`, NOT on `main`. He wants to try changes on a copy before
+`scribe-dev`, NOT on `main`. He wants to try changes on a copy before
 they reach the file real members are using.
 
 So: **do not edit `pm-ai-scribe.html`, `ai-scribe-workspace.html`, `note-engine.js` or
