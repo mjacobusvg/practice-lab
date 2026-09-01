@@ -2661,6 +2661,7 @@ function updateTopbar() {
     '<button onclick="toggleAcctMenu();openWelcomeTour()">Take the tour</button>' +
     '<button onclick="toggleAcctMenu();openReportProblem()">Report a problem</button>' +
     (isAdmin() ? '<button onclick="toggleAcctMenu();showCEList()">CE candidates</button>' : '') +
+    (isAdmin() ? '<button onclick="toggleAcctMenu();adminSigninLink()">Generate sign-in link</button>' : '') +
     (isFullMember()
       ? '<button onclick="openBillingPortal()">Manage billing</button>'
       : isForumMember()
@@ -7092,6 +7093,34 @@ async function sendInvite() {
 // ════════════════════════════════════════
 // ADMIN ANALYTICS
 // ════════════════════════════════════════
+// Admin: generate a copy-paste one-click sign-in link for any email, so a
+// locked-out user can be let in without depending on their inbox.
+async function adminSigninLink() {
+  if (!isAdmin()) return;
+  var email = prompt('Generate a one-click sign-in link for which email?');
+  if (!email) return;
+  email = email.trim().toLowerCase();
+  try {
+    var res = await fetch('/.netlify/functions/admin-signin-link', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), email: email })
+    });
+    var d = await res.json();
+    if (!res.ok || !d.ok) { alert((d && d.error) || 'Could not generate link.'); return; }
+    var note = (d.accountExists === false)
+      ? '\n\nNote: no account exists for this email yet. The link still works and will sign them in.'
+      : '';
+    try {
+      await navigator.clipboard.writeText(d.url);
+      alert('Sign-in link for ' + d.email + ' copied to your clipboard.\n\nPaste it to them (email, text, wherever). Clicking it logs them straight in. Valid for 30 days.' + note);
+    } catch (e) {
+      window.prompt('Copy this sign-in link for ' + d.email + ' (valid 30 days):', d.url);
+    }
+  } catch (e) {
+    alert('Network error generating the link.');
+  }
+}
+
 async function showAnalytics() {
   if (!isAdmin()) { showHome(); return; }
   closeSidebar(); closeRail();
