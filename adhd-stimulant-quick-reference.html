@@ -130,9 +130,30 @@ ol.pearl-list li b { color:var(--text-heading); }
 .cbox li::before { content:"\2013"; position:absolute; left:0; color:var(--text-secondary); }
 .cover-foot { font-size:0.82rem; color:var(--text-secondary); margin-top:14px; }
 
+.picker { border:1px solid var(--border-hover); border-radius:var(--radius-lg); padding:16px 18px; margin-bottom:14px; background:var(--bg-raised); }
+.pchip { font-family:inherit; font-size:0.83rem; font-weight:600; color:var(--text-heading); background:var(--bg-card); border:1px solid var(--border-hover); border-radius:100px; padding:7px 16px; cursor:pointer; transition:all var(--transition); }
+.pchip:hover { background:var(--bg-card-hover); border-color:var(--teal); }
+.pchip:focus-visible { outline:2px solid var(--teal); outline-offset:2px; }
+.pchip.on { background:var(--teal); border-color:var(--teal); color:#04222a; }
+.panel { position:relative; margin-top:14px; background:var(--bg-card); border:1px solid var(--teal); border-left:3px solid var(--teal); border-radius:var(--radius); padding:16px 40px 16px 18px; }
+.panel-x { position:absolute; top:8px; right:10px; background:none; border:none; color:var(--text-secondary); font-size:1.3rem; line-height:1; cursor:pointer; padding:2px 6px; }
+.panel-x:hover { color:var(--text-heading); }
+.panel h4 { font-size:0.72rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:var(--teal); margin-bottom:9px; }
+.panel p { font-size:0.88rem; margin-bottom:9px; line-height:1.55; }
+.panel p:last-child { margin-bottom:0; }
+.panel ul { list-style:none; margin-bottom:9px; }
+.panel li { font-size:0.87rem; padding-left:17px; position:relative; margin-bottom:7px; line-height:1.5; }
+.panel li::before { content:"\2192"; position:absolute; left:0; color:var(--teal); }
+.panel b { color:var(--text-heading); }
+.panel .warn { color:var(--amber); font-weight:600; }
+tr.dim { opacity:0.24; }
+tr.hit { background:var(--teal-glow); }
+.cbox.flash { border-color:var(--teal); box-shadow:0 0 0 2px var(--teal-glow); }
+
 @media print {
   body { background: #fff; color: #111; background-image: none; }
-  .jumpbtn, #tbp-theme-fab { display: none !important; }
+  .picker, #tbp-theme-fab { display: none !important; }
+  tr.dim { opacity: 1 !important; } tr.hit { background: transparent !important; }
   .hero, .pearls, .cover, .mini, .cbox, .table-scroll { break-inside: avoid; border-color: #ccc; }
   thead th, .cbox, .pchip { background: #f5f5f5 !important; }
   .pearls, .mini { background: #f9f9f9 !important; }
@@ -145,7 +166,6 @@ ol.pearl-list li b { color:var(--text-heading); }
 <script src="/auth-gate.js"></script>
 </head>
 <body>
-
 <div class="wrap" id="adhd-root" style="display:none">
 
   <div class="page-head">
@@ -153,21 +173,26 @@ ol.pearl-list li b { color:var(--text-heading); }
     <h1>ADHD Stimulant Quick Reference</h1>
     <div class="subtitle">You already know Adderall XR, Vyvanse, Concerta and Focalin. This is for the other fifteen.</div>
     <p class="reviewed">Reviewed September 2026 &middot; <strong>verify dosing, indications and coverage before prescribing.</strong> Duration figures describe what studies measured, not what a given patient gets.</p>
-    <a class="jumpbtn" href="#map">I know the problem &rarr; jump to the formulation map</a>
   </div>
 
-  <section class="mini" id="wrong">
-    <div class="mini-label">First, name what is actually wrong</div>
-    <div class="chiprow">
-      <span class="pchip">Onset</span>
-      <span class="pchip">Duration</span>
-      <span class="pchip">Release shape</span>
-      <span class="pchip">Tolerability</span>
-      <span class="pchip">Manufacturer</span>
-      <span class="pchip">Access</span>
-      <span class="pchip">Expectation</span>
+  <section class="picker" id="picker">
+    <div class="mini-label">I know what is wrong &mdash; help me narrow it down</div>
+    <div class="chiprow" role="group" aria-label="Filter by problem">
+      <button class="pchip" data-key="class">Class</button>
+      <button class="pchip" data-key="onset">Onset</button>
+      <button class="pchip" data-key="duration">Duration</button>
+      <button class="pchip" data-key="shape">Release shape</button>
+      <button class="pchip" data-key="route">Route / swallowing</button>
+      <button class="pchip" data-key="tolerability">Tolerability</button>
+      <button class="pchip" data-key="manufacturer">Manufacturer</button>
+      <button class="pchip" data-key="access">Access</button>
+      <button class="pchip" data-key="expectation">Expectation</button>
     </div>
-    <p class="mini-note">If you cannot say what the next formulation is supposed to fix, do not switch yet. A stimulant that improved function but was intolerable <em>worked</em> &mdash; record it that way.</p>
+    <div id="panel" class="panel" hidden>
+      <button class="panel-x" onclick="adhdClear()" aria-label="Clear selection">&times;</button>
+      <div id="panel-body"></div>
+    </div>
+    <p class="mini-note" id="picker-hint">Pick the problem and the map below filters to the formulations that answer it. If you cannot say what the next formulation should fix, do not switch yet.</p>
   </section>
 
   <section class="mini" id="toolbox">
@@ -188,17 +213,18 @@ ol.pearl-list li b { color:var(--text-heading); }
     <div class="table-scroll">
       <table class="matrix">
         <thead><tr><th>The problem</th><th>Consider</th><th>Why it exists</th></tr></thead>
-        <tbody>
-          <tr class="amph"><td>Adderall XR works, but consistently does not last long enough</td><td><b>Mydayis</b></td><td>The extended-coverage branch of mixed amphetamine. In development, 37.5 mg produced exposure like XR 25 mg <em>plus</em> IR 12.5 mg eight hours later. Built to replace that second dose.</td></tr>
-          <tr class="amph"><td>Need long amphetamine coverage <em>and</em> earlier onset matters</td><td><b>Dyanavel XR</b></td><td>The one with adult trial benefit detected at 30 minutes. Also liquid or chewable with fine titration. <em>Not Mydayis &mdash; that is a duration answer, not an onset one.</em></td></tr>
-          <tr class="amph"><td>Need Adderall-XR-like delivery, but an ODT</td><td><b>Adzenys XR-ODT</b></td><td>Administration solution. Label gives direct equivalents to Adderall XR.</td></tr>
-          <tr class="amph"><td>Need transdermal dextroamphetamine</td><td><b>Xelstrym</b></td><td>Route solution. Applied about two hours ahead, so not an onset fix.</td></tr>
-          <tr class="mph"><td>MPH IR works and I want two planned doses in one capsule</td><td><b>Ritalin LA</b></td><td>Two peaks about four hours apart. <span class="ol">off-label in adults</span></td></tr>
-          <tr class="mph"><td>Worst impairment is before a morning pill can work</td><td><b>Jornay PM</b></td><td>Taken the night before and held overnight. Evening timing tuned between 6:30 and 9:30 p.m.</td></tr>
-          <tr class="mph"><td>Focalin works but its release shape does not fit the day</td><td><b>Azstarys</b></td><td>Dexmethylphenidate plus a prodrug component contributing later.</td></tr>
-          <tr class="mph"><td>Need liquid MPH or unusually fine titration</td><td><b>Quillivant XR</b></td><td>More than a convenience: separated from placebo at 45 minutes and held through 12 hours (pediatric study).</td></tr>
-          <tr class="mph"><td>Need chewable or dissolving MPH</td><td><b>QuilliChew ER</b> / <b>Cotempla XR-ODT</b></td><td>Administration first. Different release shapes from each other, so not interchangeable. <span class="ol">Cotempla off-label in adults</span></td></tr>
-          <tr class="mph"><td>Want to shorten the medication day on purpose</td><td><b>Daytrana</b></td><td>Patch; removing it early makes wear time part of the plan. <span class="ol">off-label in adults</span></td></tr>
+        <tbody id="matrix-body">
+          <tr class="amph" data-tags="duration"><td>A long-acting stimulant works and I only need another couple of hours</td><td><b>IR booster</b></td><td>Preserve the regimen that already works rather than replacing it. Try this before reinventing anything.</td></tr>
+          <tr class="amph" data-tags="duration"><td>Adderall XR works, but consistently does not last long enough</td><td><b>Mydayis</b></td><td>The extended-coverage branch of mixed amphetamine. In development, 37.5 mg produced exposure like XR 25 mg <em>plus</em> IR 12.5 mg eight hours later. Built to replace that second dose.</td></tr>
+          <tr class="amph" data-tags="onset duration route"><td>Need long amphetamine coverage <em>and</em> earlier onset matters</td><td><b>Dyanavel XR</b></td><td>The one with adult trial benefit detected at 30 minutes. Also liquid or chewable with fine titration. <em>Not Mydayis &mdash; that is a duration answer, not an onset one.</em></td></tr>
+          <tr class="amph" data-tags="route"><td>Amphetamine works, but swallowing a capsule is the problem</td><td><b>Adzenys XR-ODT</b></td><td>Administration solution. Label gives direct equivalents to Adderall XR.</td></tr>
+          <tr class="amph" data-tags="route"><td>Amphetamine works, but oral administration itself is the problem</td><td><b>Xelstrym</b></td><td>Transdermal dextroamphetamine. Applied about two hours ahead, so not an onset fix.</td></tr>
+          <tr class="mph" data-tags="shape duration"><td>MPH IR works and I want two planned doses in one capsule</td><td><b>Ritalin LA</b></td><td>Two peaks about four hours apart. Different goal from Concerta, which is a gradually sustained day. <span class="ol">off-label in adults</span></td></tr>
+          <tr class="mph" data-tags="onset"><td>Worst impairment is before a morning pill can work</td><td><b>Jornay PM</b></td><td>Taken the night before and held overnight. Evening timing tuned between 6:30 and 9:30 p.m.</td></tr>
+          <tr class="mph" data-tags="shape"><td>Focalin works but its release shape does not fit the day</td><td><b>Azstarys</b></td><td>Dexmethylphenidate plus a prodrug component contributing later.</td></tr>
+          <tr class="mph" data-tags="onset route"><td>Need liquid MPH or unusually fine titration</td><td><b>Quillivant XR</b></td><td>More than a convenience: separated from placebo at 45 minutes and held through 12 hours (pediatric study).</td></tr>
+          <tr class="mph" data-tags="route"><td>Methylphenidate is right, but tablet administration is the problem</td><td><b>QuilliChew ER</b> / <b>Cotempla XR-ODT</b></td><td>Administration first. Different release shapes from each other, so not interchangeable. <span class="ol">Cotempla off-label in adults</span></td></tr>
+          <tr class="mph" data-tags="route duration"><td>Want to shorten the medication day on purpose</td><td><b>Daytrana</b></td><td>Patch; removing it early makes wear time part of the plan. <span class="ol">off-label in adults</span></td></tr>
         </tbody>
       </table>
     </div>
@@ -304,6 +330,55 @@ TBPAuth.protect({
   requireFull: false,
   skipPHIGate: true,
   onVerified: function(){ adhdGate(); }
+});
+</script>
+<script>
+var ADHD_PANELS = {
+  "class": '<h4>Is it the molecule, or the delivery?</h4><p>This is the fork that comes before all the formulation cleverness. <b>If the family itself is not helping, stop optimizing delivery.</b></p><ul><li>No meaningful benefit despite an adequate dose and trial, or unacceptable adverse effects across the family, points to switching amphetamine to methylphenidate or the reverse rather than trying an eighth formulation of the same molecule.</li><li>Either family is a reasonable first-line choice in adults, and switching classes after an adequate trial is the standard next move.</li></ul><p class="warn">Nothing in the map below fixes a class problem.</p>',
+  "onset": '<h4>It works once it gets going, but the start is the problem</h4><ul><li><b>Dyanavel XR</b> &mdash; long amphetamine coverage with adult trial benefit detected at a 30-minute assessment.</li><li><b>Quillivant XR</b> &mdash; methylphenidate with relatively early demonstrated onset, though the timing study is pediatric.</li><li><b>Jornay PM</b> &mdash; if the real problem is <em>before</em> any morning medication could be working.</li></ul><p class="warn">Mydayis is primarily a duration solution. It is not the evidence-based answer to slow Vyvanse onset.</p>',
+  "duration": '<h4>It works, then runs out</h4><ul><li>Only another hour or two needed &mdash; <b>an IR booster</b>. Preserve a regimen that works rather than replacing it.</li><li>Adderall XR works but consistently needs substantial later coverage &mdash; <b>Mydayis</b>.</li><li>MPH IR works but you want two planned phases in one capsule &mdash; <b>Ritalin LA</b>.</li><li>Want the ability to end the day early on purpose &mdash; <b>Daytrana</b>, where wear time is part of the plan.</li></ul><p>Published duration is not guaranteed duration. Seven good hours is not an abnormal metabolism.</p>',
+  "shape": '<h4>Right molecule, wrong shape of day</h4><p>"Methylphenidate ER" does not tell you what kind of day the patient gets.</p><ul><li><b>Concerta</b> &mdash; early portion then gradually increasing release.</li><li><b>Ritalin LA</b> &mdash; two planned pulses about four hours apart.</li><li><b>Focalin XR</b> &mdash; dexmethylphenidate, two-phase.</li><li><b>Azstarys</b> &mdash; dexmethylphenidate plus a prodrug contributing later.</li><li>On the amphetamine side, <b>Adderall XR</b> has two release phases and <b>Mydayis</b> has three.</li></ul>',
+  "route": '<h4>The drug is right, taking it is the problem</h4><ul><li><b>Adzenys XR-ODT</b> &mdash; Adderall-XR-like exposure as an orally dissolving tablet.</li><li><b>Dyanavel XR</b> &mdash; liquid or chewable, with unusually fine dose increments.</li><li><b>Quillivant XR</b> &mdash; liquid methylphenidate.</li><li><b>QuilliChew ER</b> and <b>Cotempla XR-ODT</b> &mdash; chewable and dissolving methylphenidate, with different release shapes from each other.</li><li><b>Xelstrym</b> and <b>Daytrana</b> &mdash; patches, when oral administration is out entirely.</li></ul>',
+  "tolerability": '<h4>First ask <em>when</em> the adverse effect happens</h4><ul><li>At onset or peak &mdash; dose or release profile may be the lever.</li><li>All day, or across several formulations in one family &mdash; the molecule becomes more suspect.</li><li>Across both amphetamine and methylphenidate &mdash; question whether another stimulant formulation is the answer at all.</li><li>Only as it wears off &mdash; think rebound versus wear-off before blaming a medication that was working six hours earlier.</li></ul><p>Mixed amphetamine clearly helps but the physical activation is the problem? A <b>dextroamphetamine-only</b> trial is a reasonable in-family experiment. A hypothesis worth testing, not a promise that it will be cleaner.</p><p class="warn">A medication that improved function but was intolerable still worked. Record it that way.</p>',
+  "manufacturer": '<h4>Same prescription, different behaviour</h4><ul><li>Find out what was actually dispensed <b>before</b> raising the dose.</li><li>Stable, then a manufacturer change, then a changed response, then baseline restored on return to the previous product, is genuinely useful patient-specific evidence.</li><li>Document the manufacturer rather than writing "generic Adderall stopped working."</li></ul><p>Worth taking seriously: FDA reassessed two generic Concerta products after reports of insufficient effect and stopped treating them as automatically substitutable. That is why these reports do not get dismissed out of hand.</p><p class="warn">This is not a formulation problem. Nothing in the map below fixes it.</p>',
+  "access": '<h4>Can the patient actually get it?</h4><p>The coverage section below is highlighted. Familiar generics have the smoothest path, and some specialty products are more obtainable than their names suggest.</p><p class="warn">Generic availability does not guarantee coverage. Brand status does not guarantee denial. Check the plan.</p>',
+  "expectation": '<h4>Is function worse, or does it just not feel like anything?</h4><ul><li>Compare against the functional target you named at the start, not against how the medication feels.</li><li>"It does not feel like it works anymore" is a different finding from "the target impairment has returned."</li><li>Tolerance to the subjective effect is not the same as loss of therapeutic benefit.</li></ul><p class="warn">This is not a formulation problem either. Revisit the target before changing the prescription.</p>'
+};
+
+function adhdClear(){
+  document.querySelectorAll('.pchip').forEach(function(b){ b.classList.remove('on'); b.setAttribute('aria-pressed','false'); });
+  document.querySelectorAll('#matrix-body tr').forEach(function(r){ r.classList.remove('dim','hit'); });
+  document.querySelectorAll('.cbox').forEach(function(c){ c.classList.remove('flash'); });
+  document.getElementById('panel').hidden = true;
+  document.getElementById('picker-hint').style.display = '';
+}
+
+function adhdPick(key, btn){
+  var wasOn = btn.classList.contains('on');
+  adhdClear();
+  if(wasOn) return;
+  btn.classList.add('on'); btn.setAttribute('aria-pressed','true');
+  document.getElementById('panel-body').innerHTML = ADHD_PANELS[key] || '';
+  document.getElementById('panel').hidden = false;
+  document.getElementById('picker-hint').style.display = 'none';
+
+  if(key === 'access'){
+    document.querySelectorAll('.cbox').forEach(function(c){ c.classList.add('flash'); });
+    document.getElementById('coverage').scrollIntoView({ behavior:'smooth', block:'center' });
+    return;
+  }
+  var any = false;
+  document.querySelectorAll('#matrix-body tr').forEach(function(r){
+    var tags = (r.getAttribute('data-tags') || '').split(' ');
+    if(tags.indexOf(key) > -1){ r.classList.add('hit'); any = true; }
+    else { r.classList.add('dim'); }
+  });
+  if(!any){ document.querySelectorAll('#matrix-body tr').forEach(function(r){ r.classList.remove('dim'); }); }
+}
+
+document.querySelectorAll('.pchip').forEach(function(b){
+  b.setAttribute('aria-pressed','false');
+  b.addEventListener('click', function(){ adhdPick(b.getAttribute('data-key'), b); });
 });
 </script>
 </body>
