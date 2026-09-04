@@ -130,6 +130,8 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 .tbp-dim{opacity:.28;filter:saturate(.55);pointer-events:none;transition:opacity .35s ease,filter .35s ease}
 #ambient-progress .out{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal),0 12px 34px rgba(0,0,0,.45)}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/auth-gate.js"></script>
 <script src="/note-engine-practice.js?v=practice"></script>
 <script src="/scales-data.js"></script>
@@ -235,6 +237,24 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
         <div class="hint" style="margin-top:6px;line-height:1.5"><strong style="color:var(--cream)">Start from your intake template.</strong> Open your new-patient scaffold full screen and fill each section live during the intake, then draft straight from it.</div>
         <button class="btn" id="neweval-setup-btn" style="margin-top:8px">Start my intake note (full screen) &rarr;</button>
         <span class="hint" id="neweval-hint" style="margin-left:8px"></span>
+
+        <!-- Outside records. Transient session sources: read them, optionally let Prep reason over
+             them, optionally put a clinician-approved carry-forward summary in the note. The file and
+             its extracted text live in memory only and are never written to the note or localStorage. -->
+        <div id="src-block" style="margin-top:20px;padding-top:16px;border-top:1px solid var(--rule)">
+          <div class="hint" style="line-height:1.5"><strong style="color:var(--cream)">Outside records (optional).</strong>
+            Add a psychological or neuropsych evaluation, discharge summary, referral, school testing or prior records.
+            Reading one does nothing to your note. You choose whether it informs your prep, and whether any of it is written down.</div>
+          <div style="margin-top:9px">
+            <button class="btn" id="src-add-btn" type="button">+ Add document</button>
+            <input type="file" id="src-file" accept=".pdf,.docx,.txt,.rtf,.md,.text" multiple style="display:none">
+            <span class="hint" id="src-hint" style="margin-left:8px"></span>
+          </div>
+          <div class="hint" style="margin-top:7px;line-height:1.45;color:var(--cream-dim)">
+            Used for this visit only. The file stays on your computer &mdash; the Scribe reads it, it does not keep a copy,
+            and nothing from it reaches your note unless you add it deliberately.</div>
+          <div id="src-list" style="margin-top:12px"></div>
+        </div>
       </div>
 
       <!-- BLANK path (Prep off): one button into the single working note. For a follow-up with last
@@ -1154,6 +1174,7 @@ function draftSystem(){
   s += "=== RISK AND SAFETY (highest stakes) ===\n";
   s += "Handle documented risk (suicidal ideation, homicidal ideation, self-harm, plan, intent, access to means) with maximum fidelity. NEVER omit, soften, downgrade, or paraphrase away any risk the notes document. NEVER fabricate a risk denial (e.g. 'denies SI/HI') unless the notes document it was asked and denied. If risk is documented ambiguously, preserve the clinician's exact words and do not resolve the ambiguity.\n\n";
   s += "=== MEDICATIONS (keep exactly as written) ===\n";
+  s += "OUTSIDE RECORDS ARE NOT TODAY'S HISTORY. When the source material includes information from an outside record (a prior evaluation, discharge summary, referral, school or psychological testing, or any 'Historical Note:' line describing records reviewed), that information KEEPS ITS ATTRIBUTION in the note and never becomes a present-tense patient fact. Write 'the 2024 neuropsychological evaluation documented ADHD' or 'records reviewed described childhood-onset inattention' — NEVER 'the patient has ADHD diagnosed in childhood' on the strength of a record alone. An ABSENCE in a record is an absence in the record, never a patient denial: write 'the records reviewed did not document prior suicide attempts', NEVER 'the patient denies prior suicide attempts'. Something the patient told you today is documented as the patient's report; something a record documents is documented as the record's. Never let the two collapse into each other, and never merge a record-derived statement and a today statement into one undifferentiated sentence.\n\n";
   s += "Never change, correct, normalize, or guess medication names, doses, routes, or frequencies. Write each exactly as the clinician documented it; do not convert brand to generic or generic to brand. If a medication name or dose looks implausible, misspelled, or unrecognized, keep it verbatim, do not substitute a 'correct' name, and let the review pass flag it.\n\n";
   if(visitType === 'follow_up'){
     s += "=== FOLLOW-UP: CARRY EVERYTHING FORWARD, EDIT THE DELTAS ===\n";
@@ -1225,6 +1246,7 @@ function verifySystem(){
   s += "AMBIENT PSYCHOTHERAPY ADD-ON: if the psychotherapy documentation is supported by the ambient transcript rather than typed coach input, do NOT strip it and do NOT flag it as uncounted — the transcript is evidence. Instead flag it once, briefly, for the clinician to confirm the add-on's TIME (psychotherapy-only minutes) and that it was a DISTINCT service from the E/M. Do not treat 'not typed under the coach' as a reason the delivered therapy cannot be counted.\n\n";
   s += "AMBIENT TRANSCRIPT IS EVIDENCE: a 'TODAY'S VISIT — AMBIENT TRANSCRIPT' block is the actual recording of today's visit. Content the draft derived from it is SUPPORTED, not a fabrication — do not strip it. (Only the checklist/guide scaffolds are non-evidence.)\n\n";
   s += "SILENT BY DEFAULT, ASK ONLY WHEN GENUINELY STUCK: This pass fixes what it can and stays quiet. NEVER narrate changes you made, and NEVER ask the clinician to confirm something you already handled (a fabrication you removed, a documented risk you restored, a value the source let you correct) — just do it silently. RAISE A FLAG ONLY for a GENUINE question you cannot resolve yourself: a medication name, dose, or clinically consequential value that looks wrong or internally contradictory AND that the source does not let you fix, or a real clinical ambiguity that needs the clinician's judgment. Keep each flag to ONE sentence, and include only the genuinely unresolved ones. Most notes have zero flags; raise one only when you truly cannot settle it yourself.\n\n";
+  s += "PROVENANCE: if the draft states as a present-tense patient fact something the source attributes to an outside record (a prior evaluation, discharge summary, referral, testing, or a 'Historical Note:' line about records reviewed), restore the attribution to match the source. Likewise, if the draft converted an absence in the records into a patient denial ('denies prior hospitalization' where the source says only that records did not document one), rewrite it as what the records did or did not document. Do this silently, without a flag. Never remove an attribution the source carries.\n";
   s += "RISK: never let the draft add, drop, or soften any documented risk (SI, HI, self-harm, plan, intent). If the draft DROPPED or softened a risk the source documents, restore it to match the source exactly. If the draft ADDED a risk statement or denial the source does not document (e.g. a 'denies SI' the source never recorded), remove it. Do this silently, without a flag.\n";
   s += "IMPLAUSIBILITY (ASK, do NOT fix): if something clinically consequential looks wrong and the source gives you no way to correct it — an unrecognized or likely-misspelled MEDICATION name, an implausible dose/frequency/duration, a number that affects care, or an internal contradiction you cannot resolve — do NOT guess or invent a correction; raise a one-sentence flag so the clinician can resolve it, and preserve the exact wording. A garbled NON-medication proper noun (a person, device, or place name) or a cosmetic date/spelling issue that does not change care: leave it as documented, no flag.\n\n";
   if(visitType === 'follow_up'){ s += "FOLLOW-UP CARRY-FORWARD: silently correct any current-visit assessment, especially SI/HI or self-harm, that the draft asserts as done today but that only the prior note supports and today's notes do not, so a prior safety assessment never reads as if performed today. Standing items carried as 'continued/stable' are fine. Do this silently, without a flag.\n\n"; }
@@ -1757,6 +1779,303 @@ function newEvalScaffoldSystem(){
   s += "Output only the blank scaffold.";
   return s;
 }
+
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// OUTSIDE RECORDS  (practice copy — see CLINICAL-OS-STRATEGY.md §32)
+//
+// Three objects, never conflated:
+//   1. RAW SOURCE      the file + its extracted text. In-memory only (tbpSources). Never written
+//                      to the note, never to localStorage, never to the Vault. Gone on Remove or
+//                      when the tab closes. The file is already on the clinician's own machine;
+//                      the Scribe needs temporary access to reason over it, not a second copy.
+//   2. TEMP ANALYSIS   a Read summary. On screen, session only. AI-generated is not durable.
+//   3. CARRY-FORWARD   what the clinician deliberately inserts, as a 'Historical Note:' line. That
+//                      rides the existing carry-forward rail (draftSystem carries 'Historical
+//                      Note:' VERBATIM) and becomes the durable proxy for a source that future
+//                      sessions will never see again.
+// ══════════════════════════════════════════════════════════════════════════════════════════
+
+var tbpSources = [];          // in-memory ONLY. Never serialized anywhere.
+var tbpSrcSeq = 0;
+var SRC_MAX_CHARS = 120000;   // ~30k tokens. Past this we truncate visibly rather than silently.
+
+try { if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; } catch(e){}
+
+// Lifted from template-upload.html, with the 5-page cap removed (a neuropsych report is 30+ pages)
+// and a real failure state for a scanned PDF, which used to return '' and produce a mystery summary.
+async function tbpExtractText(file){
+  var name = file.name || '';
+  if(/\.docx$/i.test(name)){
+    var buf = await file.arrayBuffer();
+    var res = await mammoth.extractRawText({ arrayBuffer: buf });
+    return { text: (res.value || ''), pages: 0 };
+  }
+  if(/\.pdf$/i.test(name)){
+    var buf2 = await file.arrayBuffer();
+    var pdf = await pdfjsLib.getDocument({ data: buf2 }).promise;
+    var txt = '';
+    for(var i = 1; i <= pdf.numPages; i++){
+      var page = await pdf.getPage(i);
+      var c = await page.getTextContent();
+      txt += c.items.map(function(it){ return it.str; }).join(' ') + '\n';
+    }
+    return { text: txt, pages: pdf.numPages };
+  }
+  if(/\.(txt|rtf|md|text)$/i.test(name)) return { text: await file.text(), pages: 0 };
+  throw new Error('Unsupported file type. Use PDF, DOCX, TXT or RTF.');
+}
+
+function tbpSrcById(id){
+  for(var i=0;i<tbpSources.length;i++) if(tbpSources[i].id === id) return tbpSources[i];
+  return null;
+}
+// Remove must actually drop the text from the active context, not just hide the card.
+function tbpSrcRemove(id){
+  for(var i=0;i<tbpSources.length;i++){
+    if(tbpSources[i].id === id){ tbpSources[i].text = ''; tbpSources.splice(i,1); break; }
+  }
+  tbpRenderSources();
+}
+
+function tbpRenderSources(){
+  var list = document.getElementById('src-list');
+  if(!list) return;
+  if(!tbpSources.length){ list.innerHTML = ''; return; }
+  var h = '';
+  for(var i=0;i<tbpSources.length;i++){
+    var d = tbpSources[i];
+    var meta = (d.pages ? d.pages + ' pages · ' : '') + Math.round(d.chars/1000) + 'k characters'
+             + (d.truncated ? ' · only the first ' + Math.round(SRC_MAX_CHARS/1000) + 'k analyzed' : '');
+    h += '<div class="src-card" data-id="'+d.id+'" style="border:1px solid var(--rule);border-radius:8px;padding:11px 13px;margin-bottom:9px;background:var(--navy-card)">'
+      +   '<div style="display:flex;align-items:baseline;gap:9px;flex-wrap:wrap">'
+      +     '<strong style="color:var(--cream);font-size:.92rem">'+esc(d.name)+'</strong>'
+      +     '<span class="hint" style="color:var(--cream-dim)">'+esc(meta)+'</span>'
+      +     (d.useForPrep ? '<span class="hint" style="color:var(--teal)">· informing prep</span>' : '')
+      +   '</div>';
+    if(d.error){
+      h += '<div class="hint" style="margin-top:7px;color:var(--amber);line-height:1.45">'+esc(d.error)+'</div>'
+        +  '<div style="margin-top:8px"><button type="button" class="btn src-act" data-act="remove" data-id="'+d.id+'" style="font-size:.8rem;padding:5px 11px">Remove</button></div>';
+    } else {
+      h += '<div style="margin-top:9px;display:flex;gap:7px;flex-wrap:wrap">'
+        +   '<button type="button" class="btn src-act" data-act="read" data-id="'+d.id+'" style="font-size:.8rem;padding:5px 11px">Summarize</button>'
+        +   '<button type="button" class="btn src-act" data-act="prep" data-id="'+d.id+'" style="font-size:.8rem;padding:5px 11px">'+(d.useForPrep ? 'Not for prep' : 'Use for prep')+'</button>'
+        +   '<button type="button" class="btn src-act" data-act="note" data-id="'+d.id+'" style="font-size:.8rem;padding:5px 11px">Summary for the note</button>'
+        +   '<button type="button" class="btn src-act" data-act="remove" data-id="'+d.id+'" style="font-size:.8rem;padding:5px 11px">Remove</button>'
+        + '</div>'
+        + '<div class="src-out" id="src-out-'+d.id+'" style="margin-top:10px"></div>';
+    }
+    h += '</div>';
+  }
+  // Source-informed prep. Deliberately renders ON SCREEN and never into the working note:
+  // "use for prep" means the model may reason over the record, not that record content gets
+  // written down. Anything the clinician wants in the chart goes through "Summary for the note".
+  if(tbpHasPrepSources()){
+    h += '<div style="margin-top:14px;padding-top:13px;border-top:1px dashed var(--rule)">'
+      +   '<button type="button" class="btn" id="src-prep-btn">Prep me from these records &rarr;</button>'
+      +   '<span class="hint" id="src-prep-msg" style="margin-left:8px"></span>'
+      +   '<div class="hint" style="margin-top:6px;line-height:1.45;color:var(--cream-dim)">Shown here for you to read before the visit. It does not go into your note.</div>'
+      +   '<div id="src-prep-out" style="margin-top:11px"></div>'
+      + '</div>';
+  }
+  list.innerHTML = h;
+}
+
+// ── Read: temporary analysis. Deliberately says nothing about the note and changes no context. ──
+function docReadSystem(){
+  var s = "You are helping a psychiatric prescriber understand an OUTSIDE CLINICAL RECORD they have just received. ";
+  s += "They want to know what it says, quickly, before deciding whether any of it matters. This is a READ, not chart content: nothing you write here goes into a note.\n\n";
+  s += "Be efficient and concrete. Use short labeled lines, in this order, and OMIT any label the document does not support (never write 'not documented' for a whole label, just leave it out):\n";
+  s += "Document: what kind of record it is, who wrote it (name and credential if given), and its date.\n";
+  s += "Bottom line: the conclusions or diagnoses it reached, in one or two sentences.\n";
+  s += "Basis: what those conclusions actually rested on, whether history, collateral, testing or observation.\n";
+  s += "Relevant history: developmental, psychiatric, medical or social history the document establishes.\n";
+  s += "Testing: instruments administered, named, without dumping every subscale score.\n";
+  s += "Medication history: what was tried, the response, and why anything stopped.\n";
+  s += "Recommendations: what it recommended, when clinically relevant.\n";
+  s += "Worth verifying yourself: real limitations, such as retrospective report, no collateral, records not reviewed, internal inconsistency, or an assertion the document does not support.\n\n";
+  s += "RULES: Report only what the document says. Invent nothing, and never fill a gap with the typical case. ";
+  s += "Attribute throughout: this is what a RECORD documents, not what is true of the patient now. Never write a sentence that reads as your own clinical assertion about the patient. ";
+  s += "If the extracted text is garbled, partial, or clearly missing pages, say so plainly at the top instead of summarizing around it. Plain text, no Markdown.";
+  return s;
+}
+
+// ── Carry-forward: the durable proxy for a source the Scribe will never see again. ──
+function docCarryForwardSystem(){
+  var s = "You are writing the CHART RECORD of an outside clinical document for a psychiatric prescriber.\n\n";
+  s += "UNDERSTAND WHAT YOU ARE PRODUCING. The clinician has no chart integration. The Scribe will NOT see this document again: at every future visit it receives only what was carried forward from the previous note. ";
+  s += "So what you write here becomes the ONLY representation of this source that exists in every subsequent encounter. You are creating the future Scribe's memory of it. ";
+  s += "Preserve what a clinician or an AI would need years from now to understand what this record established, how it established it, and what limited it. DO NOT optimize for brevity. ";
+  s += "A fact you drop here is not recoverable later.\n\n";
+  s += "This is different from a quick read-summary, which can be aggressively short. This one is longer on purpose.\n\n";
+  s += "FORMAT: output ONE block, starting with the literal words 'Historical Note:' and then flowing prose. No headings, no bullets, no Markdown, no preamble, no closing comment. ";
+  s += "Open by naming the document, its author and credential if given, and its date, for example: 'Historical Note: Prior records reviewed, neuropsychological evaluation by J. Smith, PhD, dated 3/14/2024, documented ...'\n\n";
+  s += "PRESERVE, where the document supports it: what the record concluded or diagnosed; the evidence those conclusions rested on (history, collateral, testing, observation); developmental and longitudinal facts, including age of onset and the settings involved; who provided collateral and what they reported; instruments administered, named, with meaningful findings but not every score; medication and treatment history with response and reason for discontinuation; hospitalizations or other major events; recommendations of ongoing relevance; and stated limitations of the evaluation.\n\n";
+  s += "ATTRIBUTION IS NOT OPTIONAL. Every clinical statement stays attributed to the record. Write 'the evaluation documented childhood-onset inattention', NEVER 'the patient has had inattention since childhood'. ";
+  s += "An absence in the record is an absence in the record: write 'the records reviewed did not document prior suicide attempts', NEVER 'the patient denies prior suicide attempts'. ";
+  s += "A record documenting something is not the patient reporting it today, and the note must never let those collapse into each other.\n\n";
+  s += "Invent nothing. If a date, author or instrument is not given, omit it rather than approximating. Do not soften or upgrade a conclusion the document hedged. Plain text.";
+  return s;
+}
+
+// Prep for a NEW evaluation, given outside records. This is what newEvalScaffoldSystem() cannot
+// do: that call is handed the literal string 'Produce the blank intake scaffold now.' and is blind
+// by design. With sources, prep finally has something to reason over (CLINICAL-OS-STRATEGY.md §32).
+function newEvalPrepFromSourcesSystem(){
+  var s = "You are preparing a psychiatric prescriber for a NEW PATIENT EVALUATION they are about to conduct. They have not met this patient. ";
+  s += "You are given one or more OUTSIDE RECORDS the patient or a referrer sent ahead. Your job is to make the clinician walk in already oriented, and to be honest about what those records do and do not establish.\n\n";
+  s += "SYNTHESIS FIRST, GAPS SECOND. You are not a completeness checker. Start by saying what the records actually establish and how strongly, in ordinary clinical language. Only then say what is still open.\n\n";
+  s += "Output EXACTLY these three markers, each on its own line, with content on the lines after it. Reproduce each marker exactly as written. No Markdown, no JSON, no code fences.\n\n";
+  s += "<<<ORIENTATION>>>\n";
+  s += "Three to six short lines. What kind of records these are, who wrote them and when, and the clinical picture they describe. This is a glance, not chart content.\n\n";
+  s += "<<<ESTABLISHED BY THE RECORDS>>>\n";
+  s += "What the records document, one item per line, EACH with its source and the evidence behind it. Write 'the 2024 neuropsychological evaluation documented childhood-onset inattention across home and school, with maternal collateral' — NOT 'childhood onset present'. ";
+  s += "A record documenting something is not the same as the patient reporting it to you today, and never write it as though it were. Where a record asserts a conclusion without supporting evidence, say so on that line.\n\n";
+  s += "<<<TO ESTABLISH TODAY>>>\n";
+  s += "The highest-value things this visit should settle, one per line, ordered by how much they would change management. Do NOT list something the records already establish well: the point of reading them is to stop asking what is already answered. ";
+  s += "Distinguish three different situations explicitly in the wording of each line:\n";
+  s += "- a SOFT GAP, where more information would raise confidence;\n";
+  s += "- MEANINGFUL UNCERTAINTY, where competing explanations remain unresolved;\n";
+  s += "- CONTRADICTORY EVIDENCE, where something in the records actively argues against the conclusion they reached (for example no attentional difficulty until a head injury at 31, or concentration problems only during discrete mood episodes). Say so plainly when you see it.\n\n";
+  s += "GOVERNING RULE: 'not documented' is not the same as 'not present', and neither is the same as 'not assessed'. A history describing lost homework, parental reminders and midnight project completion supports childhood onset even if nobody wrote 'before age 12'. Ask whether the total record reasonably establishes the construct, not whether a checklist item appears.\n\n";
+  s += "You may disagree with the records, gently, in either direction. Invent nothing: every statement traces to something in the documents. Never give a probability or a score. Plain text.";
+  return s;
+}
+
+// Build the transient source block handed to a model call. This string is passed as message
+// content only. It is never stored, cached, or written to the note.
+function tbpSourceContext(){
+  var out = '', n = 0;
+  for(var i=0;i<tbpSources.length;i++){
+    var d = tbpSources[i];
+    if(!d.useForPrep || !d.text) continue;
+    n++;
+    out += '<<<OUTSIDE RECORD ' + n + ': ' + d.name + '>>>\n'
+         + d.text + '\n<<<END OUTSIDE RECORD ' + n + '>>>\n\n';
+  }
+  return out;
+}
+function tbpHasPrepSources(){ return tbpSourceContext() !== ''; }
+
+async function tbpSrcRun(id, act){
+  var d = tbpSrcById(id); if(!d) return;
+  var out = document.getElementById('src-out-' + id); if(!out) return;
+  out.innerHTML = '<span class="spinner"></span><span class="hint">'
+    + (act === 'read' ? 'Reading the document&hellip;' : 'Writing the record summary&hellip;') + '</span>';
+  try {
+    var sys = (act === 'read') ? docReadSystem() : docCarryForwardSystem();
+    var body = 'OUTSIDE RECORD, filename ' + d.name + '\n\n' + d.text;
+    var res = await callAPI(sys, [{ role:'user', content: body }], act === 'read' ? 1600 : 2400);
+    res = (res || '').trim();
+    if(!res){ out.innerHTML = '<span class="hint" style="color:var(--amber)">No summary came back. Try again.</span>'; return; }
+    if(act === 'read'){
+      out.innerHTML = '<div style="background:var(--navy);border:1px solid var(--rule);border-radius:7px;padding:11px 13px;white-space:pre-wrap;font-size:.88rem;line-height:1.55;color:var(--cream)">'
+        + esc(res) + '</div>'
+        + '<div class="hint" style="margin-top:6px;color:var(--cream-dim)">Read only. Nothing here has touched your note or your prep.</div>';
+    } else {
+      // Clinician-approved insertion: they read it, edit it, and choose to put it in the note.
+      out.innerHTML = '<div class="hint" style="margin-bottom:5px;color:var(--cream);line-height:1.45">Review and edit before it goes in. Once inserted, this is what every future visit inherits about this record.</div>'
+        + '<textarea id="src-cf-' + id + '" style="width:100%;min-height:190px;font-size:.88rem;line-height:1.55"></textarea>'
+        + '<div style="margin-top:7px"><button type="button" class="btn src-insert" data-id="' + id + '" style="font-size:.8rem;padding:5px 11px">Insert into my note</button>'
+        + '<span class="hint" id="src-cf-msg-' + id + '" style="margin-left:8px"></span></div>';
+      document.getElementById('src-cf-' + id).value = res;
+    }
+  } catch(err){
+    out.innerHTML = '<span class="hint" style="color:var(--red)">' + esc(err.message || err) + '</span>';
+  }
+}
+
+document.getElementById('src-add-btn').addEventListener('click', function(){
+  if(tbpDemoBlock()) return;
+  document.getElementById('src-file').click();
+});
+
+document.getElementById('src-file').addEventListener('change', async function(){
+  var files = Array.prototype.slice.call(this.files || []);
+  this.value = '';
+  if(!files.length) return;
+  var hint = document.getElementById('src-hint');
+  for(var i=0;i<files.length;i++){
+    var f = files[i];
+    hint.innerHTML = '<span class="spinner"></span>Reading ' + esc(f.name) + '&hellip;';
+    var rec = { id: 'S' + (++tbpSrcSeq), name: f.name, text: '', chars: 0, pages: 0,
+                truncated: false, useForPrep: false, error: '' };
+    try {
+      var ex = await tbpExtractText(f);
+      var t = (ex.text || '').replace(/ /g, ' ').trim();
+      rec.pages = ex.pages || 0;
+      // A scanned PDF extracts to nothing. Say so instead of handing back an empty summary.
+      if(t.replace(/\s+/g, '').length < 40){
+        rec.error = 'No readable text found. This looks like a scanned or image-only file, and the Scribe can only read documents that contain real text. Paste the relevant part instead, or use a text-based copy.';
+      } else {
+        if(t.length > SRC_MAX_CHARS){ t = t.slice(0, SRC_MAX_CHARS); rec.truncated = true; }
+        rec.text = t; rec.chars = t.length;
+      }
+    } catch(err){
+      rec.error = (err && err.message) ? err.message : 'Could not read this file.';
+    }
+    tbpSources.push(rec);
+    tbpRenderSources();
+  }
+  hint.innerHTML = '';
+});
+
+async function tbpRunSourcePrep(){
+  var out = document.getElementById('src-prep-out');
+  var msg = document.getElementById('src-prep-msg');
+  var btn = document.getElementById('src-prep-btn');
+  if(!out) return;
+  if(btn) btn.disabled = true;
+  if(msg) msg.innerHTML = '<span class="spinner"></span>Reading the records&hellip;';
+  out.innerHTML = '';
+  try {
+    var res = await callAPI(newEvalPrepFromSourcesSystem(),
+      [{ role:'user', content: tbpSourceContext() + 'Produce the prep now.' }], 3000);
+    res = (res || '').trim();
+    if(!res){ out.innerHTML = '<span class="hint" style="color:var(--amber)">Nothing came back. Try again.</span>'; return; }
+    var pretty = res.replace(/<<<ORIENTATION>>>/g, 'ORIENTATION')
+                    .replace(/<<<ESTABLISHED BY THE RECORDS>>>/g, '\nESTABLISHED BY THE RECORDS')
+                    .replace(/<<<TO ESTABLISH TODAY>>>/g, '\nTO ESTABLISH TODAY');
+    out.innerHTML = '<div style="background:var(--navy);border:1px solid var(--rule);border-radius:7px;padding:12px 14px;white-space:pre-wrap;font-size:.88rem;line-height:1.6;color:var(--cream)">'
+      + esc(pretty.trim()) + '</div>';
+  } catch(err){
+    out.innerHTML = '<span class="hint" style="color:var(--red)">' + esc(err.message || err) + '</span>';
+  } finally {
+    if(btn) btn.disabled = false;
+    if(msg) msg.innerHTML = '';
+  }
+}
+
+document.getElementById('src-list').addEventListener('click', function(e){
+  var b = e.target && e.target.closest ? e.target.closest('button') : null;
+  if(!b) return;
+  if(b.id === 'src-prep-btn'){ if(!tbpDemoBlock()) tbpRunSourcePrep(); return; }
+  var id = b.getAttribute('data-id'); if(!id) return;
+
+  if(b.classList.contains('src-insert')){
+    var ta = document.getElementById('src-cf-' + id);
+    var raw = document.getElementById('raw');
+    if(!ta || !raw) return;
+    var block = (ta.value || '').trim();
+    if(!block) return;
+    raw.value = (raw.value.trim() ? raw.value.replace(/\s+$/, '') + '\n\n' : '') + block + '\n';
+    renderMode();
+    try{ if(window.tbpSaveDraft) window.tbpSaveDraft(); }catch(e2){}
+    var msg = document.getElementById('src-cf-msg-' + id);
+    if(msg) msg.innerHTML = '<span style="color:var(--green)">Added to your working note.</span>';
+    return;
+  }
+
+  var act = b.getAttribute('data-act');
+  if(act === 'remove'){ tbpSrcRemove(id); return; }
+  if(act === 'prep'){
+    var d = tbpSrcById(id); if(d){ d.useForPrep = !d.useForPrep; tbpRenderSources(); }
+    return;
+  }
+  if(tbpDemoBlock()) return;
+  tbpSrcRun(id, act);
+});
+
 document.getElementById('neweval-setup-btn').addEventListener('click', async function(){
   if(tbpDemoBlock()) return;
   var raw = document.getElementById('raw');
