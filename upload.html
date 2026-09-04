@@ -112,39 +112,107 @@ document.getElementById('reset-btn').addEventListener('click', function(){
   drop.innerHTML = '<b>Click to choose a file</b> or drag it here<br><span style="font-size:.8rem">PDF, Word, Excel, images, anything up to 25 MB</span>';
 });
 
+function fmt(e){ return String((e && e.message) || e || 'unknown'); }
+
+// Read a response WITHOUT ever throwing. A non-JSON body (a Netlify 404 page, a 502
+// timeout, a function that crashed before it could answer) is the most common cause of
+// a silent "connection error", so hand it back verbatim instead of swallowing it.
+async function readJson(res){
+  var txt = '';
+  try { txt = await res.text(); } catch (e) { return { _bad: 'could not read the response body' }; }
+  try { return JSON.parse(txt); } catch (e) {
+    return { _bad: 'HTTP ' + res.status + ' non-JSON: ' + txt.replace(/\s+/g, ' ').slice(0, 200) };
+  }
+}
+
+// Backup route: push the bytes through our own function as base64. Netlify caps a
+// function body near 6 MB and base64 inflates by a third, so only small files qualify,
+// but it lands the file when the browser cannot reach Supabase Storage directly.
+var FALLBACK_MAX = 4 * 1024 * 1024;
+
+function toBase64(file){
+  return new Promise(function(resolve, reject){
+    var r = new FileReader();
+    r.onload = function(){ resolve(String(r.result || '')); };
+    r.onerror = function(){ reject(new Error('could not read the file')); };
+    r.readAsDataURL(file);
+  });
+}
+
 upBtn.addEventListener('click', async function(){
   if (!chosen) { setMsg(upMsg, 'Choose a file first.', 'err'); return; }
   var path = String(chosen.name || 'upload').trim().replace(/^\/+/, '');
   var bucket = document.getElementById('bucket').value;
   var reset = function(){ upBtn.disabled = false; upBtn.textContent = 'Upload'; };
   upBtn.disabled = true; upBtn.textContent = 'Uploading…';
+  upMsg.className = 'msg';
+
+  // 1) Ask our admin function for a short-lived signed upload URL.
+  var sd;
   try {
-    // 1) Ask our admin function for a short-lived signed upload URL.
     var signRes = await fetch('/.netlify/functions/admin-doc-upload', {
       method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer ' + TOKEN},
       body: JSON.stringify({ action:'sign', token: TOKEN, bucket: bucket, path: path })
     });
-    var sd = await signRes.json();
-    if (!sd || !sd.ok || !sd.uploadUrl) {
-      if (sd && /sign in|not authorized/i.test(sd.error||'')) { try{ localStorage.removeItem('tbp_auth_token'); }catch(e){} }
-      reset(); setMsg(upMsg, (sd && sd.error) || 'Upload failed.', 'err'); return;
-    }
-    // 2) Send the file BYTES straight to Supabase Storage (no Netlify size limit).
-    //    multipart form matches how Supabase's own client uploads to a signed URL.
+    sd = await readJson(signRes);
+  } catch (e) {
+    reset(); setMsg(upMsg, 'Step 1 never reached the server (' + fmt(e) + '). Check your connection and retry.', 'err'); return;
+  }
+  if (sd && sd._bad) {
+    reset(); setMsg(upMsg, 'Step 1 — the upload function did not answer properly. ' + sd._bad, 'err'); return;
+  }
+  if (!sd || !sd.ok || !sd.uploadUrl) {
+    if (sd && /sign in|not authorized/i.test(sd.error||'')) { try{ localStorage.removeItem('tbp_auth_token'); }catch(e){} }
+    reset(); setMsg(upMsg, 'Step 1 — ' + ((sd && sd.error) || 'could not create an upload URL.'), 'err'); return;
+  }
+
+  // 2) Send the file BYTES straight to Supabase Storage (no Netlify size limit).
+  //    multipart form matches how Supabase's own client uploads to a signed URL.
+  //    Send NO custom headers: overwrite permission is already baked into the signed
+  //    URL, and an extra header only adds a CORS preflight that can be refused.
+  var directErr = '';
+  try {
     var fd = new FormData();
     fd.append('cacheControl', '3600');
     fd.append('', chosen, chosen.name);
-    var putRes = await fetch(sd.uploadUrl, { method:'PUT', headers: { 'x-upsert':'true' }, body: fd });
-    reset();
+    var putRes = await fetch(sd.uploadUrl, { method:'PUT', body: fd });
     if (putRes.ok) {
+      reset();
       setMsg(upMsg, 'Uploaded to ' + sd.bucket + ' / ' + sd.path + ' (' + Math.round(chosen.size/1024) + ' KB). Done.', 'ok');
-    } else {
-      var t = ''; try { t = await putRes.text(); } catch(e){}
-      setMsg(upMsg, 'Upload failed (' + putRes.status + '). ' + String(t).slice(0,200), 'err');
+      return;
     }
+    var t = ''; try { t = await putRes.text(); } catch(e){}
+    directErr = 'HTTP ' + putRes.status + ' ' + String(t).replace(/\s+/g, ' ').slice(0, 200);
   } catch (e) {
-    reset(); setMsg(upMsg, 'Connection error, try again.', 'err');
+    directErr = 'the browser could not reach Supabase Storage (' + fmt(e) + ')';
   }
+
+  // 3) Direct upload failed. Small files can still go through our own function.
+  if (chosen.size <= FALLBACK_MAX) {
+    upBtn.textContent = 'Retrying…';
+    try {
+      var dataUrl = await toBase64(chosen);
+      var res2 = await fetch('/.netlify/functions/admin-doc-upload', {
+        method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer ' + TOKEN},
+        body: JSON.stringify({ token: TOKEN, bucket: bucket, path: path, content_type: chosen.type || 'application/octet-stream', data: dataUrl })
+      });
+      var fb = await readJson(res2);
+      reset();
+      if (fb && fb.ok) {
+        setMsg(upMsg, 'Uploaded to ' + fb.bucket + ' / ' + fb.path + ' (' + Math.round(chosen.size/1024) + ' KB) via the backup route. Done.', 'ok');
+        return;
+      }
+      setMsg(upMsg, 'Direct upload failed (' + directErr + '). Backup route also failed: ' + ((fb && (fb.error || fb._bad)) || 'unknown error') + '.', 'err');
+      return;
+    } catch (e) {
+      reset();
+      setMsg(upMsg, 'Direct upload failed (' + directErr + '). Backup route errored: ' + fmt(e) + '.', 'err');
+      return;
+    }
+  }
+
+  reset();
+  setMsg(upMsg, 'Step 2 — direct upload failed: ' + directErr + '. At ' + Math.round(chosen.size/1024/1024) + ' MB this file is too big for the backup route, so the direct path has to work.', 'err');
 });
 </script>
 </body>
