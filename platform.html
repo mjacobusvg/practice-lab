@@ -2293,11 +2293,59 @@ function tbpBtnCooldown(btn, secs) {
   }, 1000);
 }
 
+// Catch the handful of address typos that quietly wreck a signup: the sign-in
+// email bounces, the person thinks the door is locked, and it lands in our spam
+// as a MAILER-DAEMON failure. Returns a corrected address when the domain looks
+// like an obvious slip (gnail.com, gmail.co, gmail.comm, .con ...), else null.
+// Conservative on purpose: exact known-typo domains, plus a couple of TLD slips
+// that are never real, plus .co -> .com ONLY for known freemail providers (so a
+// real company .co domain is left alone).
+function suggestEmailFix(email) {
+  var at = email.lastIndexOf('@');
+  if (at === -1) return null;
+  var local = email.slice(0, at), domain = email.slice(at + 1);
+  var DOMAIN_TYPOS = {
+    'gnail.com': 'gmail.com', 'gmial.com': 'gmail.com', 'gmai.com': 'gmail.com',
+    'gmaill.com': 'gmail.com', 'gmail.co': 'gmail.com', 'gmail.comm': 'gmail.com',
+    'gmail.con': 'gmail.com', 'gmail.cmo': 'gmail.com', 'gmail.om': 'gmail.com',
+    'gmail.vom': 'gmail.com', 'gmail.xom': 'gmail.com', 'gmaul.com': 'gmail.com',
+    'yahooo.com': 'yahoo.com', 'yaho.com': 'yahoo.com', 'yahoo.co': 'yahoo.com',
+    'yahoo.con': 'yahoo.com', 'ymail.co': 'ymail.com',
+    'hotmial.com': 'hotmail.com', 'hotmai.com': 'hotmail.com', 'hotmail.co': 'hotmail.com',
+    'hotmail.con': 'hotmail.com', 'hotnail.com': 'hotmail.com',
+    'outlok.com': 'outlook.com', 'outloo.com': 'outlook.com', 'outlook.co': 'outlook.com',
+    'outlook.con': 'outlook.com', 'icloud.co': 'icloud.com', 'icloud.con': 'icloud.com',
+    'aol.co': 'aol.com', 'aol.con': 'aol.com', 'live.co': 'live.com', 'proton.mail': 'proton.me'
+  };
+  if (DOMAIN_TYPOS[domain]) return local + '@' + DOMAIN_TYPOS[domain];
+  // TLD slips that are never a real TLD -> .com (any domain).
+  var badTld = domain.match(/\.(comm|con|cno|cmo|xom|vom|ocm|clm|coom)$/);
+  if (badTld) return local + '@' + domain.slice(0, -badTld[0].length) + '.com';
+  // <freemail>.co -> .com (leave real company .co domains alone).
+  var m = domain.match(/^(gmail|yahoo|hotmail|outlook|icloud|aol|live|msn|ymail|comcast|proton|protonmail)\.co$/);
+  if (m) return local + '@' + m[1] + '.com';
+  return null;
+}
+
+var _emailTypoOverride = false; // set true when the user insists on the address as typed
+
 async function sendMagicLink(mode) {
   var emailEl = document.getElementById(mode === 'login' ? 'login-email' : 'gate-email');
   var statusEl = document.getElementById(mode === 'login' ? 'login-status' : 'signup-status');
   var email = emailEl.value.trim().toLowerCase();
   if (!email || email.indexOf('@') === -1) { statusEl.textContent = 'Enter a valid email.'; return; }
+  // Typo interception: suggest the fix and wait for one confirming click. The
+  // person can accept the correction (one tap) or keep exactly what they typed.
+  if (!_emailTypoOverride) {
+    var fix = suggestEmailFix(email);
+    if (fix && fix !== email) {
+      statusEl.innerHTML = 'Did you mean <strong>' + fix + '</strong>? '
+        + '<a href="#" style="color:var(--teal)" onclick="document.getElementById(\'' + emailEl.id + '\').value=\'' + fix + '\';_emailTypoOverride=true;sendMagicLink(\'' + mode + '\');return false">Yes, use that</a>'
+        + ' &middot; <a href="#" style="color:var(--text-secondary)" onclick="_emailTypoOverride=true;sendMagicLink(\'' + mode + '\');return false">No, it is correct</a>';
+      return;
+    }
+  }
+  _emailTypoOverride = false;
   var _btn = statusEl.parentElement ? statusEl.parentElement.querySelector('button.btn-primary') : null;
   if (_btn && !_btn.dataset.origLabel) _btn.dataset.origLabel = _btn.innerHTML;
   if (_btn) { _btn.disabled = true; _btn.style.opacity = '0.6'; _btn.style.cursor = 'default'; }
