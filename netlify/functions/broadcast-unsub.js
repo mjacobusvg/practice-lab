@@ -6,7 +6,7 @@
 //
 // GET  /.netlify/functions/broadcast-unsub?t=<token>   -> confirmation page
 // POST /.netlify/functions/broadcast-unsub?t=<token>   -> RFC 8058 one-click
-//        (List-Unsubscribe-Post: List=One-Click). Gmail/Yahoo POST here directly
+//        (List-Unsubscribe-Post: List-Unsubscribe=One-Click). Gmail/Yahoo POST here directly
 //        from their native "Unsubscribe" button; we just do the opt-out and 200.
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, SESSION_SIGNING_SECRET

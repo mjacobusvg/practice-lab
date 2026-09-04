@@ -162,7 +162,7 @@ function buildRawEmail(opts) {
     'Subject: ' + encodeHeaderWord(opts.subject),
     'MIME-Version: 1.0',
     'List-Unsubscribe: <' + opts.unsub + '>',
-    'List-Unsubscribe-Post: List=One-Click',
+    'List-Unsubscribe-Post: List-Unsubscribe=One-Click',
     'Content-Type: text/html; charset=UTF-8',
     'Content-Transfer-Encoding: base64',
     '',
