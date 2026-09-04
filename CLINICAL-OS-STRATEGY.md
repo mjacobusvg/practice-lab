@@ -867,6 +867,141 @@ Do not force clinicians to duplicate an intake system their EHR already runs.
 
 Route 1 first. It is smaller, it serves more clinicians, and it de-risks route 2.
 
+### What route 1 actually is: sources, not a paste box
+
+Route 1 above reads like "add a big paste box." That is the weak version. The durable one is
+**give the Scribe sources** — a document already sitting on the clinician's own machine, pasted
+text, a prior Scribe note, a referral — and let any of them feed the prep call. The bottleneck
+today is not that clinicians lack the information. It is that the information lives in a
+27-page neuropsych report, a discharge summary, school testing or an old psychiatric record,
+and they have to hand-extract it before the Scribe can reason over any of it.
+
+Two of this section's assumptions were checked against the code in Sep 2026 and one was wrong:
+
+- **The Scribe's file input is transcript-only.** `#transcript-file` accepts
+  `.txt,.md,.vtt,.srt,.text` — recorder transcripts, nothing else. There is no PDF or DOCX
+  path in the Scribe. So "the working note already accepts pasted text and uploads" above is
+  true only for plain text; reading an outside record is a real build, not a wiring change.
+- **The extraction primitive already exists in this repo and is running in production.**
+  `template-upload.html` loads pdf.js and mammoth from cdnjs and has an 18-line client-side
+  `extractText(file)` covering `.docx / .pdf / .txt / .rtf`. Reuse it. Two changes are needed:
+  it caps PDFs at `Math.min(pdf.numPages, 5)`, which has to go, and it returns `''` on a
+  scanned/image PDF, which must surface as a visible "no text found, this looks scanned"
+  state rather than a silent empty summary.
+
+### Read it vs use it — two different actions, never one button
+
+Uploading a record and reading it are not the same as bringing it into the clinical context.
+Often 80% of a packet is irrelevant, and the clinician should be able to understand a document
+without contaminating today's reasoning with it.
+
+- **Read** — temporary analysis. Summarize it, and later ask it questions. No effect on prep,
+  on the note, or on synthesis.
+- **Use** — this source becomes transient model context for prep and reasoning this session.
+
+### Persistence: read the clinician's file, do not become a second copy of it
+
+The uploaded PDF is not new PHI the Scribe is creating. It is already a file on the clinician's
+own device — they had to have it to upload it. So the reason not to retain it is not secrecy.
+It is that **the Scribe needs temporary access to reason over the source, and has no need to
+create another retained copy of it.** TBP is not becoming a document repository; the EHR owns
+the chart.
+
+The persistence that actually matters is information *generated or captured inside the Scribe*
+that the clinician may not otherwise possess: ambient transcription, working-note content,
+AI-generated summaries, prep output. Note that the Scribe is not persistence-free today —
+`ai-scribe-workspace.html` autosaves each tab's draft to `localStorage` under
+`tbp_draft_<slot>` for crash recovery. That is correct and stays.
+
+So the rule, precisely:
+
+> No durable server-side storage of PHI. Uploaded source documents and their extracted text
+> are transient session input and must not be written to `localStorage` either — not because
+> the clinician lacks that PHI, but because the Scribe has no need to hold a second copy.
+> Existing browser-local draft recovery continues to apply to working-note content. If the
+> clinician deliberately incorporates a document-derived summary into the note, that summary
+> becomes ordinary note content and follows the same local recovery and carry-forward
+> behavior as the rest of the note.
+
+Three distinct objects, and they must not be conflated:
+
+| | what it is | lifetime |
+|---|---|---|
+| **Raw source** | the file and its extracted text | in-memory only; gone on Remove or session end |
+| **Temporary analysis** | a Read summary, an answer to a question, prep reasoning | session only; AI-generated is not the same as durable |
+| **Clinician-approved historical summary** | what they deliberately put in the note | durable; rides the existing note rail |
+
+Removing a source must actually drop it from the active context, not just hide its card.
+
+### The carry-forward mechanism already exists — reuse it, do not rebuild it
+
+An outside record is the sharpest case of a problem the Scribe already solves. `draftSystem()`
+carries this rule today, verbatim:
+
+> `PRESERVE DURABLE DATED CONTEXT (write today's note so it is a usable record for next
+> visit's you): this clinician has no chart integration, so THIS NOTE is the only memory the
+> next visit will have.`
+
+and this one:
+
+> `HISTORICAL BACKGROUND: content marked 'Historical Note:' ... carries forward VERBATIM as
+> background.`
+
+**Verbatim** is the whole point. Alongside `PROMOTE DURABLE BACKGROUND TO HISTORICAL`, the
+null-update tokens that refuse to delete a carried section, and the dated med/lab/risk
+trajectory rules, the Scribe already reasons about being its own future memory and already has
+a rail that does not get re-paraphrased each visit.
+
+So a chart-bound record summary is a **`Historical Note:` variant, not a new subsystem.** Do
+not build a parallel "Prior Outside Records" persistence layer beside machinery that works.
+Iterative re-summarization is exactly what that rail already prevents: 30 pages becomes a good
+250-word summary, then 180 words, then 120, then "history of ADHD testing," and the evidence is
+gone.
+
+### Two summary intents, two different prompts
+
+A summary has to know where it is going. These are not the same job:
+
+- **Read summary** — efficient, for the clinician on screen, right now. "ADHD and GAD
+  diagnosed; stimulant recommended, methylphenidate previously helpful." Nothing needs to
+  survive it.
+- **Carry-forward summary** — the durable representation of a source the Scribe will almost
+  certainly never see again, because next session it receives only what was pasted from the
+  last note. It must preserve what the document was, who wrote it, when, what it concluded,
+  **the evidence those conclusions rested on**, developmental and longitudinal facts,
+  collateral, treatment history and response, meaningful recommendations, and stated
+  limitations. It is longer than the Read summary on purpose.
+
+The instruction that carries this: *you are creating the future Scribe's memory of this source;
+preserve what will matter longitudinally, do not optimize for brevity.*
+
+There is a general principle underneath, and it is not limited to documents. Today's transcript
+is **recoverable** — the whole thing is present while drafting, so synthesize freely. An outside
+record is **non-recoverable**. For non-recoverable sources the threshold for discarding
+information is higher.
+
+### Provenance is a Phase 1 requirement, not a polish item
+
+The output must never silently convert an outside-record claim into a present-tense patient
+fact. "Outside neuropsychological evaluation dated 2022 documented ADHD" is a different
+statement from "patient has ADHD diagnosed in childhood," and "records reviewed did not
+document prior suicide attempts" is a different statement from "patient denies prior suicide
+attempts." This is not only medicolegal hygiene; the attribution is what makes the clinical
+reasoning correct. `ROADMAP.md` Lane B already lists "clearer separation of historical fact vs
+'reported today'" as Scribe work, so this belongs in `draftSystem` and `verifySystem`, not in a
+document-feature corner.
+
+### Budget: chunk, do not throw 80 pages at one call
+
+`clinical-proxy-stream` is pinned at Netlify's 26s maximum (see `netlify.toml`). A 27-page
+report is roughly 15-20k tokens; 80 pages is 60k+. Do not solve 80 pages before the interaction
+is proven — ship a graceful boundary for a large document, find out empirically what the
+synchronous path handles, and if a normal-length evaluation blows the limit, move document
+processing to the background-function pattern already used by `azure-transcribe-fast-background`
+and the Chart Coder (`timeout = 900`). Longer term the right shape is chunk, extract the
+clinically important material per chunk, then synthesize across chunks — not one enormous call,
+which also loses early-page material under later pages.
+
 ### Reasoning checkpoints, not a continuously thinking AI
 
 The model does not sit and think between calls. Continuous background re-analysis would add
@@ -904,13 +1039,18 @@ Suite living inside it, describes the actual shape better.
 
 ### ADHD as the first module
 
-The two ADHD evaluation posts are the clinical spec for the first evaluation module, and the
+The ADHD evaluation posts are the clinical spec for the first evaluation module, and the
 instrument design and AI behavior spec are recorded in `FUTURE-OPPORTUNITIES.md` (synthesis
 first, gap detection second; soft gap vs meaningful uncertainty vs contradictory evidence;
 "not documented" ≠ "not present" ≠ "not assessed").
 
+There are **four** of those posts, not two. Part 1 and Part 2 argue that measurement is not
+diagnosis; Parts 3 and 4 exist as well, and Part 3's material on functional targets and what
+counts as the medication actually working is directly relevant to a longitudinal module — an
+earlier draft of this section said "the two ADHD evaluation posts" and was wrong.
+
 One discipline carried over from those posts: the previsit packet must not become a
-fourteen-page form. Two posts arguing that questionnaires are not diagnosis cannot be answered
+fourteen-page form. Posts arguing that questionnaires are not diagnosis cannot be answered
 with a 127-item questionnaire. Gather what is cheap for the patient to give and expensive for
 the clinician to obtain manually — concrete examples, chronology, what systems they rely on,
 when it was better or absent — and let the model summarize it so the clinician does not read

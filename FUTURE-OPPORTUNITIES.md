@@ -97,10 +97,15 @@ history reasonably establishes the construct, not whether every checklist item w
 
 - **Why it matters** — Part 1 and Part 2 of the ADHD posts argue that measurement is not
   diagnosis. This is that thesis built as a product, and it is a strong demonstration of
-  what the Scribe is supposed to be: a second clinical brain, not a hall monitor.
-- **Prerequisite** — the two ADHD posts published; the existing assessment-suite send
-  infrastructure (tokenized one-time links, `assessment-create.js`) extended to collateral
-  informants. Draft the items from the construct level and clinical literature; do **not**
+  what the Scribe is supposed to be: a second clinical brain, not a hall monitor. Note there
+  are **four** posts, not two: Part 3's material on functional targets and what counts as the
+  medication actually working bears directly on a longitudinal module and should be read as
+  part of the clinical spec.
+- **Prerequisite** — the ADHD posts published (Part 1 publishes first; the remaining parts are
+  scheduled with post IDs already assigned); the existing assessment-suite send infrastructure
+  (tokenized one-time links, `assessment-create.js`) extended to collateral informants. Also
+  document ingestion into prep (`CLINICAL-OS-STRATEGY.md` §32) — without it the guide asks
+  questions whose answers are sitting in an uploaded PDF. Draft the items from the construct level and clinical literature; do **not**
   build by paraphrasing ASRS/DIVA/DSM items side by side, and do not brand it as an
   "ASRS-like" or "DIVA alternative" tool. Label it plainly as a structured clinical-history
   and interview aid, not a validated psychometric test.

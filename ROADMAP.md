@@ -264,6 +264,22 @@ Clinician answers; the answers feed the HPI. That makes the chain real: prior no
 -> interview -> note. This is what makes the marketing claim ("prepared before the patient
 appears") literally true.
 
+**Where prep gets its source (added Sep 2026).** For a follow-up, prep reads last visit's note
+and the chain already works. For a **new evaluation it reads nothing** — `newEvalScaffoldSystem()`
+is called with the literal string `'Produce the blank intake scaffold now.'` — so "prepared
+before the patient appears" is not yet true for new patients, which is where preparation matters
+most. The fix is to let the clinician hand the Scribe **sources**: a record already on their own
+machine (PDF/DOCX), pasted intake or referral text, a prior note. The extraction code for this
+already exists in `template-upload.html` and is reused rather than rewritten.
+
+This is Lane 7 work, not a new initiative, and it is broader than the ADHD module: "someone sent
+me records and I have to read them before this appointment" is most weeks for most psychiatric
+prescribers, which is the habitual-use test this file measures on. Two rules govern it and are
+not optional — the Scribe takes temporary access to the clinician's own file rather than keeping
+a second copy of it, and an outside record's claims stay attributed to the record instead of
+becoming present-tense patient history (the Lane B item "clearer separation of historical fact
+vs 'reported today'"). Full design in `CLINICAL-OS-STRATEGY.md` §32.
+
 #### Lane 8 — One intelligent "Relevant next steps" area
 
 Where the separate tools start feeling like one program. During/after the encounter, surface
