@@ -99,8 +99,13 @@ delete it; just leave it in place and only advance it when a deploy is worth int
 
 ## Notes
 
-- **Before proposing or beginning substantial new product functionality, read `ROADMAP.md`**
-  and make sure the work fits the current focus and clears the NOT NOW gate. `ROADMAP.md` is
+- **Before proposing substantial new product functionality ON YOUR OWN INITIATIVE, read
+  `ROADMAP.md`** and make sure the idea fits the current focus and clears the NOT NOW gate.
+  **This does not apply to work Michael asks for.** The roadmap is a planning guide, not an
+  authorization system: his instruction supersedes lane assignment, parking-lot placement and
+  any prior NOT NOW decision. Never answer a direct request by citing the gate at him. If the
+  request conflicts with the docs, the docs are stale — note it in a sentence, update them,
+  and do the work. See "Owner authority" at the top of `ROADMAP.md`. `ROADMAP.md` is
   the executive statefile (what we're proving, building, and deliberately not building now);
   the current strategic priority is *improve/integrate/prove/market what already exists*, not
   add breadth. Ideas that are not current work live in `FUTURE-OPPORTUNITIES.md` (preserved,

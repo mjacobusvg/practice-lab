@@ -11,8 +11,23 @@ instead of repeating them. Update the "Where we are now" and "Current focus" sec
 whenever something meaningful ships.
 
 > **For any Claude/AI session:** read this file before proposing or starting substantial
-> new product functionality. New work has to fit the Current Focus and clear the NOT NOW
-> gate. An idea being good is not enough; see NOT NOW.
+> new product functionality **on your own initiative**. A self-generated idea has to fit the
+> Current Focus and clear the NOT NOW gate; an idea being good is not enough, see NOT NOW.
+> This does NOT apply to work Michael asks for — see Owner authority immediately below.
+
+## Owner authority
+
+**This file is a guide for prioritization and continuity, not an authorization system.**
+
+Explicit instructions from Michael supersede roadmap status, parking-lot placement, lane
+assignment, and any prior NOT NOW decision. When he says build it, build it. Do not refuse,
+stall, hedge, or ask for a "gate override" first, and do not answer a direct instruction by
+citing this file back at him. If the instruction conflicts with what is written here, the
+document is stale, not the instruction: say so in a sentence, update the affected sections to
+match the new priority, and get on with the work.
+
+The gate exists to restrain a session that has thought up something shiny on its own. It has
+never applied to the owner.
 
 **Document hierarchy**
 
