@@ -416,6 +416,8 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
           <span style="display:block;font-weight:400;font-size:.82rem;opacity:.85;margin-top:3px;line-height:1.4">Prep a follow-up or new evaluation with carry-forward context &mdash; or skip setup and just type, paste, record or upload below.</span></button>
         <button type="button" class="btn" style="margin:0;padding:11px 15px;text-align:left;flex:1 1 210px" onclick="tbpDocsFromNudge()">&#128196; Review outside records
           <span style="display:block;font-weight:400;font-size:.82rem;opacity:.85;margin-top:3px;line-height:1.4">Upload a PDF or document to summarize it, pull relevant history into prep, or create a chart-ready record summary.</span></button>
+        <button type="button" class="btn" style="margin:0;padding:11px 15px;text-align:left;flex:1 1 210px" onclick="tbpShowReason()">&#129504; Reason through this case
+          <span style="display:block;font-weight:400;font-size:.82rem;opacity:.85;margin-top:3px;line-height:1.4">What fits, what doesn't, what you may be missing, and what to clarify next &mdash; from what is already in this session.</span></button>
       </div>
       <div style="margin-top:10px;font-size:.85rem;line-height:1.5;color:var(--cream-dim)">Following up? Setup is where you paste last visit's HPI, assessment and meds, and that is what drives your carry-forward and today's checklist.
         <a href="#" onclick="tbpCollapseJobs();return false;" style="color:var(--cream-dim);margin-left:6px;text-decoration:underline">Collapse</a></div>
@@ -426,6 +428,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
       <span style="font-size:.82rem;color:var(--cream-dim);font-weight:600;letter-spacing:.02em">I want to</span>
       <button type="button" class="btn" style="margin:0;padding:7px 13px;font-size:.85rem" onclick="tbpShowSetup()">&#9881; Start or prep a visit</button>
       <button type="button" class="btn" style="margin:0;padding:7px 13px;font-size:.85rem" onclick="tbpDocsFromNudge()">&#128196; Review outside records</button>
+      <button type="button" class="btn" style="margin:0;padding:7px 13px;font-size:.85rem" onclick="tbpShowReason()">&#129504; Reason through this case</button>
     </div>
   </div>
   <div id="focus-sections" style="display:none"></div>
@@ -690,6 +693,32 @@ function tcoachSuggestTool(){
 </div>
 
 <!-- First-run onboarding: a short guided setup (working style + setup + template). -->
+<div class="modal-overlay" id="reason-modal" style="z-index:9640">
+  <div class="modal" style="max-width:820px">
+    <button class="modal-x" type="button" onclick="tbpHideReason()" aria-label="Close">&times;</button>
+    <h2 style="margin:0 0 4px">Reason through this case</h2>
+    <div class="hint" style="line-height:1.55;margin-bottom:13px">Reads what is already in this session &mdash; your working note, last visit's note if you pasted it, your prep, and any outside records you brought in. Nothing here goes into your note unless you put it there.</div>
+
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:11px">
+      <button type="button" class="btn rsn-starter" style="margin:0;padding:6px 12px;font-size:.82rem;font-weight:500">What am I missing?</button>
+      <button type="button" class="btn rsn-starter" style="margin:0;padding:6px 12px;font-size:.82rem;font-weight:500">Does the current diagnosis really fit?</button>
+      <button type="button" class="btn rsn-starter" style="margin:0;padding:6px 12px;font-size:.82rem;font-weight:500">What else could explain this?</button>
+      <button type="button" class="btn rsn-starter" style="margin:0;padding:6px 12px;font-size:.82rem;font-weight:500">What argues against my current formulation?</button>
+      <button type="button" class="btn rsn-starter" style="margin:0;padding:6px 12px;font-size:.82rem;font-weight:500">What should I clarify next?</button>
+      <button type="button" class="btn rsn-starter" style="margin:0;padding:6px 12px;font-size:.82rem;font-weight:500">What kind of medication problem does this look like?</button>
+      <button type="button" class="btn rsn-starter" style="margin:0;padding:6px 12px;font-size:.82rem;font-weight:500">What would make you change your mind?</button>
+    </div>
+
+    <textarea id="rsn-q" style="width:100%;min-height:70px" placeholder="Or ask anything about this case. E.g. 'She has OCD controlled on escitalopram but severe bruxism, and buspirone did not help. What would you think through next?'"></textarea>
+    <div style="margin-top:8px;display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+      <button type="button" class="btn" id="rsn-go">Think it through &rarr;</button>
+      <span class="hint" id="rsn-msg"></span>
+      <span class="hint" id="rsn-ctx" style="color:var(--cream-dim);margin-left:auto"></span>
+    </div>
+    <div id="rsn-out" style="margin-top:13px"></div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="docs-modal" style="z-index:9650">
   <div class="modal" style="max-width:720px">
     <button class="modal-x" type="button" onclick="tbpHideDocs()" aria-label="Close">&times;</button>
@@ -2037,6 +2066,148 @@ document.getElementById('up-choice-doc').addEventListener('click', function(){
 ['docs-modal','upload-choice'].forEach(function(id){
   var el = document.getElementById(id);
   if(el) el.addEventListener('click', function(e){ if(e.target === el) el.classList.remove('open'); });
+});
+
+
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// REASON THROUGH THIS CASE  (practice copy)
+//
+// One streamed call over the context the session already holds. No retrieval, no Archive, no
+// background job, no second pass — so it is the fastest and cheapest thing in the Scribe, and
+// nothing leaves the BAA-covered clinical path. clinical-proxy-stream caches system prompts
+// over ~4096 chars for an hour, so the reasoning method below is cheap to carry every time.
+//
+// Governing split (CLINICAL-OS-STRATEGY.md: clinical guidance must never ship as a naked LLM):
+// reason freely about clinical logic, stay conservative about externally verifiable prescribing
+// facts. Dose limits, interactions, labeling and guideline claims get flagged for verification,
+// never asserted. That is what the evidence layer is eventually for.
+// ══════════════════════════════════════════════════════════════════════════════════════════
+
+function reasonSystem(){
+  var s = "You are a psychiatric prescriber's clinical reasoning partner, thinking alongside them about a patient they are seeing. You are not writing a note and not documenting anything. You are the second opinion they would get from a trusted colleague who read the same material.\n\n";
+
+  s += "=== HOW TO THINK ===\n";
+  s += "- Use chronology and sequence, not symptom matching. Ask what changed, and when.\n";
+  s += "- Distinguish what is ESTABLISHED in the material from what you are INFERRING. Say which is which.\n";
+  s += "- Do not anchor on a diagnosis already in the record. An existing label is information, not a conclusion.\n";
+  s += "- Actively look for evidence that CONTRADICTS the leading formulation, and say so when you find it.\n";
+  s += "- Ask what new information would most change the plan, and lead with that.\n";
+  s += "- Before calling any medication a failure, separate the possibilities: efficacy, duration, timing, tolerability, adherence, interaction, access, or a mismatch between the treatment and the actual target.\n";
+  s += "- Treat dose ranges, screener scores and prior labels as information, not conclusions. Do not react to a number instead of the patient.\n";
+  s += "- Ask whether the diagnosis actually explains the functional pattern, not just the symptom list.\n";
+  s += "- When uncertainty remains, name it. Do not force a diagnosis to sound decisive.\n";
+  s += "- 'Not documented' is not 'not present', and neither is 'not assessed'.\n\n";
+
+  s += "=== MEDICATIONS: REASON FREELY, ASSERT FACTS CAREFULLY ===\n";
+  s += "You SHOULD reason about the shape of a medication problem and about strategic directions and their tradeoffs. For example: that a stimulant working but wearing off early looks like a duration problem rather than class failure; that an agent effective for the target but poorly tolerated raises preserve-and-manage versus switch; that the timing of a complaint relative to the last dose change matters.\n";
+  s += "You SHOULD NOT assert externally verifiable prescribing facts that are not established in the supplied material — specific dose limits, maximum doses, interaction claims, contraindications, renal or hepatic adjustments, pregnancy or lactation claims, FDA indication or age range, or 'guidelines recommend X'. If an option depends on such a detail, name the detail as something to verify rather than stating it as fact.\n";
+  s += "Never invent a prior trial, a dose, a response, a contraindication or a patient factor. If the material does not say it, it is not there.\n\n";
+
+  s += "=== PROVENANCE ===\n";
+  s += "Material may include outside records. Keep their claims attributed: 'the 2024 evaluation documented ...', not 'the patient has ...'. An absence in a record is not a patient denial. Something the patient said today is the patient's report; something a record documents is the record's.\n\n";
+
+  s += "=== HOW TO ANSWER ===\n";
+  s += "Answer the clinician's actual question first, in plain clinical language. Be concise and specific to THIS patient — no generic advice, no 'consider therapy and monitor symptoms' filler. You may disagree with the clinician, gently, in either direction.\n";
+  s += "Use these light headings, and OMIT any that has nothing real to say. Never pad to fill them:\n";
+  s += "My read\n";
+  s += "What gives me pause\n";
+  s += "What I'd clarify next\n";
+  s += "Include a 'Medication considerations' section ONLY when the clinician's question is about medication. Include a 'Worth verifying' section ONLY when you named a prescribing detail that needs checking.\n";
+  s += "Plain text. No Markdown, no bullets characters, no preamble, no closing summary. If the material is too thin to reason from, say exactly what you would need instead of guessing.";
+  return s;
+}
+
+// Everything the session legitimately holds. Assembled fresh each time; never stored.
+function tbpCaseContext(){
+  function val(id){ var e = document.getElementById(id); return e ? (e.value||'').trim() : ''; }
+  var parts = [], bits = [];
+
+  var visit = (typeof visitType !== 'undefined' && visitType)
+    ? (visitType === 'new_eval' ? 'New patient evaluation' : 'Follow-up visit') : 'Visit type not set';
+  parts.push('VISIT TYPE: ' + visit);
+
+  // The focus overlay and the inline box are the same note; take whichever has content.
+  var note = val('focus-note') || val('raw');
+  if(note){ parts.push("TODAY'S WORKING NOTE (what the clinician has captured so far):\n" + note); bits.push('working note'); }
+
+  var last = val('context');
+  if(last){ parts.push("LAST VISIT'S NOTE (pasted by the clinician):\n" + last); bits.push('last visit'); }
+
+  try {
+    if(typeof prepSnapshot !== 'undefined' && prepSnapshot){ parts.push('PRE-VISIT SNAPSHOT:\n' + prepSnapshot); bits.push('prep'); }
+    if(typeof prepChecklist !== 'undefined' && prepChecklist && prepChecklist.length){
+      parts.push("PREP CHECKLIST (what prep flagged to ask today):\n" + prepChecklist.join('\n'));
+    }
+  } catch(e){}
+
+  try {
+    var used = 0;
+    for(var i=0;i<tbpSources.length;i++){
+      var d = tbpSources[i];
+      if(!d.useForPrep || !d.text) continue;
+      used++;
+      parts.push('OUTSIDE RECORD ' + used + ' (' + d.name + '):\n' + d.text);
+    }
+    if(used) bits.push(used + ' outside record' + (used>1?'s':''));
+  } catch(e){}
+
+  return { text: parts.join('\n\n---\n\n'), have: bits };
+}
+
+function tbpShowReason(){
+  if(typeof tbpDemoBlock === 'function' && tbpDemoBlock()) return;
+  document.getElementById('reason-modal').classList.add('open');
+  var c = tbpCaseContext();
+  var el = document.getElementById('rsn-ctx');
+  if(el) el.textContent = c.have.length ? ('Reading: ' + c.have.join(', ')) : 'Nothing in this session yet';
+  var q = document.getElementById('rsn-q'); if(q){ try{ q.focus(); }catch(e){} }
+}
+function tbpHideReason(){ document.getElementById('reason-modal').classList.remove('open'); }
+
+async function tbpRunReason(question){
+  var out = document.getElementById('rsn-out');
+  var msg = document.getElementById('rsn-msg');
+  var go  = document.getElementById('rsn-go');
+  var c = tbpCaseContext();
+  if(!c.have.length){
+    out.innerHTML = '<div class="hint" style="color:var(--amber);line-height:1.5">There is nothing in this session to reason over yet. Type or paste into your working note, paste last visit\'s note in setup, or bring in an outside record first.</div>';
+    return;
+  }
+  if(go) go.disabled = true;
+  if(msg) msg.innerHTML = '<span class="spinner"></span>Thinking&hellip;';
+  out.innerHTML = '<div id="rsn-body" style="background:var(--navy);border:1px solid var(--rule);border-radius:7px;padding:13px 15px;white-space:pre-wrap;font-size:.9rem;line-height:1.62;color:var(--cream)"></div>';
+  var body = document.getElementById('rsn-body');
+  var acc = '';
+  try {
+    // NOTE: callAPI's onDelta is handed the ACCUMULATED text so far, not an increment.
+    acc = await callAPI(
+      reasonSystem(),
+      [{ role:'user', content: 'CASE MATERIAL AVAILABLE THIS SESSION:\n\n' + c.text
+          + '\n\n---\n\nTHE CLINICIAN ASKS: ' + question }],
+      2200,
+      function(partial){ body.textContent = partial; }   // text starts appearing in seconds
+    ) || '';
+    if(!acc.trim()) out.innerHTML = '<div class="hint" style="color:var(--amber)">Nothing came back. Try again.</div>';
+  } catch(err){
+    out.innerHTML = '<div class="hint" style="color:var(--red)">' + esc(err.message || err) + '</div>';
+  } finally {
+    if(go) go.disabled = false;
+    if(msg) msg.innerHTML = '';
+  }
+}
+
+document.getElementById('rsn-go').addEventListener('click', function(){
+  var q = (document.getElementById('rsn-q').value || '').trim();
+  if(!q){ document.getElementById('rsn-q').focus(); return; }
+  tbpRunReason(q);
+});
+document.getElementById('reason-modal').addEventListener('click', function(e){
+  if(e.target === this){ this.classList.remove('open'); return; }
+  var b = e.target && e.target.closest ? e.target.closest('button.rsn-starter') : null;
+  if(!b) return;
+  var q = (b.textContent || '').trim();
+  document.getElementById('rsn-q').value = q;
+  tbpRunReason(q);
 });
 
 document.getElementById('src-add-btn').addEventListener('click', function(){
