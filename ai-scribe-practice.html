@@ -2035,6 +2035,7 @@ async function tbpSrcRun(id, act){
     res = (res || '').trim();
     if(!res){ out.innerHTML = '<span class="hint" style="color:var(--amber)">No summary came back. Try again.</span>'; return; }
     if(act === 'read'){
+      d.readSummary = res;   // reused as the compact stand-in for this record in case reasoning
       out.innerHTML = '<div style="background:var(--navy);border:1px solid var(--rule);border-radius:7px;padding:11px 13px;white-space:pre-wrap;font-size:.88rem;line-height:1.55;color:var(--cream)">'
         + esc(res) + '</div>'
         + '<div class="hint" style="margin-top:6px;color:var(--cream-dim)">Read only. Nothing here has touched your note or your prep.</div>';
@@ -2101,7 +2102,7 @@ function reasonSystem(){
 
   s += "=== MEDICATIONS: REASON FREELY, ASSERT FACTS CAREFULLY ===\n";
   s += "You SHOULD reason about the shape of a medication problem and about strategic directions and their tradeoffs. For example: that a stimulant working but wearing off early looks like a duration problem rather than class failure; that an agent effective for the target but poorly tolerated raises preserve-and-manage versus switch; that the timing of a complaint relative to the last dose change matters.\n";
-  s += "REASON AT THE LEVEL OF STRATEGY AND DRUG CLASS. This is the useful altitude and you should work at it confidently. You may say things like: the antidepressant may simply not be optimized yet, and if it is being tolerated and the trial has not been pushed in dose or duration, optimizing the current agent is a common next step before abandoning it; that the alternative directions from here are switching within the class, switching across class, or augmenting; that among augmentation strategies some clinicians reach for an atypical antipsychotic while others use lithium, thyroid, or a second antidepressant with a different mechanism, and that these differ in monitoring burden and side-effect profile. Naming drug CLASSES and the common strategic sequences is expected, not a fact claim to hedge away from.\n";
+  s += "REASON AT THE LEVEL OF STRATEGY AND DRUG CLASS. This is the useful altitude and you should work at it confidently. You may say things like: the antidepressant may simply not be optimized yet, and if it is being tolerated and the trial has not been pushed in dose or duration, optimizing the current agent is a common next step before abandoning it; that the alternative directions from here are switching within the class, switching across class, or augmenting; and that the strategies available differ in monitoring burden and side-effect profile. Name the classes and sequences that fit THIS patient's actual treatment target and diagnosis — the right strategy set for OCD, bipolar depression, PTSD, ADHD or an anxiety disorder is not the same one, so derive it from the case rather than defaulting to a familiar list. (As an illustration of the altitude only, not a template to reuse: for an inadequately responsive antidepressant trial in unipolar depression, some clinicians augment with an atypical antipsychotic while others use lithium, thyroid, or a second antidepressant with a different mechanism.) Naming drug CLASSES and the common strategic sequences is expected, not a fact claim to hedge away from.\n";
   s += "FIRST ASK WHETHER THE CURRENT TRIAL WAS ADEQUATE. Before treating anything as a failed medication, consider whether it was actually given a real trial in dose and duration, and whether the patient was taking it. If the material does not document the dose or how long they have been on it, that is one of the highest-value things to clarify, not something to assume either way.\n";
   s += "ATTRIBUTE STRATEGY LANGUAGE HONESTLY. Prefer 'a common next step is', 'some clinicians would', 'the usual directions from here are' over 'you should' or 'the recommended treatment is'. You are laying out the reasonable directions and what distinguishes them, not issuing a plan.\n";
   s += "What you SHOULD NOT do is drop to the level of specifics you cannot verify. Do not assert externally verifiable prescribing facts that are not established in the supplied material — specific dose limits, maximum doses, interaction claims, contraindications, renal or hepatic adjustments, pregnancy or lactation claims, FDA indication or age range, or 'guidelines recommend X'. If an option depends on such a detail, name the detail as something to verify rather than stating it as fact.\n";
@@ -2130,12 +2131,34 @@ function tbpCaseContext(){
     ? (visitType === 'new_eval' ? 'New patient evaluation' : 'Follow-up visit') : 'Visit type not set';
   parts.push('VISIT TYPE: ' + visit);
 
-  // The focus overlay and the inline box are the same note; take whichever has content.
-  var note = val('focus-note') || val('raw');
-  if(note){ parts.push("TODAY'S WORKING NOTE (what the clinician has captured so far):\n" + note); bits.push('working note'); }
+  // Read the working note the way tcoachCurrentNote does. In sections mode the plain
+  // #focus-note is HIDDEN but not cleared, so a naive `focus-note || raw` reads a stale copy
+  // and reasons about a version the clinician can no longer see. syncRawFromSections keeps
+  // #raw current, so the visible panels are the source of truth when sections are up.
+  var note = '';
+  var fo = document.getElementById('focus-overlay');
+  var fn = document.getElementById('focus-note');
+  if(fo && fo.classList.contains('open') && fn && fn.style.display !== 'none' && (fn.value||'').trim()){
+    note = fn.value.trim();
+  } else {
+    var secs = [];
+    document.querySelectorAll('#focus-sections .wn-ta').forEach(function(t){ if((t.value||'').trim()) secs.push(t.value.trim()); });
+    note = secs.length ? secs.join('\n\n') : val('raw');
+  }
+  if(note){ parts.push("TODAY'S WORKING NOTE (what the clinician captured; rough, pre-draft):\n" + note); bits.push('working note'); }
 
-  var drafted = val('hpi-out');
-  if(drafted){ parts.push('DRAFTED NOTE (the HPI as drafted for this visit; the clinician may have edited it):\n' + drafted); bits.push('drafted note'); }
+  // The finished note is four outputs, not one — see copyFullNote(). Reasoning over only the
+  // HPI could not answer "does my assessment follow from this note?", which is the whole point
+  // of being able to do this after the visit.
+  var drafted = [];
+  var hpi = val('hpi-out');        if(hpi)     drafted.push('History of Present Illness:\n' + hpi);
+  var assess = val('assess-out');  if(assess)  drafted.push('Assessment:\n' + assess);
+  var thx = val('therapy-out');    if(thx)     drafted.push('Psychotherapy add-on:\n' + thx);
+  var plan = val('plan-out');      if(plan)    drafted.push('Plan:\n' + plan);
+  if(drafted.length){
+    parts.push('DRAFTED NOTE for this visit (the clinician may have edited it since drafting):\n\n' + drafted.join('\n\n'));
+    bits.push('drafted note');
+  }
 
   var last = val('context');
   if(last){ parts.push("LAST VISIT'S NOTE (pasted by the clinician):\n" + last); bits.push('last visit'); }
@@ -2147,13 +2170,25 @@ function tbpCaseContext(){
     }
   } catch(e){}
 
+  // Outside records: prefer the summary already produced for this document over its full text.
+  // Resending a 35-page neuropsych report on every question is exactly the token sink this
+  // feature is supposed to avoid. Where no summary exists yet, send a bounded slice and SAY it
+  // is bounded, so the model never treats a truncated record as the whole record.
   try {
-    var used = 0;
+    var used = 0, RSN_RAW_CAP = 14000;
     for(var i=0;i<tbpSources.length;i++){
       var d = tbpSources[i];
       if(!d.useForPrep || !d.text) continue;
       used++;
-      parts.push('OUTSIDE RECORD ' + used + ' (' + d.name + '):\n' + d.text);
+      if(d.readSummary){
+        parts.push('OUTSIDE RECORD ' + used + ' (' + d.name + ') — SUMMARY of the document, not its full text:\n' + d.readSummary);
+      } else if(d.text.length > RSN_RAW_CAP){
+        parts.push('OUTSIDE RECORD ' + used + ' (' + d.name + ') — PARTIAL: the first '
+          + RSN_RAW_CAP + ' of ' + d.text.length + ' characters. Later pages are NOT included, so do not treat an absence here as an absence in the record:\n'
+          + d.text.slice(0, RSN_RAW_CAP));
+      } else {
+        parts.push('OUTSIDE RECORD ' + used + ' (' + d.name + '):\n' + d.text);
+      }
     }
     if(used) bits.push(used + ' outside record' + (used>1?'s':''));
   } catch(e){}
