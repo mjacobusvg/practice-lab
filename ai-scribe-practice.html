@@ -389,7 +389,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
       <option value="__suggest__">Suggest a tool&hellip;</option>
     </select>
     <button class="btn-ghost" id="focus-record" type="button" style="margin-top:0;border-color:var(--teal);color:var(--teal)" onclick="openAmbientSetup()">&#9679; Record</button>
-    <button class="btn-ghost" id="focus-upload-transcript-btn" type="button" style="margin-top:0;border-color:var(--teal);color:var(--teal)" title="Upload a transcript recorded elsewhere (e.g. Krisp)">&#8593; Upload</button>
+    <button class="btn-ghost" id="focus-upload-transcript-btn" type="button" style="margin-top:0;border-color:var(--teal);color:var(--teal)" title="Upload a visit transcript or a clinical document">&#8593; Upload</button>
     <button class="btn" id="focus-draft">Draft final note &rarr;</button>
   </div>
   <!-- Always-visible recording/transcription status. The modal's #record-status is hidden once
@@ -407,8 +407,17 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
   <!-- Empty-note nudge: the last-visit paste box now lives inside "Set up this visit", so a clinician
        who starts typing in the note can miss it. Shown only when the note is empty and not yet set up. -->
   <div id="focus-setup-nudge" style="display:none;margin:10px 0 6px;padding:12px 14px;border:1px solid var(--teal);border-left:3px solid var(--teal);background:var(--teal-glow);border-radius:9px;font-size:.9rem;line-height:1.5;color:var(--cream)">
-    <strong>Want prep and carry-forward context? Set up this visit first.</strong> Following up? Open it and paste last visit's HPI, assessment, and meds. That carries the patient forward and drives your diagnoses, your assessment, and today's questions. New patient? It loads your template. Setup is not required &mdash; you can just type, paste, record or upload below and draft your note.
-    <div style="margin-top:9px"><button type="button" class="btn" style="margin:0;padding:8px 16px" onclick="tbpShowSetup()">&#9881; Set up this visit</button> <a href="#" onclick="tbpDismissSetupNudge();return false;" style="color:var(--cream-dim);margin-left:10px;text-decoration:none;font-size:.85rem">Not now</a></div>
+    <strong style="font-size:.98rem">What do you want to do?</strong>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:11px">
+      <button type="button" class="btn" style="margin:0;padding:11px 15px;text-align:left;flex:1 1 210px" onclick="tbpShowSetup()">&#9881; Set up a visit
+        <span style="display:block;font-weight:400;font-size:.82rem;opacity:.85;margin-top:3px;line-height:1.4">Prep a follow-up or new evaluation with carry-forward context.</span></button>
+      <button type="button" class="btn" style="margin:0;padding:11px 15px;text-align:left;flex:1 1 210px" onclick="tbpStartQuickNote()">&#9998; Start a quick note
+        <span style="display:block;font-weight:400;font-size:.82rem;opacity:.85;margin-top:3px;line-height:1.4">Type, paste, record or upload a transcript and draft, with no setup.</span></button>
+      <button type="button" class="btn" style="margin:0;padding:11px 15px;text-align:left;flex:1 1 210px" onclick="tbpDocsFromNudge()">&#128196; Read a clinical document
+        <span style="display:block;font-weight:400;font-size:.82rem;opacity:.85;margin-top:3px;line-height:1.4">Upload a PDF or DOCX to summarize it, use it for prep, or add a record summary to your note.</span></button>
+    </div>
+    <div style="margin-top:10px;font-size:.85rem;line-height:1.5;color:var(--cream-dim)">Not sure? Set up the visit if you want prep and carry-forward context &mdash; following up, that is where you paste last visit's HPI, assessment and meds. Setup is optional; you can always just start typing, recording or uploading.
+      <a href="#" onclick="tbpDismissSetupNudge();return false;" style="color:var(--cream-dim);margin-left:6px;text-decoration:underline">Hide this</a></div>
   </div>
   <div id="focus-sections" style="display:none"></div>
   <textarea id="focus-note" placeholder="This is your working note. Click 'Set up this visit' above to carry last visit forward and build your checklist — or just type, paste, upload a transcript, or record right here, then Draft final note."></textarea>
@@ -1900,7 +1909,7 @@ function tbpRenderSources(){
       h += '<div style="margin-top:9px;display:flex;gap:7px;flex-wrap:wrap">'
         +   '<button type="button" class="btn src-act" data-act="read" data-id="'+d.id+'" style="font-size:.8rem;padding:5px 11px">Summarize</button>'
         +   '<button type="button" class="btn src-act" data-act="prep" data-id="'+d.id+'" style="font-size:.8rem;padding:5px 11px">'+(d.useForPrep ? 'Not for prep' : 'Use for prep')+'</button>'
-        +   '<button type="button" class="btn src-act" data-act="note" data-id="'+d.id+'" style="font-size:.8rem;padding:5px 11px">Summary for the note</button>'
+        +   '<button type="button" class="btn src-act" data-act="note" data-id="'+d.id+'" style="font-size:.8rem;padding:5px 11px">Add record summary to note</button>'
         +   '<button type="button" class="btn src-act" data-act="remove" data-id="'+d.id+'" style="font-size:.8rem;padding:5px 11px">Remove</button>'
         + '</div>'
         + '<div class="src-out" id="src-out-'+d.id+'" style="margin-top:10px"></div>';
@@ -2525,6 +2534,18 @@ function tbpUpdateSetupNudge(){
   var touring = (window.__tbpScribeTourActive === true);   // the walkthrough drives an empty note; don't clutter it
   var dismissed = (window.__tbpSetupNudgeDismissed === true);
   n.style.display = (open && empty && plain && !pastedLast && !dismissed && !demo && !touring) ? '' : 'none';
+}
+// Landing chooser: get out of the way and put the cursor in the note.
+function tbpStartQuickNote(){
+  tbpDismissSetupNudge();
+  var n = document.getElementById('focus-note');
+  if(n){ try{ n.focus(); }catch(e){} }
+}
+// Straight into the reader. Someone who already knows they have a document to read
+// should not be asked "what are you uploading?" first — they just answered that.
+function tbpDocsFromNudge(){
+  if(typeof tbpDemoBlock === 'function' && tbpDemoBlock()) return;
+  tbpShowDocs();
 }
 function tbpDismissSetupNudge(){ window.__tbpSetupNudgeDismissed = true; var n = document.getElementById('focus-setup-nudge'); if(n) n.style.display='none'; }
 (function(){ var fn = document.getElementById('focus-note'); if(fn) fn.addEventListener('input', function(){ try{ tbpUpdateSetupNudge(); }catch(e){} }); })();
