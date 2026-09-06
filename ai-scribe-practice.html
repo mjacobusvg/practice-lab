@@ -1965,6 +1965,34 @@ function tbpRenderSources(){
 // and by the carry-forward-only repair prompt, so a retry is held to the same standard as a
 // first pass. One definition, because two drifting copies is how the second product silently
 // becomes a different, worse thing.
+// The one absolute constraint, shared by the review prompt and the carry-forward repair prompt.
+// It sits at the top of both: three test cases showed that when the model recognises a
+// high-salience interaction, a rule buried mid-prompt reads as a preference and it explains
+// anyway. Its own function because the carry-forward is what becomes permanent, and it was
+// previously built with no prescribing boundary whatsoever.
+function docPrescribingBoundary(){
+  var s = "=== THE ONE ABSOLUTE CONSTRAINT: YOU MAY IDENTIFY, YOU MAY NOT SUPPLY ===\n";
+  s += "You may identify a medication combination, a dose, a level or a change in circumstance as something that warrants verification. You may NOT supply the pharmacology from your own knowledge. Everything else in this prompt is judgement. This is not.\n\n";
+
+  s += "If the source does not itself state the mechanism, the metabolic pathway, the direction of an effect, its magnitude, a therapeutic range, a target level, a dose implication, or an expected clinical consequence, then you do not add any of them. Not as a fact, not as a possibility, not as an open question, not as a reason for monitoring, and not in a sentence that begins 'this is why it matters'.\n";
+  s += "This holds however obvious the pharmacology is to you, and however clinically important it feels. A combination being genuinely high-risk is a reason to flag it for verification, never a reason to explain it. The clinician reading this has a drug reference and a licence; what they need from you is to notice, not to teach.\n\n";
+
+  s += "NEVER LABEL A DOSE OR A NUMERIC LEVEL. Not therapeutic, subtherapeutic, supratherapeutic, low, high, adequate, inadequate, submaximal, suboptimal, above target or below target — not unless the source itself characterises it that way. 'Potentially submaximal' and 'subtherapeutic-appearing' are the same claim wearing a hedge, and 'may not reflect a stable therapeutic endpoint' is the same claim wearing a clause. Report the number, the date, and what the record does and does not say about it.\n";
+  s += "Do NOT infer whether a dose or level is adequate from the patient's symptoms. Persistent symptoms alongside a given dose is two documented facts, not evidence about the dose.\n\n";
+
+  s += "BAD: 'Fluvoxamine inhibits clozapine metabolism while smoking induces it, creating opposing effects on exposure, so cessation could substantially raise levels.'\n";
+  s += "GOOD: 'Clozapine, fluvoxamine and heavy tobacco use were simultaneously documented at discharge, with a stated intention to quit smoking. The source does not address the clinical significance of this combination, does not document a clozapine level or target, and does not describe monitoring beyond ANC surveillance. Interaction and monitoring implications should be independently verified before any medication change.'\n\n";
+  s += "BAD: 'Fluvoxamine was at a potentially submaximal dose at discharge.'\n";
+  s += "GOOD: 'Fluvoxamine 100 mg nightly had been started during the admission; the record does not establish the intended long-term dose.'\n\n";
+  s += "BAD: 'Lithium level 0.4 is subtherapeutic, and concurrent HCTZ may be increasing lithium exposure.'\n";
+  s += "GOOD: 'Lithium level was 0.4 mEq/L on two draws four months apart. The record does not state the prescriber's target level or the rationale for maintaining the current dose. HCTZ and near-daily ibuprofen were concurrently documented; the source does not address their relevance to lithium management, which should be independently verified.'\n\n";
+
+  s += "Notice what the good versions keep: every fact the clinician needs to act, and the instruction to verify. What they drop is the pharmacology lesson, which is the part you are most likely to be confidently wrong about and the part they did not ask you for.\n\n";
+
+  s += "WHEN AN INDICATION IS UNDOCUMENTED, say so and stop. 'Benztropine was prescribed as needed at discharge; the indication is not documented.' Do not generate the possible reasons.\n\n";
+  return s;
+}
+
 function docCarryRules(){
   var s = "";
   s += "THE CARRY-FORWARD IS NOT A MINI RECORD REVIEW, AND IT IS NOT A DEFENCE OF THE SOURCE'S DIAGNOSES. It is what a clinician should still know years from now, once this document is gone.\n\n";
@@ -2005,7 +2033,8 @@ function docCarryRules(){
 // rather than the original document: the review is already the distilled reading, it is far
 // shorter, and re-reading the raw record would risk a second, differently-reasoned pass.
 function docCarryOnlySystem(){
-  var s = "A clinician's review of an outside clinical record has already been written. Your only job is to produce the durable carry-forward summary from it.\n\n";
+  var s = docPrescribingBoundary();
+  s += "A clinician's review of an outside clinical record has already been written. Your only job is to produce the durable carry-forward summary from it.\n\n";
   s += "Produce NOTHING else. No preamble, no heading, no closing comment, no Markdown.\n\n";
   s += "The REVIEW answered: what do I need to understand about this source today?\n";
   s += "The CARRY-FORWARD answers: what from this source will a clinician still need several visits from now, once the document itself is gone?\n\n";
@@ -2018,7 +2047,8 @@ function docCarryOnlySystem(){
 }
 
 function docReviewSystem(){
-  var s = "You are reviewing an outside clinical record for a psychiatric clinician who is about to see, or has just seen, this patient.\n\n";
+  var s = docPrescribingBoundary();
+  s += "You are reviewing an outside clinical record for a psychiatric clinician who is about to see, or has just seen, this patient.\n\n";
   s += "Your job is NOT to summarize or reproduce the document. It is to work out what a clinician needs to understand from this record now, and what is important enough to preserve for years.\n\n";
 
   s += "BEFORE YOU WRITE: identify the five to ten findings that most change clinical understanding of this patient, and build the review around THOSE. Do not organize it around the order information appeared in the source.\n\n";
@@ -2078,16 +2108,8 @@ function docReviewSystem(){
   s += "- Do NOT make durability judgements inside the review. Whether something is 'a durable finding' is the carry-forward's question, decided later under its own rules.\n";
   s += "- Prefer describing behaviour over ascribing motive. 'Expressed ambivalence about a regular schedule because nighttime was experienced as productive' is reporting; calling the pattern volitional is a judgement the record does not license.\n\n";
 
-  s += "=== EXTERNALLY VERIFIABLE PRESCRIBING FACTS ===\n";
-  s += "The same split that governs clinical reasoning elsewhere in this tool applies here. Reason freely about clinical logic; stay conservative about facts a reference book would settle.\n";
-  s += "Report doses, levels, durations and regimens exactly as the record states them. Do NOT assert therapeutic ranges, target levels, maximum doses, titration schedules, equivalencies, drug interactions, labeled indications, or what guidelines recommend — not even when the arithmetic looks obvious, and not as an aside.\n";
-  s += "If a documented dose or level appears low, high or unusual relative to the documented response, say what the record documents and that the record does not state the prescriber's target or rationale. Name it as something the clinician may want to verify. Do not supply the number yourself.\n";
-  s += "NEVER LABEL A NUMERIC DRUG LEVEL. Not therapeutic, subtherapeutic, supratherapeutic, low, high, adequate, inadequate, above target or below target — not unless the source itself characterises it that way. Report the number, the dates it was drawn, and what the record does and does not say about it. The adjective is the therapeutic-range claim wearing a different coat, and 'subtherapeutic-appearing' or 'apparently low' is the same claim hedged.\n";
-  s += "Do NOT infer whether a dose or a level is adequate from the patient's symptoms. Persistent symptoms alongside a given dose is two documented facts; treating it as evidence that the dose is insufficient is a conclusion the record does not support and a reference book would not settle either.\n";
-  s += "When two agents are co-prescribed, you may note that they are co-prescribed and that any interaction should be checked against a drug reference. Do NOT state that an interaction exists, its mechanism, its direction, its magnitude, or what to do about it. This includes framing it as an open question: 'whether the co-prescribed agents are affecting drug exposure' still asserts that exposure is the axis and that these agents act on it.\n";
-  s += "BAD: 'Lithium level 0.4 is subtherapeutic, and concurrent HCTZ may be increasing lithium exposure.'\n";
-  s += "GOOD: 'Lithium level was 0.4 mEq/L on two draws four months apart. The record does not state the prescriber's target level or the rationale for maintaining the current dose. HCTZ and near-daily ibuprofen were concurrently documented; the source does not address their relevance to lithium management, which should be independently verified.'\n";
-  s += "This is not timidity. These are the claims that are externally checkable and therefore the ones where being wrong is least forgivable, and the record in front of you is not the source that settles them.\n\n";
+  s += "=== A REMINDER, BECAUSE THIS IS WHERE IT SLIPS ===\n";
+  s += "You are now deep enough into the record to have formed opinions. Re-read the absolute constraint at the top of this prompt before you write about any medication, dose, level or combination. Report doses, levels, durations and regimens exactly as the record states them. Identify what warrants verification. Supply no pharmacology.\n\n";
 
   s += "=== KNOWLEDGE YOU BRING VERSUS CONTENT YOU FOUND ===\n";
   s += "You may apply diagnostic criteria and general clinical knowledge the source never mentions — noticing that a reported episode duration falls short of a criterion is exactly the kind of thing a clinician wants caught. But frame it visibly as YOUR reading, not as something the record established, and do not let it become a verdict on the outside clinician's work.\n";
@@ -2108,6 +2130,7 @@ function docReviewSystem(){
 
   s += "=== SELF-AUDIT BEFORE YOU FINISH ===\n";
   s += "Read back every interpretive sentence you wrote and classify it: documented by the source, a strongly supported inference, or merely a plausible hypothesis. Rewrite any plausible hypothesis that is currently stated as fact. This pass matters more than adding anything further.\n";
+  s += "Then run one mechanical sweep: find every sentence that mentions a medication, a dose, a level or a combination, and ask whether each pharmacological claim in it came from the source or from you. Delete every one that came from you, keeping the fact and the instruction to verify. Do this even where the pharmacology is elementary and you are certain of it — especially there, because that is where it has slipped every time.\n";
   s += "Then read it again for one specific move: a real pattern followed by an invented reason for it. Wherever you named a discrepancy, a repeated outcome, a weak domain or a disagreement between informants and then supplied a cause, check whether the source established that cause. If it did not, delete the explanation and keep the pattern. That single edit fixes most of what goes wrong here.\n\n";
 
   s += "=== WHAT SYNTHESIS LOOKS LIKE ===\n";
