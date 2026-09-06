@@ -1062,6 +1062,149 @@ Any copy promising the Scribe works from "history, questionnaires and collateral
 gathered" is describing route 1 or route 2. Until one of them ships, that claim is not true
 yet, and the honest version is prep plus final synthesis.
 
+## 34. Discern: reasoning alongside the encounter
+
+**Status: named, designed, NOT built.** A first version of case reasoning exists in the practice
+copy (`ai-scribe-practice.html`) as a modal with starter questions and free text. Discern is the
+larger thing that grows out of it. Nothing here is live.
+
+### What it is, and the line it does not cross
+
+Discern is a reasoning workspace beside the Scribe. Not an AI that diagnoses the patient or says
+what to prescribe. Something to ask "what am I missing?", "what else could explain this?", "what
+would I need to establish before calling this hypomania?", "give me four questions that would
+clarify the OCD picture".
+
+> **The clinician owns the formulation and the decision. Discern's job is to help interrogate the
+> reasoning that gets there.**
+
+That distinction is the product, not a disclaimer. It is what separates a deliberation aid from an
+autonomous clinical actor, and it should be visible in the behaviour rather than asserted in
+small print.
+
+### Naming discipline
+
+Words imply agency. Avoid **guide, copilot, advisor, consultant, recommendation engine, second
+opinion** — each subtly puts the system in the directive seat. Prefer **reasoning support,
+think through the case, explore competing explanations, identify what may be missing, generate
+questions to clarify, challenge the formulation, surface considerations before a decision**.
+
+"Discern" works precisely because the verb is about distinguishing carefully, not instructing.
+
+This applies to the ADHD work too: **"ADHD Evaluation Guide" should become "ADHD Evaluation
+Framework."** A framework offers a structure for reasoning; a guide implies it knows the path.
+
+### The three layers, and the boundary that matters
+
+The earlier rule — "Discern never touches the note" — was too blunt. If a clinician asks what
+differentials to consider and adopts the answer, that reasoning belongs in the Assessment. What
+must never happen is a brainstormed possibility becoming chart content because it was mentioned.
+
+| layer | what it is | persistence |
+|---|---|---|
+| **Exploratory chat** | anything can be considered here: "could this be borderline?" | temporary; never documentation |
+| **Adopted reasoning** | the clinician explicitly endorses a takeaway | held as case-reasoning state for this encounter |
+| **The note** | Draft uses the adopted reasoning | durable, ordinary note content |
+
+> **Discern can influence the note, but it must never silently convert exploration into
+> documentation.**
+
+The mechanism is a light, explicit move: a candidate takeaway under a useful answer with
+**Keep for assessment** / **Keep as a question** / **Don't carry forward**. One click, not a save
+dialog. The conversation itself stays temporary — that is a feature, not a limitation. A clinician
+needs somewhere to test a hypothesis without every exploratory thought becoming permanent PHI.
+
+Not every answer is the same kind of thing, and Discern should not treat them alike:
+
+- **Action-only** (interview questions, a therapy technique, a patient explanation, a quick
+  reminder of a criterion) — used in the moment, normally persists nowhere.
+- **Clinical reasoning** (differential formulation, competing explanations, interpretation of
+  conflicting evidence, rationale for diagnosing or deferring, risk formulation, why a finding is
+  weighted cautiously) — a candidate for adoption.
+- **Documentation output** (assessment language, plan language, patient instructions, referral
+  language) — the clinician asked for chart text; offer to place it.
+
+Some prompts signal documentation intent on their face ("summarise my reasoning so far", "what
+should go in my assessment", "help me explain why I am deferring the ADHD diagnosis") and can
+offer **Use in assessment** directly. "What else could this be?" cannot.
+
+### Ambient changes the interaction, not just the interface
+
+An ambient clinician is with the patient, not at the keyboard. Typing a question mid-visit is not
+the interaction. **Ambient needs one-tap starters** — what am I missing, challenge my formulation,
+what should I clarify next — rather than a chat box.
+
+And §32's constraint still binds: ambient transcription runs **after** Stop, so mid-visit there is
+no transcript in the browser to reason over. Mid-visit Discern in ambient mode reasons over prep,
+outside-record reviews and anything typed — not over what was just said. Say that plainly in the
+UI rather than letting a clinician assume it heard the conversation. Discern is at full strength
+before the visit and after the draft; in the middle of an ambient visit it is partially blind.
+
+Which points at a general rule worth holding across the product: **show what the reasoning layer
+can currently see.** A line reading "using: prep, working note, 1 outside record review — not
+available: the live recording" answers the question every clinician will otherwise ask.
+
+### Cost and latency architecture
+
+The rule: **on demand, one call, smallest useful context.** Never an ambient loop re-analysing the
+encounter, which would be both expensive and much riskier.
+
+Four things keep it cheap, three already implemented in the practice copy:
+
+1. **One reasoning call per question**, streamed, invoked only when the clinician asks.
+2. **Reuse work already done.** The record review — not the 35-page report — is what goes into the
+   reasoning context. Prep has already distilled the prior note; use prep, not the note again.
+3. **The reasoning method rides a cached system prompt.** `clinical-proxy-stream` caches system
+   prompts over ~4096 characters for an hour at 0.1x on reads, so the expensive part is paid about
+   once an hour rather than once a question.
+4. **Retrieval only when the question needs it.** "What am I missing for OCD?" is one call.
+   "What is the evidence for memantine augmentation in OCD?" is the one that earns retrieval.
+
+Do not guess at the bill. Every AI surface already logs `est_cost_usd` with account email, tier
+and model to `public.tool_usage` — run it on real use for a week and price it from data before
+deciding whether a heavier "deep review" needs an allowance.
+
+**Latency target:** first useful text within a few seconds; an ordinary answer complete in roughly
+20-30 seconds. Freed publishes "typically under 30 seconds" for its chat, so that is the bar the
+category has set. Anything approaching the Archive's current 60-120 seconds is unusable with a
+patient present — see §32 on why that pipeline is slow and why the Scribe path must stream.
+
+### The competitive picture, stated honestly
+
+**Do not claim nobody else is doing this.** As of Sep 2026, Freed 2.0 ships a persistent AI chat
+panel with patient context, uploaded-document handling and cited clinical evidence; Berries has a
+Session Assistant that stays open during the visit and answers contextual questions, suggests
+interventions, follow-up questions and case conceptualisation. The category is moving here. Any
+marketing claim of novelty for "a chat beside the note" is false and would be caught.
+
+That validates the direction rather than undermining it. The differentiation is not a feature
+checkbox — a competitor adds a chat button in a week. It is what happens when every capability
+shares one psychiatric model of the encounter: outside-record synthesis that understands what
+changes interpretation, prep that establishes what is known, reasoning that separates evidence
+from inference, provenance that survives into the note, and longitudinal memory that carries the
+meaning forward. That is a clinical operating model, and it is considerably harder to copy.
+
+Worth borrowing from what already exists: the persistent side panel (two products landed on it
+independently, which is evidence); a visible indicator of what the assistant can currently see;
+conversing about an uploaded document after it has been reviewed rather than re-reading it; one
+chat serving many jobs through suggested starters instead of accumulating a tool per job; and
+PMHScribe's prior-auth principle generalised — **use the clinical context to produce the artifact
+this recipient actually needs**, rather than dumping the chart (referral summary, patient
+instructions, accommodation letter, handoff, consultation summary).
+
+Worth **not** borrowing: Freed's chat can update the note when it reads a message as an editing
+instruction. That is precisely the boundary above, and we should be on the other side of it.
+
+### What would make this good rather than impressive
+
+The riskiest failure is not philosophical objection. It is Discern stating a verifiable
+prescribing fact confidently and wrongly — a maximum dose, an interaction, an indication — and a
+clinician acting on it. §12-15's rule holds: clinical guidance never ships as a naked LLM. Reason
+at the level of strategy and drug class; name the specifics that need verification rather than
+asserting them; and build the evidence layer before going further.
+
+---
+
 ## 33. This document is intentionally incomplete
 
 This is a starting point.

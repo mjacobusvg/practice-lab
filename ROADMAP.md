@@ -67,6 +67,34 @@ with a free 2-week trial. Members + contacts in Supabase; email broadcasts via
 We have enough features. The problem is adoption, integration, proof of habitual use, and
 marketing what already exists. Stop expanding breadth.
 
+**In the practice copy, not live (Sep 2026).** `ai-scribe-practice.html` +
+`ai-scribe-practice-workspace.html` + `note-engine-practice.js`, reachable at `/practice`, carry
+work that has NOT been ported to the live Scribe. Porting is a deliberate step and not a file
+copy: the live files carry the build-tag lockstep rules the practice copy deliberately opts out
+of. What is there:
+
+- **Outside records.** Upload a PDF/DOCX/TXT/RTF, get a clinical review of it (not a summary —
+  see `CLINICAL-OS-STRATEGY.md` §32 on why that distinction is the whole feature), optionally let
+  it inform new-eval prep, optionally insert a chart-ready record summary onto the existing
+  `Historical Note:` carry-forward rail. Raw file and extracted text stay in memory only.
+- **Reason through this case.** One streamed call over what the session already holds, available
+  before, during and after the visit. No retrieval, no Archive, no background job.
+- **Provenance in the shared prompts.** Outside-record claims stay attributed in `draftSystem`
+  and `verifySystem`, not only in the document feature.
+- **Landing chooser.** The Scribe's jobs are visible on the working-note screen and collapse to a
+  compact strip rather than disappearing.
+
+Before any member beta: run the case battery against it (inadequate trial, duration vs failure,
+tolerability, missing information, diagnostic anchoring, contradictory outside record, and a
+direct attempt to make it assert a dose or interaction), then port.
+
+**Next: Discern** (`CLINICAL-OS-STRATEGY.md` §34) — the reasoning workspace the practice-copy
+feature grows into, including the exploratory / adopted / documented boundary, ambient one-tap
+starters, and the cost and latency architecture. Then the ADHD Evaluation **Framework** (renamed
+from Guide; a framework structures reasoning, a guide implies it knows the path), which needed the
+record and longitudinal-context layer underneath it first. A faster Scribe-side Ask the Archive
+sits alongside, not above, those.
+
 **Shipped recently:**
 - **Note-as-memory bridge** — follow-up drafts carry durable *dated* context forward (med
   trajectory, labs/monitoring with dates, dated risk history, quantified progress), and

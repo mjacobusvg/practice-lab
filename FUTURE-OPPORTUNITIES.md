@@ -65,7 +65,9 @@ TBP-original tools feeding one evidence map:
    branching on whether the informant knew the patient in childhood, adulthood, or both.
    Asks what they observed ("did someone have to remind them about assignments,
    belongings, appointments"), not whether a criterion is met.
-3. **Adult ADHD Clinical Interview Guide** (in the Scribe) — semi-structured and dynamic,
+3. **Adult ADHD Clinical Interview Framework** (in the Scribe; "guide" was the
+   earlier name and implies the tool knows the path, see `CLINICAL-OS-STRATEGY.md` §34 on
+   naming and agency) — semi-structured and dynamic,
    organized around the symptom constructs plus onset, settings, impairment, chronology,
    differential, and diagnostic uncertainty.
 
@@ -125,6 +127,33 @@ history reasonably establishes the construct, not whether every checklist item w
   on discrete reasoning checkpoints rather than a live stream (ambient transcription runs after
   Stop, not during), and the discipline that the previsit packet must not become a fourteen-page
   form. Read both before starting: neither half is buildable on its own.
+
+---
+
+### Fast Ask the Archive inside the Scribe
+
+The standalone Archive is a research experience: it shows what it found, which posts it came from,
+related templates. In a visit the job is different — answer first, sources on request.
+
+**Why the existing pipeline cannot simply be embedded** (measured Sep 2026, `inngest-serve.mjs`):
+it makes three sequential model calls — Haiku query expansion, a Sonnet synthesis capped at 4000
+tokens, and a third Haiku call whose only job is writing descriptions for the source list. The
+synthesis does not stream, and the whole thing runs as a background Inngest job the browser polls,
+so the answer can only ever arrive all at once. That is the 60-120 seconds.
+
+The Scribe version should be: one retrieval of a small number of relevant chunks, one synthesis
+call streamed through the Scribe's existing `callAPI` path, sources carried free from the
+retrieval rows (title, url, author and space are already columns) behind a "show sources" action.
+No third call.
+
+- **Prerequisite** — note the archive corpus lives in Supabase with OpenAI embeddings, both
+  deliberately off the PHI path (`BAA-AND-PHI-ROUTING.md`). The synthesis can see the patient on
+  the BAA-covered clinical path; the *search query* cannot carry PHI. In practice that is not a
+  scrubbing exercise — the archive is searched by clinical topic, which contains no PHI by nature
+  — but the boundary must be real, not assumed from the query "sounding clinical".
+- **Where it sits** — subordinate to Discern (§34), not a peer. Reasoning answers from the case;
+  the Archive is invoked when the question actually needs retrieved knowledge.
+- **Status** — strategic option, not active roadmap.
 
 ---
 

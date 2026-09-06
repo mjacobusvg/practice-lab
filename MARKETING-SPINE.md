@@ -146,3 +146,30 @@ And it does not just hand you a code. It shows you WHY. So when you are staring 
 
 **Prepare for the visit. Document the care. Audit the chart. Understand the code.**
 That is Think Beyond Practice.
+
+---
+
+## Talking about reasoning features (Discern, case reasoning, record review)
+
+Two hard rules, both about accuracy rather than modesty.
+
+**Never claim nobody else is doing this.** As of Sep 2026 Freed ships a persistent AI chat panel
+with patient context and uploaded-document handling, and Berries has an in-session assistant that
+answers contextual questions and suggests interventions and case conceptualisation. "The only
+scribe that reasons" is false and checkable. The honest and stronger claim is about the whole
+workflow sharing one psychiatric model of the encounter, not about owning a feature.
+
+**Never describe it as making clinical decisions.** Avoid: AI diagnoses with you, AI treatment
+recommendations, AI second opinion, your AI psychiatrist, clinical decision maker, copilot, guide,
+advisor. Use: reasoning partner, think through the case, what am I missing, explore competing
+explanations, challenge the formulation, surface considerations before a decision. The clinician
+owns the formulation; the tool helps interrogate the reasoning that gets there. See
+`CLINICAL-OS-STRATEGY.md` §34.
+
+Address the boundary directly rather than avoiding it — members will think of it themselves, and
+naming it first reads as having thought about it rather than as defensiveness.
+
+One differentiator is true and worth using: members watch this get built from real cases and
+influence it. "I ran it on an actual neuropsych evaluation, it gave me everything and told me
+nothing, then I noticed the patient was tested on a stimulant and realised the tool had to
+understand what changes interpretation" is a better story than any feature list.
