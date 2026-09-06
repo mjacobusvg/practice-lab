@@ -123,6 +123,10 @@
   // Show an upgrade screen instead of redirecting — a redirect would loop, since
   // the platform would just re-mint the same forum token and send them back.
   function renderUpgrade(toolName) {
+    function wireSwitch() {
+      var a = document.getElementById('tbp-upgrade-switch');
+      if (a) a.addEventListener('click', function (e) { e.preventDefault(); switchAccount(); });
+    }
     function paint() {
       document.body.style.overflow = 'hidden';
       document.body.classList.add('tbp-gate-active');
@@ -137,12 +141,21 @@
           '<h1>', toolName, '</h1>',
           '<p class="gate-sub">This tool is part of the $119/month Full plan.<br>Your current plan doesn\'t include it.</p>',
           '<a class="gate-btn" style="text-decoration:none" href="', PLATFORM_URL, '?plan=full_monthly_119">Upgrade to Full</a>',
+          // Wrong-account is a common reason to land here. Say which account, and offer the way out.
+          (function () {
+            var c = currentClaims();
+            if (!c || !c.email) return '';
+            return '<div style="margin-top:16px;font-size:12px;color:var(--tbp-cream-dim)">Signed in as '
+              + String(c.email).replace(/[<>&"]/g, '')
+              + '. <a href="#" id="tbp-upgrade-switch" style="color:var(--tbp-teal);text-decoration:none;font-weight:600">Use a different account</a></div>';
+          })(),
           '<div class="gate-footer">',
             'Questions? <a href="mailto:michael@thinkbeyondpractice.com">michael@thinkbeyondpractice.com</a>',
           '</div>',
         '</div>'
       ].join('');
       document.body.appendChild(gate);
+      wireSwitch();
     }
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', paint);
     else paint();
@@ -173,6 +186,10 @@
   // Public API
   window.TBPAuth = {
     protect: function(options) {
+      // Paint the identity marker regardless of how the gate resolves. The moment it is
+      // most needed is precisely when the gate BLOCKS you, because the reason is usually
+      // that you are signed in as the wrong account.
+      try { whenBody(renderIdentityBadge); } catch (e) {}
       // Scheduled-maintenance gate: block every PHI/clinical tool up front (before
       // demo or auth), so nothing loads and no clinical content can be submitted.
       // Non-PHI pages pass skipPHIGate:true and are unaffected.
@@ -279,6 +296,74 @@
   // Ask the server whether this member holds an active per-feature entitlement (a
   // hand-granted trial pass, e.g. a week of the Letter Generator). UX only; fails
   // closed to the upgrade wall on any error. cb(true|false).
+  // ── Who am I signed in as? ─────────────────────────────────────────────────
+  // Sign-in is silent and sticky: the stored token decides the account on every tool,
+  // and until now no page said which account that was. Someone signed into a second
+  // account (or a free one) sees a gate or a trial wall with no clue why and no way to
+  // switch. This paints a small, permanent "signed in as" marker with an escape hatch.
+  function currentClaims() {
+    try {
+      var tok = localStorage.getItem(SESSION_KEY);
+      return tok ? (parseToken(tok) || null) : null;
+    } catch (e) { return null; }
+  }
+
+  // Drop the session and go back to sign-in, keeping the returnTo so they land back here.
+  function switchAccount() {
+    clearSession();
+    try { localStorage.removeItem('tbp_verified_email'); } catch (e) {}
+    redirectToLogin();
+  }
+
+  function renderIdentityBadge() {
+    try {
+      // The Scribe runs FRAMED inside the Patient Desk, and the Desk does not load this
+      // file at all, so a top-frame-only rule would skip the very tool where signing in
+      // as the wrong account bites hardest. Paint here unless an ancestor already did
+      // (same origin, so this is readable; if it ever is not, painting twice beats not
+      // painting at all).
+      try {
+        if (window.top !== window.self && window.top.document.getElementById('tbp-whoami')) return;
+      } catch (e) {}
+      if (typeof TBP_DEMO !== 'undefined' && TBP_DEMO) return;
+      if (document.getElementById('tbp-whoami')) return;
+      var claims = currentClaims();
+      if (!claims || !claims.email) return;
+
+      var tier = String(claims.tier || '').toLowerCase();
+      var tierLabel = tier === 'full' ? 'Full' : (tier === 'forum' ? 'Forum' : (tier ? tier : 'free'));
+
+      var el = document.createElement('div');
+      el.id = 'tbp-whoami';
+      el.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:99998;max-width:min(92vw,420px);'
+        + 'background:var(--tbp-navy-mid,#111c30);color:var(--tbp-cream-dim,#b0aa9e);'
+        + 'border:1px solid var(--tbp-rule,rgba(42,171,184,0.2));border-radius:8px;'
+        + 'padding:7px 11px;font:400 12px/1.45 -apple-system,"DM Sans",Segoe UI,sans-serif;'
+        + 'box-shadow:0 2px 10px rgba(0,0,0,.25);display:flex;align-items:center;gap:8px;flex-wrap:wrap';
+      el.innerHTML =
+        '<span>Signed in as <strong style="color:var(--tbp-cream,#e8e2d6);font-weight:600">'
+        + String(claims.email).replace(/[<>&"]/g, '') + '</strong>'
+        + ' <span style="opacity:.75">(' + tierLabel + ')</span></span>'
+        + '<a href="#" id="tbp-whoami-switch" style="color:var(--tbp-teal,#2aabb8);text-decoration:none;font-weight:600;white-space:nowrap">Not you? Switch account</a>'
+        + '<a href="#" id="tbp-whoami-hide" title="Hide" style="color:var(--tbp-cream-dim,#b0aa9e);text-decoration:none;opacity:.7;margin-left:auto">&times;</a>';
+      document.body.appendChild(el);
+
+      document.getElementById('tbp-whoami-switch').addEventListener('click', function (e) {
+        e.preventDefault();
+        switchAccount();
+      });
+      document.getElementById('tbp-whoami-hide').addEventListener('click', function (e) {
+        e.preventDefault();
+        el.remove();   // this page view only; it comes back on the next load, by design
+      });
+    } catch (e) {}
+  }
+
+  function whenBody(fn) {
+    if (document.body) { fn(); return; }
+    document.addEventListener('DOMContentLoaded', fn);
+  }
+
   function checkFeatureEntitlement(token, feature, cb) {
     try {
       fetch('/.netlify/functions/check-entitlement?feature=' + encodeURIComponent(feature), {
