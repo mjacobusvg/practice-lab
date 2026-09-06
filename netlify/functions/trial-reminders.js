@@ -20,7 +20,34 @@
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, BACKFILL_SECRET, URL (Netlify site URL)
 
+const { mintPrefsToken } = require('./_lib/prefs-token');
+
+// Canonical domain on purpose: these links sit in somebody's inbox for days, so
+// they must not be a deploy-preview URL the way the internal base below can be.
+const SITE = process.env.SITE_URL || 'https://thinkbeyondpractice.com';
+
 const TRIAL_DAYS = 14; // keep in sync with trial-check.mjs (ai-scribe-v1)
+
+// One-click feedback links. "Just reply" asks somebody who has already decided
+// not to buy to compose an email from scratch, which is the highest-friction ask
+// at the lowest-motivation moment. These cost one click and no typing; the
+// optional free text is offered on the landing page afterwards.
+const FEEDBACK_REASONS = [
+  ['no-time',   'Never had time to really try it'],
+  ['notes',     'The notes were not good enough'],
+  ['price',     'Too expensive'],
+  ['have-one',  'I already have a scribe I like'],
+  ['missing',   'Missing something I need'],
+  ['technical', 'I hit technical trouble']
+];
+
+function feedbackLinks(email, stage) {
+  const tok = encodeURIComponent(mintPrefsToken(email));
+  return FEEDBACK_REASONS.map(function (r) {
+    return '[' + r[1] + '](' + SITE + '/.netlify/functions/trial-feedback?e=' + tok
+      + '&s=' + stage + '&r=' + r[0] + ')';
+  }).join('  ·  ');
+}
 const FROM = 'Michael Van Gelder <michael@thinkbeyondpractice.com>';
 const JOIN = 'https://thinkbeyondpractice.com/platform?plan=full_monthly_119';
 
@@ -32,7 +59,7 @@ const STAGES = [
     key: 'ending', sentCol: 'reminder_sent_at', minAgeDays: 12, maxAgeDays: 14,
     subject: function (daysLeft) { return daysLeft <= 1 ? 'Your AI Scribe trial ends tomorrow' : ('Your AI Scribe trial ends in ' + daysLeft + ' days'); },
     preheader: 'Keep the AI Scribe, the Chart Auditor, and the whole clinical suite.',
-    markdown: function (daysLeft) {
+    markdown: function (daysLeft, email) {
       const when = daysLeft <= 1 ? 'tomorrow' : ('in ' + daysLeft + ' days');
       return [
         'Hi {{first_name}},',
@@ -45,7 +72,9 @@ const STAGES = [
         '',
         'Not ready? No problem, and no card was ever charged. You can pick it back up whenever the timing is right.',
         '',
-        'And if it did not click for you, I would genuinely like to know why. Just reply to this email and tell me.',
+        'And if it has not won you over yet, one click tells me what is standing in the way. No typing needed:',
+        '',
+        feedbackLinks(email, 'ending'),
         '',
         '— Michael',
         '',
@@ -57,7 +86,7 @@ const STAGES = [
     key: 'expired', sentCol: 'expired_sent_at', minAgeDays: 14, maxAgeDays: 16,
     subject: function () { return 'Your AI Scribe trial has ended — your work is saved'; },
     preheader: 'Your templates and settings are waiting whenever you are ready.',
-    markdown: function () {
+    markdown: function (daysLeft, email) {
       return [
         'Hi {{first_name}},',
         '',
@@ -67,7 +96,9 @@ const STAGES = [
         '',
         '[Continue with Full membership →](' + JOIN + ')',
         '',
-        'And if it did not fit your workflow, I would honestly value knowing why — it is how the Scribe gets better. Just reply.',
+        'And if it did not fit your workflow, one click tells me why. It is how the Scribe gets better, and it needs no typing:',
+        '',
+        feedbackLinks(email, 'expired'),
         '',
         '— Michael',
         '',
@@ -137,7 +168,7 @@ exports.handler = async function (event) {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               internal_secret: SECRET, subject: stage.subject(daysLeft), preheader: stage.preheader,
-              markdown: stage.markdown(daysLeft), audience: 'custom', emails: email, from: FROM
+              markdown: stage.markdown(daysLeft, email), audience: 'custom', emails: email, from: FROM
             })
           });
           const sd = await sendRes.json().catch(function () { return {}; });

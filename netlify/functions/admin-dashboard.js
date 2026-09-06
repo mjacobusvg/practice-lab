@@ -189,12 +189,13 @@ exports.handler = async function(event, context) {
 
   // ========== DEFAULT: dashboard data ==========
   try {
-    const [archiveJobs, unanswered, feedback, practiceLabUsage, referrals] = await Promise.all([
+    const [archiveJobs, unanswered, feedback, practiceLabUsage, referrals, trialFeedback] = await Promise.all([
       query('archive_jobs?select=created_at&order=created_at.desc&limit=1000'),
       query('unanswered_questions?select=question,created_at&order=created_at.desc&limit=500'),
       query('archive_feedback?select=rating,created_at&limit=1000').catch(() => []),
       query('tool_usage?select=tool,mode,created_at&order=created_at.desc&limit=2000').catch(() => []),
-      query('referral_attributions?select=*&order=created_at.desc&limit=500').catch(() => [])
+      query('referral_attributions?select=*&order=created_at.desc&limit=500').catch(() => []),
+      query('trial_feedback?select=stage,reason,note,created_at&order=created_at.desc&limit=500').catch(() => [])
     ]);
 
     // Archive stats
@@ -209,6 +210,15 @@ exports.handler = async function(event, context) {
     // Feedback stats
     const thumbsUp = feedback.filter(function(f) { return f.rating === 1; }).length;
     const thumbsDown = feedback.filter(function(f) { return f.rating === -1; }).length;
+
+    // Why trials do not convert. One row per person per stage, reason arrives on
+    // the click and note only if they chose to add one.
+    const tfByReason = {};
+    trialFeedback.forEach(function(f) { tfByReason[f.reason] = (tfByReason[f.reason] || 0) + 1; });
+    const tfNotes = trialFeedback
+      .filter(function(f) { return f.note; })
+      .slice(0, 25)
+      .map(function(f) { return { stage: f.stage, reason: f.reason, note: f.note, created_at: f.created_at }; });
 
     // Unanswered stats
     const unansweredTotal = unanswered.length;
@@ -278,6 +288,14 @@ exports.handler = async function(event, context) {
           today: plToday,
           byMode: plByMode,
           daily: dailyActivity(practiceLabUsage, 'created_at', 14)
+        },
+        trialFeedback: {
+          total: trialFeedback.length,
+          thisWeek: trialFeedback.filter(function(f) {
+            return new Date(f.created_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+          }).length,
+          byReason: tfByReason,
+          notes: tfNotes
         },
         referrals: {
           total: refTotal,
