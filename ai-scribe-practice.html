@@ -1928,7 +1928,9 @@ function tbpRenderSources(){
         +   '<button type="button" class="btn src-act" data-act="prep" data-id="'+d.id+'" style="font-size:.8rem;padding:5px 11px">'+(d.useForPrep ? 'Not for prep' : 'Use for prep')+'</button>'
         +   '<button type="button" class="btn src-act" data-act="remove" data-id="'+d.id+'" style="font-size:.8rem;padding:5px 11px">Remove</button>'
         + '</div>'
-        + '<div class="src-out" id="src-out-'+d.id+'" style="margin-top:10px"></div>';
+        + '<div class="src-out" id="src-out-'+d.id+'" style="margin-top:10px">'
+        +   (d.review ? tbpReviewPanelHtml(d.id, d.review) : '')
+        + '</div>';
     }
     h += '</div>';
   }
@@ -2055,6 +2057,14 @@ function tbpSourceContext(){
 }
 function tbpHasPrepSources(){ return tbpSourceContext() !== ''; }
 
+// One place that builds the review panel, so a fresh run and a re-render produce the same thing.
+function tbpReviewPanelHtml(id, text){
+  return '<div class="hint" style="margin-bottom:5px;color:var(--cream);line-height:1.45">Read it here, edit anything, and put it in your note only if you want to. Once inserted, this is what future visits inherit about this record.</div>'
+    + '<textarea id="src-cf-' + id + '" style="width:100%;min-height:260px;font-size:.88rem;line-height:1.55">' + esc(text) + '</textarea>'
+    + '<div style="margin-top:7px"><button type="button" class="btn src-insert" data-id="' + id + '" style="font-size:.8rem;padding:5px 11px">Insert into my note</button>'
+    + '<span class="hint" id="src-cf-msg-' + id + '" style="margin-left:8px">Optional. Nothing has gone into your note.</span></div>';
+}
+
 async function tbpSrcRun(id){
   var d = tbpSrcById(id); if(!d) return;
   var out = document.getElementById('src-out-' + id); if(!out) return;
@@ -2065,11 +2075,7 @@ async function tbpSrcRun(id){
     res = (res || '').trim();
     if(!res){ out.innerHTML = '<span class="hint" style="color:var(--amber)">Nothing came back. Try again.</span>'; return; }
     d.review = res;   // reused as the compact stand-in for this record in case reasoning
-    out.innerHTML = '<div class="hint" style="margin-bottom:5px;color:var(--cream);line-height:1.45">Read it here, edit anything, and put it in your note only if you want to. Once inserted, this is what future visits inherit about this record.</div>'
-      + '<textarea id="src-cf-' + id + '" style="width:100%;min-height:260px;font-size:.88rem;line-height:1.55"></textarea>'
-      + '<div style="margin-top:7px"><button type="button" class="btn src-insert" data-id="' + id + '" style="font-size:.8rem;padding:5px 11px">Insert into my note</button>'
-      + '<span class="hint" id="src-cf-msg-' + id + '" style="margin-left:8px">Optional. Nothing has gone into your note.</span></div>';
-    document.getElementById('src-cf-' + id).value = res;
+    out.innerHTML = tbpReviewPanelHtml(id, res);
   } catch(err){
     out.innerHTML = '<span class="hint" style="color:var(--red)">' + esc(err.message || err) + '</span>';
   }
@@ -2269,11 +2275,20 @@ document.getElementById('up-choice-transcript').addEventListener('click', functi
 document.getElementById('up-choice-doc').addEventListener('click', function(){
   tbpHideUploadChoice(); tbpShowDocs();
 });
-// Close a source modal by clicking its backdrop, matching the rest of the Scribe.
-['docs-modal','upload-choice','reason-modal'].forEach(function(id){
-  var el = document.getElementById(id);
+// Backdrop-click closes ONLY the trivial upload chooser. The records panel and the reasoning
+// panel hold work that cost a model call, so they close on the X or Escape, never on a stray
+// click outside.
+(function(){
+  var el = document.getElementById('upload-choice');
   if(el) el.addEventListener('click', function(e){ if(e.target === el) el.classList.remove('open'); });
-});
+  document.addEventListener('keydown', function(e){
+    if(e.key !== 'Escape') return;
+    ['upload-choice','docs-modal','reason-modal'].forEach(function(id){
+      var m = document.getElementById(id);
+      if(m && m.classList.contains('open')) m.classList.remove('open');
+    });
+  });
+})();
 
 document.getElementById('src-add-btn').addEventListener('click', function(){
   if(tbpDemoBlock()) return;
@@ -2335,6 +2350,14 @@ async function tbpRunSourcePrep(){
     if(msg) msg.innerHTML = '';
   }
 }
+
+// Edits to a review are kept on the source, so re-rendering the card never reverts them.
+document.getElementById('src-list').addEventListener('input', function(e){
+  var t = e.target;
+  if(!t || !t.id || t.id.indexOf('src-cf-') !== 0) return;
+  var d = tbpSrcById(t.id.slice(7));
+  if(d) d.review = t.value;
+});
 
 document.getElementById('src-list').addEventListener('click', function(e){
   var b = e.target && e.target.closest ? e.target.closest('button') : null;
