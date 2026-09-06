@@ -2023,7 +2023,17 @@ function docCarryRules(){
 
   s += "ATTRIBUTION SURVIVES COMPRESSION. Where a carried statement is your synthesis rather than something the source said, keep that visible. Never rewrite your own observation as a conclusion the outside evaluator reached.\n\n";
 
-  s += "LENGTH. For a complex outside evaluation, target roughly 125 to 225 words, and use fewer when you can. Length is not thoroughness here; it is failure to decide.\n\n";
+  s += "LENGTH DOES NOT SCALE WITH THE SOURCE. This is the rule most often broken. A fifty-page packet spanning five years does not earn a longer block than a single evaluation; if anything it earns a shorter one, because five years of records contain far more that is redundant. The block you are writing is a fixed-size slot in every future note, and the source has no vote on how big that slot is.\n";
+  s += "Do not take your sense of scale from the review you just wrote. The review is as long as the source demanded. This is not.\n\n";
+
+  s += "FOR A MULTI-YEAR OR MULTI-DOCUMENT PACKET, collapse aggressively:\n";
+  s += "- A series of numbers becomes one trend, or nothing. 'Serial lithium levels rose over 2023-2024 alongside a rise in creatinine' carries the fact; the six values and their dates do not need to ride in every future note.\n";
+  s += "- Repeated visits become one longitudinal pattern. Dozens of stable follow-ups are one sentence about a stable interval.\n";
+  s += "- Repeated symptoms become the diagnosis or the pattern they establish.\n";
+  s += "- Detailed testing becomes its durable interpretation, and usually one clause.\n";
+  s += "- A string of treatment events becomes only the response, intolerance or access fact worth remembering.\n\n";
+
+  s += "LENGTH. Target 125 to 225 words, whether the source is eight pages or eighty. Going past 250 should be rare and deliberate. If your draft is longer than 225 words, do not trim adjectives: run the deletion test again, sentence by sentence, and cut whole sentences. Length here is not thoroughness; it is failure to decide.\n\n";
 
   s += "THE FINAL DELETION TEST. Take every sentence in your draft in turn and ask: if THIS SENTENCE disappeared but the diagnosis list remained, would future care meaningfully lose something? If not, delete it. Run this on the whole draft before you finish. Most of what you want to keep will not survive it, and that is the point.\n\n";
 
@@ -2037,6 +2047,25 @@ function docCarryRules(){
 // (almost always because a long review hit the token ceiling first). It works from the review
 // rather than the original document: the review is already the distilled reading, it is far
 // shorter, and re-reading the raw record would risk a second, differently-reasoned pass.
+// Compression pass. Fires when the carry-forward comes back materially over budget, which
+// happens on large packets because the block is written straight after a long review and
+// anchors on it. Rewriting a draft to a word count is a far easier task than writing to one,
+// so this succeeds where the instruction alone does not.
+function docCarryCompressSystem(){
+  var s = docPrescribingBoundary();
+  s += "A durable carry-forward summary has been drafted for a patient's chart. It is too long. Your only job is to cut it to length.\n\n";
+  s += "Return ONLY the rewritten block. No preamble, no commentary on what you cut, no Markdown.\n";
+  s += "Keep its first line beginning 'Historical Note: Outside record reviewed' intact, including the document, date and context it names.\n";
+  s += "Do NOT add anything. Every fact in your output must be in the draft you were given. You are cutting, not rewriting or re-reasoning.\n\n";
+  s += docCarryRules();
+  s += "=== HOW TO CUT ===\n";
+  s += "Work sentence by sentence. For each, ask: if this sentence disappeared but the diagnosis list remained, would future care meaningfully lose something? If not, delete the whole sentence. Do not trim adjectives or merge clauses to save words; that keeps everything and helps nothing.\n";
+  s += "Cut in this order: numeric series and individual values; test detail beyond its durable meaning; evidence supporting a diagnosis already named; visit-by-visit or score-by-score history; anything the chart itself will still hold.\n";
+  s += "Keep: unresolved questions, enduring traits and behavioural patterns, treatment response and intolerance, the combination or finding flagged for verification, and any evidence that changes how a carried diagnosis should be read later.\n";
+  s += "Target 125 to 225 words.";
+  return s;
+}
+
 function docCarryOnlySystem(){
   var s = docPrescribingBoundary();
   s += "A clinician's review of an outside clinical record has already been written. Your only job is to produce the durable carry-forward summary from it.\n\n";
@@ -2258,6 +2287,9 @@ function tbpReviewPanelHtml(id, review, carry, failed, pending, diag){
   return h;
 }
 
+// Word count, used as the length gate. Counts what a reader would count.
+function tbpWordCount(t){ t = String(t || '').trim(); return t ? t.split(/\s+/).length : 0; }
+
 // Write the carry-forward on its own, from the review. Used both as the automatic repair when
 // the single call did not reach the second marker, and behind the retry button.
 async function tbpSrcCarry(id){
@@ -2317,6 +2349,27 @@ async function tbpSrcRun(id){
         + (d.carry ? d.carry.length + ' chars, ' + d.carry.trim().split(/\s+/).length + ' words' : 'nothing');
       out.innerHTML = tbpReviewPanelHtml(id, d.review, d.carry, d.carryFailed, false, d.diag);
       return;
+    }
+    // Length gate. The target is 125-250 words; 260 is the point where the block has stopped
+    // being a durable summary and become a second review, which is exactly what happened on
+    // the 29k-char packet. Rewriting to a budget is an easier task than writing to one.
+    var words = tbpWordCount(d.carry);
+    if(words > 260){
+      out.innerHTML = tbpReviewPanelHtml(id, d.review, d.carry, '', false, d.diag);
+      try {
+        var t1 = Date.now();
+        var tighter = await callAPI(docCarryCompressSystem(),
+          [{ role:'user', content: 'THE DRAFT, ' + words + ' words:\n\n' + d.carry }], 900);
+        tighter = (tighter || '').replace(/<<<CARRY FORWARD>>>/g, '').trim();
+        // Only accept a genuine compression that kept the rail intact.
+        if(tighter && tbpWordCount(tighter) < words && /^Historical Note/i.test(tighter)){
+          d.diag += '\n\n--- compression pass ---\ntime: ' + ((Date.now()-t1)/1000).toFixed(1) + 's\n'
+            + words + ' words in, ' + tbpWordCount(tighter) + ' words out';
+          d.carry = tighter;
+        } else {
+          d.diag += '\n\n--- compression pass ---\nran, result rejected (kept the ' + words + '-word draft)';
+        }
+      } catch(e4){ d.diag += '\n\n--- compression pass ---\nfailed: ' + (e4 && e4.message); }
     }
     d.carryFailed = '';
     out.innerHTML = tbpReviewPanelHtml(id, d.review, d.carry, '', false, d.diag);
