@@ -1989,7 +1989,12 @@ function docPrescribingBoundary(){
 
   s += "Notice what the good versions keep: every fact the clinician needs to act, and the instruction to verify. What they drop is the pharmacology lesson, which is the part you are most likely to be confidently wrong about and the part they did not ask you for.\n\n";
 
-  s += "WHEN AN INDICATION IS UNDOCUMENTED, say so and stop. 'Benztropine was prescribed as needed at discharge; the indication is not documented.' Do not generate the possible reasons.\n\n";
+  s += "A FLAG TO VERIFY IS NOT A BRAKE ON THE PATIENT. Address verification to the clinician and tie it to their decisions, never to something the patient is trying to do for their health. 'Before smoking cessation is attempted' reads as telling a patient not to quit smoking until someone checks a drug level, which is not the message and is not yours to send.\n";
+  s += "Right: 'Given the documented plan for smoking cessation, interaction and monitoring implications should be independently verified as smoking status changes and before medication adjustments are made.'\n";
+  s += "Same safety signal, tied to the clinician's monitoring and the clinician's prescribing, without making the health behaviour itself sound contraindicated.\n\n";
+
+  s += "WHEN AN INDICATION IS UNDOCUMENTED, say so and stop. The whole sentence is: 'Benztropine 1 mg twice daily as needed was prescribed at discharge; the indication is not documented.' Nothing follows it.\n";
+  s += "Do not then list what the reasons might have been. 'Whether it was for anticipated extrapyramidal symptoms, as a precaution, or for another reason is not stated' is a list of candidate explanations wearing the clothes of a disclaimer, and it is the same failure as supplying one. If the record does not say, the useful information is that the record does not say.\n\n";
   return s;
 }
 
@@ -2271,8 +2276,10 @@ async function tbpSrcRun(id){
     // 5200, not 3200. A thorough review of a long neuropsychological report runs well past
     // 3000 tokens on its own, and at 3200 the model ran out of ceiling before it ever wrote
     // the <<<CARRY FORWARD>>> marker — so the second product vanished with no error anywhere.
+    var t0 = Date.now();
     var res = await callAPI(docReviewSystem(),
       [{ role:'user', content: 'OUTSIDE RECORD, filename ' + d.name + '\n\n' + d.text }], 5200);
+    var elapsed = Date.now() - t0;
     // Read the truncation flag NOW: callAPI resets it on its next call, and the repair pass
     // below is a next call.
     var truncated = (typeof _lastCallTruncated !== 'undefined' && _lastCallTruncated);
@@ -2285,7 +2292,9 @@ async function tbpSrcRun(id){
     // Which layer produced what, kept on the source so it survives a re-render. This is the
     // only way to tell a generation failure from a parse failure from a render failure after
     // the fact, and it costs nothing.
-    d.diag = 'raw response: ' + res.length + ' chars\n'
+    d.diag = 'source document: ' + d.text.length + ' chars, ~' + Math.round(d.text.length/4) + ' tokens\n'
+      + 'time to complete: ' + (elapsed/1000).toFixed(1) + 's (this call does NOT stream to the panel)\n'
+      + 'raw response: ' + res.length + ' chars\n'
       + '<<<REVIEW>>> marker: ' + (res.indexOf('<<<REVIEW>>>') !== -1 ? 'found' : 'ABSENT') + '\n'
       + '<<<CARRY FORWARD>>> marker: ' + (res.indexOf('<<<CARRY FORWARD>>>') !== -1 ? 'found at ' + res.indexOf('<<<CARRY FORWARD>>>') : 'ABSENT') + '\n'
       + 'parsed review: ' + d.review.length + ' chars\n'
@@ -2304,7 +2313,8 @@ async function tbpSrcRun(id){
       d.carryFailed = d.carry ? '' : (truncated
         ? 'The review used the whole response, so it was cut off, and writing it separately also failed.'
         : 'The model returned the review without it.');
-      d.diag += '\n\n--- second pass (carry-forward only) ---\nreturned: ' + (d.carry ? d.carry.length + ' chars' : 'nothing');
+      d.diag += '\n\n--- second pass (carry-forward only) ---\ntime: ' + ((Date.now() - t0 - elapsed)/1000).toFixed(1) + 's\nreturned: '
+        + (d.carry ? d.carry.length + ' chars, ' + d.carry.trim().split(/\s+/).length + ' words' : 'nothing');
       out.innerHTML = tbpReviewPanelHtml(id, d.review, d.carry, d.carryFailed, false, d.diag);
       return;
     }
