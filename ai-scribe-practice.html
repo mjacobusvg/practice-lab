@@ -2016,6 +2016,30 @@ function docReviewSystem(){
   return s;
 }
 
+// Prep for a NEW evaluation, given outside records. This is what newEvalScaffoldSystem() cannot
+// do: that call is handed the literal string 'Produce the blank intake scaffold now.' and is blind
+// by design. With sources, prep finally has something to reason over (CLINICAL-OS-STRATEGY.md 32).
+function newEvalPrepFromSourcesSystem(){
+  var s = "You are preparing a psychiatric prescriber for a NEW PATIENT EVALUATION they are about to conduct. They have not met this patient. ";
+  s += "You are given one or more OUTSIDE RECORDS the patient or a referrer sent ahead. Your job is to make the clinician walk in already oriented, and to be honest about what those records do and do not establish.\n\n";
+  s += "SYNTHESIS FIRST, GAPS SECOND. You are not a completeness checker. Start by saying what the records actually establish and how strongly, in ordinary clinical language. Only then say what is still open.\n\n";
+  s += "Output EXACTLY these three markers, each on its own line, with content on the lines after it. Reproduce each marker exactly as written. No Markdown, no JSON, no code fences.\n\n";
+  s += "<<<ORIENTATION>>>\n";
+  s += "Three to six short lines. What kind of records these are, who wrote them and when, and the clinical picture they describe. This is a glance, not chart content.\n\n";
+  s += "<<<ESTABLISHED BY THE RECORDS>>>\n";
+  s += "What the records document, one item per line, EACH with its source and the evidence behind it. Write 'the 2024 neuropsychological evaluation documented childhood-onset inattention across home and school, with maternal collateral' - NOT 'childhood onset present'. ";
+  s += "A record documenting something is not the same as the patient reporting it to you today, and never write it as though it were. Where a record asserts a conclusion without supporting evidence, say so on that line.\n\n";
+  s += "<<<TO ESTABLISH TODAY>>>\n";
+  s += "The highest-value things this visit should settle, one per line, ordered by how much they would change management. Do NOT list something the records already establish well: the point of reading them is to stop asking what is already answered. ";
+  s += "Distinguish three different situations explicitly in the wording of each line:\n";
+  s += "- a SOFT GAP, where more information would raise confidence;\n";
+  s += "- MEANINGFUL UNCERTAINTY, where competing explanations remain unresolved;\n";
+  s += "- CONTRADICTORY EVIDENCE, where something in the records actively argues against the conclusion they reached (for example no attentional difficulty until a head injury at 31, or concentration problems only during discrete mood episodes). Say so plainly when you see it.\n\n";
+  s += "GOVERNING RULE: 'not documented' is not the same as 'not present', and neither is the same as 'not assessed'. A history describing lost homework, parental reminders and midnight project completion supports childhood onset even if nobody wrote 'before age 12'. Ask whether the total record reasonably establishes the construct, not whether a checklist item appears.\n\n";
+  s += "You may disagree with the records, gently, in either direction. Invent nothing: every statement traces to something in the documents. Never give a probability or a score. Plain text.";
+  return s;
+}
+
 // Build the transient source block handed to a model call. This string is passed as message
 // content only. It is never stored, cached, or written to the note.
 function tbpSourceContext(){
@@ -2230,6 +2254,25 @@ document.getElementById('reason-modal').addEventListener('click', function(e){
   var q = (b.textContent || '').trim();
   document.getElementById('rsn-q').value = q;
   tbpRunReason(q);
+});
+
+// ── Modal plumbing for the record reader and the upload chooser. ──
+function tbpShowDocs(){ document.getElementById('docs-modal').classList.add('open'); tbpRenderSources(); }
+function tbpHideDocs(){ document.getElementById('docs-modal').classList.remove('open'); }
+function tbpShowUploadChoice(){ document.getElementById('upload-choice').classList.add('open'); }
+function tbpHideUploadChoice(){ document.getElementById('upload-choice').classList.remove('open'); }
+
+document.getElementById('up-choice-transcript').addEventListener('click', function(){
+  tbpHideUploadChoice();
+  if(window.tbpPickTranscriptFile) window.tbpPickTranscriptFile();
+});
+document.getElementById('up-choice-doc').addEventListener('click', function(){
+  tbpHideUploadChoice(); tbpShowDocs();
+});
+// Close a source modal by clicking its backdrop, matching the rest of the Scribe.
+['docs-modal','upload-choice','reason-modal'].forEach(function(id){
+  var el = document.getElementById(id);
+  if(el) el.addEventListener('click', function(e){ if(e.target === el) el.classList.remove('open'); });
 });
 
 document.getElementById('src-add-btn').addEventListener('click', function(){
