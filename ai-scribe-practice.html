@@ -1929,7 +1929,7 @@ function tbpRenderSources(){
         +   '<button type="button" class="btn src-act" data-act="remove" data-id="'+d.id+'" style="font-size:.8rem;padding:5px 11px">Remove</button>'
         + '</div>'
         + '<div class="src-out" id="src-out-'+d.id+'" style="margin-top:10px">'
-        +   (d.review ? tbpReviewPanelHtml(d.id, d.review, d.carry || '') : '')
+        +   (d.review ? tbpReviewPanelHtml(d.id, d.review, d.carry || '', d.carryFailed || '') : '')
         + '</div>';
     }
     h += '</div>';
@@ -1961,6 +1961,63 @@ function tbpRenderSources(){
 //
 // The same output serves both jobs: read it on screen, or put it in the note. It is written
 // knowing it may become the ONLY representation of this document any future Scribe session sees.
+// The durability rules for the carry-forward. Shared verbatim by the two-output review prompt
+// and by the carry-forward-only repair prompt, so a retry is held to the same standard as a
+// first pass. One definition, because two drifting copies is how the second product silently
+// becomes a different, worse thing.
+function docCarryRules(){
+  var s = "";
+  s += "THE CARRY-FORWARD IS NOT A SUMMARY OF THE RECORD. It is not a shorter review either. Almost everything that makes the review valuable — the reasoning behind a caveat, the evidence for a conclusion, the detail of a discrepancy — belongs to today and must not ride in every future note.\n\n";
+
+  s += "ASSUME THE CHART ALREADY KEEPS the patient's diagnoses, current medications and subsequent notes. Preserve only what adds durable meaning that would NOT be obvious from the diagnosis list alone.\n";
+  s += "THE GOVERNING INSTRUCTION: prefer preserving what the diagnosis does NOT tell you.\n\n";
+
+  s += "Before including anything, ask three questions. If the answer to the first is no, omit it.\n";
+  s += "1. If the diagnoses remain visible but this source disappears, is something clinically important actually lost?\n";
+  s += "2. Is this an enduring trait, a longitudinal pattern, a meaningful strength or weakness, an unresolved diagnostic question, a treatment-response fact, or a major interpretive limitation on the source?\n";
+  s += "3. Will it still matter several visits from now?\n\n";
+
+  s += "DO NOT repeat symptoms because they supported a diagnosis that is itself being carried forward. Carrying ADHD forward does not require carrying task-initiation failure, hyperfocus, commission errors and discriminability with it. Carrying a depressive diagnosis does not require the symptom trail that established it.\n";
+  s += "DO NOT preserve test results, indices, percentiles or error patterns when their durable meaning fits in one phrase.\n";
+  s += "DO NOT preserve an evidence trail whose only job is justifying a diagnosis already retained.\n";
+  s += "DO NOT preserve generic recommendations, ordinary family history, one-off events, transient observations, or methodological detail that did not change a conclusion.\n\n";
+
+  s += "WHAT NORMALLY EARNS ITS PLACE: the source, its date and any status limitation; the diagnoses and conclusions it reached; questions it explicitly left unresolved or deferred; enduring traits that outlive the diagnosis label, such as perfectionism or an entrenched sleep pattern with the attitude that maintains it; cognitive strengths and weaknesses in plain language; the gap between structured performance and real-world function when there is one; prior treatment response and intolerance, which saves reconstructing trials later; and the one or two caveats that change how this source should be read in future.\n\n";
+
+  s += "EXAMPLES OF THE COMPRESSION REQUIRED.\n";
+  s += "Bad: 'CPT-3 showed elevated commission errors, poor discriminability, progressive response-speed slowing across blocks and 4 of 9 atypical indices.'\n";
+  s += "Good: 'Attention testing showed residual abnormalities, but testing occurred on prescribed stimulant medication and does not establish untreated baseline functioning.'\n";
+  s += "Bad: 'Endorsed decreased need for sleep, racing thoughts and difficulty slowing down, while the parent report did not reach clinical range.'\n";
+  s += "Good: 'Bipolar-spectrum illness was not established and was specifically deferred for psychiatric clarification.'\n";
+  s += "Keep individual symptoms ONLY where they remain independently important to a future differential, not as evidence for a conclusion you already carried.\n";
+  s += "Bad: 'Letter Fluency above the 99th percentile, Category Fluency 97th, WCST intact, RCFT copy within normal limits but inefficiently organised.'\n";
+  s += "Good: 'Strong verbal abilities and generally intact structured executive and memory performance, with processing speed a relative weakness.'\n\n";
+
+  s += "ATTRIBUTION SURVIVES COMPRESSION. When a carried statement is YOUR synthesis rather than something the source said, keep that visible. Never rewrite your own observation as a conclusion the outside evaluator reached.\n\n";
+
+  s += "LENGTH. Target 150 to 250 words even for a long, complex evaluation. Exceed that only when genuinely durable information will otherwise be lost, and never to be thorough. If your draft is longer, the usual cause is evidence you kept to justify a diagnosis that is already being carried forward: cut that first.\n";
+  s += "Before finalising, ask: if the original record disappeared tomorrow and I could still see the diagnosis list, what would I regret not knowing? Keep exactly that.\n\n";
+
+  return s;
+}
+
+// Second-pass repair. Used only when the one-call review did not produce a carry-forward
+// (almost always because a long review hit the token ceiling first). It works from the review
+// rather than the original document: the review is already the distilled reading, it is far
+// shorter, and re-reading the raw record would risk a second, differently-reasoned pass.
+function docCarryOnlySystem(){
+  var s = "A clinician's review of an outside clinical record has already been written. Your only job is to produce the durable carry-forward summary from it.\n\n";
+  s += "Produce NOTHING else. No preamble, no heading, no closing comment, no Markdown.\n\n";
+  s += "The REVIEW answered: what do I need to understand about this source today?\n";
+  s += "The CARRY-FORWARD answers: what from this source will a clinician still need several visits from now, once the document itself is gone?\n\n";
+  s += docCarryRules();
+  s += "=== OUTPUT ===\n";
+  s += "One block of flowing prose, plain text, no labels. Its FIRST line must begin with the literal words 'Historical Note: Outside record reviewed' and then name the document, its date and the patient's age or context if the review gives them, so the note's carry-forward rail keeps it intact across visits.\n";
+  s += "Carry forward only what the review actually establishes. Do not add findings, inferences or conclusions that are not in it.\n";
+  s += "This is what goes in the chart. Write it as though the original document will not exist the next time anyone needs it, because from the Scribe's point of view it will not.";
+  return s;
+}
+
 function docReviewSystem(){
   var s = "You are reviewing an outside clinical record for a psychiatric clinician who is about to see, or has just seen, this patient.\n\n";
   s += "Your job is NOT to summarize or reproduce the document. It is to work out what a clinician needs to understand from this record now, and what is important enough to preserve for years.\n\n";
@@ -1970,7 +2027,7 @@ function docReviewSystem(){
   s += "=== THE QUESTION THAT MATTERS MOST ===\n";
   s += "Which facts in this record change how the OTHER facts should be interpreted? Findings are not self-explanatory. Ask what conditions were in place when the data was produced, and say plainly how those conditions affect what the data can support.\n";
   s += "Consider, when present: medication active during testing — especially treatment for the very domain being assessed; sleep deprivation or severe sleep dysregulation; acute psychiatric symptoms; substances; acute illness; testing accommodations or nonstandard administration; age or norm mismatch; language and cultural factors; validity concerns; missing collateral; the setting itself.\n";
-  s += "TREATED STATE IS NOT BASELINE. If the patient was receiving treatment that could improve the domain being tested, say so and distinguish treated-state performance from untreated baseline. Intact performance under effective treatment is NOT evidence the underlying disorder is absent — it may be evidence the treatment is working. Note also when impairment persisted DESPITE treatment, because that cuts the other way and is often the stronger finding. If the record does not document dose, formulation, timing relative to testing, or the rationale for testing on or off medication, say that the record does not establish it rather than assuming either way.\n\n";
+  s += "TREATED STATE IS NOT BASELINE. If the patient was receiving treatment that could improve the domain being tested, say so and distinguish treated-state performance from untreated baseline. Intact performance under effective treatment is NOT evidence the underlying disorder is absent — it may be evidence the treatment is working. Note also when impairment persisted DESPITE treatment, because that cuts the other way. Report both directions; do not decide which one carries more weight. If the record does not document dose, formulation, timing relative to testing, or the rationale for testing on or off medication, say that the record does not establish it rather than assuming either way.\n\n";
 
   s += "=== VALIDITY ===\n";
   s += "Distinguish PERFORMANCE validity or effort from the validity of a self-report or personality measure. They are not the same finding and must never be conflated.\n";
@@ -2011,6 +2068,13 @@ function docReviewSystem(){
   s += "- Do NOT re-derive psychometric scoring conventions. When the source interprets a measure, preserve the source's interpretation. Do not reason about which direction a transformed score runs in order to reach your own verdict on an instrument, and never contradict the source's reading of its own data on that basis.\n";
   s += "- Do NOT append a speculative caveat to a resolved item. If the source reports full recovery with no residual effects, report that; do not add that subtle contributions cannot be excluded. Absence of a stated finding is not a lurking finding, and this kind of completeness reflex adds nothing and erodes trust in the rest.\n";
   s += "- Do NOT recommend treatment the source did not recommend, or characterise something as requiring a particular intervention unless the source said so. Describing a barrier is reporting; prescribing the response to it is not yours to do here.\n";
+  s += "- Do NOT rank one finding as 'stronger', 'more robust', 'more meaningful', 'the more reliable signal' or more diagnostically weighty than another unless the source or the available evidence clearly justifies that comparison. Describe why a finding is noteworthy without assigning evidentiary weight you cannot establish. The same rule kills 'a floor, not a ceiling', 'this makes them more robust, not less', and calling one result 'objective' in a way that implies the others are not.\n";
+  s += "- Do NOT invoke the literature, base rates, or 'a well-documented pattern in which...' Nothing outside this record is available to you as evidence about this patient. Describe what the record shows and stop.\n";
+  s += "- Avoid absolutes and exclusivity. 'The only reliable pathway', 'the first objective data', 'regardless of cause' each claim knowledge of everything outside this document. The record establishes what it contains, not what does not exist elsewhere.\n";
+  s += "- Do NOT decide what an informant report REPRESENTS. That a parent completed a rating scale does not establish that it reflects a stable baseline across time, or that it is less coloured than self-report. Report who reported what.\n";
+  s += "- Do NOT grade severity the source did not grade. 'Sleep deprivation of this severity' asserts a threshold. Describe the documented sleep pattern instead.\n";
+  s += "- Do NOT refute an interpretation nobody offered. 'This is not merely sleep hygiene noncompliance' argues with an absent claim; it belongs to persuasion, not review.\n";
+  s += "- Do NOT make durability judgements inside the review. Whether something is 'a durable finding' is the carry-forward's question, decided later under its own rules.\n";
   s += "- Prefer describing behaviour over ascribing motive. 'Expressed ambivalence about a regular schedule because nighttime was experienced as productive' is reporting; calling the pattern volitional is a judgement the record does not license.\n\n";
 
   s += "=== SELF-AUDIT BEFORE YOU FINISH ===\n";
@@ -2027,44 +2091,17 @@ function docReviewSystem(){
   s += "That example also shows the checking rule: before saying a kind of evidence is missing, look at what else was actually administered.\n\n";
   s += "Weak, because it picks a winner the record cannot support: 'The processing speed weakness likely reflects sleep deprivation and depressive slowing rather than a stable deficit.'\n";
   s += "Right: 'The relative processing-speed weakness could reflect mood symptoms, sleep dysregulation, ADHD, a genuine underlying relative weakness, or some combination; this record does not allow them to be separated.'\n\n";
+  s += "Weak, because it ranks and universalises: 'The CPT-3 is an objective, performance-based finding, and impairment persisting despite treatment in this domain is the stronger signal. This reflects a well-documented pattern in which external structure is the only reliable activation pathway.'\n";
+  s += "Right: 'The CPT-3 showed performance abnormalities consistent with sustained-attention and inhibitory-control difficulties. Because testing occurred on prescribed stimulant medication, and alongside severe sleep dysregulation and depressive symptoms, the relative contribution of each factor cannot be determined from this record.'\n\n";
   s += "Weak: 'WCST intact; verbal fluency 99th percentile; memory average to high average.'\n";
-  s += "Right: 'Despite substantial reported real-world executive dysfunction, most structured executive and memory measures were intact or strong — a meaningful gap between performance under external structure and self-directed daily functioning, rather than evidence against the reported impairment.'\n\n";
+  s += "Right: 'Despite substantial reported real-world executive dysfunction, most structured executive and memory measures were intact or strong. The discrepancy illustrates that strong performance on structured one-to-one tasks does not rule out substantial difficulty with self-directed functioning in everyday settings.'\n\n";
 
   s += "=== THE SECOND OUTPUT: WHAT SURVIVES ===\n";
   s += "You produce TWO things from this one reading, and they answer different questions.\n";
   s += "The REVIEW answers: what do I need to understand about this source today?\n";
   s += "The CARRY-FORWARD answers: what from this source will a clinician still need several visits from now, once the document itself is gone?\n\n";
 
-  s += "THE CARRY-FORWARD IS NOT A SUMMARY OF THE RECORD. It is not a shorter review either. Almost everything that makes the review valuable — the reasoning behind a caveat, the evidence for a conclusion, the detail of a discrepancy — belongs to today and must not ride in every future note.\n\n";
-
-  s += "ASSUME THE CHART ALREADY KEEPS the patient's diagnoses, current medications and subsequent notes. Preserve only what adds durable meaning that would NOT be obvious from the diagnosis list alone.\n";
-  s += "THE GOVERNING INSTRUCTION: prefer preserving what the diagnosis does NOT tell you.\n\n";
-
-  s += "Before including anything, ask three questions. If the answer to the first is no, omit it.\n";
-  s += "1. If the diagnoses remain visible but this source disappears, is something clinically important actually lost?\n";
-  s += "2. Is this an enduring trait, a longitudinal pattern, a meaningful strength or weakness, an unresolved diagnostic question, a treatment-response fact, or a major interpretive limitation on the source?\n";
-  s += "3. Will it still matter several visits from now?\n\n";
-
-  s += "DO NOT repeat symptoms because they supported a diagnosis that is itself being carried forward. Carrying ADHD forward does not require carrying task-initiation failure, hyperfocus, commission errors and discriminability with it. Carrying a depressive diagnosis does not require the symptom trail that established it.\n";
-  s += "DO NOT preserve test results, indices, percentiles or error patterns when their durable meaning fits in one phrase.\n";
-  s += "DO NOT preserve an evidence trail whose only job is justifying a diagnosis already retained.\n";
-  s += "DO NOT preserve generic recommendations, ordinary family history, one-off events, transient observations, or methodological detail that did not change a conclusion.\n\n";
-
-  s += "WHAT NORMALLY EARNS ITS PLACE: the source, its date and any status limitation; the diagnoses and conclusions it reached; questions it explicitly left unresolved or deferred; enduring traits that outlive the diagnosis label, such as perfectionism or an entrenched sleep pattern with the attitude that maintains it; cognitive strengths and weaknesses in plain language; the gap between structured performance and real-world function when there is one; prior treatment response and intolerance, which saves reconstructing trials later; and the one or two caveats that change how this source should be read in future.\n\n";
-
-  s += "EXAMPLES OF THE COMPRESSION REQUIRED.\n";
-  s += "Bad: 'CPT-3 showed elevated commission errors, poor discriminability, progressive response-speed slowing across blocks and 4 of 9 atypical indices.'\n";
-  s += "Good: 'Attention testing showed residual abnormalities, but testing occurred on prescribed stimulant medication and does not establish untreated baseline functioning.'\n";
-  s += "Bad: 'Endorsed decreased need for sleep, racing thoughts and difficulty slowing down, while the parent report did not reach clinical range.'\n";
-  s += "Good: 'Bipolar-spectrum illness was not established and was specifically deferred for psychiatric clarification.'\n";
-  s += "Keep individual symptoms ONLY where they remain independently important to a future differential, not as evidence for a conclusion you already carried.\n";
-  s += "Bad: 'Letter Fluency above the 99th percentile, Category Fluency 97th, WCST intact, RCFT copy within normal limits but inefficiently organised.'\n";
-  s += "Good: 'Strong verbal abilities and generally intact structured executive and memory performance, with processing speed a relative weakness.'\n\n";
-
-  s += "ATTRIBUTION SURVIVES COMPRESSION. When a carried statement is YOUR synthesis rather than something the source said, keep that visible. Never rewrite your own observation as a conclusion the outside evaluator reached.\n\n";
-
-  s += "LENGTH. Target 150 to 250 words even for a long, complex evaluation. Exceed that only when genuinely durable information will otherwise be lost, and never to be thorough. If your draft is longer, the usual cause is evidence you kept to justify a diagnosis that is already being carried forward: cut that first.\n";
-  s += "Before finalising, ask: if the original record disappeared tomorrow and I could still see the diagnosis list, what would I regret not knowing? Keep exactly that.\n\n";
+  s += docCarryRules();
 
   s += "=== OUTPUT ===\n";
   s += "Plain text throughout. No Markdown, no bullet characters, no preamble, no closing comment.\n";
@@ -2134,7 +2171,11 @@ function tbpSplitReview(raw){
 }
 
 // One place that builds the review panel, so a fresh run and a re-render produce the same thing.
-function tbpReviewPanelHtml(id, review, carry){
+// THREE states, not two. The carry-forward can legitimately be absent — the model hit the token
+// ceiling before it got there, or the second pass also failed — and the old `if(carry)` gate
+// rendered nothing at all in that case, which reads as "this feature has no second output"
+// rather than "something went wrong". A missing carry-forward is now visible and recoverable.
+function tbpReviewPanelHtml(id, review, carry, failed, pending){
   var h = '<div class="hint" style="margin-bottom:5px;color:var(--cream)">The full review, for you to read now.</div>'
     + '<div style="background:var(--navy);border:1px solid var(--rule);border-radius:7px;padding:12px 14px;white-space:pre-wrap;font-size:.88rem;line-height:1.6;color:var(--cream);max-height:420px;overflow:auto">'
     + esc(review) + '</div>';
@@ -2143,8 +2184,24 @@ function tbpReviewPanelHtml(id, review, carry){
       + '<textarea id="src-cf-' + id + '" style="width:100%;min-height:190px;font-size:.88rem;line-height:1.55">' + esc(carry) + '</textarea>'
       + '<div style="margin-top:7px"><button type="button" class="btn src-insert" data-id="' + id + '" style="font-size:.8rem;padding:5px 11px">Insert into my note</button>'
       + '<span class="hint" id="src-cf-msg-' + id + '" style="margin-left:8px">Optional. Nothing has gone into your note.</span></div>';
+  } else if(pending){
+    h += '<div style="margin:13px 0 0"><span class="spinner"></span><span class="hint">Writing the summary for your note&hellip;</span></div>';
+  } else if(failed){
+    h += '<div class="hint" style="margin:13px 0 6px;color:var(--amber);line-height:1.45"><strong>The summary for your note did not come back.</strong> '
+      + esc(failed) + ' The review above is unaffected. Nothing has gone into your note.</div>'
+      + '<button type="button" class="btn src-cf-retry" data-id="' + id + '" style="font-size:.8rem;padding:5px 11px">Write the summary for my note</button>';
   }
   return h;
+}
+
+// Write the carry-forward on its own, from the review. Used both as the automatic repair when
+// the single call did not reach the second marker, and behind the retry button.
+async function tbpSrcCarry(id){
+  var d = tbpSrcById(id);
+  if(!d || !d.review) return '';
+  var out = await callAPI(docCarryOnlySystem(),
+    [{ role:'user', content: 'THE REVIEW:\n\n' + d.review }], 900);
+  return (out || '').replace(/<<<CARRY FORWARD>>>/g, '').trim();
 }
 
 async function tbpSrcRun(id){
@@ -2152,14 +2209,36 @@ async function tbpSrcRun(id){
   var out = document.getElementById('src-out-' + id); if(!out) return;
   out.innerHTML = '<span class="spinner"></span><span class="hint">Reading the record&hellip;</span>';
   try {
+    // 5200, not 3200. A thorough review of a long neuropsychological report runs well past
+    // 3000 tokens on its own, and at 3200 the model ran out of ceiling before it ever wrote
+    // the <<<CARRY FORWARD>>> marker — so the second product vanished with no error anywhere.
     var res = await callAPI(docReviewSystem(),
-      [{ role:'user', content: 'OUTSIDE RECORD, filename ' + d.name + '\n\n' + d.text }], 3200);
+      [{ role:'user', content: 'OUTSIDE RECORD, filename ' + d.name + '\n\n' + d.text }], 5200);
+    // Read the truncation flag NOW: callAPI resets it on its next call, and the repair pass
+    // below is a next call.
+    var truncated = (typeof _lastCallTruncated !== 'undefined' && _lastCallTruncated);
     res = (res || '').trim();
     if(!res){ out.innerHTML = '<span class="hint" style="color:var(--amber)">Nothing came back. Try again.</span>'; return; }
     var split = tbpSplitReview(res);
     d.review = split.review;   // reused as the compact stand-in for this record in case reasoning
     d.carry  = split.carry;    // what actually goes in the note
-    out.innerHTML = tbpReviewPanelHtml(id, d.review, d.carry);
+
+    // A carry-forward under ~120 characters is not a short summary, it is a fragment left by
+    // the ceiling. Treat it the same as a missing one rather than putting it in front of a
+    // clinician as though it were the finished product.
+    if(d.review && (!d.carry || d.carry.length < 120)){
+      // Show the review immediately — it is finished and useful — with the second product
+      // visibly still in flight, then repair it in a short dedicated call.
+      out.innerHTML = tbpReviewPanelHtml(id, d.review, '', '', true);
+      try { d.carry = await tbpSrcCarry(id); } catch(e2){ d.carry = ''; }
+      d.carryFailed = d.carry ? '' : (truncated
+        ? 'The review used the whole response, so it was cut off, and writing it separately also failed.'
+        : 'The model returned the review without it.');
+      out.innerHTML = tbpReviewPanelHtml(id, d.review, d.carry, d.carryFailed);
+      return;
+    }
+    d.carryFailed = '';
+    out.innerHTML = tbpReviewPanelHtml(id, d.review, d.carry, '');
   } catch(err){
     out.innerHTML = '<span class="hint" style="color:var(--red)">' + esc(err.message || err) + '</span>';
   }
@@ -2460,6 +2539,25 @@ document.getElementById('src-list').addEventListener('click', function(e){
     try{ if(window.tbpSaveDraft) window.tbpSaveDraft(); }catch(e2){}
     var msg = document.getElementById('src-cf-msg-' + id);
     if(msg) msg.innerHTML = '<span style="color:var(--green)">Added to your working note.</span>';
+    return;
+  }
+
+  if(b.classList.contains('src-cf-retry')){
+    if(tbpDemoBlock()) return;
+    var dd = tbpSrcById(id); var o2 = document.getElementById('src-out-' + id);
+    if(!dd || !dd.review || !o2) return;
+    b.disabled = true;
+    (async function(){
+      try {
+        o2.innerHTML = tbpReviewPanelHtml(id, dd.review, '', '', true);
+        dd.carry = await tbpSrcCarry(id);
+        dd.carryFailed = dd.carry ? '' : 'It failed again. The review above is still complete.';
+        o2.innerHTML = tbpReviewPanelHtml(id, dd.review, dd.carry, dd.carryFailed);
+      } catch(e3){
+        dd.carryFailed = (e3 && e3.message) || 'It failed again.';
+        o2.innerHTML = tbpReviewPanelHtml(id, dd.review, '', dd.carryFailed);
+      } finally { b.disabled = false; }
+    })();
     return;
   }
 
