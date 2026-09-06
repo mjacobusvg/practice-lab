@@ -2053,16 +2053,27 @@ function docCarryRules(){
 // so this succeeds where the instruction alone does not.
 function docCarryCompressSystem(){
   var s = docPrescribingBoundary();
-  s += "A durable carry-forward summary has been drafted for a patient's chart. It is too long. Your only job is to cut it to length.\n\n";
-  s += "Return ONLY the rewritten block. No preamble, no commentary on what you cut, no Markdown.\n";
-  s += "Keep its first line beginning 'Historical Note: Outside record reviewed' intact, including the document, date and context it names.\n";
-  s += "Do NOT add anything. Every fact in your output must be in the draft you were given. You are cutting, not rewriting or re-reasoning.\n\n";
+  s += "A durable carry-forward summary has been drafted for a patient's chart. It is over budget. Your only job is to cut it to length.\n\n";
+  s += "This is NOT a request to shorten something. It is a fixed-size slot in every future note, and your job is to decide what occupies it. The draft you are given is not a target to trim toward; it is a superset to choose from.\n\n";
+
+  s += "Return ONLY the rewritten block. No preamble, no note on what you cut, no Markdown.\n";
+  s += "Keep the first line beginning 'Historical Note: Outside record reviewed' intact, including the document, date and context it names.\n";
+  s += "You may only delete and compress. Every fact in your output must already be in the draft. Add no clinical claim, no interpretation, no framing that was not there.\n\n";
+
   s += docCarryRules();
+
+  s += "=== YOUR BUDGET ===\n";
+  s += "Target 160 to 210 words. Hard maximum 225. A draft at 280 words has not been cut; it has been tidied.\n\n";
+
   s += "=== HOW TO CUT ===\n";
-  s += "Work sentence by sentence. For each, ask: if this sentence disappeared but the diagnosis list remained, would future care meaningfully lose something? If not, delete the whole sentence. Do not trim adjectives or merge clauses to save words; that keeps everything and helps nothing.\n";
-  s += "Cut in this order: numeric series and individual values; test detail beyond its durable meaning; evidence supporting a diagnosis already named; visit-by-visit or score-by-score history; anything the chart itself will still hold.\n";
-  s += "Keep: unresolved questions, enduring traits and behavioural patterns, treatment response and intolerance, the combination or finding flagged for verification, and any evidence that changes how a carried diagnosis should be read later.\n";
-  s += "Target 125 to 225 words.";
+  s += "ONE SENTENCE PER DURABLE THEME. Identify the themes worth permanent memory — usually five or six — and give each exactly one sentence. That constraint alone produces the right length.\n";
+  s += "COLLAPSE EVERY NUMERIC SERIES into its trend, unless one exact value is itself the durable fact. 'Serial lithium levels rose from 0.6 to 0.9 mEq/L between September 2023 and December 2024, creatinine rose from 0.8 to 1.1, and TSH peaked at 8.9 in September 2024 prompting a levothyroxine adjustment' is five facts and forty words. 'Late-2024 records document rising lithium and creatinine values, worsening hypothyroidism requiring a primary care levothyroxine adjustment, and new near-daily ibuprofen use; the significance of these concurrent findings should be independently verified' is the same clinical meaning in thirty-four, and nothing a future clinician would act on is lost.\n";
+  s += "DELETE ANYTHING RECOVERABLE from the diagnosis list or the current medication list. It is already in the chart.\n";
+  s += "Cut in this order: numeric series and individual values; test findings beyond their durable interpretation; evidence supporting a diagnosis already named; visit-by-visit or score-by-score history; commentary and characterisation.\n";
+  s += "Delete WHOLE SENTENCES. Do not trim adjectives or merge clauses to save words — that keeps everything and helps nothing, and it is exactly how a 361-word draft becomes a 284-word draft that is still wrong.\n\n";
+
+  s += "=== KEEP ===\n";
+  s += "Unresolved questions that materially remain open; enduring traits and behavioural patterns; treatment response, intolerance and access facts worth remembering; the combination or finding flagged for verification; and any evidence that changes how a carried diagnosis should be read later.\n";
   return s;
 }
 
@@ -2290,6 +2301,38 @@ function tbpReviewPanelHtml(id, review, carry, failed, pending, diag){
 // Word count, used as the length gate. Counts what a reader would count.
 function tbpWordCount(t){ t = String(t || '').trim(); return t ? t.split(/\s+/).length : 0; }
 
+// The length gate. Asking a model to stay under a word count has now failed twice, and asking
+// it to cut TO one got 361 words to 284 — better, still over. So the ceiling is enforced here
+// instead: measure, feed the actual count back, and repeat. Each pass gets a harder, more
+// specific instruction than the last, and only a result that is both shorter and still carries
+// the Historical Note rail is accepted. Two passes at most; whatever is shortest and valid wins.
+async function tbpFitCarryBudget(carry, log){
+  var MAX = 225, best = String(carry || '').trim(), bestWords = tbpWordCount(best);
+  for(var attempt = 1; attempt <= 2 && bestWords > MAX; attempt++){
+    var t = Date.now();
+    var ask = attempt === 1
+      ? 'THE DRAFT, ' + bestWords + ' words. Cut it to 160-210 words.\n\n' + best
+      : 'This is ' + bestWords + ' words and the maximum is 225. Return 190 to 220 words. '
+        + 'Delete whole sentences — do not trim words. Add nothing.\n\n' + best;
+    var out;
+    try { out = await callAPI(docCarryCompressSystem(), [{ role:'user', content: ask }], 900); }
+    catch(e){ log.push('pass ' + attempt + ': failed (' + (e && e.message) + ')'); break; }
+    out = (out || '').replace(/<<<CARRY FORWARD>>>/g, '').trim();
+    var w = tbpWordCount(out);
+    if(out && w < bestWords && /^Historical Note/i.test(out)){
+      log.push('pass ' + attempt + ': ' + bestWords + ' to ' + w + ' words in ' + ((Date.now()-t)/1000).toFixed(1) + 's');
+      best = out; bestWords = w;
+    } else {
+      log.push('pass ' + attempt + ': rejected (' + (out ? w + ' words' : 'empty')
+        + (/^Historical Note/i.test(out) ? '' : ', rail lost') + '), kept ' + bestWords);
+      break;
+    }
+  }
+  log.push(bestWords <= MAX ? 'final: ' + bestWords + ' words, within budget'
+                            : 'final: ' + bestWords + ' words, STILL OVER the 225 ceiling');
+  return best;
+}
+
 // Write the carry-forward on its own, from the review. Used both as the automatic repair when
 // the single call did not reach the second marker, and behind the retry button.
 async function tbpSrcCarry(id){
@@ -2297,7 +2340,14 @@ async function tbpSrcCarry(id){
   if(!d || !d.review) return '';
   var out = await callAPI(docCarryOnlySystem(),
     [{ role:'user', content: 'THE REVIEW:\n\n' + d.review }], 900);
-  return (out || '').replace(/<<<CARRY FORWARD>>>/g, '').trim();
+  out = (out || '').replace(/<<<CARRY FORWARD>>>/g, '').trim();
+  // Same ceiling on the repair route: this output becomes permanent by exactly the same door.
+  if(tbpWordCount(out) > 260){
+    var clog = [];
+    out = await tbpFitCarryBudget(out, clog);
+    d.diag = (d.diag || '') + '\n\n--- length gate (repair route) ---\n' + clog.join('\n');
+  }
+  return out;
 }
 
 async function tbpSrcRun(id){
@@ -2350,26 +2400,14 @@ async function tbpSrcRun(id){
       out.innerHTML = tbpReviewPanelHtml(id, d.review, d.carry, d.carryFailed, false, d.diag);
       return;
     }
-    // Length gate. The target is 125-250 words; 260 is the point where the block has stopped
-    // being a durable summary and become a second review, which is exactly what happened on
-    // the 29k-char packet. Rewriting to a budget is an easier task than writing to one.
-    var words = tbpWordCount(d.carry);
-    if(words > 260){
+    // 260 is where the block has stopped being a durable summary and become a second review,
+    // which is what the 29k-char packet produced. Render the review first: it is finished, and
+    // the fitting passes take a few seconds each.
+    if(tbpWordCount(d.carry) > 260){
       out.innerHTML = tbpReviewPanelHtml(id, d.review, d.carry, '', false, d.diag);
-      try {
-        var t1 = Date.now();
-        var tighter = await callAPI(docCarryCompressSystem(),
-          [{ role:'user', content: 'THE DRAFT, ' + words + ' words:\n\n' + d.carry }], 900);
-        tighter = (tighter || '').replace(/<<<CARRY FORWARD>>>/g, '').trim();
-        // Only accept a genuine compression that kept the rail intact.
-        if(tighter && tbpWordCount(tighter) < words && /^Historical Note/i.test(tighter)){
-          d.diag += '\n\n--- compression pass ---\ntime: ' + ((Date.now()-t1)/1000).toFixed(1) + 's\n'
-            + words + ' words in, ' + tbpWordCount(tighter) + ' words out';
-          d.carry = tighter;
-        } else {
-          d.diag += '\n\n--- compression pass ---\nran, result rejected (kept the ' + words + '-word draft)';
-        }
-      } catch(e4){ d.diag += '\n\n--- compression pass ---\nfailed: ' + (e4 && e4.message); }
+      var clog = [];
+      d.carry = await tbpFitCarryBudget(d.carry, clog);
+      d.diag += '\n\n--- length gate ---\n' + clog.join('\n');
     }
     d.carryFailed = '';
     out.innerHTML = tbpReviewPanelHtml(id, d.review, d.carry, '', false, d.diag);
