@@ -3288,6 +3288,27 @@ function tbpHideReason(){
   document.documentElement.classList.remove('rsn-open');   // give the workspace its width back
 }
 
+var rsnLast = null;   // {q, a} — the last exchange, so a reload does not lose it
+
+function tbpRsnBodyHtml(){
+  return '<div id="rsn-body" style="background:var(--navy);border:1px solid var(--rule);border-radius:7px;'
+    + 'padding:13px 15px;white-space:pre-wrap;font-size:.9rem;line-height:1.62;color:var(--cream)"></div>';
+}
+
+// Put a saved exchange back exactly as it was left: the question in the box, the answer below it.
+// An answer with no question above it reads as though it arrived from nowhere.
+function tbpRsnRestore(x){
+  if(!x || !x.a) return;
+  rsnLast = x;
+  var out = document.getElementById('rsn-out');
+  var q = document.getElementById('rsn-q');
+  if(q && x.q) q.value = x.q;
+  if(!out) return;
+  out.innerHTML = tbpRsnBodyHtml();
+  var body = document.getElementById('rsn-body');
+  if(body) body.textContent = x.a;
+}
+
 async function tbpRunReason(question){
   var out = document.getElementById('rsn-out');
   var msg = document.getElementById('rsn-msg');
@@ -3300,7 +3321,7 @@ async function tbpRunReason(question){
   }
   if(go) go.disabled = true;
   if(msg) msg.innerHTML = '<span class="spinner"></span>Thinking&hellip;';
-  out.innerHTML = '<div id="rsn-body" style="background:var(--navy);border:1px solid var(--rule);border-radius:7px;padding:13px 15px;white-space:pre-wrap;font-size:.9rem;line-height:1.62;color:var(--cream)"></div>';
+  out.innerHTML = tbpRsnBodyHtml();
   var body = document.getElementById('rsn-body');
   var acc = '';
   try {
@@ -3312,7 +3333,13 @@ async function tbpRunReason(question){
       2200,
       function(partial){ body.textContent = partial; }   // text starts appearing in seconds
     ) || '';
-    if(!acc.trim()) out.innerHTML = '<div class="hint" style="color:var(--amber)">Nothing came back. Try again.</div>';
+    if(!acc.trim()){ out.innerHTML = '<div class="hint" style="color:var(--amber)">Nothing came back. Try again.</div>'; }
+    else {
+      // Keep the exchange, and persist immediately — like the framework, this costs a model call
+      // and the autosave only fires on input events, which asking a question does not produce.
+      rsnLast = { q: question, a: acc };
+      try { if(window.tbpSaveDraft) window.tbpSaveDraft(); } catch(e){}
+    }
   } catch(err){
     out.innerHTML = '<div class="hint" style="color:var(--red)">' + esc(err.message || err) + '</div>';
   } finally {
@@ -6730,6 +6757,7 @@ function initTherapyCoach(){
       // It is derived text — the same class as the snapshot above — not the source documents,
       // which stay unstored by design and by the promise printed on the gather screen.
       adhd: (typeof adhdFw !== 'undefined' && adhdFw) ? adhdFw : null,
+      rsn: (typeof rsnLast !== 'undefined' && rsnLast) ? rsnLast : null,
       ts: Date.now()
     };
   }
@@ -6738,7 +6766,8 @@ function initTherapyCoach(){
       || (d.wnSections && ((d.wnSections.note || '') + (d.wnSections.checklist || '')).trim())
       // A framework built before a word is typed is worth keeping on its own. Without this the
       // save was a no-op and the key was actively cleared, so a reload lost it twice over.
-      || (d.adhd && (d.adhd.ESTABLISHED || d.adhd.GAPS || d.adhd.SNAPSHOT)));
+      || (d.adhd && (d.adhd.ESTABLISHED || d.adhd.GAPS || d.adhd.SNAPSHOT))
+      || (d.rsn && d.rsn.a));
   }
   function save(){ if(stopped) return; try{ var d = collect(); if(hasContent(d)) localStorage.setItem(KEY, JSON.stringify(d)); else localStorage.removeItem(KEY); }catch(e){} }
   function schedule(){ if(timer) clearTimeout(timer); timer = setTimeout(save, 700); }
@@ -6772,6 +6801,7 @@ function initTherapyCoach(){
       // Restore the framework and its entry point. The source documents are gone — they were
       // never stored — so the panel notes that, since a reassess would otherwise silently run
       // without the originals it was built from.
+      if(d.rsn && d.rsn.a){ try { tbpRsnRestore(d.rsn); } catch(e){} }
       if(typeof adhdFw !== 'undefined' && d.adhd){
         adhdFw = d.adhd;
         adhdFw.reloaded = true;
