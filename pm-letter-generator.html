@@ -323,6 +323,10 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
 
 .lib-output-layout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 28px; }
 .lib-output-letter { background: #fdfaf1; color: #1a1a1a; border-radius: 8px; padding: 50px 60px; font-family: Georgia, serif; font-size: 1rem; line-height: 1.7; white-space: pre-wrap; min-height: 600px; box-shadow: 0 12px 28px rgba(0,0,0,0.3); }
+.lib-output-letter:focus { outline: 2px solid var(--teal); outline-offset: 2px; }
+.lib-output-edithint { font-size: 0.8rem; color: var(--cream-muted); margin-bottom: 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.lib-revert-btn { background: transparent; border: 1px solid rgba(245,235,217,0.3); color: var(--cream-dim); font-size: 0.75rem; padding: 3px 9px; border-radius: 5px; cursor: pointer; }
+.lib-revert-btn:hover { border-color: var(--teal); color: var(--cream); }
 .lib-output-sidebar { display: flex; flex-direction: column; gap: 14px; }
 .lib-output-actions { background: var(--bg-card, #15192a); border: 1px solid rgba(245,235,217,0.12); border-radius: 8px; padding: 20px; }
 .lib-output-actions h4 { margin-bottom: 14px; font-size: 0.74rem; color: var(--cream-muted); text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; font-family: 'Inter', sans-serif; }
@@ -766,7 +770,8 @@ select{cursor:pointer;appearance:none;background-image:url("data:image/svg+xml,%
     </div>
 
     <div class="lib-output-layout">
-      <div class="lib-output-letter" id="lib-output-letter"></div>
+      <div class="lib-output-edithint" id="lib-output-edithint">&#x270e; You can edit any part of this letter below. Your changes flow through to the PDF, email, fax, and copy. <button type="button" class="lib-revert-btn" id="lib-revert-btn" onclick="libRevertLetter()" style="display:none">Revert to generated</button></div>
+      <div class="lib-output-letter" id="lib-output-letter" contenteditable="true" spellcheck="true" role="textbox" aria-multiline="true" aria-label="Editable letter text"></div>
       <div class="lib-output-sidebar">
         <div class="lib-output-actions">
           <h4>Actions</h4>
@@ -3019,6 +3024,10 @@ function libGenerateFinal() {
   }
   var finalText = libRenderTemplate(std.body_template, LIB.placeholderValues, LIB.toggleValues, std.placeholders);
   document.getElementById('lib-output-letter').textContent = finalText;
+  LIB.lastGeneratedText = finalText;       // baseline for "Revert to generated"
+  libInitLetterEditing();
+  var _lgRevBtn = document.getElementById('lib-revert-btn');
+  if (_lgRevBtn) _lgRevBtn.style.display = 'none';
   document.getElementById('lib-output-subtitle').textContent =
     std.category_label + (std.variant_label ? ' — ' + std.variant_label : '') + ' | TBP Standard v' + std.version;
 
@@ -3066,6 +3075,50 @@ function libGenerateFinal() {
   libShowView('output');
 }
 
+// ─── DIRECT LETTER EDITING ──────────────────────────────────────────────────
+// The composed letter in #lib-output-letter is directly editable by the clinician
+// (contenteditable). Every output path (PDF, email, fax, copy, text, print, and the
+// pay-link draft persisted across the Stripe redirect) reads the letter through
+// libLetterText() so manual edits are what the recipient actually receives. innerText
+// is used so the line breaks the clinician sees are preserved even after contenteditable
+// rewrites the DOM into divs/brs on Enter.
+function libLetterText() {
+  var el = document.getElementById('lib-output-letter');
+  if (!el) return '';
+  var t = (typeof el.innerText === 'string' && el.innerText !== '') ? el.innerText : (el.textContent || '');
+  return t.replace(/\r\n/g, '\n').replace(/ /g, ' ');
+}
+
+// Bind plain-text paste (so pasted rich text can't inject markup into the PDF source) and
+// the revert affordance. Bound once per element; safe to call on every generate/restore.
+function libInitLetterEditing() {
+  var el = document.getElementById('lib-output-letter');
+  if (!el || el._lgEditBound) return;
+  el.addEventListener('paste', function (e) {
+    e.preventDefault();
+    var text = '';
+    try { text = (e.clipboardData || window.clipboardData).getData('text/plain') || ''; } catch (_) {}
+    try { document.execCommand('insertText', false, text); }
+    catch (_) {
+      var sel = window.getSelection();
+      if (sel && sel.rangeCount) { sel.deleteFromDocument(); sel.getRangeAt(0).insertNode(document.createTextNode(text)); }
+    }
+  });
+  el.addEventListener('input', function () {
+    var btn = document.getElementById('lib-revert-btn');
+    if (btn) btn.style.display = (libLetterText() !== ((window.LIB && LIB.lastGeneratedText) || '')) ? 'inline-block' : 'none';
+  });
+  el._lgEditBound = true;
+}
+
+// Restore the letter to exactly what was generated, discarding manual edits.
+function libRevertLetter() {
+  var el = document.getElementById('lib-output-letter');
+  if (el) el.textContent = (window.LIB && LIB.lastGeneratedText) || '';
+  var btn = document.getElementById('lib-revert-btn');
+  if (btn) btn.style.display = 'none';
+}
+
 function libTrackUsage(std) {
   try {
     var email = '';
@@ -3103,7 +3156,7 @@ async function libBuildLetterPDF(opts) {
 
   var std = LIB.selectedStandard;
   if (!std) throw new Error('No letter selected');
-  var letterText = document.getElementById('lib-output-letter').textContent || '';
+  var letterText = libLetterText();
   var filename = std.standard_key + '_' + std.variant_key + '_' + new Date().toISOString().slice(0, 10) + '.pdf';
 
   var vault = libGetVaultData() || {};
@@ -3350,7 +3403,7 @@ function libWrapTextLines(text, font, fontSize, maxWidth) {
 }
 
 function libCopyText() {
-  var text = document.getElementById('lib-output-letter').textContent;
+  var text = libLetterText();
   navigator.clipboard.writeText(text).then(function() {
     libFlash('Letter copied to clipboard');
   }).catch(function() {
@@ -3359,7 +3412,7 @@ function libCopyText() {
 }
 
 function libDownloadText() {
-  var text = document.getElementById('lib-output-letter').textContent;
+  var text = libLetterText();
   var std = LIB.selectedStandard;
   var filename = std.standard_key + '_' + std.variant_key + '_' + new Date().toISOString().slice(0,10) + '.txt';
   var blob = new Blob([text], { type: 'text/plain' });
@@ -3370,7 +3423,7 @@ function libDownloadText() {
 }
 
 function libPrintLetter() {
-  var text = document.getElementById('lib-output-letter').textContent;
+  var text = libLetterText();
   var w = window.open('', '_blank');
   w.document.write('<html><head><title>Letter</title><style>body{font-family:Georgia,serif;font-size:12pt;line-height:1.6;max-width:7in;margin:0.5in auto;color:#111;white-space:pre-wrap}@media print{body{margin:0;max-width:none}}</style></head><body>' + libEsc(text) + '</body></html>');
   w.document.close();
@@ -5950,7 +6003,7 @@ function _getActiveLetterText() {
   var legacyEl = document.getElementById('letter-output');
   var text = '';
   if (libEl && libEl.textContent && libEl.textContent.trim()) {
-    text = libEl.textContent;
+    text = (typeof libLetterText === 'function') ? libLetterText() : libEl.textContent;
   } else if (legacyEl) {
     text = legacyEl.textContent || '';
   }
@@ -7196,7 +7249,7 @@ function _lgSaveLetterDraft(){
     var subEl = document.getElementById('lib-output-subtitle');
     var signEl = document.getElementById('lib-sign-letter');
     localStorage.setItem('lg_letter_draft', JSON.stringify({
-      text: letterEl.textContent,
+      text: (typeof libLetterText === 'function') ? libLetterText() : letterEl.textContent,
       subtitle: subEl ? subEl.textContent : '',
       std: (window.LIB && LIB.selectedStandard) || null,
       sign: !!(signEl && signEl.checked),
@@ -7227,6 +7280,8 @@ function _lgRestoreLetterDraft(attempt){
   try {
     if (window.LIB && d.std) LIB.selectedStandard = d.std;
     letterEl.textContent = d.text;
+    if (window.LIB) LIB.lastGeneratedText = d.text;
+    libInitLetterEditing();
     var subEl = document.getElementById('lib-output-subtitle');
     if (subEl && d.subtitle) subEl.textContent = d.subtitle;
     var signEl = document.getElementById('lib-sign-letter');
