@@ -127,6 +127,11 @@ html.rsn-open #rsn-grip{display:block}
 #rsn-grip::after{content:"";position:absolute;top:0;bottom:0;left:4px;width:1px;background:var(--rule)}
 #rsn-grip:hover::after,#rsn-grip.dragging::after{background:var(--teal);width:2px;left:3.5px}
 html.rsn-dragging{user-select:none}   /* stop the note selecting text mid-drag */
+/* The question box stays reachable while the answer scrolls. Negative margins let its
+   background span the full panel width so text cannot show through underneath it. */
+#rsn-composer{position:sticky;bottom:0;z-index:2;background:var(--navy-card);
+  margin:14px -22px 0;padding:11px 22px 14px;border-top:1px solid var(--rule);
+  box-shadow:0 -10px 18px -12px rgba(0,0,0,.55)}
 html.rsn-open .focus-overlay.open{right:var(--rsn-w)}
 html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition:padding-right .12s ease}
 @media (max-width:1100px){
@@ -742,13 +747,16 @@ function tcoachSuggestTool(){
       <button type="button" class="btn rsn-starter" style="margin:0;padding:6px 12px;font-size:.82rem;font-weight:500">What would make you change your mind?</button>
     </div>
 
-    <textarea id="rsn-q" style="width:100%;min-height:70px" placeholder="Ask anything about this case&hellip; e.g. &ldquo;What else should I clarify before changing medication?&rdquo;"></textarea>
-    <div style="margin-top:8px;display:flex;align-items:center;gap:9px;flex-wrap:wrap">
-      <button type="button" class="btn" id="rsn-go">Think it through &rarr;</button>
-      <span class="hint" id="rsn-msg"></span>
-      <span class="hint" id="rsn-ctx" style="color:var(--cream-dim);margin-left:auto"></span>
-    </div>
     <div id="rsn-out" style="margin-top:13px"></div>
+
+    <div id="rsn-composer">
+      <textarea id="rsn-q" style="width:100%;min-height:64px" placeholder="Ask anything about this case&hellip; e.g. &ldquo;What else should I clarify before changing medication?&rdquo;"></textarea>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+        <button type="button" class="btn" id="rsn-go" style="margin-top:0">Think it through &rarr;</button>
+        <span class="hint" id="rsn-msg"></span>
+        <span class="hint" id="rsn-ctx" style="color:var(--cream-dim);margin-left:auto;text-align:right"></span>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -2612,13 +2620,17 @@ function tbpCaseContext(){
   return { text: parts.join('\n\n---\n\n'), have: bits };
 }
 
+function tbpRsnUpdateCtx(c){
+  var el = document.getElementById('rsn-ctx'); if(!el) return;
+  c = c || tbpCaseContext();
+  el.textContent = c.have.length ? ('Reading: ' + c.have.join(', ')) : 'Nothing in this session yet';
+}
+
 function tbpShowReason(){
   if(typeof tbpDemoBlock === 'function' && tbpDemoBlock()) return;
   document.getElementById('reason-modal').classList.add('open');
   document.documentElement.classList.add('rsn-open');   // shrinks the workspace to make room
-  var c = tbpCaseContext();
-  var el = document.getElementById('rsn-ctx');
-  if(el) el.textContent = c.have.length ? ('Reading: ' + c.have.join(', ')) : 'Nothing in this session yet';
+  tbpRsnUpdateCtx();
   var q = document.getElementById('rsn-q'); if(q){ try{ q.focus(); }catch(e){} }
 }
 // Panel width is the clinician's call: a long answer wants reading width, a dense note wants
@@ -2685,6 +2697,7 @@ async function tbpRunReason(question){
   var msg = document.getElementById('rsn-msg');
   var go  = document.getElementById('rsn-go');
   var c = tbpCaseContext();
+  tbpRsnUpdateCtx(c);   // the session may have gained a record since the panel was opened
   if(!c.have.length){
     out.innerHTML = '<div class="hint" style="color:var(--amber);line-height:1.5">There is nothing in this session to reason over yet. Type or paste into your working note, paste last visit\'s note in setup, or bring in an outside record first.</div>';
     return;
@@ -2717,9 +2730,22 @@ document.getElementById('rsn-go').addEventListener('click', function(){
   if(!q){ document.getElementById('rsn-q').focus(); return; }
   tbpRunReason(q);
 });
+// Cmd/Ctrl+Enter sends; plain Enter and Shift+Enter both make a new line. Predictable, and it
+// does not punish a clinician who hits Enter while composing a two-sentence question.
+document.getElementById('rsn-q').addEventListener('keydown', function(e){
+  if(e.key !== 'Enter' || !(e.metaKey || e.ctrlKey)) return;
+  e.preventDefault();
+  var go = document.getElementById('rsn-go');
+  if(go && !go.disabled) go.click();
+});
+
 document.getElementById('reason-modal').addEventListener('click', function(e){
   var b = e.target && e.target.closest ? e.target.closest('button.rsn-starter') : null;
   if(!b) return;
+  // The starters bypass the send button, so they need their own in-flight guard or a second
+  // click during streaming fires a duplicate call.
+  var go = document.getElementById('rsn-go');
+  if(go && go.disabled) return;
   var q = (b.textContent || '').trim();
   document.getElementById('rsn-q').value = q;
   tbpRunReason(q);
