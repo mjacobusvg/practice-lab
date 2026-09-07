@@ -3044,6 +3044,11 @@ function tbpAdhdRender(){
     h += '<div style="background:var(--navy);border:1px solid rgba(139,92,246,0.35);border-radius:7px;padding:10px 13px;margin-bottom:15px;font-size:.83rem;line-height:1.55;color:var(--cream);white-space:pre-wrap">'
       + esc(f.EVIDENCE) + '</div>';
   }
+  if(f.reloaded){
+    h += '<div class="hint" style="margin-bottom:13px;padding:9px 12px;border:1px solid var(--rule);border-left:3px solid var(--amber);border-radius:7px;line-height:1.5;color:var(--cream)">'
+      + 'Recovered after a reload. The framework is intact; the uploaded documents are not, because they are never stored. '
+      + 'Everything below still stands, and a reassess will read the visit against it &mdash; but add the records again if you want them re-read.</div>';
+  }
   if(f.SNAPSHOT){
     h += '<div class="adhd-sec"><h3>Before you walk in</h3><div class="adhd-txt" style="border-color:rgba(139,92,246,0.4)">'
       + esc(f.SNAPSHOT) + '</div></div>';
@@ -3134,7 +3139,7 @@ async function tbpAdhdRun(mode){
     }
     // An update rebuilds every section; a first build must not wipe TODAY/POSITION if they
     // somehow exist already.
-    if(isUpdate){ f.sig = tbpAdhdSessionSig(); adhdFw = f; }
+    if(isUpdate){ f.sig = tbpAdhdSessionSig(); f.reloaded = false; adhdFw = f; }
     else {
       // A first build is a pre-visit briefing: it must not inherit post-visit sections from a
       // previous framework, or the panel would claim the interview established things it has
@@ -3142,10 +3147,14 @@ async function tbpAdhdRun(mode){
       // session actually grows.
       f.TODAY = ''; f.CHANGED = ''; f.POSITION = '';
       f.sig = tbpAdhdSessionSig();
+      f.reloaded = false;
       adhdFw = f;
     }
     adhdArmed = true;
     tbpAdhdFeedPrep();   // rundown banner and checklist rails, same ones prep uses
+    // Persist now. The autosave is driven by input events, and a clinician who builds a
+    // framework and then reloads before typing anything would otherwise never have triggered one.
+    try { if(window.tbpSaveDraft) window.tbpSaveDraft(); } catch(e){}
     if(msg) msg.innerHTML = '';
     tbpAdhdRender();
     if(!isUpdate){ tbpAdhdHideSetup(); tbpAdhdShowPanel(); }
@@ -6716,12 +6725,20 @@ function initTherapyCoach(){
       wnMode: (typeof wnMode !== 'undefined' ? wnMode : 'plain'),
       wnSections: (typeof wnSections !== 'undefined' ? wnSections : null),
       snap: (typeof prepSnapshot !== 'undefined' ? prepSnapshot : ''),   // pre-visit rundown banner; in-memory only otherwise, so a reload/refresh-nudge/recovery would drop it
+      pchk: (typeof prepChecklist !== 'undefined' && prepChecklist) ? prepChecklist : [],
+      // The ADHD framework costs a model call over several documents and was surviving nothing.
+      // It is derived text — the same class as the snapshot above — not the source documents,
+      // which stay unstored by design and by the promise printed on the gather screen.
+      adhd: (typeof adhdFw !== 'undefined' && adhdFw) ? adhdFw : null,
       ts: Date.now()
     };
   }
   function hasContent(d){
     return !!((d.raw && d.raw.trim()) || (d.context && d.context.trim()) || (d.focus && d.focus.trim())
-      || (d.wnSections && ((d.wnSections.note || '') + (d.wnSections.checklist || '')).trim()));
+      || (d.wnSections && ((d.wnSections.note || '') + (d.wnSections.checklist || '')).trim())
+      // A framework built before a word is typed is worth keeping on its own. Without this the
+      // save was a no-op and the key was actively cleared, so a reload lost it twice over.
+      || (d.adhd && (d.adhd.ESTABLISHED || d.adhd.GAPS || d.adhd.SNAPSHOT)));
   }
   function save(){ if(stopped) return; try{ var d = collect(); if(hasContent(d)) localStorage.setItem(KEY, JSON.stringify(d)); else localStorage.removeItem(KEY); }catch(e){} }
   function schedule(){ if(timer) clearTimeout(timer); timer = setTimeout(save, 700); }
@@ -6751,6 +6768,15 @@ function initTherapyCoach(){
       if(typeof wnMode !== 'undefined' && d.wnMode) wnMode = d.wnMode;
       if(typeof wnSections !== 'undefined' && d.wnSections) wnSections = d.wnSections;
       if(typeof prepSnapshot !== 'undefined' && d.snap) prepSnapshot = d.snap;   // bring the pre-visit rundown banner back with the note
+      if(typeof prepChecklist !== 'undefined' && Array.isArray(d.pchk)) prepChecklist = d.pchk;
+      // Restore the framework and its entry point. The source documents are gone — they were
+      // never stored — so the panel notes that, since a reassess would otherwise silently run
+      // without the originals it was built from.
+      if(typeof adhdFw !== 'undefined' && d.adhd){
+        adhdFw = d.adhd;
+        adhdFw.reloaded = true;
+        try { adhdArmed = true; tbpAdhdSyncTriggers(); tbpAdhdRender(); } catch(e){}
+      }
       var r = document.getElementById('raw'); if(r && d.raw) r.value = d.raw;
       var c = document.getElementById('context'); if(c && d.context) c.value = d.context;
       var f = document.getElementById('focus-note'); if(f && d.focus) f.value = d.focus;
