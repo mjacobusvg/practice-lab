@@ -8,6 +8,18 @@
 // bedrock:InvokeModel + bedrock:InvokeModelWithResponseStream, and env vars
 // BEDROCK_MODEL_SONNET / BEDROCK_MODEL_HAIKU set to the US inference-profile IDs.
 //
+// ALSO HANDLES OCR (action:'ocr'). Scanned records -- faxes above all -- arrive as page
+// images with no text layer, so nothing can be extracted in the browser. The Scribe
+// renders each page to an image locally and posts it here one page at a time; this
+// function runs Amazon Textract over it and returns the text it actually read.
+// Textract is HIPAA-eligible under the same AWS BAA that already covers Bedrock, so
+// this adds no new vendor and no new agreement. Deliberately Textract and NOT a vision
+// model: OCR must fail loudly rather than invent a plausible dose. Textract returns
+// garbage or nothing when a page is unreadable; it does not fabricate.
+// Nothing is stored -- no S3, no async job, bytes in and text out.
+//
+// One-time IAM: add textract:DetectDocumentText to this function's execution role.
+//
 // Env vars: SESSION_SIGNING_SECRET, SUPABASE_URL, SUPABASE_SERVICE_KEY,
 //           BEDROCK_MODEL_SONNET, BEDROCK_MODEL_HAIKU, (optional) BEDROCK_REGION.
 //
@@ -234,6 +246,47 @@ export const handler = async (event) => {
     const trialOk = await hasActiveTrial(session.claims.cmid, session.claims.email);
     const entitledOk = (!trialOk && gateFeature) ? await hasActiveEntitlement(session.claims.email, gateFeature) : false;
     if (!trialOk && !entitledOk) return json(403, { error: 'This tool requires the full Think Beyond Practice membership.' });
+  }
+
+  // --- OCR a single rendered page (scanned records) -------------------------------
+  // One page per request keeps every call inside the synchronous Textract limits and
+  // inside the Function URL's 6 MB request cap, and lets the browser show real progress.
+  if (body.action === 'ocr') {
+    const b64 = typeof body.image === 'string' ? body.image.replace(/^data:[^,]*,/, '') : '';
+    if (!b64) return json(400, { error: 'No page image supplied.' });
+    let bytes;
+    try { bytes = Buffer.from(b64, 'base64'); } catch (e) { return json(400, { error: 'Page image could not be decoded.' }); }
+    if (!bytes.length) return json(400, { error: 'Page image was empty.' });
+    if (bytes.length > 5 * 1024 * 1024) return json(413, { error: 'Page image is too large. Lower the render scale.' });
+
+    let Textract;
+    try {
+      Textract = await import('@aws-sdk/client-textract');
+    } catch (e) {
+      return json(500, { error: 'Textract client unavailable in this runtime. Add @aws-sdk/client-textract to the function or a layer.' });
+    }
+    const tx = new Textract.TextractClient({ region: REGION });
+    let out;
+    try {
+      out = await tx.send(new Textract.DetectDocumentTextCommand({ Document: { Bytes: bytes } }));
+    } catch (err) {
+      const m = String(err && err.message || err);
+      const denied = /AccessDenied|not authorized/i.test(m);
+      return json(denied ? 403 : 502, {
+        error: denied
+          ? 'This account is not permitted to run Textract yet. Add textract:DetectDocumentText to the function execution role.'
+          : 'Could not read this page: ' + m.slice(0, 300)
+      });
+    }
+    const lines = (out.Blocks || [])
+      .filter(function (b) { return b.BlockType === 'LINE' && typeof b.Text === 'string'; })
+      .map(function (b) { return b.Text; });
+    await logUsage({
+      tool: body.tool || toolFromReferer(referer) || 'AI Scribe', mode: 'ocr_page', event: 'interaction',
+      email: session.claims.email, tier: session.claims.tier, model: 'textract',
+      inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0
+    });
+    return json(200, { text: lines.join('\n') });
   }
 
   const logicalModel = (ALLOWED_MODELS.indexOf(body.model) !== -1 ? body.model : DEFAULT_MODEL);

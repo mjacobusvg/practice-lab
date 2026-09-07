@@ -7,7 +7,7 @@ question, changing any clinical data path, or updating the subprocessor page / p
 BAA. Keep it in sync with `subprocessors.html`, `privacy-policy.html`, `baa.html`, and
 `COMPLIANCE-INTEGRATION.md`.
 
-Last updated: 2026-08-31.
+Last updated: 2026-09-07.
 
 Legend: **[CONFIRMED]** = verified this session (console/email/live test). **[PER MICHAEL]** =
 stated by the owner, document not re-verified here — confirm the signed document exists.
@@ -76,6 +76,27 @@ logs token-count metadata only (never message content), to Supabase `tool_usage`
   - Haiku: `us.anthropic.claude-haiku-4-5-20251001-v1:0` (env `BEDROCK_MODEL_HAIKU`)
 - Anthropic (the model developer) does **not** receive inputs/outputs and does not train on them
   — Bedrock runs the models inside AWS and does not share data with the provider.
+
+### 4a-ii. Scanned records — page images → text (OCR)
+
+A faxed or scanned record has no text layer, so there is nothing for the browser to extract and
+the Scribe cannot read it at all without looking at the pages. The Scribe renders each page to a
+JPEG **locally**, then posts it one page at a time to **`tbp-clinical-proxy`** (the same BUFFERED
+Function URL, `action:'ocr'`), which runs **Amazon Textract** `DetectDocumentText` and returns the
+text. Under the **AWS BAA** — Textract is HIPAA-eligible, same account and same agreement as
+Bedrock, so this adds **no new subprocessor and no new BAA**. Synchronous only: no S3 bucket, no
+async job, no retention. The extracted text then follows the normal 4a path.
+
+- One-time IAM: `textract:DetectDocumentText` on the `tbp-clinical-proxy` execution role.
+- Capped at 40 pages per document (cost/latency stop, not a technical limit).
+- **Textract, deliberately not a vision model.** OCR must fail loudly rather than infer a
+  plausible dose from an unreadable one. Textract returns garbage or nothing when it cannot read
+  a page; it does not fabricate. Text obtained this way is labelled "read by OCR" on the source
+  card so the clinician knows to check anything that matters against the page.
+- Note that this changes what leaves the machine for scanned documents: **page images**, not
+  extracted text. Same destination, same agreement. The gather-screen copy was corrected at the
+  same time — it previously said "the file stays on your computer", which was true but was being
+  read as "the record's content stays local", which was never true for any document.
 
 ### 4b. Ambient transcription — audio → transcript
 Browser records → uploads audio **directly to Azure Blob Storage** (short-lived write SAS, container
