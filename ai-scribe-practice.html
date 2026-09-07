@@ -3030,7 +3030,13 @@ function tbpAdhdQuestionsToNote(silent){
     wnSections = { checklist: qs.map(function(q){ return '\u2022 ' + q; }).join('\n\n'), guide: '', note: '' };
     wnMode = 'sections';
     if(raw) raw.value = serializeSections();
-    renderMode();
+    // renderMode() is the SETUP SCREEN renderer and does nothing to the working note. The
+    // full-screen note is built by buildFocusSections, and when the overlay is already open
+    // (which it is, straight after a build) it has to be rebuilt or the checklist lands in
+    // state and never appears. openFocus does the whole job: display toggles, banner, panels.
+    var fo = document.getElementById('focus-overlay');
+    if(fo && fo.classList.contains('open') && typeof openFocus === 'function') openFocus('raw');
+    else renderMode();
     try { if(window.tbpSaveDraft) window.tbpSaveDraft(); } catch(e){}
     if(msg) msg.innerHTML = '<span style="color:var(--green)">Added to your working note. Jot answers under each; the prompts are stripped when you draft.</span>';
     return true;
@@ -3163,6 +3169,11 @@ async function tbpAdhdRun(mode){
     }
     adhdArmed = true;
     tbpAdhdFeedPrep();   // rundown banner and checklist rails, same ones prep uses
+    // AFTER the install, not before. Installing the checklist grows the session by a thousand
+    // characters, so a fingerprint taken earlier makes the gate fire on scaffold this build
+    // just wrote — the reassess action appearing before the visit has happened at all.
+    adhdFw.sig = tbpAdhdSessionSig();
+    try { tbpAdhdSyncFoot(); } catch(e){}
     // Persist now. The autosave is driven by input events, and a clinician who builds a
     // framework and then reloads before typing anything would otherwise never have triggered one.
     try { if(window.tbpSaveDraft) window.tbpSaveDraft(); } catch(e){}
