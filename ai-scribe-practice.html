@@ -114,9 +114,19 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 #reason-modal.rsn-panel.open{display:block}
 #reason-modal.rsn-panel>.modal{max-width:none;width:auto;min-height:100%;border:0;border-radius:0;background:transparent;padding:18px 22px 26px}
 /* Push, do not cover. Both workspaces: the full-screen note and the plain page. */
-/* While the panel is open, its trigger reads as the thing currently open rather than as one
-   of three equal jobs. Driven off the same class that opens the panel, so it cannot desync. */
-html.rsn-open .rsn-trigger{box-shadow:0 0 0 2px var(--teal),0 0 14px rgba(42,171,184,.22)}
+/* While the panel is open, its trigger reads as the thing currently open rather than as one of
+   three equal jobs. .btn is a filled teal pill with dark text, so anything added on top of it
+   disappears; inverting it is what actually reads as selected. Driven off the same class that
+   opens the panel, so it cannot desync. */
+html.rsn-open .rsn-trigger{background:var(--navy);color:var(--teal);box-shadow:inset 0 0 0 2px var(--teal)}
+
+/* ── Drag the divider to rebalance note and panel. ── */
+#rsn-grip{position:fixed;top:0;bottom:0;right:var(--rsn-w);width:9px;margin-right:-4px;z-index:9641;
+  cursor:col-resize;display:none;background:transparent;touch-action:none}
+html.rsn-open #rsn-grip{display:block}
+#rsn-grip::after{content:"";position:absolute;top:0;bottom:0;left:4px;width:1px;background:var(--rule)}
+#rsn-grip:hover::after,#rsn-grip.dragging::after{background:var(--teal);width:2px;left:3.5px}
+html.rsn-dragging{user-select:none}   /* stop the note selecting text mid-drag */
 html.rsn-open .focus-overlay.open{right:var(--rsn-w)}
 html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition:padding-right .12s ease}
 @media (max-width:1100px){
@@ -712,6 +722,7 @@ function tcoachSuggestTool(){
 </div>
 
 <!-- First-run onboarding: a short guided setup (working style + setup + template). -->
+<div id="rsn-grip" title="Drag to resize"></div>
 <div class="modal-overlay rsn-panel" id="reason-modal" style="z-index:9640">
   <!-- No inline max-width: the panel sizes itself from --rsn-w, and an inline value would
        beat the stylesheet and leave a narrow column floating in a wide drawer. -->
@@ -2610,6 +2621,60 @@ function tbpShowReason(){
   if(el) el.textContent = c.have.length ? ('Reading: ' + c.have.join(', ')) : 'Nothing in this session yet';
   var q = document.getElementById('rsn-q'); if(q){ try{ q.focus(); }catch(e){} }
 }
+// Panel width is the clinician's call: a long answer wants reading width, a dense note wants
+// the space back. Bounded so neither side can be squeezed out of usefulness — 340px keeps the
+// starter buttons and the question box workable, half the viewport keeps the note the primary
+// surface. Persisted per browser rather than per patient, since it is a workspace preference.
+var RSN_W_KEY = 'tbp_rsn_w';
+function tbpRsnClamp(px){
+  return Math.max(340, Math.min(px, Math.min(window.innerWidth * 0.5, 900)));
+}
+function tbpRsnSetWidth(px, persist){
+  var w = tbpRsnClamp(px);
+  document.documentElement.style.setProperty('--rsn-w', w + 'px');
+  if(persist){ try { localStorage.setItem(RSN_W_KEY, String(Math.round(w))); } catch(e){} }
+}
+(function(){
+  // Restore before first paint of the panel, so it never opens at the default and jump-cuts.
+  try {
+    var saved = parseInt(localStorage.getItem(RSN_W_KEY) || '', 10);
+    if(saved > 0) tbpRsnSetWidth(saved, false);
+  } catch(e){}
+
+  var grip = document.getElementById('rsn-grip');
+  if(!grip) return;
+  grip.addEventListener('pointerdown', function(e){
+    // Below the breakpoint the panel is full-bleed and there is nothing to rebalance.
+    if(window.innerWidth <= 1100) return;
+    e.preventDefault();
+    grip.setPointerCapture(e.pointerId);
+    grip.classList.add('dragging');
+    document.documentElement.classList.add('rsn-dragging');
+  });
+  grip.addEventListener('pointermove', function(e){
+    if(!grip.classList.contains('dragging')) return;
+    tbpRsnSetWidth(window.innerWidth - e.clientX, false);   // width is the distance to the right edge
+  });
+  function end(e){
+    if(!grip.classList.contains('dragging')) return;
+    grip.classList.remove('dragging');
+    document.documentElement.classList.remove('rsn-dragging');
+    try { grip.releasePointerCapture(e.pointerId); } catch(err){}
+    // Persist once, at the end, rather than on every move.
+    var cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--rsn-w'));
+    if(cur > 0) tbpRsnSetWidth(cur, true);
+  }
+  grip.addEventListener('pointerup', end);
+  grip.addEventListener('pointercancel', end);
+
+  // A saved width can become illegal when the window shrinks; re-clamp rather than leave the
+  // note squeezed into a sliver.
+  window.addEventListener('resize', function(){
+    var cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--rsn-w'));
+    if(cur > 0) tbpRsnSetWidth(cur, false);
+  });
+})();
+
 function tbpHideReason(){
   document.getElementById('reason-modal').classList.remove('open');
   document.documentElement.classList.remove('rsn-open');   // give the workspace its width back
