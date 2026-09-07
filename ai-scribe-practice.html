@@ -120,6 +120,27 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
    opens the panel, so it cannot desync. */
 html.rsn-open .rsn-trigger{background:var(--navy);color:var(--teal);box-shadow:inset 0 0 0 2px var(--teal)}
 
+/* The Framework docks like Discern but keeps its own width, and only one panel is open at a
+   time — two side panels would leave the note a column. */
+:root{--adhd-w:min(42vw,620px)}
+#adhd-panel.adhd-panel{inset:0 0 0 auto;width:var(--adhd-w);border-left:1px solid rgba(139,92,246,0.45)}
+html.adhd-open .focus-overlay.open{right:var(--adhd-w)}
+html.adhd-open #tool-container{padding-right:calc(var(--adhd-w) + 20px);transition:padding-right .12s ease}
+html.adhd-open .adhd-trigger{background:var(--navy);color:#a78bfa;box-shadow:inset 0 0 0 2px #a78bfa}
+#adhd-grip{position:fixed;top:0;bottom:0;right:var(--adhd-w);width:9px;margin-right:-4px;z-index:9643;
+  cursor:col-resize;display:none;background:transparent;touch-action:none}
+html.adhd-open #adhd-grip{display:block}
+#adhd-grip::after{content:"";position:absolute;top:0;bottom:0;left:4px;width:1px;background:var(--rule)}
+#adhd-grip:hover::after,#adhd-grip.dragging::after{background:#a78bfa;width:2px;left:3.5px}
+.adhd-sec{margin-bottom:15px}
+.adhd-sec h3{font-family:var(--font-body);font-size:.79rem;letter-spacing:.06em;text-transform:uppercase;color:#a78bfa;margin:0 0 6px;font-weight:700}
+.adhd-sec .adhd-txt{background:var(--navy);border:1px solid var(--rule);border-radius:7px;padding:11px 13px;white-space:pre-wrap;font-size:.87rem;line-height:1.6;color:var(--cream)}
+@media (max-width:1100px){
+  #adhd-panel.adhd-panel{width:100%;border-left:0;box-shadow:none}
+  html.adhd-open .focus-overlay.open{right:0}
+  html.adhd-open #tool-container{padding-right:0}
+}
+
 /* ── Drag the divider to rebalance note and panel. ── */
 #rsn-grip{position:fixed;top:0;bottom:0;right:var(--rsn-w);width:9px;margin-right:-4px;z-index:9641;
   cursor:col-resize;display:none;background:transparent;touch-action:none}
@@ -272,6 +293,13 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
         <span class="hint" id="neweval-hint" style="margin-left:8px"></span>
 
         <div class="hint" style="margin-top:12px;line-height:1.5;color:var(--cream-dim)">Have records the patient sent ahead &mdash; a prior evaluation, discharge summary, referral, school testing? <a href="#" onclick="tbpShowDocs();return false;" style="color:var(--teal);text-decoration:none;font-weight:700">Review them first &rarr;</a></div>
+
+        <div id="adhd-offer" style="margin-top:14px;padding:12px 14px;border:1px solid rgba(139,92,246,0.5);border-left:3px solid #a78bfa;background:linear-gradient(90deg,rgba(139,92,246,0.16),rgba(139,92,246,0.05));border-radius:9px">
+          <div style="font-weight:700;color:#a78bfa;font-size:.95rem">Evaluating ADHD?</div>
+          <div class="hint" style="margin-top:4px;line-height:1.5">Build the evaluation from what you already have. The Framework reads the records, intake paperwork and history you bring it, then shows what is already established, what still needs to be established, which competing explanations are actually live, and the questions worth asking today. Your note stays your note.</div>
+          <button class="btn" type="button" id="adhd-open-setup" style="margin-top:9px;background:#a78bfa;color:#1a1033">Use ADHD Evaluation Framework &rarr;</button>
+          <span class="hint" id="adhd-offer-msg" style="margin-left:8px"></span>
+        </div>
       </div>
 
       <!-- BLANK path (Prep off): one button into the single working note. For a follow-up with last
@@ -473,6 +501,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
       <button type="button" class="btn" style="margin:0;padding:7px 13px;font-size:.85rem" title="Carry last visit forward, build today&rsquo;s checklist and set the visit type &mdash; or skip setup and just start writing." onclick="tbpShowSetup()">&#9881; Start or prep a visit</button>
       <button type="button" class="btn" style="margin:0;padding:7px 13px;font-size:.85rem" title="Read a prior evaluation, discharge summary or old records. Reviewing one does nothing to your note; the file never leaves your computer." onclick="tbpDocsFromNudge()">&#128196; Review outside records</button>
       <button type="button" class="btn rsn-trigger" style="margin:0;padding:7px 13px;font-size:.85rem" title="Think through the case using what is already in this session. Nothing goes into your note unless you put it there." onclick="tbpShowReason()">&#129504; Discern</button>
+      <button type="button" class="btn adhd-trigger adhd-entry" style="display:none;margin:0;padding:7px 13px;font-size:.85rem;background:#a78bfa;color:#1a1033" title="What this case establishes about the ADHD question, what it does not, and what is worth asking today." onclick="tbpAdhdShowPanel()">&#129504; ADHD Framework</button>
     </div>
   </div>
   <div id="focus-sections" style="display:none"></div>
@@ -737,6 +766,55 @@ function tcoachSuggestTool(){
 </div>
 
 <!-- First-run onboarding: a short guided setup (working style + setup + template). -->
+<div class="modal-overlay" id="adhd-setup" style="z-index:9660">
+  <div class="modal" style="max-width:760px">
+    <button class="modal-x" type="button" onclick="tbpAdhdHideSetup()" aria-label="Close">&times;</button>
+    <h2 style="margin:0 0 1px">ADHD Evaluation Framework</h2>
+    <div style="font-weight:600;color:var(--cream);font-size:.92rem;margin-bottom:6px">Build this evaluation from what you already have</div>
+    <div class="hint" style="line-height:1.55;margin-bottom:14px">Add any records, intake forms, prior evaluations, school records, collateral or history you already have. Upload files or paste text &mdash; both work, and you can add several. The Framework organises the evidence, shows what is already established and what still needs clarification, and generates the questions worth asking today.
+      <br><span style="color:var(--cream-dim)">Files stay on your computer. The Scribe reads them and keeps no copy.</span></div>
+
+    <div style="display:flex;gap:9px;flex-wrap:wrap;align-items:center">
+      <button class="btn" type="button" id="adhd-add-file" style="margin-top:0">&plus; Upload records</button>
+      <button class="btn-ghost" type="button" id="adhd-add-text" style="margin-top:0">&plus; Paste text</button>
+      <input type="file" id="adhd-file" accept=".pdf,.docx,.txt,.rtf,.md,.text" multiple style="display:none">
+      <span class="hint" id="adhd-add-msg"></span>
+    </div>
+
+    <div id="adhd-paste-wrap" style="display:none;margin-top:11px">
+      <input type="text" id="adhd-paste-label" placeholder="What is this? e.g. Parent collateral, Intake questionnaire, Patient's written history" style="width:100%;margin-bottom:7px">
+      <textarea id="adhd-paste-text" style="width:100%;min-height:120px" placeholder="Paste the text here."></textarea>
+      <div style="margin-top:7px">
+        <button class="btn" type="button" id="adhd-paste-save" style="margin-top:0;padding:7px 14px;font-size:.85rem">Add this</button>
+        <button class="btn-ghost" type="button" id="adhd-paste-cancel" style="margin-top:0;padding:7px 14px;font-size:.85rem">Cancel</button>
+      </div>
+    </div>
+
+    <div id="adhd-src-list" style="margin-top:14px"></div>
+
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--rule)">
+      <button class="btn" type="button" id="adhd-build" style="background:#a78bfa;color:#1a1033">Build ADHD Evaluation Framework &rarr;</button>
+      <span class="hint" id="adhd-build-msg" style="margin-left:9px"></span>
+      <div class="hint" style="margin-top:9px;line-height:1.5;color:var(--cream-dim)">You can build with nothing at all &mdash; the Framework will simply tell you that everything still needs establishing, which is itself a fair starting point for a first appointment.</div>
+    </div>
+  </div>
+</div>
+
+<div id="adhd-grip" title="Drag to resize"></div>
+<div class="modal-overlay rsn-panel adhd-panel" id="adhd-panel" style="z-index:9642">
+  <div class="modal">
+    <button class="modal-x" type="button" onclick="tbpAdhdHidePanel()" aria-label="Close">&times;</button>
+    <h2 style="margin:0 0 1px">ADHD Evaluation Framework</h2>
+    <div style="font-weight:600;color:var(--cream);font-size:.92rem;margin-bottom:8px">What this case establishes, and what it does not</div>
+    <div id="adhd-body"></div>
+    <div id="adhd-panel-foot" style="position:sticky;bottom:0;z-index:2;background:var(--navy-card);margin:14px -22px 0;padding:11px 22px 14px;border-top:1px solid var(--rule)">
+      <button class="btn" type="button" id="adhd-refresh" style="margin-top:0;background:#a78bfa;color:#1a1033;padding:8px 15px;font-size:.86rem">Update from today&rsquo;s visit</button>
+      <span class="hint" id="adhd-refresh-msg" style="margin-left:9px"></span>
+      <div class="hint" style="margin-top:7px;line-height:1.45;color:var(--cream-dim)">Deliberate, not automatic &mdash; it re-reads the session when you ask it to, so it never churns while you type.</div>
+    </div>
+  </div>
+</div>
+
 <div id="rsn-grip" title="Drag to resize"></div>
 <div class="modal-overlay rsn-panel" id="reason-modal" style="z-index:9640">
   <!-- No inline max-width: the panel sizes itself from --rsn-w, and an inline value would
@@ -2470,6 +2548,131 @@ async function tbpSrcRun(id){
   }
 }
 
+
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// ADHD EVALUATION FRAMEWORK
+//
+// Not a questionnaire and not a rating scale. The clinician already knows the eighteen DSM
+// symptoms; what they do not have is a view of which parts of the diagnostic question this
+// particular case has actually answered. So the Framework reads everything the visit already
+// holds — records the patient sent ahead, intake paperwork, a prior evaluation, collateral,
+// the working note — and sorts it into what is established, what is not, what else could
+// explain it, and what is worth asking today.
+//
+// It is layered onto a normal new-patient evaluation, never a replacement for one. The note
+// stays the note.
+//
+// It inherits every boundary from the record reader and Discern, and adds one of its own: it
+// must be equally willing to conclude that ADHD is not supported. A framework that quietly
+// walks every case toward the diagnosis it is named after is worse than no framework.
+// ══════════════════════════════════════════════════════════════════════════════════════════
+
+var adhdFw = null;        // the built framework; in memory only, like every other source
+var adhdArmed = false;    // this visit is an ADHD evaluation
+
+function adhdSharedRules(){
+  var s = docPrescribingBoundary();
+
+  s += "=== WHAT THIS IS ===\n";
+  s += "You are organising the diagnostic problem for a psychiatric clinician evaluating a patient for ADHD. You are NOT administering a checklist, scoring symptoms, or producing a rating scale. The clinician knows the criteria. What they do not have is a clear view of which parts of the question this case has already answered, and which it has not.\n";
+  s += "Everything you write is about THIS patient and THIS evidence. Generic statements about ADHD are worthless here and you should write none of them.\n\n";
+
+  s += "=== THE ONE THING THAT WOULD RUIN THIS ===\n";
+  s += "You are named after a diagnosis, which creates constant pressure to find it. Do not. A framework that walks every case toward ADHD is worse than no framework, because it launders a foregone conclusion through the appearance of structure.\n";
+  s += "You must be equally willing — and equally specific — when the evidence points elsewhere or is simply insufficient. 'Childhood onset is not established and cannot be established from what is here' is a successful output. So is 'the pattern in these records fits an untreated anxiety disorder at least as well.' Treat the absence of evidence as a finding, never as something to work around.\n";
+  s += "Do NOT rank ADHD above the alternatives because it is the question you were asked.\n\n";
+
+  s += "=== PROVENANCE IS THE POINT ===\n";
+  s += "Every item you list carries where it came from, in the item itself: the patient's own report, a parent or partner's report, a school record, a prior evaluator's conclusion, objective testing, a previous clinician's note, or the clinician's observation today. 'Reported difficulty since childhood' and 'a 2019 school record documents difficulty' are different grades of evidence and must never be flattened into each other.\n";
+  s += "Self-report of childhood symptoms IS evidence, and it is retrospective self-report — say which. A prior clinician's diagnosis is that clinician's conclusion, not an established fact, and it carries whatever support they documented for it, which is often none.\n";
+  s += "AN UNKNOWN IS NOT A NO. Undocumented is undocumented — never 'denied', never 'absent', never 'negative'.\n\n";
+
+  s += "=== CALIBRATION ===\n";
+  s += "Do not complete the story. If the sources establish a pattern but not its cause, state the pattern and leave the cause open. Do not infer why school got harder, why a parent remembers it differently, or which confound mattered most, unless the sources establish it.\n";
+  s += "Do not treat response to a stimulant as evidence for the diagnosis. It shows the medication produced an effect; people without ADHD focus better on stimulants too. The same applies in reverse to non-response.\n";
+  s += "Testing or history obtained during treatment does not establish untreated baseline functioning. Say so where it applies rather than quietly using the finding as though it were clean.\n";
+  s += "Where sources conflict, present the conflict. Do not adjudicate it and do not average it away.\n\n";
+  return s;
+}
+
+// The build. Runs once over whatever the clinician gathered before the visit.
+function adhdBuildSystem(){
+  var s = adhdSharedRules();
+
+  s += "=== YOUR OUTPUT ===\n";
+  s += "Plain text. No Markdown, no bullet characters, no preamble, no closing summary. Emit the five markers below, each reproduced EXACTLY on its own line, with content on the lines after it. Inside a section, put each item on its own line and start it with a dash and a space.\n\n";
+
+  s += "<<<EVIDENCE>>>\n";
+  s += "One line naming what you were actually given, by kind and date where known — for example 'Neuropsychological evaluation 10/2021, parent collateral (pasted), intake questionnaire, prior psychiatric note 3/2024'. Then, on a second line beginning 'Not available:', name the kinds of evidence a clinician would expect in an ADHD evaluation that are NOT here, such as school records, teacher report, collateral from someone who knew the patient as a child, or objective testing. If nothing important is missing, omit the second line.\n\n";
+
+  s += "<<<ESTABLISHED>>>\n";
+  s += "What the sources actually support, organised under these headings, each on its own line, and OMIT any heading with nothing real under it rather than writing 'none documented' beneath it:\n";
+  s += "Developmental history and onset. Current symptoms. Functional impairment, and in which settings. Collateral. Prior diagnoses and testing. Treatment history and response. Confounds present.\n";
+  s += "Each item carries its provenance. Be specific: 'Mother reports he was described as a daydreamer by teachers in third grade' rather than 'childhood symptoms reported'. Specificity is what makes this worth reading.\n\n";
+
+  s += "<<<GAPS>>>\n";
+  s += "What the diagnosis would need that this evidence does not yet provide. This is the most useful section in the whole framework, so be concrete and be honest about degree.\n";
+  s += "Distinguish three things and make the difference visible in how you word each item: something genuinely absent; something present but weakly supported; and something the sources actively contradict.\n";
+  s += "Good items look like: 'Childhood onset rests entirely on the patient's retrospective account; no informant who knew him before age 12 has been asked.' 'Impairment is well documented at work and not established in any second setting.' 'The 2021 testing was performed while he was taking prescribed stimulant medication, so it does not speak to untreated baseline.' 'Symptoms are documented from 2022 onward, which is also when the depressive episode began; the chronology between them is unclear.'\n";
+  s += "Order them by how much each would change the conclusion. Lead with the one that matters most.\n\n";
+
+  s += "<<<COMPETING>>>\n";
+  s += "Only the alternatives ACTUALLY ALIVE in this case, with the reason each is live and what would separate it from ADHD. Do not spray a differential. Two or three well-argued alternatives are worth more than nine listed ones, and listing an alternative with nothing behind it is noise that makes the real ones harder to see.\n";
+  s += "If a common alternative is genuinely not in play here, leave it out entirely rather than writing that it is unlikely.\n";
+  s += "Say plainly where an alternative fits the evidence as well as ADHD does, or better.\n\n";
+
+  s += "<<<QUESTIONS>>>\n";
+  s += "Questions worth asking today, each generated by a specific gap above and each phrased the way a clinician would actually say it out loud. Six to ten.\n";
+  s += "Do NOT ask DSM symptom questions. 'Do you often lose things' is not worth a clinician's minute; they know how to ask that and it is not what is missing.\n";
+  s += "Ask what the evidence needs. 'You said school was easy until college — what changed when the structure went away?' 'Before you were twelve, what did adults actually complain about?' 'During the stretches when you were not depressed, were these same problems still there?' 'Your mother remembers you as organised. What do you think she was not seeing?' 'Who knew you as a child that we could ask?'\n";
+  s += "Each question stands on its own line. Where it is not obvious, add a short parenthetical naming the gap it closes.\n";
+  return s;
+}
+
+// The in-visit update. Rebuilds the framework with what the encounter has since produced, and
+// adds the two sections that only exist once there is a visit to speak of.
+function adhdUpdateSystem(){
+  var s = adhdSharedRules();
+
+  s += "=== WHAT IS DIFFERENT NOW ===\n";
+  s += "A framework was built before this visit from records alone. The clinician has since seen the patient, and you are given the earlier framework plus everything the session now holds. Rebuild it.\n";
+  s += "Move items that today's encounter actually established out of the gaps and into what is established, with today's interview named as the source. Leave a gap where it stands if the visit did not close it, and say plainly that it remains open — a gap the clinician chose not to pursue is still a gap. Where today's history WEAKENS the case, that must show up: this section is not a progress bar.\n\n";
+
+  s += "=== YOUR OUTPUT ===\n";
+  s += "Plain text, no Markdown, no preamble. Emit all seven markers below, exactly as written, each on its own line. The first five carry the same rules as before and should be rewritten to reflect what is now known, not merely repeated.\n\n";
+  s += "<<<EVIDENCE>>>\n<<<ESTABLISHED>>>\n<<<GAPS>>>\n<<<COMPETING>>>\n<<<QUESTIONS>>>\n";
+  s += "For QUESTIONS now: only what is still worth asking. If the remaining gaps cannot be closed by asking this patient today — a school record nobody has, an informant who is not here — say what would be needed and from whom instead of inventing questions to fill the section.\n\n";
+
+  s += "<<<TODAY>>>\n";
+  s += "What this encounter established that the records did not, and what it changed. Include anything today weakened or contradicted. If the visit did not move the diagnostic question, say that plainly.\n\n";
+
+  s += "<<<POSITION>>>\n";
+  s += "The diagnostic position the CURRENT evidence supports, in two to five sentences. Lead with the position itself, then the one or two things it turns on.\n";
+  s += "You are describing where the evidence stands. You are not making the diagnosis, and you are not recommending what to write down. The clinician decides.\n";
+  s += "The honest options include: ADHD is reasonably supported on this evidence; ADHD remains possible but is not adequately established and specific evidence is still needed; the current evidence does not adequately support ADHD; another formulation currently explains the presentation better. Say which, and say what would change it.\n";
+  s += "If the answer is that no conclusion is justified today, say exactly that. That is a real and useful result of a careful evaluation, not a failure of one.\n";
+  return s;
+}
+
+// Marker parse, shared by both calls. Missing sections come back empty rather than undefined so
+// the panel can render a partial result instead of throwing on the first absent key.
+function tbpAdhdSplit(raw){
+  var keys = ['EVIDENCE','ESTABLISHED','GAPS','COMPETING','QUESTIONS','TODAY','POSITION'];
+  var t = String(raw || ''), out = {};
+  var hits = [];
+  keys.forEach(function(k){
+    var i = t.indexOf('<<<' + k + '>>>');
+    if(i !== -1) hits.push({ k: k, at: i, len: k.length + 6 });
+  });
+  hits.sort(function(a, b){ return a.at - b.at; });
+  keys.forEach(function(k){ out[k] = ''; });
+  hits.forEach(function(h, n){
+    var end = (n + 1 < hits.length) ? hits[n + 1].at : t.length;
+    out[h.k] = t.slice(h.at + h.len, end).trim();
+  });
+  return out;
+}
+
 // ══════════════════════════════════════════════════════════════════════════════════════════
 // REASON THROUGH THIS CASE  (practice copy)
 //
@@ -2636,8 +2839,243 @@ function tbpRsnUpdateCtx(c){
   el.textContent = c.have.length ? ('Reading: ' + c.have.join(', ')) : 'Nothing in this session yet';
 }
 
+
+// ── Framework plumbing ───────────────────────────────────────────────────────────────────
+// Documents reuse tbpSources, so the Framework inherits the same extraction, the same
+// truncation guard and the same never-serialized guarantee as the record reader. A pasted
+// block becomes a source too, with the clinician's own label as its name — provenance in the
+// framework is only as good as knowing which document each claim came from.
+
+function tbpAdhdShowSetup(){
+  if(typeof tbpDemoBlock === 'function' && tbpDemoBlock()) return;
+  document.getElementById('adhd-setup').classList.add('open');
+  tbpAdhdRenderSources();
+}
+function tbpAdhdHideSetup(){ document.getElementById('adhd-setup').classList.remove('open'); }
+
+function tbpAdhdRenderSources(){
+  var el = document.getElementById('adhd-src-list'); if(!el) return;
+  if(!tbpSources.length){
+    el.innerHTML = '<div class="hint" style="color:var(--cream-dim);line-height:1.5">Nothing added yet.</div>';
+    return;
+  }
+  var h = '<div class="hint" style="margin-bottom:6px;color:var(--cream)">The Framework will read:</div>';
+  tbpSources.forEach(function(d){
+    var meta = d.error ? '<span style="color:var(--amber)">' + esc(d.error) + '</span>'
+      : (d.pasted ? 'pasted text' : (d.pages ? d.pages + ' pages' : 'text'))
+        + ' &middot; ' + Math.round(d.chars / 1000) + 'k characters'
+        + (d.truncated ? ' <span style="color:var(--amber)">(truncated)</span>' : '');
+    h += '<div style="display:flex;align-items:baseline;gap:9px;padding:7px 0;border-top:1px solid var(--rule)">'
+      + '<span style="color:var(--cream);font-weight:600;font-size:.87rem">' + esc(d.name) + '</span>'
+      + '<span class="hint" style="font-size:.78rem">' + meta + '</span>'
+      + '<a href="#" data-adhd-rm="' + d.id + '" style="margin-left:auto;color:var(--cream-dim);text-decoration:none;font-size:.78rem">Remove</a></div>';
+  });
+  el.innerHTML = h;
+}
+
+document.getElementById('adhd-src-list').addEventListener('click', function(e){
+  var a = e.target && e.target.closest ? e.target.closest('[data-adhd-rm]') : null;
+  if(!a) return;
+  e.preventDefault();
+  tbpSrcRemove(a.getAttribute('data-adhd-rm'));
+  tbpAdhdRenderSources();
+});
+
+document.getElementById('adhd-add-file').addEventListener('click', function(){
+  if(tbpDemoBlock()) return;
+  document.getElementById('adhd-file').click();
+});
+document.getElementById('adhd-file').addEventListener('change', async function(){
+  var files = Array.prototype.slice.call(this.files || []);
+  this.value = '';
+  if(!files.length) return;
+  var msg = document.getElementById('adhd-add-msg');
+  for(var i=0;i<files.length;i++){
+    var f = files[i];
+    msg.innerHTML = '<span class="spinner"></span>Reading ' + esc(f.name) + '&hellip;';
+    var rec = { id:'S' + (++tbpSrcSeq), name:f.name, text:'', chars:0, pages:0,
+                truncated:false, useForPrep:true, review:'', carry:'', error:'', pasted:false };
+    try {
+      var ex = await tbpExtractText(f);
+      var t = (ex.text || '').replace(/ /g, ' ').trim();
+      rec.pages = ex.pages || 0;
+      if(t.replace(/\s+/g, '').length < 40){
+        rec.error = 'No readable text found. This looks like a scanned or image-only file. Paste the relevant part instead, or use a text-based copy.';
+      } else {
+        if(t.length > SRC_MAX_CHARS){ t = t.slice(0, SRC_MAX_CHARS); rec.truncated = true; }
+        rec.text = t; rec.chars = t.length;
+      }
+    } catch(err){ rec.error = (err && err.message) ? err.message : 'Could not read this file.'; }
+    tbpSources.push(rec);
+    tbpAdhdRenderSources();
+  }
+  msg.innerHTML = '';
+});
+
+document.getElementById('adhd-add-text').addEventListener('click', function(){
+  var w = document.getElementById('adhd-paste-wrap');
+  w.style.display = '';
+  document.getElementById('adhd-paste-label').focus();
+});
+document.getElementById('adhd-paste-cancel').addEventListener('click', function(){
+  document.getElementById('adhd-paste-wrap').style.display = 'none';
+  document.getElementById('adhd-paste-label').value = '';
+  document.getElementById('adhd-paste-text').value = '';
+});
+document.getElementById('adhd-paste-save').addEventListener('click', function(){
+  var lab = (document.getElementById('adhd-paste-label').value || '').trim();
+  var txt = (document.getElementById('adhd-paste-text').value || '').trim();
+  if(!txt){ document.getElementById('adhd-paste-text').focus(); return; }
+  if(txt.length > SRC_MAX_CHARS) txt = txt.slice(0, SRC_MAX_CHARS);
+  tbpSources.push({ id:'S' + (++tbpSrcSeq), name: lab || 'Pasted text', text:txt, chars:txt.length,
+                    pages:0, truncated:false, useForPrep:true, review:'', carry:'', error:'', pasted:true });
+  document.getElementById('adhd-paste-cancel').click();
+  tbpAdhdRenderSources();
+});
+
+// Everything the framework reads, assembled fresh. Sources go in whole here — unlike Discern,
+// which prefers an existing review, the framework's whole job is reading the originals.
+function tbpAdhdMaterial(){
+  var parts = [];
+  tbpSources.forEach(function(d){
+    if(!d.text) return;
+    parts.push('SOURCE: ' + d.name + (d.pasted ? '  (pasted by the clinician)' : '')
+      + (d.truncated ? '  [PARTIAL — this document was longer than could be read in full]' : '')
+      + '\n\n' + d.text);
+  });
+  return parts.join('\n\n=====\n\n');
+}
+
+function tbpAdhdSecHtml(title, body){
+  if(!body) return '';
+  return '<div class="adhd-sec"><h3>' + title + '</h3><div class="adhd-txt">' + esc(body) + '</div></div>';
+}
+
+function tbpAdhdRender(){
+  var el = document.getElementById('adhd-body'); if(!el) return;
+  if(!adhdFw){ el.innerHTML = '<div class="hint">Nothing built yet.</div>'; return; }
+  var f = adhdFw;
+  var h = '';
+  if(f.EVIDENCE){
+    h += '<div style="background:var(--navy);border:1px solid rgba(139,92,246,0.35);border-radius:7px;padding:10px 13px;margin-bottom:15px;font-size:.83rem;line-height:1.55;color:var(--cream);white-space:pre-wrap">'
+      + esc(f.EVIDENCE) + '</div>';
+  }
+  // Order matters: what today did, then position, sit at the top once they exist, because by
+  // then they are what the clinician came back to read.
+  h += tbpAdhdSecHtml('What today established', f.TODAY);
+  h += tbpAdhdSecHtml('Where the evidence stands', f.POSITION);
+  h += tbpAdhdSecHtml('Established', f.ESTABLISHED);
+  h += tbpAdhdSecHtml('Still to establish', f.GAPS);
+  h += tbpAdhdSecHtml('Competing explanations', f.COMPETING);
+  h += tbpAdhdSecHtml('Questions for today', f.QUESTIONS);
+  el.innerHTML = h || '<div class="hint" style="color:var(--amber)">Nothing came back. Try building again.</div>';
+}
+
+function tbpAdhdShowPanel(){
+  if(typeof tbpDemoBlock === 'function' && tbpDemoBlock()) return;
+  try { tbpHideReason(); } catch(e){}   // one panel at a time; two would leave the note a column
+  document.getElementById('adhd-panel').classList.add('open');
+  document.documentElement.classList.add('adhd-open');
+  tbpAdhdRender();
+}
+function tbpAdhdHidePanel(){
+  document.getElementById('adhd-panel').classList.remove('open');
+  document.documentElement.classList.remove('adhd-open');
+}
+
+async function tbpAdhdRun(mode){
+  var isUpdate = (mode === 'update');
+  var msg = document.getElementById(isUpdate ? 'adhd-refresh-msg' : 'adhd-build-msg');
+  var btn = document.getElementById(isUpdate ? 'adhd-refresh' : 'adhd-build');
+  if(btn) btn.disabled = true;
+  if(msg) msg.innerHTML = '<span class="spinner"></span>' + (isUpdate ? 'Re-reading the session&hellip;' : 'Reading everything you gave it&hellip;');
+  try {
+    var material = tbpAdhdMaterial();
+    var user;
+    if(isUpdate){
+      var c = tbpCaseContext();
+      user = 'THE FRAMEWORK BUILT BEFORE THIS VISIT:\n\n'
+        + ['EVIDENCE','ESTABLISHED','GAPS','COMPETING','QUESTIONS'].map(function(k){
+            return '<<<' + k + '>>>\n' + (adhdFw && adhdFw[k] ? adhdFw[k] : ''); }).join('\n\n')
+        + '\n\n=====\n\nWHAT THE SESSION NOW HOLDS:\n\n' + c.text
+        + (material ? '\n\n=====\n\nTHE ORIGINAL SOURCES:\n\n' + material : '');
+    } else {
+      user = material
+        ? ('EVERYTHING THE CLINICIAN HAS GATHERED SO FAR:\n\n' + material)
+        : 'The clinician has gathered no records or history yet. Build the framework on that basis: nothing is established, and say what would need to be obtained.';
+    }
+    var raw = await callAPI(isUpdate ? adhdUpdateSystem() : adhdBuildSystem(),
+      [{ role:'user', content: user }], 4200);
+    var f = tbpAdhdSplit(raw);
+    if(!f.ESTABLISHED && !f.GAPS && !f.COMPETING){
+      if(msg) msg.innerHTML = '<span style="color:var(--amber)">Nothing usable came back. Try again.</span>';
+      return;
+    }
+    // An update rebuilds every section; a first build must not wipe TODAY/POSITION if they
+    // somehow exist already.
+    if(isUpdate) adhdFw = f;
+    else { f.TODAY = (adhdFw && adhdFw.TODAY) || ''; f.POSITION = (adhdFw && adhdFw.POSITION) || ''; adhdFw = f; }
+    adhdArmed = true;
+    if(msg) msg.innerHTML = '';
+    tbpAdhdRender();
+    if(!isUpdate){ tbpAdhdHideSetup(); tbpAdhdShowPanel(); }
+    try { tbpAdhdSyncTriggers(); } catch(e){}
+  } catch(err){
+    if(msg) msg.innerHTML = '<span style="color:var(--red)">' + esc(err.message || err) + '</span>';
+  } finally {
+    if(btn) btn.disabled = false;
+  }
+}
+
+document.getElementById('adhd-build').addEventListener('click', function(){ if(!tbpDemoBlock()) tbpAdhdRun('build'); });
+document.getElementById('adhd-refresh').addEventListener('click', function(){ if(!tbpDemoBlock()) tbpAdhdRun('update'); });
+document.getElementById('adhd-open-setup').addEventListener('click', function(){ tbpAdhdShowSetup(); });
+
+// Once a framework exists it needs a way back into it from the working note, alongside Discern.
+function tbpAdhdSyncTriggers(){
+  document.querySelectorAll('.adhd-entry').forEach(function(el){
+    el.style.display = adhdFw ? '' : 'none';
+  });
+}
+
+// Resize, same contract as Discern's grip: bounded, persisted per browser, off below the
+// breakpoint where there is nothing to rebalance.
+var ADHD_W_KEY = 'tbp_adhd_w';
+function tbpAdhdSetWidth(px, persist){
+  var w = Math.max(360, Math.min(px, Math.min(window.innerWidth * 0.55, 960)));
+  document.documentElement.style.setProperty('--adhd-w', w + 'px');
+  if(persist){ try { localStorage.setItem(ADHD_W_KEY, String(Math.round(w))); } catch(e){} }
+}
+(function(){
+  try { var sv = parseInt(localStorage.getItem(ADHD_W_KEY) || '', 10); if(sv > 0) tbpAdhdSetWidth(sv, false); } catch(e){}
+  var g = document.getElementById('adhd-grip'); if(!g) return;
+  g.addEventListener('pointerdown', function(e){
+    if(window.innerWidth <= 1100) return;
+    e.preventDefault(); g.setPointerCapture(e.pointerId);
+    g.classList.add('dragging'); document.documentElement.classList.add('rsn-dragging');
+  });
+  g.addEventListener('pointermove', function(e){
+    if(!g.classList.contains('dragging')) return;
+    tbpAdhdSetWidth(window.innerWidth - e.clientX, false);
+  });
+  function end(e){
+    if(!g.classList.contains('dragging')) return;
+    g.classList.remove('dragging'); document.documentElement.classList.remove('rsn-dragging');
+    try { g.releasePointerCapture(e.pointerId); } catch(err){}
+    var cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--adhd-w'));
+    if(cur > 0) tbpAdhdSetWidth(cur, true);
+  }
+  g.addEventListener('pointerup', end);
+  g.addEventListener('pointercancel', end);
+  window.addEventListener('resize', function(){
+    var cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--adhd-w'));
+    if(cur > 0) tbpAdhdSetWidth(cur, false);
+  });
+})();
+
 function tbpShowReason(){
   if(typeof tbpDemoBlock === 'function' && tbpDemoBlock()) return;
+  try { tbpAdhdHidePanel(); } catch(e){}   // one side panel at a time
   document.getElementById('reason-modal').classList.add('open');
   document.documentElement.classList.add('rsn-open');   // shrinks the workspace to make room
   tbpRsnUpdateCtx();
@@ -2782,10 +3220,12 @@ document.getElementById('up-choice-doc').addEventListener('click', function(){
   if(el) el.addEventListener('click', function(e){ if(e.target === el) el.classList.remove('open'); });
   document.addEventListener('keydown', function(e){
     if(e.key !== 'Escape') return;
-    ['upload-choice','docs-modal','reason-modal'].forEach(function(id){
+    ['upload-choice','docs-modal','reason-modal','adhd-setup','adhd-panel'].forEach(function(id){
       var m = document.getElementById(id);
       if(!m || !m.classList.contains('open')) return;
-      if(id === 'reason-modal') tbpHideReason(); else m.classList.remove('open');
+      if(id === 'reason-modal') tbpHideReason();
+      else if(id === 'adhd-panel') tbpAdhdHidePanel();
+      else m.classList.remove('open');
     });
   });
 })();
