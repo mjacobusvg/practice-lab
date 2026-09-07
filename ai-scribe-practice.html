@@ -2632,11 +2632,12 @@ function adhdBuildSystem(){
 
   s += "<<<SNAPSHOT>>>\n";
   s += "What the clinician needs in their head in the thirty seconds before walking in. NOT a summary of the sections above — those are for during and after. This is for the corridor.\n";
-  s += "A follow-up rundown answers 'why are they back'. A new patient evaluation asks harder questions, and this snapshot answers those. Write it as short plain sentences or single-line items, no headings, in this order, omitting anything the sources do not support rather than writing a placeholder for it:\n\n";
+  s += "A follow-up rundown answers 'why are they back'. A new patient evaluation asks harder questions, and this snapshot answers those. Write it as short plain sentences or single-line items, no headings, in this order, omitting anything the sources do not support rather than writing a placeholder for it.\n";
+  s += "STATE THE FACT AND STOP. Do not follow a fact with a sentence explaining its significance — 'those are different tasks and the gap between them will shape the visit' and 'a prescribing decision may be forced today' are commentary on facts that already carry themselves, and the clinician reading this in a corridor does not need the implication spelled out. The only part that is allowed to interpret is THE TRAP, which exists for exactly that.\n\n";
 
-  s += "WHO IS WALKING IN, in one line: age, what they do, how they came to be here, and what they are explicitly asking for. What the patient wants from this visit is often not what the evaluation needs, and where those differ, say so — that gap is the shape of the next forty-five minutes.\n\n";
+  s += "WHO IS WALKING IN, in one line: age, what they do, how they came to be here, and what they are explicitly asking for. Where what the patient wants differs from what the evaluation needs, name both in the same sentence and stop.\n\n";
 
-  s += "WHAT IS ALREADY DECIDED ABOUT THEM. Any diagnosis they arrive holding and any medication they are currently taking, with who decided it and on what. This matters before the door opens because the patient arrives inside that story, and because a prescribing decision may be forced today whether or not the diagnostic question is settled. If they are on a controlled medication somebody else started, say so plainly here.\n\n";
+  s += "WHAT IS ALREADY DECIDED ABOUT THEM. Any diagnosis they arrive holding and any medication they are currently taking, with who decided it and on what. If somebody else started a controlled medication, say so plainly.\n\n";
 
   s += "THE DIAGNOSTIC PROBLEM IN ONE SENTENCE. Not the differential — the single thing this evaluation actually has to resolve.\n\n";
 
@@ -3004,20 +3005,26 @@ function tbpAdhdFeedPrep(){
     }
     var qs = tbpAdhdQuestionList();
     if(qs.length) prepChecklist = qs;   // reaches drafting and Discern through tbpCaseContext
+    // Set the visit up. Prep does not ask permission for its checklist and neither should this:
+    // it is a scaffold to write answers under, stripped when the note is drafted, and a
+    // clinician who built a framework has already said what they want.
+    if(adhdFw) adhdFw.installed = tbpAdhdQuestionsToNote(true);
   } catch(e){}
 }
 
 // Install the questions as the working note's checklist section, the way prep does. Guarded:
 // it will not overwrite a note that already has anything in it.
-function tbpAdhdQuestionsToNote(){
-  var msg = document.getElementById('adhd-q-msg');
+function tbpAdhdQuestionsToNote(silent){
+  var msg = silent ? null : document.getElementById('adhd-q-msg');
   var qs = tbpAdhdQuestionList();
-  if(!qs.length) return;
+  if(!qs.length) return false;
   var raw = document.getElementById('raw');
   var existing = raw ? (raw.value || '').trim() : '';
   if(existing){
+    // Only ever refuses when there is real work to protect. That is the one case the button
+    // still exists for.
     if(msg) msg.innerHTML = '<span style="color:var(--amber)">Your working note already has content, so nothing was replaced. Copy anything you want from above.</span>';
-    return;
+    return false;
   }
   try {
     wnSections = { checklist: qs.map(function(q){ return '\u2022 ' + q; }).join('\n\n'), guide: '', note: '' };
@@ -3026,8 +3033,10 @@ function tbpAdhdQuestionsToNote(){
     renderMode();
     try { if(window.tbpSaveDraft) window.tbpSaveDraft(); } catch(e){}
     if(msg) msg.innerHTML = '<span style="color:var(--green)">Added to your working note. Jot answers under each; the prompts are stripped when you draft.</span>';
+    return true;
   } catch(e){
     if(msg) msg.innerHTML = '<span style="color:var(--red)">Could not add them. Copy them from above instead.</span>';
+    return false;
   }
 }
 
@@ -3068,9 +3077,11 @@ function tbpAdhdRender(){
     h += tbpAdhdSecHtml('Still to establish', f.GAPS);
     h += tbpAdhdSecHtml('Competing explanations', f.COMPETING);
     h += tbpAdhdSecHtml('Questions for today', f.QUESTIONS);
-    if(f.QUESTIONS){
+    if(f.QUESTIONS && f.installed){
+      h += '<div class="hint" style="margin:-6px 0 16px;color:var(--green)">These are already in your working note as a checklist. Jot answers under each; the prompts are stripped when you draft.</div>';
+    } else if(f.QUESTIONS){
       h += '<div style="margin:-6px 0 16px"><button class="btn" type="button" id="adhd-q-add" style="margin-top:0;padding:7px 13px;font-size:.83rem;background:#a78bfa;color:#1a1033">Put these in my working note &rarr;</button>'
-        + '<span class="hint" id="adhd-q-msg" style="margin-left:8px"></span></div>';
+        + '<span class="hint" id="adhd-q-msg" style="margin-left:8px">Your note already has content, so these were not added automatically.</span></div>';
     }
   }
   el.innerHTML = h || '<div class="hint" style="color:var(--amber)">Nothing came back. Try building again.</div>';
