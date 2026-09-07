@@ -806,10 +806,10 @@ function tcoachSuggestTool(){
     <h2 style="margin:0 0 1px">ADHD Evaluation Framework</h2>
     <div style="font-weight:600;color:var(--cream);font-size:.92rem;margin-bottom:8px">What this case establishes, and what it does not</div>
     <div id="adhd-body"></div>
-    <div id="adhd-panel-foot" style="position:sticky;bottom:0;z-index:2;background:var(--navy-card);margin:14px -22px 0;padding:11px 22px 14px;border-top:1px solid var(--rule)">
-      <button class="btn" type="button" id="adhd-refresh" style="margin-top:0;background:#a78bfa;color:#1a1033;padding:8px 15px;font-size:.86rem">Update from today&rsquo;s visit</button>
+    <div id="adhd-panel-foot" style="display:none;position:sticky;bottom:0;z-index:2;background:var(--navy-card);margin:14px -22px 0;padding:11px 22px 14px;border-top:1px solid var(--rule)">
+      <button class="btn" type="button" id="adhd-refresh" style="margin-top:0;background:#a78bfa;color:#1a1033;padding:8px 15px;font-size:.86rem">What did today establish? &rarr;</button>
       <span class="hint" id="adhd-refresh-msg" style="margin-left:9px"></span>
-      <div class="hint" style="margin-top:7px;line-height:1.45;color:var(--cream-dim)">Deliberate, not automatic &mdash; it re-reads the session when you ask it to, so it never churns while you type.</div>
+      <div class="hint" style="margin-top:7px;line-height:1.45;color:var(--cream-dim)">Re-reads the visit against the framework: what you settled, what changed, what is still open, and where that leaves the diagnosis.</div>
     </div>
   </div>
 </div>
@@ -2640,10 +2640,15 @@ function adhdUpdateSystem(){
   s += "=== YOUR OUTPUT ===\n";
   s += "Plain text, no Markdown, no preamble. Emit all seven markers below, exactly as written, each on its own line. The first five carry the same rules as before and should be rewritten to reflect what is now known, not merely repeated.\n\n";
   s += "<<<EVIDENCE>>>\n<<<ESTABLISHED>>>\n<<<GAPS>>>\n<<<COMPETING>>>\n<<<QUESTIONS>>>\n";
+  s += "Then <<<TODAY>>>, <<<CHANGED>>> and <<<POSITION>>>, described below.\n";
   s += "For QUESTIONS now: only what is still worth asking. If the remaining gaps cannot be closed by asking this patient today — a school record nobody has, an informant who is not here — say what would be needed and from whom instead of inventing questions to fill the section.\n\n";
 
   s += "<<<TODAY>>>\n";
-  s += "What this encounter established that the records did not, and what it changed. Include anything today weakened or contradicted. If the visit did not move the diagnostic question, say that plainly.\n\n";
+  s += "What this encounter established that the records did not. Only what the visit actually settled — if a gap was not pursued today it does not belong here, it belongs in GAPS. If the visit established nothing new, say that plainly rather than padding this section.\n\n";
+
+  s += "<<<CHANGED>>>\n";
+  s += "What today CHANGED about the picture, as distinct from what it added. A gap that closed. A gap that turned out bigger than it looked. Something the patient said that contradicts a record or an earlier account. An alternative that got stronger or weaker. If nothing changed, say so in one line — that is a real result and a common one.\n";
+  s += "This section is not a progress report on the diagnosis. Weakening is as reportable as strengthening.\n\n";
 
   s += "<<<POSITION>>>\n";
   s += "The diagnostic position the CURRENT evidence supports, in two to five sentences. Lead with the position itself, then the one or two things it turns on.\n";
@@ -2656,7 +2661,7 @@ function adhdUpdateSystem(){
 // Marker parse, shared by both calls. Missing sections come back empty rather than undefined so
 // the panel can render a partial result instead of throwing on the first absent key.
 function tbpAdhdSplit(raw){
-  var keys = ['EVIDENCE','ESTABLISHED','GAPS','COMPETING','QUESTIONS','TODAY','POSITION'];
+  var keys = ['EVIDENCE','ESTABLISHED','GAPS','COMPETING','QUESTIONS','TODAY','CHANGED','POSITION'];
   var t = String(raw || ''), out = {};
   var hits = [];
   keys.forEach(function(k){
@@ -2953,29 +2958,57 @@ function tbpAdhdSecHtml(title, body){
 function tbpAdhdRender(){
   var el = document.getElementById('adhd-body'); if(!el) return;
   if(!adhdFw){ el.innerHTML = '<div class="hint">Nothing built yet.</div>'; return; }
-  var f = adhdFw;
-  var h = '';
+  var f = adhdFw, h = '';
   if(f.EVIDENCE){
     h += '<div style="background:var(--navy);border:1px solid rgba(139,92,246,0.35);border-radius:7px;padding:10px 13px;margin-bottom:15px;font-size:.83rem;line-height:1.55;color:var(--cream);white-space:pre-wrap">'
       + esc(f.EVIDENCE) + '</div>';
   }
-  // Order matters: what today did, then position, sit at the top once they exist, because by
-  // then they are what the clinician came back to read.
-  h += tbpAdhdSecHtml('What today established', f.TODAY);
-  h += tbpAdhdSecHtml('Where the evidence stands', f.POSITION);
-  h += tbpAdhdSecHtml('Established', f.ESTABLISHED);
-  h += tbpAdhdSecHtml('Still to establish', f.GAPS);
-  h += tbpAdhdSecHtml('Competing explanations', f.COMPETING);
-  h += tbpAdhdSecHtml('Questions for today', f.QUESTIONS);
+  var after = !!(f.TODAY || f.CHANGED || f.POSITION);
+  if(after){
+    // Post-visit: lead with what the encounter settled, close with where that leaves things.
+    h += tbpAdhdSecHtml('Established today', f.TODAY);
+    h += tbpAdhdSecHtml('What changed', f.CHANGED);
+    h += tbpAdhdSecHtml('Still unresolved', f.GAPS);
+    h += tbpAdhdSecHtml('Current diagnostic position', f.POSITION);
+    h += tbpAdhdSecHtml('Everything established', f.ESTABLISHED);
+    h += tbpAdhdSecHtml('Competing explanations', f.COMPETING);
+    h += tbpAdhdSecHtml('Still worth asking', f.QUESTIONS);
+  } else {
+    h += tbpAdhdSecHtml('Established', f.ESTABLISHED);
+    h += tbpAdhdSecHtml('Still to establish', f.GAPS);
+    h += tbpAdhdSecHtml('Competing explanations', f.COMPETING);
+    h += tbpAdhdSecHtml('Questions for today', f.QUESTIONS);
+  }
   el.innerHTML = h || '<div class="hint" style="color:var(--amber)">Nothing came back. Try building again.</div>';
+  tbpAdhdSyncFoot();
 }
 
+// A rough fingerprint of what the session holds, so the reassess action can appear when there
+// is genuinely something new to read and stay hidden when there is not. Length is enough: the
+// question is "has a visit happened", not "what exactly changed".
+function tbpAdhdSessionSig(){
+  try {
+    var c = tbpCaseContext();
+    return (c && c.text) ? c.text.length : 0;
+  } catch(e){ return 0; }
+}
+
+// The reassess action is the second phase of the Framework, not a refresh button. It appears
+// only once the session has meaningfully more in it than when the framework was built —
+// offering it beforehand is what produced a spinner followed by the same screen.
+function tbpAdhdSyncFoot(){
+  var foot = document.getElementById('adhd-panel-foot'); if(!foot) return;
+  var sig = tbpAdhdSessionSig();
+  var base = (adhdFw && typeof adhdFw.sig === 'number') ? adhdFw.sig : 0;
+  var enough = (sig - base) > 400;   // a few sentences of real visit material, not a stray keystroke
+  foot.style.display = enough ? '' : 'none';
+}
 function tbpAdhdShowPanel(){
   if(typeof tbpDemoBlock === 'function' && tbpDemoBlock()) return;
   try { tbpHideReason(); } catch(e){}   // one panel at a time; two would leave the note a column
   document.getElementById('adhd-panel').classList.add('open');
   document.documentElement.classList.add('adhd-open');
-  tbpAdhdRender();
+  tbpAdhdRender();   // also re-decides whether the reassess action has earned its place
 }
 function tbpAdhdHidePanel(){
   document.getElementById('adhd-panel').classList.remove('open');
@@ -2987,7 +3020,7 @@ async function tbpAdhdRun(mode){
   var msg = document.getElementById(isUpdate ? 'adhd-refresh-msg' : 'adhd-build-msg');
   var btn = document.getElementById(isUpdate ? 'adhd-refresh' : 'adhd-build');
   if(btn) btn.disabled = true;
-  if(msg) msg.innerHTML = '<span class="spinner"></span>' + (isUpdate ? 'Re-reading the session&hellip;' : 'Reading everything you gave it&hellip;');
+  if(msg) msg.innerHTML = '<span class="spinner"></span>' + (isUpdate ? 'Checking what today&rsquo;s visit changed&hellip;' : 'Reading everything you gave it&hellip;');
   try {
     var material = tbpAdhdMaterial();
     var user;
@@ -3012,8 +3045,16 @@ async function tbpAdhdRun(mode){
     }
     // An update rebuilds every section; a first build must not wipe TODAY/POSITION if they
     // somehow exist already.
-    if(isUpdate) adhdFw = f;
-    else { f.TODAY = (adhdFw && adhdFw.TODAY) || ''; f.POSITION = (adhdFw && adhdFw.POSITION) || ''; adhdFw = f; }
+    if(isUpdate){ f.sig = tbpAdhdSessionSig(); adhdFw = f; }
+    else {
+      // A first build is a pre-visit briefing: it must not inherit post-visit sections from a
+      // previous framework, or the panel would claim the interview established things it has
+      // not seen. The fingerprint is taken now so the reassess action stays hidden until the
+      // session actually grows.
+      f.TODAY = ''; f.CHANGED = ''; f.POSITION = '';
+      f.sig = tbpAdhdSessionSig();
+      adhdFw = f;
+    }
     adhdArmed = true;
     if(msg) msg.innerHTML = '';
     tbpAdhdRender();
@@ -3028,7 +3069,12 @@ async function tbpAdhdRun(mode){
 
 document.getElementById('adhd-build').addEventListener('click', function(){ if(!tbpDemoBlock()) tbpAdhdRun('build'); });
 document.getElementById('adhd-refresh').addEventListener('click', function(){ if(!tbpDemoBlock()) tbpAdhdRun('update'); });
-document.getElementById('adhd-open-setup').addEventListener('click', function(){ tbpAdhdShowSetup(); });
+document.getElementById('adhd-open-setup').addEventListener('click', function(){
+  // The setup modal has done its job once this is chosen; leaving it stacked behind the gather
+  // screen and then behind the panel puts the clinician three layers deep for no reason.
+  try { tbpHideSetup(); } catch(e){}
+  tbpAdhdShowSetup();
+});
 
 // Once a framework exists it needs a way back into it from the working note, alongside Discern.
 function tbpAdhdSyncTriggers(){
