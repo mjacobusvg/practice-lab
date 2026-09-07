@@ -106,6 +106,39 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 .err{background:rgba(248,113,113,0.1);border:1px solid var(--red);border-radius:8px;padding:12px 16px;color:var(--red);font-size:.85rem;margin-top:14px}
 /* Setup wizard modal */
 .modal-overlay{position:fixed;inset:0;background:rgba(4,10,20,.72);z-index:9000;display:none;align-items:flex-start;justify-content:center;padding:32px 16px;overflow:auto}
+/* ── The reasoning panel. Docks right; the note keeps working beside it. ── */
+:root{--rsn-w:min(38vw,560px)}
+#reason-modal.rsn-panel{inset:0 0 0 auto;width:var(--rsn-w);background:var(--navy-card);
+  border-left:1px solid var(--rule);box-shadow:-10px 0 30px rgba(0,0,0,.34);padding:0;overflow:auto;display:none}
+#reason-modal.rsn-panel.open{display:block}
+#reason-modal.rsn-panel>.modal{max-width:none;width:auto;min-height:100%;border:0;border-radius:0;background:transparent;padding:18px 22px 26px}
+/* Push, do not cover. Both workspaces: the full-screen note and the plain page. */
+/* While the panel is open, its trigger reads as the thing currently open rather than as one of
+   three equal jobs. .btn is a filled teal pill with dark text, so anything added on top of it
+   disappears; inverting it is what actually reads as selected. Driven off the same class that
+   opens the panel, so it cannot desync. */
+html.rsn-open .rsn-trigger{background:var(--navy);color:var(--teal);box-shadow:inset 0 0 0 2px var(--teal)}
+
+/* ── Drag the divider to rebalance note and panel. ── */
+#rsn-grip{position:fixed;top:0;bottom:0;right:var(--rsn-w);width:9px;margin-right:-4px;z-index:9641;
+  cursor:col-resize;display:none;background:transparent;touch-action:none}
+html.rsn-open #rsn-grip{display:block}
+#rsn-grip::after{content:"";position:absolute;top:0;bottom:0;left:4px;width:1px;background:var(--rule)}
+#rsn-grip:hover::after,#rsn-grip.dragging::after{background:var(--teal);width:2px;left:3.5px}
+html.rsn-dragging{user-select:none}   /* stop the note selecting text mid-drag */
+/* The question box stays reachable while the answer scrolls. Negative margins let its
+   background span the full panel width so text cannot show through underneath it. */
+#rsn-composer{position:sticky;bottom:0;z-index:2;background:var(--navy-card);
+  margin:14px -22px 0;padding:11px 22px 14px;border-top:1px solid var(--rule);
+  box-shadow:0 -10px 18px -12px rgba(0,0,0,.55)}
+html.rsn-open .focus-overlay.open{right:var(--rsn-w)}
+html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition:padding-right .12s ease}
+@media (max-width:1100px){
+  /* No room to sit beside anything — fall back to full-bleed. */
+  #reason-modal.rsn-panel{width:100%;border-left:0;box-shadow:none}
+  html.rsn-open .focus-overlay.open{right:0}
+  html.rsn-open #tool-container{padding-right:0}
+}
 .modal-overlay.open{display:flex}
 /* Inside the Patient Desk, the only "new patient" action is the Desk's "+ New patient" tab;
    hide the scribe's own clear-notes button so it can't wipe the patient you're working. */
@@ -129,8 +162,10 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 .tbp-dim{opacity:.28;filter:saturate(.55);pointer-events:none;transition:opacity .35s ease,filter .35s ease}
 #ambient-progress .out{border-color:var(--teal);box-shadow:0 0 0 1px var(--teal),0 12px 34px rgba(0,0,0,.45)}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-64"></script>
+<script src="/note-engine.js?v=ambient-65"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -233,6 +268,8 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
         <div class="hint" style="margin-top:6px;line-height:1.5"><strong style="color:var(--cream)">Start from your intake template.</strong> Open your new-patient scaffold full screen and fill each section live during the intake, then draft straight from it.</div>
         <button class="btn" id="neweval-setup-btn" style="margin-top:8px">Start my intake note (full screen) &rarr;</button>
         <span class="hint" id="neweval-hint" style="margin-left:8px"></span>
+
+        <div class="hint" style="margin-top:12px;line-height:1.5;color:var(--cream-dim)">Have records the patient sent ahead &mdash; a prior evaluation, discharge summary, referral, school testing? <a href="#" onclick="tbpShowDocs();return false;" style="color:var(--teal);text-decoration:none;font-weight:700">Review them first &rarr;</a></div>
       </div>
 
       <!-- BLANK path (Prep off): one button into the single working note. For a follow-up with last
@@ -355,7 +392,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-64</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-65</span></div>
 </div>
 </div>
 
@@ -383,7 +420,7 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
       <option value="__suggest__">Suggest a tool&hellip;</option>
     </select>
     <button class="btn-ghost" id="focus-record" type="button" style="margin-top:0;border-color:var(--teal);color:var(--teal)" onclick="openAmbientSetup()">&#9679; Record</button>
-    <button class="btn-ghost" id="focus-upload-transcript-btn" type="button" style="margin-top:0;border-color:var(--teal);color:var(--teal)" title="Upload a transcript recorded elsewhere (e.g. Krisp)">&#8593; Upload</button>
+    <button class="btn-ghost" id="focus-upload-transcript-btn" type="button" style="margin-top:0;border-color:var(--teal);color:var(--teal)" title="Upload a visit transcript or a clinical document">&#8593; Upload</button>
     <button class="btn" id="focus-draft">Draft final note &rarr;</button>
   </div>
   <!-- Always-visible recording/transcription status. The modal's #record-status is hidden once
@@ -400,9 +437,31 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
   </div>
   <!-- Empty-note nudge: the last-visit paste box now lives inside "Set up this visit", so a clinician
        who starts typing in the note can miss it. Shown only when the note is empty and not yet set up. -->
-  <div id="focus-setup-nudge" style="display:none;margin:10px 0 6px;padding:12px 14px;border:1px solid var(--teal);border-left:3px solid var(--teal);background:var(--teal-glow);border-radius:9px;font-size:.9rem;line-height:1.5;color:var(--cream)">
-    <strong>Set up this visit first.</strong> Following up? Open it and paste last visit's HPI, assessment, and meds. That carries the patient forward and drives your diagnoses, your assessment, and today's questions. New patient? It loads your template. Or just start typing below.
-    <div style="margin-top:9px"><button type="button" class="btn" style="margin:0;padding:8px 16px" onclick="tbpShowSetup()">&#9881; Set up this visit</button> <a href="#" onclick="tbpDismissSetupNudge();return false;" style="color:var(--cream-dim);margin-left:10px;text-decoration:none;font-size:.85rem">Not now</a></div>
+  <div id="focus-setup-nudge" style="margin:10px 0 6px;padding:12px 14px;border:1px solid var(--teal);border-left:3px solid var(--teal);background:var(--teal-glow);border-radius:9px;font-size:.9rem;line-height:1.5;color:var(--cream)">
+
+    <!-- EXPANDED: teaches the three jobs on a fresh, empty note. -->
+    <div id="jobs-full">
+      <strong style="font-size:.98rem">What do you want to do?</strong>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:11px">
+        <button type="button" class="btn" style="margin:0;padding:11px 15px;text-align:left;flex:1 1 210px" title="Carry last visit forward, build today&rsquo;s checklist and set the visit type &mdash; or skip setup and just start writing." onclick="tbpShowSetup()">&#9881; Start or prep a visit
+          <span style="display:block;font-weight:400;font-size:.82rem;opacity:.85;margin-top:3px;line-height:1.4">Prep a follow-up or new evaluation from prior context &mdash; or skip setup and start the visit below.</span></button>
+        <button type="button" class="btn" style="margin:0;padding:11px 15px;text-align:left;flex:1 1 210px" title="Read a prior evaluation, discharge summary or old records. Reviewing one does nothing to your note; the file never leaves your computer." onclick="tbpDocsFromNudge()">&#128196; Review outside records
+          <span style="display:block;font-weight:400;font-size:.82rem;opacity:.85;margin-top:3px;line-height:1.4">Upload outside records for clinical review, use what matters in prep, or carry a concise historical summary into the note.</span></button>
+        <button type="button" class="btn rsn-trigger" style="margin:0;padding:11px 15px;text-align:left;flex:1 1 210px" title="Think through the case using what is already in this session. Nothing goes into your note unless you put it there." onclick="tbpShowReason()">&#129504; Discern
+          <span style="display:block;font-weight:600;font-size:.86rem;opacity:.95;margin-top:2px;line-height:1.35">Reason through this case</span>
+          <span style="display:block;font-weight:400;font-size:.82rem;opacity:.85;margin-top:3px;line-height:1.4">What fits, what doesn't, what you may be missing, and what to clarify next &mdash; from what is already in this session.</span></button>
+      </div>
+      <div style="margin-top:10px;font-size:.85rem;line-height:1.5;color:var(--cream-dim)">Following up? Setup is where you paste last visit's HPI, assessment and meds, and that is what drives your carry-forward and today's checklist.
+        <a href="#" onclick="tbpCollapseJobs();return false;" style="color:var(--cream-dim);margin-left:6px;text-decoration:underline">Collapse</a></div>
+    </div>
+
+    <!-- COLLAPSED: the same three jobs, still real buttons, once they are working. -->
+    <div id="jobs-strip" style="display:none;align-items:center;gap:9px;flex-wrap:wrap">
+      <span style="font-size:.82rem;color:var(--cream-dim);font-weight:600;letter-spacing:.02em">I want to</span>
+      <button type="button" class="btn" style="margin:0;padding:7px 13px;font-size:.85rem" title="Carry last visit forward, build today&rsquo;s checklist and set the visit type &mdash; or skip setup and just start writing." onclick="tbpShowSetup()">&#9881; Start or prep a visit</button>
+      <button type="button" class="btn" style="margin:0;padding:7px 13px;font-size:.85rem" title="Read a prior evaluation, discharge summary or old records. Reviewing one does nothing to your note; the file never leaves your computer." onclick="tbpDocsFromNudge()">&#128196; Review outside records</button>
+      <button type="button" class="btn rsn-trigger" style="margin:0;padding:7px 13px;font-size:.85rem" title="Think through the case using what is already in this session. Nothing goes into your note unless you put it there." onclick="tbpShowReason()">&#129504; Discern</button>
+    </div>
   </div>
   <div id="focus-sections" style="display:none"></div>
   <textarea id="focus-note" placeholder="This is your working note. Click 'Set up this visit' above to carry last visit forward and build your checklist — or just type, paste, upload a transcript, or record right here, then Draft final note."></textarea>
@@ -666,6 +725,73 @@ function tcoachSuggestTool(){
 </div>
 
 <!-- First-run onboarding: a short guided setup (working style + setup + template). -->
+<div id="rsn-grip" title="Drag to resize"></div>
+<div class="modal-overlay rsn-panel" id="reason-modal" style="z-index:9640">
+  <!-- No inline max-width: the panel sizes itself from --rsn-w, and an inline value would
+       beat the stylesheet and leave a narrow column floating in a wide drawer. -->
+  <div class="modal">
+    <button class="modal-x" type="button" onclick="tbpHideReason()" aria-label="Close">&times;</button>
+    <h2 style="margin:0 0 1px">Discern</h2>
+    <div style="font-weight:600;color:var(--cream);font-size:.92rem;margin-bottom:5px">Reason through this case</div>
+    <div class="hint" style="line-height:1.55;margin-bottom:13px">Uses the context already in this session &mdash; your working note, prior note, prep, and outside records. Nothing is added to your note unless you choose to put it there.</div>
+
+    <div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:11px">
+      <button type="button" class="btn rsn-starter" style="margin:0;padding:6px 12px;font-size:.82rem;font-weight:500">What am I missing?</button>
+      <button type="button" class="btn rsn-starter" style="margin:0;padding:6px 12px;font-size:.82rem;font-weight:500">What should I clarify next?</button>
+      <button type="button" class="btn rsn-starter" style="margin:0;padding:6px 12px;font-size:.82rem;font-weight:500">What else could explain this?</button>
+      <button type="button" class="btn rsn-starter" style="margin:0;padding:6px 12px;font-size:.82rem;font-weight:500">What argues against my current formulation?</button>
+      <button type="button" class="btn rsn-starter" style="margin:0;padding:6px 12px;font-size:.82rem;font-weight:500">Does the current diagnosis really fit?</button>
+      <button type="button" class="btn rsn-starter" style="margin:0;padding:6px 12px;font-size:.82rem;font-weight:500">What kind of medication problem does this look like?</button>
+      <button type="button" class="btn rsn-starter" style="margin:0;padding:6px 12px;font-size:.82rem;font-weight:500">What would make you change your mind?</button>
+    </div>
+
+    <div id="rsn-out" style="margin-top:13px"></div>
+
+    <div id="rsn-composer">
+      <textarea id="rsn-q" style="width:100%;min-height:64px" placeholder="Ask anything about this case&hellip; e.g. &ldquo;What else should I clarify before changing medication?&rdquo;"></textarea>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+        <button type="button" class="btn" id="rsn-go" style="margin-top:0">Think it through &rarr;</button>
+        <span class="hint" id="rsn-msg"></span>
+        <span class="hint" id="rsn-ctx" style="color:var(--cream-dim);margin-left:auto;text-align:right"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="docs-modal" style="z-index:9650">
+  <div class="modal" style="max-width:720px">
+    <button class="modal-x" type="button" onclick="tbpHideDocs()" aria-label="Close">&times;</button>
+    <h2 style="margin:0 0 4px">Review outside records</h2>
+    <div class="hint" style="line-height:1.55;margin-bottom:4px">A prior evaluation, neuropsych report, discharge summary, referral, school testing, old psychiatric records. Read one on its own, let it inform your prep, or write a durable record summary into your note.</div>
+    <div id="src-block" style="margin-top:20px;padding-top:16px;border-top:1px solid var(--rule)">
+      <div class="hint" style="line-height:1.5"><strong style="color:var(--cream)">Outside records (optional).</strong>
+        Add a psychological or neuropsych evaluation, discharge summary, referral, school testing or prior records.
+        Reviewing one does nothing to your note. You choose whether it informs your prep, and whether any of it is written down.</div>
+      <div style="margin-top:9px">
+        <button class="btn" id="src-add-btn" type="button">+ Add document</button>
+        <input type="file" id="src-file" accept=".pdf,.docx,.txt,.rtf,.md,.text" multiple style="display:none">
+        <span class="hint" id="src-hint" style="margin-left:8px"></span>
+      </div>
+      <div class="hint" style="margin-top:7px;line-height:1.45;color:var(--cream-dim)">
+        Used for this visit only. The file stays on your computer &mdash; the Scribe reads it, it does not keep a copy,
+        and nothing from it reaches your note unless you add it deliberately.</div>
+      <div id="src-list" style="margin-top:12px"></div>
+    </div>
+      
+  </div>
+</div>
+
+<div class="modal-overlay" id="upload-choice" style="z-index:9660">
+  <div class="modal" style="max-width:520px">
+    <button class="modal-x" type="button" onclick="tbpHideUploadChoice()" aria-label="Close">&times;</button>
+    <h2 style="margin:0 0 10px">What are you uploading?</h2>
+    <button type="button" class="btn" id="up-choice-transcript" style="display:block;width:100%;text-align:left;margin:0 0 9px;padding:13px 15px">&#8593; A transcript of a visit
+      <span style="display:block;font-weight:400;font-size:.85rem;opacity:.85;margin-top:3px">From Krisp, Zoom or another recorder. Goes into today's note as the visit.</span></button>
+    <button type="button" class="btn" id="up-choice-doc" style="display:block;width:100%;text-align:left;margin:0;padding:13px 15px">&#128196; A clinical document or outside record
+      <span style="display:block;font-weight:400;font-size:.85rem;opacity:.85;margin-top:3px">PDF, DOCX, TXT or RTF. Get a clinical review of it, pull relevant history into prep, or add a record summary to your note.</span></button>
+  </div>
+</div>
+
 <div class="modal-overlay" id="onboarding">
   <div class="modal" style="max-width:640px">
     <button class="modal-x" type="button" onclick="closeOnboarding()" aria-label="Close">&times;</button>
@@ -1152,6 +1278,7 @@ function draftSystem(){
   s += "=== RISK AND SAFETY (highest stakes) ===\n";
   s += "Handle documented risk (suicidal ideation, homicidal ideation, self-harm, plan, intent, access to means) with maximum fidelity. NEVER omit, soften, downgrade, or paraphrase away any risk the notes document. NEVER fabricate a risk denial (e.g. 'denies SI/HI') unless the notes document it was asked and denied. If risk is documented ambiguously, preserve the clinician's exact words and do not resolve the ambiguity.\n\n";
   s += "=== MEDICATIONS (keep exactly as written) ===\n";
+  s += "OUTSIDE RECORDS ARE NOT TODAY'S HISTORY. When the source material includes information from an outside record (a prior evaluation, discharge summary, referral, school or psychological testing, or any 'Historical Note:' line describing records reviewed), that information KEEPS ITS ATTRIBUTION in the note and never becomes a present-tense patient fact. Write 'the 2024 neuropsychological evaluation documented ADHD' or 'records reviewed described childhood-onset inattention' — NEVER 'the patient has ADHD diagnosed in childhood' on the strength of a record alone. An ABSENCE in a record is an absence in the record, never a patient denial: write 'the records reviewed did not document prior suicide attempts', NEVER 'the patient denies prior suicide attempts'. Something the patient told you today is documented as the patient's report; something a record documents is documented as the record's. Never let the two collapse into each other, and never merge a record-derived statement and a today statement into one undifferentiated sentence.\n\n";
   s += "Never change, correct, normalize, or guess medication names, doses, routes, or frequencies. Write each exactly as the clinician documented it; do not convert brand to generic or generic to brand. If a medication name or dose looks implausible, misspelled, or unrecognized, keep it verbatim, do not substitute a 'correct' name, and let the review pass flag it.\n\n";
   if(visitType === 'follow_up'){
     s += "=== FOLLOW-UP: CARRY EVERYTHING FORWARD, EDIT THE DELTAS ===\n";
@@ -1223,6 +1350,7 @@ function verifySystem(){
   s += "AMBIENT PSYCHOTHERAPY ADD-ON: if the psychotherapy documentation is supported by the ambient transcript rather than typed coach input, do NOT strip it and do NOT flag it as uncounted — the transcript is evidence. Instead flag it once, briefly, for the clinician to confirm the add-on's TIME (psychotherapy-only minutes) and that it was a DISTINCT service from the E/M. Do not treat 'not typed under the coach' as a reason the delivered therapy cannot be counted.\n\n";
   s += "AMBIENT TRANSCRIPT IS EVIDENCE: a 'TODAY'S VISIT — AMBIENT TRANSCRIPT' block is the actual recording of today's visit. Content the draft derived from it is SUPPORTED, not a fabrication — do not strip it. (Only the checklist/guide scaffolds are non-evidence.)\n\n";
   s += "SILENT BY DEFAULT, ASK ONLY WHEN GENUINELY STUCK: This pass fixes what it can and stays quiet. NEVER narrate changes you made, and NEVER ask the clinician to confirm something you already handled (a fabrication you removed, a documented risk you restored, a value the source let you correct) — just do it silently. RAISE A FLAG ONLY for a GENUINE question you cannot resolve yourself: a medication name, dose, or clinically consequential value that looks wrong or internally contradictory AND that the source does not let you fix, or a real clinical ambiguity that needs the clinician's judgment. Keep each flag to ONE sentence, and include only the genuinely unresolved ones. Most notes have zero flags; raise one only when you truly cannot settle it yourself.\n\n";
+  s += "PROVENANCE: if the draft states as a present-tense patient fact something the source attributes to an outside record (a prior evaluation, discharge summary, referral, testing, or a 'Historical Note:' line about records reviewed), restore the attribution to match the source. Likewise, if the draft converted an absence in the records into a patient denial ('denies prior hospitalization' where the source says only that records did not document one), rewrite it as what the records did or did not document. Do this silently, without a flag. Never remove an attribution the source carries.\n";
   s += "RISK: never let the draft add, drop, or soften any documented risk (SI, HI, self-harm, plan, intent). If the draft DROPPED or softened a risk the source documents, restore it to match the source exactly. If the draft ADDED a risk statement or denial the source does not document (e.g. a 'denies SI' the source never recorded), remove it. Do this silently, without a flag.\n";
   s += "IMPLAUSIBILITY (ASK, do NOT fix): if something clinically consequential looks wrong and the source gives you no way to correct it — an unrecognized or likely-misspelled MEDICATION name, an implausible dose/frequency/duration, a number that affects care, or an internal contradiction you cannot resolve — do NOT guess or invent a correction; raise a one-sentence flag so the clinician can resolve it, and preserve the exact wording. A garbled NON-medication proper noun (a person, device, or place name) or a cosmetic date/spelling issue that does not change care: leave it as documented, no flag.\n\n";
   if(visitType === 'follow_up'){ s += "FOLLOW-UP CARRY-FORWARD: silently correct any current-visit assessment, especially SI/HI or self-harm, that the draft asserts as done today but that only the prior note supports and today's notes do not, so a prior safety assessment never reads as if performed today. Standing items carried as 'continued/stable' are fine. Do this silently, without a flag.\n\n"; }
@@ -1294,6 +1422,7 @@ function renderResult(hpi, flags, verified, opts){
   // clears it. This button reopens it (with all their content) so they can fix the source and
   // re-draft, instead of being stranded on the output with no way back.
   html += '<button type="button" class="btn-ghost" id="hpi-back-to-note" style="margin:0 0 10px;border-color:var(--teal);color:var(--teal)" onclick="openFocus(\'raw\')" title="Reopen the working note with everything you typed, edit it, and Draft again">&#8598; Back to my working note (edit &amp; re-draft)</button>';
+  html += '<button type="button" class="btn-ghost" style="margin:0 0 10px 8px;border-color:var(--teal);color:var(--teal)" onclick="tbpShowReason()" title="Think through the case now that the whole visit is here">&#129504; Discern &mdash; reason through this case</button>';
   html += '<textarea class="hpi-edit" id="hpi-out">'+esc(hpi)+'</textarea>';
   html += '<div class="hint" style="margin-top:6px">Edit here before you copy or send &mdash; your changes are what get used.</div></div>';
 
@@ -1755,6 +1884,1039 @@ function newEvalScaffoldSystem(){
   s += "Output only the blank scaffold.";
   return s;
 }
+
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// OUTSIDE RECORDS  (see CLINICAL-OS-STRATEGY.md §32)
+//
+// Three objects, never conflated:
+//   1. RAW SOURCE      the file + its extracted text. In-memory only (tbpSources). Never written
+//                      to the note, never to localStorage, never to the Vault. Gone on Remove or
+//                      when the tab closes. The file is already on the clinician's own machine;
+//                      the Scribe needs temporary access to reason over it, not a second copy.
+//   2. TEMP ANALYSIS   a Read summary. On screen, session only. AI-generated is not durable.
+//   3. CARRY-FORWARD   what the clinician deliberately inserts, as a 'Historical Note:' line. That
+//                      rides the existing carry-forward rail (draftSystem carries 'Historical
+//                      Note:' VERBATIM) and becomes the durable proxy for a source that future
+//                      sessions will never see again.
+// ══════════════════════════════════════════════════════════════════════════════════════════
+
+var tbpSources = [];          // in-memory ONLY. Never serialized anywhere.
+var tbpSrcSeq = 0;
+var SRC_MAX_CHARS = 120000;   // ~30k tokens. Past this we truncate visibly rather than silently.
+
+try { if(window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; } catch(e){}
+
+// Lifted from template-upload.html, with the 5-page cap removed (a neuropsych report is 30+ pages)
+// and a real failure state for a scanned PDF, which used to return '' and produce a mystery summary.
+async function tbpExtractText(file){
+  var name = file.name || '';
+  if(/\.docx$/i.test(name)){
+    var buf = await file.arrayBuffer();
+    var res = await mammoth.extractRawText({ arrayBuffer: buf });
+    return { text: (res.value || ''), pages: 0 };
+  }
+  if(/\.pdf$/i.test(name)){
+    var buf2 = await file.arrayBuffer();
+    var pdf = await pdfjsLib.getDocument({ data: buf2 }).promise;
+    var txt = '';
+    for(var i = 1; i <= pdf.numPages; i++){
+      var page = await pdf.getPage(i);
+      var c = await page.getTextContent();
+      txt += c.items.map(function(it){ return it.str; }).join(' ') + '\n';
+    }
+    return { text: txt, pages: pdf.numPages };
+  }
+  if(/\.(txt|rtf|md|text)$/i.test(name)) return { text: await file.text(), pages: 0 };
+  throw new Error('Unsupported file type. Use PDF, DOCX, TXT or RTF.');
+}
+
+function tbpSrcById(id){
+  for(var i=0;i<tbpSources.length;i++) if(tbpSources[i].id === id) return tbpSources[i];
+  return null;
+}
+// Remove must actually drop the text from the active context, not just hide the card.
+function tbpSrcRemove(id){
+  for(var i=0;i<tbpSources.length;i++){
+    if(tbpSources[i].id === id){ tbpSources[i].text = ''; tbpSources.splice(i,1); break; }
+  }
+  tbpRenderSources();
+}
+
+function tbpRenderSources(){
+  var list = document.getElementById('src-list');
+  if(!list) return;
+  if(!tbpSources.length){ list.innerHTML = ''; return; }
+  var h = '';
+  for(var i=0;i<tbpSources.length;i++){
+    var d = tbpSources[i];
+    var meta = (d.pages ? d.pages + ' pages · ' : '') + Math.round(d.chars/1000) + 'k characters'
+             + (d.truncated ? ' · only the first ' + Math.round(SRC_MAX_CHARS/1000) + 'k analyzed' : '');
+    h += '<div class="src-card" data-id="'+d.id+'" style="border:1px solid var(--rule);border-radius:8px;padding:11px 13px;margin-bottom:9px;background:var(--navy-card)">'
+      +   '<div style="display:flex;align-items:baseline;gap:9px;flex-wrap:wrap">'
+      +     '<strong style="color:var(--cream);font-size:.92rem">'+esc(d.name)+'</strong>'
+      +     '<span class="hint" style="color:var(--cream-dim)">'+esc(meta)+'</span>'
+      +     (d.useForPrep ? '<span class="hint" style="color:var(--teal)">· informing prep</span>' : '')
+      +   '</div>';
+    if(d.error){
+      h += '<div class="hint" style="margin-top:7px;color:var(--amber);line-height:1.45">'+esc(d.error)+'</div>'
+        +  '<div style="margin-top:8px"><button type="button" class="btn src-act" data-act="remove" data-id="'+d.id+'" style="font-size:.8rem;padding:5px 11px">Remove</button></div>';
+    } else {
+      h += '<div style="margin-top:9px;display:flex;gap:7px;flex-wrap:wrap">'
+        +   '<button type="button" class="btn src-act" data-act="review" data-id="'+d.id+'" style="font-size:.8rem;padding:5px 11px">Review record</button>'
+        +   '<button type="button" class="btn src-act" data-act="prep" data-id="'+d.id+'" style="font-size:.8rem;padding:5px 11px">'+(d.useForPrep ? 'Not for prep' : 'Use for prep')+'</button>'
+        +   '<button type="button" class="btn src-act" data-act="remove" data-id="'+d.id+'" style="font-size:.8rem;padding:5px 11px">Remove</button>'
+        + '</div>'
+        + '<div class="src-out" id="src-out-'+d.id+'" style="margin-top:10px">'
+        +   (d.review ? tbpReviewPanelHtml(d.id, d.review, d.carry || '', d.carryFailed || '', false, d.diag || '') : '')
+        + '</div>';
+    }
+    h += '</div>';
+  }
+  // Source-informed prep. Deliberately renders ON SCREEN and never into the working note:
+  // "use for prep" means the model may reason over the record, not that record content gets
+  // written down. Anything the clinician wants in the chart goes through "Summary for the note".
+  if(tbpHasPrepSources()){
+    h += '<div style="margin-top:14px;padding-top:13px;border-top:1px dashed var(--rule)">'
+      +   '<button type="button" class="btn" id="src-prep-btn">Prep me from these records &rarr;</button>'
+      +   '<span class="hint" id="src-prep-msg" style="margin-left:8px"></span>'
+      +   '<div class="hint" style="margin-top:6px;line-height:1.45;color:var(--cream-dim)">Shown here for you to read before the visit. It does not go into your note.</div>'
+      +   '<div id="src-prep-out" style="margin-top:11px"></div>'
+      + '</div>';
+  }
+  list.innerHTML = h;
+}
+
+// ── Record review: ONE call, one output. Replaces the old Summarize / carry-forward pair.
+//
+// "Summarize this" is the wrong instruction. A summarizer optimizes for COVERAGE, which is how
+// you get the foster brother, the smaller foot and every subtest score back in slightly fewer
+// words. The job is what a clinician does with an outside record: work out what matters, how the
+// findings fit together, and — the transferable rule — WHICH FACTS CHANGE HOW THE OTHER FACTS
+// SHOULD BE READ. A stimulant taken during cognitive testing changes what intact attention
+// scores mean. Severe sleep dysregulation changes what attention and mood findings mean. An
+// invalidated self-report inventory changes what can be concluded from self-report. Age-mismatched
+// norms change confidence. We cannot enumerate the oddities in advance, so teach the question.
+//
+// The same output serves both jobs: read it on screen, or put it in the note. It is written
+// knowing it may become the ONLY representation of this document any future Scribe session sees.
+// The durability rules for the carry-forward. Shared verbatim by the two-output review prompt
+// and by the carry-forward-only repair prompt, so a retry is held to the same standard as a
+// first pass. One definition, because two drifting copies is how the second product silently
+// becomes a different, worse thing.
+// The one absolute constraint, shared by the review prompt and the carry-forward repair prompt.
+// It sits at the top of both: three test cases showed that when the model recognises a
+// high-salience interaction, a rule buried mid-prompt reads as a preference and it explains
+// anyway. Its own function because the carry-forward is what becomes permanent, and it was
+// previously built with no prescribing boundary whatsoever.
+function docPrescribingBoundary(){
+  var s = "=== THE ONE ABSOLUTE CONSTRAINT: YOU MAY IDENTIFY, YOU MAY NOT SUPPLY ===\n";
+  s += "You may identify a medication combination, a dose, a level or a change in circumstance as something that warrants verification. You may NOT supply the pharmacology from your own knowledge. Everything else in this prompt is judgement. This is not.\n\n";
+
+  s += "If the source does not itself state the mechanism, the metabolic pathway, the direction of an effect, its magnitude, a therapeutic range, a target level, a dose implication, or an expected clinical consequence, then you do not add any of them. Not as a fact, not as a possibility, not as an open question, not as a reason for monitoring, and not in a sentence that begins 'this is why it matters'.\n";
+  s += "This holds however obvious the pharmacology is to you, and however clinically important it feels. A combination being genuinely high-risk is a reason to flag it for verification, never a reason to explain it. The clinician reading this has a drug reference and a licence; what they need from you is to notice, not to teach.\n\n";
+
+  s += "NEVER LABEL A DOSE OR A NUMERIC LEVEL. Not therapeutic, subtherapeutic, supratherapeutic, low, high, adequate, inadequate, submaximal, suboptimal, above target or below target — not unless the source itself characterises it that way. 'Potentially submaximal' and 'subtherapeutic-appearing' are the same claim wearing a hedge, and 'may not reflect a stable therapeutic endpoint' is the same claim wearing a clause. Report the number, the date, and what the record does and does not say about it.\n";
+  s += "Do NOT infer whether a dose or level is adequate from the patient's symptoms. Persistent symptoms alongside a given dose is two documented facts, not evidence about the dose.\n\n";
+
+  s += "BAD: 'Fluvoxamine inhibits clozapine metabolism while smoking induces it, creating opposing effects on exposure, so cessation could substantially raise levels.'\n";
+  s += "GOOD: 'Clozapine, fluvoxamine and heavy tobacco use were simultaneously documented at discharge, with a stated intention to quit smoking. The source does not address the clinical significance of this combination, does not document a clozapine level or target, and does not describe monitoring beyond ANC surveillance. Interaction and monitoring implications should be independently verified before any medication change.'\n\n";
+  s += "BAD: 'Fluvoxamine was at a potentially submaximal dose at discharge.'\n";
+  s += "GOOD: 'Fluvoxamine 100 mg nightly had been started during the admission; the record does not establish the intended long-term dose.'\n\n";
+  s += "BAD: 'Lithium level 0.4 is subtherapeutic, and concurrent HCTZ may be increasing lithium exposure.'\n";
+  s += "GOOD: 'Lithium level was 0.4 mEq/L on two draws four months apart. The record does not state the prescriber's target level or the rationale for maintaining the current dose. HCTZ and near-daily ibuprofen were concurrently documented; the source does not address their relevance to lithium management, which should be independently verified.'\n\n";
+
+  s += "Notice what the good versions keep: every fact the clinician needs to act, and the instruction to verify. What they drop is the pharmacology lesson, which is the part you are most likely to be confidently wrong about and the part they did not ask you for.\n\n";
+
+  s += "A FLAG TO VERIFY IS NOT A BRAKE ON THE PATIENT. Address verification to the clinician and tie it to their decisions, never to something the patient is trying to do for their health. 'Before smoking cessation is attempted' reads as telling a patient not to quit smoking until someone checks a drug level, which is not the message and is not yours to send.\n";
+  s += "Right: 'Given the documented plan for smoking cessation, interaction and monitoring implications should be independently verified as smoking status changes and before medication adjustments are made.'\n";
+  s += "Same safety signal, tied to the clinician's monitoring and the clinician's prescribing, without making the health behaviour itself sound contraindicated.\n\n";
+
+  s += "WHEN AN INDICATION IS UNDOCUMENTED, say so and stop. The whole sentence is: 'Benztropine 1 mg twice daily as needed was prescribed at discharge; the indication is not documented.' Nothing follows it.\n";
+  s += "Do not then list what the reasons might have been. 'Whether it was for anticipated extrapyramidal symptoms, as a precaution, or for another reason is not stated' is a list of candidate explanations wearing the clothes of a disclaimer, and it is the same failure as supplying one. If the record does not say, the useful information is that the record does not say.\n\n";
+  return s;
+}
+
+function docCarryRules(){
+  var s = "";
+  s += "THE CARRY-FORWARD IS NOT A MINI RECORD REVIEW, AND IT IS NOT A DEFENCE OF THE SOURCE'S DIAGNOSES. It is what a clinician should still know years from now, once this document is gone.\n\n";
+
+  s += "ASSUME THE DIAGNOSES THEMSELVES WILL REMAIN IN THE LONGITUDINAL CHART. Do not preserve the symptom lists, rating-scale items, test findings or reasoning that supported them, unless a specific symptom or pattern has independent longitudinal value BEYOND the diagnosis it helped establish.\n";
+  s += "THE GOVERNING INSTRUCTION: prefer what the diagnosis does NOT tell the future clinician.\n\n";
+
+  s += "PRIORITISE, in this order:\n";
+  s += "1. Unresolved diagnoses and questions that materially remain open.\n";
+  s += "2. Enduring personality and behavioural patterns.\n";
+  s += "3. Distinctive longitudinal sleep and functional patterns.\n";
+  s += "4. Meaningful cognitive strengths or relative weaknesses, in plain language.\n";
+  s += "5. Treatment responses and intolerances worth remembering.\n";
+  s += "6. Source limitations that would materially change how this record is read in future.\n\n";
+
+  s += "THE ONE EXCEPTION, AND IT MATTERS. Preserve supporting evidence when that evidence materially changes or undermines how the carried diagnosis should be understood later. Evidence that merely re-proves a diagnosis you are already carrying is redundant and goes. Evidence that is the reason the diagnosis may need reconsidering is the single most valuable thing you can carry, because the diagnosis alone would actively mislead without it.\n";
+  s += "Concretely: carrying 'ADHD' does not require the symptoms that established it. But carrying 'Bipolar II' when both elevated periods lasted under two days and each began days after an antidepressant start DOES require those facts — 'Bipolar II diagnosed 2024' on its own would hand a future clinician a settled diagnosis that the record itself leaves open. Ask which one you are looking at before you cut.\n\n";
+
+  s += "COMPRESS TEST FINDINGS TO CLINICAL MEANING. Do not carry individual instruments, scores, indices, subtest names, percentiles, error patterns or rating-scale details merely because they helped establish a diagnosis.\n";
+  s += "An unresolved question needs only the question. 'Bipolar-spectrum disorder was not established and was specifically deferred for psychiatric clarification' is complete. The endorsed manic items that raised it, and the conditions under which it should be revisited, belong to the review, not to every future note.\n";
+  s += "A whole cognitive profile compresses to a sentence or two: what is strong, what is relatively weak, and whether structured performance diverged from real-world functioning.\n";
+  s += "Drop generic recommendations, ordinary family history, one-off events, transient observations, and methodology that did not change a conclusion.\n\n";
+
+  s += "ATTRIBUTION SURVIVES COMPRESSION. Where a carried statement is your synthesis rather than something the source said, keep that visible. Never rewrite your own observation as a conclusion the outside evaluator reached.\n\n";
+
+  s += "LENGTH DOES NOT SCALE WITH THE SOURCE. This is the rule most often broken. A fifty-page packet spanning five years does not earn a longer block than a single evaluation; if anything it earns a shorter one, because five years of records contain far more that is redundant. The block you are writing is a fixed-size slot in every future note, and the source has no vote on how big that slot is.\n";
+  s += "Do not take your sense of scale from the review you just wrote. The review is as long as the source demanded. This is not.\n\n";
+
+  s += "FOR A MULTI-YEAR OR MULTI-DOCUMENT PACKET, collapse aggressively:\n";
+  s += "- A series of numbers becomes one trend, or nothing. 'Serial lithium levels rose over 2023-2024 alongside a rise in creatinine' carries the fact; the six values and their dates do not need to ride in every future note.\n";
+  s += "- Repeated visits become one longitudinal pattern. Dozens of stable follow-ups are one sentence about a stable interval.\n";
+  s += "- Repeated symptoms become the diagnosis or the pattern they establish.\n";
+  s += "- Detailed testing becomes its durable interpretation, and usually one clause.\n";
+  s += "- A string of treatment events becomes only the response, intolerance or access fact worth remembering.\n\n";
+
+  s += "LENGTH. Target 125 to 225 words, whether the source is eight pages or eighty. Going past 250 should be rare and deliberate. If your draft is longer than 225 words, do not trim adjectives: run the deletion test again, sentence by sentence, and cut whole sentences. Length here is not thoroughness; it is failure to decide.\n\n";
+
+  s += "THE FINAL DELETION TEST. Take every sentence in your draft in turn and ask: if THIS SENTENCE disappeared but the diagnosis list remained, would future care meaningfully lose something? If not, delete it. Run this on the whole draft before you finish. Most of what you want to keep will not survive it, and that is the point.\n\n";
+
+  s += "WORKED EXAMPLE, showing the shape and length wanted. It is from a DIFFERENT patient — take the compression from it, never the content:\n";
+  s += "'Historical Note: Outside record reviewed. Neuropsychological evaluation 10/27/2021, age 19 years 9 months; reviewed in draft form. Diagnosed ADHD combined presentation, mild; major depressive disorder, moderate with anxious distress; and insomnia. Bipolar-spectrum disorder was not established and was specifically deferred for psychiatric clarification. Longitudinally relevant findings included prominent longstanding perfectionism and severe irregular sleep, with ambivalence about a consistent schedule because nighttime was experienced as productive and creative. Cognitive testing showed strong verbal abilities and generally intact structured executive and memory functioning, with processing speed a relative weakness; performance under structured testing was stronger than reported self-directed daily functioning. Testing occurred while he was prescribed Adderall and amid significant sleep and mood symptoms, so this evaluation does not establish an untreated attentional baseline. Adderall was reported helpful for focus and mood; melatonin, clonidine and trazodone were each stopped because of morning drowsiness. The PAI was invalid for an unspecified reason; separate performance-validity testing was normal.'\n";
+  s += "Note what that example does NOT contain: no subtest scores, no indices, no percentiles, no CPT detail, no endorsed symptom items, no norm-mismatch discussion, no recommendations, and no evidence offered in support of a diagnosis it already names.\n\n";
+  return s;
+}
+
+// Second-pass repair. Used only when the one-call review did not produce a carry-forward
+// (almost always because a long review hit the token ceiling first). It works from the review
+// rather than the original document: the review is already the distilled reading, it is far
+// shorter, and re-reading the raw record would risk a second, differently-reasoned pass.
+// Compression pass. Fires when the carry-forward comes back materially over budget, which
+// happens on large packets because the block is written straight after a long review and
+// anchors on it. Rewriting a draft to a word count is a far easier task than writing to one,
+// so this succeeds where the instruction alone does not.
+function docCarryCompressSystem(){
+  var s = docPrescribingBoundary();
+  s += "A durable carry-forward summary has been drafted for a patient's chart. It is over budget. Your only job is to cut it to length.\n\n";
+  s += "This is NOT a request to shorten something. It is a fixed-size slot in every future note, and your job is to decide what occupies it. The draft you are given is not a target to trim toward; it is a superset to choose from.\n\n";
+
+  s += "Return ONLY the rewritten block. No preamble, no note on what you cut, no Markdown.\n";
+  s += "Keep the first line beginning 'Historical Note: Outside record reviewed' intact, including the document, date and context it names.\n";
+  s += "You may only delete and compress. Every fact in your output must already be in the draft. Add no clinical claim, no interpretation, no framing that was not there.\n\n";
+
+  s += docCarryRules();
+
+  s += "=== YOUR BUDGET ===\n";
+  s += "Target 160 to 210 words. Hard maximum 225. A draft at 280 words has not been cut; it has been tidied.\n\n";
+
+  s += "=== HOW TO CUT ===\n";
+  s += "ONE SENTENCE PER DURABLE THEME. Identify the themes worth permanent memory — usually five or six — and give each exactly one sentence. That constraint alone produces the right length.\n";
+  s += "COLLAPSE EVERY NUMERIC SERIES into its trend, unless one exact value is itself the durable fact. 'Serial lithium levels rose from 0.6 to 0.9 mEq/L between September 2023 and December 2024, creatinine rose from 0.8 to 1.1, and TSH peaked at 8.9 in September 2024 prompting a levothyroxine adjustment' is five facts and forty words. 'Late-2024 records document rising lithium and creatinine values, worsening hypothyroidism requiring a primary care levothyroxine adjustment, and new near-daily ibuprofen use; the significance of these concurrent findings should be independently verified' is the same clinical meaning in thirty-four, and nothing a future clinician would act on is lost.\n";
+  s += "DELETE ANYTHING RECOVERABLE from the diagnosis list or the current medication list. It is already in the chart.\n";
+  s += "Cut in this order: numeric series and individual values; test findings beyond their durable interpretation; evidence supporting a diagnosis already named; visit-by-visit or score-by-score history; commentary and characterisation.\n";
+  s += "Delete WHOLE SENTENCES. Do not trim adjectives or merge clauses to save words — that keeps everything and helps nothing, and it is exactly how a 361-word draft becomes a 284-word draft that is still wrong.\n\n";
+
+  s += "=== KEEP ===\n";
+  s += "Unresolved questions that materially remain open; enduring traits and behavioural patterns; treatment response, intolerance and access facts worth remembering; the combination or finding flagged for verification; and any evidence that changes how a carried diagnosis should be read later.\n";
+  return s;
+}
+
+function docCarryOnlySystem(){
+  var s = docPrescribingBoundary();
+  s += "A clinician's review of an outside clinical record has already been written. Your only job is to produce the durable carry-forward summary from it.\n\n";
+  s += "Produce NOTHING else. No preamble, no heading, no closing comment, no Markdown.\n\n";
+  s += "The REVIEW answered: what do I need to understand about this source today?\n";
+  s += "The CARRY-FORWARD answers: what from this source will a clinician still need several visits from now, once the document itself is gone?\n\n";
+  s += docCarryRules();
+  s += "=== OUTPUT ===\n";
+  s += "One block of flowing prose, plain text, no labels. Its FIRST line must begin with the literal words 'Historical Note: Outside record reviewed' and then name the document, its date and the patient's age or context if the review gives them, so the note's carry-forward rail keeps it intact across visits.\n";
+  s += "Carry forward only what the review actually establishes. Do not add findings, inferences or conclusions that are not in it.\n";
+  s += "This is what goes in the chart. Write it as though the original document will not exist the next time anyone needs it, because from the Scribe's point of view it will not.";
+  return s;
+}
+
+function docReviewSystem(){
+  var s = docPrescribingBoundary();
+  s += "You are reviewing an outside clinical record for a psychiatric clinician who is about to see, or has just seen, this patient.\n\n";
+  s += "Your job is NOT to summarize or reproduce the document. It is to work out what a clinician needs to understand from this record now, and what is important enough to preserve for years.\n\n";
+
+  s += "BEFORE YOU WRITE: identify the five to ten findings that most change clinical understanding of this patient, and build the review around THOSE. Do not organize it around the order information appeared in the source.\n\n";
+
+  s += "=== THE QUESTION THAT MATTERS MOST ===\n";
+  s += "Which facts in this record change how the OTHER facts should be interpreted? Findings are not self-explanatory. Ask what conditions were in place when the data was produced, and say plainly how those conditions affect what the data can support.\n";
+  s += "Consider, when present: medication active during testing — especially treatment for the very domain being assessed; sleep deprivation or severe sleep dysregulation; acute psychiatric symptoms; substances; acute illness; testing accommodations or nonstandard administration; age or norm mismatch; language and cultural factors; validity concerns; missing collateral; the setting itself.\n";
+  s += "TREATED STATE IS NOT BASELINE. If the patient was receiving treatment that could improve the domain being tested, say so and distinguish treated-state performance from untreated baseline. Intact performance under effective treatment is NOT evidence the underlying disorder is absent — it may be evidence the treatment is working. Note also when impairment persisted DESPITE treatment, because that cuts the other way. Report both directions; do not decide which one carries more weight. If the record does not document dose, formulation, timing relative to testing, or the rationale for testing on or off medication, say that the record does not establish it rather than assuming either way.\n\n";
+
+  s += "=== VALIDITY ===\n";
+  s += "Distinguish PERFORMANCE validity or effort from the validity of a self-report or personality measure. They are not the same finding and must never be conflated.\n";
+  s += "If a measure is called invalid and the source does not say why, state exactly that. Do NOT infer or guess the reason. You may note that the reason could itself have been clinically informative while making clear it cannot be determined from this record.\n\n";
+
+  s += "=== SYNTHESIZE, DO NOT EXTRACT ===\n";
+  s += "Do not list diagnoses, scores, symptoms and recommendations. Work out what pattern emerges: which findings agree, which are discordant, what competing explanations could account for the picture, what remains unresolved.\n";
+  s += "Name preserved and strong functioning, not only deficits. A discrepancy between strong performance in a structured one-to-one testing environment and substantial real-world dysfunction is itself a clinical finding — explain it rather than letting normal testing quietly appear to refute the reported impairment.\n\n";
+
+  s += "=== SOURCE VERSUS YOUR INTERPRETATION ===\n";
+  s += "Keep three things visibly separate: conclusions the source explicitly reached; facts and history the source documented; and your own synthesis of how it fits together. Never present your inference as something the outside clinician said. Keep attribution throughout — 'the evaluation documented', not 'the patient has'. An absence in a record is an absence in the record, never a patient denial.\n\n";
+
+  s += "=== WHAT TO KEEP ===\n";
+  s += "This review may become the ONLY representation of this document available in every future encounter, because subsequent visits receive the previous note, not the original record. So preserve what a clinician or an AI would need years from now to understand what this record established, on what evidence, and what limited it. A fact dropped here is not recoverable later.\n";
+  s += "That is a reason for VALUE DENSITY, not for length. Keep history that affects diagnosis, treatment, risk, longitudinal understanding, interpretation of the findings, or future psychiatric care. Drop demographic, developmental, medical, academic and psychosocial detail that does not. Do not keep something merely because it appeared in the record.\n";
+  s += "Do not list every instrument or every score. Name instruments and cite specific scores ONLY where they demonstrate a strength, a weakness, a discrepancy, or the basis for a conclusion.\n";
+  s += "For treatment history, explain the clinical significance rather than listing agents — what was tried, the response, why it stopped, and what that implies.\n";
+  s += "The review must be substantially shorter than the source.\n\n";
+
+  s += "=== DIAGNOSES ===\n";
+  s += "Preserve the diagnoses and conclusions the source actually gave. Then assess how strongly the source supports them: what evidence backs them, what complicates them, which differentials remain unresolved, and whether the source itself deferred a question. Do not diagnose independently beyond what the evidence reasonably supports.\n\n";
+
+  s += "=== LIMITATIONS ===\n";
+  s += "Fold meaningful limitations into the synthesis where they affect interpretation, rather than listing them separately. Distinguish a genuine methodological concern from an unanswered question from information that simply was not provided. Do not manufacture alarm from missing information, and do not turn an uncertainty into an accusation against the evaluator.\n\n";
+
+  s += "=== CALIBRATION OF CLINICAL INFERENCE ===\n";
+  s += "You may identify implications, discrepancies, confounds and reasonable competing explanations the source never stated. That is the job. But an inference stated as a fact is worse than no inference, because it sounds authoritative and can be wrong. So:\n";
+  s += "- Distinguish documented fact from your inference, in the sentence itself.\n";
+  s += "- Use calibrated language when direction or causation is uncertain: 'may', 'could', 'raises the possibility', 'cannot be determined from this record'.\n";
+  s += "- Do NOT promote a plausible explanation to the most likely explanation unless the source supports it. When several explanations remain live, name them and say the record does not allow them to be separated. Preserving a real alternative is better reasoning than picking one.\n";
+  s += "- Do NOT introduce a diagnosis, a neurologic localization, a mechanism or any other conclusion that nobody raised, merely to explain a discrepancy. Explain the discrepancy and stop.\n";
+  s += "- Do NOT infer the DIRECTION or MAGNITUDE of bias from a methodological limitation. A norm mismatch means interpret cautiously; it does not tell you which way the estimate is off unless the source establishes that.\n";
+  s += "- Do NOT describe treatment as active, effective or providing coverage during testing unless dose, formulation and timing support it. 'Reported taking it' is not 'was therapeutically covered throughout'. Prefer the prescribing fact to the treatment claim: 'while prescribed stimulant medication', not 'under stimulant treatment', because the degree of active effect is exactly what is unknown.\n";
+  s += "- CHECK WHAT ELSE WAS ADMINISTERED before saying a category of evidence is missing. If one instrument is invalid, say what that specific instrument would have contributed; do not claim the evaluation had no measure of that kind when other validated instruments were in fact used.\n";
+  s += "- When information is absent, state what cannot be determined instead of filling the gap.\n";
+  s += "- Keep the register clinical. Do not editorialise, do not admire or grade the evaluator, and do not write for effect. Phrases like 'warrants scrutiny' and 'represents a clinical choice the record does not explain' are grading. Juxtapose the facts and let the clinician draw the conclusion: 'Lithium was characterised as tolerated; mild thirst was also documented.'\n";
+  s += "- You are synthesising an outside record, not auditing the outside clinician. Saying what the record does not state is reporting and is often the most useful thing you do. Cataloguing what the prescriber failed to consider, or what they did not document having weighed, is auditing. One noted gap that changes interpretation is worth more than five that impugn.\n";
+  s += "- Do NOT manufacture uncertainty that contradicts the source. If the source states the patient was taking a medication, that fact is established; what is missing is dose, formulation, timing and degree of effect. Say those are undocumented. Do not speculate about whether the medication was taken at all.\n";
+  s += "- Do NOT re-derive psychometric scoring conventions. When the source interprets a measure, preserve the source's interpretation. Do not reason about which direction a transformed score runs in order to reach your own verdict on an instrument, and never contradict the source's reading of its own data on that basis.\n";
+  s += "- Do NOT append a speculative caveat to a resolved item. If the source reports full recovery with no residual effects, report that; do not add that subtle contributions cannot be excluded. Absence of a stated finding is not a lurking finding, and this kind of completeness reflex adds nothing and erodes trust in the rest.\n";
+  s += "- Do NOT recommend treatment the source did not recommend, or characterise something as requiring a particular intervention unless the source said so. Describing a barrier is reporting; prescribing the response to it is not yours to do here.\n";
+  s += "- Do NOT rank one finding as 'stronger', 'more robust', 'more meaningful', 'the more reliable signal' or more diagnostically weighty than another unless the source or the available evidence clearly justifies that comparison. Describe why a finding is noteworthy without assigning evidentiary weight you cannot establish. The same rule kills 'a floor, not a ceiling', 'this makes them more robust, not less', and calling one result 'objective' in a way that implies the others are not.\n";
+  s += "- Do NOT invoke the literature, base rates, or 'a well-documented pattern in which...' Nothing outside this record is available to you as evidence about this patient. Describe what the record shows and stop.\n";
+  s += "- Avoid absolutes and exclusivity. 'The only reliable pathway', 'the first objective data', 'regardless of cause' each claim knowledge of everything outside this document. The record establishes what it contains, not what does not exist elsewhere.\n";
+  s += "- Do NOT decide what an informant report REPRESENTS. That a parent completed a rating scale does not establish that it reflects a stable baseline across time, or that it is less coloured than self-report. Report who reported what.\n";
+  s += "- Do NOT grade severity the source did not grade. 'Sleep deprivation of this severity' asserts a threshold. Describe the documented sleep pattern instead.\n";
+  s += "- Do NOT refute an interpretation nobody offered. 'This is not merely sleep hygiene noncompliance' argues with an absent claim; it belongs to persuasion, not review.\n";
+  s += "- Do NOT append clinical significance to a historical fact. That a trait was longstanding or premorbid is reportable; that it 'may be relevant to conceptualisation and future treatment' is you adding weight. State the fact and stop.\n";
+  s += "- Do NOT make durability judgements inside the review. Whether something is 'a durable finding' is the carry-forward's question, decided later under its own rules.\n";
+  s += "- Prefer describing behaviour over ascribing motive. 'Expressed ambivalence about a regular schedule because nighttime was experienced as productive' is reporting; calling the pattern volitional is a judgement the record does not license.\n\n";
+
+  s += "=== A REMINDER, BECAUSE THIS IS WHERE IT SLIPS ===\n";
+  s += "You are now deep enough into the record to have formed opinions. Re-read the absolute constraint at the top of this prompt before you write about any medication, dose, level or combination. Report doses, levels, durations and regimens exactly as the record states them. Identify what warrants verification. Supply no pharmacology.\n\n";
+
+  s += "=== KNOWLEDGE YOU BRING VERSUS CONTENT YOU FOUND ===\n";
+  s += "You may apply diagnostic criteria and general clinical knowledge the source never mentions — noticing that a reported episode duration falls short of a criterion is exactly the kind of thing a clinician wants caught. But frame it visibly as YOUR reading, not as something the record established, and do not let it become a verdict on the outside clinician's work.\n";
+  s += "Right: 'The reported duration of one and a half to two days is shorter than the standard DSM-5 duration criterion for a hypomanic episode, which makes the documented basis for the diagnosis incomplete as written.'\n";
+  s += "Wrong: presenting the same point as a proven fatal defect the evaluator overlooked.\n";
+  s += "Say how confidently a diagnosis can be interpreted FROM THIS RECORD. Do not speak to its validity — 'materially affects the diagnostic validity' reads as you adjudicating the diagnosis, which is not your role. 'Materially affects how confidently the diagnosis can be interpreted from this record' says the useful half and claims nothing you cannot support.\n";
+  s += "Cut clever asides. An observation that is neatly put but changes nothing a clinician would do — noting that discontinuing a drug the patient was not taking was notional, for instance — is writing for effect. Delete it.\n\n";
+
+  s += "=== DO NOT COMPLETE THE STORY ===\n";
+  s += "Clinical records frequently contain patterns whose causes remain uncertain. You are NOT obligated to explain every discrepancy, repeated treatment response, unusual test result or conflicting report. If the source supports the existence of a pattern but not its explanation, state the pattern and preserve the uncertainty. A clinically intelligent review may end with 'the reason cannot be determined from this record.' That is a finished thought, not an unfinished one.\n";
+  s += "Specifically, do not infer: why a medication repeatedly caused a problem; why two informants disagreed; why one cognitive domain was weaker; how nonstandard testing conditions affected a particular score; whether treatment was adequately active; or which confound contributed most. Not unless the source or the available evidence actually establishes it.\n";
+  s += "Do NOT generate explanatory hypotheses merely because multiple similar treatment outcomes occurred. If the source documents a repeated pattern but does not establish its cause, preserve the pattern and leave the cause unresolved. Three sleep agents each stopped for morning drowsiness is a durable, useful fact on its own; the list of reasons it might have happened is invented.\n";
+  s += "When you name a discrepancy, name it and stop. Do not follow it with the mechanism you think produced it. Saying a pattern is 'consistent with' an account the patient or family gave is still explaining it, and the testing did not establish that mechanism.\n";
+  s += "SCOPE EVERY CLAIM TO THIS DOCUMENT. Say what this evaluation does or does not provide, never what does or does not exist. 'This evaluation does not provide an unmedicated cognitive baseline' is supportable. 'No unmedicated cognitive baseline exists' is a claim about the patient's entire life and chart, which you cannot see. The same applies to firsts: unless the source states it, you cannot know this was the first in-person testing, the first objective data, or the first of anything.\n";
+  s += "A limitation is a limitation, not a quantified effect. Nonstandard administration, a norm mismatch or an unusual testing environment should be named as an additional limitation with the effect left open: 'COVID-era administration differed from standard conditions and is an additional limitation; the record does not establish whether or how it affected performance.' Do not decide it was 'particularly relevant' to one subtest.\n";
+  s += "Keep scope proportionate. 'A modifying variable for every other diagnosis in the record' overclaims; 'materially complicates interpretation of the mood, attention and cognitive findings' says the same clinically useful thing without the sweep.\n";
+  s += "Where an index summarises a variable profile, describe the variability rather than adjudicating the true value. 'The FSIQ should be interpreted alongside the marked variability across domains rather than as a complete description of the cognitive profile' is right; 'the FSIQ likely obscures the profile' quietly asserts you know what the profile really is.\n\n";
+
+  s += "=== SELF-AUDIT BEFORE YOU FINISH ===\n";
+  s += "Read back every interpretive sentence you wrote and classify it: documented by the source, a strongly supported inference, or merely a plausible hypothesis. Rewrite any plausible hypothesis that is currently stated as fact. This pass matters more than adding anything further.\n";
+  s += "Then run one mechanical sweep: find every sentence that mentions a medication, a dose, a level or a combination, and ask whether each pharmacological claim in it came from the source or from you. Delete every one that came from you, keeping the fact and the instruction to verify. Do this even where the pharmacology is elementary and you are certain of it — especially there, because that is where it has slipped every time.\n";
+  s += "Then read it again for one specific move: a real pattern followed by an invented reason for it. Wherever you named a discrepancy, a repeated outcome, a weak domain or a disagreement between informants and then supplied a cause, check whether the source established that cause. If it did not, delete the explanation and keep the pattern. That single edit fixes most of what goes wrong here.\n\n";
+
+  s += "=== WHAT SYNTHESIS LOOKS LIKE ===\n";
+  s += "Weak: 'Patient was taking Adderall at the time of testing.'\n";
+  s += "Right: 'Testing occurred while he was taking prescribed Adderall, which he reported improved focus, though dose, formulation and timing relative to testing are not documented. Intact attention and executive performance therefore reflects treated-state functioning and does not establish an unmedicated baseline. Atypical attention findings were nonetheless present, which is noteworthy, though the degree of medication effect during testing is unknown and the findings remain confounded by severe sleep dysregulation and depression.'\n";
+  s += "Note what that does NOT do: it does not decide the atypical findings are the stronger signal, and it does not wonder whether he took the medication at all. It reports what is established, names what is undocumented, and leaves the weighing to the clinician.\n\n";
+  s += "Weak, because it upgrades a possibility to a near-certainty: 'The full-scale IQ is almost certainly an underestimate of underlying ability.'\n";
+  s += "Right: 'The full-scale score may obscure relative strengths, since processing speed was substantially lower than several other domains; the record does not establish a different underlying level of ability.'\n\n";
+  s += "Weak: 'PAI was invalid. Standalone validity testing was normal.'\n";
+  s += "Right: 'The PAI was deemed invalid for a reason the report does not state and was not interpreted, removing one broad self-report personality and psychopathology measure, though other validated self-report scales remained available. A separate performance-validity measure was normal, so this should not be read as poor effort on cognitive testing.'\n";
+  s += "That example also shows the checking rule: before saying a kind of evidence is missing, look at what else was actually administered.\n\n";
+  s += "Weak, because it picks a winner the record cannot support: 'The processing speed weakness likely reflects sleep deprivation and depressive slowing rather than a stable deficit.'\n";
+  s += "Right: 'The relative processing-speed weakness could reflect mood symptoms, sleep dysregulation, ADHD, a genuine underlying relative weakness, or some combination; this record does not allow them to be separated.'\n\n";
+  s += "Weak, because it ranks and universalises: 'The CPT-3 is an objective, performance-based finding, and impairment persisting despite treatment in this domain is the stronger signal. This reflects a well-documented pattern in which external structure is the only reliable activation pathway.'\n";
+  s += "Right: 'The CPT-3 showed performance abnormalities consistent with sustained-attention and inhibitory-control difficulties. Because testing occurred on prescribed stimulant medication, and alongside severe sleep dysregulation and depressive symptoms, the relative contribution of each factor cannot be determined from this record.'\n\n";
+  s += "Weak: 'WCST intact; verbal fluency 99th percentile; memory average to high average.'\n";
+  s += "Right: 'Despite substantial reported real-world executive dysfunction, most structured executive and memory measures were intact or strong. The discrepancy illustrates that strong performance on structured one-to-one tasks does not rule out substantial difficulty with self-directed functioning in everyday settings.'\n\n";
+
+  s += "=== THE SECOND OUTPUT: WHAT SURVIVES ===\n";
+  s += "You produce TWO things from this one reading, and they answer different questions.\n";
+  s += "The REVIEW answers: what do I need to understand about this source today?\n";
+  s += "The CARRY-FORWARD answers: what from this source will a clinician still need several visits from now, once the document itself is gone?\n\n";
+
+  s += docCarryRules();
+
+  s += "=== OUTPUT ===\n";
+  s += "Plain text throughout. No Markdown, no bullet characters, no preamble, no closing comment.\n";
+  s += "Emit BOTH sections below, in this order, each marker reproduced EXACTLY as written on its own line, with content on the lines after it.\n\n";
+  s += "<<<REVIEW>>>\n";
+  s += "The full review for the clinician to read now. Use these labels, each on its own line, and omit any that has nothing real to say rather than padding it. Begin by naming the document, its author and credential if given, its date, and its status if relevant (for example a draft not issued as final).\n";
+  s += "Diagnoses and conclusions: what the source explicitly concluded.\n";
+  s += "Clinical synthesis: THE MOST IMPORTANT SECTION. What the record shows taken as a whole — strengths, weaknesses, patterns, discrepancies, confounds, competing explanations, what changes interpretation, what stays unresolved. This must add clinical understanding, not restate the sections below it.\n";
+  s += "Relevant history: only what matters longitudinally.\n";
+  s += "Medication and treatment history: with its significance explained.\n";
+  s += "Key recommendations: only those likely to matter to subsequent psychiatric care.\n\n";
+  s += "Add a final 'Unresolved:' line ONLY for important open items that could not be worked into the synthesis naturally. Most reviews will not need one.\n\n";
+  s += "<<<CARRY FORWARD>>>\n";
+  s += "One block of flowing prose, no labels, built under the durability rules above. Its FIRST line must begin with the literal words 'Historical Note: Outside record reviewed' and then name the document, its date and the patient's age or context if given, so the note's carry-forward rail keeps it intact across visits.\n";
+  s += "This is what goes in the chart. Write it as though the original document will not exist the next time anyone needs it, because from the Scribe's point of view it will not.";
+  return s;
+}
+
+// Prep for a NEW evaluation, given outside records. This is what newEvalScaffoldSystem() cannot
+// do: that call is handed the literal string 'Produce the blank intake scaffold now.' and is blind
+// by design. With sources, prep finally has something to reason over (CLINICAL-OS-STRATEGY.md 32).
+function newEvalPrepFromSourcesSystem(){
+  var s = "You are preparing a psychiatric prescriber for a NEW PATIENT EVALUATION they are about to conduct. They have not met this patient. ";
+  s += "You are given one or more OUTSIDE RECORDS the patient or a referrer sent ahead. Your job is to make the clinician walk in already oriented, and to be honest about what those records do and do not establish.\n\n";
+  s += "SYNTHESIS FIRST, GAPS SECOND. You are not a completeness checker. Start by saying what the records actually establish and how strongly, in ordinary clinical language. Only then say what is still open.\n\n";
+  s += "Output EXACTLY these three markers, each on its own line, with content on the lines after it. Reproduce each marker exactly as written. No Markdown, no JSON, no code fences.\n\n";
+  s += "<<<ORIENTATION>>>\n";
+  s += "Three to six short lines. What kind of records these are, who wrote them and when, and the clinical picture they describe. This is a glance, not chart content.\n\n";
+  s += "<<<ESTABLISHED BY THE RECORDS>>>\n";
+  s += "What the records document, one item per line, EACH with its source and the evidence behind it. Write 'the 2024 neuropsychological evaluation documented childhood-onset inattention across home and school, with maternal collateral' - NOT 'childhood onset present'. ";
+  s += "A record documenting something is not the same as the patient reporting it to you today, and never write it as though it were. Where a record asserts a conclusion without supporting evidence, say so on that line.\n\n";
+  s += "<<<TO ESTABLISH TODAY>>>\n";
+  s += "The highest-value things this visit should settle, one per line, ordered by how much they would change management. Do NOT list something the records already establish well: the point of reading them is to stop asking what is already answered. ";
+  s += "Distinguish three different situations explicitly in the wording of each line:\n";
+  s += "- a SOFT GAP, where more information would raise confidence;\n";
+  s += "- MEANINGFUL UNCERTAINTY, where competing explanations remain unresolved;\n";
+  s += "- CONTRADICTORY EVIDENCE, where something in the records actively argues against the conclusion they reached (for example no attentional difficulty until a head injury at 31, or concentration problems only during discrete mood episodes). Say so plainly when you see it.\n\n";
+  s += "GOVERNING RULE: 'not documented' is not the same as 'not present', and neither is the same as 'not assessed'. A history describing lost homework, parental reminders and midnight project completion supports childhood onset even if nobody wrote 'before age 12'. Ask whether the total record reasonably establishes the construct, not whether a checklist item appears.\n\n";
+  s += "You may disagree with the records, gently, in either direction. Invent nothing: every statement traces to something in the documents. Never give a probability or a score. Plain text.";
+  return s;
+}
+
+// Build the transient source block handed to a model call. This string is passed as message
+// content only. It is never stored, cached, or written to the note.
+function tbpSourceContext(){
+  var out = '', n = 0;
+  for(var i=0;i<tbpSources.length;i++){
+    var d = tbpSources[i];
+    if(!d.useForPrep || !d.text) continue;
+    n++;
+    out += '<<<OUTSIDE RECORD ' + n + ': ' + d.name + '>>>\n'
+         + d.text + '\n<<<END OUTSIDE RECORD ' + n + '>>>\n\n';
+  }
+  return out;
+}
+function tbpHasPrepSources(){ return tbpSourceContext() !== ''; }
+
+// Split the single response into its two outputs. They answer different questions: the review is
+// for understanding the source today, the carry-forward is what survives into future notes.
+function tbpSplitReview(raw){
+  var t = String(raw || '');
+  var i = t.indexOf('<<<CARRY FORWARD>>>');
+  if(i === -1) return { review: t.replace(/<<<REVIEW>>>/g, '').trim(), carry: '' };
+  var review = t.slice(0, i).replace(/<<<REVIEW>>>/g, '').trim();
+  var carry  = t.slice(i + '<<<CARRY FORWARD>>>'.length).trim();
+  return { review: review, carry: carry };
+}
+
+// One place that builds the review panel, so a fresh run and a re-render produce the same thing.
+// THREE states, not two. The carry-forward can legitimately be absent — the model hit the token
+// ceiling before it got there, or the second pass also failed — and the old `if(carry)` gate
+// rendered nothing at all in that case, which reads as "this feature has no second output"
+// rather than "something went wrong". A missing carry-forward is now visible and recoverable.
+function tbpReviewPanelHtml(id, review, carry, failed, pending, diag){
+  var h = '<div class="hint" style="margin-bottom:5px;color:var(--cream)">The full review, for you to read now.</div>'
+    + '<div style="background:var(--navy);border:1px solid var(--rule);border-radius:7px;padding:12px 14px;white-space:pre-wrap;font-size:.88rem;line-height:1.6;color:var(--cream);max-height:420px;overflow:auto">'
+    + esc(review) + '</div>';
+  if(carry){
+    h += '<div class="hint" style="margin:13px 0 5px;color:var(--cream);line-height:1.45"><strong>For your note.</strong> Deliberately shorter than the review above &mdash; only what a clinician would still need once this document is gone. Edit it, then insert it if you want to.</div>'
+      + '<div id="src-cf-' + id + '" contenteditable="true" spellcheck="false" style="background:var(--navy);border:1px solid var(--teal);border-radius:7px;padding:12px 14px;white-space:pre-wrap;font-size:.88rem;line-height:1.6;color:var(--cream);min-height:120px;outline:none">'
+      + esc(carry) + '</div>'
+      + '<div style="margin-top:7px"><button type="button" class="btn src-insert" data-id="' + id + '" style="font-size:.8rem;padding:5px 11px">Insert into my note</button>'
+      + '<span class="hint" id="src-cf-msg-' + id + '" style="margin-left:8px">Optional. Nothing has gone into your note.</span></div>';
+  } else if(pending){
+    h += '<div style="margin:13px 0 0"><span class="spinner"></span><span class="hint">Writing the summary for your note&hellip;</span></div>';
+  } else if(failed){
+    h += '<div class="hint" style="margin:13px 0 6px;color:var(--amber);line-height:1.45"><strong>The summary for your note did not come back.</strong> '
+      + esc(failed) + ' The review above is unaffected. Nothing has gone into your note.</div>'
+      + '<button type="button" class="btn src-cf-retry" data-id="' + id + '" style="font-size:.8rem;padding:5px 11px">Write the summary for my note</button>';
+  }
+  if(diag){
+    h += '<div style="margin-top:10px"><a href="#" class="src-diag-toggle" data-id="' + id + '" style="color:var(--text-3,#8a93a6);text-decoration:none;font-size:.75rem">Show what came back &rsaquo;</a>'
+      + '<div id="src-diag-' + id + '" style="display:none;margin-top:7px;background:#0b1120;border:1px dashed var(--rule);border-radius:6px;padding:10px 12px;font:400 11px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text-3,#8a93a6);white-space:pre-wrap;max-height:280px;overflow:auto">'
+      + esc(diag) + '</div></div>';
+  }
+  return h;
+}
+
+// Word count, used as the length gate. Counts what a reader would count.
+function tbpWordCount(t){ t = String(t || '').trim(); return t ? t.split(/\s+/).length : 0; }
+
+// The length gate. Asking a model to stay under a word count has now failed twice, and asking
+// it to cut TO one got 361 words to 284 — better, still over. So the ceiling is enforced here
+// instead: measure, feed the actual count back, and repeat. Each pass gets a harder, more
+// specific instruction than the last, and only a result that is both shorter and still carries
+// the Historical Note rail is accepted. Two passes at most; whatever is shortest and valid wins.
+async function tbpFitCarryBudget(carry, log){
+  // The prompt asks for 160-210 and states 225 as the maximum. The loop accepts 230, because
+  // a third call to remove one word is a worse trade than five words of slop, and a gate that
+  // reports failure at 226 is reporting an arithmetic boundary rather than a product problem.
+  var ACCEPT = 230, best = String(carry || '').trim(), bestWords = tbpWordCount(best);
+  for(var attempt = 1; attempt <= 2 && bestWords > ACCEPT; attempt++){
+    var t = Date.now();
+    var ask = attempt === 1
+      ? 'THE DRAFT, ' + bestWords + ' words. Cut it to 160-210 words.\n\n' + best
+      : 'This is ' + bestWords + ' words and the maximum is 225. Return 190 to 220 words. '
+        + 'Delete whole sentences — do not trim words. Add nothing.\n\n' + best;
+    var out;
+    try { out = await callAPI(docCarryCompressSystem(), [{ role:'user', content: ask }], 900); }
+    catch(e){ log.push('pass ' + attempt + ': failed (' + (e && e.message) + ')'); break; }
+    out = (out || '').replace(/<<<CARRY FORWARD>>>/g, '').trim();
+    var w = tbpWordCount(out);
+    if(out && w < bestWords && /^Historical Note/i.test(out)){
+      log.push('pass ' + attempt + ': ' + bestWords + ' to ' + w + ' words in ' + ((Date.now()-t)/1000).toFixed(1) + 's');
+      best = out; bestWords = w;
+    } else {
+      log.push('pass ' + attempt + ': rejected (' + (out ? w + ' words' : 'empty')
+        + (/^Historical Note/i.test(out) ? '' : ', rail lost') + '), kept ' + bestWords);
+      break;
+    }
+  }
+  log.push(bestWords <= ACCEPT ? 'final: ' + bestWords + ' words, within budget'
+                               : 'final: ' + bestWords + ' words, STILL OVER budget');
+  return best;
+}
+
+// Write the carry-forward on its own, from the review. Used both as the automatic repair when
+// the single call did not reach the second marker, and behind the retry button.
+async function tbpSrcCarry(id){
+  var d = tbpSrcById(id);
+  if(!d || !d.review) return '';
+  var out = await callAPI(docCarryOnlySystem(),
+    [{ role:'user', content: 'THE REVIEW:\n\n' + d.review }], 900);
+  out = (out || '').replace(/<<<CARRY FORWARD>>>/g, '').trim();
+  // Same ceiling on the repair route: this output becomes permanent by exactly the same door.
+  if(tbpWordCount(out) > 260){
+    var clog = [];
+    out = await tbpFitCarryBudget(out, clog);
+    d.diag = (d.diag || '') + '\n\n--- length gate (repair route) ---\n' + clog.join('\n');
+  }
+  return out;
+}
+
+async function tbpSrcRun(id){
+  var d = tbpSrcById(id); if(!d) return;
+  var out = document.getElementById('src-out-' + id); if(!out) return;
+  out.innerHTML = '<span class="spinner"></span><span class="hint">Reading the record&hellip;</span>';
+  try {
+    // 5200, not 3200. A thorough review of a long neuropsychological report runs well past
+    // 3000 tokens on its own, and at 3200 the model ran out of ceiling before it ever wrote
+    // the <<<CARRY FORWARD>>> marker — so the second product vanished with no error anywhere.
+    var t0 = Date.now();
+    var res = await callAPI(docReviewSystem(),
+      [{ role:'user', content: 'OUTSIDE RECORD, filename ' + d.name + '\n\n' + d.text }], 5200);
+    var elapsed = Date.now() - t0;
+    // Read the truncation flag NOW: callAPI resets it on its next call, and the repair pass
+    // below is a next call.
+    var truncated = (typeof _lastCallTruncated !== 'undefined' && _lastCallTruncated);
+    res = (res || '').trim();
+    if(!res){ out.innerHTML = '<span class="hint" style="color:var(--amber)">Nothing came back. Try again.</span>'; return; }
+    var split = tbpSplitReview(res);
+    d.review = split.review;   // reused as the compact stand-in for this record in case reasoning
+    d.carry  = split.carry;    // what actually goes in the note
+
+    // Which layer produced what, kept on the source so it survives a re-render. This is the
+    // only way to tell a generation failure from a parse failure from a render failure after
+    // the fact, and it costs nothing.
+    d.diag = 'source document: ' + d.text.length + ' chars, ~' + Math.round(d.text.length/4) + ' tokens\n'
+      + 'time to complete: ' + (elapsed/1000).toFixed(1) + 's (this call does NOT stream to the panel)\n'
+      + 'raw response: ' + res.length + ' chars\n'
+      + '<<<REVIEW>>> marker: ' + (res.indexOf('<<<REVIEW>>>') !== -1 ? 'found' : 'ABSENT') + '\n'
+      + '<<<CARRY FORWARD>>> marker: ' + (res.indexOf('<<<CARRY FORWARD>>>') !== -1 ? 'found at ' + res.indexOf('<<<CARRY FORWARD>>>') : 'ABSENT') + '\n'
+      + 'parsed review: ' + d.review.length + ' chars\n'
+      + 'parsed carry-forward: ' + d.carry.length + ' chars, ' + (d.carry.trim() ? d.carry.trim().split(/\s+/).length : 0) + ' words\n'
+      + 'stopped at token ceiling: ' + (truncated ? 'YES — the response was cut off' : 'no') + '\n'
+      + '--- raw, verbatim ---\n' + res;
+
+    // A carry-forward under ~120 characters is not a short summary, it is a fragment left by
+    // the ceiling. Treat it the same as a missing one rather than putting it in front of a
+    // clinician as though it were the finished product.
+    if(d.review && (!d.carry || d.carry.length < 120)){
+      // Show the review immediately — it is finished and useful — with the second product
+      // visibly still in flight, then repair it in a short dedicated call.
+      out.innerHTML = tbpReviewPanelHtml(id, d.review, '', '', true, d.diag);
+      try { d.carry = await tbpSrcCarry(id); } catch(e2){ d.carry = ''; }
+      d.carryFailed = d.carry ? '' : (truncated
+        ? 'The review used the whole response, so it was cut off, and writing it separately also failed.'
+        : 'The model returned the review without it.');
+      d.diag += '\n\n--- second pass (carry-forward only) ---\ntime: ' + ((Date.now() - t0 - elapsed)/1000).toFixed(1) + 's\nreturned: '
+        + (d.carry ? d.carry.length + ' chars, ' + d.carry.trim().split(/\s+/).length + ' words' : 'nothing');
+      out.innerHTML = tbpReviewPanelHtml(id, d.review, d.carry, d.carryFailed, false, d.diag);
+      return;
+    }
+    // 260 is where the block has stopped being a durable summary and become a second review,
+    // which is what the 29k-char packet produced. Render the review first: it is finished, and
+    // the fitting passes take a few seconds each.
+    if(tbpWordCount(d.carry) > 260){
+      out.innerHTML = tbpReviewPanelHtml(id, d.review, d.carry, '', false, d.diag);
+      var clog = [];
+      d.carry = await tbpFitCarryBudget(d.carry, clog);
+      d.diag += '\n\n--- length gate ---\n' + clog.join('\n');
+    }
+    d.carryFailed = '';
+    out.innerHTML = tbpReviewPanelHtml(id, d.review, d.carry, '', false, d.diag);
+  } catch(err){
+    out.innerHTML = '<span class="hint" style="color:var(--red)">' + esc(err.message || err) + '</span>';
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// REASON THROUGH THIS CASE
+//
+// One streamed call over the context the session already holds. No retrieval, no Archive, no
+// background job, no second pass — so it is the fastest and cheapest thing in the Scribe, and
+// nothing leaves the BAA-covered clinical path. clinical-proxy-stream caches system prompts
+// over ~4096 chars for an hour, so the reasoning method below is cheap to carry every time.
+//
+// Governing split (CLINICAL-OS-STRATEGY.md: clinical guidance must never ship as a naked LLM):
+// reason freely about clinical logic, stay conservative about externally verifiable prescribing
+// facts. Dose limits, interactions, labeling and guideline claims get flagged for verification,
+// never asserted. That is what the evidence layer is eventually for.
+// ══════════════════════════════════════════════════════════════════════════════════════════
+
+function reasonSystem(){
+  var s = "You are a psychiatric prescriber's clinical reasoning partner, thinking alongside them about a patient they are seeing. You are not writing a note and not documenting anything. You are the second opinion they would get from a trusted colleague who read the same material.\n\n";
+
+  s += "=== HOW TO THINK ===\n";
+  s += "- Use chronology and sequence, not symptom matching. Ask what changed, and when.\n";
+  s += "- Distinguish what is ESTABLISHED in the material from what you are INFERRING. Say which is which.\n";
+  s += "- Do not anchor on a diagnosis already in the record. An existing label is information, not a conclusion.\n";
+  s += "- CHALLENGE A DIAGNOSIS WITHOUT REPLACING IT. Accepting an inherited label uncritically and swapping in your own are both failures, and the second is the easier one to fall into once you have found the contradiction. When today's history materially weakens a prior diagnosis: name the contradiction, keep the diagnosis attributed to the clinician who made it, say what information would actually settle it, and stop. You are one visit into a transfer; they had the whole course.\n";
+  s += "'The more parsimonious picture is X' is the tell. So is any sentence that reads as your formulation standing where theirs was. Right: 'Bipolar II was the prior psychiatrist's diagnosis. The index episode as described today does not clearly establish hypomania, so I would treat it as needing clarification rather than accepting or overturning it from this visit.'\n";
+  s += "Naming a competing explanation as one live possibility among others is reasoning and is welcome. Declaring it the better account of the case is not.\n";
+  s += "- Actively look for evidence that CONTRADICTS the leading formulation, and say so when you find it.\n";
+  s += "- Ask what new information would most change the plan, and lead with that.\n";
+  s += "- Before calling any medication a failure, separate the possibilities: efficacy, duration, timing, tolerability, adherence, interaction, access, or a mismatch between the treatment and the actual target.\n";
+  s += "- Treat dose ranges, screener scores and prior labels as information, not conclusions. Do not react to a number instead of the patient.\n";
+  s += "- Reason with diagnostic and treatment criteria; do not recite them as formal definitions. 'The standard working definition requires two adequate trials' reads as quoting a rule at the clinician, and it is a short step from there to 'guidelines recommend'. 'Treatment resistance generally requires failure of adequately conducted trials, and this history does not establish that' makes the same point as reasoning.\n";
+  s += "- Ask whether the diagnosis actually explains the functional pattern, not just the symptom list.\n";
+  s += "- RESPONSE TO TREATMENT IS NOT EVIDENCE FOR A DIAGNOSIS. That a patient improved on a medication tells you the medication produced an effect, not that the label is right — people without ADHD focus better on stimulants, and mood improves on an antidepressant for reasons other than depression. Say 'the medication is producing the intended functional benefit'; never let that become 'which confirms the diagnosis'. The reverse is equally wrong: not responding does not refute a diagnosis.\n";
+  s += "- When uncertainty remains, name it. Do not force a diagnosis to sound decisive.\n";
+  s += "- Absence of a side effect is not evidence about dose. It does not mean there is room to go up, that the current dose is low, or that the patient is under-treated. Note the tolerability as tolerability and stop there.\n";
+  s += "- 'Not documented' is not 'not present', and neither is 'not assessed'.\n\n";
+
+  s += "=== MEDICATIONS: REASON FREELY, ASSERT FACTS CAREFULLY ===\n";
+  s += "You SHOULD reason about the shape of a medication problem and about strategic directions and their tradeoffs. For example: that a stimulant working but wearing off early looks like a duration problem rather than class failure; that an agent effective for the target but poorly tolerated raises preserve-and-manage versus switch; that the timing of a complaint relative to the last dose change matters.\n";
+  s += "REASON AT THE LEVEL OF STRATEGY AND DRUG CLASS. This is the useful altitude and you should work at it confidently. You may say things like: the antidepressant may simply not be optimized yet, and if it is being tolerated and the trial has not been pushed in dose or duration, optimizing the current agent is a common next step before abandoning it; that the alternative directions from here are switching within the class, switching across class, or augmenting; and that the strategies available differ in monitoring burden and side-effect profile. Name the classes and sequences that fit THIS patient's actual treatment target and diagnosis — the right strategy set for OCD, bipolar depression, PTSD, ADHD or an anxiety disorder is not the same one, so derive it from the case rather than defaulting to a familiar list. (As an illustration of the altitude only, not a template to reuse: for an inadequately responsive antidepressant trial in unipolar depression, some clinicians augment with an atypical antipsychotic while others use lithium, thyroid, or a second antidepressant with a different mechanism.) Naming drug CLASSES and the common strategic sequences is expected, not a fact claim to hedge away from.\n";
+  s += "AN UNKNOWN IS NOT A LOW. When dose, duration or adherence is undocumented, adequacy CANNOT BE ESTABLISHED — and that is the finding. Do not convert it into 'subtherapeutic', 'borderline', 'low-dose', 'brief', 'inadequate' or any other status label, and do not import a threshold from outside the case to measure it against. This is the single most common way this reasoning goes wrong, because the missing value is usually easy to guess and the guess arrives as an adjective.\n";
+  s += "Wrong: 'Two months is borderline on duration.' Wrong: \"'Didn't do anything' at a subtherapeutic dose is not an efficacy failure\" — that states as known the very thing the sentence then calls unknown.\n";
+  s += "Right: 'Escitalopram was taken for about two months, but the dose is unknown, so adequacy cannot be established from this history.' Right: \"'Didn't do anything' does not establish an efficacy failure when dose and treatment adequacy are unknown.\"\n";
+  s += "FIRST ASK WHETHER THE CURRENT TRIAL WAS ADEQUATE. Before treating anything as a failed medication, consider whether it was actually given a real trial in dose and duration, and whether the patient was taking it. If the material does not document the dose or how long they have been on it, that is one of the highest-value things to clarify, not something to assume either way.\n";
+  s += "NAMING A DIRECTION IS NOT THE SAME AS TEACHING HOW IT BEHAVES. You may say the directions from here are to extend coverage, redistribute it, or change agent, and say what would make a clinician prefer one. You may NOT explain how each option tends to perform — 'rebound often worsens if you add a second immediate-release dose, whereas a formulation change handles it better' is a claim about drug behaviour dressed as strategy. Keep it about THIS patient: 'if the afternoon state is worse than his baseline rather than a return to it, that distinction bears on whether this is a coverage problem or a rebound problem' is reasoning; the rest is a lecture.\n";
+  s += "ATTRIBUTE STRATEGY LANGUAGE HONESTLY. Prefer 'a common next step is', 'some clinicians would', 'the usual directions from here are' over 'you should' or 'the recommended treatment is'. You are laying out the reasonable directions and what distinguishes them, not issuing a plan.\n";
+  s += "DURATION AND ONSET ARE PHARMACOKINETIC FACTS, and belong on the barred side with doses and interactions. Do not supply the number of hours an agent or formulation lasts, when it peaks, or how long it takes to work. You do not need it: 'an immediate-release formulation has limited duration, and his reported timing is consistent with losing coverage by early afternoon' makes the identical argument out of what the patient told you, and cannot be wrong about a product you were not told the name of.\n";
+  s += "What you SHOULD NOT do is drop to the level of specifics you cannot verify. Do not assert externally verifiable prescribing facts that are not established in the supplied material — specific dose limits, maximum doses, onset or duration figures, interaction claims, contraindications, renal or hepatic adjustments, pregnancy or lactation claims, FDA indication or age range, or 'guidelines recommend X'. If an option depends on such a detail, name the detail as something to verify rather than stating it as fact.\n";
+  s += "DO NOT RESCUE A MEDICATION WITH A NEW INDICATION. If a diagnosis is in doubt, do not go looking for another reason the drug might be justified — 'it would not be unreasonable in recurrent depression even off the bipolar label' is an indication claim, and it invents a rationale the case never established.\n";
+  s += "This includes the hedged form. 'It has mood-stabilizing and antidepressant properties that could be producing benefit regardless of the label' supplies drug properties from your own knowledge to justify continuing it, which is the same move with the indication removed. Pharmacological properties are externally verifiable facts and are barred here like any other.\n";
+  s += "The two questions separate cleanly without it: whether the diagnosis is right, and whether changing a currently tolerated regimen is wise, are different questions with different evidence. Reason about the second from what is actually known — current benefit, tolerability, what happened when it was started, what happens to her if it is changed — not from an indication or a mechanism you supplied. The useful question is already available without either: is her stability attributable to the medication, or to something else that changed?\n";
+  s += "Never invent a prior trial, a dose, a response, a contraindication or a patient factor. If the material does not say it, it is not there.\n\n";
+
+  s += "=== THE SAFETY EXCEPTION ===\n";
+  s += "Everything above about staying off interaction claims is the rule for ROUTINE medication reasoning. It is suspended in one situation, deliberately.\n";
+  s += "WHEN THE CHRONOLOGY AND SYMPTOM PATTERN IN FRONT OF YOU RAISE CONCERN FOR A SERIOUS MEDICATION-INDUCED SYNDROME OR A TIME-SENSITIVE ADVERSE DRUG EVENT, SAY SO PLAINLY AND NAME IT. Being circumspect about a patient who may be unwell right now is not caution; it is the failure. A clinician who has to work out for themselves what you were hinting at has been given nothing.\n\n";
+
+  s += "The trigger is SYMPTOMS PRESENT NOW plus a temporal link to a medication change. It is not a combination that merely looks risky. Two agents co-prescribed in a patient who is well remains an ordinary flag-to-verify, and nothing here licenses turning that into a warning.\n\n";
+
+  s += "In that situation you MAY: name the syndrome or adverse-drug pattern you are concerned about; identify the medication change or co-prescription that makes it concerning; name the highest-value history and examination findings that would establish or exclude it; and say plainly that it warrants urgent or same-day assessment when it does.\n";
+  s += "You still MAY NOT: treat the diagnosis as established when the findings that would confirm it have not been checked; teach the pharmacokinetics; give a treatment protocol or any dose; or overclaim causality.\n\n";
+
+  s += "NAME THE CONCERN, NOT THE DIAGNOSIS. 'This presentation looks more like serotonin toxicity than an anxiety exacerbation' asserts a diagnosis you cannot make without an examination. 'The chronology and symptom cluster are concerning for serotonin toxicity and deserve urgent assessment rather than being assumed to be anxiety' carries the same urgency and is true.\n";
+  s += "LEAD WITH THE CHRONOLOGY, and keep it proportionate. One agent is usually the clean temporal pivot; others may be additional exposure but are not equal culprits. Stable for a year, new agent added, symptoms beginning days later is the argument. Say it in that order.\n";
+  s += "DO NOT DISMISS THE ALTERNATIVE TO STRENGTHEN YOUR CASE. 'Work stress cannot explain the loose stools and diaphoresis' is false — anxiety produces both. The honest claim is that the timing and the cluster make a medication-related cause concerning enough that it cannot be assumed to be anxiety. Overstating it costs you the clinician's trust on the thing that actually matters.\n";
+  s += "KEEP THE ACTION CLINICIAN-FACING. Not 'stop the tramadol today' but 'this warrants same-day assessment and a decision about holding the newly added serotonergic agent rather than treating it as anxiety'. The urgency is yours to convey; the order is theirs to write.\n";
+  s += "NAME THE DECISION, THEN STOP. Once you have said which medication decision has to be made now, do not follow it with your own verdict on that decision. 'I would not send her home with the tramadol continuing' is the prescribing order, arriving one sentence after you correctly declined to write it. Urgency does not license finishing their sentence for them.\n\n";
+
+  s += "The register to aim for: 'The timing and symptom cluster are concerning for serotonin toxicity after tramadol was added to an established serotonergic regimen. I would not assume this is anxiety. Worth clarifying temperature, clonus, tremor or hyperreflexia, whether symptoms are progressing, and current tramadol use; this warrants same-day assessment.'\n\n";
+
+  s += "=== PROVENANCE ===\n";
+  s += "Material may include outside records. Keep their claims attributed: 'the 2024 evaluation documented ...', not 'the patient has ...'. An absence in a record is not a patient denial. Something the patient said today is the patient's report; something a record documents is the record's.\n\n";
+
+  s += "=== HOW TO ANSWER ===\n";
+  s += "Answer the clinician's actual question first, in plain clinical language. Be concise and specific to THIS patient — no generic advice, no 'consider therapy and monitor symptoms' filler. You may disagree with the clinician, gently, in either direction.\n";
+  s += "BE SHORT. This is read beside a patient, often between rooms, sometimes with the patient waiting. Aim for 150 to 300 words. Lead with the answer in the first two sentences, then give the two to four highest-value considerations or questions and stop. The clinician can ask for more; they cannot get back the minute spent reading a fifth consideration.\n";
+  s += "Length is not thoroughness. Four options each with a paragraph of rationale is a worse answer than two options and the thing that distinguishes them. If you have said the useful thing, stop — do not add a closing paragraph restating your read in different words.\n";
+  s += "Once you have established that the material is too thin to reason from, that IS the answer. Name what you would need and stop; do not then produce conditional questions about a medication class and diagnosis you were never given.\n";
+  s += "Use these light headings, and OMIT any that has nothing real to say. Never pad to fill them:\n";
+  s += "My read\n";
+  s += "What gives me pause\n";
+  s += "What I'd clarify next\n";
+  s += "Include a 'Medication considerations' section ONLY when the clinician's question is about medication. Include a 'Worth verifying' section ONLY when you named a prescribing detail that needs checking.\n";
+  s += "END AS A COLLEAGUE, NOT AS A VERDICT. 'The more defensible path is X' and 'the correct next step is Y' hand down a plan. 'Before labelling this treatment-resistant, I would first establish whether she has had an adequate trial, and clarify what happened with the prior agents' is the same content, thinking alongside them. The clinician decides; you are the second opinion they asked for.\n";
+  s += "Plain text. No Markdown, no bullets characters, no preamble, no closing summary. If the material is too thin to reason from, say exactly what you would need instead of guessing.";
+  return s;
+}
+
+// Everything the session legitimately holds. Assembled fresh each time; never stored.
+function tbpCaseContext(){
+  function val(id){ var e = document.getElementById(id); return e ? (e.value||'').trim() : ''; }
+  var parts = [], bits = [];
+
+  var visit = (typeof visitType !== 'undefined' && visitType)
+    ? (visitType === 'new_eval' ? 'New patient evaluation' : 'Follow-up visit') : 'Visit type not set';
+  parts.push('VISIT TYPE: ' + visit);
+
+  // Read the working note the way tcoachCurrentNote does. In sections mode the plain
+  // #focus-note is HIDDEN but not cleared, so a naive `focus-note || raw` reads a stale copy
+  // and reasons about a version the clinician can no longer see. syncRawFromSections keeps
+  // #raw current, so the visible panels are the source of truth when sections are up.
+  var note = '';
+  var fo = document.getElementById('focus-overlay');
+  var fn = document.getElementById('focus-note');
+  if(fo && fo.classList.contains('open') && fn && fn.style.display !== 'none' && (fn.value||'').trim()){
+    note = fn.value.trim();
+  } else {
+    var secs = [];
+    document.querySelectorAll('#focus-sections .wn-ta').forEach(function(t){ if((t.value||'').trim()) secs.push(t.value.trim()); });
+    note = secs.length ? secs.join('\n\n') : val('raw');
+  }
+  if(note){ parts.push("TODAY'S WORKING NOTE (what the clinician captured; rough, pre-draft):\n" + note); bits.push('working note'); }
+
+  // The finished note is four outputs, not one — see copyFullNote(). Reasoning over only the
+  // HPI could not answer "does my assessment follow from this note?", which is the whole point
+  // of being able to do this after the visit.
+  var drafted = [];
+  var hpi = val('hpi-out');        if(hpi)     drafted.push('History of Present Illness:\n' + hpi);
+  var assess = val('assess-out');  if(assess)  drafted.push('Assessment:\n' + assess);
+  var thx = val('therapy-out');    if(thx)     drafted.push('Psychotherapy add-on:\n' + thx);
+  var plan = val('plan-out');      if(plan)    drafted.push('Plan:\n' + plan);
+  if(drafted.length){
+    parts.push('DRAFTED NOTE for this visit (the clinician may have edited it since drafting):\n\n' + drafted.join('\n\n'));
+    bits.push('drafted note');
+  }
+
+  var last = val('context');
+  if(last){ parts.push("LAST VISIT'S NOTE (pasted by the clinician):\n" + last); bits.push('last visit'); }
+
+  try {
+    if(typeof prepSnapshot !== 'undefined' && prepSnapshot){ parts.push('PRE-VISIT SNAPSHOT:\n' + prepSnapshot); bits.push('prep'); }
+    if(typeof prepChecklist !== 'undefined' && prepChecklist && prepChecklist.length){
+      parts.push("PREP CHECKLIST (what prep flagged to ask today):\n" + prepChecklist.join('\n'));
+    }
+  } catch(e){}
+
+  // Outside records: prefer the summary already produced for this document over its full text.
+  // Resending a 35-page neuropsych report on every question is exactly the token sink this
+  // feature is supposed to avoid. Where no summary exists yet, send a bounded slice and SAY it
+  // is bounded, so the model never treats a truncated record as the whole record.
+  try {
+    var used = 0, RSN_RAW_CAP = 14000;
+    for(var i=0;i<tbpSources.length;i++){
+      var d = tbpSources[i];
+      if(!d.useForPrep || !d.text) continue;
+      used++;
+      if(d.review){
+        parts.push('OUTSIDE RECORD ' + used + ' (' + d.name + ') — clinician-facing REVIEW of the document, not its full text:\n' + d.review);
+      } else if(d.text.length > RSN_RAW_CAP){
+        parts.push('OUTSIDE RECORD ' + used + ' (' + d.name + ') — PARTIAL: the first '
+          + RSN_RAW_CAP + ' of ' + d.text.length + ' characters. Later pages are NOT included, so do not treat an absence here as an absence in the record:\n'
+          + d.text.slice(0, RSN_RAW_CAP));
+      } else {
+        parts.push('OUTSIDE RECORD ' + used + ' (' + d.name + '):\n' + d.text);
+      }
+    }
+    if(used) bits.push(used + ' outside record' + (used>1?'s':''));
+  } catch(e){}
+
+  return { text: parts.join('\n\n---\n\n'), have: bits };
+}
+
+function tbpRsnUpdateCtx(c){
+  var el = document.getElementById('rsn-ctx'); if(!el) return;
+  c = c || tbpCaseContext();
+  el.textContent = c.have.length ? ('Reading: ' + c.have.join(', ')) : 'Nothing in this session yet';
+}
+
+function tbpShowReason(){
+  if(typeof tbpDemoBlock === 'function' && tbpDemoBlock()) return;
+  document.getElementById('reason-modal').classList.add('open');
+  document.documentElement.classList.add('rsn-open');   // shrinks the workspace to make room
+  tbpRsnUpdateCtx();
+  var q = document.getElementById('rsn-q'); if(q){ try{ q.focus(); }catch(e){} }
+}
+// Panel width is the clinician's call: a long answer wants reading width, a dense note wants
+// the space back. Bounded so neither side can be squeezed out of usefulness — 340px keeps the
+// starter buttons and the question box workable, half the viewport keeps the note the primary
+// surface. Persisted per browser rather than per patient, since it is a workspace preference.
+var RSN_W_KEY = 'tbp_rsn_w';
+function tbpRsnClamp(px){
+  return Math.max(340, Math.min(px, Math.min(window.innerWidth * 0.5, 900)));
+}
+function tbpRsnSetWidth(px, persist){
+  var w = tbpRsnClamp(px);
+  document.documentElement.style.setProperty('--rsn-w', w + 'px');
+  if(persist){ try { localStorage.setItem(RSN_W_KEY, String(Math.round(w))); } catch(e){} }
+}
+(function(){
+  // Restore before first paint of the panel, so it never opens at the default and jump-cuts.
+  try {
+    var saved = parseInt(localStorage.getItem(RSN_W_KEY) || '', 10);
+    if(saved > 0) tbpRsnSetWidth(saved, false);
+  } catch(e){}
+
+  var grip = document.getElementById('rsn-grip');
+  if(!grip) return;
+  grip.addEventListener('pointerdown', function(e){
+    // Below the breakpoint the panel is full-bleed and there is nothing to rebalance.
+    if(window.innerWidth <= 1100) return;
+    e.preventDefault();
+    grip.setPointerCapture(e.pointerId);
+    grip.classList.add('dragging');
+    document.documentElement.classList.add('rsn-dragging');
+  });
+  grip.addEventListener('pointermove', function(e){
+    if(!grip.classList.contains('dragging')) return;
+    tbpRsnSetWidth(window.innerWidth - e.clientX, false);   // width is the distance to the right edge
+  });
+  function end(e){
+    if(!grip.classList.contains('dragging')) return;
+    grip.classList.remove('dragging');
+    document.documentElement.classList.remove('rsn-dragging');
+    try { grip.releasePointerCapture(e.pointerId); } catch(err){}
+    // Persist once, at the end, rather than on every move.
+    var cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--rsn-w'));
+    if(cur > 0) tbpRsnSetWidth(cur, true);
+  }
+  grip.addEventListener('pointerup', end);
+  grip.addEventListener('pointercancel', end);
+
+  // A saved width can become illegal when the window shrinks; re-clamp rather than leave the
+  // note squeezed into a sliver.
+  window.addEventListener('resize', function(){
+    var cur = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--rsn-w'));
+    if(cur > 0) tbpRsnSetWidth(cur, false);
+  });
+})();
+
+function tbpHideReason(){
+  document.getElementById('reason-modal').classList.remove('open');
+  document.documentElement.classList.remove('rsn-open');   // give the workspace its width back
+}
+
+async function tbpRunReason(question){
+  var out = document.getElementById('rsn-out');
+  var msg = document.getElementById('rsn-msg');
+  var go  = document.getElementById('rsn-go');
+  var c = tbpCaseContext();
+  tbpRsnUpdateCtx(c);   // the session may have gained a record since the panel was opened
+  if(!c.have.length){
+    out.innerHTML = '<div class="hint" style="color:var(--amber);line-height:1.5">There is nothing in this session to reason over yet. Type or paste into your working note, paste last visit\'s note in setup, or bring in an outside record first.</div>';
+    return;
+  }
+  if(go) go.disabled = true;
+  if(msg) msg.innerHTML = '<span class="spinner"></span>Thinking&hellip;';
+  out.innerHTML = '<div id="rsn-body" style="background:var(--navy);border:1px solid var(--rule);border-radius:7px;padding:13px 15px;white-space:pre-wrap;font-size:.9rem;line-height:1.62;color:var(--cream)"></div>';
+  var body = document.getElementById('rsn-body');
+  var acc = '';
+  try {
+    // NOTE: callAPI's onDelta is handed the ACCUMULATED text so far, not an increment.
+    acc = await callAPI(
+      reasonSystem(),
+      [{ role:'user', content: 'CASE MATERIAL AVAILABLE THIS SESSION:\n\n' + c.text
+          + '\n\n---\n\nTHE CLINICIAN ASKS: ' + question }],
+      2200,
+      function(partial){ body.textContent = partial; }   // text starts appearing in seconds
+    ) || '';
+    if(!acc.trim()) out.innerHTML = '<div class="hint" style="color:var(--amber)">Nothing came back. Try again.</div>';
+  } catch(err){
+    out.innerHTML = '<div class="hint" style="color:var(--red)">' + esc(err.message || err) + '</div>';
+  } finally {
+    if(go) go.disabled = false;
+    if(msg) msg.innerHTML = '';
+  }
+}
+
+document.getElementById('rsn-go').addEventListener('click', function(){
+  var q = (document.getElementById('rsn-q').value || '').trim();
+  if(!q){ document.getElementById('rsn-q').focus(); return; }
+  tbpRunReason(q);
+});
+// Cmd/Ctrl+Enter sends; plain Enter and Shift+Enter both make a new line. Predictable, and it
+// does not punish a clinician who hits Enter while composing a two-sentence question.
+document.getElementById('rsn-q').addEventListener('keydown', function(e){
+  if(e.key !== 'Enter' || !(e.metaKey || e.ctrlKey)) return;
+  e.preventDefault();
+  var go = document.getElementById('rsn-go');
+  if(go && !go.disabled) go.click();
+});
+
+document.getElementById('reason-modal').addEventListener('click', function(e){
+  var b = e.target && e.target.closest ? e.target.closest('button.rsn-starter') : null;
+  if(!b) return;
+  // The starters bypass the send button, so they need their own in-flight guard or a second
+  // click during streaming fires a duplicate call.
+  var go = document.getElementById('rsn-go');
+  if(go && go.disabled) return;
+  var q = (b.textContent || '').trim();
+  document.getElementById('rsn-q').value = q;
+  tbpRunReason(q);
+});
+
+// ── Modal plumbing for the record reader and the upload chooser. ──
+function tbpShowDocs(){ document.getElementById('docs-modal').classList.add('open'); tbpRenderSources(); }
+function tbpHideDocs(){ document.getElementById('docs-modal').classList.remove('open'); }
+function tbpShowUploadChoice(){ document.getElementById('upload-choice').classList.add('open'); }
+function tbpHideUploadChoice(){ document.getElementById('upload-choice').classList.remove('open'); }
+
+document.getElementById('up-choice-transcript').addEventListener('click', function(){
+  tbpHideUploadChoice();
+  if(window.tbpPickTranscriptFile) window.tbpPickTranscriptFile();
+});
+document.getElementById('up-choice-doc').addEventListener('click', function(){
+  tbpHideUploadChoice(); tbpShowDocs();
+});
+// Backdrop-click closes ONLY the trivial upload chooser. The records panel and the reasoning
+// panel hold work that cost a model call, so they close on the X or Escape, never on a stray
+// click outside.
+(function(){
+  var el = document.getElementById('upload-choice');
+  if(el) el.addEventListener('click', function(e){ if(e.target === el) el.classList.remove('open'); });
+  document.addEventListener('keydown', function(e){
+    if(e.key !== 'Escape') return;
+    ['upload-choice','docs-modal','reason-modal'].forEach(function(id){
+      var m = document.getElementById(id);
+      if(!m || !m.classList.contains('open')) return;
+      if(id === 'reason-modal') tbpHideReason(); else m.classList.remove('open');
+    });
+  });
+})();
+
+document.getElementById('src-add-btn').addEventListener('click', function(){
+  if(tbpDemoBlock()) return;
+  document.getElementById('src-file').click();
+});
+
+document.getElementById('src-file').addEventListener('change', async function(){
+  var files = Array.prototype.slice.call(this.files || []);
+  this.value = '';
+  if(!files.length) return;
+  var hint = document.getElementById('src-hint');
+  for(var i=0;i<files.length;i++){
+    var f = files[i];
+    hint.innerHTML = '<span class="spinner"></span>Reading ' + esc(f.name) + '&hellip;';
+    var rec = { id: 'S' + (++tbpSrcSeq), name: f.name, text: '', chars: 0, pages: 0,
+                truncated: false, useForPrep: false, review: '', carry: '', error: '' };
+    try {
+      var ex = await tbpExtractText(f);
+      var t = (ex.text || '').replace(/ /g, ' ').trim();
+      rec.pages = ex.pages || 0;
+      // A scanned PDF extracts to nothing. Say so instead of handing back an empty summary.
+      if(t.replace(/\s+/g, '').length < 40){
+        rec.error = 'No readable text found. This looks like a scanned or image-only file, and the Scribe can only read documents that contain real text. Paste the relevant part instead, or use a text-based copy.';
+      } else {
+        if(t.length > SRC_MAX_CHARS){ t = t.slice(0, SRC_MAX_CHARS); rec.truncated = true; }
+        rec.text = t; rec.chars = t.length;
+      }
+    } catch(err){
+      rec.error = (err && err.message) ? err.message : 'Could not read this file.';
+    }
+    tbpSources.push(rec);
+    tbpRenderSources();
+  }
+  hint.innerHTML = '';
+});
+
+async function tbpRunSourcePrep(){
+  var out = document.getElementById('src-prep-out');
+  var msg = document.getElementById('src-prep-msg');
+  var btn = document.getElementById('src-prep-btn');
+  if(!out) return;
+  if(btn) btn.disabled = true;
+  if(msg) msg.innerHTML = '<span class="spinner"></span>Reading the records&hellip;';
+  out.innerHTML = '';
+  try {
+    var res = await callAPI(newEvalPrepFromSourcesSystem(),
+      [{ role:'user', content: tbpSourceContext() + 'Produce the prep now.' }], 3000);
+    res = (res || '').trim();
+    if(!res){ out.innerHTML = '<span class="hint" style="color:var(--amber)">Nothing came back. Try again.</span>'; return; }
+    var pretty = res.replace(/<<<ORIENTATION>>>/g, 'ORIENTATION')
+                    .replace(/<<<ESTABLISHED BY THE RECORDS>>>/g, '\nESTABLISHED BY THE RECORDS')
+                    .replace(/<<<TO ESTABLISH TODAY>>>/g, '\nTO ESTABLISH TODAY');
+    out.innerHTML = '<div style="background:var(--navy);border:1px solid var(--rule);border-radius:7px;padding:12px 14px;white-space:pre-wrap;font-size:.88rem;line-height:1.6;color:var(--cream)">'
+      + esc(pretty.trim()) + '</div>';
+  } catch(err){
+    out.innerHTML = '<span class="hint" style="color:var(--red)">' + esc(err.message || err) + '</span>';
+  } finally {
+    if(btn) btn.disabled = false;
+    if(msg) msg.innerHTML = '';
+  }
+}
+
+// Edits to a review are kept on the source, so re-rendering the card never reverts them.
+document.getElementById('src-list').addEventListener('input', function(e){
+  var t = e.target;
+  if(!t || !t.id || t.id.indexOf('src-cf-') !== 0) return;
+  var d = tbpSrcById(t.id.slice(7));
+  if(d) d.carry = t.textContent;   // the editable block holds the carry-forward, not the full review
+});
+
+document.getElementById('src-list').addEventListener('click', function(e){
+  var tog = e.target && e.target.closest ? e.target.closest('.src-diag-toggle') : null;
+  if(tog){
+    e.preventDefault();
+    var panel = document.getElementById('src-diag-' + tog.getAttribute('data-id'));
+    if(panel){
+      var open = panel.style.display !== 'none';
+      panel.style.display = open ? 'none' : 'block';
+      tog.innerHTML = (open ? 'Show' : 'Hide') + ' what came back ' + (open ? '&rsaquo;' : '&rsaquo;');
+    }
+    return;
+  }
+  var b = e.target && e.target.closest ? e.target.closest('button') : null;
+  if(!b) return;
+  if(b.id === 'src-prep-btn'){ if(!tbpDemoBlock()) tbpRunSourcePrep(); return; }
+  var id = b.getAttribute('data-id'); if(!id) return;
+
+  if(b.classList.contains('src-insert')){
+    var ta = document.getElementById('src-cf-' + id);
+    var raw = document.getElementById('raw');
+    if(!ta || !raw) return;
+    var block = (ta.textContent || '').trim();   // contenteditable, not a form control
+    if(!block) return;
+    raw.value = (raw.value.trim() ? raw.value.replace(/\s+$/, '') + '\n\n' : '') + block + '\n';
+    renderMode();
+    try{ if(window.tbpSaveDraft) window.tbpSaveDraft(); }catch(e2){}
+    var msg = document.getElementById('src-cf-msg-' + id);
+    if(msg) msg.innerHTML = '<span style="color:var(--green)">Added to your working note.</span>';
+    return;
+  }
+
+  if(b.classList.contains('src-cf-retry')){
+    if(tbpDemoBlock()) return;
+    var dd = tbpSrcById(id); var o2 = document.getElementById('src-out-' + id);
+    if(!dd || !dd.review || !o2) return;
+    b.disabled = true;
+    (async function(){
+      try {
+        o2.innerHTML = tbpReviewPanelHtml(id, dd.review, '', '', true, dd.diag);
+        dd.carry = await tbpSrcCarry(id);
+        dd.carryFailed = dd.carry ? '' : 'It failed again. The review above is still complete.';
+        o2.innerHTML = tbpReviewPanelHtml(id, dd.review, dd.carry, dd.carryFailed, false, dd.diag);
+      } catch(e3){
+        dd.carryFailed = (e3 && e3.message) || 'It failed again.';
+        o2.innerHTML = tbpReviewPanelHtml(id, dd.review, '', dd.carryFailed, false, dd.diag);
+      } finally { b.disabled = false; }
+    })();
+    return;
+  }
+
+  var act = b.getAttribute('data-act');
+  if(act === 'remove'){ tbpSrcRemove(id); return; }
+  if(act === 'prep'){
+    var d = tbpSrcById(id); if(!d) return;
+    // Reading a document needs no visit. Feeding PREP does: prep is built per visit type,
+    // and visitType is deliberately null until the clinician chooses one.
+    if(!d.useForPrep && !visitType){
+      var o = document.getElementById('src-out-' + id);
+      if(o) o.innerHTML = '<div class="hint" style="color:var(--amber);line-height:1.45">To use this in visit prep, set up the visit first '
+        + '(<a href="#" onclick="tbpHideDocs();tbpShowSetup();return false;" style="color:var(--teal);text-decoration:none;font-weight:700">set up this visit</a>). '
+        + 'Summarizing it and writing a record summary for your note both work without that.</div>';
+      return;
+    }
+    d.useForPrep = !d.useForPrep; tbpRenderSources();
+    return;
+  }
+  if(tbpDemoBlock()) return;
+  tbpSrcRun(id);
+});
+
 document.getElementById('neweval-setup-btn').addEventListener('click', async function(){
   if(tbpDemoBlock()) return;
   var raw = document.getElementById('raw');
@@ -2132,10 +3294,29 @@ function tbpUpdateSetupNudge(){
   try{ var ctx = document.getElementById('context'); if(ctx && (ctx.value||'').trim()) pastedLast = true; }catch(e){}
   var demo = (typeof TBP_DEMO !== 'undefined' && TBP_DEMO);
   var touring = (window.__tbpScribeTourActive === true);   // the walkthrough drives an empty note; don't clutter it
-  var dismissed = (window.__tbpSetupNudgeDismissed === true);
-  n.style.display = (open && empty && plain && !pastedLast && !dismissed && !demo && !touring) ? '' : 'none';
+  var collapsed = (window.__tbpJobsCollapsed === true);
+
+  // The three jobs do not vanish once someone starts working, they get smaller. Making them
+  // disappear left the primary capabilities represented by nothing but help-row text links,
+  // which is a visual hierarchy problem no amount of routing fixes.
+  n.style.display = (open && !demo && !touring) ? '' : 'none';
+  var full = (empty && plain && !pastedLast && !collapsed);
+  var f = document.getElementById('jobs-full');
+  var strip = document.getElementById('jobs-strip');
+  if(f) f.style.display = full ? '' : 'none';
+  if(strip) strip.style.display = full ? 'none' : 'flex';
+  // Roomy while teaching, tight while working.
+  n.style.padding = full ? '12px 14px' : '9px 12px';
 }
-function tbpDismissSetupNudge(){ window.__tbpSetupNudgeDismissed = true; var n = document.getElementById('focus-setup-nudge'); if(n) n.style.display='none'; }
+// Straight into the reader. Someone who already knows they have a document to read
+// should not be asked "what are you uploading?" first — they just answered that.
+function tbpDocsFromNudge(){
+  if(typeof tbpDemoBlock === 'function' && tbpDemoBlock()) return;
+  tbpShowDocs();
+}
+// "Dismiss" now means collapse to the strip: the jobs stay reachable, just quietly.
+function tbpCollapseJobs(){ window.__tbpJobsCollapsed = true; try{ tbpUpdateSetupNudge(); }catch(e){} }
+function tbpDismissSetupNudge(){ tbpCollapseJobs(); }
 (function(){ var fn = document.getElementById('focus-note'); if(fn) fn.addEventListener('input', function(){ try{ tbpUpdateSetupNudge(); }catch(e){} }); })();
 function tbpSnapshotBannerHtml(snap){
   return '<div id="focus-snap" class="focus-snap open">'
@@ -4466,11 +5647,15 @@ TBPAuth.protect({
     }).join('\n').replace(/\n{3,}/g,'\n\n').trim();
   }
   // Both the setup-screen button and the working-note toolbar button open the same picker.
+  // Upload is the universal way to bring outside material in, so it asks WHICH kind first.
+  // Historically it meant "transcript" and nothing else, which is why reading a clinical
+  // document had no discoverable front door.
+  window.tbpPickTranscriptFile = function(){ setSt(''); inp.value=''; inp.click(); };
   ['upload-transcript-btn','focus-upload-transcript-btn'].forEach(function(id){
     var el = document.getElementById(id);
     if(el) el.addEventListener('click', function(){
       if(typeof tbpDemoBlock==='function' && tbpDemoBlock()) return;
-      setSt(''); inp.value=''; inp.click();
+      tbpShowUploadChoice();
     });
   });
   inp.addEventListener('change', function(){
