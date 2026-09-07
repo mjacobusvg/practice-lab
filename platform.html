@@ -2683,11 +2683,37 @@ async function checkAuth() {
     }
     else gateMode('login');
   }
-  // React to magic-link / OAuth completion on redirect back
+  // React to magic-link / OAuth completion on redirect back.
+  // Re-run checkAuth on a fresh sign-in EITHER when the gate is still up (a normal
+  // logged-out login) OR when the signed-in identity has actually CHANGED from what
+  // is on screen. That second case fixes the "it keeps putting me in my other
+  // account" bug: if a stale session for account A boots the app and hides the gate,
+  // a magic-link token for account B lands a beat later and fires SIGNED_IN — but the
+  // old guard skipped it because the gate was already hidden, leaving the UI stuck on
+  // A while the real session was B. Comparing emails also covers the load-time race
+  // where getSession resolves the stored session before the URL token is applied.
+  // A same-user token refresh (email unchanged) is intentionally ignored, so this
+  // never thrashes the UI for an already-correct member.
   SB.auth.onAuthStateChange(function(event, session) {
-    if (event === 'SIGNED_IN' && document.getElementById('gate') && !document.getElementById('gate').classList.contains('hidden')) {
-      checkAuth();
+    if (event !== 'SIGNED_IN') return;
+    var newEmail = (session && session.user && session.user.email || '').toLowerCase();
+    var curEmail = (S.user && S.user.email || '').toLowerCase();
+    var gateEl = document.getElementById('gate');
+    var gateVisible = gateEl && !gateEl.classList.contains('hidden');
+    if (!gateVisible && (!newEmail || newEmail === curEmail)) return;
+    // Identity changed (or fresh login at the gate): clear any tool-session keys tied
+    // to the previous account so nothing stale outlives the switch, then reload.
+    if (newEmail && newEmail !== curEmail) {
+      try {
+        localStorage.removeItem('tbp_auth_token');
+        localStorage.removeItem('tbp_auth_expiry');
+        localStorage.removeItem('tbp_verified_email');
+        localStorage.removeItem('tbp_tier');
+        localStorage.removeItem('tbp_member_id');
+        localStorage.removeItem('tbp_member_jwt');
+      } catch (e) {}
     }
+    checkAuth();
   });
 }
 
