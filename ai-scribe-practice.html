@@ -426,7 +426,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-66-ocr</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-67-chartnote</span></div>
 </div>
 </div>
 
@@ -2703,9 +2703,18 @@ function adhdHistorySystem(){
   s += "Target 150 to 300 words. This is a paragraph or three in someone's assessment, not a report.\n\n";
 
   s += "=== OUTPUT ===\n";
-  s += "Plain text. Two sections, each marker reproduced exactly on its own line.\n\n";
+  s += "Plain text. Three sections, each marker reproduced exactly on its own line.\n\n";
+
+  s += "<<<CHARTNOTE>>>\n";
+  s += "The records-review entry: what a clinician writes in the chart to document that they reviewed outside records and what those records contained. This is the shortest thing you produce and the thing most likely to be used, so write it as DOCUMENTATION, not as analysis.\n";
+  s += "First person, past tense, the clinician's own voice, because they are the one who reviewed the records. It opens like a chart entry opens: 'I reviewed records from Mindful Support Services (Sommer Wright, PMHNP) dated 05/22/2026 through 07/10/2026.'\n";
+  s += "Then, in flowing prose and in this order: the diagnoses those records carry and who made them; the symptoms documented; the treatment given and the response recorded; and anything else in the records a later reader of this chart would need. Attribution holds here exactly as everywhere else — 'she reported', 'the records document', 'Wright diagnosed' — because a chart note that turns a patient's account into an established finding is a worse chart note, not a tidier one.\n";
+  s += "WHAT DOES NOT GO IN HERE: what the records fail to establish, what evidence is missing, what a fuller evaluation would need, what the evidence amounts to, and any diagnostic opinion of your own. Those belong to the section below, or to the clinician. Do not argue with a prior clinician's reasoning here either — where a source drew an inference, attribute it plainly and leave it attributed. Naming what it does not support is the other section's job.\n";
+  s += "ONE closing sentence may record a limitation that a later reader of this chart would be misled without — testing obtained on medication, a diagnosis resting on self-report alone, screeners sent and not returned. Factual, not a criticism, and only one.\n";
+  s += "Target 120 to 220 words. Thin records make this shorter. Never pad it.\n\n";
+
   s += "<<<SUMMARY>>>\n";
-  s += "The chart-ready historical evidence, as described above.\n\n";
+  s += "The chart-ready historical evidence, as described above. Fuller than the entry above and doing a different job: this is the evidence itself, for the clinician's assessment. Overlap between the two is expected and fine.\n\n";
   s += "<<<DETAIL>>>\n";
   s += "The same content traced to source, so the clinician can check anything that makes them ask where it came from. One line per item: the finding, then an em dash, then who said it and in which document with its date. For example: 'Childhood zoning out and daydreaming — patient report, Salas psychiatric evaluation 04/18/2025'. Nothing here is prose; it is a ledger.";
   return s;
@@ -2807,7 +2816,7 @@ function adhdUpdateSystem(){
 // Marker parse, shared by both calls. Missing sections come back empty rather than undefined so
 // the panel can render a partial result instead of throwing on the first absent key.
 function tbpAdhdSplit(raw){
-  var keys = ['EVIDENCE','SNAPSHOT','ESTABLISHED','GAPS','COMPETING','QUESTIONS','TODAY','CHANGED','POSITION','SUMMARY','DETAIL'];
+  var keys = ['EVIDENCE','SNAPSHOT','ESTABLISHED','GAPS','COMPETING','QUESTIONS','TODAY','CHANGED','POSITION','CHARTNOTE','SUMMARY','DETAIL'];
   var t = String(raw || ''), out = {};
   var hits = [];
   keys.forEach(function(k){
@@ -3234,6 +3243,11 @@ function tbpAdhdRender(){
 
   // ── History path: the documented evidence, and where each piece came from. Nothing else.
   if(f.mode === 'history'){
+    if(f.CHARTNOTE){
+      h += '<div class="adhd-sec"><h3>Records reviewed &mdash; chart note</h3><div class="adhd-txt">' + esc(f.CHARTNOTE) + '</div></div>';
+      h += '<div style="margin:-6px 0 18px"><button class="btn" type="button" id="adhd-chart-add" style="margin-top:0;padding:7px 13px;font-size:.83rem;background:#a78bfa;color:#1a1033">Put this in my working note &rarr;</button>'
+        + '<span class="hint" id="adhd-chart-msg" style="margin-left:8px">Goes in as text you can edit. Review it before you sign.</span></div>';
+    }
     h += '<div class="adhd-sec"><h3>Documented ADHD history</h3><div class="adhd-txt">' + esc(f.SUMMARY) + '</div></div>';
     h += '<div style="margin:-6px 0 14px"><button class="btn" type="button" id="adhd-hist-add" style="margin-top:0;padding:7px 13px;font-size:.83rem;background:#a78bfa;color:#1a1033">Put this in my working note &rarr;</button>'
       + '<span class="hint" id="adhd-hist-msg" style="margin-left:8px">Goes in as text you can edit. Review it before you sign.</span></div>';
@@ -3330,11 +3344,11 @@ async function tbpAdhdRun(mode){
         : 'The clinician has gathered no records or history yet. Build the framework on that basis: nothing is established, and say what would need to be obtained.';
     }
     var sys = isUpdate ? adhdUpdateSystem() : (adhdMode === 'history' ? adhdHistorySystem() : adhdBuildSystem());
-    var raw = await callAPI(sys, [{ role:'user', content: user }], 4200);
+    var raw = await callAPI(sys, [{ role:'user', content: user }], 5200);
     var f = tbpAdhdSplit(raw);
     f.mode = isUpdate ? (adhdFw && adhdFw.mode) || 'framework' : adhdMode;
     if(f.mode === 'history'){
-      if(!f.SUMMARY){
+      if(!f.SUMMARY && !f.CHARTNOTE){
         if(msg) msg.innerHTML = '<span style="color:var(--amber)">Nothing usable came back. Try again.</span>';
         return;
       }
@@ -3385,6 +3399,14 @@ document.getElementById('adhd-build').addEventListener('click', function(){ if(!
 document.getElementById('adhd-body').addEventListener('click', function(e){
   if(!e.target || !e.target.closest) return;
   if(e.target.closest('#adhd-q-add')){ tbpAdhdQuestionsToNote(); return; }
+  if(e.target.closest('#adhd-chart-add')){
+    var cm = document.getElementById('adhd-chart-msg');
+    var cok = tbpAppendToNote(adhdFw && adhdFw.CHARTNOTE);
+    if(cm) cm.innerHTML = cok
+      ? '<span style="color:var(--green)">Added to your working note.</span>'
+      : '<span style="color:var(--red)">Could not add it. Copy it from above instead.</span>';
+    return;
+  }
   if(e.target.closest('#adhd-hist-add')){
     var m = document.getElementById('adhd-hist-msg');
     var ok = tbpAppendToNote(adhdFw && adhdFw.SUMMARY);
