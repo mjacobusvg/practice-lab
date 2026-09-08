@@ -1910,11 +1910,14 @@ body.show-promo .platform-promo{display:flex}
     <!-- SIGN IN (returning members) -->
     <div id="gate-login">
       <h2>Welcome back</h2>
-      <p>Sign in to Think Beyond Practice with a secure email link — no password needed.</p>
+      <p>Sign in with your password, or have a one-time link emailed to you.</p>
       <input type="email" id="login-email" placeholder="Your email" autocomplete="email">
-      <button class="btn-primary" onclick="sendMagicLink('login')">Email me a sign-in link</button>
+      <input type="password" id="login-password" placeholder="Password (leave blank to get an email link)" autocomplete="current-password" onkeydown="if(event.key==='Enter'){signInWithPassword();return false;}">
+      <button class="btn-primary" onclick="signInWithPassword()">Sign in</button>
       <div class="gate-note" id="login-status"></div>
-      <div class="gate-note" style="margin-top:12px"><a href="#" onclick="openEmailRecovery();return false" style="color:var(--teal)">Forgot which email you used?</a> &middot; <a href="mailto:support@thinkbeyondpractice.com?subject=Trouble%20signing%20in%20to%20Think%20Beyond%20Practice" style="color:var(--teal)">Still stuck? Contact us</a></div>
+      <div class="gate-note" style="margin-top:12px"><a href="#" onclick="sendMagicLink('login');return false" style="color:var(--teal)">Email me a one-time sign-in link instead</a></div>
+      <div class="gate-note" style="margin-top:8px"><a href="#" onclick="openEmailRecovery();return false" style="color:var(--teal)">Forgot which email you used?</a> &middot; <a href="mailto:support@thinkbeyondpractice.com?subject=Trouble%20signing%20in%20to%20Think%20Beyond%20Practice" style="color:var(--teal)">Still stuck? Contact us</a></div>
+      <div class="gate-note" style="margin-top:8px;font-size:0.78rem;color:var(--text-secondary)">No password yet? Use the email link once, then set a password from your account menu so you never wait on an email again.</div>
     </div>
 
     <!-- CREATE FREE ACCOUNT (new visitors) -->
@@ -2329,6 +2332,88 @@ function suggestEmailFix(email) {
 
 var _emailTypoOverride = false; // set true when the user insists on the address as typed
 
+// Password sign-in — the no-email-required path. Members who have set a password
+// log in instantly here instead of waiting on the magic-link email (the single
+// biggest activation leak). If the password field is left blank, this quietly
+// falls back to the emailed one-time link, so the one "Sign in" button does the
+// right thing for both password users and link-only users. On success the
+// SIGNED_IN handler runs checkAuth() and boots them in, same as a magic link.
+async function signInWithPassword() {
+  var emailEl = document.getElementById('login-email');
+  var pwEl = document.getElementById('login-password');
+  var statusEl = document.getElementById('login-status');
+  var email = (emailEl && emailEl.value || '').trim().toLowerCase();
+  var pw = pwEl ? pwEl.value : '';
+  if (!email || email.indexOf('@') === -1) { statusEl.textContent = 'Enter a valid email.'; return; }
+  // No password typed → this member is link-only; send the one-time email link.
+  if (!pw) { return sendMagicLink('login'); }
+  var btn = statusEl.parentElement ? statusEl.parentElement.querySelector('button.btn-primary') : null;
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
+  statusEl.textContent = 'Signing in…';
+  try {
+    var res = await SB.auth.signInWithPassword({ email: email, password: pw });
+    if (res.error) {
+      // Wrong password, or this account has no password on file yet.
+      statusEl.innerHTML = 'That did not work. If you have not set a password yet, ' +
+        '<a href="#" style="color:var(--teal)" onclick="sendMagicLink(\'login\');return false">email me a one-time link</a>, ' +
+        'then set a password from your account menu once you are in.';
+      if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+      return;
+    }
+    // Success: onAuthStateChange('SIGNED_IN') fires and checkAuth() takes over.
+    statusEl.textContent = 'Signed in. One moment…';
+  } catch (e) {
+    statusEl.textContent = 'Sign-in failed. Please try again, or use the email link.';
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+  }
+}
+
+// Set/change a password for the signed-in member, so next time they can skip the
+// email link entirely. Uses Supabase updateUser, which requires the active session
+// they already have — no email round-trip. Lightweight self-contained modal so it
+// works from the account menu without new markup.
+function openSetPassword() {
+  var existing = document.getElementById('setpw-overlay');
+  if (existing) existing.remove();
+  var ov = document.createElement('div');
+  ov.id = 'setpw-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9000;display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+  ov.innerHTML =
+    '<div style="background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:12px;max-width:380px;width:100%;padding:24px;box-shadow:0 12px 40px rgba(0,0,0,0.35)">' +
+    '<h3 style="margin:0 0 6px;font-size:1.1rem">Set a password</h3>' +
+    '<p style="margin:0 0 14px;font-size:0.84rem;color:var(--text-secondary)">Set a password so you can sign in instantly next time, without waiting for an email link. At least 8 characters.</p>' +
+    '<input type="password" id="setpw-input" placeholder="New password" autocomplete="new-password" style="width:100%;padding:11px;border:1px solid var(--border);border-radius:8px;margin-bottom:10px;box-sizing:border-box;background:var(--bg-page);color:var(--text-primary)">' +
+    '<input type="password" id="setpw-confirm" placeholder="Confirm password" autocomplete="new-password" onkeydown="if(event.key===\'Enter\'){saveNewPassword();return false;}" style="width:100%;padding:11px;border:1px solid var(--border);border-radius:8px;margin-bottom:10px;box-sizing:border-box;background:var(--bg-page);color:var(--text-primary)">' +
+    '<div id="setpw-status" style="font-size:0.82rem;color:var(--text-secondary);min-height:18px;margin-bottom:12px"></div>' +
+    '<div style="display:flex;gap:10px;justify-content:flex-end">' +
+    '<button onclick="var o=document.getElementById(\'setpw-overlay\');if(o)o.remove()" style="padding:9px 16px;border:1px solid var(--border);background:transparent;color:var(--text-primary);border-radius:8px;cursor:pointer">Cancel</button>' +
+    '<button class="btn-primary" onclick="saveNewPassword()">Save password</button>' +
+    '</div></div>';
+  document.body.appendChild(ov);
+  setTimeout(function () { var i = document.getElementById('setpw-input'); if (i) i.focus(); }, 50);
+}
+
+async function saveNewPassword() {
+  var pw = (document.getElementById('setpw-input') || {}).value || '';
+  var cf = (document.getElementById('setpw-confirm') || {}).value || '';
+  var st = document.getElementById('setpw-status');
+  if (!st) return;
+  st.style.color = 'var(--text-secondary)';
+  if (pw.length < 8) { st.textContent = 'Password must be at least 8 characters.'; return; }
+  if (pw !== cf) { st.textContent = 'The two passwords do not match.'; return; }
+  st.textContent = 'Saving…';
+  try {
+    var res = await SB.auth.updateUser({ password: pw });
+    if (res.error) { st.textContent = res.error.message || 'Could not set password. Please try again.'; return; }
+    st.style.color = 'var(--teal)';
+    st.textContent = 'Password set. You can sign in with it from now on.';
+    setTimeout(function () { var o = document.getElementById('setpw-overlay'); if (o) o.remove(); }, 1500);
+  } catch (e) {
+    st.textContent = 'Could not set password. Please try again.';
+  }
+}
+
 async function sendMagicLink(mode) {
   var emailEl = document.getElementById(mode === 'login' ? 'login-email' : 'gate-email');
   var statusEl = document.getElementById(mode === 'login' ? 'login-status' : 'signup-status');
@@ -2734,6 +2819,7 @@ function updateTopbar() {
     '<button onclick="toggleAcctMenu();showInvite()">Invite a colleague</button>' +
     '<button onclick="toggleAcctMenu();openWelcomeTour()">Take the tour</button>' +
     '<button onclick="toggleAcctMenu();openReportProblem()">Report a problem</button>' +
+    '<button onclick="toggleAcctMenu();openSetPassword()">Set a password</button>' +
     (isAdmin() ? '<button onclick="toggleAcctMenu();showCEList()">CE candidates</button>' : '') +
     (isAdmin() ? '<button onclick="toggleAcctMenu();adminSigninLink()">Generate sign-in link</button>' : '') +
     (isFullMember()
