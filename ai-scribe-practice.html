@@ -455,7 +455,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-72-draftfail</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-73-reveal</span></div>
 </div>
 </div>
 
@@ -1837,6 +1837,26 @@ function tbpAutoDraftAmbient(){
 // the note only after they're confirmed — so typed and ambient behave identically. Crucially it does
 // NOT set sourceMode='ambient' (that stays 'typed'), so the verify pass still treats the notes as the
 // clinician's own written ground truth, not a transcript.
+
+// The drafted note is held hidden between Draft and preflight (see renderResult's hideHpi). Anything
+// that ends that window without showing it strands a finished note in the DOM at display:none, which
+// looks to the clinician exactly like the Draft did nothing at all. This is the one place that
+// guarantees the note comes back, and it is safe to call more than once.
+function tbpRevealDraftedNote(){
+  try {
+    var p = document.getElementById('hpi-panel');
+    if(p && p.style.display === 'none') p.style.display = '';
+    // The work-up block is hidden in the silent flow too; without it there is no way to retry the
+    // assessment or clear the visit, so a stranded note has no way forward.
+    var h = document.getElementById('assess-handoff');
+    if(h && h.style.display === 'none') h.style.display = '';
+    var b = document.getElementById('build-assess');
+    if(b && b.style.display === 'none') b.style.display = '';
+    if(p) p.scrollIntoView({ behavior:'smooth', block:'start' });
+  } catch(e){}
+  try { _ambientFlow = false; tbpAmbientProgress('clear'); } catch(e){}
+}
+
 var _typedDraftInFlight = false;
 function tbpTypedDraft(btn, src, errEl){
   if(_typedDraftInFlight) return false;
@@ -1900,7 +1920,30 @@ function tbpTypedDraft(btn, src, errEl){
       tbpAmbientProgress('preflight');
       // Continue straight into preflight (surface the clinical calls) with no manual Build click —
       // exactly the ambient behaviour, including its "paste last visit first" guard for a thin follow-up.
-      try { var bb=document.getElementById('build-assess'); if(bb && typeof buildAssessment==='function') buildAssessment(bb); else { _ambientFlow=false; tbpAmbientProgress('clear'); } } catch(e){ _ambientFlow=false; tbpAmbientProgress('clear'); }
+      //
+      // THE NOTE IS HIDDEN AT THIS POINT. renderResult wrapped it in #hpi-panel with display:none so
+      // the silent flow can reveal it all at once after preflight. Every failure path below used to
+      // clear the banner and return, leaving a fully drafted note sitting invisible in the DOM with
+      // nothing rendered and nothing logged — the clinician finished a visit, pressed Draft, watched
+      // it say "Drafting...", and landed on a blank page. Reported from a real visit.
+      //
+      // So the reveal is now unconditional: whatever happens to the assessment step, the note that is
+      // already written gets shown. The assessment failing is not a reason to withhold the HPI.
+      var bb = document.getElementById('build-assess');
+      Promise.resolve()
+        .then(function(){
+          if(bb && typeof buildAssessment === 'function') return buildAssessment(bb);
+          throw new Error('the assessment step was not available on this page');
+        })
+        .catch(function(e){
+          tbpLogError('Post-draft assessment step failed: ' + ((e && e.message) || e), e && e.stack);
+          var ar = document.getElementById('assess-results');
+          if(ar && !ar.innerHTML.trim()){
+            ar.innerHTML = '<div class="err">Your note is drafted and shown below, but the clinical-calls step could not run &mdash; '
+              + esc((e && e.message) || 'it failed') + '. Use <strong>Build assessment &amp; plan</strong> to try that part again.</div>';
+          }
+        })
+        .then(function(){ tbpRevealDraftedNote(); });
     } else {
       // runDraft already surfaced the specific error in errEl; reflect it in the banner and stop.
       _ambientFlow = false;
@@ -4691,11 +4734,12 @@ async function buildAssessment(btn, force){
   if(!window.NoteEngine || typeof window.NoteEngine.runAssessment !== 'function'){
     _ambientFlow = false; tbpAmbientProgress('clear');
     document.getElementById('assess-results').innerHTML = '<div class="err">Assessment engine did not load. Hard-reload the page (Cmd/Ctrl+Shift+R) and try again.</div>';
+    tbpRevealDraftedNote();
     return;
   }
   var hpiEl = document.getElementById('hpi-out');
   var hpi = (hpiEl && typeof hpiEl.value === 'string' && hpiEl.value.trim()) ? hpiEl.value.trim() : lastHpi;
-  if(!hpi){ _ambientFlow = false; tbpAmbientProgress('clear'); document.getElementById('assess-results').innerHTML = '<div class="err">No HPI to work from yet.</div>'; return; }
+  if(!hpi){ _ambientFlow = false; tbpAmbientProgress('clear'); document.getElementById('assess-results').innerHTML = '<div class="err">No HPI to work from yet.</div>'; tbpRevealDraftedNote(); return; }
   // The prior assessment (diagnosis list above all) drives today's diagnosis list. It comes from the
   // one upfront box (last visit's full note + assessment) that also powers carry-forward and the checklist.
   var dxprior = '';
