@@ -236,9 +236,31 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
     }, 1200);
   });
   window.tbpPracticeSurface = surface;
+
+  // Step trace. Not error handling — a record of the pipeline reaching each stage, kept in
+  // sessionStorage so a reload or a closing overlay cannot wipe the evidence.
+  var TK = 'tbp_trace';
+  // Memory is the source of truth: sessionStorage is best-effort and is silently dropped in some
+  // framed contexts (storage partitioning), which would leave tbpTraceDump() empty exactly when
+  // it is needed. Session storage is only there so a reload does not erase the evidence.
+  var mem = [];
+  try { mem = JSON.parse(sessionStorage.getItem(TK) || '[]') || []; } catch(e){ mem = []; }
+  window.tbpTrace = function(step, detail){
+    var line = step + (detail !== undefined && detail !== null ? '  ' + detail : '');
+    mem.push(new Date().toLocaleTimeString() + '  ' + line);
+    if(mem.length > 80) mem = mem.slice(-80);
+    try { sessionStorage.setItem(TK, JSON.stringify(mem)); } catch(e){}
+    surface('step', line);
+  };
+  window.tbpTraceDump = function(){ return mem.join('\n'); };
+  window.tbpTraceClear = function(){ mem = []; try { sessionStorage.removeItem(TK); } catch(e){} };
+  // Replay anything from before a reload, so a pipeline that died and reloaded still shows.
+  window.addEventListener('load', function(){
+    if(mem.length) surface('trace', 'from before this reload: ' + mem.length + ' step(s). Run tbpTraceDump() in the console for all of them.');
+  });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-74-loud"></script>
+<script src="/note-engine-practice.js?v=ambient-75-trace"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -506,7 +528,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-74-loud</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-75-trace</span></div>
 </div>
 </div>
 
@@ -1654,6 +1676,7 @@ function renderResult(hpi, flags, verified, opts){
   html += handoff + '<div id="assess-results"></div>';
 
   document.getElementById('results').innerHTML = html;
+  try { tbpTrace('2 note rendered', 'hidden=' + !!(opts && opts.hideHpi) + ' len=' + (hpi ? hpi.length : 0)); } catch(e){}
   refreshAssessPriorHint();
   var baBtn = document.getElementById('build-assess');
   if(baBtn) baBtn.addEventListener('click', function(){ if(tbpDemoBlock()) return; buildAssessment(this); });
@@ -1960,12 +1983,14 @@ function tbpTypedDraft(btn, src, errEl){
   }
   if(!src || src.length < 15){ return draftFail('Paste your visit notes first, even rough ones.'); }
   _typedDraftInFlight = true;
+  try { tbpTraceClear(); tbpTrace('1 Draft pressed', 'visitType=' + visitType + ' chars=' + (src ? src.length : 0)); } catch(e){}
   _ambientFlow = true;   // reuse the silent/preflight-first machinery (progress banner + post-preflight reveal)
   // If launched from the full-screen working note, close it onto the result once the draft lands
   // (mirrors the ambient path) so the banner and preflight questions are visible.
   var fromFocus = (function(){ var o=document.getElementById('focus-overlay'); return !!(o && o.classList.contains('open')); })();
   tbpAmbientProgress('draft');   // paint the staged banner + scroll to it before any await
   Promise.resolve(runDraft(src, btn, errEl, true)).then(function(ok){
+    try { tbpTrace('3 runDraft returned', 'ok=' + ok); } catch(e){}
     if(ok){
       if(fromFocus){ try { if(typeof closeFocus==='function') closeFocus(); } catch(e){} }
       tbpAmbientProgress('preflight');
@@ -1981,6 +2006,7 @@ function tbpTypedDraft(btn, src, errEl){
       // So the reveal is now unconditional: whatever happens to the assessment step, the note that is
       // already written gets shown. The assessment failing is not a reason to withhold the HPI.
       var bb = document.getElementById('build-assess');
+      try { tbpTrace('4 into preflight', 'buildAssessBtn=' + (!!bb) + ' fn=' + (typeof buildAssessment)); } catch(e){}
       Promise.resolve()
         .then(function(){
           if(bb && typeof buildAssessment === 'function') return buildAssessment(bb);
@@ -1994,7 +2020,7 @@ function tbpTypedDraft(btn, src, errEl){
               + esc((e && e.message) || 'it failed') + '. Use <strong>Build assessment &amp; plan</strong> to try that part again.</div>';
           }
         })
-        .then(function(){ tbpRevealDraftedNote(); });
+        .then(function(){ try { tbpTrace('9 revealing note'); } catch(e){} tbpRevealDraftedNote(); });
     } else {
       // runDraft already surfaced the specific error in errEl; reflect it in the banner and stop.
       _ambientFlow = false;
@@ -4780,9 +4806,11 @@ function ensureModalityCard(qs){
 }
 
 async function buildAssessment(btn, force){
+  try { tbpTrace('5 buildAssessment entered', 'force=' + !!force + ' visitType=' + visitType); } catch(e){}
   // Every early exit below must also stop the ambient "Building your note" banner, or a
   // drafted note can sit stranded behind a still-spinning banner (looks stuck).
   if(!window.NoteEngine || typeof window.NoteEngine.runAssessment !== 'function'){
+    try { tbpTrace('5a STOPPED', 'NoteEngine missing'); } catch(e){}
     _ambientFlow = false; tbpAmbientProgress('clear');
     document.getElementById('assess-results').innerHTML = '<div class="err">Assessment engine did not load. Hard-reload the page (Cmd/Ctrl+Shift+R) and try again.</div>';
     tbpRevealDraftedNote();
@@ -4790,7 +4818,8 @@ async function buildAssessment(btn, force){
   }
   var hpiEl = document.getElementById('hpi-out');
   var hpi = (hpiEl && typeof hpiEl.value === 'string' && hpiEl.value.trim()) ? hpiEl.value.trim() : lastHpi;
-  if(!hpi){ _ambientFlow = false; tbpAmbientProgress('clear'); document.getElementById('assess-results').innerHTML = '<div class="err">No HPI to work from yet.</div>'; tbpRevealDraftedNote(); return; }
+  if(!hpi){ try { tbpTrace('5b STOPPED', 'no HPI to work from'); } catch(e){}
+    _ambientFlow = false; tbpAmbientProgress('clear'); document.getElementById('assess-results').innerHTML = '<div class="err">No HPI to work from yet.</div>'; tbpRevealDraftedNote(); return; }
   // The prior assessment (diagnosis list above all) drives today's diagnosis list. It comes from the
   // one upfront box (last visit's full note + assessment) that also powers carry-forward and the checklist.
   var dxprior = '';
@@ -4798,6 +4827,7 @@ async function buildAssessment(btn, force){
   // Without the prior assessment the engine can only ask for it, which reads badly. Nudge to the
   // top box, but let them build anyway (the HPI sometimes carries meds/diagnoses inline).
   if(visitType === 'follow_up' && dxprior.length < 40 && !force){
+    try { tbpTrace('5c STOPPED', 'follow-up with no last-visit note pasted (context=' + dxprior.length + ' chars)'); } catch(e){}
     document.getElementById('assess-results').innerHTML =
       '<div class="flags"><div class="flags-h">Paste last visit\'s note first &mdash; or your diagnoses will be off</div>'
       + '<div class="hint" style="margin-top:6px;line-height:1.5">A follow-up HPI alone is light on detail, so without last visit\'s <strong style="color:var(--cream)">diagnosis list and assessment</strong> the diagnoses and carry-forward will be <strong style="color:var(--cream)">limited and error-prone</strong>. Paste last visit\'s note (with its assessment) into <strong style="color:var(--cream)">&ldquo;Last visit\'s note + assessment&rdquo;</strong> near the top, then build. Prepping your visits ahead of time loads this automatically.</div>'
@@ -4833,7 +4863,9 @@ async function buildAssessment(btn, force){
   var box = document.getElementById('assess-results');
   box.innerHTML = '<div class="out"><div class="hint"><span class="spinner"></span> Reading the visit to surface the clinical calls&hellip;</div></div>';
   try {
+    try { tbpTrace('6 calling runPreflight'); } catch(e){}
     var pf = await window.NoteEngine.runPreflight(inp, scope);
+    try { tbpTrace('7 runPreflight returned', pf ? ('questions=' + ((pf.questions || pf).length || 0)) : 'empty'); } catch(e){}
     // If the visit already documents the plan (e.g. the clinician said it aloud in an ambient visit),
     // the plan input inside the confirm step below starts hidden so they aren't prompted to retype it
     // (the PMP button still reveals it on demand). Pass the flag through.
@@ -4846,7 +4878,8 @@ async function buildAssessment(btn, force){
     // input itself now lives at the end of the confirm step, not in this block.
     if(wasAmbient){ var ah=document.getElementById('assess-handoff'); if(ah) ah.style.display=''; }
     if(!qs.length){ await generateNote(inp, scope, {}, []); }   // nothing to confirm — generate directly
-    else { renderPreflightCards(inp, scope, qs, planDetected); box.scrollIntoView({ behavior:'smooth', block:'start' }); }
+    else { try { tbpTrace('8 rendering preflight cards', 'n=' + (qs ? qs.length : 0)); } catch(e){}
+      renderPreflightCards(inp, scope, qs, planDetected); box.scrollIntoView({ behavior:'smooth', block:'start' }); }
   } catch(err){
     if(_ambientFlow){ _ambientFlow = false; tbpAmbientProgress('clear'); }
     box.innerHTML = '<div class="err">'+esc(err.message || 'Could not read the visit.')+'</div>';
