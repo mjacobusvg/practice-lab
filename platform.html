@@ -1908,16 +1908,20 @@ body.show-promo .platform-promo{display:flex}
     </div>
 
     <!-- SIGN IN (returning members) -->
+    <!-- Default is the email-link flow every existing member already knows. Password
+         is strictly opt-in: the field and its button stay hidden until a member who
+         HAS set one clicks "Have a password?" So nobody who never set a password is
+         ever shown a password box to fumble with. -->
     <div id="gate-login">
       <h2>Welcome back</h2>
-      <p>Sign in with your password, or have a one-time link emailed to you.</p>
+      <p>Enter your email and we'll send you a secure one-time sign-in link.</p>
       <input type="email" id="login-email" placeholder="Your email" autocomplete="email">
-      <input type="password" id="login-password" placeholder="Password (leave blank to get an email link)" autocomplete="current-password" onkeydown="if(event.key==='Enter'){signInWithPassword();return false;}">
-      <button class="btn-primary" onclick="signInWithPassword()">Sign in</button>
+      <input type="password" id="login-password" placeholder="Your password" autocomplete="current-password" hidden onkeydown="if(event.key==='Enter'){signInWithPassword();return false;}">
+      <button class="btn-primary" id="login-link-btn" onclick="sendMagicLink('login')">Email me a sign-in link</button>
+      <button class="btn-primary" id="login-pw-btn" onclick="signInWithPassword()" hidden>Sign in</button>
       <div class="gate-note" id="login-status"></div>
-      <div class="gate-note" style="margin-top:12px"><a href="#" onclick="sendMagicLink('login');return false" style="color:var(--teal)">Email me a one-time sign-in link instead</a></div>
+      <div class="gate-note" style="margin-top:12px"><a href="#" id="pw-toggle" onclick="togglePasswordLogin();return false" style="color:var(--teal)">Have a password? Sign in with it</a></div>
       <div class="gate-note" style="margin-top:8px"><a href="#" onclick="openEmailRecovery();return false" style="color:var(--teal)">Forgot which email you used?</a> &middot; <a href="mailto:support@thinkbeyondpractice.com?subject=Trouble%20signing%20in%20to%20Think%20Beyond%20Practice" style="color:var(--teal)">Still stuck? Contact us</a></div>
-      <div class="gate-note" style="margin-top:8px;font-size:0.78rem;color:var(--text-secondary)">No password yet? Use the email link once, then set a password from your account menu so you never wait on an email again.</div>
     </div>
 
     <!-- CREATE FREE ACCOUNT (new visitors) -->
@@ -2338,6 +2342,28 @@ var _emailTypoOverride = false; // set true when the user insists on the address
 // falls back to the emailed one-time link, so the one "Sign in" button does the
 // right thing for both password users and link-only users. On success the
 // SIGNED_IN handler runs checkAuth() and boots them in, same as a magic link.
+
+// Reveal the opt-in password field. The default sign-in screen shows ONLY the
+// email-link flow (what every existing member already uses), so a member who
+// never set a password is never confronted with a password box. Clicking
+// "Have a password?" swaps in the field + password button; clicking again (now
+// "Use a one-time email link instead") swaps back to the default.
+function togglePasswordLogin() {
+  var pw = document.getElementById('login-password');
+  var linkBtn = document.getElementById('login-link-btn');
+  var pwBtn = document.getElementById('login-pw-btn');
+  var toggle = document.getElementById('pw-toggle');
+  var status = document.getElementById('login-status');
+  if (!pw || !linkBtn || !pwBtn || !toggle) return;
+  var showPw = pw.hidden; // currently hidden → we're switching TO password mode
+  pw.hidden = !showPw;
+  linkBtn.hidden = showPw;
+  pwBtn.hidden = !showPw;
+  toggle.textContent = showPw ? 'Use a one-time email link instead' : 'Have a password? Sign in with it';
+  if (status) status.textContent = '';
+  if (showPw) { try { pw.focus(); } catch (e) {} }
+}
+
 async function signInWithPassword() {
   var emailEl = document.getElementById('login-email');
   var pwEl = document.getElementById('login-password');
@@ -2347,7 +2373,7 @@ async function signInWithPassword() {
   if (!email || email.indexOf('@') === -1) { statusEl.textContent = 'Enter a valid email.'; return; }
   // No password typed → this member is link-only; send the one-time email link.
   if (!pw) { return sendMagicLink('login'); }
-  var btn = statusEl.parentElement ? statusEl.parentElement.querySelector('button.btn-primary') : null;
+  var btn = document.getElementById('login-pw-btn');
   if (btn) { btn.disabled = true; btn.style.opacity = '0.6'; }
   statusEl.textContent = 'Signing in…';
   try {
