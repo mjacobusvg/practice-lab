@@ -165,7 +165,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-68"></script>
+<script src="/note-engine.js?v=ambient-69"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -392,7 +392,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-68</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-69</span></div>
 </div>
 </div>
 
@@ -1743,6 +1743,7 @@ function tbpRevealDraftedNote(){
 }
 
 var _typedDraftInFlight = false;
+var _preflightRendered = false;   // did the clinical-calls step put questions on screen this run?
 function tbpTypedDraft(btn, src, errEl){
   if(_typedDraftInFlight) return false;
   errEl = errEl || document.getElementById('err-box') || { innerHTML:'' };
@@ -1814,6 +1815,7 @@ function tbpTypedDraft(btn, src, errEl){
       //
       // So the reveal is now unconditional: whatever happens to the assessment step, the note that is
       // already written gets shown. The assessment failing is not a reason to withhold the HPI.
+      _preflightRendered = false;   // set by the preflight branch; decides whether the note stays hidden
       var bb = document.getElementById('build-assess');
       Promise.resolve()
         .then(function(){
@@ -1828,7 +1830,14 @@ function tbpTypedDraft(btn, src, errEl){
               + esc((e && e.message) || 'it failed') + '. Use <strong>Build assessment &amp; plan</strong> to try that part again.</div>';
           }
         })
-        .then(function(){ tbpRevealDraftedNote(); });
+        .then(function(){
+          // Success: the clinical calls are on screen and the draft stays behind them until the
+          // clinician answers and presses Generate. Showing it above the questions puts the answer
+          // on screen before the question, which is what this flow exists to avoid.
+          if(_preflightRendered){ try { _ambientFlow = false; tbpAmbientProgress('clear'); } catch(e){} return; }
+          // Anything else: the note is written and nothing else is going to bring it on screen.
+          tbpRevealDraftedNote();
+        });
     } else {
       // runDraft already surfaced the specific error in errEl; reflect it in the banner and stop.
       _ambientFlow = false;
@@ -3707,7 +3716,8 @@ async function buildAssessment(btn, force){
     // input itself now lives at the end of the confirm step, not in this block.
     if(wasAmbient){ var ah=document.getElementById('assess-handoff'); if(ah) ah.style.display=''; }
     if(!qs.length){ await generateNote(inp, scope, {}, []); }   // nothing to confirm — generate directly
-    else { renderPreflightCards(inp, scope, qs, planDetected); box.scrollIntoView({ behavior:'smooth', block:'start' }); }
+    else { _preflightRendered = true;   // the questions are up; the draft stays hidden until Generate
+      renderPreflightCards(inp, scope, qs, planDetected); box.scrollIntoView({ behavior:'smooth', block:'start' }); }
   } catch(err){
     if(_ambientFlow){ _ambientFlow = false; tbpAmbientProgress('clear'); }
     box.innerHTML = '<div class="err">'+esc(err.message || 'Could not read the visit.')+'</div>';
