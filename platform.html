@@ -1930,6 +1930,8 @@ body.show-promo .platform-promo{display:flex}
       <p>See what psychiatric prescribers are building inside Think Beyond Practice. Browse discussions, explore tools, and see the platform -- free.</p>
       <input type="text" id="gate-name" placeholder="Your name" autocomplete="name">
       <input type="email" id="gate-email" placeholder="Your email" autocomplete="email">
+      <input type="password" id="signup-password" placeholder="Create a password (optional)" autocomplete="new-password">
+      <div class="gate-note" style="margin-top:-2px;margin-bottom:6px;font-size:0.78rem;color:var(--text-secondary)">Set a password to sign in instantly, or leave it blank and we'll email you a one-time sign-in link.</div>
       <select id="gate-creds">
         <option value="">Your role (optional)</option>
         <option value="PMHNP">PMHNP</option>
@@ -2544,11 +2546,63 @@ async function submitEmailRecovery() {
 async function signUpFree() {
   var name = document.getElementById('gate-name').value.trim();
   var email = document.getElementById('gate-email').value.trim().toLowerCase();
-  if (!name || !email || email.indexOf('@') === -1) { document.getElementById('signup-status').textContent = 'Enter your name and a valid email.'; return; }
+  var statusEl = document.getElementById('signup-status');
+  if (!name || !email || email.indexOf('@') === -1) { statusEl.textContent = 'Enter your name and a valid email.'; return; }
+  var pw = (document.getElementById('signup-password') || {}).value || '';
+  if (pw && pw.length < 8) { statusEl.textContent = 'Password needs at least 8 characters, or leave it blank and we’ll email you a link.'; return; }
+  // Same email-typo interception as the sign-in path: suggest the fix, one confirm.
+  if (!_emailTypoOverride) {
+    var fix = suggestEmailFix(email);
+    if (fix && fix !== email) {
+      statusEl.innerHTML = 'Did you mean <strong>' + fix + '</strong>? '
+        + '<a href="#" style="color:var(--teal)" onclick="document.getElementById(\'gate-email\').value=\'' + fix + '\';_emailTypoOverride=true;signUpFree();return false">Yes, use that</a>'
+        + ' &middot; <a href="#" style="color:var(--text-secondary)" onclick="_emailTypoOverride=true;signUpFree();return false">No, it is correct</a>';
+      return;
+    }
+  }
+  // Password chosen → create the account with it (instant sign-in when the project
+  // does not require email confirmation). Blank → the existing magic-link flow.
+  if (pw) { _emailTypoOverride = false; return signUpWithPassword(name, email, pw); }
+  // Magic-link path: we already ran the typo check, so flag override so sendMagicLink
+  // does not re-prompt (it resets the flag itself afterward).
+  _emailTypoOverride = true;
   sendMagicLink('signup');
   // NOTE: no referral recorded here. Referrals are a PAID-signup concept only;
   // the ?ref= invite link stays stashed in localStorage and is attributed at
   // paid checkout (startCheckout -> Stripe metadata -> webhook).
+}
+
+// Create a free account WITH a password, so the new member can sign in instantly
+// forever after instead of depending on an email link. Carries name/role metadata
+// the same way the magic-link signup does. Handles both project configs: if a
+// session comes back, they are logged straight in (email confirmation off); if not,
+// the account exists and a confirmation email was sent, and their password works
+// once they confirm (same email step the magic-link flow already relies on, but now
+// with a password for every future login).
+async function signUpWithPassword(name, email, pw) {
+  var statusEl = document.getElementById('signup-status');
+  var meta = { name: name };
+  var creds = (document.getElementById('gate-creds') || {}).value;
+  if (creds) meta.creds = creds;
+  statusEl.textContent = 'Creating your account…';
+  try {
+    var res = await SB.auth.signUp({ email: email, password: pw, options: { data: meta, emailRedirectTo: REDIRECT_TO } });
+    if (res.error) {
+      statusEl.innerHTML = /already|exists|registered/i.test(res.error.message || '')
+        ? 'That email already has an account. Use the <a href="#" style="color:var(--teal)" onclick="gateMode(\'login\');return false">Sign in</a> tab to log in.'
+        : (res.error.message || 'Could not create the account. Please try again.');
+      return;
+    }
+    if (res.data && res.data.session) {
+      // Instant login. onAuthStateChange('SIGNED_IN') fires and checkAuth() boots them.
+      statusEl.textContent = 'Account created. One moment…';
+    } else {
+      // Confirmation required by the project: account made, confirmation email sent.
+      statusEl.innerHTML = '<div style="background:#fff3bf;border:1px solid #e6c200;border-radius:8px;padding:12px 14px;color:#4a3b00;font-size:0.92rem;line-height:1.5;margin-top:6px;text-align:left"><strong>Account created.</strong> Check your email to confirm it, then sign in with your email and password. If it is not there in a minute, look in spam.</div>';
+    }
+  } catch (e) {
+    statusEl.textContent = 'Could not create the account. Please try again, or leave the password blank for an email link.';
+  }
 }
 
 async function signInGoogle() {
