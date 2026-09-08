@@ -253,6 +253,38 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
     surface('step', line);
   };
   window.tbpTraceDump = function(){ return mem.join('\n'); };
+
+  // Why is something not on screen? Walks from an element up to <html> and reports the first
+  // ancestors that are not painted, and why. Guessing at this has cost several rounds.
+  window.tbpWhyHidden = function(id){
+    var el = document.getElementById(id);
+    if(!el) return id + ': NOT IN THE DOM AT ALL';
+    var out = [], n = el, depth = 0;
+    while(n && n !== document.documentElement.parentNode && depth < 30){
+      var cs = null;
+      try { cs = getComputedStyle(n); } catch(e){}
+      if(cs){
+        var why = [];
+        if(cs.display === 'none') why.push('display:none');
+        if(cs.visibility === 'hidden') why.push('visibility:hidden');
+        if(parseFloat(cs.opacity) === 0) why.push('opacity:0');
+        if(n.offsetHeight === 0 && n.offsetWidth === 0 && cs.display !== 'none') why.push('zero size');
+        if(cs.position === 'fixed' || cs.position === 'absolute'){
+          var r = n.getBoundingClientRect();
+          if(r.bottom < 0 || r.top > (window.innerHeight || 0)) why.push('positioned off-screen (top=' + Math.round(r.top) + ')');
+        }
+        if(why.length){
+          out.push('  ' + (n.tagName || '?').toLowerCase()
+            + (n.id ? '#' + n.id : '')
+            + (n.className && typeof n.className === 'string' && n.className.trim() ? '.' + n.className.trim().split(/\s+/).join('.') : '')
+            + '  ->  ' + why.join(', '));
+        }
+      }
+      n = n.parentNode;
+      depth++;
+    }
+    return id + ': ' + (out.length ? ('hidden by\n' + out.join('\n')) : 'nothing hiding it; it should be visible');
+  };
   window.tbpTraceClear = function(){ mem = []; try { sessionStorage.removeItem(TK); } catch(e){} };
   // Replay anything from before a reload, so a pipeline that died and reloaded still shows.
   window.addEventListener('load', function(){
@@ -260,7 +292,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-75-trace"></script>
+<script src="/note-engine-practice.js?v=ambient-76-why"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -528,7 +560,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-75-trace</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-76-why</span></div>
 </div>
 </div>
 
@@ -2020,7 +2052,21 @@ function tbpTypedDraft(btn, src, errEl){
               + esc((e && e.message) || 'it failed') + '. Use <strong>Build assessment &amp; plan</strong> to try that part again.</div>';
           }
         })
-        .then(function(){ try { tbpTrace('9 revealing note'); } catch(e){} tbpRevealDraftedNote(); });
+        .then(function(){
+          try { tbpTrace('9 revealing note'); } catch(e){}
+          tbpRevealDraftedNote();
+          // The pipeline can complete and the screen still be empty. Say why, in the banner,
+          // rather than leaving it to another round of reading the source.
+          try {
+            setTimeout(function(){
+              var r = document.getElementById('results');
+              tbpTrace('10 results content', 'chars=' + (r ? r.innerHTML.length : 'MISSING')
+                + ' offsetHeight=' + (r ? r.offsetHeight : '-'));
+              tbpTrace('11 ' + tbpWhyHidden('hpi-panel'));
+              tbpTrace('12 ' + tbpWhyHidden('assess-results'));
+            }, 250);
+          } catch(e){}
+        });
     } else {
       // runDraft already surfaced the specific error in errEl; reflect it in the banner and stop.
       _ambientFlow = false;
