@@ -165,7 +165,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-66"></script>
+<script src="/note-engine.js?v=ambient-67"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -392,7 +392,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-66</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-67</span></div>
 </div>
 </div>
 
@@ -1727,8 +1727,52 @@ function tbpTypedDraft(btn, src, errEl){
   if(_typedDraftInFlight) return false;
   errEl = errEl || document.getElementById('err-box') || { innerHTML:'' };
   errEl.innerHTML = '';
-  if(!visitType){ errEl.innerHTML='<div class="err">Choose a visit type first (New patient evaluation or Follow-up) &mdash; it sets which of your templates is used.</div>'; return false; }
-  if(!src || src.length < 15){ errEl.innerHTML='<div class="err">Paste your visit notes first, even rough ones.</div>'; return false; }
+  // A Draft that cannot run must SAY SO WHERE THE CLINICIAN IS LOOKING. #err-box lives inside
+  // #work-area, which renderMode hides whenever visitType is falsy — so the message explaining
+  // that no visit type is set was being written into a container hidden by that exact condition.
+  // Click Draft after a whole visit and you got silence: no error, no note, no output.
+  function draftFail(html){
+    var shown = false;
+    [errEl, document.getElementById('focus-err'), document.getElementById('err-box')].forEach(function(el){
+      if(!el) return;
+      if(!el.offsetParent && el !== errEl) return;         // skip anything not actually on screen
+      el.innerHTML = '<div class="err">' + html + '</div>';
+      if(el.offsetParent) shown = true;
+    });
+    // Nothing on screen could carry it — the working note is closed and the setup form is hidden.
+    // Never fail silently: open the setup so the clinician can act on what is actually wrong.
+    if(!shown){
+      try { if(window.tbpShowSetup) window.tbpShowSetup(); } catch(e){}
+      var eb = document.getElementById('err-box');
+      if(eb) eb.innerHTML = '<div class="err">' + html + '</div>';
+      try { (eb || document.body).scrollIntoView({ behavior:'smooth', block:'center' }); } catch(e){}
+    }
+    return false;
+  }
+  if(!visitType){
+    // Recover it rather than stopping, when the note itself already knows: a frame reload can
+    // drop the in-memory visitType while the saved draft still carries it.
+    var saved = null;
+    try {
+      var k = 'tbp_draft_' + ((location.search.match(/[?&]slot=([^&]+)/) || [])[1] ? decodeURIComponent(location.search.match(/[?&]slot=([^&]+)/)[1]) : 'solo');
+      var d = JSON.parse(localStorage.getItem(k) || 'null');
+      if(d && d.visitType) saved = d.visitType;
+    } catch(e){}
+    var opt = saved ? document.querySelector('#visit-opts [data-visit="' + saved + '"]') : null;
+    if(opt){ opt.click(); }
+    if(!visitType){
+      // Log the shape of the failure (never the note) so a recurrence is identifiable instead of
+      // mysterious: whether a draft existed for this tab, whether it carried a visit type, and
+      // whether the option element was even in the DOM to click.
+      try {
+        tbpLogError('Draft blocked: no visit type. savedDraft=' + (saved ? saved : 'none')
+          + ' optionFound=' + (!!opt) + ' rawLen=' + ((document.getElementById('raw')||{}).value||'').length
+          + ' wnMode=' + (typeof wnMode !== 'undefined' ? wnMode : '?'));
+      } catch(e){}
+      return draftFail('Choose a visit type first (New patient evaluation or Follow-up) &mdash; it sets which of your templates is used. Your note is safe; nothing was lost.');
+    }
+  }
+  if(!src || src.length < 15){ return draftFail('Paste your visit notes first, even rough ones.'); }
   _typedDraftInFlight = true;
   _ambientFlow = true;   // reuse the silent/preflight-first machinery (progress banner + post-preflight reveal)
   // If launched from the full-screen working note, close it onto the result once the draft lands
