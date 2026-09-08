@@ -250,7 +250,15 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
     mem.push(new Date().toLocaleTimeString() + '  ' + line);
     if(mem.length > 80) mem = mem.slice(-80);
     try { sessionStorage.setItem(TK, JSON.stringify(mem)); } catch(e){}
-    surface('step', line);
+    // Recorded always, shown only when asked or when something actually failed. Errors and
+    // unhandled rejections still surface on their own.
+    if(window.__tbpTraceLoud) surface('step', line);
+  };
+  // Show everything recorded so far. Called automatically when the pipeline ends without preflight,
+  // and available in the console as tbpTraceShow().
+  window.tbpTraceShow = function(){
+    window.__tbpTraceLoud = true;
+    mem.forEach(function(l){ surface('step', l.replace(/^\S+\s+/, '')); });
   };
   window.tbpTraceDump = function(){ return mem.join('\n'); };
 
@@ -288,11 +296,11 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   window.tbpTraceClear = function(){ mem = []; try { sessionStorage.removeItem(TK); } catch(e){} };
   // Replay anything from before a reload, so a pipeline that died and reloaded still shows.
   window.addEventListener('load', function(){
-    if(mem.length) surface('trace', 'from before this reload: ' + mem.length + ' step(s). Run tbpTraceDump() in the console for all of them.');
+    if(mem.length) { /* kept in memory; run tbpTraceShow() or tbpTraceDump() to see them */ }
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-77-fixed"></script>
+<script src="/note-engine-practice.js?v=ambient-78-preflight"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -561,7 +569,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-77-fixed</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-78-preflight</span></div>
 </div>
 </div>
 
@@ -1965,6 +1973,7 @@ function tbpRevealDraftedNote(){
 }
 
 var _typedDraftInFlight = false;
+var _preflightRendered = false;   // did the clinical-calls step put questions on screen this run?
 function tbpTypedDraft(btn, src, errEl){
   if(_typedDraftInFlight) return false;
   errEl = errEl || document.getElementById('err-box') || { innerHTML:'' };
@@ -2038,6 +2047,7 @@ function tbpTypedDraft(btn, src, errEl){
       //
       // So the reveal is now unconditional: whatever happens to the assessment step, the note that is
       // already written gets shown. The assessment failing is not a reason to withhold the HPI.
+      _preflightRendered = false;   // set by the preflight branch below; decides whether the note stays hidden
       var bb = document.getElementById('build-assess');
       try { tbpTrace('4 into preflight', 'buildAssessBtn=' + (!!bb) + ' fn=' + (typeof buildAssessment)); } catch(e){}
       Promise.resolve()
@@ -2054,17 +2064,23 @@ function tbpTypedDraft(btn, src, errEl){
           }
         })
         .then(function(){
-          try { tbpTrace('9 revealing note'); } catch(e){}
+          if(_preflightRendered){
+            // Success: the clinical calls are on screen and the draft stays behind them until the
+            // clinician answers and presses Generate. Only clear the progress banner.
+            try { tbpTrace('9 preflight is up; note stays hidden until Generate'); } catch(e){}
+            try { _ambientFlow = false; tbpAmbientProgress('clear'); } catch(e){}
+            return;
+          }
+          // Anything else: the note is written and nothing is going to reveal it, so show it.
+          try { tbpTrace('9 no preflight; revealing the note'); } catch(e){}
           tbpRevealDraftedNote();
-          // The pipeline can complete and the screen still be empty. Say why, in the banner,
-          // rather than leaving it to another round of reading the source.
           try {
             setTimeout(function(){
               var r = document.getElementById('results');
               tbpTrace('10 results content', 'chars=' + (r ? r.innerHTML.length : 'MISSING')
                 + ' offsetHeight=' + (r ? r.offsetHeight : '-'));
               tbpTrace('11 ' + tbpWhyHidden('hpi-panel'));
-              tbpTrace('12 ' + tbpWhyHidden('assess-results'));
+              tbpTraceShow();
             }, 250);
           } catch(e){}
         });
@@ -4926,6 +4942,7 @@ async function buildAssessment(btn, force){
     if(wasAmbient){ var ah=document.getElementById('assess-handoff'); if(ah) ah.style.display=''; }
     if(!qs.length){ await generateNote(inp, scope, {}, []); }   // nothing to confirm — generate directly
     else { try { tbpTrace('8 rendering preflight cards', 'n=' + (qs ? qs.length : 0)); } catch(e){}
+      _preflightRendered = true;   // the questions are up; the draft stays hidden until Generate
       renderPreflightCards(inp, scope, qs, planDetected); box.scrollIntoView({ behavior:'smooth', block:'start' }); }
   } catch(err){
     if(_ambientFlow){ _ambientFlow = false; tbpAmbientProgress('clear'); }
