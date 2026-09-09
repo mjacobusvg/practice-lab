@@ -70,9 +70,12 @@ key. **Remaining:**
   let them expire, or migrate/purge if a fully-clean Supabase is needed immediately.
 - **Assessments** are now migrated to S3 (AWS BAA) and re-enabled — patient name, responses, and
   schedule patient email store in S3, Supabase keeps only keys + de-identified metadata.
-- **Optional refinement:** the S3 object is app-gated after `expires_at` and auto-deleted by the
-  bucket's 90-day lifecycle, but not physically deleted at each letter's exact chosen expiry. A
-  small scheduled cleanup (delete S3 objects past `expires_at`) would tighten that — not urgent.
+- **Per-expiry deletion — DONE (2026-09-09).** `phi-purge-expired.js` (Netlify scheduled fn, daily
+  `0 8 * * *`) physically deletes the S3 object at each letter's chosen `expires_at` (the
+  0/7/14/30/90 window), so the clinician's window is the real deletion time; the 90-day S3 lifecycle
+  is now only a backstop. Same job deletes raw assessment PHI 30 days after completion (keeping
+  `deidentified_meta` for the longitudinal trend) and cleans the patient-name object for assessments
+  that expired without completion. Letter `0` = "don't store" is enforced in `letter-log.js` too.
 
 ## Decision log
 

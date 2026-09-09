@@ -112,9 +112,11 @@ exports.handler = async function(event) {
 
     // ---- LOG (default): insert a delivery record, optionally storing the PDF ----
     var recipientMasked = String(payload.recipientMasked || '').slice(0, 64);
+    var reqRetention = parseInt(payload.retentionDays, 10);
     var storePdf = payload.pdfBase64 ? String(payload.pdfBase64) : null;
-    var retentionDays = parseInt(payload.retentionDays, 10);
-    if (isNaN(retentionDays) || retentionDays < 1) retentionDays = DEFAULT_RETENTION_DAYS;
+    // Explicit 0 = "Don't store a copy": drop the PDF regardless of what was sent.
+    if (reqRetention === 0) storePdf = null;
+    var retentionDays = (isNaN(reqRetention) || reqRetention < 1) ? DEFAULT_RETENTION_DAYS : reqRetention;
     if (retentionDays > MAX_RETENTION_DAYS) retentionDays = MAX_RETENTION_DAYS;
 
     // If a PDF is being retained, store it in S3 (AWS BAA) and keep only the key.
