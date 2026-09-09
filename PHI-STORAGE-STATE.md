@@ -33,18 +33,24 @@ PHI-retention representation to a member or in policy.
   not-enabled stub, 0 rows. Its write path (`create-certified-checkout`) is now blocked
   **unconditionally** until `letter_text` moves to S3 AND a mail-vendor BAA is executed.
 
-## Verified live counts (2026-09-09)
+## Verified live counts (updated 2026-09-09, after migration + cleanup)
 
-| Table | What it can hold | Live PHI right now |
-|---|---|---|
-| `letter_send_log` | delivery meta (subject, masked recipient) + optional `pdf_base64` | **11 rows; 1 stored PDF unpurged**; all 11 have a `subject` |
-| `assessments` | `patient_name`, `patient_hash`, `deidentified_meta` | 2 rows, **both purged, 0 patient names** |
-| `assessment_results` | `responses`, `scores`, `flags` | **0 rows** |
-| `tool_usage` | token counts, tool label, member email | metadata only (no content) — clean |
+Verified by direct query after moving letters/assessments to S3 and deleting the legacy
+test rows — **zero inline PHI at rest in Supabase across every PHI-capable column:**
 
-So today the only patient PHI actually at rest in Supabase is **1 letter PDF** (+ 11 letter
-subject lines, which may or may not contain identifiers — verify how `getLetterSubject()` builds
-them). Assessments are currently clean.
+| Column checked | Live PHI now |
+|---|---|
+| `letter_charges.pdf_base64` | **0** (legacy test rows deleted; new letters store `pdf_s3_key` → S3) |
+| `letter_send_log.pdf_base64` | **0** (same) |
+| `assessments.patient_name` | **0** (name now in S3 via `patient_s3_key`) |
+| `assessment_results.responses` / `scores` | **0** (now in S3 via `result_s3_key`) |
+| `assessment_schedules.patient_email` | **0** (now in S3 via `patient_s3_key`) |
+| `certified_mail_jobs.letter_text` | **0** (stub, write path blocked) |
+| `tool_usage` | token/metadata only (no content) — clean |
+
+PHI now lives only in **S3 under the AWS BAA** (letter PDFs, assessment name/responses,
+schedule email) or is transient (scribe/audit/transcription/OCR). Nothing patient-identifying
+rests in Supabase. Re-run these counts before any future compliance representation.
 
 ## Feature-by-feature retention (verified)
 
@@ -56,7 +62,7 @@ them). Assessments are currently clean.
 | Local note draft | clinician's browser localStorage | on device only | auto-purged after 18h |
 | Scanned-record OCR | AWS Textract (synchronous) | No | none |
 | **Letter generator** | delivered via SES; PDF in **AWS S3** (`tbp-letters`, AWS BAA) | **PDF in S3, not Supabase**; DB keeps only `pdf_s3_key` + subject/masked-recipient metadata | PDF: clinician-chosen, default 14d / max 90d (app-gated by `expires_at`; S3 90d lifecycle backstop); served by `letter-view.js` from S3, legacy inline fallback |
-| **Assessments** | PHI in **AWS S3** (`assessments/` prefix, AWS BAA); AI scoring via Bedrock | **name/responses/scores + schedule email in S3, not Supabase**; DB keeps keys + de-id metadata | S3-stored; purged on clinician delete; de-id metadata retained in Supabase |
+| **Assessments** | PHI in **AWS S3** (`assessments/` prefix, AWS BAA); AI scoring via Bedrock | **name/responses/scores + schedule email in S3, not Supabase**; DB keeps keys + de-id metadata | raw PHI auto-deleted 30 days after completion (`phi-purge-expired.js`) or on clinician delete; de-id metadata retained in Supabase for trends |
 | Notifications / email delivery | Amazon SES (AWS BAA) | in transit only | n/a |
 
 ## The gap vs. what we tell members — RESOLVED for letters
