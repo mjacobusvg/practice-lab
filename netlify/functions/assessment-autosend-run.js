@@ -17,6 +17,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
 const phiGate = require('./_lib/assessments-phi-gate');
+const phiS3 = require('./_lib/phi-s3');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -90,13 +91,30 @@ exports.handler = async (event) => {
       const token = crypto.randomBytes(24).toString('base64url');
       const expiresAt = new Date(now.getTime() + TOKEN_TTL_DAYS * 86400000);
 
+      // Resolve the patient email + label (PHI) from S3 (new rows); fall back to legacy columns.
+      let schEmail = sch.patient_email || null;
+      let schLabel = sch.patient_label || null;
+      if (sch.patient_s3_key) {
+        const sp = await phiS3.getJson(sch.patient_s3_key);
+        if (sp.patient_email) schEmail = sp.patient_email;
+        if (sp.patient_label) schLabel = sp.patient_label;
+      }
+      if (!schEmail) { console.error('autosend: no patient email for schedule', sch.id); failed++; continue; }
+
+      // Store the new assessment's patient name (PHI) in S3, not Supabase.
+      let apKey = null;
+      if (schLabel) {
+        try { apKey = await phiS3.putJson('assessments/patient', { patient_name: schLabel }); }
+        catch (e) { console.error('autosend patient S3 store failed for schedule', sch.id, e); failed++; continue; }
+      }
+
       // Create the pending assessment (mirrors assessment-create insert).
       const { error: insErr } = await sb
         .from('assessments')
         .insert({
           token: token,
           provider_email: sch.provider_email,
-          patient_name: sch.patient_label || null,
+          patient_s3_key: apKey,
           instrument_set: sch.instrument_set,
           reason_sent: sch.reason_sent || 'monitoring',
           patient_hash: sch.patient_hash,
@@ -122,7 +140,7 @@ exports.handler = async (event) => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            to: sch.patient_email,
+            to: schEmail,
             subject: 'A questionnaire from your provider',
             body: emailBody,
             tool: 'Assessment Suite'

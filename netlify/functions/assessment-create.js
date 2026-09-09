@@ -14,6 +14,7 @@ const crypto = require('crypto');
 const instruments = require('./assessment-instruments.js');
 const { verifyToken } = require('./_lib/session');
 const phiGate = require('./_lib/assessments-phi-gate');
+const phiS3 = require('./_lib/phi-s3');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -86,12 +87,23 @@ exports.handler = async (event) => {
 
   const sb = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
 
+  // Patient name (PHI) is stored in S3 under the AWS BAA, not in Supabase.
+  let patientS3Key = null;
+  if (patientName) {
+    try {
+      patientS3Key = await phiS3.putJson('assessments/patient', { patient_name: patientName });
+    } catch (e) {
+      console.error('assessment create: patient S3 store failed:', e);
+      return { statusCode: 502, headers: CORS, body: JSON.stringify({ error: 'Could not securely store patient details. Please try again.' }) };
+    }
+  }
+
   const { data, error } = await sb
     .from('assessments')
     .insert({
       token: token,
       provider_email: providerEmail,
-      patient_name: patientName,
+      patient_s3_key: patientS3Key,
       instrument_set: instrumentSet,
       reason_sent: reasonSent,
       status: 'pending',

@@ -19,6 +19,7 @@ const crypto = require('crypto');
 const instruments = require('./assessment-instruments.js');
 const { verifyToken } = require('./_lib/session');
 const phiGate = require('./_lib/assessments-phi-gate');
+const phiS3 = require('./_lib/phi-s3');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -74,7 +75,7 @@ exports.handler = async (event) => {
   if (action === 'list') {
     const { data, error } = await sb
       .from('assessment_schedules')
-      .select('id, patient_label, instrument_set, cadence, next_run_at, end_date, status, sends_count, last_run_at, created_at')
+      .select('id, patient_label, patient_s3_key, instrument_set, cadence, next_run_at, end_date, status, sends_count, last_run_at, created_at')
       .eq('provider_email', providerEmail)
       .neq('status', 'ended')
       .order('created_at', { ascending: false })
@@ -82,7 +83,13 @@ exports.handler = async (event) => {
     if (error) {
       return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Could not load schedules' }) };
     }
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, schedules: data || [] }) };
+    // Patient label lives in S3 (new rows); resolve it, fall back to legacy column.
+    const schedules = await Promise.all((data || []).map(async function (s) {
+      var label = s.patient_label || null;
+      if (s.patient_s3_key) { try { var p = await phiS3.getJson(s.patient_s3_key); if (p && p.patient_label) label = p.patient_label; } catch (e) {} }
+      return { id: s.id, patient_label: label, instrument_set: s.instrument_set, cadence: s.cadence, next_run_at: s.next_run_at, end_date: s.end_date, status: s.status, sends_count: s.sends_count, last_run_at: s.last_run_at, created_at: s.created_at };
+    }));
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, schedules: schedules }) };
   }
 
   // ── pause / resume / end ──
@@ -153,13 +160,22 @@ exports.handler = async (event) => {
     // First send fires on the next cron tick (next_run_at = now).
     const nextRun = new Date();
 
+    // Patient email + label (PHI) go to S3 under the AWS BAA, not Supabase. The row
+    // keeps only the S3 key plus the non-identifying patient_hash used for matching.
+    let schedPatientS3Key;
+    try {
+      schedPatientS3Key = await phiS3.putJson('assessments/schedule', { patient_email: patientEmail, patient_label: patientLabel });
+    } catch (e) {
+      console.error('schedule create: patient S3 store failed:', e);
+      return { statusCode: 502, headers: CORS, body: JSON.stringify({ error: 'Could not securely store patient details. Please try again.' }) };
+    }
+
     const { data, error } = await sb
       .from('assessment_schedules')
       .insert({
         provider_email: providerEmail,
         patient_hash: patientHash,
-        patient_email: patientEmail,
-        patient_label: patientLabel,
+        patient_s3_key: schedPatientS3Key,
         instrument_set: instrumentSet,
         reason_sent: reasonSent,
         cadence: cadence,

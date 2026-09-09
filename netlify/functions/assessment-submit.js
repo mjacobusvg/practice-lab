@@ -10,6 +10,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const instruments = require('./assessment-instruments.js');
 const phiGate = require('./_lib/assessments-phi-gate');
+const phiS3 = require('./_lib/phi-s3');
 
 const CURRENT_ASSESSMENT_CONSENT_VERSION = 'assessment_v1';
 
@@ -90,14 +91,24 @@ exports.handler = async (event) => {
 
   const completedAt = new Date().toISOString();
 
-  // Store PHI-bearing result.
+  // Store the PHI-bearing result in S3 under the AWS BAA; Supabase keeps only the key.
+  let resultS3Key;
+  try {
+    resultS3Key = await phiS3.putJson('assessments/result', {
+      responses: scopedResponses,
+      scores: battery.results,
+      flags: battery.flags
+    });
+  } catch (e) {
+    console.error('assessment-submit S3 store failed:', e);
+    return { statusCode: 500, headers: CORS, body: JSON.stringify({ ok: false, message: 'Could not submit. Please try again.' }) };
+  }
+
   const { error: resultErr } = await sb
     .from('assessment_results')
     .insert({
       assessment_id: assessment.id,
-      responses: scopedResponses,
-      scores: battery.results,
-      flags: battery.flags
+      result_s3_key: resultS3Key
     });
 
   if (resultErr) {

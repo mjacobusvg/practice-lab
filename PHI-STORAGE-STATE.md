@@ -22,19 +22,16 @@ PHI-retention representation to a member or in policy.
   new paid letter row has `pdf_s3_key` set, `pdf_base64` null, and `letter-view` served it from S3.
   Legacy pre-migration rows may still hold inline `pdf_base64` until they expire (served via a
   fallback). See "Letters" row below.
-- **Assessments — PHI WRITES PAUSED (2026-09-09).** The design wrote `assessments.patient_name`,
-  `assessment_results.responses/scores/flags`, and (for recurring sends) `assessment_schedules.
-  patient_email` to Supabase, which has no BAA — and per HHS, transient-but-in-a-no-BAA-cloud still
-  makes Supabase a Business Associate, so "purged after retrieval" is NOT sufficient. Until this
-  moves to S3 (AWS BAA), the write/intake paths are paused via `_lib/assessments-phi-gate.js`
-  (`PAUSED=true`): `assessment-create`, `assessment-submit`, `assessment-autosend-run`, the
-  `assessment-schedule` 'create' action, and `create-certified-checkout` all refuse. **This is a
-  pause, NOT a migration** — assessments do not yet run on AWS; the feature intake is off. 0 live
-  PHI, so the path is provably clean now. Flip `PAUSED=false` in the same change that moves the PHI
-  to S3.
+- **Assessments — MIGRATED TO AWS S3 (2026-09-09).** Patient name, responses/scores/flags, and the
+  recurring-schedule patient email now store in S3 (`tbp-letters` bucket, `assessments/` prefix, AWS
+  BAA) via `_lib/phi-s3.js`; Supabase keeps only S3 keys (`patient_s3_key`, `result_s3_key`) plus
+  non-PHI fields (token, status, instrument_set, `patient_hash`, `deidentified_meta`). All six
+  functions updated (create, submit, retrieve, list, schedule, autosend-run) with legacy fallback
+  for any pre-migration row. The intake pause is lifted (`_lib/assessments-phi-gate.js` `PAUSED=false`,
+  kept as a kill-switch). Verify end-to-end before treating as fully done.
 - **Certified mail** — `certified_mail_jobs` (columns `letter_text`, `to_name`, `to_address`) is a
-  not-enabled stub, 0 rows; its write path (`create-certified-checkout`) is now gated by the same
-  flag so it can't write PHI to Supabase if switched on. Move `letter_text` to S3 before enabling.
+  not-enabled stub, 0 rows. Its write path (`create-certified-checkout`) is now blocked
+  **unconditionally** until `letter_text` moves to S3 AND a mail-vendor BAA is executed.
 
 ## Verified live counts (2026-09-09)
 
@@ -59,7 +56,7 @@ them). Assessments are currently clean.
 | Local note draft | clinician's browser localStorage | on device only | auto-purged after 18h |
 | Scanned-record OCR | AWS Textract (synchronous) | No | none |
 | **Letter generator** | delivered via SES; PDF in **AWS S3** (`tbp-letters`, AWS BAA) | **PDF in S3, not Supabase**; DB keeps only `pdf_s3_key` + subject/masked-recipient metadata | PDF: clinician-chosen, default 14d / max 90d (app-gated by `expires_at`; S3 90d lifecycle backstop); served by `letter-view.js` from S3, legacy inline fallback |
-| **Assessments** | intake **PAUSED** (2026-09-09); AI scoring via Bedrock | none (writes gated; 0 live rows) | pause until PHI storage moves to S3; then re-enable |
+| **Assessments** | PHI in **AWS S3** (`assessments/` prefix, AWS BAA); AI scoring via Bedrock | **name/responses/scores + schedule email in S3, not Supabase**; DB keeps keys + de-id metadata | S3-stored; purged on clinician delete; de-id metadata retained in Supabase |
 | Notifications / email delivery | Amazon SES (AWS BAA) | in transit only | n/a |
 
 ## The gap vs. what we tell members — RESOLVED for letters
@@ -71,8 +68,8 @@ key. **Remaining:**
 - **Legacy letter rows** created before 2026-09-09 may still hold inline `pdf_base64` in Supabase
   until they hit their `expires_at`/purge (letter-view serves them via a fallback). Small count;
   let them expire, or migrate/purge if a fully-clean Supabase is needed immediately.
-- **Assessments** are **paused** (intake off, 0 live PHI) rather than migrated — do not describe
-  them as "on AWS." Re-enable only after moving their PHI to S3 (the follow-up in the decision log).
+- **Assessments** are now migrated to S3 (AWS BAA) and re-enabled — patient name, responses, and
+  schedule patient email store in S3, Supabase keeps only keys + de-identified metadata.
 - **Optional refinement:** the S3 object is app-gated after `expires_at` and auto-deleted by the
   bucket's 90-day lifecycle, but not physically deleted at each letter's exact chosen expiry. A
   small scheduled cleanup (delete S3 objects past `expires_at`) would tighten that — not urgent.
@@ -85,11 +82,12 @@ key. **Remaining:**
   BAA); `pdf_s3_key` column added to `letter_send_log` + `letter_charges`; verified end-to-end with
   a real paid letter (row `paid`, `pdf_s3_key` set, `pdf_base64` null, served from S3). Legacy rows
   keep working via inline fallback and expire on their own.
-- **2026-09-09 (same day):** assessment + certified-mail PHI writes to Supabase PAUSED via
-  `_lib/assessments-phi-gate.js` (create/submit/autosend/schedule-create/certified-checkout). No
-  new PHI can be written to Supabase from these paths; 0 live rows, so all clean now. **Follow-up
-  (not yet done):** migrate assessment PHI (name, responses, schedule patient_email) to S3 and flip
-  `PAUSED=false` to re-enable the feature — same pattern as letters.
+- **2026-09-09 (same day):** assessment + certified-mail PHI writes to Supabase first PAUSED, then
+  assessment PHI MIGRATED to S3 (AWS BAA) via `_lib/phi-s3.js` across create/submit/retrieve/list/
+  schedule/autosend, and the pause lifted (`PAUSED=false`, kept as kill-switch). Supabase now holds
+  only S3 keys + de-identified metadata for assessments. Certified mail stays blocked
+  unconditionally (stub; move `letter_text` to S3 + execute a mail-vendor BAA before enabling).
+  **Verify end-to-end** (send → patient submit → clinician retrieve) before treating as closed.
 
 ## Also holds member/business data (PII, not PHI — no BAA needed)
 

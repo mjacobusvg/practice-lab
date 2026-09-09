@@ -165,16 +165,16 @@ login and `tbp_maint_bypass='1'` (or `?maintbypass=1` once) bypass it for testin
     (reuses the ses-send-pm IAM creds already in Netlify). Verified end-to-end. Bucket has a 90-day
     lifecycle backstop; app gates access by `expires_at`. Legacy pre-migration rows may still hold
     inline `pdf_base64` until they expire (served via a fallback in letter-view).
-  - **Assessments (PHI writes PAUSED 2026-09-09).** The design wrote `assessments.patient_name`,
-    `assessment_results.responses/scores/flags`, and `assessment_schedules.patient_email` to
-    Supabase (no BAA). Per HHS, transient ePHI in a no-BAA cloud still makes it a Business
-    Associate, so "purged after retrieval" was not sufficient. Intake is now paused via
-    `_lib/assessments-phi-gate.js` (create/submit/autosend/schedule-create); 0 live rows, so clean.
-    This is a PAUSE, not a migration — assessments are NOT on AWS yet. Follow-up: move the PHI to
-    S3 (like letters) and flip `PAUSED=false` to re-enable.
-  - **Certified mail (not enabled; write path gated).** `certified_mail_jobs` stores `letter_text`
-    + recipient address (PHI); it is a 0-row stub. Its checkout write path
-    (`create-certified-checkout`) is now gated by the same flag. Move `letter_text` to S3 before
+  - **Assessments (MIGRATED to S3 2026-09-09).** `assessments.patient_name`,
+    `assessment_results.responses/scores/flags`, and `assessment_schedules.patient_email/label` now
+    store in **S3** (`tbp-letters`, `assessments/` prefix, AWS BAA) via `_lib/phi-s3.js`; Supabase
+    keeps only `patient_s3_key`/`result_s3_key` plus non-PHI fields (`patient_hash`,
+    `deidentified_meta`, status, instrument_set). Updated across create/submit/retrieve/list/
+    schedule/autosend with a legacy fallback. The pause flag is off (`PAUSED=false`, kept as a
+    kill-switch). Verify send→submit→retrieve end-to-end.
+  - **Certified mail (not enabled; write path blocked).** `certified_mail_jobs` stores `letter_text`
+    + recipient address (PHI); 0-row stub. Its checkout write path (`create-certified-checkout`) is
+    blocked **unconditionally** — move `letter_text` to S3 and execute a mail-vendor BAA before
     enabling.
 - **Confirm Azure BAA document + US region**, and the **Google Workspace BAA document**.
 - **Certified mail** (`send-certified-mail.js`) is a stub; before enabling, execute a mail-vendor BAA

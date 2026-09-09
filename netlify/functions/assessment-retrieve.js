@@ -15,6 +15,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const instruments = require('./assessment-instruments.js');
 const { verifyToken } = require('./_lib/session');
+const phiS3 = require('./_lib/phi-s3');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -63,7 +64,7 @@ exports.handler = async (event) => {
 
   const { data: assessment, error: aErr } = await sb
     .from('assessments')
-    .select('id, provider_email, patient_name, instrument_set, status, completed_at, purged_at, reason_sent')
+    .select('id, provider_email, patient_name, patient_s3_key, instrument_set, status, completed_at, purged_at, reason_sent')
     .eq('id', assessmentId)
     .maybeSingle();
 
@@ -94,12 +95,18 @@ exports.handler = async (event) => {
     if (assessment.purged_at) {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, alreadyPurged: true }) };
     }
+    // Delete the S3-stored PHI (patient name + result), then the DB rows/keys.
+    try {
+      const { data: resRows } = await sb.from('assessment_results').select('result_s3_key').eq('assessment_id', assessmentId);
+      for (const rr of (resRows || [])) { if (rr && rr.result_s3_key) await phiS3.deleteObject(rr.result_s3_key); }
+      if (assessment.patient_s3_key) await phiS3.deleteObject(assessment.patient_s3_key);
+    } catch (e) { console.error('assessment delete (S3) non-fatal:', e); }
     const { error: delErr } = await sb.from('assessment_results').delete().eq('assessment_id', assessmentId);
     if (delErr) {
       console.error('assessment delete (results) failed:', delErr);
       return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Could not delete results' }) };
     }
-    const { error: updErr } = await sb.from('assessments').update({ patient_name: null, purged_at: new Date().toISOString() }).eq('id', assessmentId);
+    const { error: updErr } = await sb.from('assessments').update({ patient_name: null, patient_s3_key: null, purged_at: new Date().toISOString() }).eq('id', assessmentId);
     if (updErr) {
       console.error('assessment delete (mark purged) failed:', updErr);
       return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Results deleted but record update failed' }) };
@@ -117,7 +124,7 @@ exports.handler = async (event) => {
 
   const { data: result, error: rErr } = await sb
     .from('assessment_results')
-    .select('responses, scores, flags, created_at')
+    .select('responses, scores, flags, result_s3_key, created_at')
     .eq('assessment_id', assessmentId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -131,16 +138,33 @@ exports.handler = async (event) => {
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: false, message: 'No results found for this assessment.' }) };
   }
 
+  // Result PHI lives in S3 (new rows); fall back to inline columns for legacy rows.
+  let responses = result.responses || {};
+  let scores = result.scores || [];
+  let flags = result.flags || [];
+  if (result.result_s3_key) {
+    const blob = await phiS3.getJson(result.result_s3_key);
+    responses = blob.responses || {};
+    scores = blob.scores || [];
+    flags = blob.flags || [];
+  }
+  // Patient name lives in S3 (new rows); fall back to the legacy column.
+  let patientName = assessment.patient_name || null;
+  if (assessment.patient_s3_key) {
+    const p = await phiS3.getJson(assessment.patient_s3_key);
+    patientName = p.patient_name || patientName;
+  }
+
   const update = { retrieved_at: new Date().toISOString() };
   if (assessment.status === 'completed') update.status = 'retrieved';
   await sb.from('assessments').update(update).eq('id', assessmentId);
 
-  const battery = { results: result.scores || [], flags: result.flags || [] };
+  const battery = { results: scores, flags: flags };
   let screenerReviewBlurb = '';
   let hpiSymptomBlurb = '';
   try {
     screenerReviewBlurb = instruments.screenerReviewBlurb(battery, assessment.reason_sent);
-    hpiSymptomBlurb = instruments.hpiSymptomBlurb(battery, result.responses || {});
+    hpiSymptomBlurb = instruments.hpiSymptomBlurb(battery, responses);
   } catch (e) {
     console.error('assessment-retrieve blurb generation failed (non-fatal):', e);
   }
@@ -150,12 +174,12 @@ exports.handler = async (event) => {
     headers: CORS,
     body: JSON.stringify({
       ok: true,
-      patientName: assessment.patient_name,
+      patientName: patientName,
       instrumentSet: assessment.instrument_set,
       completedAt: assessment.completed_at,
-      scores: result.scores,
-      responses: result.responses || {},
-      flags: result.flags || [],
+      scores: scores,
+      responses: responses,
+      flags: flags,
       blurbs: { screenerReview: screenerReviewBlurb, hpiSymptom: hpiSymptomBlurb }
     })
   };

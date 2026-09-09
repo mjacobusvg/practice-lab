@@ -11,6 +11,7 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const { verifyToken } = require('./_lib/session');
+const phiS3 = require('./_lib/phi-s3');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -53,7 +54,7 @@ exports.handler = async (event) => {
 
   const { data, error } = await sb
     .from('assessments')
-    .select('id, token, patient_name, instrument_set, status, created_at, expires_at, completed_at, retrieved_at, deidentified_meta, purged_at')
+    .select('id, token, patient_name, patient_s3_key, instrument_set, status, created_at, expires_at, completed_at, retrieved_at, deidentified_meta, purged_at')
     .eq('provider_email', providerEmail)
     .order('created_at', { ascending: false })
     .limit(200);
@@ -63,17 +64,23 @@ exports.handler = async (event) => {
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Could not load assessments' }) };
   }
 
-  const items = (data || []).map(function (r) {
+  // Patient names live in S3 (new rows) under the AWS BAA; fetch them per row, falling
+  // back to the legacy inline column. Bounded to this provider's own list (<=200).
+  const items = await Promise.all((data || []).map(async function (r) {
     var hasFlags = false;
     if (Array.isArray(r.deidentified_meta)) {
       for (var i = 0; i < r.deidentified_meta.length; i++) {
         if ((r.deidentified_meta[i].flagTypes || []).length) { hasFlags = true; break; }
       }
     }
+    var patientName = r.patient_name || null;
+    if (!r.purged_at && r.patient_s3_key) {
+      try { var p = await phiS3.getJson(r.patient_s3_key); if (p && p.patient_name) patientName = p.patient_name; } catch (e) { /* fall back */ }
+    }
     return {
       id: r.id,
       token: r.status === 'pending' ? r.token : null,
-      patientName: r.patient_name,
+      patientName: patientName,
       instrumentSet: r.instrument_set,
       status: r.status,
       createdAt: r.created_at,
@@ -83,7 +90,7 @@ exports.handler = async (event) => {
       purged: !!r.purged_at,
       hasFlags: hasFlags
     };
-  });
+  }));
 
   return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, assessments: items }) };
 };

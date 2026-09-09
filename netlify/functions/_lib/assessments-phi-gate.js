@@ -9,7 +9,9 @@
 // assessment send/intake paths so no NEW PHI can be written to Supabase.
 //
 // Flip PAUSED to false in the same change that moves assessment PHI to S3.
-var PAUSED = true;
+// 2026-09-09: assessment + certified-mail PHI now stored in S3 (AWS BAA) via
+// _lib/phi-s3.js, so writes are allowed again. Left in place as a kill-switch.
+var PAUSED = false;
 
 // Clinician-facing copy (create / schedule). Patient-facing submit uses its own
 // neutral GENERIC_UNAVAILABLE string; autosend just no-ops.
