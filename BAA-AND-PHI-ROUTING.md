@@ -159,14 +159,12 @@ login and `tbp_maint_bypass='1'` (or `?maintbypass=1` once) bypass it for testin
   Scribe back to them as a rollback — retire that flag when the Netlify functions are deleted.)
 - **PHI at rest in Supabase — see `PHI-STORAGE-STATE.md` (verified 2026-09-09).** That file is the
   ground-truth inventory; keep it current. Summary:
-  - **Letters (LIVE divergence).** `letter_send_log` (+ `create-letter-charge` for paid letters)
-    stores the full letter **PDF** when the clinician opts into retention (default 14d / max 90d,
-    then `pdf_purged_at`). This is NOT dead data — `letter-view.js` serves the stored PDF back as a
-    "view the sent letter" link. So letter content (PHI) rests in Supabase (no BAA). As of 2026-09-09
-    there is 1 stored PDF live. Fix options: move PDFs to **AWS S3** under the AWS BAA (correct
-    long-term fix; touches `letter-log.js` / `create-letter-charge.js` / `letter-view.js` + a bucket
-    on acct 266359797908), OR disable PDF retention (letters become metadata-only), OR disclose the
-    retention accurately. Decision pending.
+  - **Letters (RESOLVED 2026-09-09).** Letter PDFs now store in **AWS S3** (`tbp-letters`,
+    us-east-1) under the AWS BAA, not Supabase; the DB keeps only `pdf_s3_key`. `letter-log.js`,
+    `create-letter-charge.js`, and `letter-view.js` use the shared `_lib/letters-s3.js` helper
+    (reuses the ses-send-pm IAM creds already in Netlify). Verified end-to-end. Bucket has a 90-day
+    lifecycle backstop; app gates access by `expires_at`. Legacy pre-migration rows may still hold
+    inline `pdf_base64` until they expire (served via a fallback in letter-view).
   - **Assessments (transient, currently clean).** `assessments.patient_name` +
     `assessment_results.responses` transit Supabase between patient-submit and provider-retrieve,
     then purge (`purged_at`); de-id metadata retained. Verified 2026-09-09: 0 live patient names,

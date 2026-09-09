@@ -17,12 +17,14 @@ PHI-retention representation to a member or in policy.
 - **Transient, nothing stored (clean):** note writer / audit-coder / HPI / de-identify (Bedrock,
   streamed), ambient audio (Azure, deleted post-transcription), OCR (Textract, synchronous).
   Only token-COUNT metadata hits Supabase `tool_usage` (never content).
-- **PHI CAN rest in Supabase (no BAA) — the real items:**
-  - **Letters** — `letter_send_log` (+ `create-letter-charge` for paid letters) stores the full
-    letter **PDF** when the clinician chooses retention. **This is a live feature, not dead data:**
-    `letter-view.js` serves the stored PDF back as a "view the sent letter" link.
-  - **Assessments** — `assessments.patient_name` + `assessment_results.responses` transit Supabase
-    between patient-submit and provider-retrieve, then purge. Encrypted at rest, auto-purged.
+- **Letters — MOVED TO AWS S3 (2026-09-09, verified end-to-end).** Letter PDFs now store in S3
+  bucket `tbp-letters` (us-east-1) under the AWS BAA; the DB keeps only `pdf_s3_key`. Verified: a
+  new paid letter row has `pdf_s3_key` set, `pdf_base64` null, and `letter-view` served it from S3.
+  Legacy pre-migration rows may still hold inline `pdf_base64` until they expire (served via a
+  fallback). See "Letters" row below.
+- **Assessments** — `assessments.patient_name` + `assessment_results.responses` transit Supabase
+  between patient-submit and provider-retrieve, then purge. Encrypted at rest, auto-purged.
+  Currently 0 live PHI. (Not yet moved to AWS; transient-purge design is disclosable as-is.)
 
 ## Verified live counts (2026-09-09)
 
@@ -46,36 +48,34 @@ them). Assessments are currently clean.
 | Transcription resume | browser holds job-id pointer only | No PHI | pointer self-expires ~30 min |
 | Local note draft | clinician's browser localStorage | on device only | auto-purged after 18h |
 | Scanned-record OCR | AWS Textract (synchronous) | No | none |
-| **Letter generator** | delivered via SES; log in Supabase | **subject + optional PDF in Supabase** | PDF: clinician-chosen, default 14d / max 90d, then `pdf_purged_at`; served by `letter-view.js` |
+| **Letter generator** | delivered via SES; PDF in **AWS S3** (`tbp-letters`, AWS BAA) | **PDF in S3, not Supabase**; DB keeps only `pdf_s3_key` + subject/masked-recipient metadata | PDF: clinician-chosen, default 14d / max 90d (app-gated by `expires_at`; S3 90d lifecycle backstop); served by `letter-view.js` from S3, legacy inline fallback |
 | **Assessments** | patient form → Supabase; AI scoring via Bedrock | **patient_name + responses in Supabase, transiently** | purged after provider retrieval (`purged_at`); de-id metadata kept |
 | Notifications / email delivery | Amazon SES (AWS BAA) | in transit only | n/a |
 
-## The gap vs. what we tell members
+## The gap vs. what we tell members — RESOLVED for letters
 
-We tell compliance reviewers "Supabase is not in the PHI path." That is true for the scribe and
-its tools, and currently true for assessments (purged), but **the letter PDF-retention feature
-puts letter content (PHI) in Supabase, which has no BAA.** To make the statement strictly true,
-one of:
-
-1. **Move letter PDFs to AWS S3** (under the existing AWS BAA) — the correct long-term fix.
-   Touches `letter-log.js`, `create-letter-charge.js`, `letter-view.js` (serve from S3 via signed
-   URL), plus migrating/expiring existing rows. Requires an S3 bucket + IAM on AWS account
-   `266359797908` (owner provisions). **Medium project — not a toggle**, because `letter-view`
-   depends on the stored PDF.
-2. **Disable PDF retention** — letters become delivery-metadata-only; drops the "view sent letter"
-   link. Small code change, loses a feature.
-3. **Disclose accurately** — "letter PDFs retained only if you choose, ≤90 days, encrypted, then
-   auto-purged," and keep the feature. No code change; requires the honest wording in replies/policy.
-
-Assessments: full move to AWS is a larger, separate project (rework intake + retrieve); only worth
-it if recurring/longitudinal patient assessments become a real feature. Current transient-purge
-design is disclosable as-is.
+"Supabase is not in the PHI path" is now true for the scribe/tools, for letters (PDFs in S3 as of
+2026-09-09), and for assessments (transient, purged). The letter PDF divergence that this file was
+created to flag has been fixed: letter content lives in S3 under the AWS BAA, the DB holds only a
+key. **Remaining:**
+- **Legacy letter rows** created before 2026-09-09 may still hold inline `pdf_base64` in Supabase
+  until they hit their `expires_at`/purge (letter-view serves them via a fallback). Small count;
+  let them expire, or migrate/purge if a fully-clean Supabase is needed immediately.
+- **Assessments** are not moved to AWS — the transient-purge design keeps them clean in practice
+  (0 live PHI) and is disclosable as-is. A full S3 move is only worth it if recurring/longitudinal
+  patient assessments become a core feature.
+- **Optional refinement:** the S3 object is app-gated after `expires_at` and auto-deleted by the
+  bucket's 90-day lifecycle, but not physically deleted at each letter's exact chosen expiry. A
+  small scheduled cleanup (delete S3 objects past `expires_at`) would tighten that — not urgent.
 
 ## Decision log
 
 - **2026-09-09:** verified the above; letter PDF storage identified as the one live divergence from
-  "Supabase not in the PHI path." Awaiting owner decision between options 1/2/3. No changes made to
-  the storage paths yet.
+  "Supabase not in the PHI path."
+- **2026-09-09 (same day):** RESOLVED — letter PDFs moved to AWS S3 (`tbp-letters`, us-east-1, AWS
+  BAA); `pdf_s3_key` column added to `letter_send_log` + `letter_charges`; verified end-to-end with
+  a real paid letter (row `paid`, `pdf_s3_key` set, `pdf_base64` null, served from S3). Legacy rows
+  keep working via inline fallback and expire on their own.
 
 ## Also holds member/business data (PII, not PHI — no BAA needed)
 
