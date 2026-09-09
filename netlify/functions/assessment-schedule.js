@@ -18,6 +18,7 @@ const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
 const instruments = require('./assessment-instruments.js');
 const { verifyToken } = require('./_lib/session');
+const phiGate = require('./_lib/assessments-phi-gate');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -112,6 +113,11 @@ exports.handler = async (event) => {
 
   // ── create ──
   if (action === 'create') {
+    // Compliance pause: a new schedule stores the patient email (PHI) long-term in
+    // Supabase (no BAA). Blocked until schedule PHI moves to S3. List/pause/end stay open.
+    if (phiGate.PAUSED) {
+      return { statusCode: 503, headers: CORS, body: JSON.stringify({ error: phiGate.MESSAGE }) };
+    }
     const matchKeyRaw = (body.matchKey || '').trim();
     const patientEmail = (body.patientEmail || '').trim();
     const patientLabel = (body.patientLabel || '').trim() || null;

@@ -16,6 +16,7 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
+const phiGate = require('./_lib/assessments-phi-gate');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -38,6 +39,10 @@ exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: 'Method not allowed' }) };
+  }
+  // Compliance pause: this cron creates assessments (PHI) in Supabase — no-op until S3.
+  if (phiGate.PAUSED) {
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: true, paused: true, processed: 0 }) };
   }
 
   const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ubcrrrapedaxkguxniwv.supabase.co';

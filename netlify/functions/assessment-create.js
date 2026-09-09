@@ -13,6 +13,7 @@ const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
 const instruments = require('./assessment-instruments.js');
 const { verifyToken } = require('./_lib/session');
+const phiGate = require('./_lib/assessments-phi-gate');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -27,6 +28,10 @@ exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: 'Method not allowed' }) };
+  }
+  // Compliance pause: don't write assessment PHI to Supabase (no BAA) until it moves to S3.
+  if (phiGate.PAUSED) {
+    return { statusCode: 503, headers: CORS, body: JSON.stringify({ error: phiGate.MESSAGE }) };
   }
 
   const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ubcrrrapedaxkguxniwv.supabase.co';

@@ -9,6 +9,7 @@
 
 const { createClient } = require('@supabase/supabase-js');
 const instruments = require('./assessment-instruments.js');
+const phiGate = require('./_lib/assessments-phi-gate');
 
 const CURRENT_ASSESSMENT_CONSENT_VERSION = 'assessment_v1';
 
@@ -25,6 +26,10 @@ exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
   if (event.httpMethod !== 'POST') {
     return { statusCode: 405, headers: CORS, body: JSON.stringify({ error: 'Method not allowed' }) };
+  }
+  // Compliance pause: don't write patient responses to Supabase (no BAA) until they move to S3.
+  if (phiGate.PAUSED) {
+    return { statusCode: 200, headers: CORS, body: JSON.stringify({ ok: false, message: GENERIC_UNAVAILABLE }) };
   }
 
   const SUPABASE_URL = process.env.SUPABASE_URL || 'https://ubcrrrapedaxkguxniwv.supabase.co';
