@@ -20,6 +20,7 @@
 //   CERTIFIED_MAIL_TEST_MODE=true    (marks the job test_mode; vendor send must honor it)
 
 var { verifyToken } = require('./_lib/session');
+var phiGate = require('./_lib/assessments-phi-gate');
 
 exports.handler = async function(event) {
   var headers = {
@@ -29,6 +30,11 @@ exports.handler = async function(event) {
   };
   if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers: headers, body: '' };
   if (event.httpMethod !== 'POST') return { statusCode: 405, headers: headers, body: JSON.stringify({ error: 'Method not allowed' }) };
+  // Compliance guard: certified mail is a not-enabled stub whose job row stores letter_text
+  // (PHI) + recipient address in Supabase (no BAA). Keep it closed until that moves to S3.
+  if (phiGate.PAUSED) {
+    return { statusCode: 503, headers: headers, body: JSON.stringify({ error: 'Certified mail is not available yet.' }) };
+  }
 
   var stripeKey = process.env.STRIPE_SECRET_KEY;
   var priceId = process.env.STRIPE_CERTIFIED_MAIL_PRICE_ID;

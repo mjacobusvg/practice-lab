@@ -165,12 +165,17 @@ login and `tbp_maint_bypass='1'` (or `?maintbypass=1` once) bypass it for testin
     (reuses the ses-send-pm IAM creds already in Netlify). Verified end-to-end. Bucket has a 90-day
     lifecycle backstop; app gates access by `expires_at`. Legacy pre-migration rows may still hold
     inline `pdf_base64` until they expire (served via a fallback in letter-view).
-  - **Assessments (transient, currently clean).** `assessments.patient_name` +
-    `assessment_results.responses` transit Supabase between patient-submit and provider-retrieve,
-    then purge (`purged_at`); de-id metadata retained. Verified 2026-09-09: 0 live patient names,
-    0 result rows. Storage is Supabase, not AWS — the AI SCORING moved to Bedrock, the raw-response
-    STORAGE did not. A full move to AWS is a larger project, only needed if recurring/longitudinal
-    assessments become a core feature.
+  - **Assessments (PHI writes PAUSED 2026-09-09).** The design wrote `assessments.patient_name`,
+    `assessment_results.responses/scores/flags`, and `assessment_schedules.patient_email` to
+    Supabase (no BAA). Per HHS, transient ePHI in a no-BAA cloud still makes it a Business
+    Associate, so "purged after retrieval" was not sufficient. Intake is now paused via
+    `_lib/assessments-phi-gate.js` (create/submit/autosend/schedule-create); 0 live rows, so clean.
+    This is a PAUSE, not a migration — assessments are NOT on AWS yet. Follow-up: move the PHI to
+    S3 (like letters) and flip `PAUSED=false` to re-enable.
+  - **Certified mail (not enabled; write path gated).** `certified_mail_jobs` stores `letter_text`
+    + recipient address (PHI); it is a 0-row stub. Its checkout write path
+    (`create-certified-checkout`) is now gated by the same flag. Move `letter_text` to S3 before
+    enabling.
 - **Confirm Azure BAA document + US region**, and the **Google Workspace BAA document**.
 - **Certified mail** (`send-certified-mail.js`) is a stub; before enabling, execute a mail-vendor BAA
   and store letter text on AWS, not Supabase.
