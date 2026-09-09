@@ -7,7 +7,7 @@ question, changing any clinical data path, or updating the subprocessor page / p
 BAA. Keep it in sync with `subprocessors.html`, `privacy-policy.html`, `baa.html`, and
 `COMPLIANCE-INTEGRATION.md`.
 
-Last updated: 2026-09-07.
+Last updated: 2026-09-09.
 
 Legend: **[CONFIRMED]** = verified this session (console/email/live test). **[PER MICHAEL]** =
 stated by the owner, document not re-verified here — confirm the signed document exists.
@@ -157,10 +157,22 @@ login and `tbp_maint_bypass='1'` (or `?maintbypass=1` once) bypass it for testin
   Netlify but no longer called by the front end. Leave dormant briefly for rollback, then remove so
   PHI cannot route through Netlify at all. (`tbp_force_netlify` in `pm-ai-scribe.html` still points the
   Scribe back to them as a rollback — retire that flag when the Netlify functions are deleted.)
-- **Assessments at rest.** `assessments.patient_name` + `assessment_results.responses` can rest in
-  Supabase (no BAA). Decide: de-identify with a clinician label (keep in Supabase) vs. move to AWS
-  under the BAA (needed if recurring/longitudinal patient assessments are on the roadmap). Purge any
-  pre-fix PHI rows.
+- **PHI at rest in Supabase — see `PHI-STORAGE-STATE.md` (verified 2026-09-09).** That file is the
+  ground-truth inventory; keep it current. Summary:
+  - **Letters (LIVE divergence).** `letter_send_log` (+ `create-letter-charge` for paid letters)
+    stores the full letter **PDF** when the clinician opts into retention (default 14d / max 90d,
+    then `pdf_purged_at`). This is NOT dead data — `letter-view.js` serves the stored PDF back as a
+    "view the sent letter" link. So letter content (PHI) rests in Supabase (no BAA). As of 2026-09-09
+    there is 1 stored PDF live. Fix options: move PDFs to **AWS S3** under the AWS BAA (correct
+    long-term fix; touches `letter-log.js` / `create-letter-charge.js` / `letter-view.js` + a bucket
+    on acct 266359797908), OR disable PDF retention (letters become metadata-only), OR disclose the
+    retention accurately. Decision pending.
+  - **Assessments (transient, currently clean).** `assessments.patient_name` +
+    `assessment_results.responses` transit Supabase between patient-submit and provider-retrieve,
+    then purge (`purged_at`); de-id metadata retained. Verified 2026-09-09: 0 live patient names,
+    0 result rows. Storage is Supabase, not AWS — the AI SCORING moved to Bedrock, the raw-response
+    STORAGE did not. A full move to AWS is a larger project, only needed if recurring/longitudinal
+    assessments become a core feature.
 - **Confirm Azure BAA document + US region**, and the **Google Workspace BAA document**.
 - **Certified mail** (`send-certified-mail.js`) is a stub; before enabling, execute a mail-vendor BAA
   and store letter text on AWS, not Supabase.
