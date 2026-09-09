@@ -300,7 +300,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-80-assess"></script>
+<script src="/note-engine-practice.js?v=ambient-81-late"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -427,6 +427,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
             </label>
           </div>
           <div class="hint" style="margin-top:5px;line-height:1.45;color:var(--cream-dim)">Questions are off by default. Leave it off and you get the note and the rundown, nothing else &mdash; you run your own interview.</div>
+          <div class="hint" id="ep-add-mode" style="display:none;margin-top:7px;padding:8px 11px;border:1px solid var(--rule);border-left:3px solid var(--teal);border-radius:7px;line-height:1.45;color:var(--cream)">You have already started this note, so adding records will not rebuild it. The new material is <strong>added to the end of your working note</strong> and your rundown is brought up to date &mdash; everything you have typed stays exactly as you left it.</div>
 
           <div style="margin-top:11px"><button class="btn" type="button" id="ep-run">Prep my evaluation &rarr;</button>
           <span class="hint" id="ep-hint" style="margin-left:8px"></span></div>
@@ -562,7 +563,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-80-assess</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-81-late</span></div>
 </div>
 </div>
 
@@ -1364,7 +1365,7 @@ function renderMode(){
   show('prep-controls', prepOn && isFu);
   show('neweval-scaffold', prepOn && isNew);
   // Records may have been added from another gather screen before the visit type was picked.
-  if(prepOn && isNew){ try{ tbpEpRenderSources(); }catch(e){} }
+  if(prepOn && isNew){ try{ tbpEpRenderSources(); }catch(e){} }   // also re-syncs the button mode
   // BLANK path: a single "Open a blank note" entry when Prep is OFF and a visit type is chosen.
   show('open-blank-block', !prepOn && !!visitType);
 
@@ -4242,7 +4243,159 @@ document.addEventListener('click', function(e){
 });
 
 // ── Evaluation prep: run it ──────────────────────────────────────────────────────
+// ── Records that arrive after Prep ────────────────────────────────────────────────
+// A patient emails another evaluation five minutes before the appointment, or a fax turns up
+// mid-visit. Re-running Prep rebuilds the note from scratch and would take the clinician's typing
+// with it. So once there is work in the note, adding documents does not rebuild anything: it feeds
+// what is already there. The rundown, which is scaffold and never chart content, updates in place.
+// The note itself is offered to, never written to.
+var epPrepNote = '';   // what Prep last wrote, verbatim
+var epAddendum = '';   // the last addendum, awaiting the clinician's decision
+
+function tbpEpCurrentNote(){
+  try {
+    return (wnMode === 'sections' && wnSections && typeof wnSections.note === 'string')
+      ? wnSections.note
+      : ((document.getElementById('raw') || {}).value || '');
+  } catch(e){ return ''; }
+}
+
+// Has the clinician worked in this note since Prep built it?
+function tbpEpNoteTyped(){
+  var a = (tbpEpCurrentNote() || '').replace(/\s+/g, ' ').trim();
+  var b = (epPrepNote || '').replace(/\s+/g, ' ').trim();
+  if(!a) return false;
+  if(!b) return a.length > 40;   // no prep on record, but there IS a note
+  return a !== b;
+}
+
+function evalPrepAddSystem(){
+  var s = "A clinician prepped this evaluation from records, has been working in the note since, and has now added MORE material — a record that arrived late, or something pasted mid-visit. You are given the note as it stands and everything they hold on this patient.\n\n";
+  s += docPrescribingBoundary();
+  s += EVAL_SOURCE_RULES;
+
+  s += "=== THE ONLY QUESTION ===\n";
+  s += "What does this material add or change that the note does not already say? Nothing else.\n";
+  s += "Do NOT rewrite the note, reorganise it, or restate what is in it, even better than it is currently put. Do NOT comment on it. The clinician is mid-visit and will read your answer in a few seconds; anything they already have is noise hiding the thing they do not.\n\n";
+
+  s += "=== WHAT COUNTS ===\n";
+  s += "A fact, date, diagnosis, medication trial, response, test result, collateral account or documented limitation that is absent from the note — or that CONTRADICTS or UPDATES what the note says.\n";
+  s += "A contradiction or an update is the most valuable thing you can find and always leads. State it as one: name what the note has, name what the new material says, and leave it unresolved. Never quietly correct the note, and never average the two.\n";
+  s += "Something the note already covers is not new because the new record words it differently, dates it more precisely, or says it at greater length. A detail that changes nothing a clinician would do or think is not new either.\n";
+  s += "If the material adds nothing, say exactly that in one line. That is a useful answer and a common one.\n\n";
+
+  s += "=== HOW TO WRITE IT ===\n";
+  s += "Chart-ready prose in the same register as the rest of the note, so it can go straight in. Attribution carried in the sentence: name the source and its date. Where an item belongs under a heading the note already has, say which in a leading clause.\n";
+  s += "Short. One to five items. An addendum, not a second evaluation.\n\n";
+
+  s += "=== OUTPUT ===\n";
+  s += "Plain text. Each marker reproduced exactly on its own line.\n";
+  s += "<<<NEW>>>\n(the new or changed material as prose, or the single line saying it adds nothing)\n";
+  s += "<<<WATCH>>>\n(at most two lines worth knowing before walking back in — a contradiction, or something that changes today's plan. Empty if none.)\n";
+  s += "<<<RUNDOWN>>>\n(the pre-visit rundown rewritten to include this material: the same 3-5 short labeled glance lines, complete on their own, since they replace the ones on screen. Omit this section entirely if nothing in it would change.)\n";
+  return s;
+}
+
+function evalPrepAddUserMsg(){
+  return 'THE NOTE AS IT STANDS (do not rewrite it):\n\n' + tbpEpCurrentNote()
+    + '\n\n---\n\nEVERYTHING THE CLINICIAN HOLDS ON THIS PATIENT (transient; never stored):\n\n'
+    + tbpSources.filter(function(d){ return d.text && !d.error; })
+        .map(function(d){ return '--- SOURCE: ' + (d.name || 'untitled')
+          + (d.ocr ? ' (read by OCR from a scan; misreadings are possible)' : '') + ' ---\n' + d.text; })
+        .join('\n\n');
+}
+
+function tbpSplitAddendum(raw){
+  var t = String(raw || '');
+  function sec(name, later){
+    var open = '<<<' + name + '>>>';
+    var i = t.indexOf(open);
+    if(i === -1) return '';
+    i += open.length;
+    var end = t.length;
+    for(var k = 0; k < later.length; k++){
+      var q = t.indexOf('<<<' + later[k] + '>>>', i);
+      if(q !== -1 && q < end) end = q;
+    }
+    return t.slice(i, end).replace(/^[ \t]*\r?\n/, '').trim();
+  }
+  var n = sec('NEW', ['WATCH', 'RUNDOWN']);
+  // No markers at all: keep the whole reply rather than discarding a usable answer.
+  if(!n && t.trim() && t.indexOf('<<<') === -1) n = t.trim();
+  return { newText: n, watch: sec('WATCH', ['RUNDOWN']), rundown: sec('RUNDOWN', []) };
+}
+
+// Offers; never writes. The clinician is mid-visit with their own words on screen.
+function renderEvalAddendum(a){
+  epAddendum = a.newText || '';
+  // The rundown is a glance banner, not chart content, so bringing it up to date is safe and is
+  // the "update what is already there" half of adding a record late.
+  if(a.rundown){
+    prepSnapshot = a.rundown;
+    try {
+      var fr = document.getElementById('focus-ref');
+      var fo = document.getElementById('focus-overlay');
+      if(fr && fo && fo.classList.contains('open') && typeof tbpSnapshotBannerHtml === 'function'){
+        fr.innerHTML = tbpSnapshotBannerHtml(prepSnapshot);
+      }
+      if(window.tbpSaveDraft) window.tbpSaveDraft();
+    } catch(e){}
+  }
+  // The clinician uploaded this DURING or AFTER the appointment: they want the working note
+  // updated with it, not a second thing to read and approve. So it goes in, at the end, under a
+  // line that says where it came from — and nothing they typed is touched, because appending
+  // cannot disturb what is above it.
+  var added = false;
+  if(epAddendum && epAddendum.trim()){
+    added = tbpAppendToNote('From records added during this visit:\n' + epAddendum.trim());
+  }
+  var h = '<div class="out" style="margin-top:16px;border-color:var(--teal)">'
+    + '<h3>' + (added ? 'Added to your working note' : 'What these records add') + '</h3>'
+    + '<div class="hint" style="margin-bottom:10px">'
+    + (added
+        ? 'This is in your note now, at the end, under &ldquo;From records added during this visit&rdquo; &mdash; move or edit it wherever it belongs. Everything you had already typed is untouched.'
+        : 'Could not write to your note. Copy it from below instead.')
+    + (a.rundown ? ' Your rundown is up to date.' : '') + '</div>';
+  if(a.watch){
+    h += '<div style="margin-bottom:11px;padding:9px 12px;border:1px solid var(--rule);border-left:3px solid var(--amber);border-radius:7px;white-space:pre-wrap;font-size:.88rem;line-height:1.55;color:var(--cream)">'
+      + esc(a.watch) + '</div>';
+  }
+  h += '<div style="white-space:pre-wrap;font-size:.9rem;color:var(--cream);line-height:1.6">' + esc(epAddendum) + '</div>'
+    + '<div style="margin-top:12px"><button class="btn" type="button" id="ep-add-note" style="margin-top:0;padding:7px 13px;font-size:.83rem;background:var(--navy);color:var(--cream);box-shadow:inset 0 0 0 1px var(--rule)">'
+    + (added ? 'Open my working note &#8599;' : 'Add this to my note &rarr;') + '</button>'
+    + '<span class="hint" id="ep-add-note-msg" style="margin-left:8px"></span></div></div>';
+  var el = document.getElementById('ep-results');
+  el.innerHTML = h;
+  el.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+document.addEventListener('click', function(e){
+  if(!e.target || !e.target.closest) return;
+  if(!e.target.closest('#ep-add-note')) return;
+  var m = document.getElementById('ep-add-note-msg');
+  // Already written on render; this is the way back to it. It only writes if that failed.
+  if(/Open my working note/i.test(e.target.closest('#ep-add-note').innerHTML)){
+    try { openFocus('raw'); } catch(err){}
+    return;
+  }
+  var ok = tbpAppendToNote(epAddendum);
+  if(m) m.innerHTML = ok
+    ? '<span style="color:var(--green)">Added at the end of your working note.</span>'
+    : '<span style="color:var(--red)">Could not add it. Copy it from above instead.</span>';
+});
+
+// Keep the button honest about which of the two things pressing it will do.
+function tbpEpSyncMode(){
+  var typed = tbpEpNoteTyped();
+  var b = document.getElementById('ep-run');
+  if(b && !b.disabled) b.innerHTML = typed ? 'What do these records add? &rarr;' : 'Prep my evaluation &rarr;';
+  var n = document.getElementById('ep-add-mode');
+  if(n) n.style.display = typed ? '' : 'none';
+}
+
+
 function tbpEpRenderSources(){
+  try { tbpEpSyncMode(); } catch(e){}
   var el = document.getElementById('ep-src-list'); if(!el) return;
   if(!tbpSources.length){ el.innerHTML = ''; return; }
   var h = '<div class="hint" style="margin-bottom:6px;color:var(--cream)">Prep will read:</div>';
@@ -4309,7 +4462,9 @@ document.getElementById('ep-run').addEventListener('click', async function(){
   if(ev && visitType !== 'new_eval'){ ev.click(); }
 
   var wantQ = !!(document.getElementById('ep-questions') || {}).checked;
-  var btn = this; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Reading your records&hellip;';
+  var addOnly = tbpEpNoteTyped();   // there is work in this note; feed it rather than rebuild it
+  var btn = this; btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>' + (addOnly ? 'Reading what is new&hellip;' : 'Reading your records&hellip;');
   document.getElementById('ep-results').innerHTML = '';
   tbpNotifyDesk('busy');
   var ok = false;
@@ -4321,10 +4476,17 @@ document.getElementById('ep-run').addEventListener('click', async function(){
     for(var attempt = 0; attempt < 3 && !j; attempt++){
       if(attempt > 0){ hint.innerHTML = '<span style="color:var(--cream-dim)">One more try&hellip;</span>'; }
       try {
-        var raw = await callAPI(evalPrepSystem(wantQ), [{ role:'user', content: evalPrepUserMsg() }], 8000);
-        var cand = parsePrep(raw);
-        if(cand && cand.startingNote){ j = cand; }
-        else { lastErr = new Error('the prep came back without a starting note' + (raw ? ' (' + String(raw).length + ' characters returned)' : ' (empty response)')); }
+        if(addOnly){
+          var araw = await callAPI(evalPrepAddSystem(), [{ role:'user', content: evalPrepAddUserMsg() }], 3000);
+          var parts = tbpSplitAddendum(araw);
+          if(parts.newText){ j = { addendum: parts }; }
+          else { lastErr = new Error('nothing came back' + (araw ? ' (' + String(araw).length + ' characters returned)' : ' (empty response)')); }
+        } else {
+          var raw = await callAPI(evalPrepSystem(wantQ), [{ role:'user', content: evalPrepUserMsg() }], 8000);
+          var cand = parsePrep(raw);
+          if(cand && cand.startingNote){ j = cand; }
+          else { lastErr = new Error('the prep came back without a starting note' + (raw ? ' (' + String(raw).length + ' characters returned)' : ' (empty response)')); }
+        }
       } catch(e){ lastErr = e; }
     }
     if(!j){
@@ -4333,12 +4495,13 @@ document.getElementById('ep-run').addEventListener('click', async function(){
       throw new Error('Could not build the prep — ' + why + '. Give it another go; if it keeps failing on a very long packet, remove the least useful document and try again.');
     }
     hint.innerHTML = '';
-    renderPrep(j, true);
+    if(j.addendum) renderEvalAddendum(j.addendum); else renderPrep(j, true);
     ok = true;
   } catch(err){
     hint.innerHTML = '<span style="color:var(--red)">' + esc(err.message || err) + '</span>';
   } finally {
-    btn.disabled = false; btn.innerHTML = 'Prep my evaluation &rarr;';
+    btn.disabled = false;
+    try { tbpEpSyncMode(); } catch(e){ btn.innerHTML = 'Prep my evaluation &rarr;'; }
     tbpNotifyDesk(ok ? 'done' : 'idle');
   }
 });
@@ -4364,6 +4527,10 @@ function renderPrep(j, isEval){
     note: note,
     noteFrom: isEval ? 'records' : 'last_visit'   // decides the note panel's heading; survives a reload with the draft
   };
+  // Remember exactly what Prep wrote. Anything different later is the clinician's own work, and a
+  // second run must never write over it: records arriving late is a normal Tuesday, and losing a
+  // half-documented visit to a re-prep would be unforgivable.
+  if(isEval) epPrepNote = note || '';
   wnMode = hasScaffold ? 'sections' : 'plain';
   document.getElementById('raw').value = hasScaffold ? serializeSections() : note;
   renderMode();  // reveal the working note (structured card in sections mode)
