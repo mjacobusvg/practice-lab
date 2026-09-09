@@ -27,6 +27,7 @@
 var crypto = require('crypto');
 var { verifyToken } = require('./_lib/session');
 var { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
+var { putLetterPdf } = require('./_lib/letters-s3');
 
 var RETENTION_DAYS = 30;               // patient has this long to pay + retrieve the letter
 var MAX_AMOUNT_CENTS = 500000;         // $5,000 sanity cap on an ad-hoc letter charge
@@ -173,6 +174,18 @@ exports.handler = async function (event) {
       return resp(headers, 409, { error: 'connect_required', message: 'Connect your Stripe account once before charging for a letter.' });
     }
 
+    // ---- Store the held letter PDF in S3 (AWS BAA), not Supabase ----
+    // The letter is PHI; it rests in S3 under the AWS BAA. We keep only the object
+    // key on the charge row. If S3 fails we refuse the charge rather than fall back
+    // to storing the bytes in Supabase (no BAA) — the pay-to-release flow can't
+    // release a letter we didn't store anyway.
+    var pdfS3Key;
+    try {
+      pdfS3Key = await putLetterPdf('charges', pdfBase64);
+    } catch (e) {
+      return resp(headers, 502, { error: 'Could not securely store the letter. Please try again.' });
+    }
+
     // ---- Store the held letter as a PENDING charge row ----
     var accessToken = crypto.randomBytes(24).toString('base64url');
     var expiresAt = new Date(Date.now() + RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
@@ -190,7 +203,7 @@ exports.handler = async function (event) {
         status: 'pending',
         access_token: accessToken,
         test_mode: !live,
-        pdf_base64: pdfBase64,
+        pdf_s3_key: pdfS3Key,
         pdf_filename: pdfFilename,
         expires_at: expiresAt
       })

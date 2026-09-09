@@ -11,7 +11,9 @@
 //   410                   - expired or the PDF was purged/deleted
 //   404                   - unknown token
 //
-// Env: SUPABASE_URL, SUPABASE_SERVICE_KEY
+// Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, LETTERS_S3_BUCKET (+ SES_AWS_* creds)
+
+const { getLetterPdfBase64 } = require('./_lib/letters-s3');
 
 exports.handler = async function (event) {
   const q = event.queryStringParameters || {};
@@ -27,7 +29,7 @@ exports.handler = async function (event) {
   try {
     const res = await fetch(SUPABASE_URL + '/rest/v1/letter_charges?access_token=eq.' +
       encodeURIComponent(token) +
-      '&select=status,pdf_base64,pdf_filename,expires_at,pdf_purged_at,deleted_at&limit=1', { headers: sbHeaders });
+      '&select=status,pdf_base64,pdf_s3_key,pdf_filename,expires_at,pdf_purged_at,deleted_at&limit=1', { headers: sbHeaders });
     const rows = res.ok ? await res.json() : [];
     const row = rows[0];
     if (!row) return { statusCode: 404, headers: jsonHeaders, body: JSON.stringify({ error: 'This letter link is not valid.' }) };
@@ -36,8 +38,21 @@ exports.handler = async function (event) {
       return { statusCode: 402, headers: jsonHeaders, body: JSON.stringify({ error: 'This letter has not been paid for yet.' }) };
     }
     const expired = row.expires_at && new Date(row.expires_at) < new Date();
-    if (row.deleted_at || row.pdf_purged_at || expired || !row.pdf_base64) {
+    // Gone if deleted/purged/expired, or if we have neither an S3 key (new rows) nor
+    // inline bytes (legacy rows stored before the S3 migration).
+    if (row.deleted_at || row.pdf_purged_at || expired || (!row.pdf_s3_key && !row.pdf_base64)) {
       return { statusCode: 410, headers: jsonHeaders, body: JSON.stringify({ error: 'This letter link has expired. Please contact your clinician for a new copy.' }) };
+    }
+
+    // Serve from S3 (AWS BAA) for new rows; fall back to legacy inline bytes for rows
+    // created before the migration.
+    let pdfBase64 = row.pdf_base64;
+    if (row.pdf_s3_key) {
+      try {
+        pdfBase64 = await getLetterPdfBase64(row.pdf_s3_key);
+      } catch (e) {
+        return { statusCode: 410, headers: jsonHeaders, body: JSON.stringify({ error: 'This letter link has expired. Please contact your clinician for a new copy.' }) };
+      }
     }
 
     const filename = (row.pdf_filename || 'letter.pdf').replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -49,7 +64,7 @@ exports.handler = async function (event) {
         'Cache-Control': 'no-store',
         'Access-Control-Allow-Origin': '*'
       },
-      body: row.pdf_base64,          // already base64
+      body: pdfBase64,          // already base64
       isBase64Encoded: true
     };
   } catch (err) {

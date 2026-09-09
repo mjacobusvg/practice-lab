@@ -1,4 +1,5 @@
 var { verifyToken } = require('./_lib/session');
+var { putLetterPdf, deleteLetterPdf } = require('./_lib/letters-s3');
 // netlify/functions/letter-log.js
 // Sent-log for the Letter Generator. Stores a delivery record and, optionally, the
 // composited PDF for a clinician-set retention window. Identity is derived from the
@@ -64,7 +65,7 @@ exports.handler = async function(event) {
       var sel = sb +
         '?clinician_email=eq.' + encodeURIComponent(clinicianEmail) +
         '&deleted_at=is.null' +
-        '&select=id,letter_type,channel,recipient_masked,subject,status,created_at,expires_at,pdf_purged_at,pdf_filename,pdf_base64' +
+        '&select=id,letter_type,channel,recipient_masked,subject,status,created_at,expires_at,pdf_purged_at,pdf_filename,pdf_base64,pdf_s3_key' +
         '&order=created_at.desc&limit=100';
       var listRes = await fetch(sel, { headers: sbHeaders });
       if (!listRes.ok) return resp(headers, 200, { ok: false, detail: (await listRes.text()).slice(0, 200) });
@@ -80,7 +81,7 @@ exports.handler = async function(event) {
           status: r.status,
           created_at: r.created_at,
           expires_at: r.expires_at,
-          pdf_retained: !!r.pdf_base64,
+          pdf_retained: !!(r.pdf_s3_key || r.pdf_base64),
           pdf_purged_at: r.pdf_purged_at,
           pdf_filename: r.pdf_filename
         };
@@ -92,13 +93,18 @@ exports.handler = async function(event) {
     if (action === 'delete') {
       var id = String(payload.id || '');
       if (!id) return resp(headers, 400, { error: 'Missing id.' });
-      var patchUrl = sb +
-        '?id=eq.' + encodeURIComponent(id) +
+      var scope = '?id=eq.' + encodeURIComponent(id) +
         '&clinician_email=eq.' + encodeURIComponent(clinicianEmail);
-      var delRes = await fetch(patchUrl, {
+      // Look up this row's S3 key so we can delete the object, not just null the DB.
+      try {
+        var keyRes = await fetch(sb + scope + '&select=pdf_s3_key&limit=1', { headers: sbHeaders });
+        var keyRows = keyRes.ok ? await keyRes.json() : [];
+        if (keyRows[0] && keyRows[0].pdf_s3_key) await deleteLetterPdf(keyRows[0].pdf_s3_key);
+      } catch (e) { /* best-effort; lifecycle rule backstops S3 */ }
+      var delRes = await fetch(sb + scope, {
         method: 'PATCH',
         headers: Object.assign({}, sbHeaders, { 'Prefer': 'return=minimal' }),
-        body: JSON.stringify({ pdf_base64: null, pdf_purged_at: new Date().toISOString() })
+        body: JSON.stringify({ pdf_base64: null, pdf_s3_key: null, pdf_purged_at: new Date().toISOString() })
       });
       if (!delRes.ok) return resp(headers, 200, { ok: false, detail: (await delRes.text()).slice(0, 200) });
       return resp(headers, 200, { ok: true, deleted: id });
@@ -111,9 +117,19 @@ exports.handler = async function(event) {
     if (isNaN(retentionDays) || retentionDays < 1) retentionDays = DEFAULT_RETENTION_DAYS;
     if (retentionDays > MAX_RETENTION_DAYS) retentionDays = MAX_RETENTION_DAYS;
 
+    // If a PDF is being retained, store it in S3 (AWS BAA) and keep only the key.
+    // On S3 failure, log the delivery WITHOUT the PDF rather than falling back to
+    // Supabase — a delivery record with no retained copy beats PHI in a no-BAA store.
+    var pdfS3Key = null;
     var expiresAt = null;
     if (storePdf) {
-      expiresAt = new Date(Date.now() + retentionDays * 24 * 60 * 60 * 1000).toISOString();
+      try {
+        pdfS3Key = await putLetterPdf('sendlog', storePdf);
+        expiresAt = new Date(Date.now() + retentionDays * 24 * 60 * 60 * 1000).toISOString();
+      } catch (e) {
+        pdfS3Key = null;
+        expiresAt = null;
+      }
     }
 
     var row = {
@@ -123,8 +139,8 @@ exports.handler = async function(event) {
       recipient_masked: recipientMasked,
       subject: String(payload.subject || '').slice(0, 200),
       status: String(payload.status || 'sent').slice(0, 24),
-      pdf_base64: storePdf,
-      pdf_filename: storePdf ? String(payload.pdfFilename || 'letter.pdf').slice(0, 160) : null,
+      pdf_s3_key: pdfS3Key,
+      pdf_filename: pdfS3Key ? String(payload.pdfFilename || 'letter.pdf').slice(0, 160) : null,
       expires_at: expiresAt,
       created_at: new Date().toISOString()
     };
