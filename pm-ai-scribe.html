@@ -165,7 +165,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-69"></script>
+<script src="/note-engine.js?v=ambient-70"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -392,7 +392,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-69</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-70</span></div>
 </div>
 </div>
 
@@ -1084,12 +1084,28 @@ function bindOpts(groupId, attr, setter){
     o.classList.add('sel'); setter(o.getAttribute(attr));
   });
 }
+// Per-Desk-slot key for the chosen visit type. Persisting it means an iframe reload
+// mid-visit can no longer drop the visit type and strand the clinician: a clinician who
+// recorded a full session was being told "choose a visit type" at Draft time because the
+// in-memory value was lost on reload and nothing carried it. This survives the reload.
+function tbpVisitKey(){
+  try{ var m=location.search.match(/[?&]slot=([^&]+)/); return 'tbp_visit_type_' + (m?decodeURIComponent(m[1]):'solo'); }
+  catch(e){ return 'tbp_visit_type_solo'; }
+}
 bindOpts('visit-opts','data-visit', function(v){
   // Switching visit type starts a fresh context; drop any structured-note state so a stale
   // sections card can't linger. Only on an actual change, so re-clicking the same type is a no-op.
   if(v !== visitType){ wnMode='plain'; wnSections={checklist:'',guide:'',note:''}; }
-  visitType=v; renderTemplateStatus(); revealWorkArea();
+  visitType=v; try{ localStorage.setItem(tbpVisitKey(), v); }catch(e){}
+  renderTemplateStatus(); revealWorkArea();
 });
+// On load, restore a previously-chosen visit type so a reopened/reloaded frame comes back
+// to the visit the clinician was on (recording UI visible, Draft not falsely blocked). The
+// saved-draft restore below still wins for the note body/mode.
+try{
+  var _savedVT = localStorage.getItem(tbpVisitKey());
+  if(_savedVT && !visitType){ var _vo = document.querySelector('#visit-opts [data-visit="' + _savedVT + '"]'); if(_vo){ _vo.click(); } }
+}catch(e){}
 
 // Reveal the workspace once a visit type is picked; render the clinician's saved working style.
 function revealWorkArea(){
@@ -1774,11 +1790,16 @@ function tbpTypedDraft(btn, src, errEl){
     // Recover it rather than stopping, when the note itself already knows: a frame reload can
     // drop the in-memory visitType while the saved draft still carries it.
     var saved = null;
-    try {
-      var k = 'tbp_draft_' + ((location.search.match(/[?&]slot=([^&]+)/) || [])[1] ? decodeURIComponent(location.search.match(/[?&]slot=([^&]+)/)[1]) : 'solo');
-      var d = JSON.parse(localStorage.getItem(k) || 'null');
-      if(d && d.visitType) saved = d.visitType;
-    } catch(e){}
+    // Primary: the dedicated per-slot visit-type key (survives an iframe reload).
+    try { saved = localStorage.getItem(tbpVisitKey()) || null; } catch(e){}
+    // Fallback: an older saved note draft that still carries the visit type.
+    if(!saved){
+      try {
+        var k = 'tbp_draft_' + ((location.search.match(/[?&]slot=([^&]+)/) || [])[1] ? decodeURIComponent(location.search.match(/[?&]slot=([^&]+)/)[1]) : 'solo');
+        var d = JSON.parse(localStorage.getItem(k) || 'null');
+        if(d && d.visitType) saved = d.visitType;
+      } catch(e){}
+    }
     var opt = saved ? document.querySelector('#visit-opts [data-visit="' + saved + '"]') : null;
     if(opt){ opt.click(); }
     if(!visitType){
