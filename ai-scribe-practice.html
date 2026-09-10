@@ -471,6 +471,15 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
           <div class="opt sel" data-capture="inperson">In person</div>
           <div class="opt" data-capture="telehealth">Telehealth</div>
         </div>
+        <!-- Telehealth sub-choice: how the patient's audio reaches us. "Share call tab" is the
+             high-quality Chrome/Edge path (captures the call tab's audio digitally). "Speaker"
+             is the universal fallback — mic-only, so it works in ANY browser (incl. Safari) and
+             with the Zoom/Doxy desktop app, because the mic simply hears the call on speaker.
+             Shown only when Telehealth is selected. -->
+        <div class="opts" id="tele-audio-opts" style="margin-bottom:8px;display:none">
+          <div class="opt sel" data-teleaudio="tab">Share call tab</div>
+          <div class="opt" data-teleaudio="speaker">Put call on speaker</div>
+        </div>
         <div class="hint" id="capture-hint" style="margin:0 0 12px"></div>
         <!-- Mic picker + live level meter: confirm the RIGHT mic is capturing your voice
              before you record, instead of finding out from a blank transcript. -->
@@ -6694,7 +6703,8 @@ function loadVaultTemplates(){
     var AC = window.AudioContext || window.webkitAudioContext;
     if(!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) throw new Error('Your browser does not support microphone recording.');
     if(!window.MediaRecorder && !AC) throw new Error('Your browser does not support recording. Try Chrome, Edge, or Safari.');
-    var isTele=(mode==='telehealth');
+    var isTele=(mode==='telehealth');           // share the call tab's audio (Chrome/Edge)
+    var isTeleSpeaker=(mode==='telespeaker');    // telehealth via speaker → mic-only capture
     if(isTele){
       tabStream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:true });
       var aTracks = tabStream.getAudioTracks();
@@ -6748,7 +6758,9 @@ function loadVaultTemplates(){
     recording=true;
     tbpSetRecUI('recording'); tbpNotifyDesk('recording');
     rawBaseline = document.getElementById('raw').value;
-    setStatus(isTele ? 'Recording (you + patient). To finish: hit Stop recording here, OR Chrome’s green “Stop sharing” bar — either one ends the recording.' : 'Recording… speak normally. Hit Stop when done.');
+    setStatus(isTele ? 'Recording (you + patient). To finish: hit Stop recording here, OR Chrome’s green “Stop sharing” bar — either one ends the recording.'
+      : isTeleSpeaker ? 'Recording (you + patient over speaker). Keep the call on speaker and hit Stop when the visit ends.'
+      : 'Recording… speak normally. Hit Stop when done.');
   }
 
   function doStop(){
@@ -6948,15 +6960,31 @@ function loadVaultTemplates(){
   // it as a saved Vault preference.
   var captureMode='inperson';
   try { captureMode = localStorage.getItem('tbp_hpi_capture') || 'inperson'; } catch(e){}
+  // For telehealth, HOW we hear the patient: 'tab' (share the call tab's audio, Chrome/Edge,
+  // best quality) or 'speaker' (mic only — clinician puts the call on speaker; works in ANY
+  // browser incl. Safari and with the Zoom/Doxy desktop app). Remembered per browser.
+  var teleAudio='tab';
+  try { teleAudio = localStorage.getItem('tbp_tele_audio') || 'tab'; } catch(e){}
   function renderCaptureHint(){
     var h=document.getElementById('capture-hint'); if(!h) return;
-    h.innerHTML = (captureMode==='telehealth')
-      ? 'Records <strong>you (mic)</strong> and <strong>the patient (call audio)</strong> together. On Start, pick your video-call tab and check <strong>"Also share tab audio."</strong> Headphones give the cleanest split. <strong style="color:var(--cream)">Clicking Chrome\'s "Stop sharing" also stops the recording</strong> (so it can\'t keep running after you\'re done). Transcribes after you hit Stop.'
-      : 'Records one room mic; both voices are transcribed and speakers are separated after you hit Stop.';
+    if(captureMode==='telehealth' && teleAudio==='speaker'){
+      h.innerHTML = 'Records <strong>one mic</strong>. <strong style="color:var(--cream)">Put your video call on speaker</strong> so your microphone hears the patient too. Works in <strong>any browser (including Safari)</strong> and with the <strong>Zoom/Doxy app</strong>. Use a quiet room and <strong>keep headphones OFF</strong> for this mode (headphones would send the patient\'s voice away from your mic). Transcribes after you hit Stop.';
+    } else if(captureMode==='telehealth'){
+      h.innerHTML = 'Records <strong>you (mic)</strong> and <strong>the patient (call audio)</strong> together. On Start, pick your video-call tab and check <strong>"Also share tab audio."</strong> Chrome/Edge only, with the call in a browser tab; headphones give the cleanest split. <strong style="color:var(--cream)">Clicking Chrome\'s "Stop sharing" also stops the recording</strong> (so it can\'t keep running after you\'re done). Transcribes after you hit Stop. <span style="color:var(--cream-dim)">On Safari, or if your call is in the Zoom/Doxy app, choose <strong>"Put call on speaker"</strong> instead.</span>';
+    } else {
+      h.innerHTML = 'Records one room mic; both voices are transcribed and speakers are separated after you hit Stop.';
+    }
   }
   function applyCaptureSel(){
     var opts=document.querySelectorAll('#capture-opts .opt');
     for(var i=0;i<opts.length;i++){ opts[i].classList.toggle('sel', opts[i].getAttribute('data-capture')===captureMode); }
+    // Telehealth audio sub-choice is only meaningful for telehealth visits.
+    var sub=document.getElementById('tele-audio-opts');
+    if(sub){
+      sub.style.display = (captureMode==='telehealth') ? '' : 'none';
+      var sopts=sub.querySelectorAll('.opt');
+      for(var j=0;j<sopts.length;j++){ sopts[j].classList.toggle('sel', sopts[j].getAttribute('data-teleaudio')===teleAudio); }
+    }
     renderCaptureHint();
   }
   window.tbpSetCapture = function(m){ if(m!=='inperson'&&m!=='telehealth') return; captureMode=m; try{localStorage.setItem('tbp_hpi_capture',m);}catch(e){} applyCaptureSel(); };
@@ -6970,6 +6998,17 @@ function loadVaultTemplates(){
       var o=e.target.closest('.opt'); if(!o||recording) return;
       captureMode=o.getAttribute('data-capture');
       try{ localStorage.setItem('tbp_hpi_capture', captureMode); }catch(err){}
+      applyCaptureSel();
+    });
+  }
+  // Telehealth audio sub-choice (share tab vs. speaker) — mic-only speaker mode is the
+  // universal fallback for Safari and desktop-app telehealth.
+  var teleAudioOpts=document.getElementById('tele-audio-opts');
+  if(teleAudioOpts){
+    teleAudioOpts.addEventListener('click', function(e){
+      var o=e.target.closest('.opt'); if(!o||recording) return;
+      teleAudio=o.getAttribute('data-teleaudio');
+      try{ localStorage.setItem('tbp_tele_audio', teleAudio); }catch(err){}
       applyCaptureSel();
     });
   }
@@ -6999,7 +7038,10 @@ function loadVaultTemplates(){
     if(!ambientAllowed()){ setStatus('Ambient scribe is in limited beta — not enabled for your account yet.', true); return; }
     if(recording){ doStop(); resetBtn(); return; }
     sourceMode = 'ambient';   // a recording is being captured → review the draft as a transcript
-    btn.disabled=true; setMicControls(true); setStatus(captureMode==='telehealth'?'Waiting for you to share the call tab…':'Starting…');
+    // telehealth+tab shares the call tab; telehealth+speaker and in-person both record mic-only.
+    var startMode = (captureMode==='telehealth' && teleAudio==='tab') ? 'telehealth'
+                  : (captureMode==='telehealth') ? 'telespeaker' : 'inperson';
+    btn.disabled=true; setMicControls(true); setStatus(startMode==='telehealth'?'Waiting for you to share the call tab…':'Starting…');
     // iOS/Safari (WAV path) needs its AudioContext created AND resumed inside this
     // click gesture — one made later, after await getUserMedia, starts suspended and
     // the capture engine never fires (silent WAV → Azure "invalid data"). Pre-make it
@@ -7010,7 +7052,7 @@ function loadVaultTemplates(){
         if(AC){ preCtx=new AC(); if(preCtx.state==='suspended'&&preCtx.resume){ try{ preCtx.resume(); }catch(e){} } }
       } else { preCtx=null; }
     }catch(e){ preCtx=null; }
-    doStart(captureMode).then(function(){ btn.disabled=false; btn.innerHTML='&#9632; Stop recording'; })
+    doStart(startMode).then(function(){ btn.disabled=false; btn.innerHTML='&#9632; Stop recording'; })
       .catch(function(err){ recording=false; stopMeter(); stopTracks(); setStatus(err.message||'Could not start.', true); btn.disabled=false; resetBtn(); });
   });
 
