@@ -165,7 +165,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-71"></script>
+<script src="/note-engine.js?v=ambient-72"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -401,7 +401,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-71</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-72</span></div>
 </div>
 </div>
 
@@ -5332,6 +5332,9 @@ function loadVaultTemplates(){
     var isTele=(mode==='telehealth');           // share the call tab's audio (Chrome/Edge)
     var isTeleSpeaker=(mode==='telespeaker');    // telehealth via speaker → mic-only capture
     if(isTele){
+      // Safari can't capture tab audio at all — fail clearly instead of the confusing
+      // picker-won't-select dead-end. Point to Chrome/Edge or speaker mode.
+      if(TBP_IS_SAFARI) throw new Error('Safari can’t capture call audio. Open this visit in Chrome or Edge, or choose “Put call on speaker” to record with the mic (call on speaker, headphones off).');
       tabStream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:true });
       var aTracks = tabStream.getAudioTracks();
       if(!aTracks.length){ tabStream.getTracks().forEach(function(t){t.stop();}); tabStream=null; throw new Error('No tab audio was shared. Click Start again, choose your video-call tab, and check "Also share tab audio."'); }
@@ -5591,10 +5594,17 @@ function loadVaultTemplates(){
   // browser incl. Safari and with the Zoom/Doxy desktop app). Remembered per browser.
   var teleAudio='tab';
   try { teleAudio = localStorage.getItem('tbp_tele_audio') || 'tab'; } catch(e){}
+  // Safari (WebKit) can't capture a tab's/system audio via getDisplayMedia, so the "Share call
+  // tab" path can NEVER get patient audio there (the picker highlights but the click often won't
+  // register, then there's no audio anyway). Detect it to warn up front and steer to Chrome/Edge
+  // or speaker mode, instead of letting the clinician hit a silent dead-end mid-visit.
+  var TBP_IS_SAFARI = (function(){ try{ var ua=navigator.userAgent||''; return /safari/i.test(ua) && !/chrome|chromium|crios|edg|edgios|android|fxios|opr|opera/i.test(ua); }catch(e){ return false; } })();
   function renderCaptureHint(){
     var h=document.getElementById('capture-hint'); if(!h) return;
     if(captureMode==='telehealth' && teleAudio==='speaker'){
       h.innerHTML = 'Records <strong>one mic</strong>. <strong style="color:var(--cream)">Put your video call on speaker</strong> so your microphone hears the patient too. Works in <strong>any browser (including Safari)</strong> and with the <strong>Zoom/Doxy app</strong>. Use a quiet room and <strong>keep headphones OFF</strong> for this mode (headphones would send the patient\'s voice away from your mic). Transcribes after you hit Stop.';
+    } else if(captureMode==='telehealth' && TBP_IS_SAFARI){
+      h.innerHTML = '<strong style="color:var(--amber)">&#9888; Safari can\'t capture call audio.</strong> Sharing a call tab does not work in Safari (the picker highlights but won\'t select, and it can\'t hear the call either). Open this visit in <strong>Chrome or Edge</strong> for the cleanest recording, where you can keep headphones on. Or choose <strong>"Put call on speaker"</strong> above to record with the mic in any browser (call on speaker, headphones off).';
     } else if(captureMode==='telehealth'){
       h.innerHTML = 'Records <strong>you (mic)</strong> and <strong>the patient (call audio)</strong> together. On Start, pick your video-call tab and check <strong>"Also share tab audio."</strong> Chrome/Edge only, with the call in a browser tab; headphones give the cleanest split. <strong style="color:var(--cream)">Clicking Chrome\'s "Stop sharing" also stops the recording</strong> (so it can\'t keep running after you\'re done). Transcribes after you hit Stop. <span style="color:var(--cream-dim)">On Safari, or if your call is in the Zoom/Doxy app, choose <strong>"Put call on speaker"</strong> instead.</span>';
     } else {
