@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cancel Subscription | Think Beyond Practice</title>
+<style>
+  :root { --navy:#0b1120; --navy-mid:#111c30; --teal:#2aabb8; --cream:#e8e2d6; --cream-dim:#b0aa9e; --white:#f5f4f2; --red:#f87171; --rule:rgba(42,171,184,.18); }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; background:var(--navy); color:var(--cream); font-family:Arial,sans-serif; padding:24px; }
+  .card { width:min(560px,100%); background:var(--navy-mid); border:1px solid var(--rule); border-radius:12px; padding:28px; }
+  h1 { color:var(--white); margin:0 0 10px; font-size:1.55rem; }
+  p { line-height:1.6; color:var(--cream-dim); }
+  .btn { width:100%; border:0; border-radius:8px; padding:12px 16px; font-weight:700; cursor:pointer; margin-top:12px; }
+  .btn-cancel { background:var(--red); color:#111; }
+  .btn-back { background:transparent; color:var(--cream); border:1px solid var(--rule); }
+  .status { margin-top:16px; min-height:24px; font-size:.92rem; }
+  a { color:var(--teal); }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Cancel subscription</h1>
+  <p>You can cancel your Think Beyond Practice membership online without contacting support. Cancellation takes effect at the end of your current paid billing period unless otherwise shown by Stripe.</p>
+  <button id="cancelBtn" class="btn btn-cancel" onclick="startCancellation()">Continue to cancellation</button>
+  <button class="btn btn-back" onclick="window.location.href='/platform'">Back to Think Beyond Practice</button>
+  <div id="status" class="status"></div>
+</div>
+<script>
+function getAuthToken(){
+  try { return localStorage.getItem('tbp_auth_token') || ''; }
+  catch(e){ return ''; }
+}
+
+async function startCancellation(){
+  var status = document.getElementById('status');
+  var btn = document.getElementById('cancelBtn');
+  var token = getAuthToken();
+  if (!token) {
+    status.innerHTML = 'Please <a href="/platform">sign in</a> first, then return to this page to cancel.';
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = 'Opening cancellation...';
+  status.textContent = '';
+  try {
+    var res = await fetch('/.netlify/functions/create-billing-portal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+      body: JSON.stringify({
+        action: 'cancel',
+        return_url: window.location.origin + '/platform'
+      })
+    });
+    var data = await res.json();
+    if (data.url) {
+      window.location.href = data.url;
+      return;
+    }
+    status.textContent = data.notice || data.error || 'We could not open cancellation. Please try again or contact support@thinkbeyondpractice.com.';
+  } catch(e) {
+    status.textContent = 'We could not open cancellation. Please try again or contact support@thinkbeyondpractice.com.';
+  }
+  btn.disabled = false;
+  btn.textContent = 'Continue to cancellation';
+}
+</script>
+</body>
+</html>
