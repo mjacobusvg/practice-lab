@@ -1,8 +1,9 @@
 // netlify/functions/create-billing-portal.js
 //
 // Creates a Stripe Billing Portal session so a member can self-manage their
-// subscription (update card, cancel, switch plan) on Stripe's hosted page. This
-// replaces the member-management surface Circle used to provide.
+// subscription (update card, cancel, switch plan) on Stripe's hosted page.
+// Also supports a dedicated direct-cancellation flow for the member's current
+// TBP membership subscription via body.action = 'cancel'.
 //
 // Auth: requires a valid signed session token (Bearer or body.token). The customer
 // is resolved from the member's own account, never from client input.
@@ -10,10 +11,13 @@
 // Works for any member with a Stripe customer on file, including the legacy
 // Circle-created subscriptions (they live in the same account).
 //
-// POST body: { return_url, token? }
+// POST body: { return_url, token?, action? }
+//   action omitted -> normal Stripe Billing Portal
+//   action='cancel' -> Stripe subscription_cancel deep link
 // Env: STRIPE_SECRET_KEY, SUPABASE_URL, SUPABASE_SERVICE_KEY, SESSION_SIGNING_SECRET
 
 const { verifyToken } = require('./_lib/session');
+const { tierForProduct, TIER_RANK, ACCESS_STATUSES } = require('./_lib/subscription-tier');
 
 exports.handler = async function (event) {
   const CORS = {
@@ -56,6 +60,51 @@ exports.handler = async function (event) {
       // Circle checkouts create the customer in our own Stripe. Give a calm,
       // accurate message instead of an error dead-end. (200 so the client shows it.)
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ notice: 'We could not find a billing profile linked to your account. If you believe you are on a paid plan, reply to support@thinkbeyondpractice.com and we will sort it out. Nothing about your access changes in the meantime.' }) };
+    }
+
+    if (body.action === 'cancel') {
+      // Resolve the member's current TBP membership subscription server-side.
+      // Never accept a subscription id from the browser: the authenticated account
+      // determines which Stripe customer and subscription can be cancelled.
+      const subs = await stripe.subscriptions.list({
+        customer: customerId,
+        status: 'all',
+        limit: 100,
+        expand: ['data.items.data.price.product']
+      });
+
+      const candidates = (subs.data || []).map(function (sub) {
+        const item = sub.items && sub.items.data && sub.items.data[0];
+        const product = item && item.price && item.price.product;
+        const productId = typeof product === 'string' ? product : (product && product.id);
+        const tier = tierForProduct(productId, null);
+        return { sub, tier };
+      }).filter(function (x) {
+        return x.tier && ACCESS_STATUSES.has(x.sub.status) && !x.sub.cancel_at_period_end;
+      }).sort(function (a, b) {
+        const rankDiff = (TIER_RANK[b.tier] || 0) - (TIER_RANK[a.tier] || 0);
+        if (rankDiff) return rankDiff;
+        return (b.sub.created || 0) - (a.sub.created || 0);
+      });
+
+      if (!candidates.length) {
+        return { statusCode: 200, headers: CORS, body: JSON.stringify({ notice: 'We could not find an active TBP membership subscription to cancel. If you believe you have one, contact support@thinkbeyondpractice.com.' }) };
+      }
+
+      const subscriptionId = candidates[0].sub.id;
+      const portal = await stripe.billingPortal.sessions.create({
+        customer: customerId,
+        return_url: body.return_url,
+        flow_data: {
+          type: 'subscription_cancel',
+          subscription_cancel: { subscription: subscriptionId },
+          after_completion: {
+            type: 'redirect',
+            redirect: { return_url: body.return_url }
+          }
+        }
+      });
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ url: portal.url, flow: 'subscription_cancel' }) };
     }
 
     const portal = await stripe.billingPortal.sessions.create({ customer: customerId, return_url: body.return_url });
