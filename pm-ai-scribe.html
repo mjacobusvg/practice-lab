@@ -165,7 +165,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-72"></script>
+<script src="/note-engine.js?v=ambient-73"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -401,7 +401,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-72</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-73</span></div>
 </div>
 </div>
 
@@ -1769,6 +1769,16 @@ function tbpRevealDraftedNote(){
 
 var _typedDraftInFlight = false;
 var _preflightRendered = false;   // did the clinical-calls step put questions on screen this run?
+// When Draft is blocked purely because no visit type was ever chosen (e.g. a full visit was
+// recorded/typed but the clinician never picked New-eval vs Follow-up), offer an inline
+// one-click chooser instead of a dead-end. This holds the draft context so the pick resumes
+// the SAME draft immediately, with the same notes — nothing lost, no hunting for the selector.
+var _pendingVisitDraft = null;
+window.tbpPickVisitAndDraft = function(v){
+  try{ var opt = document.querySelector('#visit-opts [data-visit="' + v + '"]'); if(opt) opt.click(); }catch(e){}
+  var ctx = _pendingVisitDraft; _pendingVisitDraft = null;
+  if(ctx && visitType){ tbpTypedDraft(ctx.btn, ctx.src, ctx.errEl); }
+};
 function tbpTypedDraft(btn, src, errEl){
   if(_typedDraftInFlight) return false;
   errEl = errEl || document.getElementById('err-box') || { innerHTML:'' };
@@ -1820,7 +1830,12 @@ function tbpTypedDraft(btn, src, errEl){
           + ' optionFound=' + (!!opt) + ' rawLen=' + ((document.getElementById('raw')||{}).value||'').length
           + ' wnMode=' + (typeof wnMode !== 'undefined' ? wnMode : '?'));
       } catch(e){}
-      return draftFail('Choose a visit type first (New patient evaluation or Follow-up) &mdash; it sets which of your templates is used. Your note is safe; nothing was lost.');
+      _pendingVisitDraft = { btn: btn, src: src, errEl: errEl };
+      return draftFail('<strong>Which visit is this?</strong> Pick one and your draft continues &mdash; it sets which of your templates is used. Your note is safe, nothing was lost.'
+        + '<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">'
+        + '<button type="button" class="btn-mini" onclick="tbpPickVisitAndDraft(\'new_eval\')">New patient evaluation</button>'
+        + '<button type="button" class="btn-mini" onclick="tbpPickVisitAndDraft(\'follow_up\')">Follow-up</button>'
+        + '</div>');
     }
   }
   if(!src || src.length < 15){ return draftFail('Paste your visit notes first, even rough ones.'); }
