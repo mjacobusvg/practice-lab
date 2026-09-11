@@ -199,7 +199,7 @@ connected psychiatric workflow.** Concretely, in build order:
 1. Scribe -> Chart Audit + Coder
 2. Scribe -> Monitoring Protocol
 3. Scribe -> Interaction Interpreter
-4. Scribe -> Letter Library
+4. Scribe -> embedded visit outputs / Letter engine
 5. Screeners <-> Encounter Context
 6. Therapy Coach -> Psychotherapy note
 7. Pre-visit -> live-visit continuity
@@ -266,15 +266,45 @@ meaningful change: **Check interactions.** The Interaction tool receives the med
 automatically, does deterministic lookup first, and only produces AI interpretation if
 opened. Then: **Add relevant counseling to Plan.**
 
-#### Lane 4 — Scribe -> Letter Library
+#### Lane 4 — Scribe -> embedded visit outputs / Letter engine
 
-During the visit the patient requests a work-accommodation letter; Scribe detects
-`letter_discussed`. At the end: **Documentation request discussed -> Create a letter using
-today's visit context.** The Letter Library already knows patient name if available, relevant
-diagnoses, functional impairment documented today, the requested accommodation, treatment
-status, the clinician's letter style, and TBP letter standards. Clinician picks the letter
-type; generation uses only the appropriate subset of the encounter. One of the "oh, it
-actually knows what I was just doing" moments.
+Do not make the clinician leave the encounter merely to re-enter information the Scribe
+already has. The standalone Letter Generator stays available for work that starts outside an
+encounter, but inside the Scribe the same engine becomes an **embedded capability**: one letter/
+delivery engine, two entrances.
+
+At or near visit completion, offer **Create from this visit** when relevant. Initial output
+classes:
+
+- **Patient Visit Summary** — patient-facing language: what was discussed, finalized medication
+  instructions/changes, agreed monitoring or follow-up, and other clinician-confirmed next steps.
+  This is not a copy of the chart note and must not expose internal differential/reasoning that was
+  not intended for the patient.
+- **Treatment Plan** — a structured clinical plan generated from the clinician-confirmed
+  assessment/Plan, available for review and use as appropriate rather than treated as an automatic
+  patient handout.
+- **Care-Coordination Summary / Letter** — a purpose-limited subset for a therapist, PCP, or other
+  authorized recipient. Do not dump the whole note; include only the information needed for the
+  coordination purpose.
+- **Other Clinical Letter** — accommodation, return-to-work, school, medication/travel, or another
+  existing Letter Library standard using today's encounter context.
+
+The workflow is **Generate -> Review/Edit -> choose recipient -> confirm disclosure authority ->
+Send**. Nothing leaves TBP automatically. The clinician must see the exact final output and
+explicitly authorize delivery. For patient-directed material, confirm the destination. For
+third-party care coordination, require an explicit clinician attestation that the disclosure is
+permitted/authorized for that recipient and purpose; do not infer an ROI from the encounter.
+
+**Reuse, do not rebuild.** Embedded Scribe outputs should call the existing Letter Generator
+infrastructure for applicable standards/templates, PDF generation, S3 storage/retention options,
+sent-log behavior, and AWS SES delivery under the AWS BAA. Do not create a second email, storage,
+or retention implementation inside the Scribe. Encounter Context supplies the source facts; the
+Letter engine handles document/delivery mechanics.
+
+The important product moment is not merely "open Letter Generator." It is: the clinician just
+finished the visit, TBP already knows the verified plan and relevant context, and a useful output
+can be created and sent without retyping the encounter. This is a direct realization of
+**prepare -> guide -> document -> audit -> act**.
 
 #### Lane 5 — Screeners <-> Encounter Context
 
@@ -333,7 +363,7 @@ Relevant to this visit
   Audit your note       (ready when the draft is complete)
   Monitoring            (quetiapine was started today)
   Interactions          (two serotonergic medications are active)
-  Letter                (work accommodation was discussed)
+  Visit output          (patient summary / coordination letter may be useful)
 ```
 
 NOT a 26-tool menu. This is exactly the Christmas-tree avoidance from the OS strategy: the
