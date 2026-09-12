@@ -4,10 +4,26 @@ This is the **master narrative** for the AI Scribe and the Think Beyond Practice
 membership. It is the approved, canonical pitch. Reuse it — do not reinvent the
 pitch from scratch each time. Cut it down per channel (see "Channel cuts" below).
 
-House style: **no em-dashes.** Lead with the audit differentiator. Open like you
-built something worth considering, not like you're apologizing for mentioning it.
-Do **not** claim "no other scribe audits notes" as an absolute unless it has been
-competitively established — the description is strong enough on its own.
+House style: **no em-dashes.** Open like you built something worth considering,
+not like you're apologizing for mentioning it. Do **not** claim "no other scribe
+audits notes" as an absolute unless it has been competitively established — the
+description is strong enough on its own.
+
+**What to lead with depends on the channel, and this rule changed in Sept 2026.**
+It used to say "lead with the audit differentiator" everywhere. That was right
+when the product was a scribe that also audited. It is now a workspace across the
+whole visit in which audit is one unusually strong thing, and the old rule read
+literally would walk the site back to the smaller claim.
+
+- **Owned channels** (homepage, demo page, launch posts, email): lead with the
+  whole-workflow, clinical-assistant positioning. Before, during and after the
+  visit. Audit is the strongest single capability inside that, not the frame.
+- **Comparison threads** ("which AI scribe do you use?"): lead audit-first. It is
+  still the highest-performing acquisition hook, because it is the thing the
+  reader did not know to ask for.
+
+Audit keeps its prominence either way. What changed is whether it is the headline
+or the proof.
 
 > **Read `PRODUCT-ARCHITECTURE-AND-NAMING.md` before writing new copy.** It holds
 > the decisions underneath this pitch: what the product is called at each level,
