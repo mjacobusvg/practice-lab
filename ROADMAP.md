@@ -433,3 +433,107 @@ or expansion** of the current product. Absent that evidence, it stays in
 The point is not to stop having ideas. Michael's ability to see adjacent possibilities is one
 of the reasons TBP exists. The rule is: separate ideation from execution. Capture every idea;
 build the ones that serve the current focus.
+
+---
+
+## Idea bank — Think Beyond AI (Sept 2026)
+
+Captured from a working session, per the rule directly above: capture every idea,
+build the ones that serve the current focus. Nothing here is committed. Run each
+through `ROADMAP-AND-PROMISE-GUARDRAILS.md` before it goes near a public page,
+and remember that buildability is gate #1: if there is a credible technical path,
+it is a legitimate candidate, and architecture, risk, usefulness and maintenance
+decide the form rather than whether to consider it at all.
+
+**Public, on the site now:** Structured Interviews (NEXT); Medication Intelligence,
+Monitoring Support, Context-Aware Letters & Forms, Longitudinal Case View,
+Connected Clinical Tools (ON THE ROADMAP); EHR-connected context (EXPLORING).
+Everything below is internal until deliberately promoted.
+
+### The three that could be signature features
+
+Not more tools. These change what the product *is*.
+
+**Tool auto-routing.** The workspace recognises what the visit needs and offers the
+next tool with the context already carried: this is an interaction question, this
+needs a safety plan, this patient is asking for FMLA. Turns a toolbox into one
+thing. Publicly this is Connected Clinical Tools; internally it is the
+architectural idea the rest depend on.
+
+**Context-aware actions.** Not autonomous action. The workspace knows the job
+coming next and helps gather what that job requires *before the patient leaves*.
+The philosophy in one line: don't make me discover afterward that I forgot to ask
+something I needed.
+
+**Clinician-configurable intelligence.** Custom frameworks, custom structured
+interviews, practice policies, documentation preferences. The system stops being
+one clinician's workflow imposed on everyone and becomes each clinician's own
+workflow made executable, within safe bounds.
+
+### The north star behind all of it
+
+**Think Beyond AI should know what job you are trying to accomplish.** Not "here is
+today's transcript" but: you are doing a new evaluation; clarifying ADHD; following
+up after a hospitalisation; changing a medication; doing PFML paperwork; answering
+a portal message; refilling a controlled substance. Once it knows the job, it
+assembles the right combination of prep, records, reasoning, interview, medication
+intelligence, documentation, letters, monitoring and audit.
+
+That is a stronger north star than "build a better scribe".
+
+### The bank
+
+Feasibility and risk are first-pass judgements from the session, not gate results.
+
+| Idea | What it would do | Feasibility / risk |
+|---|---|---|
+| Structured Interviews | ADHD first, then others. Starts from what records establish, asks only what remains useful. | Very high / moderate |
+| Medication Intelligence | Recognise the med list, run the existing interaction engine, explain meaningful interactions, risk modifiers, monitoring, documentation. | Very high / moderate |
+| Medication Timeline | Clean timeline of every trial, dose, response, side effect, reason stopped, retrial, out of messy records. | Very high / low-moderate |
+| Medication Reconciliation | Compare intake, prior notes, current note, outside records and patient report. Surface mismatches rather than silently picking one. | Very high / moderate |
+| Monitoring Support | Surface labs, vitals, ECGs, metabolic and pregnancy considerations from meds and conditions. Distinguish known from missing. | High / moderate |
+| Monitoring Timeline | When labs are supplied, pull dates and results into a timeline and show the trend. A1c 5.4 to 5.7 to 6.1 beats another blob of text. | High / moderate |
+| Patient-specific tasks and reminders | "Recheck A1c in 3 months." The workspace remembers and resurfaces it. | Buildable, needs durable patient identity, task persistence, timing and delivery. Design those before marketing it. |
+| Context-aware Letters & Forms | Knows what the document requires, says what is missing during the visit, then builds it. | High / moderate |
+| Prior Authorization Builder | Build PA rationale from meds, prior trials, diagnosis, contraindications, response and payer criteria; name what is missing. | High; payer-criteria maintenance is the real cost |
+| Referral / Consultation Builder | Concise referral with relevant history, failed interventions, meds, testing, and the actual question being asked. | Very high / low |
+| Care Coordination Message | Short update or request for a therapist, PCP, specialist or school from visit context. | Very high / low. Sending it raises the risk considerably. |
+| Visit-purpose Mode | Diagnostic clarification, side-effect visit, post-hospital follow-up, paperwork visit. The workspace reshapes around the job. | Very high / low |
+| What Changed? | Compare today against last visit; show only clinically meaningful change. | Very high / low |
+| Longitudinal Case Timeline | Diagnoses, hospitalisations, med changes, symptom shifts, labs, life events, treatment response. | High. Probably an eventual killer feature. |
+| Ask This Patient's Chart | "When did she first report panic attacks?" "Why did we stop lamotrigine?" | High, scales with available chart context |
+| Contradiction Tracker | Persist unresolved conflicts across sources and bring them back until the clinician resolves them. | High / moderate; cross-session needs persistence |
+| Diagnostic Evidence Map | For a diagnosis: evidence for, against, unclear, competing explanations, with sources. | Very high / moderate |
+| Custom Framework Builder | Clinicians define their own reasoning pathway. | High / moderate |
+| Custom Structured Interview Builder | Clinician turns their own interview into an adaptive one that skips what is already known. | High / moderate |
+| Practice-policy-aware Assistant | Load your own controlled-substance, interval, refill, benzodiazepine and telehealth policies; flag when the plan conflicts with them. | High / moderate. Strongly differentiated for private practice. |
+| Informed Consent Support | Surface the specific risks, benefits and alternatives worth discussing, then document what was actually discussed. | High / moderate |
+| Patient Instructions / AVS | Today's plan as patient-friendly instructions: changes, titration, what to watch, when to call. | Very high / moderate |
+| Side-effect Detective | Patient reports bruxism or restless legs; check current meds, timing, dose changes, interactions and medical alternatives for plausible contributors. | High / moderate-high |
+| Symptom-to-Medication Timeline | Overlay symptoms against medication changes without declaring causation. | High / moderate |
+| Records Needed Next | Suggest records that would materially help, based on what is genuinely unresolved. | Very high / low |
+| Smart Record Request | Generate the ROI text for exactly those records, and why. | Very high / low |
+| Portal Message Assistant | Paste a patient message; draft a response with note and med context, flag what needs a visit, produce the documentation. | High / moderate |
+| Refill Review | Current dose, last documented response, side effects, monitoring, last visit, planned follow-up, unresolved issues. | High, scales with available data |
+| Post-hospital / ER Follow-up Prep | Read discharge documents, reconcile meds, identify diagnostic changes, pending tests, safety issues and questions. | Very high / moderate |
+| Clinical Handoff / Case Conference Summary | A tight specialist handoff instead of a chart dump. | Very high / low |
+| Decision Rationale Capture | When a diagnosis or medication changes, capture just enough rationale now that the chart explains it in six months. | Very high / low |
+| Patient Education Builder | Education based on what was actually discussed, not a generic monograph. | High / moderate |
+| Safety Plan Integration | Move into the existing safety-plan tool with current context populated. | Very high / moderate |
+| Tool Auto-routing | Recognise which tool the visit needs and offer it with context carried over. | Very high / low-moderate |
+| Morning / Session Prep Queue | Who has records to review, unresolved tasks, monitoring due, paperwork pending. | Buildable, needs schedule plus patient persistence |
+| Read-only EHR Context | Pull meds, diagnoses, labs, appointments and prior notes instead of pasting. | High where API or FHIR access exists |
+| Write-back | Approved note goes into the EHR. | Buildable, integration-dependent, higher operational risk |
+| Specialty Packs | Same workspace, different templates, frameworks, monitoring and interview modules per specialty. | High once the architecture is modular |
+
+### Deliberately held back from the public page
+
+Custom framework and interview builders, symptom-to-medication causality, portal
+message workflows, refill review, morning queues, automated patient-specific
+reminders. Not because they are weak. Because a public roadmap should sell a
+direction, not expose every thought anyone has had, and because several of them
+need persistence architecture that does not exist yet.
+
+The five public items tell one coherent evolution and should stay that way:
+**interview, medications, monitoring, documents, longitudinal context, connected
+tools.** That is how "clinical assistant" becomes literal over time.
