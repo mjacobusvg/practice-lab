@@ -104,7 +104,7 @@ function needsAuth(path) {
   return /^\/platform(\.html)?([\/?#]|$)/i.test(path)
       || /^\/pm-/i.test(path)
       || /^\/ai-scribe-workspace\.html/i.test(path)
-      || /^\/eps-quick-reference/i.test(path);
+      || /^\/[a-z0-9-]*quick-reference/i.test(path);   // eps-, adhd-stimulant-, and future ones
 }
 function oneClickify(html, contact) {
   var email = contact && contact.email;
