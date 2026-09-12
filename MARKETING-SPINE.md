@@ -9,6 +9,17 @@ built something worth considering, not like you're apologizing for mentioning it
 Do **not** claim "no other scribe audits notes" as an absolute unless it has been
 competitively established — the description is strong enough on its own.
 
+> **Read `PRODUCT-ARCHITECTURE-AND-NAMING.md` before writing new copy.** It holds
+> the decisions underneath this pitch: what the product is called at each level,
+> why "Scribe" is now one module rather than the whole thing, the vocabulary rules,
+> and the Read -> Prepare -> Reason -> Interview story. Where the two files
+> disagree, that one is newer.
+
+**Naming, in one line:** the product is an AI scribe and it is not only an AI
+scribe. Keep "AI scribe" wherever people need the category term. Say "the
+workspace" or name the module for everything a scribe does not do. The positioning
+line is **Think beyond the scribe.**
+
 ---
 
 ## Master narrative (full — for website, email, demo page, launch post)
@@ -148,6 +159,74 @@ And it does not just hand you a code. It shows you WHY. So when you are staring 
 That is Think Beyond Practice.
 
 ---
+
+## New Evaluation Prep (the current headline)
+
+The biggest advancement is not an ADHD feature, so do not lead with one. Lead with
+Prep, which applies to every new patient regardless of diagnosis.
+
+**The distinction members will actually care about:**
+
+- Review Outside Records says: *help me with these records.*
+- New Evaluation Prep says: *use these records to get me ready to see this patient.*
+
+Before this, a clinician could upload a 30-page prior psychiatric evaluation and
+the workspace would review it, tell them what mattered, weigh the evidence, and
+reason about it with Discern. They still had to take all of that and turn it into
+today's visit themselves. That is the hole this fills.
+
+**What to say it does:**
+
+> I have a new patient tomorrow. Here are their intake forms, old psychiatric
+> notes, testing, medication history, collateral, whatever I have. Read all of it
+> and get my actual evaluation ready.
+
+And it produces a rundown to read before walking in, the clinician's **own**
+new-patient template populated with the relevant history, and optional questions
+for today only if they want help identifying what is still worth clarifying.
+
+If another record arrives during the appointment, it can incorporate what that
+record adds without rebuilding the note they have been working in. Worth calling
+out to beta members specifically, because it is exactly the ugly real-world
+workflow a clean demo never exposes.
+
+**Scans and faxes read now.** A faxed record has no text in it, so the workspace
+reads the pages themselves. Say plainly that OCR misreads and anything that
+matters should be checked against the page.
+
+## The ADHD Framework (secondary, and be precise about what it is not)
+
+Do not lead with this and do not imply it is the structured interview.
+
+> I have also been building an optional ADHD Evaluation Framework on top of the
+> new prep system. It does not replace your clinical interview or require you to
+> follow someone else's checklist. It organises what the available evidence
+> supports, what remains uncertain, conflicting information, and competing
+> explanations when ADHD is part of the diagnostic question.
+
+**Never imply that childhood collateral is required.** Corroboration strengthens an
+evaluation and is not a prerequisite. Most adults cannot produce a parent, a school
+record or an informant who knew them before age 12, for reasons that have nothing
+to do with whether they have ADHD. This is a product principle, not just copy: the
+tool is built not to say it, and the marketing must not say it either.
+
+## What is coming (how to tease the structured interview)
+
+The sequence is Read, Prepare, Reason, Interview. Saying why the interview came
+last is what makes the whole thing look intentional:
+
+> I did not want to build another static ADHD questionnaire where the clinician
+> walks through 18 symptoms regardless of what is already known. For that to work
+> the way I wanted, the workspace first needed to understand prior records, intake
+> information, testing and collateral; know what had already been established;
+> bring that information into the actual evaluation; and distinguish what is known
+> from what still needs clarification. That infrastructure is what I have been
+> building.
+
+Then what it will be: an optional, evidence-aware structured ADHD interview that
+starts from what is already known, works through what still needs assessing, and
+feeds straight into the evaluation. It will not make the clinician re-ask
+questions the records have already answered.
 
 ## Talking about reasoning features (Discern, case reasoning, record review)
 
