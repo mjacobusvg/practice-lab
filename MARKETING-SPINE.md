@@ -283,9 +283,8 @@ specific and checkable, where "we listen to feedback" is what everyone says. And
 next rather than implying every idea gets built.
 
 Pair it with the standing caveat: the clinical decisions are not crowdsourced, the
-problems worth solving can be. As of Sept 2026 the homepage carries a shorter
-variant; this is the one to use everywhere else, and the one to move the homepage to
-next time that section is touched.
+problems worth solving can be. The homepage runs this wording as of Sept 2026, so
+this is canonical rather than aspirational. Use it everywhere.
 
 ## Talking about reasoning features (Discern, case reasoning, record review)
 
