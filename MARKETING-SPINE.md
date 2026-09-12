@@ -27,14 +27,21 @@ or the proof.
 
 > **Read `PRODUCT-ARCHITECTURE-AND-NAMING.md` before writing new copy.** It holds
 > the decisions underneath this pitch: what the product is called at each level,
-> why "Scribe" is now one module rather than the whole thing, the vocabulary rules,
+> why "Scribe" is now one capability within the workspace rather than the whole
+> thing, why they are capabilities and not "modules", the vocabulary rules,
 > and the Read -> Prepare -> Reason -> Interview story. Where the two files
 > disagree, that one is newer.
 
 **Naming, in one line:** the product is an AI scribe and it is not only an AI
 scribe. Keep "AI scribe" wherever people need the category term. Say "the
-workspace" or name the module for everything a scribe does not do. The positioning
-line is **Think beyond the scribe.**
+workspace" or name the capability for everything a scribe does not do. The
+positioning line is **Think beyond the scribe.**
+
+**Never write "six modules."** They are capabilities, and they are not six equivalent
+components. Prefer naming them by where they fall in the work -- before, during,
+after the visit -- which is what the homepage does and what is actually true. See
+`PRODUCT-ARCHITECTURE-AND-NAMING.md` for why the distinction is real and not
+semantics.
 
 ---
 

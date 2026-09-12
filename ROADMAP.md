@@ -345,7 +345,7 @@ most. The fix is to let the clinician hand the Scribe **sources**: a record alre
 machine (PDF/DOCX), pasted intake or referral text, a prior note. The extraction code for this
 already exists in `template-upload.html` and is reused rather than rewritten.
 
-This is Lane 7 work, not a new initiative, and it is broader than the ADHD module: "someone sent
+This is Lane 7 work, not a new initiative, and it is broader than the ADHD work: "someone sent
 me records and I have to read them before this appointment" is most weeks for most psychiatric
 prescribers, which is the habitual-use test this file measures on. Two rules govern it and are
 not optional — the Scribe takes temporary access to the clinician's own file rather than keeping
@@ -470,6 +470,16 @@ interviews, practice policies, documentation preferences. The system stops being
 one clinician's workflow imposed on everyone and becomes each clinician's own
 workflow made executable, within safe bounds.
 
+### A word about what these are
+
+Nothing in this bank should become a seventh, eighth or ninth "module". They are
+**capabilities**, and several of the best ones should not be a named destination at
+all -- they should be intelligence that appears in the workflow when it is useful.
+Medication intelligence, monitoring, tool-routing and longitudinal context are the
+clearest examples. See `PRODUCT-ARCHITECTURE-AND-NAMING.md`: the product is one
+clinical workspace with capabilities that surface at different points in the work,
+not a box containing tools.
+
 ### The north star behind all of it
 
 **Think Beyond AI should know what job you are trying to accomplish.** Not "here is
@@ -524,7 +534,7 @@ Feasibility and risk are first-pass judgements from the session, not gate result
 | Morning / Session Prep Queue | Who has records to review, unresolved tasks, monitoring due, paperwork pending. | Buildable, needs schedule plus patient persistence |
 | Read-only EHR Context | Pull meds, diagnoses, labs, appointments and prior notes instead of pasting. | High where API or FHIR access exists |
 | Write-back | Approved note goes into the EHR. | Buildable, integration-dependent, higher operational risk |
-| Specialty Packs | Same workspace, different templates, frameworks, monitoring and interview modules per specialty. | High once the architecture is modular |
+| Specialty Packs | Same workspace, different templates, frameworks, monitoring and interview capabilities per specialty. | High once the architecture is modular |
 
 ### Deliberately held back from the public page
 

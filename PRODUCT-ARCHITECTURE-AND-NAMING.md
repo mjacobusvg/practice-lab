@@ -96,8 +96,43 @@ framing. This decision revives that rather than inventing it.
 
 ## 4. Vocabulary rules
 
+### They are capabilities, not modules
+
+**Do not call them modules.** Decided Sept 2026, after the word had already reached
+the product header, and it is a correction rather than a preference.
+
+"Six modules" describes a product architecture that is cleaner and more
+compartmentalised than what actually exists. They are not six equivalent components
+sitting side by side:
+
+- **Prep** is a workflow state that gets the visit ready and populates the working note.
+- **Scribe** is the core documentation workflow.
+- **Review Outside Records** is a fairly distinct standalone job inside the workspace.
+- **Discern** is a reasoning panel that works alongside the note.
+- **Frameworks** are optional structured reasoning layers, not really one thing.
+- **Audit + Coder** is the most genuinely separate downstream tool, though it belongs
+  to the same clinical workflow.
+
+The umbrella word is **capabilities**, or describe them by where they fall in the
+work and skip the category noun entirely. "What Think Beyond AI can do today" is
+better than any taxonomy. The clinician does not care that Discern is a side panel
+and Prep is a state machine. They care when and why they would reach for each one,
+which is why the Before / During / After grouping is the honest framing and the one
+the homepage already uses.
+
+This matters beyond wording. Calling them modules invites a module-switcher UI for an
+architecture the product does not have, and it sets the wrong expectation for what
+comes next: medication intelligence, monitoring, letters, tool-routing and
+longitudinal context should not all become seven more "modules". Several of them
+should be intelligence that simply appears in the workflow when it is useful.
+
+**The truer sentence:** Think Beyond AI is not a box containing six tools. It is one
+clinical workspace with different capabilities that appear at different points in the
+work.
+
 **Reserve "Scribe" for the part that actually scribes**: record or upload the
-encounter, draft the documentation. That is one module, not the product.
+encounter, draft the documentation. That is one capability within the workspace, not
+the product.
 
 | Do not write | Write |
 |---|---|
@@ -186,9 +221,15 @@ Not yet decided. Do not treat any of these as settled.
   member-facing link and the search equity on "AI scribe".
 - **Does Think Beyond AI get its own landing page**, or stay a section of the
   Think Beyond Practice site?
-- **When does the in-product UI adopt the module names?** Naming the modules
-  inside the product is cheap, makes the broadcast easier to write, and is what
-  would make a later rename obvious rather than a leap. It has not been done yet.
+- ~~**When does the in-product UI adopt the capability names?**~~ Resolved Sept 2026.
+  The product header now reads Think Beyond AI, and names the capabilities grouped
+  Before / During / After. The first-run onboarding was rewritten off "two tools that
+  work together", which had become the single largest misrepresentation a new member
+  would read. The persistent focus bar says **Think Beyond AI / Working Note** -- where
+  you are, not a switcher.
+- **How much of the workspace should the focus bar expose?** It is the screen a
+  clinician is in all day. Relevant actions should surface when they are relevant,
+  rather than the bar advertising the whole surface area at all times. Not designed.
 - **How is the membership priced if the workspace becomes the headline** rather
   than the scribe?
 
