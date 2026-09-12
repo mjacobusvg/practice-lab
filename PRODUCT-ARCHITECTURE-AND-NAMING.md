@@ -92,6 +92,34 @@ product concept before this build, at the point where note generation, audit and
 defensibility, reasoning, letters and case presentation had outgrown the scribe
 framing. This decision revives that rather than inventing it.
 
+### Where this is going (the maturation arc)
+
+The hierarchy above is a snapshot of one stage. The trajectory, stated Sept 2026:
+
+> **Scribe -> Clinical Assistant -> Clinical Workspace -> a lightweight clinical
+> operating layer.**
+
+Each stage is a real product that stands on its own, which is what makes the arc
+credible rather than a pitch deck. We are between the second and third today.
+
+**The mechanism matters more than the label.** It gets there *not by pretending to be
+the EHR, but by taking over the cognitive and workflow glue the EHR is terrible at.*
+The EHR owns the record. It does not help you understand what is in it, decide what
+to do next, or carry what you just established into the thing you have to produce
+because of it. That gap is the product, and it is why "operating layer" does not mean
+"system of record".
+
+This refines `CLINICAL-OS-STRATEGY.md` §1, which states the operating-system thesis
+for Think Beyond Practice as a whole and is explicit that it does not mean an EHR
+replacement. What is added here is the staging, and naming the mechanism. Keep the
+two consistent; if they drift, this one is newer.
+
+It is also the reason for the capabilities-not-modules rule below. An operating layer
+made of discrete modules a clinician must choose between is just a toolbox with
+better branding. It works only if the capabilities surface when the work calls for
+them, which is what makes Tool Auto-routing the load-bearing item in the idea bank
+rather than one more feature.
+
 ---
 
 ## 4. Vocabulary rules

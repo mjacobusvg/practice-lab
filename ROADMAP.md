@@ -445,6 +445,14 @@ and remember that buildability is gate #1: if there is a credible technical path
 it is a legitimate candidate, and architecture, risk, usefulness and maintenance
 decide the form rather than whether to consider it at all.
 
+**The frame this sits under** is the maturation arc in
+`PRODUCT-ARCHITECTURE-AND-NAMING.md` §3: Scribe -> Clinical Assistant -> Clinical
+Workspace -> a lightweight clinical operating layer, reached by taking over the
+cognitive and workflow glue the EHR is bad at rather than by becoming a system of
+record. Read an idea below against that, not only against "is it useful": the ones
+that matter are the ones that close the gap between knowing something and having to
+act on it somewhere else.
+
 **Public, on the site now:** Structured Interviews (NEXT); Medication Intelligence,
 Monitoring Support, Context-Aware Letters & Forms, Longitudinal Case View,
 Connected Clinical Tools (ON THE ROADMAP); EHR-connected context (EXPLORING).

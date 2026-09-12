@@ -266,6 +266,27 @@ starts from what is already known, works through what still needs assessing, and
 feeds straight into the evaluation. It will not make the clinician re-ask
 questions the records have already answered.
 
+## The invitation (canonical wording)
+
+Member-shaped development is the differentiator the spine already says is true and
+worth using. This is the wording to use when asking for it:
+
+> **See something missing? Tell me.**
+> Think Beyond AI is being built from the real problems clinicians bring into the
+> workspace. If there is a useful thing you wish it could do and there is a credible
+> way to build it, I want to see whether we can.
+
+Two things make it work. "The real problems clinicians bring into the workspace" is
+specific and checkable, where "we listen to feedback" is what everyone says. And
+"a credible way to build it" is the actual gate from
+`ROADMAP-AND-PROMISE-GUARDRAILS.md`, so the invitation is honest about what happens
+next rather than implying every idea gets built.
+
+Pair it with the standing caveat: the clinical decisions are not crowdsourced, the
+problems worth solving can be. As of Sept 2026 the homepage carries a shorter
+variant; this is the one to use everywhere else, and the one to move the homepage to
+next time that section is touched.
+
 ## Talking about reasoning features (Discern, case reasoning, record review)
 
 Two hard rules, both about accuracy rather than modesty.
