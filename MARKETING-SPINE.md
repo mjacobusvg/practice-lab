@@ -63,18 +63,33 @@ thinkbeyondpractice.com
 
 ---
 
-## Landing-page version
+## Landing-page version (canonical, shipped Sept 2026)
 
-**Headline:**
+This replaced "Your scribe shouldn't just write the note. It should help you catch
+what could hurt you before you sign it." That headline was right when the product was
+a scribe that also audited. It is now a workspace across the whole visit, and leading
+on the audit undersells it on our own page. See the channel rule at the top: audit
+still leads in comparison threads.
 
-> Your scribe shouldn't just write the note. It should help you catch what could hurt you before you sign it.
+**Name and identity:**
 
-**Sub-sequence (the workflow, in order):**
+> **THINK BEYOND AI**
+> Your AI scribe and clinical assistant.
+> **Think beyond the scribe.**
 
-> Prepare for the visit. Support the therapy. Write the note. Audit the chart. Defend the code.
+**The workflow sequence:**
 
-This sequence communicates that this is not just transcription — it is a clinical
-workflow and documentation system built around psychiatric practice.
+> Understand the record. Prepare the visit. Reason through the case. Document the care. Audit before you sign.
+
+**This is the one canonical sequence. Use it everywhere.** Two older variants were in
+circulation ("Support the therapy / Write the note / Defend the code" and "Document
+the care / Audit the chart / Understand the code") and both have been replaced here
+and in `CLINICAL-OS-STRATEGY.md`.
+
+It is better than either for three reasons. It maps to what the workspace actually
+does now, including Review Outside Records and Discern, which neither old sequence
+covered. It is not psych-specific. And it does not make psychotherapy sound like a
+mandatory step in every visit, which "Support the therapy" did.
 
 ---
 
@@ -178,8 +193,8 @@ And that is only the start. After the visit it drafts the note in your own docum
 
 And it does not just hand you a code. It shows you WHY. So when you are staring at a tough follow-up wondering "is this really a 99215, or still a 99214?", it walks the reasoning with you, and if the documentation does not support the higher level, it shows you what is missing. Not to inflate the code, but so you document the work you actually did and get sharper at coding over time. That is one of the things clinicians use it for most.
 
-**Prepare for the visit. Document the care. Audit the chart. Understand the code.**
-That is Think Beyond Practice.
+**Understand the record. Prepare the visit. Reason through the case. Document the care. Audit before you sign.**
+That is Think Beyond AI.
 
 ---
 

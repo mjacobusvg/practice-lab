@@ -195,11 +195,13 @@ The Chart Audit + Coder evaluates the completed chart for things that matter aft
 - psychotherapy add-on support
 - coding defensibility
 
-The current marketing spine correctly summarizes the workflow as:
+The current marketing spine summarizes the workflow as:
 
-> Prepare for the visit. Support the therapy. Write the note. Audit the chart. Defend the code.
+> Understand the record. Prepare the visit. Reason through the case. Document the care. Audit before you sign.
 
-This remains an important public-facing wedge.
+(Updated Sept 2026. It previously read "Prepare for the visit. Support the therapy.
+Write the note. Audit the chart. Defend the code." The audit step remains an important
+public-facing wedge; what changed is that it is no longer the whole frame.)
 
 "Audit-ready notes" and auditing the finished chart are not the same thing.
 
