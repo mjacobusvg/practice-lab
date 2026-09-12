@@ -534,6 +534,31 @@ reminders. Not because they are weak. Because a public roadmap should sell a
 direction, not expose every thought anyone has had, and because several of them
 need persistence architecture that does not exist yet.
 
-The five public items tell one coherent evolution and should stay that way:
+The public items tell one coherent evolution and should stay that way:
 **interview, medications, monitoring, documents, longitudinal context, connected
-tools.** That is how "clinical assistant" becomes literal over time.
+tools**, with EHR-connected context labelled Exploring rather than promised. That
+is how "clinical assistant" becomes literal over time.
+
+**More Diagnostic Frameworks stays internal until we can name the frameworks.**
+Decided Sept 2026, after it was briefly considered for the public roadmap.
+
+"More frameworks" as a roadmap line is vague, and it makes the roadmap read as
+disproportionately diagnostic. Frameworks already appears in the Live tier, and
+the very next item is a structured ADHD interview, so a third diagnostic entry
+adds nothing the reader cannot already see. The slot it would have taken is
+better spent on Longitudinal Case View and Connected Clinical Tools, which are
+the two items that show where the *whole workspace* is going:
+
+- **Longitudinal Case View** signals the transition from helping with this visit
+  to making sense of the patient's course across the information you provide.
+  That is a much larger conceptual expansion than another framework.
+- **Connected Clinical Tools** is arguably the most strategically important item
+  on the page, because it explains why the separate Think Beyond Practice tools
+  exist. The interaction checker, safety plan, letters and forms, Audit + Coder
+  stop behaving like separate destinations and become capabilities the workspace
+  invokes with the context already in front of it. That is the path to a genuine
+  clinical assistant.
+
+It becomes interesting marketing the moment it is concrete: *"Diagnostic
+Frameworks: bipolar spectrum and autism next"*, or whatever we actually build.
+Promote it then, not before.
