@@ -185,7 +185,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-85"></script>
+<script src="/note-engine.js?v=ambient-86"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -470,7 +470,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-85</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-86</span></div>
 </div>
 </div>
 
@@ -1397,6 +1397,19 @@ function nameStyleDirective(tmpl){
 // nameStyleDirective. Finds the canonical "THIRD-PARTY NAMES:" tag and returns it verbatim; returns
 // '' when the template states none, in which case the caller applies the privacy default (relationship,
 // never name). Separate from the patient's own NAME/PRONOUN STYLE.
+
+// A clinician who writes the patient's NAME writes the partner's name too; one who writes "the
+// patient" wants "his partner". The old default ignored that and imposed relationship-only on
+// every non-patient whenever a template had no explicit "Third parties:" line — which is most
+// templates — so it silently overrode the clinician's own NAME/PRONOUN STYLE. Derive it instead.
+function thirdPartyDefault(nameDir){
+  var neutral = /they\s*\/\s*them|pronoun[-\s]*neutral|do not use the patient'?s (first )?name|do not (default to|use) (a )?gendered|refer to the patient as ["']?the patient/i;
+  if(nameDir && neutral.test(nameDir)){
+    return "THIRD-PARTY NAMES: the clinician writes about the patient in a de-identified style, so match it for everyone else: refer to anyone who is NOT the patient (partner, spouse, parents, siblings, friends, therapists, other prescribers) by RELATIONSHIP or ROLE rather than by name.\n\n";
+  }
+  return "THIRD-PARTY NAMES: the clinician writes about people by name, so do the same for everyone else. Use the names the records give for partners, family, therapists and other prescribers, exactly as documented, and keep any role alongside the name where the records give one ('her partner, Alexia Johnson'). Do not strip a documented name down to a relationship.\n\n";
+}
+
 function thirdPartyDirective(tmpl){
   tmpl = String(tmpl || '');
   if(!tmpl) return '';
@@ -1497,8 +1510,7 @@ function draftSystem(){
     s += "  >> " + thirdDir + "\n";
     s += "Apply this to everyone who is NOT the patient. It is SEPARATE from the patient's own name/pronoun style above, which is unaffected.\n\n";
   } else {
-    s += "=== THIRD-PARTY NAMES (default: relationship, not name) ===\n";
-    s += "Refer to anyone other than the patient (spouse, partner, children, parents, other relatives, friends, therapists, other providers, coworkers) ONLY by their relationship or role to the patient, e.g. 'his wife', 'her therapist', 'the patient's aunt' — NEVER by name, even when the raw notes give a name. Silently drop third-party names and keep the relationship. This is a non-patient privacy default, SEPARATE from the patient's own name/pronoun style above, which is unaffected.\n\n";
+    s += thirdPartyDefault(nameDir);
   }
   s += "=== OUTPUT FORMAT ===\n";
   s += "Output plain, chart-ready text for pasting into an EHR. Do NOT use Markdown: no # or ## headings, no --- or *** divider lines, no > blockquotes, no ** bold **. FOLLOW THE CLINICIAN'S TEMPLATE for how section labels are placed: if the template writes the label inline with a colon and the content on the same line (e.g. 'Counseling: continues weekly therapy...'), do exactly that; if the template puts labels on their own line, do that. Do not impose a layout the template does not use. Even if the template is written in Markdown, do not carry that syntax into the HPI.\n\n";
@@ -2151,7 +2163,7 @@ function evalPrepSystem(wantQuestions){
   if(nameDir){ s += "NAME & PRONOUN STYLE (the clinician's own, authoritative):\n  >> " + nameDir + "\n"; }
   else { s += "NAME STYLE: use the patient's documented first name naturally, writing about a person rather than a case file.\n"; }
   if(thirdDir){ s += "THIRD-PARTY NAMES (the clinician's own directive): " + thirdDir + "\n\n"; }
-  else { s += "THIRD-PARTY NAMES: refer to anyone who is NOT the patient (partner, spouse, parents, siblings, friends, therapists, other prescribers) by RELATIONSHIP or ROLE rather than by name: 'his partner', 'the prior prescriber'. Name a clinician or practice only where the note has to identify the source of a record.\n\n"; }
+  else { s += thirdPartyDefault(nameDir); }
 
   s += "=== THE RULE THAT MATTERS MOST HERE ===\n";
   s += "This note will be SIGNED BY THIS CLINICIAN, and none of the material you are working from is theirs. Every line you place in the note came from someone else's records or from the patient's own account of their history. If a line lands as an established finding when it is a prior clinician's conclusion or a patient's report, this clinician has attested to somebody else's work as their own.\n";
