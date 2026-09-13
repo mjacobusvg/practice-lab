@@ -185,7 +185,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-90"></script>
+<script src="/note-engine.js?v=ambient-91"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -323,10 +323,10 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
             <label style="display:inline-flex;align-items:center;gap:7px;cursor:pointer;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream-dim);font-size:.85rem;margin:0">
               <input type="checkbox" id="ep-adhd" style="width:auto"> ADHD evaluation support</label>
             <div class="hint" style="margin:3px 0 9px 22px;line-height:1.5">Builds the ADHD Evaluation Framework from the same records while it preps: what supports ADHD, what is still unresolved, and what to clarify today. After the visit it can tell you what today established.</div>
-            <label style="display:flex;align-items:center;gap:7px;cursor:pointer;text-transform:none;font-weight:400;letter-spacing:0"><input type="checkbox" id="ep-questions" style="width:auto"> Suggest questions for today
+            <label style="display:flex;align-items:center;gap:7px;cursor:pointer;text-transform:none;font-weight:400;letter-spacing:0"><input type="checkbox" id="ep-questions" style="width:auto"> <span id="ep-q-label">Suggest questions for today</span>
             </label>
           </div>
-          <div class="hint" style="margin-top:5px;line-height:1.45;color:var(--cream-dim)">Questions are off by default. Leave it off and you get the note and the rundown, nothing else &mdash; you run your own interview.</div>
+          <div class="hint" id="ep-q-hint" style="margin-top:5px;line-height:1.45;color:var(--cream-dim)">Questions are off by default. Leave it off and you get the note and the rundown, nothing else &mdash; you run your own interview.</div>
           <div class="hint" id="ep-add-mode" style="display:none;margin-top:7px;padding:8px 11px;border:1px solid var(--rule);border-left:3px solid var(--teal);border-radius:7px;line-height:1.45;color:var(--cream)">You have already started this note, so adding records will not rebuild it. The new material is <strong>added to the end of your working note</strong> and your rundown is brought up to date &mdash; everything you have typed stays exactly as you left it.</div>
 
           <div style="margin-top:11px"><button class="btn" type="button" id="ep-run">Prep my evaluation &rarr;</button>
@@ -468,7 +468,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-90</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-91</span></div>
 </div>
 </div>
 
@@ -3827,6 +3827,31 @@ function tbpAdhdEnter(mode){
   tbpAdhdShowSetup(mode);
 }
 document.getElementById('adhd-open-setup-link').addEventListener('click', function(e){ e.preventDefault(); tbpAdhdEnter('framework'); });
+
+// The two options overlapped: the Framework already produces the questions worth asking today,
+// while the second checkbox still claimed that leaving it off meant "nothing else, you run your
+// own interview". Both true separately, contradictory together. So the second option renames
+// itself to what it actually adds once ADHD support is on: everything OUTSIDE the diagnostic
+// question. Nobody should have to work out whether ticking one makes the other redundant.
+function tbpEpSyncQuestionCopy(){
+  var adhd = document.getElementById('ep-adhd');
+  var lbl  = document.getElementById('ep-q-label');
+  var hint = document.getElementById('ep-q-hint');
+  if(!lbl || !hint) return;
+  if(adhd && adhd.checked){
+    lbl.textContent = 'Also suggest general intake questions';
+    hint.innerHTML = 'The Framework already gives you the ADHD questions, one click from its panel into your note. '
+      + 'This adds questions about the rest of the record \u2014 medical, social, safety, anything outside the diagnostic question.';
+  } else {
+    lbl.textContent = 'Suggest questions for today';
+    hint.innerHTML = 'Questions are off by default. Leave it off and you get the note and the rundown, nothing else \u2014 you run your own interview.';
+  }
+}
+(function(){
+  var a = document.getElementById('ep-adhd');
+  if(a) a.addEventListener('change', tbpEpSyncQuestionCopy);
+  tbpEpSyncQuestionCopy();
+})();
 // The 'history' entry point is retired: evaluation prep with Focus set to ADHD does that job,
 // and does it into the clinician's own template. adhdHistorySystem() and the history branches
 // stay in place for now, unreachable, rather than being ripped out mid-flight.
