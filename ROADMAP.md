@@ -401,6 +401,49 @@ actually reads as bloated.
 - Gradually add staging/testing/deployment guardrails as usage grows.
 - Do **not** undertake a major rewrite merely for architectural elegance.
 
+### D. Clinical Simulation Lab (added Sept 2026, owner-directed)
+
+This file previously listed therapeutic simulation under NOT NOW. Michael directed the work in
+Sept 2026, so the entry was stale, not the instruction. It is now an active lane. What is built
+so far is deliberately a **vertical slice, not a platform**: one technique, three scenarios, no
+authoring tools, no persistence, no CE credit.
+
+**Live (beta):** `practice-lab-clinical.html` at `/practice-lab/clinical`, the third card in the
+Practice Lab hub. Motivational Interviewing, three psychiatric med-visit scenarios (aripiprazole
+weight gain, alcohol behind a partial antidepressant response, a 21-year-old sent by his mother).
+
+**The design decisions that make it not a chatbot:**
+
+1. **The patient has hidden state.** Each patient turn returns JSON carrying what the patient says
+   plus a readiness score and an alliance score, both 0-10, both moved only by what the clinician
+   actually just did. The numbers are never shown during the conversation, because a visible meter
+   teaches clinicians to play the meter. They are revealed afterwards as a turn-by-turn trajectory
+   with the model's own one-line reason for each move. That reveal is the teaching moment: *this
+   is the turn where you lost him.*
+2. **The debrief is a separate call with no memory of the persona,** scored against MITI-style
+   behaviour counts (open vs closed questions, simple vs complex reflections, affirmations,
+   autonomy support, permission asked, MI non-adherent turns). **Every claim must quote the
+   clinician's own words verbatim.** Unquoted praise is worthless. Same principle as the Chart
+   Audit, which is the differentiator members already recognise.
+3. **Technique is scored, outcome is not.** Good MI with a patient who still refuses scores well.
+4. **Risk and crisis scenarios are deliberately held back** pending scenario design and safety
+   review. That is the one where being wrong matters most.
+
+**Routing:** non-PHI `anthropic-proxy` (Practice Lab path), Sonnet for both the patient turn and
+the debrief, `tool: 'Clinical Simulation Lab'` with a per-scenario `mode` so `tool_usage` gives a
+real cost-per-session number. That number is the input to any later licensing conversation.
+
+**Open, in order:**
+- Watch cost and latency per session; A/B Haiku on the patient turn (the debrief stays Sonnet).
+- Scenario count before technique count. Three MI scenarios that feel real beat four thin techniques.
+- Persistence (Supabase) only when there is a reason: repeat-attempt comparison, or CE credit.
+- Then CBT, which needs a different rubric, not the MI one with the labels swapped.
+
+**How this clears the gate rather than ignoring it:** it is the only thing TBP has that a member
+can use on a day with no patients in front of them, which is a different usage occasion from every
+other tool. Whether that actually produces repeat engagement is the thing to measure before any of
+the licensing ambitions in `FUTURE-OPPORTUNITIES.md` §5 are taken seriously.
+
 ---
 
 ## NOT NOW — strategic options, not development commitments
@@ -419,7 +462,8 @@ proving the current psychiatric product. The full, organized idea tree lives in
 - electronic lab ordering
 - expanded forms / PA automation
 - mentorship and supervision marketplace expansion
-- therapeutic simulation platform
+- ~~therapeutic simulation platform~~ **moved into active work Sept 2026 at Michael's direction** (lane D
+  below). The white-label / engine-licensing version of it stays NOT NOW.
 - enterprise CE licensing
 - white-label / licensed simulation technology
 - broader marketplace

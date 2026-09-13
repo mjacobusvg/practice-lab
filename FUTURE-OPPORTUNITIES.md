@@ -304,7 +304,11 @@ licensing.
 >   white-label licensing, platform/engine licensing.
 > - *Prerequisite:* prove that TBP's own simulations produce repeated learner engagement
 >   before building third-party authoring infrastructure.
-> - *Status:* strategic option; not active roadmap.
+> - *Status (updated Sept 2026):* the **first slice is built and in beta** at
+>   `/practice-lab/clinical` (MI, three scenarios) at Michael's direction. See `ROADMAP.md`
+>   lane D. Everything else on this list, including third-party authoring, scenario
+>   marketplaces, competency reporting, engine licensing and white-label, remains an option
+>   and is explicitly NOT started. The prerequisite above still governs them.
 
 ---
 
