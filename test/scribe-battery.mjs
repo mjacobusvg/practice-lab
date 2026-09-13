@@ -1,4 +1,5 @@
-// Usability battery for the practice AI Scribe.
+// Usability battery for the AI Scribe. Runs against the LIVE file by default;
+// set TBP_SCRIBE=ai-scribe-practice to point it at the practice copy instead.
 //
 //   npm i playwright            # once; Chromium is already at /opt/pw-browsers
 //   python3 -m http.server 8899 &
@@ -16,6 +17,8 @@
 import { chromium } from 'playwright';
 import fs from 'fs';
 
+const SCRIBE = process.env.TBP_SCRIBE || 'pm-ai-scribe';
+
 const stub = fs.readFileSync(new URL('./gate-stub.js', import.meta.url), 'utf8');
 const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
 
@@ -31,9 +34,9 @@ async function openScribe(slot = 'probe') {
   await page.route('**/.netlify/**', r => r.fulfill({ status: 200, contentType: 'application/json', body: '{}' }));
   // Same-origin host page: an about:blank parent partitions localStorage away, which the
   // per-patient draft isolation test needs to read.
-  await page.goto(`http://localhost:8899/test/host.html?slot=${slot}`, { waitUntil: 'domcontentloaded' });
+  await page.goto(`http://localhost:8899/test/host.html?slot=${slot}&scribe=${SCRIBE}`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(3200);
-  const f = page.frames().find(fr => fr.url().includes('ai-scribe-practice'));
+  const f = page.frames().find(fr => fr.url().includes('/' + SCRIBE + '.html'));   // not the host frame, whose query also names the build
   // Stub the model. Answers are shaped by which prompt asked, so each flow completes for real.
   await f.evaluate(() => {
     window.__calls = [];
