@@ -185,7 +185,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-86"></script>
+<script src="/note-engine.js?v=ambient-87"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -470,7 +470,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-86</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-87</span></div>
 </div>
 </div>
 
@@ -3704,6 +3704,8 @@ function tbpAdhdSyncFoot(){
   var enough = (sig - base) > 400;   // a few sentences of real visit material, not a stray keystroke
   foot.style.display = enough ? '' : 'none';
 }
+// Re-check as the note grows so the entry button offers the reassess the moment it is earned.
+setInterval(function(){ try { if(adhdFw) tbpAdhdSyncTriggers(); } catch(e){} }, 4000);
 function tbpAdhdShowPanel(){
   if(typeof tbpDemoBlock === 'function' && tbpDemoBlock()) return;
   try { tbpHideReason(); } catch(e){}   // one panel at a time; two would leave the note a column
@@ -3833,8 +3835,22 @@ document.getElementById('adhd-open-setup').addEventListener('click', function(){
 
 // Once a framework exists it needs a way back into it from the working note, alongside Discern.
 function tbpAdhdSyncTriggers(){
+  // The entry button is the only thing on the working-note screen that says a framework exists,
+  // so it has to carry its state. Two things were invisible before: after a Recover the panel
+  // does not reopen, and the note looks like the framework is gone; and once the visit has been
+  // conducted, "What did today establish?" only appears INSIDE the panel, so a clinician who
+  // just finished the interview has no idea the second half is waiting for them.
+  var ready = false;
+  try { ready = adhdFw && (tbpAdhdSessionSig() - ((typeof adhdFw.sig === 'number') ? adhdFw.sig : 0)) > 400; } catch(e){}
   document.querySelectorAll('.adhd-entry').forEach(function(el){
     el.style.display = adhdFw ? '' : 'none';
+    if(!adhdFw) return;
+    el.innerHTML = ready ? '\uD83E\uDDE0 ADHD Framework \u00b7 what did today establish?'
+                         : '\uD83E\uDDE0 ADHD Framework';
+    el.title = ready
+      ? 'You have visit material the framework has not seen. Reopen it to weigh what today established against what the records already showed.'
+      : 'Where the ADHD evidence stands: what this case establishes, what it does not, what competing explanations are still open, and what to ask. Separate from prepping the visit.';
+    el.style.boxShadow = ready ? '0 0 0 2px #1a1033, 0 0 0 4px #a78bfa' : '';
   });
 }
 
