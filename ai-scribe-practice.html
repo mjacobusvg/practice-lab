@@ -2486,7 +2486,12 @@ async function tbpRenderPdfPage(pdf, n){
   canvas.width = Math.round(vp.width); canvas.height = Math.round(vp.height);
   var ctx = canvas.getContext('2d');
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);   // faxes render transparent otherwise
-  await page.render({ canvasContext: ctx, viewport: vp }).promise;
+  // intent:'print' is not cosmetic. On the default display intent pdf.js drives its render
+  // loop with requestAnimationFrame (InternalRenderTask._scheduleNext), and a hidden tab never
+  // fires one — so reading a scanned fax stalls the moment the clinician switches tabs and only
+  // resumes when they come back. Print intent continues on a microtask instead, which nothing
+  // throttles, so pages keep rasterising in the background. A scanned page renders identically.
+  await page.render({ canvasContext: ctx, viewport: vp, intent: 'print' }).promise;
   var url = canvas.toDataURL('image/jpeg', 0.85);
   canvas.width = 0; canvas.height = 0;   // drop the page image as soon as it is encoded
   return url;
