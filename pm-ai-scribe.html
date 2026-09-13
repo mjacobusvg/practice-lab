@@ -185,7 +185,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-84"></script>
+<script src="/note-engine.js?v=ambient-85"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -470,7 +470,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-84</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-85</span></div>
 </div>
 </div>
 
@@ -2114,6 +2114,17 @@ async function verifyHpi(hpi){
 // unconditional now and generalised one notch. The sixth, a list of ADHD symptom
 // domains to pull forward, is gone: the records and the clinician's own template
 // already drive which sections get filled.
+// Clinicians upload what is in the folder, and folders are not clean: a fax with someone
+// else's sheet in it, a collateral form completed about a different patient, records pulled
+// for the wrong person. Nothing downstream was checking, so two people could be blended into
+// one history that reads finished. Every prompt that consumes uploaded sources carries this.
+var SOURCE_IDENTITY_CHECK =
+  "=== ARE THESE ALL THE SAME PATIENT? CHECK THIS BEFORE YOU WRITE ANYTHING ===\n" +
+  "You are handed whatever was in the folder, and folders contain misfiled material: a fax with somebody else's page in it, a collateral form filled out about a different patient, records pulled for the wrong person with a similar name. Nobody will warn you.\n" +
+  "So first compare the sources against each other on what identifies a person: the name each one uses, age or date of birth, the pronouns and sex each source uses for the patient, who was treating them and over what dates, and whether the histories can describe one life at all. A source that uses different pronouns for the patient than the others is a signal, not a style problem.\n" +
+  "If any source appears to be about a DIFFERENT person, do NOT merge them and do NOT quietly go with whichever has the most material. Begin your output with a line starting 'SOURCE MISMATCH:' that names the document which looks like someone else and the specific things that do not line up. Then work from ONLY the sources that agree with each other, and say which ones those are.\n" +
+  "Two people blended into one history is the worst thing you can produce here. It is worse than producing nothing, because it looks finished.\n\n";
+
 var EVAL_SOURCE_RULES =
   "=== READING SOMEONE ELSE'S RECORDS ===\n" +
   "Retrospective self-report of childhood or historical symptoms IS evidence and it IS retrospective self-report. Write which. 'She reported at the 2026 evaluation that she struggled with reading throughout school' is right; 'longstanding reading difficulty since childhood' is not.\n" +
@@ -2131,6 +2142,16 @@ function evalPrepSystem(wantQuestions){
   s += docPrescribingBoundary();
 
   if(tmpl){ s += "CLINICIAN'S NEW-PATIENT TEMPLATE (follow its section structure, order and labels exactly):\n\n" + tmpl + "\n\n"; }
+
+  // draftSystem applies the clinician's saved NAME/PRONOUN style and the third-party naming
+  // default; Prep never did, so a prepped note and a drafted note in the same chart could refer
+  // to the same people two different ways.
+  var nameDir = nameStyleDirective(tmpl);
+  var thirdDir = thirdPartyDirective(tmpl);
+  if(nameDir){ s += "NAME & PRONOUN STYLE (the clinician's own, authoritative):\n  >> " + nameDir + "\n"; }
+  else { s += "NAME STYLE: use the patient's documented first name naturally, writing about a person rather than a case file.\n"; }
+  if(thirdDir){ s += "THIRD-PARTY NAMES (the clinician's own directive): " + thirdDir + "\n\n"; }
+  else { s += "THIRD-PARTY NAMES: refer to anyone who is NOT the patient (partner, spouse, parents, siblings, friends, therapists, other prescribers) by RELATIONSHIP or ROLE rather than by name: 'his partner', 'the prior prescriber'. Name a clinician or practice only where the note has to identify the source of a record.\n\n"; }
 
   s += "=== THE RULE THAT MATTERS MOST HERE ===\n";
   s += "This note will be SIGNED BY THIS CLINICIAN, and none of the material you are working from is theirs. Every line you place in the note came from someone else's records or from the patient's own account of their history. If a line lands as an established finding when it is a prior clinician's conclusion or a patient's report, this clinician has attested to somebody else's work as their own.\n";
@@ -2173,6 +2194,7 @@ function evalPrepSystem(wantQuestions){
   }
   s += "Plain text. No Markdown, no bullet characters.\n\n";
 
+  s += SOURCE_IDENTITY_CHECK;
   s += EVAL_SOURCE_RULES + "\n";
 
   s += "=== OUTPUT ===\n";
@@ -2700,6 +2722,7 @@ function docCarryOnlySystem(){
 
 function docReviewSystem(){
   var s = docPrescribingBoundary();
+  s += SOURCE_IDENTITY_CHECK;
   s += "You are reviewing an outside clinical record for a psychiatric clinician who is about to see, or has just seen, this patient.\n\n";
   s += "Your job is NOT to summarize or reproduce the document. It is to work out what a clinician needs to understand from this record now, and what is important enough to preserve for years.\n\n";
 
@@ -2830,6 +2853,7 @@ function docReviewSystem(){
 // by design. With sources, prep finally has something to reason over (CLINICAL-OS-STRATEGY.md 32).
 function newEvalPrepFromSourcesSystem(){
   var s = "You are preparing a psychiatric prescriber for a NEW PATIENT EVALUATION they are about to conduct. They have not met this patient. ";
+  s += SOURCE_IDENTITY_CHECK;
   s += "You are given one or more OUTSIDE RECORDS the patient or a referrer sent ahead. Your job is to make the clinician walk in already oriented, and to be honest about what those records do and do not establish.\n\n";
   s += "SYNTHESIS FIRST, GAPS SECOND. You are not a completeness checker. Start by saying what the records actually establish and how strongly, in ordinary clinical language. Only then say what is still open.\n\n";
   s += "Output EXACTLY these three markers, each on its own line, with content on the lines after it. Reproduce each marker exactly as written. No Markdown, no JSON, no code fences.\n\n";
@@ -3051,6 +3075,7 @@ var adhdMode = 'framework';   // or 'history' — same records, different output
 
 function adhdSharedRules(){
   var s = docPrescribingBoundary();
+  s += SOURCE_IDENTITY_CHECK;
 
   s += "=== WHAT THIS IS ===\n";
   s += "You are organising the diagnostic problem for a psychiatric clinician evaluating a patient for ADHD. You are NOT administering a checklist, scoring symptoms, or producing a rating scale. The clinician knows the criteria. What they do not have is a clear view of which parts of the question this case has already answered, and which it has not.\n";
@@ -4236,6 +4261,7 @@ function tbpEpNoteTyped(){
 function evalPrepAddSystem(){
   var s = "A clinician prepped this evaluation from records, has been working in the note since, and has now added MORE material — a record that arrived late, or something pasted mid-visit. You are given the note as it stands and everything they hold on this patient.\n\n";
   s += docPrescribingBoundary();
+  s += SOURCE_IDENTITY_CHECK;
   s += EVAL_SOURCE_RULES;
 
   s += "=== THE ONLY QUESTION ===\n";
