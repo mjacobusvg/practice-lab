@@ -134,20 +134,26 @@ Day-to-day work was being done as the account root user. On an account under a B
 should carry MFA and sit unused, with an ordinary IAM user for daily work.
 
 - [x] **1. Root MFA.** DONE — virtual device registered 23 April 2026.
-- [ ] **1b. Register a SECOND root MFA device.** AWS issues no recovery codes for root (an
+- [ ] **1b. Register a SECOND root MFA device.** STILL OPEN. AWS issues no recovery codes for root (an
       earlier version of this runbook wrongly said it did); the supported backup is up to 8
       registered devices. Add a second authenticator or a hardware key. Then confirm the root
       email and account phone number are current — that pair is the actual recovery path if
       every device is lost.
 - [x] **2. Root access keys.** DONE — none exist. IAM dashboard shows 0 security
       recommendations. Nothing to revoke.
-- [ ] **3. Activate IAM billing access BEFORE testing.** Account menu -> Account -> "IAM user
-      and role access to billing information" -> Edit -> Activate. Root-only setting. Without
-      it the new IAM user signs in and Billing is simply absent.
-- [ ] **4. Create an IAM user** with console access and `AdministratorAccess`.
-- [ ] **5. MFA that user too.**
-- [ ] **6. Test in a private window** — confirm Lambda, Bedrock, Support and Billing all
-      resolve — *then* stop using root for daily work.
+- [x] **3. Activate IAM billing access.** DONE 13 Sept. Root-only setting; without it the new
+      IAM user signs in and Billing is simply absent.
+- [x] **4. Create an IAM user.** DONE 13 Sept — `Michael`,
+      `arn:aws:iam::266359797908:user/Michael`, `AdministratorAccess` attached directly, no
+      access keys. **Username is `Michael`, capital M, and is NOT the root email address** —
+      signing in with the email is what fails.
+- [x] **5. MFA that user.** DONE 13 Sept — **passkey**, not TOTP. Worth noting for next
+      time: the AWS virtual-MFA enrolment is fiddly (each page load mints a NEW secret, so a
+      stale entry from a cancelled attempt never validates), and a passkey sidesteps the whole
+      code-entry problem. Check whether the passkey is synced (iCloud Keychain / 1Password /
+      Google) or bound to one device; if device-bound, losing that machine loses the factor.
+- [x] **6. Tested and in use.** DONE 13 Sept. Sign-in URL:
+      `https://266359797908.signin.aws.amazon.com/console`
 
 Root is never deleted, only quiet. It stays needed for account settings, the billing toggle,
 and closing the account.
@@ -157,13 +163,20 @@ and closing the account.
 No record of who created, modified or deleted infrastructure. On a BAA footprint that is the
 audit trail for the environment itself, and it cannot be reconstructed after the fact.
 
-- [ ] CloudTrail -> Trails -> Create trail. Management events, Read and Write. **Data events
-      OFF** (billed per event; a separate decision, worth revisiting for the PHI bucket).
-- [ ] **SSE-KMS encryption on. Log file validation on** — validation is what makes the trail
-      defensible as an audit record.
-- [ ] Multi-region (default).
+- [x] **DONE 13 Sept.** Trail `tbp-management-events`, multi-region, status Logging.
+      Management events API activity = All. Data events OFF, Insights OFF, CloudWatch Logs
+      OFF. Bucket `aws-cloudtrail-logs-266359797908-664276ba`.
+- [x] **SSE-KMS deliberately NOT enabled.** A new KMS key is ~$1/month plus per-request
+      charges, and CloudTrail logs are API metadata rather than PHI, so the free SSE-S3
+      default is the right call here.
+- [ ] **Log file validation — VERIFY.** It defaults to Disabled and is the setting that makes
+      the trail defensible as an audit record rather than merely informative. Trail ->
+      General details -> Edit -> tick Log file validation.
 - [ ] Lifecycle rule on the log bucket. **Record the chosen retention period as a policy
       decision** rather than leaving it to a default.
+
+The trail starts from creation and does not backfill: **13 Sept 2026 is day one of
+infrastructure audit history for this account.**
 
 First trail's management events are free; S3 storage is pennies at this volume. CloudTrail
 logs are API metadata, not PHI, so this adds no BAA complication.
@@ -173,8 +186,11 @@ logs are API metadata, not PHI, so this adds no BAA complication.
 No automated detection of resources shared outside the account — the check that would catch
 an S3 bucket holding chart-audit payloads becoming externally reachable.
 
-- [ ] IAM -> Access analyzer -> Create analyzer. Type **External access**, zone of trust
-      **this account**. Free. Review every finding on an S3 bucket properly.
+- [x] **DONE 13 Sept.** Resource analysis - External access, zone of trust current account,
+      us-east-1. Free. The other two finding types (Internal access, Unused access) both
+      charge fees and were deliberately not selected. One analyzer covers the whole footprint
+      because every resource is us-east-1.
+- [ ] Review the findings once they populate, especially anything on an S3 bucket.
 
 ### 6d. Lower priority (Trusted Advisor yellows)
 
@@ -201,14 +217,18 @@ Three carry **active long-lived access keys that nothing uses**. On an account u
 idle credentials holding live permissions are the thing to clear; the Bedrock one can still
 call Bedrock and has not been used since 1 May.
 
-- [ ] `BedrockAPIKey-2wn5` — last used 1 May 2026. Leftover from the Bedrock cutover
+- [x] `BedrockAPIKey-2wn5` DEACTIVATED 13 Sept. — last used 1 May 2026. Leftover from the Bedrock cutover
       experiments; the Lambdas authenticate via execution roles.
-- [ ] `ses-smtp-user.20260529-170928` — never used. Superseded by the August SMTP user.
-- [ ] `tbp-transcribe-medical` — never used. Transcription went to Azure AI Speech instead.
+- [x] `ses-smtp-user.20260529-170928` DEACTIVATED 13 Sept. — never used. Superseded by the August SMTP user.
+- [x] `tbp-transcribe-medical` DEACTIVATED 13 Sept. — never used. Transcription went to Azure AI Speech instead.
 
-**Deactivate, do not delete.** IAM -> Users -> *user* -> Security credentials -> Access keys
--> Make inactive. Leave inactive a couple of weeks; delete only if nothing breaks.
-Deactivating is instantly reversible, deleting is not.
+**All three deactivated 13 Sept, not deleted.** Leave inactive a couple of weeks, then delete
+if nothing breaks. Deactivating is instantly reversible.
+
+The one to watch: if magic-link / confirmation email stops arriving, the May SMTP user was in
+use after all — reactivate it. The evidence said otherwise (it had never authenticated once
+since 30 May, while the August user shows `ses-smtp` traffic daily, and Supabase Auth mail
+demonstrably works), but that is the symptom and the fix is one click.
 
 Also worth noting: neither live key has been rotated since it was created (30 May and
 27 Aug 2026). Not urgent, but long-lived static keys are what AWS guidance steers away from.
