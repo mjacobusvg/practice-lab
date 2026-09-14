@@ -230,7 +230,7 @@ exports.handler = async function (event) {
 
     // 5) Email Michael (unless a manual debug call asked for JSON only).
     if (wantEmail) {
-      const to = process.env.RECONCILE_TO || process.env.NOTIFY_TO || 'michael@thinkbeyondpsych.com';
+      const to = process.env.RECONCILE_TO || process.env.NOTIFY_TO || 'michael@thinkbeyondpractice.com';
       const subject = issueCount === 0
         ? '✓ TBP billing reconcile — all clear'
         : 'TBP billing reconcile — ' + issueCount + ' item' + (issueCount === 1 ? '' : 's') + ' to review';

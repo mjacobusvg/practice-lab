@@ -175,7 +175,7 @@ exports.handler = async function (event) {
     // 4) Only email when it actually healed something — silence on a clean day so
     //    this never becomes noise Michael tunes out.
     if (healedCount > 0 && !dryRun) {
-      const to = process.env.RECONCILE_TO || process.env.NOTIFY_TO || 'michael@thinkbeyondpsych.com';
+      const to = process.env.RECONCILE_TO || process.env.NOTIFY_TO || 'michael@thinkbeyondpractice.com';
       const subject = 'TBP billing self-heal — corrected ' + healedCount + ' item' + (healedCount === 1 ? '' : 's');
       await emailEach([to], subject, function () { return buildEmail(report); });
     }
