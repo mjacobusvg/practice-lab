@@ -299,7 +299,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-92-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-93-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -584,7 +584,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-92-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-93-sub</span></div>
 </div>
 </div>
 
@@ -3697,33 +3697,55 @@ function tbpAdhdFeedPrep(){
   } catch(e){}
 }
 
-// Install the questions as the working note's checklist section, the way prep does. Guarded:
-// it will not overwrite a note that already has anything in it.
+// Add the questions to the working note's CHECK / ASK TODAY section. APPEND-ONLY, on purpose: during
+// a visit the clinician is typing answers UNDERNEATH these lines, so nothing already on screen is
+// ever rewritten, reordered or removed. New questions land at the bottom of the checklist; the note,
+// the transcript, the guide, the coach and screener sections are left exactly as they were. (The old
+// version replaced the whole section object, which silently dropped those other sections, and refused
+// outright once the note had any content — so mid-visit, the one time you actually want a question
+// added, was the one time the button would not do it.)
+//
+// Questions already in the checklist are skipped, so re-running the Framework or clicking twice adds
+// only what is genuinely new instead of doubling the list. Only bullet lines are compared: an answer
+// the clinician typed under a question is their prose, not a question, and must never be matched
+// against or touched.
+function tbpAdhdQKey(s){
+  return String(s || '').toLowerCase().replace(/^[\s•\-*]+/, '').replace(/[^a-z0-9]+/g, ' ').trim();
+}
 function tbpAdhdQuestionsToNote(silent){
   var msg = silent ? null : document.getElementById('adhd-q-msg');
   var qs = tbpAdhdQuestionList();
   if(!qs.length) return false;
   var raw = document.getElementById('raw');
-  var existing = raw ? (raw.value || '').trim() : '';
-  if(existing){
-    // Only ever refuses when there is real work to protect. That is the one case the button
-    // still exists for.
-    if(msg) msg.innerHTML = '<span style="color:var(--amber)">Your working note already has content, so nothing was replaced. Copy anything you want from above.</span>';
-    return false;
-  }
+  if(!raw) return false;
   try {
-    wnSections = { checklist: qs.map(function(q){ return '\u2022 ' + q; }).join('\n\n'), guide: '', note: '' };
-    wnMode = 'sections';
-    if(raw) raw.value = serializeSections();
-    // renderMode() is the SETUP SCREEN renderer and does nothing to the working note. The
-    // full-screen note is built by buildFocusSections, and when the overlay is already open
-    // (which it is, straight after a build) it has to be rebuilt or the checklist lands in
-    // state and never appears. openFocus does the whole job: display toggles, banner, panels.
+    if(typeof wnSections === 'undefined' || !wnSections) wnSections = { checklist:'', guide:'', note:'' };
+    // A plain note becomes a sectioned one first, carrying whatever the clinician already wrote into
+    // the note section untouched — otherwise the checklist would have nowhere to go but the middle of
+    // their prose. Every other section object is preserved by mutating in place, never reassigning.
+    if(typeof wnMode === 'undefined' || wnMode !== 'sections'){
+      var plain = (raw.value || '').trim();
+      if(plain) wnSections.note = (wnSections.note && wnSections.note.trim() ? wnSections.note.replace(/\s+$/, '') + '\n\n' : '') + plain;
+      wnMode = 'sections';
+    }
+    var cur = wnSections.checklist || '';
+    var have = cur.split(/\n+/).filter(function(l){ return /^\s*•/.test(l); }).map(tbpAdhdQKey);
+    var add = qs.filter(function(q){ var k = tbpAdhdQKey(q); return k && have.indexOf(k) === -1; });
+    if(!add.length){
+      if(msg) msg.innerHTML = '<span style="color:var(--green)">These are already in your working note. Nothing was changed.</span>';
+      return true;
+    }
+    var block = add.map(function(q){ return '• ' + q; }).join('\n\n');
+    wnSections.checklist = cur.trim() ? cur.replace(/\s+$/, '') + '\n\n' + block : block;
+    raw.value = serializeSections();
+    // renderMode() is the SETUP SCREEN renderer and does nothing to the working note. The full-screen
+    // note is built by buildFocusSections, and when the overlay is already open it has to be rebuilt
+    // or the questions land in state and never appear. openFocus does the whole job.
     var fo = document.getElementById('focus-overlay');
     if(fo && fo.classList.contains('open') && typeof openFocus === 'function') openFocus('raw');
     else renderMode();
     try { if(window.tbpSaveDraft) window.tbpSaveDraft(); } catch(e){}
-    if(msg) msg.innerHTML = '<span style="color:var(--green)">Added to your working note. Jot answers under each; the prompts are stripped when you draft.</span>';
+    if(msg) msg.innerHTML = '<span style="color:var(--green)">Added ' + add.length + (add.length === 1 ? ' question' : ' questions') + ' to the bottom of CHECK / ASK TODAY. Nothing already in your note was changed.</span>';
     return true;
   } catch(e){
     if(msg) msg.innerHTML = '<span style="color:var(--red)">Could not add them. Copy them from above instead.</span>';
