@@ -198,9 +198,12 @@ an S3 bucket holding chart-audit payloads becoming externally reachable.
       without AWS credentials, so IAM auth on the Function URL is not an option; auth is
       enforced in-code via the signed session token, exactly as §5 of
       `BAA-AND-PHI-ROUTING.md` describes. Nothing reaches a model without a valid token.
-- [ ] Archive these four, then add an **archive rule** (Analyzer settings -> Archive rules) so
-      they do not reappear on every scan. The point is that the *next* finding stands out
-      instead of being lost among four permanent expected ones.
+- [x] **Archived 14 Sept. No archive rule, deliberately.** Archiving is already durable — an
+      archived finding stays archived unless the underlying resource policy changes, which is
+      precisely when it should resurface. An archive rule matching `AWS::Lambda::Function`
+      would also auto-suppress a genuinely NEW public Lambda, which is the opposite of what
+      this tool is for. If a fifth intentionally-public function is ever added, archive that
+      one finding too.
 
 **The real gap these surface (NEW, open):** anyone on the internet can *invoke* these
 functions. They get a 401/403 without a valid token, but **a rejected request still costs a
@@ -211,13 +214,42 @@ account-wide concurrency, which would take the Scribe down for paying members.
       Configuration -> Concurrency). Bounds both the bill and the blast radius. Pick ceilings
       from real peak usage — `tool_usage` has the traffic shape.
 
-### 6d. Lower priority (Trusted Advisor yellows)
+### 6d. Trusted Advisor yellows — CLOSED
 
-- [ ] S3 incomplete multipart upload abort — lifecycle rule, abort after 7 days. Saves money.
-- [ ] S3 server access logs on the PHI-payload buckets, targeting a separate log bucket.
-      Useful for audit; has storage cost.
-- [ ] IAM SAML 2.0 identity provider — inspect what it flags before changing anything.
-      Likely stale config rather than a real gap.
+- [x] **S3 incomplete multipart upload abort** — DONE 13 Sept. `abort-incomplete-mpu`, 7 days,
+      on `tbp-letters` and `tbp-ses-inbound`. Added as a SEPARATE rule on `tbp-letters` rather
+      than editing `expire-letters-90d`, so the working PHI retention rule was never touched.
+- [x] **S3 server access logging** — DONE 14 Sept. New bucket `tbp-s3-access-logs` (us-east-1,
+      ACLs disabled, public access blocked, SSE-S3). Enabled on `tbp-letters` and
+      `tbp-ses-inbound`, each under its own prefix (`s3://tbp-s3-access-logs/<bucket>/` — the
+      trailing slash is required or the prefix is glued onto the filenames instead of making a
+      folder) so the two sets do not interleave. Log bucket carries `access-logs-retention-7y`
+      (2557 days) plus MPU abort. This is the object-level audit trail — who read which
+      object — that CloudTrail data events would otherwise provide at per-event cost.
+- [x] **IAM SAML 2.0 identity provider** — CLOSED as not applicable. The check advises
+      federating instead of using IAM users, which is guidance for organisations with a staff
+      directory. One person, one IAM user. Deliberately left yellow.
+
+### 6g. Lambda concurrency — alarm, NOT a cap (decided 14 Sept)
+
+The four Function URLs are invokable by anyone and a rejected request still costs an
+invocation, so uncapped concurrency is in principle a cost-and-availability exposure.
+
+**Reserved concurrency was proposed and rejected.** Michael's objection overrides the earlier
+recommendation and was correct: reserved concurrency is a ceiling as well as a floor. The risk
+it mitigates is hypothetical (a deliberate attacker); the risk it creates is near-certain (a
+silent cap on the growth path that has to be remembered, failing by throttling paying members
+unnoticed). Measured peak is 21 calls/min on the Scribe against an account limit of 1000
+concurrent — nowhere near anything.
+
+- [x] **CloudWatch alarm instead.** `lambda-concurrency-abnormal` on `AWS/Lambda`
+      `ConcurrentExecutions` across all functions, Maximum, 5-minute period, `> 200` for 2 of
+      2 datapoints, notifying SNS topic `tbp-alerts`. Roughly 10x the busiest observed moment
+      and a fifth of the account ceiling: normal growth never touches it, an attack or runaway
+      loop trips it inside ten minutes. Constrains no request.
+      **The SNS email subscription must be confirmed or the alarm cannot notify.**
+- [ ] Optional: AWS Budgets monthly cost alert (~$150, alerting at 80% and 100%) for the cost
+      side of the same scenario. Current AWS spend is ~$50/month.
 
 ### 6f. Stale access keys (from the credential report, 13 Sept 2026)
 
