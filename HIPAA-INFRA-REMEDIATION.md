@@ -133,14 +133,14 @@ broken, and 6a.1 is the only step with real lockout risk.
 Day-to-day work was being done as the account root user. On an account under a BAA, root
 should carry MFA and sit unused, with an ordinary IAM user for daily work.
 
-- [ ] **1. Root MFA first.** Account menu -> Security credentials -> Multi-factor
-      authentication -> Assign MFA device. **Save the recovery codes offline.** Losing a root
-      MFA device with no recovery path means a slow identity-verification process with AWS.
-      This is the highest-consequence step here.
-- [ ] **2. Check for root access keys** (same page). If any exist, do NOT delete them until
-      you have established what uses them. The Lambdas use execution roles, so nothing
-      *should* depend on a root key, but a key sitting in an env var somewhere breaks
-      production the moment it is revoked.
+- [x] **1. Root MFA.** DONE — virtual device registered 23 April 2026.
+- [ ] **1b. Register a SECOND root MFA device.** AWS issues no recovery codes for root (an
+      earlier version of this runbook wrongly said it did); the supported backup is up to 8
+      registered devices. Add a second authenticator or a hardware key. Then confirm the root
+      email and account phone number are current — that pair is the actual recovery path if
+      every device is lost.
+- [x] **2. Root access keys.** DONE — none exist. IAM dashboard shows 0 security
+      recommendations. Nothing to revoke.
 - [ ] **3. Activate IAM billing access BEFORE testing.** Account menu -> Account -> "IAM user
       and role access to billing information" -> Edit -> Activate. Root-only setting. Without
       it the new IAM user signs in and Billing is simply absent.
@@ -183,6 +183,35 @@ an S3 bucket holding chart-audit payloads becoming externally reachable.
       Useful for audit; has storage cost.
 - [ ] IAM SAML 2.0 identity provider — inspect what it flags before changing anything.
       Likely stale config rather than a real gap.
+
+### 6f. Stale access keys (from the credential report, 13 Sept 2026)
+
+The account has five IAM users. **All five are service accounts** — every one has
+`password_enabled: false`, so none is a console login. Root was the only way in, which is
+what 6a fixes.
+
+Two are live and must not be touched:
+
+| User | Purpose | Key last used |
+|---|---|---|
+| `ses-send-pm` | SES API sending | 13 Sept 2026 |
+| `ses-smtp-user.20260826-184558` | SES SMTP | 13 Sept 2026 |
+
+Three carry **active long-lived access keys that nothing uses**. On an account under a BAA,
+idle credentials holding live permissions are the thing to clear; the Bedrock one can still
+call Bedrock and has not been used since 1 May.
+
+- [ ] `BedrockAPIKey-2wn5` — last used 1 May 2026. Leftover from the Bedrock cutover
+      experiments; the Lambdas authenticate via execution roles.
+- [ ] `ses-smtp-user.20260529-170928` — never used. Superseded by the August SMTP user.
+- [ ] `tbp-transcribe-medical` — never used. Transcription went to Azure AI Speech instead.
+
+**Deactivate, do not delete.** IAM -> Users -> *user* -> Security credentials -> Access keys
+-> Make inactive. Leave inactive a couple of weeks; delete only if nothing breaks.
+Deactivating is instantly reversible, deleting is not.
+
+Also worth noting: neither live key has been rotated since it was created (30 May and
+27 Aug 2026). Not urgent, but long-lived static keys are what AWS guidance steers away from.
 
 ### 6e. Support console permissions (deadline: 16 November 2026)
 
