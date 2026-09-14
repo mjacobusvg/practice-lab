@@ -115,7 +115,10 @@ async function logUsage(row) {
       body: JSON.stringify({
         tool: row.tool || 'Clinical Tool', mode: row.mode || null, event: row.event || 'interaction',
         created_at: new Date().toISOString(), account_email: email, tier: row.tier || null, model: model,
-        input_tokens: totalInput, output_tokens: outputTokens, est_cost_usd: cost
+        input_tokens: totalInput, output_tokens: outputTokens, est_cost_usd: cost,
+        // Groups this call with the rest of one patient workspace's rows. Random, client-
+        // generated, no patient identity and no content — see netlify/functions/scribe-event.js.
+        session_id: row.sessionId || null
       })
     });
   } catch (e) { console.log('tool_usage log error:', e && e.message); }
@@ -304,11 +307,13 @@ export const handler = async (event) => {
 
   const usageTool = body.tool || qsTool || toolFromReferer(referer) || 'Clinical Tool';
   const usageMode = body.mode || null;
+  // Hex-only and length-bounded: an analytics grouping key, never a channel for content.
+  const usageSession = (typeof body.session_id === 'string' && /^[a-f0-9]{8,40}$/.test(body.session_id)) ? body.session_id : null;
 
   try {
     const result = await callBedrock(modelId, payloadObj);
     await logUsage({
-      tool: usageTool, mode: usageMode, event: 'interaction',
+      tool: usageTool, mode: usageMode, event: 'interaction', sessionId: usageSession,
       email: session.claims.email, tier: session.claims.tier, model: logicalModel,
       inputTokens: result.inputTokens, outputTokens: result.outputTokens,
       cacheCreationTokens: result.cacheCreationTokens, cacheReadTokens: result.cacheReadTokens

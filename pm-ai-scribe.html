@@ -185,7 +185,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-92"></script>
+<script src="/note-engine.js?v=ambient-93"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -469,7 +469,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-92</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-93</span></div>
 </div>
 </div>
 
@@ -1079,7 +1079,10 @@ function tbpLogError(message, stack){
 
 // ── Streaming proxy call (mirrors the Note Builder / Chart Coder pattern) ──
 var _lastCallTruncated = false;   // set true when the model stopped because it hit max_tokens (note cut off)
-async function callAPI(systemPrompt, messages, maxTokens, onDelta, model){
+// `mode` labels WHICH workflow produced this call (draft, prep_eval, discern, ...). It is
+// passed straight through by the clinical proxy into public.tool_usage.mode, which was null
+// on every Scribe row before this — so usage was countable but not interpretable.
+async function callAPI(systemPrompt, messages, maxTokens, onDelta, model, mode){
   _lastCallTruncated = false;
   // Hard backstop: in demo mode nothing is ever sent to the clinical backend. Live buttons are
   // already intercepted (tbpDemoBlock) so this rarely fires, but it guarantees no visitor content
@@ -1104,6 +1107,8 @@ async function callAPI(systemPrompt, messages, maxTokens, onDelta, model){
       body: JSON.stringify({
         token: authToken,
         tool: 'AI Scribe',   // explicit tool label: drives isScribe access (trial users) since cross-origin strips Referer
+        mode: mode || null,                    // which workflow this call belongs to (analytics only)
+        session_id: tbpVisitSession(),         // groups this call with the rest of the visit
         model: model || 'claude-sonnet-4-6',   // per-call override; defaults to Sonnet. Haiku is used for the mechanical calls (verify, plan) — see MODEL-REGISTRY.md.
         max_tokens: maxTokens || 2000,
         system: systemPrompt,
@@ -1222,19 +1227,104 @@ function tbpVisitKey(){
   try{ var m=location.search.match(/[?&]slot=([^&]+)/); return 'tbp_visit_type_' + (m?decodeURIComponent(m[1]):'solo'); }
   catch(e){ return 'tbp_visit_type_solo'; }
 }
+
+// ── WORKFLOW TELEMETRY ──────────────────────────────────────────────────────────────────
+// Answers the question we could not answer from the code: how do clinicians ACTUALLY work
+// the Scribe? Prep vs paste-and-draft, Ambient vs typing, whether Discern and the Framework
+// are ever reached for at all. Model calls label themselves (callAPI sends `mode`); the
+// events here involve NO model call — opening a panel, starting a recording, choosing a
+// visit type — so they post to /.netlify/functions/scribe-event, which writes the SAME
+// public.tool_usage table the model calls already write.
+//
+// NO PHI IS SENT. Only a fixed event name from a known vocabulary and a random visit id go
+// out — never note text, transcript, document content, or anything identifying a patient.
+// The server re-checks the name against an allowlist and takes the clinician's identity from
+// their signed session rather than this request body.
+var TBP_SESS_KEY = 'tbp_sess_' + (function(){
+  try{ var m = location.search.match(/[?&]slot=([^&]+)/); return m ? decodeURIComponent(m[1]) : 'solo'; }
+  catch(e){ return 'solo'; }
+})();
+// One id per patient workspace, so two Desk tabs open at once never interleave into what
+// looks like a single clinician's single visit. Persisted per slot so an iframe reload
+// mid-visit keeps the same id instead of splitting one visit into two.
+function tbpVisitSession(){
+  var id = '';
+  try { id = localStorage.getItem(TBP_SESS_KEY) || ''; } catch(e){}
+  if(!/^[a-f0-9]{8,40}$/.test(id)){
+    id = (Date.now().toString(16) + Math.floor(Math.random()*1e12).toString(16)).slice(0,32);
+    try { localStorage.setItem(TBP_SESS_KEY, id); } catch(e){}
+  }
+  return id;
+}
+// A different patient in this tab is a different visit.
+function tbpNewVisitSession(){
+  try{ localStorage.removeItem(TBP_SESS_KEY); }catch(e){}
+  _tbpRouteFor = ''; _tbpRoutes = {};
+  return tbpVisitSession();
+}
+function tbpTrack(mode){
+  try {
+    if(TBP_DEMO) return;      // the demo desk is a visitor looking around, not a clinician working
+    if(!authToken) return;    // nothing to attribute an event to
+    fetch('/.netlify/functions/scribe-event', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json' },
+      // keepalive so an event fired as the tab is closing (ambient_stop, draft_clicked) still lands
+      keepalive: true,
+      body: JSON.stringify({ token: authToken, mode: mode, session_id: tbpVisitSession() })
+    }).catch(function(){});   // telemetry must never surface an error to a clinician mid-visit
+  } catch(e){}
+}
+// How the encounter material reached the note. Recorded ONCE per route per visit — we want
+// "this visit used Ambient and also typing", not one row per keystroke.
+var _tbpRoutes = {}, _tbpRouteFor = '';
+function tbpTrackRoute(route){
+  try {
+    var sess = tbpVisitSession();
+    if(_tbpRouteFor !== sess){ _tbpRouteFor = sess; _tbpRoutes = {}; }
+    if(_tbpRoutes[route]) return;
+    _tbpRoutes[route] = 1;
+    tbpTrack(route);
+  } catch(e){}
+}
+// Discern's value depends entirely on WHEN it is opened, because during an Ambient recording
+// it cannot see the encounter at all (the recorder holds one blob until Stop). Stamping the
+// phase onto the event is the whole point of tracking it.
+function tbpDiscernPhase(){
+  try {
+    if(typeof tbpIsRecording === 'function' && tbpIsRecording()) return 'discern_opened_during_recording';
+    var s = (typeof wnSections !== 'undefined' && wnSections && wnSections.transcript) ? wnSections.transcript : '';
+    if(s && s.trim()) return 'discern_opened_after_transcript';
+    var raw = document.getElementById('raw');
+    if(raw && /AMBIENT TRANSCRIPT/.test(raw.value || '')) return 'discern_opened_after_transcript';
+  } catch(e){}
+  return 'discern_opened_before_visit';
+}
 bindOpts('visit-opts','data-visit', function(v){
   // Switching visit type starts a fresh context; drop any structured-note state so a stale
   // sections card can't linger. Only on an actual change, so re-clicking the same type is a no-op.
-  if(v !== visitType){ wnMode='plain'; wnSections={checklist:'',guide:'',note:''}; }
+  if(v !== visitType){
+    wnMode='plain'; wnSections={checklist:'',guide:'',note:''};
+    // A different visit type in this tab is a different patient: start a new telemetry visit so
+    // the previous patient's events never merge into this one. Skipped on the restore replay
+    // below, which re-clicks the saved type on load and is not a clinician choosing anything.
+    if(!_tbpRestoringVisit){ tbpNewVisitSession(); tbpTrack(v === 'new_eval' ? 'visit_new_eval' : 'visit_follow_up'); }
+  }
   visitType=v; try{ localStorage.setItem(tbpVisitKey(), v); }catch(e){}
   renderTemplateStatus(); revealWorkArea();
 });
 // On load, restore a previously-chosen visit type so a reopened/reloaded frame comes back
 // to the visit the clinician was on (recording UI visible, Draft not falsely blocked). The
 // saved-draft restore below still wins for the note body/mode.
+var _tbpRestoringVisit = false;
 try{
   var _savedVT = localStorage.getItem(tbpVisitKey());
-  if(_savedVT && !visitType){ var _vo = document.querySelector('#visit-opts [data-visit="' + _savedVT + '"]'); if(_vo){ _vo.click(); } }
+  if(_savedVT && !visitType){
+    var _vo = document.querySelector('#visit-opts [data-visit="' + _savedVT + '"]');
+    // Replaying the saved choice must not look like a new visit, or every iframe reload would
+    // invent a fresh session id and shatter one visit into several.
+    if(_vo){ _tbpRestoringVisit = true; try { _vo.click(); } finally { _tbpRestoringVisit = false; } }
+  }
 }catch(e){}
 
 // Reveal the workspace once a visit type is picked; render the clinician's saved working style.
@@ -1707,7 +1797,7 @@ async function applyFlagFixes(flags){
       + (tmpl && tmpl.trim() ? "CLINICIAN'S TEMPLATE (the section structure and headings the HPI should follow):\n\n" + tmpl + "\n\n---\n\n" : "")
       + "CLINICIAN INSTRUCTIONS (each responds to a review flag; apply each):\n"
       + fixes.map(function(x){ return "- Flag: " + x.flag + "\n  Do: " + x.instruction; }).join("\n");
-    var revised = await callAPI(reviseHpiSystem(), [{role:'user', content: msg}], 3400);
+    var revised = await callAPI(reviseHpiSystem(), [{role:'user', content: msg}], 3400, undefined, undefined, 'revise_hpi');
     if(!revised || !revised.trim()){ throw new Error('Nothing came back. Try again.'); }
     hpiEl.value = finalizeHpi(revised);
     lastHpi = hpiEl.value;
@@ -1753,7 +1843,7 @@ async function runDraft(sourceText, btn, errEl, silent){
     // long follow-up that carries the entire prior note forward was TRUNCATED mid-note — it ran out of
     // output budget partway down the template and silently dropped every section after it (including
     // Substance Use and SI/HI). The clinical note must never be cut off by the token ceiling.
-    var hpi = await callAPI(draftSystem(), [{role:'user', content: gatherSource(sourceText)}], 8000, silent ? undefined : function(partial){ if(streamEl) streamEl.textContent = partial; });
+    var hpi = await callAPI(draftSystem(), [{role:'user', content: gatherSource(sourceText)}], 8000, silent ? undefined : function(partial){ if(streamEl) streamEl.textContent = partial; }, undefined, 'draft');
     if(!hpi){ throw new Error('No HPI came back. Try again.'); }
     // Belt and suspenders: if the model still hit the ceiling on an exceptionally long note, say so
     // LOUDLY rather than let a truncated note look complete (see _lastCallTruncated in callAPI).
@@ -2073,7 +2163,7 @@ async function verifyHpi(hpi){
   // Verify stays on Sonnet for now: it must reliably ASK when it hits a question it genuinely cannot
   // resolve (an unresolvable garbled med/dose, a real ambiguity). Haiku under-flagged in the first A/B;
   // re-testing whether it asks appropriately under the corrected prompt before moving this back to Haiku.
-  var raw = await callAPI(verifySystem(), [{role:'user', content: msg}], 8000);
+  var raw = await callAPI(verifySystem(), [{role:'user', content: msg}], 8000, undefined, undefined, 'audit');
   // The verifier returns PLAIN TEXT with <<<SECTION>>> markers, NOT JSON. These notes are full of
   // patient quotes and line breaks; as raw JSON, a single unescaped quote broke JSON.parse, which
   // silently failed the ENTIRE review — the "Automatic review could not be completed" warning — and
@@ -2319,7 +2409,7 @@ document.getElementById('prep-btn').addEventListener('click', async function(){
     for(var attempt = 0; attempt < 3 && !j; attempt++){
       if(attempt > 0){ hint.innerHTML = '<span style="color:var(--cream-dim)">One more try&hellip;</span>'; }
       try {
-        var raw = await callAPI(prepSystem(), [{role:'user', content: "LAST VISIT'S NOTE:\n\n" + last}], 8000);
+        var raw = await callAPI(prepSystem(), [{role:'user', content: "LAST VISIT'S NOTE:\n\n" + last}], 8000, undefined, undefined, 'prep_followup');
         var cand = parsePrep(raw);
         if(cand && cand.startingNote){ j = cand; }
         else { lastErr = new Error('the prep came back without a starting note' + (raw ? ' (' + String(raw).length + ' characters returned)' : ' (empty response)')); }
@@ -2397,6 +2487,10 @@ async function tbpExtractText(file){
       var c = await page.getTextContent();
       txt += c.items.map(function(it){ return it.str; }).join(' ') + '\n';
     }
+    // Records telemetry: a PDF with a real text layer never reaches the OCR path, so without
+    // this it is invisible and "no member uploads records" cannot be told apart from "no member
+    // uploads SCANNED records". Content is never sent — only that a record was added.
+    try { if(txt && txt.trim().length > 40) tbpTrack('records_added'); } catch(e){}
     return { text: txt, pages: pdf.numPages };
   }
   if(/\.(txt|rtf|md|text)$/i.test(name)) return { text: await file.text(), pages: 0 };
@@ -2960,7 +3054,7 @@ async function tbpFitCarryBudget(carry, log){
       : 'This is ' + bestWords + ' words and the maximum is 225. Return 190 to 220 words. '
         + 'Delete whole sentences — do not trim words. Add nothing.\n\n' + best;
     var out;
-    try { out = await callAPI(docCarryCompressSystem(), [{ role:'user', content: ask }], 900); }
+    try { out = await callAPI(docCarryCompressSystem(), [{ role:'user', content: ask }], 900, undefined, undefined, 'doc_carry_compress'); }
     catch(e){ log.push('pass ' + attempt + ': failed (' + (e && e.message) + ')'); break; }
     out = (out || '').replace(/<<<CARRY FORWARD>>>/g, '').trim();
     var w = tbpWordCount(out);
@@ -2984,7 +3078,7 @@ async function tbpSrcCarry(id){
   var d = tbpSrcById(id);
   if(!d || !d.review) return '';
   var out = await callAPI(docCarryOnlySystem(),
-    [{ role:'user', content: 'THE REVIEW:\n\n' + d.review }], 900);
+    [{ role:'user', content: 'THE REVIEW:\n\n' + d.review }], 900, undefined, undefined, 'doc_carry');
   out = (out || '').replace(/<<<CARRY FORWARD>>>/g, '').trim();
   // Same ceiling on the repair route: this output becomes permanent by exactly the same door.
   if(tbpWordCount(out) > 260){
@@ -3005,7 +3099,7 @@ async function tbpSrcRun(id){
     // the <<<CARRY FORWARD>>> marker — so the second product vanished with no error anywhere.
     var t0 = Date.now();
     var res = await callAPI(docReviewSystem(),
-      [{ role:'user', content: 'OUTSIDE RECORD, filename ' + d.name + '\n\n' + d.text }], 5200);
+      [{ role:'user', content: 'OUTSIDE RECORD, filename ' + d.name + '\n\n' + d.text }], 5200, undefined, undefined, 'doc_review');
     var elapsed = Date.now() - t0;
     // Read the truncation flag NOW: callAPI resets it on its next call, and the repair pass
     // below is a next call.
@@ -3591,6 +3685,7 @@ function tbpAdhdQuestionsToNote(silent){
     if(fo && fo.classList.contains('open') && typeof openFocus === 'function') openFocus('raw');
     else renderMode();
     try { if(window.tbpSaveDraft) window.tbpSaveDraft(); } catch(e){}
+    tbpTrack('framework_questions_added');
     if(msg) msg.innerHTML = '<span style="color:var(--green)">Added to your working note. Jot answers under each; the prompts are stripped when you draft.</span>';
     return true;
   } catch(e){
@@ -3708,6 +3803,7 @@ setInterval(function(){ try { if(adhdFw) tbpAdhdSyncTriggers(); } catch(e){} }, 
 function tbpAdhdShowPanel(){
   if(typeof tbpDemoBlock === 'function' && tbpDemoBlock()) return;
   try { tbpHideReason(); } catch(e){}   // one panel at a time; two would leave the note a column
+  tbpTrack('framework_opened');
   document.getElementById('adhd-panel').classList.add('open');
   document.documentElement.classList.add('adhd-open');
   tbpAdhdRender();   // also re-decides whether the reassess action has earned its place
@@ -3740,7 +3836,8 @@ async function tbpAdhdRun(mode){
         : 'The clinician has gathered no records or history yet. Build the framework on that basis: nothing is established, and say what would need to be obtained.';
     }
     var sys = isUpdate ? adhdUpdateSystem() : (adhdMode === 'history' ? adhdHistorySystem() : adhdBuildSystem());
-    var raw = await callAPI(sys, [{ role:'user', content: user }], 5200);
+    var raw = await callAPI(sys, [{ role:'user', content: user }], 5200, undefined, undefined,
+      isUpdate ? 'framework_reassess' : (adhdMode === 'history' ? 'framework_history' : 'framework_build'));
     var f = tbpAdhdSplit(raw);
     f.mode = isUpdate ? (adhdFw && adhdFw.mode) || 'framework' : adhdMode;
     if(f.mode === 'history'){
@@ -3916,6 +4013,7 @@ function tbpAdhdSetWidth(px, persist){
 function tbpShowReason(){
   if(typeof tbpDemoBlock === 'function' && tbpDemoBlock()) return;
   try { tbpAdhdHidePanel(); } catch(e){}   // one side panel at a time
+  tbpTrack(tbpDiscernPhase());
   document.getElementById('reason-modal').classList.add('open');
   document.documentElement.classList.add('rsn-open');   // shrinks the workspace to make room
   tbpRsnUpdateCtx();
@@ -4023,7 +4121,9 @@ async function tbpRunReason(question){
       [{ role:'user', content: 'CASE MATERIAL AVAILABLE THIS SESSION:\n\n' + c.text
           + '\n\n---\n\nTHE CLINICIAN ASKS: ' + question }],
       2200,
-      function(partial){ body.textContent = partial; }   // text starts appearing in seconds
+      function(partial){ body.textContent = partial; },  // text starts appearing in seconds
+      undefined,
+      'discern'
     ) || '';
     if(!acc.trim()){ out.innerHTML = '<div class="hint" style="color:var(--amber)">Nothing came back. Try again.</div>'; }
     else {
@@ -4119,7 +4219,7 @@ async function tbpRunSourcePrep(){
   out.innerHTML = '';
   try {
     var res = await callAPI(newEvalPrepFromSourcesSystem(),
-      [{ role:'user', content: tbpSourceContext() + 'Produce the prep now.' }], 3000);
+      [{ role:'user', content: tbpSourceContext() + 'Produce the prep now.' }], 3000, undefined, undefined, 'prep_eval_from_sources');
     res = (res || '').trim();
     if(!res){ out.innerHTML = '<span class="hint" style="color:var(--amber)">Nothing came back. Try again.</span>'; return; }
     var pretty = res.replace(/<<<ORIENTATION>>>/g, 'ORIENTATION')
@@ -4231,7 +4331,7 @@ document.getElementById('neweval-setup-btn').addEventListener('click', async fun
       // blank form ONCE, then cache it (Vault + memory) so every future new patient is instant.
       var btn = this; btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>Building your intake scaffold&hellip;';
       try {
-        var scaffold = await callAPI(newEvalScaffoldSystem(), [{role:'user', content: 'Produce the blank intake scaffold now.'}], 1500);
+        var scaffold = await callAPI(newEvalScaffoldSystem(), [{role:'user', content: 'Produce the blank intake scaffold now.'}], 1500, undefined, undefined, 'eval_scaffold');
         if(scaffold && scaffold.trim()){
           var clean = finalizeHpi(scaffold);
           raw.value = clean; vaultScaffolds.new_eval = clean;
@@ -4263,7 +4363,7 @@ document.getElementById('open-blank-btn').addEventListener('click', async functi
     var btn = this; var prev = btn.innerHTML; btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span>Getting your snapshot&hellip;';
     try {
-      var snap = await callAPI(snapshotSystem(), [{role:'user', content: "LAST VISIT'S NOTE:\n\n" + last}], 1200);
+      var snap = await callAPI(snapshotSystem(), [{role:'user', content: "LAST VISIT'S NOTE:\n\n" + last}], 1200, undefined, undefined, 'snapshot');
       if(snap && snap.trim()){ prepSnapshot = snap.trim(); }
     } catch(e){ /* the snapshot is a nicety; never block opening the note */ }
     btn.disabled = false; btn.innerHTML = prev;
@@ -4519,12 +4619,12 @@ document.getElementById('ep-run').addEventListener('click', async function(){
       if(attempt > 0){ hint.innerHTML = '<span style="color:var(--cream-dim)">One more try&hellip;</span>'; }
       try {
         if(addOnly){
-          var araw = await callAPI(evalPrepAddSystem(), [{ role:'user', content: evalPrepAddUserMsg() }], 3000);
+          var araw = await callAPI(evalPrepAddSystem(), [{ role:'user', content: evalPrepAddUserMsg() }], 3000, undefined, undefined, 'prep_eval_add');
           var parts = tbpSplitAddendum(araw);
           if(parts.newText){ j = { addendum: parts }; }
           else { lastErr = new Error('nothing came back' + (araw ? ' (' + String(araw).length + ' characters returned)' : ' (empty response)')); }
         } else {
-          var raw = await callAPI(evalPrepSystem(wantQ), [{ role:'user', content: evalPrepUserMsg() }], 8000);
+          var raw = await callAPI(evalPrepSystem(wantQ), [{ role:'user', content: evalPrepUserMsg() }], 8000, undefined, undefined, 'prep_eval');
           var cand = parsePrep(raw);
           if(cand && cand.startingNote){ j = cand; }
           else { lastErr = new Error('the prep came back without a starting note' + (raw ? ' (' + String(raw).length + ' characters returned)' : ' (empty response)')); }
@@ -4668,7 +4768,7 @@ async function tbpEnsureSnapshot(){
     var fo = document.getElementById('focus-overlay');
     var open = fo && fo.classList.contains('open');
     if(fr && open){ fr.innerHTML = '<div style="background:var(--teal-glow);border:1px solid var(--teal);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:.85rem;color:var(--cream)"><span class="spinner"></span>Rebuilding your snapshot&hellip;</div>'; }
-    var snap = await callAPI(snapshotSystem(), [{role:'user', content:"LAST VISIT'S NOTE:\n\n"+src}], 1200);
+    var snap = await callAPI(snapshotSystem(), [{role:'user', content:"LAST VISIT'S NOTE:\n\n"+src}], 1200, undefined, undefined, 'snapshot');
     if(snap && snap.trim()){
       prepSnapshot = snap.trim();
       try{ if(window.tbpSaveDraft) window.tbpSaveDraft(); }catch(e){}         // persist so it survives future reloads
@@ -5763,7 +5863,7 @@ document.getElementById('wiz-generate').addEventListener('click', async function
 async function runElicit(){
   var inp = gatherWizInputs();
   var payload = inp.msg + (elicitTranscript ? "\n\n---\n\nELICITATION SO FAR (clinician's answers, authoritative):\n\n" + elicitTranscript : "");
-  var raw = await callAPI(elicitSystem(), [{role:'user', content: payload}], 1100);
+  var raw = await callAPI(elicitSystem(), [{role:'user', content: payload}], 1100, undefined, undefined, 'vault_elicit');
   var j = safeJSON(raw) || {};
   var qs = Array.isArray(j.questions) ? j.questions : [];
   if(qs.length && j.enough !== true && elicitRound < 2){
@@ -5819,7 +5919,7 @@ async function buildTemplate(qaBlock){
     var inp = gatherWizInputs();
     var msg = inp.msg;
     if(qaBlock) msg += "\n\n---\n\n" + qaBlock;
-    var tmpl = await callAPI(wizardSystem(), [{role:'user', content: msg}], 2000);
+    var tmpl = await callAPI(wizardSystem(), [{role:'user', content: msg}], 2000, undefined, undefined, 'vault_wizard');
     if(!tmpl){ throw new Error('Nothing came back. Try again.'); }
     tmpl = stripDashes(tmpl);
     var label = wiz.visit==='new_eval' ? 'New patient evaluation' : 'Follow-up';
@@ -5907,7 +6007,7 @@ function getBgChoice(){
   return out;
 }
 async function runParse(note, visitLabel, bg){
-  var raw = await callAPI(parseNoteSystem(visitLabel, bg), [{role:'user', content: parseNoteUserMsg(note, visitLabel)}], 8000);
+  var raw = await callAPI(parseNoteSystem(visitLabel, bg), [{role:'user', content: parseNoteUserMsg(note, visitLabel)}], 8000, undefined, undefined, 'vault_parse_note');
   var j = safeJSON(raw);
   if(!j || typeof j.hpi !== 'string'){ throw new Error('Could not read the note. Try again.'); }
   return j;
@@ -6160,7 +6260,7 @@ async function draftSampleHpi(visitKey){
     if(visitKey === 'follow_up' && s.prior){
       src += "\n\n---\n\nPRIOR HPI / ASSESSMENT (continuity context only; not today's documented content):\n\n" + s.prior;
     }
-    var hpi = await callAPI(draftSystem(), [{role:'user', content: src}], 8000);   // 8000: never truncate the note (see runDraft)
+    var hpi = await callAPI(draftSystem(), [{role:'user', content: src}], 8000, undefined, undefined, 'draft');   // 8000: never truncate the note (see runDraft)
     return finalizeHpi(hpi || '');
   } finally { visitType = prev; }
 }
@@ -6339,7 +6439,7 @@ document.getElementById('refine-start').addEventListener('click', async function
   refineChat = [{who:'me', text: issue + (bad ? '\n\n(Example of a wrong output attached.)' : '')}];
   refineMessages = [{role:'user', content: refineUserMsg(current, issue, bad)}];
   try {
-    var raw = await callAPI(refineSystem(), refineMessages, 8000);
+    var raw = await callAPI(refineSystem(), refineMessages, 8000, undefined, undefined, 'refine');
     var j = safeJSON(raw);
     if(!j || typeof j.template !== 'string'){ throw new Error('Could not read the response. Try again.'); }
     refineMessages.push({role:'assistant', content: raw});
@@ -6362,7 +6462,7 @@ async function sendRefine(){
   refineChat.push({who:'me', text: text});
   refineMessages.push({role:'user', content: "Current working template:\n\n" + working.trim() + "\n\nMy follow-up: " + text});
   try {
-    var raw = await callAPI(refineSystem(), refineMessages, 8000);
+    var raw = await callAPI(refineSystem(), refineMessages, 8000, undefined, undefined, 'refine');
     var j = safeJSON(raw);
     if(!j || typeof j.template !== 'string'){ throw new Error('Could not read the response. Try again.'); }
     refineMessages.push({role:'assistant', content: raw});
@@ -6634,6 +6734,9 @@ function loadVaultTemplates(){
   // blinking-red "Recording…" so it's unmistakable the mic is hot, even away from the status banner.
   // state: 'recording' (blinking red) | 'transcribing' (amber spinner) | anything falsy = idle.
   // The whole lifecycle shows on the Record button itself — that's where the eye checks status.
+  // Exposed for telemetry: Discern opened DURING a recording cannot see the encounter at all
+  // (one blob is held until Stop), so the phase has to be stamped onto the event.
+  window.tbpIsRecording = function(){ return !!recording; };
   function tbpSetRecUI(state){
     var active = (state === 'recording' || state === 'transcribing');
     ['focus-record','record-main-btn'].forEach(function(id){
@@ -6793,6 +6896,7 @@ function loadVaultTemplates(){
       startWavCapture(recordStream, wavCtx || null);
     }
     recording=true;
+    tbpTrack('ambient_start'); tbpTrackRoute('input_ambient');
     tbpSetRecUI('recording'); tbpNotifyDesk('recording');
     rawBaseline = document.getElementById('raw').value;
     setStatus(isTele ? 'Recording (you + patient). To finish: hit Stop recording here, OR Chrome’s green “Stop sharing” bar — either one ends the recording.'
@@ -6803,6 +6907,7 @@ function loadVaultTemplates(){
   function doStop(){
     if(!recording) return;
     recording=false;
+    tbpTrack('ambient_stop');
     tbpSetRecUI('transcribing'); tbpNotifyDesk('transcribing');  // recording stopped → transcription begins; show it on the button + tab until done
     stopMeter();
     if(recMode==='wav'){
@@ -6821,6 +6926,7 @@ function loadVaultTemplates(){
 
   function appendTranscript(text){
     if(!text) return;
+    tbpTrack('ambient_transcript');
     var ov = document.getElementById('focus-overlay');
     var focusOpen = !!(ov && ov.classList.contains('open'));
     if(wnMode === 'sections'){
@@ -7699,7 +7805,7 @@ async function tcoachFindFromNote(){
     var sys = "You are a brief-therapy technique matcher for a psychiatric prescriber mid-visit. Given the clinician's current visit notes and a fixed list of SITUATIONS (each with an id), pick the 1 or 2 situations whose therapeutic moment best fits what is happening with THIS patient right now. Also give ONE short, concrete thing the clinician could say next, tailored to the notes. Invent no clinical facts. Respond ONLY with raw JSON, no code fence: {\"matches\":[\"id\",...],\"tip\":\"one sentence the clinician could actually say\"}.";
     var listStr = TCOACH_CARDS.map(function(c){ return c.id+': '+c.situation; }).join('\n');
     var user = "SITUATIONS:\n" + listStr + "\n\nCURRENT VISIT NOTES:\n\n" + note;
-    var raw2 = await callAPI(sys, [{role:'user', content:user}], 400);
+    var raw2 = await callAPI(sys, [{role:'user', content:user}], 400, undefined, undefined, 'therapy_coach_match');
     var j = safeJSON(raw2);
     var ids = (j && Array.isArray(j.matches)) ? j.matches.filter(function(id){ return TCOACH_CARDS.some(function(c){return c.id===id;}); }) : [];
     renderTCoachCards(document.getElementById('tcoach-filter').value, ids);
@@ -7840,8 +7946,18 @@ function initTherapyCoach(){
   window.tbpTxSave  = function(o){ try{ if(o && (o.jobUrl || (o.fast && o.jobId))) localStorage.setItem(PKEY, JSON.stringify({ jobUrl:o.jobUrl, blobName:o.blobName, fast:!!o.fast, jobId:o.jobId, ts:Date.now() })); }catch(e){} };
   window.tbpTxClear = function(){ try{ localStorage.removeItem(PKEY); }catch(e){} };
   window.tbpTxGet   = function(){ try{ var s=localStorage.getItem(PKEY); if(!s) return null; var d=JSON.parse(s); if(d && (d.jobUrl || (d.fast && d.jobId)) && d.ts && (Date.now()-d.ts) < 30*60*1000) return d; localStorage.removeItem(PKEY); return null; }catch(e){ return null; } };
+  // How the encounter material arrives is the thing we most need to know and least can see:
+  // a clinician pasting their own HPI and drafting looks identical in the data to one who
+  // prepped. These fire at most once per route per visit.
+  document.addEventListener('paste', function(ev){
+    var el = ev.target; if(!el || !el.id && !(''+el.className).indexOf) return;
+    if(el.id === 'raw' || el.id === 'context' || el.id === 'focus-note' || ((''+el.className).indexOf('wn-ta') !== -1)) tbpTrackRoute('input_paste');
+  }, true);
   document.addEventListener('input', function(ev){
     var el = ev.target; if(!el) return;
+    // ev.inputType distinguishes real typing from a paste or a programmatic write; only
+    // genuine keystrokes count as "typed".
+    if(ev.inputType === 'insertText' && (el.id === 'raw' || el.id === 'focus-note' || ((''+el.className).indexOf('wn-ta') !== -1))) tbpTrackRoute('input_typed');
     if(el.id === 'raw' || el.id === 'context' || el.id === 'focus-note' || ((''+el.className).indexOf('wn-ta') !== -1)) schedule();
   });
   window.addEventListener('beforeunload', save);

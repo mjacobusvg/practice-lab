@@ -108,6 +108,7 @@ function detectPracticeLabMode(systemPrompt) {
  *   inputTokens   {number?} prompt tokens
  *   outputTokens  {number?} completion tokens
  *   costUsd       {number?} pass to override; otherwise computed from model+tokens
+ *   sessionId     {string?} random per-visit id grouping one workspace's rows (no PHI)
  * @param {object} env optional { SUPABASE_URL, SUPABASE_SERVICE_KEY } override
  * @returns {Promise<void>}
  */
@@ -135,7 +136,8 @@ function logUsage(row, env) {
       model: model,
       input_tokens: inputTokens,
       output_tokens: outputTokens,
-      est_cost_usd: cost
+      est_cost_usd: cost,
+      session_id: row.sessionId || null
     };
 
     return fetch(SUPABASE_URL + '/rest/v1/tool_usage', {
