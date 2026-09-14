@@ -141,6 +141,13 @@ delete it; just leave it in place and only advance it when a deploy is worth int
   exists in the repo before building, detect cheaply and call AI only when needed, keep
   structured data / retrieved evidence / AI synthesis separate, and surface tradeoffs to Michael
   before consequential product decisions.
+- `FORUM-POSTS.md` is the state file for **member-facing forum posts**: the limited Markdown a
+  post body actually supports, the `scheduled_posts` -> `forum_posts` pipeline, the Mon/Thu 15:00
+  UTC cadence and field conventions, the checksum discipline for any body write, and how reader
+  mode renders a post. **Read it before drafting, scheduling or editing a post, or touching post
+  typography in `platform.html`.** The trap it exists to prevent: `**Heading**` on its own line is
+  a bold paragraph, NOT a heading. Post sections must be `# Heading` (which renders as `<h2>`,
+  since the post title is the `h1`).
 - **The community is NOT on Circle anymore.** TBP runs its own platform (`platform.html` +
   `netlify/functions/`), with members and contacts in Supabase (`public.contacts`, tiers
   `free` / `forum` / `full`). The many `Circle`-named files and the Circle MCP connector are
