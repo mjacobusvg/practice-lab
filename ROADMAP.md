@@ -398,6 +398,15 @@ actually reads as bloated.
 - Resolve the known marketplace RLS exposure (Supabase audit found marketplace tables with
   RLS disabled) **before any real marketplace transactions begin.**
 - Review flagged SECURITY DEFINER views/functions and privileges.
+- **AWS account security (added Sept 2026).** Trusted Advisor is showing two RED checks on
+  an account carrying PHI: CloudTrail management-event logging off (no audit trail for
+  infrastructure changes, and it cannot be reconstructed later) and IAM Access Analyzer not
+  enabled (no detection of externally-shared resources). Day-to-day work is also being done
+  as the account root user. Runbook with the safe ordering is `HIPAA-INFRA-REMEDIATION.md`
+  §6. None of it touches the clinical path.
+- **`est_cost_usd` overstates Sonnet spend ~2.4x** since the Sept 1 Bedrock cutover. Caching
+  works (confirmed against the actual bill); Bedrock reports cache token counts somewhere the
+  Lambda's parser does not read. Cost metering only, no money lost. AWS support case open.
 - Gradually add staging/testing/deployment guardrails as usage grows.
 - Do **not** undertake a major rewrite merely for architectural elegance.
 

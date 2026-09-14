@@ -119,6 +119,80 @@ and set the flag. Until then, stop writing `letter_text` to Supabase in
 
 ---
 
+## 6. AWS account security (added Sept 2026, after a Trusted Advisor review)
+
+Surfaced while investigating a Bedrock billing question. None of this touches the clinical
+path: no Lambda, Bedrock or front-end changes, and the Scribe keeps serving throughout. It is
+console work for whoever holds AWS access.
+
+**Do these in order.** Step 6a.3 is the one that makes people think their new IAM user is
+broken, and 6a.1 is the only step with real lockout risk.
+
+### 6a. Stop operating as root
+
+Day-to-day work was being done as the account root user. On an account under a BAA, root
+should carry MFA and sit unused, with an ordinary IAM user for daily work.
+
+- [ ] **1. Root MFA first.** Account menu -> Security credentials -> Multi-factor
+      authentication -> Assign MFA device. **Save the recovery codes offline.** Losing a root
+      MFA device with no recovery path means a slow identity-verification process with AWS.
+      This is the highest-consequence step here.
+- [ ] **2. Check for root access keys** (same page). If any exist, do NOT delete them until
+      you have established what uses them. The Lambdas use execution roles, so nothing
+      *should* depend on a root key, but a key sitting in an env var somewhere breaks
+      production the moment it is revoked.
+- [ ] **3. Activate IAM billing access BEFORE testing.** Account menu -> Account -> "IAM user
+      and role access to billing information" -> Edit -> Activate. Root-only setting. Without
+      it the new IAM user signs in and Billing is simply absent.
+- [ ] **4. Create an IAM user** with console access and `AdministratorAccess`.
+- [ ] **5. MFA that user too.**
+- [ ] **6. Test in a private window** — confirm Lambda, Bedrock, Support and Billing all
+      resolve — *then* stop using root for daily work.
+
+Root is never deleted, only quiet. It stays needed for account settings, the billing toggle,
+and closing the account.
+
+### 6b. CloudTrail management events (was a RED Trusted Advisor check, 17/17 resources)
+
+No record of who created, modified or deleted infrastructure. On a BAA footprint that is the
+audit trail for the environment itself, and it cannot be reconstructed after the fact.
+
+- [ ] CloudTrail -> Trails -> Create trail. Management events, Read and Write. **Data events
+      OFF** (billed per event; a separate decision, worth revisiting for the PHI bucket).
+- [ ] **SSE-KMS encryption on. Log file validation on** — validation is what makes the trail
+      defensible as an audit record.
+- [ ] Multi-region (default).
+- [ ] Lifecycle rule on the log bucket. **Record the chosen retention period as a policy
+      decision** rather than leaving it to a default.
+
+First trail's management events are free; S3 storage is pennies at this volume. CloudTrail
+logs are API metadata, not PHI, so this adds no BAA complication.
+
+### 6c. IAM Access Analyzer (was a RED Trusted Advisor check, 17/17 resources)
+
+No automated detection of resources shared outside the account — the check that would catch
+an S3 bucket holding chart-audit payloads becoming externally reachable.
+
+- [ ] IAM -> Access analyzer -> Create analyzer. Type **External access**, zone of trust
+      **this account**. Free. Review every finding on an S3 bucket properly.
+
+### 6d. Lower priority (Trusted Advisor yellows)
+
+- [ ] S3 incomplete multipart upload abort — lifecycle rule, abort after 7 days. Saves money.
+- [ ] S3 server access logs on the PHI-payload buckets, targeting a separate log bucket.
+      Useful for audit; has storage cost.
+- [ ] IAM SAML 2.0 identity provider — inspect what it flags before changing anything.
+      Likely stale config rather than a real gap.
+
+### 6e. Support console permissions (deadline: 16 November 2026)
+
+AWS is requiring an explicit permission for support actions from that date. Root is
+unaffected. Once 6a is done and daily work runs through an IAM user, that user needs
+`AWSSupportAccess` (or `AdministratorAccess`, which covers it) or it loses the ability to
+open cases.
+
+---
+
 ## Note
 
 The AWS deploy itself requires access to the AWS account and cannot be done from a repo-only
