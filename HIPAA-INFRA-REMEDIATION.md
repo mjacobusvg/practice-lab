@@ -134,7 +134,7 @@ Day-to-day work was being done as the account root user. On an account under a B
 should carry MFA and sit unused, with an ordinary IAM user for daily work.
 
 - [x] **1. Root MFA.** DONE — virtual device registered 23 April 2026.
-- [ ] **1b. Register a SECOND root MFA device.** STILL OPEN. AWS issues no recovery codes for root (an
+- [x] **1b. Second root MFA device.** DONE 13 Sept — a second passkey. AWS issues no recovery codes for root (an
       earlier version of this runbook wrongly said it did); the supported backup is up to 8
       registered devices. Add a second authenticator or a hardware key. Then confirm the root
       email and account phone number are current — that pair is the actual recovery path if
@@ -169,9 +169,8 @@ audit trail for the environment itself, and it cannot be reconstructed after the
 - [x] **SSE-KMS deliberately NOT enabled.** A new KMS key is ~$1/month plus per-request
       charges, and CloudTrail logs are API metadata rather than PHI, so the free SSE-S3
       default is the right call here.
-- [ ] **Log file validation — VERIFY.** It defaults to Disabled and is the setting that makes
-      the trail defensible as an audit record rather than merely informative. Trail ->
-      General details -> Edit -> tick Log file validation.
+- [x] **Log file validation ENABLED 13 Sept.** It defaults to Disabled; this is the setting
+      that makes the trail defensible as an audit record rather than merely informative.
 - [ ] Lifecycle rule on the log bucket. **Record the chosen retention period as a policy
       decision** rather than leaving it to a default.
 
@@ -190,7 +189,27 @@ an S3 bucket holding chart-audit payloads becoming externally reachable.
       us-east-1. Free. The other two finding types (Internal access, Unused access) both
       charge fees and were deliberately not selected. One analyzer covers the whole footprint
       because every resource is us-east-1.
-- [ ] Review the findings once they populate, especially anything on an S3 bucket.
+- [x] **Findings reviewed 13 Sept. Four, all expected.** Every one is a Lambda Function URL
+      with `Auth = NONE`, reported as `All Principals / Write`:
+      `tbp-azure-transcribe`, `tbp-clinical-proxy`, `tbp-clinical-proxy-stream`,
+      `tbp-assessments`.
+
+      **These are by design, not misconfigurations.** A browser cannot sign a SigV4 request
+      without AWS credentials, so IAM auth on the Function URL is not an option; auth is
+      enforced in-code via the signed session token, exactly as §5 of
+      `BAA-AND-PHI-ROUTING.md` describes. Nothing reaches a model without a valid token.
+- [ ] Archive these four, then add an **archive rule** (Analyzer settings -> Archive rules) so
+      they do not reappear on every scan. The point is that the *next* finding stands out
+      instead of being lost among four permanent expected ones.
+
+**The real gap these surface (NEW, open):** anyone on the internet can *invoke* these
+functions. They get a 401/403 without a valid token, but **a rejected request still costs a
+Lambda invocation.** With no ceiling, sustained hammering runs up spend and can exhaust
+account-wide concurrency, which would take the Scribe down for paying members.
+
+- [ ] Set **reserved concurrency** on each of the four functions (Lambda -> function ->
+      Configuration -> Concurrency). Bounds both the bill and the blast radius. Pick ceilings
+      from real peak usage — `tool_usage` has the traffic shape.
 
 ### 6d. Lower priority (Trusted Advisor yellows)
 
