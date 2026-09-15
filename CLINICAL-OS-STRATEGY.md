@@ -1404,6 +1404,103 @@ This is no longer an ADHD Framework observation. It changes how every future fea
 
 ---
 
+## 36. The mid-visit engine: listen continuously, reason occasionally
+
+The cost objection to a live companion is real but it is aimed at the wrong thing. There are two
+separate costs and only one of them is continuous.
+
+**Hearing the visit** is the unavoidable continuous cost, and it is not the frightening part.
+Michael's own Azure bill confirms batch transcription at **$0.18 per audio hour** (S1 Speech to Text
+Batch; 41.43 hours billed $7.458 over Aug 16 to Sep 14). Streaming alternatives quoted around
+$0.27/hour all-in for a cheap model with diarization — secondary sources, unverified, treat as
+indicative. If a live transcript REPLACES the final batch transcript rather than being added on top,
+the delta is single-digit cents per visit. See §35.5 and the Ambient dependency in §34.
+
+**Thinking about what it hears** is where an architecture gets expensive or stays cheap. The
+expensive design is: every 15 seconds, send the whole transcript plus all records plus the framework
+plus the medication list, and ask "anything interesting?" That is slow, costly and irritating, and it
+is exactly the mistake the Framework's own reassess made before it was rewritten as a delta.
+
+The engine should be a hierarchy:
+
+> **Listen continuously. Detect cheaply. Use deterministic tools wherever possible. Call reasoning
+> only when ambiguity actually requires reasoning.**
+
+### 36.1 The deterministic tier ALREADY EXISTS and is already paid for
+
+This is the finding that changes the economics, and it was verified in-repo rather than assumed:
+
+| Capability | File | Model calls |
+|---|---|---|
+| Medication interactions | `pm-interaction-checker.html`, ~490 KB | **none** |
+| Screening scales | `scales-data.js`, ~20 KB | **none** |
+| Monitoring requirements | `pm-monitoring-protocol.html` | rules local; ONE call, for the patient handout only |
+
+The interaction file is not a thin wrapper around a model. It is a local rules engine carrying on
+the order of 311 pharmacokinetic relationships (inhibits / induces / substrate across CYP1A2, 2C8,
+2C9, 2C19, 2D6, 3A4) plus 16 named risk mechanisms — serotonergic overlap, QTc stacking, respiratory
+depression, anticholinergic burden, seizure threshold, bleeding risk, lithium level risk, metabolic
+risk stacking. It runs entirely in the browser.
+
+So "check this interaction mid-visit for essentially zero marginal cost" is not a thing to build. It
+is a thing TBP already owns and currently hides behind `window.open(u, '_blank')` (§35.2). **The
+work is plumbing, not construction:** surface the existing engine inside the encounter instead of in
+a new tab. Same for scoring a PHQ-9, GAD-7 or ASRS, and for pulling lithium or antipsychotic
+monitoring expectations.
+
+That also means the cheapest, highest-value mid-visit features are the ones that need no AI at all,
+which is §28's question answered in the affirmative for most of this list.
+
+### 36.2 Three tiers, never exposed as tiers
+
+- **Always available, effectively free.** Scales, safety instruments, calculators, references,
+  deterministic interaction and monitoring lookups. No model call.
+- **On demand.** Discern, "what am I missing?", "what did that answer establish?", "what would
+  distinguish these?", the Framework's mid-visit delta. Nothing happens until the clinician asks,
+  which is why clinician-triggered buttons are cheaper than anticipation.
+- **Live companion.** Continuous transcription lets the workspace notice something itself and
+  quietly surface it.
+
+The clinician should never see these as tiers. They should see help that is there when needed.
+
+### 36.3 Listening is not the same as reasoning
+
+**The workspace can listen continuously without reasoning continuously.** This is the distinction
+that makes a live companion financially plausible.
+
+A text stream can be watched cheaply for medication names, treatment decisions, safety language,
+symptom changes, contradictions, labs and diagnoses. Only when one of those produces a meaningful
+event does anything wake up — and what wakes first should be a deterministic tool, not a reasoning
+call. Reasoning is for genuine ambiguity: does what she just said materially change the picture,
+could this be activation rather than hypomania, what one question would separate these.
+
+Two honest limits on the cheap-detection step:
+
+1. It needs a trigger vocabulary. The interaction dataset supplies the drug terms; safety language
+   and symptom patterns would need their own lists, and simple text matching on a live transcript
+   will produce false positives. The threshold matters more than the detector.
+2. Automatic noticing requires live transcription, which TBP does not have (§34). Everything in the
+   on-demand and free tiers works today without it.
+
+### 36.4 A cheaper hybrid worth keeping in the discussion
+
+Recording locally costs nothing (the WAV path already holds PCM in browser memory — see §34). So the
+browser could keep a rolling buffer of the last 60 to 120 seconds WITHOUT transcribing it, and
+transcribe only that snippet when the clinician presses something like **"check what we just
+discussed."**
+
+That cannot support automatic alerts, because the system cannot understand audio it never
+transcribed. But it gives an on-demand companion at a fraction of continuous-streaming cost, and it
+is a genuinely smaller first step than streaming the whole appointment.
+
+### 36.5 Why this fits the thesis
+
+Computation is spent only when spending it might save the clinician attention — not because another
+thirty seconds of audio happened. An always-on system that reasons continuously would burn money to
+produce interruptions, which is the thesis inverted.
+
+---
+
 ## 33. This document is intentionally incomplete
 
 This is a starting point.
