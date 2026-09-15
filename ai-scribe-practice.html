@@ -357,7 +357,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
     form.parentNode.insertBefore(scrim, form); scrim.appendChild(form);
     scrim.classList.add('hidden');   // note is home base on load; setup opens on demand (or on load in demo)
     window.tbpShowSetup=function(){ scrim.classList.remove('hidden'); try{ tbpUpdateSetupNudge(); }catch(e){} };
-    window.tbpHideSetup=function(){ scrim.classList.add('hidden'); try{ tbpUpdateSetupNudge(); }catch(e){} };
+    window.tbpHideSetup=function(){ scrim.classList.add('hidden'); _pendingRecordOpen=false; var _grh=document.getElementById('record-gate-hint'); if(_grh) _grh.style.display='none'; try{ tbpUpdateSetupNudge(); }catch(e){} };
     // A close (X) and a click on the dark backdrop dismiss setup and return to the note, so opening
     // "Set up this visit" to peek never traps you into completing a setup action.
     form.insertAdjacentHTML('afterbegin', '<button type="button" id="setup-close-btn" title="Close setup, back to your note" style="position:absolute;top:9px;right:12px;background:none;border:0;color:var(--cream-dim);font-size:26px;line-height:1;cursor:pointer;padding:2px 7px;z-index:3">&times;</button>');
@@ -400,6 +400,9 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
         <div class="opt" data-visit="new_eval">New patient evaluation</div>
         <div class="opt" data-visit="follow_up">Follow-up</div>
       </div>
+      <!-- Shown when Record is pressed with no visit type chosen: recording needs the visit type
+           to pick the template, so we ask for it first, then open the recorder automatically. -->
+      <div id="record-gate-hint" style="display:none;margin:8px 0 0;padding:9px 12px;background:var(--teal-glow);border:1px solid var(--teal);border-radius:8px;font-size:.88rem;color:var(--cream)">Pick a visit type above to start recording &mdash; it sets which template your note uses. Recording opens as soon as you choose.</div>
       <div class="tmpl-status" id="tmpl-status">Checking your Vault for a saved template&hellip;</div>
     </div>
 
@@ -1124,6 +1127,7 @@ var HOUSE = "You are a clinical documentation generator for psychiatric and beha
 
 // ── State ──
 var visitType = null; // no default: force an explicit choice so the wrong template can never ride a silent default
+var _pendingRecordOpen = false; // set when Record is pressed with no visit type; opens the recorder once one is chosen
 var sourceMode = 'typed';
 // Two independent axes (a clinician can do any combination):
 var workflow = null;      // CAPTURE: 'ambient' (record) | 'manual' (type/paste). Vault, never hardcoded.
@@ -1388,6 +1392,14 @@ bindOpts('visit-opts','data-visit', function(v){
   if(v !== visitType){ wnMode='plain'; wnSections={checklist:'',guide:'',note:''}; }
   visitType=v; try{ localStorage.setItem(tbpVisitKey(), v); }catch(e){}
   renderTemplateStatus(); revealWorkArea();
+  // If Record was pressed before a visit type was chosen, we parked the intent — now that one is
+  // set, hide the gate hint, close the setup, and open the recorder so it's a single continuous flow.
+  var _gh = document.getElementById('record-gate-hint'); if(_gh) _gh.style.display = 'none';
+  if(_pendingRecordOpen && visitType){
+    _pendingRecordOpen = false;
+    try{ if(window.tbpHideSetup) window.tbpHideSetup(); }catch(e){}
+    try{ openAmbientSetup(); }catch(e){}
+  }
 });
 // On load, restore a previously-chosen visit type so a reopened/reloaded frame comes back
 // to the visit the clinician was on (recording UI visible, Draft not falsely blocked). The
@@ -7680,6 +7692,17 @@ function loadVaultTemplates(){
 // Typing/pasting is always available and needs no button. In the public demo the live action is gated.
 function openAmbientSetup(){
   if(typeof tbpDemoBlock === 'function' && tbpDemoBlock()) return;
+  // Require a visit type BEFORE recording. It sets which template the note uses, and starting a
+  // recording without it strands the clinician at a "no visit type" prompt AFTER the visit. If it
+  // is not set, reveal the setup so they choose one, remember they were trying to record, and open
+  // the recorder automatically the moment they pick (see bindOpts('visit-opts')).
+  if(!visitType){
+    _pendingRecordOpen = true;
+    var gh = document.getElementById('record-gate-hint'); if(gh) gh.style.display = '';
+    try{ if(window.tbpShowSetup) window.tbpShowSetup(); }catch(e){}
+    try{ var vo = document.getElementById('visit-opts'); if(vo) vo.scrollIntoView({ behavior:'smooth', block:'center' }); }catch(e){}
+    return;
+  }
   var m = document.getElementById('ambient-modal'); if(!m) return;
   // Reparent to <body> so the modal is never trapped inside a display:none ancestor (it is authored
   // inside the work-area for locality). getElementById wiring is unaffected by the move.
