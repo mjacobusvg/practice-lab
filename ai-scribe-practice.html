@@ -299,7 +299,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-93-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-94-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -584,7 +584,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-93-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-94-sub</span></div>
 </div>
 </div>
 
@@ -975,7 +975,7 @@ function tcoachSuggestTool(){
     <div id="adhd-panel-foot" style="display:none;position:sticky;bottom:0;z-index:2;background:var(--navy-card);margin:14px -22px 0;padding:11px 22px 14px;border-top:1px solid var(--rule)">
       <button class="btn" type="button" id="adhd-refresh" style="margin-top:0;background:#a78bfa;color:#1a1033;padding:8px 15px;font-size:.86rem">What did today establish? &rarr;</button>
       <span class="hint" id="adhd-refresh-msg" style="margin-left:9px"></span>
-      <div class="hint" style="margin-top:7px;line-height:1.45;color:var(--cream-dim)">Re-reads the visit against the framework: what you settled, what changed, what is still open, and where that leaves the diagnosis.</div>
+      <div class="hint" id="adhd-refresh-note" style="margin-top:7px;line-height:1.45;color:var(--cream-dim)">Re-reads the visit against the framework: what you settled, what changed, what is still open, and where that leaves the diagnosis.</div>
     </div>
   </div>
 </div>
@@ -1124,6 +1124,15 @@ var DEFAULT_MSE = 'No abnormal movements noted. Speech is clear with normal rate
 // bookkeeping — those are clinician-specific and belong in a custom Plan macro, not the house default.
 var DEFAULT_PLAN = 'No medications were changed today.\nContinue all current medications as prescribed.\nLabs and orders as indicated; results will be reviewed with the patient.\nReturn to clinic in ___, sooner if clinically needed.\nCrisis: call or text 988, or go to the nearest emergency room.';
 var vaultTemplates = { new_eval: '', follow_up: '' };
+// Initialised HERE, beside vaultTemplates, and NOT at its loader further down. The saved
+// visit type is restored on load by replaying a click on the visit-type option, which runs
+// renderTemplateStatus() long before execution reaches the house-template loader. Declaring
+// it only down there left it hoisted-but-undefined at that moment, so a clinician with no
+// Vault template for that visit type hit "Cannot read properties of undefined (reading
+// 'new_eval')" on every reload — and because the throw happens inside a synthetic event
+// listener it escaped the restore block's try/catch and killed the rest of
+// renderTemplateStatus(), so the section toggles never rendered.
+var houseTemplates = { new_eval:'', follow_up:'' };
 // Cached CLEAN fillable scaffolds derived from the templates above. A saved template is really a
 // template+prompt (it carries drafting directives), so it can't be dropped into the working note
 // as-is. We compute the blank fillable form ONCE (first new-patient use), cache it here and in the
@@ -3668,12 +3677,30 @@ function tbpAdhdMaterial(){
 // Questions arrive as lines, some with a trailing parenthetical naming the gap they close. The
 // checklist wants the question itself — the rationale is for the panel, not for something the
 // clinician is writing answers under mid-visit.
+// Turn the raw <<<SECTION>>> stream into something readable WHILE it is still arriving.
+// Only used for the in-flight preview; the finished text goes through tbpAdhdSplit as before.
+function tbpAdhdStripTags(t){
+  return String(t || '').replace(/<<<([A-Z _]+)>>>/g, function(_, name){
+    return '\n' + name.replace(/_/g, ' ') + '\n';
+  }).replace(/\n{3,}/g, '\n\n').trim();
+}
 function tbpAdhdQuestionList(){
   if(!adhdFw || !adhdFw.QUESTIONS) return [];
-  return adhdFw.QUESTIONS.split('\n').map(function(l){
-    return l.replace(/^[-\u2022\s]+/, '').trim();
-  }).filter(function(l){ return l.length > 12; })
-    .map(function(l){ return l.replace(/\s*\((?:Targets|Addresses|Opens|Probes|Distinguishes|Evaluates)[^)]*\)\s*$/i, '').trim(); });
+  var lines = adhdFw.QUESTIONS.split('\n');
+  // The post-visit pass groups its questions under headings ("On the ASD pathway:") and opens
+  // with a sentence of context. Taking every long line, as this used to, dropped those headings
+  // and that prose into CHECK / ASK TODAY as if they were questions to ask the patient. Real
+  // questions are the bulleted lines, in both the pre-visit and post-visit shapes.
+  var bulleted = lines.filter(function(l){ return /^\s*[-\u2022*]/.test(l); });
+  var src = bulleted.length ? bulleted : lines;   // fall back if a future prompt drops the bullets
+  return src.map(function(l){
+    return l.replace(/^[-\u2022*\s]+/, '').trim();
+  }).filter(function(l){
+    if(l.length <= 12) return false;
+    // A heading, not a question: ends in a colon and asks nothing.
+    if(/:$/.test(l) && l.indexOf('?') === -1) return false;
+    return true;
+  }).map(function(l){ return l.replace(/\s*\((?:Targets|Addresses|Opens|Probes|Distinguishes|Evaluates)[^)]*\)\s*$/i, '').trim(); });
 }
 
 // The Framework feeds the same two rails the normal prep flow does: the rundown banner above
@@ -3816,13 +3843,31 @@ function tbpAdhdRender(){
   // open on something the clinician had just read six inches to the left.
   var after = !!(f.TODAY || f.CHANGED || f.POSITION);
   if(after){
+    // ORDER MATTERS HERE. After the visit this panel used to render seven sections of equal
+    // weight, five of which repeated the pre-visit briefing the clinician had already read.
+    // The two sections that were actually new sat at the top of a very long scroll and looked
+    // exactly like everything else, so there was no way to see WHAT had changed. The new
+    // material now comes first and the carried-forward picture folds away.
+    h += '<div class="hint" style="margin:-4px 0 12px;color:#a78bfa;font-weight:600;letter-spacing:.05em;text-transform:uppercase;font-size:.74rem">New since the framework was built</div>';
     h += tbpAdhdSecHtml('Established today', f.TODAY);
     h += tbpAdhdSecHtml('What changed', f.CHANGED);
     h += tbpAdhdSecHtml('Still unresolved', f.GAPS);
-    h += tbpAdhdSecHtml('Current diagnostic position', f.POSITION);
-    h += tbpAdhdSecHtml('Everything established', f.ESTABLISHED);
-    h += tbpAdhdSecHtml('Competing explanations', f.COMPETING);
     h += tbpAdhdSecHtml('Still worth asking', f.QUESTIONS);
+    // The pre-visit questions could always be pushed into CHECK / ASK TODAY; the post-visit
+    // ones could not, which left the clinician retyping them by hand. Same id, so the same
+    // append-only handler runs: nothing already in the note is rewritten or removed.
+    if(f.QUESTIONS){
+      h += '<div style="margin:-6px 0 16px"><button class="btn" type="button" id="adhd-q-add" style="margin-top:0;padding:7px 13px;font-size:.83rem;background:#a78bfa;color:#1a1033">Add these to my working note &rarr;</button>'
+        + '<span class="hint" id="adhd-q-msg" style="margin-left:8px">Appends to CHECK / ASK TODAY. Your answers stay put.</span></div>';
+    }
+    h += tbpAdhdSecHtml('Current diagnostic position', f.POSITION);
+    var carried = tbpAdhdSecHtml('Everything established', f.ESTABLISHED)
+                + tbpAdhdSecHtml('Competing explanations', f.COMPETING);
+    if(carried){
+      h += '<details style="margin-bottom:14px"><summary style="cursor:pointer;color:var(--cream-dim);font-size:.82rem;padding:6px 0">'
+        + 'The full picture, including what the records already showed &rsaquo;</summary>'
+        + '<div style="margin-top:10px">' + carried + '</div></details>';
+    }
   } else {
     h += tbpAdhdSecHtml('Established', f.ESTABLISHED);
     h += tbpAdhdSecHtml('Still to establish', f.GAPS);
@@ -3855,10 +3900,36 @@ function tbpAdhdSyncFoot(){
   var sig = tbpAdhdSessionSig();
   var base = (adhdFw && typeof adhdFw.sig === 'number') ? adhdFw.sig : 0;
   var enough = (sig - base) > 400;   // a few sentences of real visit material, not a stray keystroke
-  foot.style.display = enough ? '' : 'none';
+  // Hiding the whole footer when nothing new had arrived meant that AFTER a reassess ran — which
+  // resets the fingerprint — the button vanished and there was no way to run it again short of
+  // typing another 400 characters. The action is always reachable now; only its emphasis changes,
+  // so "there is new material to read" still looks different from "you can re-check if you like".
+  foot.style.display = adhdFw ? '' : 'none';
+  var btn = document.getElementById('adhd-refresh');
+  var note = document.getElementById('adhd-refresh-note');
+  if(btn){
+    btn.innerHTML = enough ? 'What did today establish? &rarr;' : 'Re-check against the visit &rarr;';
+    btn.style.background = enough ? '#a78bfa' : 'transparent';
+    btn.style.color = enough ? '#1a1033' : 'var(--cream)';
+    btn.style.boxShadow = enough ? '' : 'inset 0 0 0 1px var(--rule)';
+  }
+  if(note){
+    note.textContent = enough
+      ? 'There is visit material the framework has not read yet.'
+      : 'Nothing new since the last read. Running it again will mostly repeat itself.';
+  }
 }
 // Re-check as the note grows so the entry button offers the reassess the moment it is earned.
 setInterval(function(){ try { if(adhdFw) tbpAdhdSyncTriggers(); } catch(e){} }, 4000);
+// Open the panel WITHOUT re-rendering it. tbpAdhdShowPanel() ends in tbpAdhdRender(), which
+// during a live stream would repaint the partial text with the previous framework on every
+// chunk. Used only by the in-flight preview.
+function tbpAdhdShowPanelQuiet(){
+  if(typeof tbpDemoBlock === 'function' && tbpDemoBlock()) return;
+  try { tbpHideReason(); } catch(e){}
+  document.getElementById('adhd-panel').classList.add('open');
+  document.documentElement.classList.add('adhd-open');
+}
 function tbpAdhdShowPanel(){
   if(typeof tbpDemoBlock === 'function' && tbpDemoBlock()) return;
   try { tbpHideReason(); } catch(e){}   // one panel at a time; two would leave the note a column
@@ -3894,7 +3965,25 @@ async function tbpAdhdRun(mode){
         : 'The clinician has gathered no records or history yet. Build the framework on that basis: nothing is established, and say what would need to be obtained.';
     }
     var sys = isUpdate ? adhdUpdateSystem() : (adhdMode === 'history' ? adhdHistorySystem() : adhdBuildSystem());
-    var raw = await callAPI(sys, [{ role:'user', content: user }], 5200);
+    // STREAM IT. This call reads an entire record set and writes 5,000 tokens, so it takes one to
+    // two minutes; with no onDelta the panel sat completely blank for all of it and looked hung.
+    // The text is <<<SECTION>>> delimited and cannot be rendered properly until it is complete,
+    // so the partial is shown as plain prose with the delimiters turned into headings, and the
+    // real render replaces it the moment the call returns.
+    var panelEl = document.getElementById('adhd-body');
+    var opened = false;
+    var raw = await callAPI(sys, [{ role:'user', content: user }], 5200, function(partial){
+      if(!panelEl || !partial) return;
+      try {
+        // A first build is usually chained off Prep, so the clinician is looking at the prep
+        // output while this runs and the framework simply "pops in" two or three minutes later.
+        // Opening the panel on the first bytes turns that into something visibly working.
+        if(!opened){ opened = true; try { tbpAdhdHideSetup(); tbpAdhdShowPanelQuiet(); } catch(e){} }
+        panelEl.innerHTML = '<div class="hint" style="margin-bottom:10px;color:#a78bfa">'
+          + '<span class="spinner"></span>' + (isUpdate ? 'Reading the visit against the framework&hellip;' : 'Reading the records&hellip;') + '</div>'
+          + '<div class="adhd-txt" style="opacity:.75">' + esc(tbpAdhdStripTags(partial)) + '</div>';
+      } catch(e){}
+    });
     var f = tbpAdhdSplit(raw);
     f.mode = isUpdate ? (adhdFw && adhdFw.mode) || 'framework' : adhdMode;
     if(f.mode === 'history'){
@@ -6557,7 +6646,8 @@ async function saveRefineTemplate(){
 // Fetched live and read-only; NEVER saved into this user's Vault (so they don't
 // accidentally own it), and if the fetch fails houseTemplates stays empty and the
 // draft falls back to the built-in conventional structure exactly as before.
-var houseTemplates = { new_eval:'', follow_up:'' };
+// houseTemplates is initialised up beside vaultTemplates (see the note there); re-initialising
+// it here would wipe anything already fetched.
 var houseTemplatesLoaded = false;
 function loadHouseTemplates(){
   if(houseTemplatesLoaded) return;

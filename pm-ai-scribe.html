@@ -185,7 +185,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-93"></script>
+<script src="/note-engine.js?v=ambient-94"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -469,7 +469,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-93</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-94</span></div>
 </div>
 </div>
 
@@ -1009,6 +1009,15 @@ var DEFAULT_MSE = 'No abnormal movements noted. Speech is clear with normal rate
 // bookkeeping — those are clinician-specific and belong in a custom Plan macro, not the house default.
 var DEFAULT_PLAN = 'No medications were changed today.\nContinue all current medications as prescribed.\nLabs and orders as indicated; results will be reviewed with the patient.\nReturn to clinic in ___, sooner if clinically needed.\nCrisis: call or text 988, or go to the nearest emergency room.';
 var vaultTemplates = { new_eval: '', follow_up: '' };
+// Initialised HERE, beside vaultTemplates, and NOT at its loader further down. The saved
+// visit type is restored on load by replaying a click on the visit-type option, which runs
+// renderTemplateStatus() long before execution reaches the house-template loader. Declaring
+// it only down there left it hoisted-but-undefined at that moment, so a clinician with no
+// Vault template for that visit type hit "Cannot read properties of undefined (reading
+// 'new_eval')" on every reload — and because the throw happens inside a synthetic event
+// listener it escaped the restore block's try/catch and killed the rest of
+// renderTemplateStatus(), so the section toggles never rendered.
+var houseTemplates = { new_eval:'', follow_up:'' };
 // Cached CLEAN fillable scaffolds derived from the templates above. A saved template is really a
 // template+prompt (it carries drafting directives), so it can't be dropped into the working note
 // as-is. We compute the blank fillable form ONCE (first new-patient use), cache it here and in the
@@ -6496,7 +6505,8 @@ async function saveRefineTemplate(){
 // Fetched live and read-only; NEVER saved into this user's Vault (so they don't
 // accidentally own it), and if the fetch fails houseTemplates stays empty and the
 // draft falls back to the built-in conventional structure exactly as before.
-var houseTemplates = { new_eval:'', follow_up:'' };
+// houseTemplates is initialised up beside vaultTemplates (see the note there); re-initialising
+// it here would wipe anything already fetched.
 var houseTemplatesLoaded = false;
 function loadHouseTemplates(){
   if(houseTemplatesLoaded) return;
