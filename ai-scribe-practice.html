@@ -299,7 +299,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-94-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-95-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -584,7 +584,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-94-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-95-sub</span></div>
 </div>
 </div>
 
@@ -666,7 +666,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
       <button type="button" class="btn" style="margin:0;padding:7px 13px;font-size:.85rem" title="Carry last visit forward, build today&rsquo;s checklist and set the visit type &mdash; or skip setup and just start writing." onclick="tbpShowSetup()">&#9881; Start or prep a visit</button>
       <button type="button" class="btn" style="margin:0;padding:7px 13px;font-size:.85rem" title="Read a prior evaluation, discharge summary or old records. Reviewing one does nothing to your note until you add it." onclick="tbpDocsFromNudge()">&#128196; Review outside records</button>
       <button type="button" class="btn rsn-trigger" style="margin:0;padding:7px 13px;font-size:.85rem" title="Think through the case using what is already in this session. Nothing goes into your note unless you put it there." onclick="tbpShowReason()">&#129504; Discern</button>
-      <button type="button" class="btn adhd-trigger adhd-entry" style="display:none;margin:0;padding:7px 13px;font-size:.85rem;background:#a78bfa;color:#1a1033" title="What this case establishes about the ADHD question, what it does not, and what is worth asking today." onclick="tbpAdhdShowPanel()">&#129504; ADHD Framework</button>
+      <button type="button" class="btn adhd-trigger adhd-entry" style="display:none;margin:0;padding:7px 13px;font-size:.85rem;background:#a78bfa;color:#1a1033" title="What this case establishes about the ADHD question, what it does not, and what is worth asking today." onclick="tbpAdhdEntryClick()">&#129504; ADHD Framework</button>
     </div>
   </div>
   <div id="focus-sections" style="display:none"></div>
@@ -975,7 +975,9 @@ function tcoachSuggestTool(){
     <div id="adhd-panel-foot" style="display:none;position:sticky;bottom:0;z-index:2;background:var(--navy-card);margin:14px -22px 0;padding:11px 22px 14px;border-top:1px solid var(--rule)">
       <button class="btn" type="button" id="adhd-refresh" style="margin-top:0;background:#a78bfa;color:#1a1033;padding:8px 15px;font-size:.86rem">What did today establish? &rarr;</button>
       <span class="hint" id="adhd-refresh-msg" style="margin-left:9px"></span>
-      <div class="hint" id="adhd-refresh-note" style="margin-top:7px;line-height:1.45;color:var(--cream-dim)">Re-reads the visit against the framework: what you settled, what changed, what is still open, and where that leaves the diagnosis.</div>
+      <div class="hint" id="adhd-refresh-note" style="margin-top:7px;line-height:1.45;color:var(--cream-dim)">A quick check of today against the framework. The framework itself is left alone.</div>
+      <div style="margin-top:9px"><a href="#" id="adhd-rebuild" style="color:var(--cream-dim);text-decoration:none;font-size:.79rem">Rebuild the whole framework from the records &rsaquo;</a>
+        <span class="hint" id="adhd-rebuild-msg" style="margin-left:8px"></span></div>
     </div>
   </div>
 </div>
@@ -3359,6 +3361,69 @@ function adhdBuildSystem(){
 
 // The in-visit update. Rebuilds the framework with what the encounter has since produced, and
 // adds the two sections that only exist once there is a visit to speak of.
+// Only what happened in the ROOM. The mid-visit check must NOT re-read the records: the
+// framework already distilled them, and tbpCaseContext() bundles up to 14k characters of each
+// outside record, which is why asking "what did today establish?" was costing a full case
+// analysis and one to two minutes to report that one thing had changed.
+function tbpAdhdVisitMaterial(){
+  var parts = [];
+  try {
+    var note = '';
+    var fo = document.getElementById('focus-overlay');
+    var fn = document.getElementById('focus-note');
+    if(fo && fo.classList.contains('open') && fn && fn.style.display !== 'none' && (fn.value || '').trim()){
+      note = fn.value.trim();
+    } else {
+      var secs = [];
+      document.querySelectorAll('#focus-sections .wn-ta').forEach(function(t){ if((t.value||'').trim()) secs.push(t.value.trim()); });
+      var raw = document.getElementById('raw');
+      note = secs.length ? secs.join('\n\n') : (raw ? (raw.value || '').trim() : '');
+    }
+    if(note) parts.push("TODAY'S WORKING NOTE (what the clinician has captured in the room):\n" + note);
+    var d = [];
+    ['hpi-out','assess-out','plan-out'].forEach(function(id){
+      var e = document.getElementById(id); if(e && (e.value||'').trim()) d.push(e.value.trim());
+    });
+    if(d.length) parts.push('DRAFTED SO FAR:\n' + d.join('\n\n'));
+  } catch(e){}
+  return parts.join('\n\n---\n\n');
+}
+
+// The mid-visit check. Deliberately a DIFFERENT call from adhdUpdateSystem(), which rebuilds
+// everything: the framework is the baseline and stays intact, and this reports only the delta.
+// Output is capped hard because the clinician is reading it between questions with a patient
+// in front of them — the framework may think in paragraphs, the clinician cannot read them.
+function adhdDeltaSystem(){
+  var s = adhdSharedRules();
+  s += "=== THIS IS A MID-VISIT CHECK, NOT A REBUILD ===\n";
+  s += "A full framework already exists for this case, built from the records. It is the baseline and it STAYS. You are not rebuilding it, not restating it, and not re-deriving it. You are given the still-open part of that framework and what the clinician has captured in the room today, and your only job is to report WHAT TODAY CHANGES.\n";
+  s += "You do not have the original records in front of you, by design. Do not speculate about their contents and do not report anything as newly established unless today's material actually shows it.\n";
+  s += "If a previous check in this visit is included, do NOT report its findings again. Only what is new since it.\n";
+  s += "Weakening is as reportable as strengthening. A retraction, a contradiction, or a gap that turned out bigger is exactly what this is for. This is not a progress bar.\n";
+  s += "A question that was asked but not answered established NOTHING. Do not convert an unanswered prompt into a finding.\n";
+  s += "If today established nothing, say so in one line and leave the rest thin. That is a real and common result.\n\n";
+
+  s += "=== YOUR OUTPUT ===\n";
+  s += "Plain text, no Markdown, no preamble. Emit the five markers below, each on its own line.\n";
+  s += "BREVITY IS THE FEATURE HERE, NOT A COMPROMISE. The clinician is mid-interview. Every section below is capped, and the caps are hard limits, not targets. No bullet may exceed one sentence. Never pad a section to fill it.\n\n";
+
+  s += "<<<NEWTODAY>>>\n";
+  s += "AT MOST THREE bullets, one sentence each, starting with '- '. Only facts today actually established that the framework did not already have. If nothing: a single line saying nothing new was established.\n\n";
+
+  s += "<<<WHYMATTERS>>>\n";
+  s += "AT MOST THREE bullets, one sentence each, starting with '- '. What those facts CHANGE about the evidence — not a restatement of them. If they change nothing, say that in one line.\n\n";
+
+  s += "<<<ASKNEXT>>>\n";
+  s += "AT MOST THREE questions, starting with '- ', ranked by value right now, each a single question the clinician can ask this patient in the next few minutes. Questions only. No headings, no commentary, no parentheticals explaining your reasoning. If nothing new is worth asking, leave this empty rather than recycling questions the framework already listed.\n\n";
+
+  s += "<<<MOREQ>>>\n";
+  s += "Any further questions worth asking, same bullet format, no cap. These are shown to the clinician only on request, so put the lower-priority ones here rather than crowding ASKNEXT. Leave empty if there are none.\n\n";
+
+  s += "<<<IMPACT>>>\n";
+  s += "ONE OR TWO SENTENCES. Where today leaves the diagnostic question. Make the EVIDENCE the subject, not the patient and not the diagnosis: 'available evidence does not yet establish X' is right; 'this does not appear to be X' is a verdict you were not asked for and are not entitled to. If today did not move the position, say that.\n";
+  return s;
+}
+
 function adhdUpdateSystem(){
   var s = adhdSharedRules();
 
@@ -3392,7 +3457,7 @@ function adhdUpdateSystem(){
 // Marker parse, shared by both calls. Missing sections come back empty rather than undefined so
 // the panel can render a partial result instead of throwing on the first absent key.
 function tbpAdhdSplit(raw){
-  var keys = ['EVIDENCE','SNAPSHOT','ESTABLISHED','GAPS','COMPETING','QUESTIONS','TODAY','CHANGED','POSITION','CHARTNOTE','SUMMARY','DETAIL'];
+  var keys = ['EVIDENCE','SNAPSHOT','ESTABLISHED','GAPS','COMPETING','QUESTIONS','TODAY','CHANGED','POSITION','CHARTNOTE','SUMMARY','DETAIL','NEWTODAY','WHYMATTERS','ASKNEXT','MOREQ','IMPACT'];
   var t = String(raw || ''), out = {};
   var hits = [];
   keys.forEach(function(k){
@@ -3685,8 +3750,16 @@ function tbpAdhdStripTags(t){
   }).replace(/\n{3,}/g, '\n\n').trim();
 }
 function tbpAdhdQuestionList(){
-  if(!adhdFw || !adhdFw.QUESTIONS) return [];
-  var lines = adhdFw.QUESTIONS.split('\n');
+  if(!adhdFw) return [];
+  // After a mid-visit check, "add to CHECK / ASK TODAY" means the questions THAT CHECK raised,
+  // not the whole pre-visit list again. The append is de-duplicated downstream anyway, but
+  // sending the baseline list here would make the button look like it had done nothing.
+  var src = adhdFw.QUESTIONS;
+  if(adhdFw.delta && (adhdFw.delta.ASKNEXT || adhdFw.delta.MOREQ)){
+    src = [adhdFw.delta.ASKNEXT || '', adhdFw.delta.MOREQ || ''].filter(Boolean).join('\n');
+  }
+  if(!src) return [];
+  var lines = src.split('\n');
   // The post-visit pass groups its questions under headings ("On the ASD pathway:") and opens
   // with a sentence of context. Taking every long line, as this used to, dropped those headings
   // and that prose into CHECK / ASK TODAY as if they were questions to ask the patient. Real
@@ -3800,6 +3873,25 @@ function tbpAppendToNote(text){
   } catch(e){ return false; }
 }
 
+// The delta sections come back as one-sentence bullets. Rendering them as a wall of prose is
+// exactly the failure this whole pass exists to fix, so they are rendered as a real list and the
+// cap is enforced here as well as in the prompt — a model that overruns must not reach the screen.
+function tbpAdhdBullets(body, cap){
+  var lines = String(body || '').split('\n')
+    .map(function(l){ return l.replace(/^[-\u2022*\s]+/, '').trim(); })
+    .filter(function(l){ return l.length > 2; });
+  if(!lines.length) return '';
+  var shown = cap ? lines.slice(0, cap) : lines;
+  return '<ul style="margin:0;padding-left:18px">'
+    + shown.map(function(l){ return '<li style="margin:0 0 5px;line-height:1.5">' + esc(l) + '</li>'; }).join('')
+    + '</ul>';
+}
+function tbpAdhdCockpitBlock(label, colour, inner){
+  if(!inner) return '';
+  return '<div style="margin-bottom:13px">'
+    + '<div style="font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:' + colour + ';margin-bottom:5px">' + label + '</div>'
+    + '<div style="font-size:.88rem;color:var(--cream)">' + inner + '</div></div>';
+}
 function tbpAdhdSecHtml(title, body){
   if(!body) return '';
   return '<div class="adhd-sec"><h3>' + title + '</h3><div class="adhd-txt">' + esc(body) + '</div></div>';
@@ -3809,6 +3901,40 @@ function tbpAdhdRender(){
   var el = document.getElementById('adhd-body'); if(!el) return;
   if(!adhdFw){ el.innerHTML = '<div class="hint">Nothing built yet.</div>'; return; }
   var f = adhdFw, h = '';
+
+  // ── MID-VISIT COCKPIT ───────────────────────────────────────────────────────────────────
+  // What the clinician needs between two questions, with a patient in front of them: what did
+  // I learn, why does it matter, what do I ask next. Three bullets each, one line of impact.
+  // Everything else — including the whole framework — goes behind a disclosure. The panel used
+  // to answer this with six sections of multi-paragraph analysis, which is a consult report,
+  // not a cockpit, and it was unusable mid-visit.
+  if(f.delta){
+    var dl = f.delta;
+    var ask = tbpAdhdBullets(dl.ASKNEXT, 3);
+    h += '<div style="border:1px solid rgba(139,92,246,0.5);border-radius:8px;padding:13px 15px;margin-bottom:15px;background:var(--navy)">';
+    h += tbpAdhdCockpitBlock('New today', '#a78bfa', tbpAdhdBullets(dl.NEWTODAY, 3));
+    h += tbpAdhdCockpitBlock('Why it matters', '#a78bfa', tbpAdhdBullets(dl.WHYMATTERS, 3));
+    h += tbpAdhdCockpitBlock('Ask next', '#a78bfa', ask);
+    if(ask){
+      h += '<div style="margin:-4px 0 12px"><button class="btn" type="button" id="adhd-q-add" style="margin-top:0;padding:6px 12px;font-size:.81rem;background:#a78bfa;color:#1a1033">Add to CHECK / ASK TODAY &rarr;</button>'
+        + '<span class="hint" id="adhd-q-msg" style="margin-left:8px">Appends. Your answers stay put.</span></div>';
+    }
+    if(dl.MOREQ && dl.MOREQ.trim()){
+      h += '<details style="margin-bottom:11px"><summary style="cursor:pointer;color:var(--cream-dim);font-size:.8rem">More questions &rsaquo;</summary>'
+        + '<div style="margin-top:7px;font-size:.86rem;color:var(--cream)">' + tbpAdhdBullets(dl.MOREQ) + '</div></details>';
+    }
+    if(dl.IMPACT && dl.IMPACT.trim()){
+      h += '<div style="border-top:1px solid var(--rule);padding-top:9px;font-size:.85rem;line-height:1.5;color:var(--cream-dim)">'
+        + '<span style="color:#a78bfa;font-weight:600">Diagnostic impact:</span> ' + esc(dl.IMPACT.trim()) + '</div>';
+    }
+    h += '</div>';
+    // The framework itself is still right here, just not shouting over the answer.
+    h += '<details style="margin-bottom:12px"><summary style="cursor:pointer;color:var(--cream-dim);font-size:.82rem;padding:5px 0">The full framework &rsaquo;</summary>'
+      + '<div style="margin-top:10px">' + tbpAdhdFrameworkHtml(f) + '</div></details>';
+    el.innerHTML = h;
+    tbpAdhdSyncFoot();
+    return;
+  }
 
   if(f.reloaded){
     h += '<div class="hint" style="margin-bottom:13px;padding:9px 12px;border:1px solid var(--rule);border-left:3px solid var(--amber);border-radius:7px;line-height:1.5;color:var(--cream)">'
@@ -3835,6 +3961,16 @@ function tbpAdhdRender(){
     return;
   }
 
+  h += tbpAdhdFrameworkHtml(f, true);
+  el.innerHTML = h || '<div class="hint" style="color:var(--amber)">Nothing came back. Try building again.</div>';
+  tbpAdhdSyncFoot();
+}
+
+// The framework itself. Split out of tbpAdhdRender so the mid-visit cockpit can fold the whole
+// thing behind a disclosure without duplicating it. `withButtons` is false there: two copies of
+// #adhd-q-add on the page would collide on id, and the cockpit owns that action.
+function tbpAdhdFrameworkHtml(f, withButtons){
+  var h = '';
   if(f.EVIDENCE){
     h += '<div style="background:var(--navy);border:1px solid rgba(139,92,246,0.35);border-radius:7px;padding:10px 13px;margin-bottom:15px;font-size:.83rem;line-height:1.55;color:var(--cream);white-space:pre-wrap">'
       + esc(f.EVIDENCE) + '</div>';
@@ -3856,7 +3992,7 @@ function tbpAdhdRender(){
     // The pre-visit questions could always be pushed into CHECK / ASK TODAY; the post-visit
     // ones could not, which left the clinician retyping them by hand. Same id, so the same
     // append-only handler runs: nothing already in the note is rewritten or removed.
-    if(f.QUESTIONS){
+    if(f.QUESTIONS && withButtons){
       h += '<div style="margin:-6px 0 16px"><button class="btn" type="button" id="adhd-q-add" style="margin-top:0;padding:7px 13px;font-size:.83rem;background:#a78bfa;color:#1a1033">Add these to my working note &rarr;</button>'
         + '<span class="hint" id="adhd-q-msg" style="margin-left:8px">Appends to CHECK / ASK TODAY. Your answers stay put.</span></div>';
     }
@@ -3873,13 +4009,12 @@ function tbpAdhdRender(){
     h += tbpAdhdSecHtml('Still to establish', f.GAPS);
     h += tbpAdhdSecHtml('Competing explanations', f.COMPETING);
     h += tbpAdhdSecHtml('Questions for today', f.QUESTIONS);
-    if(f.QUESTIONS){
+    if(f.QUESTIONS && withButtons){
       h += '<div style="margin:-6px 0 16px"><button class="btn" type="button" id="adhd-q-add" style="margin-top:0;padding:7px 13px;font-size:.83rem;background:#a78bfa;color:#1a1033">Add these to my working note &rarr;</button>'
         + '<span class="hint" id="adhd-q-msg" style="margin-left:8px">Optional &mdash; they stay here either way.</span></div>';
     }
   }
-  el.innerHTML = h || '<div class="hint" style="color:var(--amber)">Nothing came back. Try building again.</div>';
-  tbpAdhdSyncFoot();
+  return h;
 }
 
 // A rough fingerprint of what the session holds, so the reassess action can appear when there
@@ -3908,7 +4043,7 @@ function tbpAdhdSyncFoot(){
   var btn = document.getElementById('adhd-refresh');
   var note = document.getElementById('adhd-refresh-note');
   if(btn){
-    btn.innerHTML = enough ? 'What did today establish? &rarr;' : 'Re-check against the visit &rarr;';
+    btn.innerHTML = enough ? 'What did today establish? &rarr;' : 'Check again &rarr;';
     btn.style.background = enough ? '#a78bfa' : 'transparent';
     btn.style.color = enough ? '#1a1033' : 'var(--cream)';
     btn.style.boxShadow = enough ? '' : 'inset 0 0 0 1px var(--rule)';
@@ -3916,7 +4051,7 @@ function tbpAdhdSyncFoot(){
   if(note){
     note.textContent = enough
       ? 'There is visit material the framework has not read yet.'
-      : 'Nothing new since the last read. Running it again will mostly repeat itself.';
+      : 'Nothing new since the last check.';
   }
 }
 // Re-check as the note grows so the entry button offers the reassess the moment it is earned.
@@ -3940,6 +4075,79 @@ function tbpAdhdShowPanel(){
 function tbpAdhdHidePanel(){
   document.getElementById('adhd-panel').classList.remove('open');
   document.documentElement.classList.remove('adhd-open');
+}
+
+// The mid-visit check. Separate from tbpAdhdRun() on purpose: it never touches the baseline
+// framework, never re-reads the records, and writes a small delta the panel shows at the top.
+async function tbpAdhdDelta(){
+  if(!adhdFw) return false;
+  var msg = document.getElementById('adhd-refresh-msg');
+  var btn = document.getElementById('adhd-refresh');
+  if(btn) btn.disabled = true;
+  if(msg) msg.innerHTML = '<span class="spinner"></span>Checking what today changed&hellip;';
+  var panelEl = document.getElementById('adhd-body');
+  var opened = false;
+  try {
+    // ONLY the still-open part of the framework. Sending ESTABLISHED and COMPETING back in full
+    // is what made this call as expensive as building the framework in the first place.
+    var open_ = 'THE FRAMEWORK\'S STILL-OPEN ITEMS (the baseline; do not restate it):\n\n'
+      + 'STILL TO ESTABLISH:\n' + (adhdFw.GAPS || '(none recorded)')
+      + '\n\nQUESTIONS IT ALREADY LISTED:\n' + (adhdFw.QUESTIONS || '(none)')
+      + (adhdFw.POSITION ? '\n\nPOSITION AT LAST CHECK:\n' + adhdFw.POSITION : '');
+    var prior = '';
+    if(adhdFw.delta){
+      prior = '\n\n=====\n\nWHAT AN EARLIER CHECK THIS VISIT ALREADY REPORTED (do not repeat any of it):\n\n'
+        + [adhdFw.delta.NEWTODAY, adhdFw.delta.WHYMATTERS].filter(Boolean).join('\n');
+    }
+    var visit = tbpAdhdVisitMaterial();
+    if(!visit.trim()){
+      if(msg) msg.innerHTML = '<span style="color:var(--amber)">There is nothing captured from today yet to check against.</span>';
+      return false;
+    }
+    var user = open_ + prior + '\n\n=====\n\nWHAT THE CLINICIAN HAS CAPTURED IN THE ROOM TODAY:\n\n' + visit;
+    // 900 tokens, not 5200: the output is five short capped sections.
+    var raw = await callAPI(adhdDeltaSystem(), [{ role:'user', content: user }], 900, function(partial){
+      if(!panelEl || !partial) return;
+      try {
+        if(!opened){ opened = true; try { tbpAdhdHideSetup(); tbpAdhdShowPanelQuiet(); } catch(e){} }
+        panelEl.innerHTML = '<div class="hint" style="margin-bottom:10px;color:#a78bfa">'
+          + '<span class="spinner"></span>Checking what today changed&hellip;</div>'
+          + '<div class="adhd-txt" style="opacity:.75">' + esc(tbpAdhdStripTags(partial)) + '</div>';
+      } catch(e){}
+    });
+    var d = tbpAdhdSplit(raw);
+    if(!d.NEWTODAY && !d.WHYMATTERS && !d.IMPACT){
+      if(msg) msg.innerHTML = '<span style="color:var(--amber)">Nothing usable came back. Try again.</span>';
+      tbpAdhdRender();
+      return false;
+    }
+    // The BASELINE IS NOT TOUCHED. Only the delta is attached, so the framework the clinician
+    // paid a minute for before the visit survives every mid-visit check intact.
+    adhdFw.delta = { NEWTODAY:d.NEWTODAY, WHYMATTERS:d.WHYMATTERS, ASKNEXT:d.ASKNEXT, MOREQ:d.MOREQ, IMPACT:d.IMPACT };
+    adhdFw.sig = tbpAdhdSessionSig();
+    if(msg) msg.innerHTML = '';
+    tbpAdhdRender();
+    tbpAdhdShowPanel();
+    try { tbpAdhdSyncTriggers(); if(window.tbpSaveDraft) window.tbpSaveDraft(); } catch(e){}
+    return true;
+  } catch(err){
+    if(msg) msg.innerHTML = '<span style="color:var(--red)">' + esc(err.message || err) + '</span>';
+    try { tbpAdhdRender(); } catch(e){}
+    return false;
+  } finally {
+    if(btn) btn.disabled = false;
+  }
+}
+
+// The entry button is an ACTION once the visit has material the framework has not read. It used
+// to only open the panel, which meant the clinician clicked a button labelled "what did today
+// establish?", got a panel, and had to find and click a second button to actually run it.
+function tbpAdhdEntryClick(){
+  if(typeof tbpDemoBlock === 'function' && tbpDemoBlock()) return;
+  var ready = false;
+  try { ready = adhdFw && (tbpAdhdSessionSig() - ((typeof adhdFw.sig === 'number') ? adhdFw.sig : 0)) > 400; } catch(e){}
+  tbpAdhdShowPanel();
+  if(ready) tbpAdhdDelta();
 }
 
 async function tbpAdhdRun(mode){
@@ -4035,6 +4243,17 @@ async function tbpAdhdRun(mode){
 }
 
 document.getElementById('adhd-build').addEventListener('click', function(){ if(!tbpDemoBlock()) tbpAdhdRun('build'); });
+// The footer's primary action is the CHEAP check. Rebuilding everything is still available, but
+// it is a deliberate, separate choice — it re-reads every record and takes as long as the first
+// build, which is not something to trigger by accident with a patient in the room.
+document.getElementById('adhd-refresh').addEventListener('click', function(){ if(!tbpDemoBlock()) tbpAdhdDelta(); });
+document.getElementById('adhd-rebuild').addEventListener('click', function(e){
+  e.preventDefault();
+  if(tbpDemoBlock()) return;
+  var m = document.getElementById('adhd-rebuild-msg');
+  if(m) m.innerHTML = '<span style="color:var(--cream-dim)">Re-reading every record. This takes as long as the first build.</span>';
+  tbpAdhdRun('update');
+});
 document.getElementById('adhd-body').addEventListener('click', function(e){
   if(!e.target || !e.target.closest) return;
   if(e.target.closest('#adhd-q-add')){ tbpAdhdQuestionsToNote(); return; }
@@ -4063,7 +4282,8 @@ document.getElementById('adhd-body').addEventListener('click', function(e){
       t.innerHTML = (open ? 'Show' : 'Hide') + ' where each piece came from &rsaquo;'; }
   }
 });
-document.getElementById('adhd-refresh').addEventListener('click', function(){ if(!tbpDemoBlock()) tbpAdhdRun('update'); });
+// (The old handler fired a FULL rebuild on this button; it now runs the cheap delta, wired above.
+//  Leaving both attached would have fired both calls on one click.)
 function tbpAdhdEnter(mode){
   // The setup modal has done its job once this is chosen; leaving it stacked behind the gather
   // screen and then behind the panel puts the clinician three layers deep for no reason.
