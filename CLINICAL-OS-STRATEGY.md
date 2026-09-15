@@ -1207,6 +1207,153 @@ asserting them; and build the evidence layer before going further.
 
 ---
 
+## 35. Encounter phase is the organizing rule
+
+The interface should change based on WHEN in the visit the clinician is using it, not on which
+internal module owns the information.
+
+A clinician should never have to think "do I need Prep, Framework, Discern, Review Records, or the
+note?" They think "I am about to see the patient," "I am with the patient," or "the visit is over."
+
+> **Pre-visit: help me understand.**
+> **Mid-visit: help me act.**
+> **Post-visit: help me finish.**
+>
+> **The closer the clinician is to live patient interaction, the less attention the product is
+> allowed to demand.**
+
+- **Pre-visit.** Depth is fine. The case file, unresolved issues, records, the Framework, likely
+  questions. There is time to read.
+- **Mid-visit.** Ruthlessly short. One important change, the next question, current dose, a safety
+  flag, an interaction. Anything taking more than a few seconds to understand is too much, because
+  it is competing with the patient for the clinician's attention.
+- **Post-visit.** Depth returns. Draft, reconcile what was established, update the Framework,
+  audit and code, unresolved follow-ups.
+
+This extends §26 rather than repeating it. §26 filters on ONE axis — what became clinically
+relevant. This adds the second: **when**. The same information, at the same relevance, has a
+radically different permitted size depending on whether the patient is in the room.
+
+### 35.1 Proven once already
+
+The ADHD Framework split is the first working instance, not a proposal:
+
+| Phase | Surface | Size |
+|---|---|---|
+| Pre-visit | The Framework panel, collapsing to a "Pt detail / info" folder tab | Dense, read before walking in |
+| Mid-visit | A small card: what changed / ask next / why it matters | ~430 characters, two seconds |
+| Post-visit | The full check inside the panel | Everything, including lower-priority questions |
+
+One body of reasoning, three amounts of the clinician's attention. That is the template every other
+capability should be judged against.
+
+### 35.2 We built the tools as destinations instead of assistance
+
+The things clinicians actually do mid-visit ALREADY EXIST in the Scribe. They are packaged wrong.
+
+`openClinicalTool()` calls `window.open(u, '_blank')` — the Interaction Interpreter, EPS Quick
+Reference, ADHD Stimulant Quick Reference, LAI Start & Switch and Crisis & Safety Plan all open in a
+NEW TAB. Every one of those is a mid-visit task (an interaction check happens while you are
+deciding, not afterwards), and a new tab is the most mid-visit-hostile delivery available. For a
+telehealth visit it is worse than hostile: it navigates away from the window with the patient's face
+in it.
+
+The pattern should be:
+
+> Keep the deep tool available. Surface the smallest useful answer inside the encounter first.
+
+- "Any relevant interaction here?" → *No major interaction. Watch BP/HR because X.* → **Open full
+  tool** only if depth is needed.
+- "Could this be akathisia?" → *Timing and restlessness fit. Ask about inner restlessness versus
+  anxiety.*
+
+Note which surfaces are already RIGHT for mid-visit: Safety (SI/HI insert) and Smart phrases.
+Instant, deterministic, no model call, no navigation. §28 asks whether something could be done
+deterministically from what we already have; that question matters most in the mid-visit phase,
+because latency is the enemy there in a way it is not before or after. **A two-second answer beats a
+better answer that takes forty.**
+
+### 35.3 Encounter cards and the tray
+
+The general interaction model, generalised from the Framework's folder tab: small cards appear in
+the working screen when useful, are read in seconds, and collapse into a persistent tray rather than
+disappearing.
+
+    📁 Pt detail / info   📁 Interaction check   📁 Safety assessment   📁 Monitoring
+
+Two ways a card appears:
+
+1. **It notices something.** The patient mentions starting fluoxetine while the workspace already
+   knows about an interacting medication. A small card: *Possible medication interaction → Review.*
+2. **The clinician asks.** One-click actions — Interactions, Monitoring, Safety, Scale, Next
+   question — that open inside the encounter, already populated from what the Scribe knows.
+
+**The result must flow into the note.** This is the part that makes it an assistant rather than a
+widget. If an interaction check returns "fluoxetine may increase atomoxetine exposure via CYP2D6
+inhibition" and the clinician decides to reduce the dose, the draft should later carry: *Drug
+interaction reviewed; elected to reduce atomoxetine and monitor tolerability.* The clinician should
+not have to remember to document work the assistant just helped them do. Same for a safety
+assessment completed in a card, or a monitoring check.
+
+**Be conservative about the automatic half.** Popping something up every time a medication name is
+spoken becomes Clippy immediately. The threshold is: *something important enough that a competent
+assistant would quietly put a sticky note beside you.* Below that, a subtle indicator
+(`Clinical assist · 2`) that can be opened at a natural pause. §27 still binds: suggestions are not
+actions.
+
+### 35.4 Discern should be phase-sensitive
+
+Discern does not need to become a separate "Companion" feature. It is the reasoning layer whose
+DEPTH changes with phase:
+
+- **Before:** "Help me think through this case."
+- **During:** "What matters right now?" · "Anything I'm missing?" · "What should I ask next?" · "Could
+  that be a side effect?" · "Check these meds."
+- **After:** "Where does the diagnosis stand?" · "What did I leave unresolved?" · "Anything I need to
+  document?"
+
+Today it produces the same depth at every point in the encounter, which makes it near-useless in the
+middle. Note also (§34) that during an Ambient recording Discern is blind to the encounter entirely,
+because the recorder holds one blob until Stop.
+
+### 35.5 Detecting the phase, and what the data can and cannot tell us
+
+`tbpDiscernPhase()` already computes before / during / after from the recorder state and whether a
+transcript has landed. Generalising that into one phase signal every surface reads is what would
+make this rule enforceable rather than aspirational.
+
+**It only works cleanly for Ambient users.** A recording is an unambiguous "I am with the patient"
+signal. A clinician typing has none: typing could be mid-visit or could be catching up at 9pm.
+Guessing wrong is asymmetric — showing a two-second card to someone with twenty minutes is merely
+unhelpful, but hiding depth from someone who wanted it is actively bad.
+
+Two limits on what the telemetry can establish, stated so they do not harden into assumptions:
+
+1. **Ambient capture mode** (`capture_inperson` / `capture_telehealth_tab` /
+   `capture_telehealth_speaker`) tells us the telehealth versus in-person split **among Ambient
+   users**, not among all users. A telehealth clinician who types or pastes never touches the
+   recorder.
+2. **Session timing patterns may help infer likely during-visit versus after-visit typing, but this
+   is probabilistic rather than definitive.** Someone can leave a tab open for 45 minutes and type
+   afterwards; someone else can type intermittently through a 20-minute visit.
+
+And one thing telemetry will never see: **prescribing happens in the clinician's EHR, which is
+invisible to us.** Whether a clinician sends medications mid-visit, immediately after, or batched at
+day's end cannot be measured from inside TBP. That is one of the few questions where asking a few
+members beats instrumentation.
+
+On medications specifically: TBP does not prescribe, and adding it is not a small step — it means
+Surescripts, and EPCS with DEA-compliant identity proofing for controlled substances. The workable
+split is that the **decision** is mid-visit (capture "Concerta 27 → 36" in two seconds) and the
+**artifact** is post-visit (the After-Visit Medication Plan in §6). That needs no integration.
+
+### 35.6 Why this is worth codifying now
+
+This is no longer an ADHD Framework observation. It changes how every future feature is judged: not
+"is this useful?" but "useful in which phase, and is it small enough for that phase?"
+
+---
+
 ## 33. This document is intentionally incomplete
 
 This is a starting point.

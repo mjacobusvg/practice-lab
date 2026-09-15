@@ -31,6 +31,12 @@ const ALLOWED = new Set([
   'input_paste',           // text pasted into the working note
   'input_typed',           // text typed by hand
   'ambient_start',
+  // Which capture path was used. Covers ONLY clinicians who record: a telehealth clinician who
+  // types or pastes never reaches the recorder, so this is the split within Ambient users rather
+  // than a measure of how much of the member base works by telehealth.
+  'capture_inperson',
+  'capture_telehealth_tab',
+  'capture_telehealth_speaker',
   'ambient_stop',
   'ambient_transcript',    // transcript landed back in the note
   // the prep / records path
