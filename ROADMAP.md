@@ -53,6 +53,23 @@ Audit is our strongest current differentiator and stays central to the *position
 it is not the North Star. The goal is habitual use of the whole workflow, not optimizing
 the company around one feature.
 
+### Why it would become habitual — the product thesis
+
+The North Star above is the business goal. This is the design principle that would earn it:
+
+> **AI reduces the amount of attention the clinician has to spend retrieving, checking,
+> remembering, organizing, and documenting information while they are trying to think with
+> another human being.**
+
+It does not replace the North Star; it explains what would make TBP part of an ordinary clinical
+day rather than another tab to remember. Every feature is judged by one question:
+
+> **Does this give attention back, or does it steal more of it?**
+
+Stated in full, with what follows from it, at the top of `CLINICAL-OS-STRATEGY.md`; §35 there turns
+it into a workable rule by adding WHEN (pre-visit: help me understand; mid-visit: help me act;
+post-visit: help me finish).
+
 ---
 
 ## Where we are now (Aug 2026, build ambient-56)

@@ -133,6 +133,14 @@ delete it; just leave it in place and only advance it when a deploy is worth int
   reinventing the pitch. It holds the master narrative, the compact (Facebook/forum) cut, and
   the landing-page headline. House style: no em-dashes; lead with the **audit** differentiator;
   do not claim "no other scribe audits notes" as an absolute.
+- **The product thesis, which every Scribe/Companion feature is judged against:** *AI reduces the
+  amount of attention the clinician has to spend retrieving, checking, remembering, organizing and
+  documenting information while they are trying to think with another human being.* The test is
+  **"does this give attention back, or steal more of it?"** Stated in full at the top of
+  `CLINICAL-OS-STRATEGY.md`; §35 there makes it workable by adding WHEN — pre-visit help me
+  understand, mid-visit help me act, post-visit help me finish, and the closer the clinician is to
+  live patient interaction the less attention the product may demand. Read both before designing
+  any clinician-facing surface.
 - `CLINICAL-OS-STRATEGY.md` is the **living product-direction doc** for where TBP is heading (the
   "operating system for psychiatric practice" thesis: the Scribe as encounter-context layer that
   orchestrates the existing tools). It is a starting point, NOT a frozen spec or permission to

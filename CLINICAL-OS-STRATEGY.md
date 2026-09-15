@@ -3,6 +3,56 @@
 **Working strategy and product-direction document**
 August 2026
 
+## The product thesis
+
+> **AI reduces the amount of attention the clinician has to spend retrieving, checking,
+> remembering, organizing, and documenting information while they are trying to think with
+> another human being.**
+
+That is the healthcare use case. Not "AI writes the note for you," and not "AI replaces clinical
+judgement."
+
+The clinician still does the hard part: hearing the patient, interpreting ambiguity, deciding what
+matters, weighing risk, making the treatment decision. The product carries the cognitive overhead
+around that work. It remembers the records. It notices the interaction. It knows which lab is
+overdue. It brings up the right screener. It remembers the question that went unanswered. It keeps
+the case file available without making anyone reread it. It captures what was decided. Afterwards it
+turns all of that into documentation.
+
+And critically, **it knows when not to interrupt.**
+
+Most "AI in healthcare" framing starts from "how do we automate this clinician task?" This starts
+from "how do we give the clinician more of their attention back?" — which is a different question
+and a better one.
+
+### The test
+
+Every feature is judged against one question:
+
+> **Does this give attention back, or does it steal more of it?**
+
+A feature that answers correctly but costs forty seconds mid-visit fails the test. A feature that is
+technically impressive but requires the clinician to go and find it fails the test. §35 turns this
+into a workable rule by adding the dimension of WHEN — the same help has a different attention cost
+before, during and after the encounter.
+
+### What follows from it
+
+The Scribe should behave like a subtle clinical assistant in the background, not a collection of
+tools the clinician has to go and hunt down. It reads the encounter context, notices when something
+clinically relevant comes up, and surfaces only the smallest useful piece of help at that moment. It
+also answers quick clinician-triggered actions — check interactions, check monitoring, bring up a
+safety screener, what am I missing, what should I ask next.
+
+Mid-visit help is fast, compact, collapsible and non-disruptive. Deeper material stays available in
+the case file but never competes with the patient for attention.
+
+Anything the clinician does with those assists stays part of the encounter state, so the Scribe can
+use it later when drafting the note. **The clinician should never have to remember to document work
+the assistant just helped them do.**
+
+---
+
 ## Status of this document
 
 This is a living strategy document, not a final specification, binding roadmap, or complete description of Think Beyond Practice.
