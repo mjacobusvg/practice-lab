@@ -459,7 +459,28 @@ weight gain, alcohol behind a partial antidepressant response, a 21-year-old sen
 the debrief, `tool: 'Clinical Simulation Lab'` with a per-scenario `mode` so `tool_usage` gives a
 real cost-per-session number. That number is the input to any later licensing conversation.
 
+**The gate before anything else is built on top of it: the adversarial harness.**
+`/practice-lab/clinical/harness` (internal, unlinked, noindexed) runs scripted clinician
+transcripts against the exact prompts the lab ships and scores them against five criteria fixed
+in advance. Three arms per scenario: deliberately MI non-adherent, deliberately good, and an
+empty control that is polite, on-topic and reflection-shaped with nothing behind it. Two criteria
+are decisive. **C1 quote fidelity:** because the clinician lines are scripted, an attributed quote
+that is not in them is a fabrication, and that is decidable mechanically rather than by reading
+the output and forming an impression. A coach that invents what a member said cannot ship at any
+score. **C2 the bad arm is punished:** if eight turns of warning and persuading without permission
+leaves the patient no worse, practising on it teaches the righting reflex. The other three
+(separation, the empty control not passing for good, coder discrimination) are prompt problems
+rather than concept problems. Offline parity and fabrication-detector tests:
+`node test/sim-harness-checks.mjs`.
+
+The failure this exists to catch is agreeableness: a patient that softens because you kept talking
+and a coach that finds something kind to say about any transcript. Both feel good in a hand-played
+demo and teach nothing, and neither is visible from one play-through, which is why hand-playing it
+is not evidence. Voice and avatars are a delivery decision that only matters if the underlying
+conversation discriminates, so this runs first and costs nothing but tokens.
+
 **Open, in order:**
+- Run the harness. C1 or C2 failing stops lane D until the prompts are fixed.
 - Watch cost and latency per session; A/B Haiku on the patient turn (the debrief stays Sonnet).
 - Scenario count before technique count. Three MI scenarios that feel real beat four thin techniques.
 - Persistence (Supabase) only when there is a reason: repeat-attempt comparison, or CE credit.

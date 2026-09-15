@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>Clinical Sim Lab — adversarial harness</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#0b1120;--navy-mid:#111c30;--navy-light:#1a2d47;
+  --teal:#2aabb8;--cream:#f5f0e8;--dim:rgba(245,240,232,0.55);
+  --rule:rgba(245,240,232,0.10);
+  --green:#22c55e;--red:#ef4444;--amber:#f59e0b;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{background:var(--navy);min-height:100vh}
+body{font-family:'DM Sans',sans-serif;color:var(--cream);padding:28px 20px 80px;font-size:14px;line-height:1.5}
+.wrap{max-width:1100px;margin:0 auto}
+h1{font-size:22px;font-weight:700;margin-bottom:6px}
+.sub{color:var(--dim);margin-bottom:22px;max-width:78ch}
+.panel{background:var(--navy-mid);border:1px solid var(--rule);border-radius:12px;padding:18px;margin-bottom:18px}
+.panel h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--teal);margin-bottom:12px;font-weight:600}
+label{display:inline-flex;align-items:center;gap:7px;margin:0 16px 8px 0;cursor:pointer}
+input[type=checkbox],input[type=number]{accent-color:var(--teal)}
+input[type=number]{background:var(--navy-light);border:1px solid var(--rule);color:var(--cream);border-radius:6px;padding:5px 8px;width:62px;font-family:inherit}
+button{font-family:inherit;font-size:14px;font-weight:600;border:none;border-radius:8px;padding:10px 18px;cursor:pointer}
+.btn-go{background:var(--teal);color:#06232b}
+.btn-go[disabled]{opacity:.45;cursor:not-allowed}
+.btn-ghost{background:transparent;color:var(--cream);border:1px solid var(--rule)}
+.hint{color:var(--dim);font-size:12.5px;margin-top:10px}
+#log{background:#060b15;border:1px solid var(--rule);border-radius:8px;padding:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.65;max-height:260px;overflow:auto;white-space:pre-wrap}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--rule);vertical-align:top}
+th{color:var(--dim);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.06em}
+td.num{font-variant-numeric:tabular-nums}
+.arm-bad{color:var(--red)}.arm-good{color:var(--green)}.arm-neutral{color:var(--amber)}
+.v{display:inline-block;font-weight:700;font-size:11px;padding:2px 8px;border-radius:20px;letter-spacing:.04em}
+.v-pass{background:rgba(34,197,94,.16);color:#7ee2a8}
+.v-fail{background:rgba(239,68,68,.16);color:#ff9a9a}
+.v-mixed{background:rgba(245,158,11,.16);color:#f8c76a}
+.crit{border-bottom:1px solid var(--rule);padding:12px 0}
+.crit:last-child{border-bottom:none}
+.crit-h{display:flex;gap:10px;align-items:center;margin-bottom:4px}
+.crit-h b{font-size:14px}
+.crit p{color:var(--dim);font-size:12.5px}
+.q-bad{color:#ff9a9a;font-family:ui-monospace,monospace;font-size:12px;display:block;margin:4px 0 0 0}
+details{margin-top:10px}
+summary{cursor:pointer;color:var(--teal);font-size:12.5px}
+pre{background:#060b15;border:1px solid var(--rule);border-radius:8px;padding:12px;overflow:auto;font-size:11.5px;max-height:420px;margin-top:8px}
+.bar{height:5px;background:var(--navy-light);border-radius:3px;overflow:hidden;margin:14px 0 0}
+.bar i{display:block;height:100%;background:var(--teal);width:0;transition:width .3s}
+</style>
+</head>
+<body>
+<div class="wrap" id="app" style="display:none">
+
+<h1>Clinical Simulation Lab — adversarial harness</h1>
+<p class="sub">
+  This is not the lab. It is the experiment that decides whether the lab is worth building out:
+  <b>does the simulated patient punish bad MI, and does the coach catch it?</b>
+  It runs scripted clinician transcripts (deliberately bad, deliberately good, and a
+  deliberately empty control) against the exact prompts the lab ships, and checks the result
+  against criteria fixed in advance. Internal tool. Unlinked, noindexed.
+</p>
+
+<div class="panel">
+  <h2>Run</h2>
+  <div id="pick-scen"></div>
+  <div style="margin-top:6px" id="pick-arm"></div>
+  <div style="margin-top:6px">
+    <label>Repeats per cell <input type="number" id="reps" value="1" min="1" max="5"></label>
+    <span class="hint" style="margin-left:4px" id="cost-note"></span>
+  </div>
+  <div style="margin-top:14px;display:flex;gap:10px">
+    <button class="btn-go" id="go" onclick="run()">Run harness</button>
+    <button class="btn-ghost" onclick="stopRun()" id="stop" style="display:none">Stop</button>
+  </div>
+  <div class="bar"><i id="bar"></i></div>
+  <div class="hint" id="status">Idle.</div>
+</div>
+
+<div class="panel" id="log-panel" style="display:none">
+  <h2>Live log</h2>
+  <div id="log"></div>
+</div>
+
+<div id="results"></div>
+
+</div>
+
+<script src="/auth-gate.js"></script>
+<script src="/clinical-sim-core.js"></script>
+<script src="/clinical-sim-scripts.js"></script>
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   THE EXPERIMENT
+
+   The failure mode this harness exists to catch is the one that makes a
+   conversational simulator worthless as training: a model that is agreeable.
+   An agreeable patient softens because you kept talking, and an agreeable
+   coach finds something nice to say about any transcript. Both feel good and
+   teach nothing, and neither is visible from a single hand played run, which
+   is why hand playing it and forming an impression is not evidence.
+
+   So we fix the criteria BEFORE looking at the output, and three of the five
+   are mechanical rather than a matter of my judgement:
+
+   C1 QUOTE FIDELITY (mechanical, the important one)
+      Every quote the coach attributes to the clinician must appear verbatim
+      in the scripted lines, and every change talk quote must appear verbatim
+      in the patient's replies. We know exactly what was said, so fabrication
+      is decidable here in a way it never is in a live run. A coach that
+      invents evidence cannot be shipped at all, whatever else it gets right.
+
+   C2 DIRECTION
+      The bad arm must not end better than it started. Punishment is the whole
+      premise: if you can be MI non adherent for eight turns and the patient
+      still comes around, the simulator is teaching the opposite of MI.
+
+   C3 SEPARATION
+      Good must finish clearly above bad on readiness + alliance. A simulator
+      that moves a little for everything is noise.
+
+   C4 THE EMPTY CONTROL
+      Neutral is on topic, polite, and reflection shaped, with nothing behind
+      it. It must NOT score like good. If it does, the patient is rewarding
+      the form of MI rather than the substance, and members would learn to
+      produce MI flavoured noise.
+
+   C5 CODER DISCRIMINATION
+      The coach's technique score must order good > bad, and it must count
+      more MI non adherent behaviours in the bad arm than the good one. The
+      bad arm is written from the MITI non adherent list, so a coder that
+      cannot find them there cannot find them anywhere.
+
+   Failing C1 or C2 kills the current design. C3 through C5 failing is a
+   prompt problem, not a concept problem.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+var PROXY = '/.netlify/functions/anthropic-proxy';
+var PATIENT_MODEL = 'claude-sonnet-4-6';
+var COACH_MODEL   = 'claude-sonnet-4-6';
+var ARMS = ['bad','neutral','good'];
+
+var running = false, abortRun = false, results = [], doneCells = 0, totalCells = 0;
+
+function authToken(){ try { return localStorage.getItem('tbp_auth_token') || ''; } catch(e){ return ''; } }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+function log(s){ var l=document.getElementById('log'); l.textContent += s+'\n'; l.scrollTop = l.scrollHeight; }
+function setStatus(s){ document.getElementById('status').textContent = s; }
+function sleep(ms){ return new Promise(function(r){ setTimeout(r, ms); }); }
+
+/* ── SETUP UI ─────────────────────────────────────────────────────────────── */
+function buildPickers(){
+  document.getElementById('pick-scen').innerHTML =
+    '<div style="color:var(--dim);font-size:12px;margin-bottom:6px">Scenarios</div>' +
+    SIMCORE.SCENARIOS.mi.map(function(s,i){
+      return '<label><input type="checkbox" class="scen" value="'+s.id+'"'+(i===0?' checked':'')+'> '+esc(s.title)+
+             ' <span style="color:var(--dim)">('+esc(s.difficultyLabel)+')</span></label>';
+    }).join('');
+  document.getElementById('pick-arm').innerHTML =
+    '<div style="color:var(--dim);font-size:12px;margin-bottom:6px">Arms</div>' +
+    ARMS.map(function(a){
+      return '<label><input type="checkbox" class="arm" value="'+a+'" checked> <span class="arm-'+a+'">'+a+'</span></label>';
+    }).join('');
+  ['scen','arm'].forEach(function(c){
+    Array.prototype.forEach.call(document.getElementsByClassName(c), function(el){ el.addEventListener('change', costNote); });
+  });
+  document.getElementById('reps').addEventListener('input', costNote);
+  costNote();
+}
+function picked(cls){ return Array.prototype.filter.call(document.getElementsByClassName(cls), function(e){return e.checked;}).map(function(e){return e.value;}); }
+function costNote(){
+  var n = picked('scen').length * picked('arm').length * Math.max(1, +document.getElementById('reps').value||1);
+  document.getElementById('cost-note').textContent =
+    n + ' run' + (n===1?'':'s') + ' = ' + (n*8) + ' patient calls + ' + n + ' debrief calls. Roughly ' + Math.ceil(n*8*2.2/60) + '-' + Math.ceil(n*8*4/60) + ' minutes.';
+}
+
+/* ── ONE MODEL CALL ───────────────────────────────────────────────────────── */
+function call(mode, model, maxTokens, system, messages){
+  return fetch(PROXY,{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      token: authToken(), tool:'Clinical Simulation Lab (harness)',
+      mode: mode, model: model, max_tokens: maxTokens,
+      system: system, messages: messages
+    })
+  }).then(function(r){ return r.json(); }).then(function(data){
+    var raw = ((data.content||[]).map(function(c){ return c.text||''; }).join('')).trim();
+    if(!raw) throw new Error(data && data.error ? String(data.error) : 'empty response');
+    return raw;
+  });
+}
+function firstJson(raw){
+  var clean = raw.replace(/```json|```/g,'').trim();
+  var a = clean.indexOf('{'), b = clean.lastIndexOf('}');
+  if(a===-1||b===-1||b<=a) throw new Error('no JSON in response');
+  return JSON.parse(clean.slice(a,b+1));
+}
+function clampNum(v, fb){ var n=Number(v); if(!isFinite(n)) return fb; return Math.max(0,Math.min(10,Math.round(n))); }
+
+/* ── ONE SCRIPTED RUN ─────────────────────────────────────────────────────── */
+/* Replicates practice-lab-clinical.html exactly: same seeding of the opening
+   as an assistant JSON turn, same message shape, same models, same token
+   budgets. If this drifts from the lab the result stops meaning anything. */
+async function runCell(sc, arm, rep){
+  var lines = SIMSCRIPTS[sc.id][arm];
+  var msgs = [], transcript = [], traj = [], malformed = 0;
+
+  transcript.push({who:'patient', text:sc.opening});
+  msgs.push({role:'assistant', content:JSON.stringify({say:sc.opening, readiness:sc.state.readiness, alliance:sc.state.alliance, note:'opening position'})});
+  traj.push({turn:0, readiness:sc.state.readiness, alliance:sc.state.alliance, note:'opening position'});
+
+  for(var i=0;i<lines.length;i++){
+    if(abortRun) throw new Error('stopped');
+    var text = lines[i];
+    transcript.push({who:'clinician', text:text});
+    msgs.push({role:'user', content:text});
+    var raw = await call('harness patient turn: '+sc.id+'/'+arm, PATIENT_MODEL, 700, SIMCORE.patientSystem(sc), msgs);
+    var last = traj[traj.length-1];
+    /* The lab parses this tolerantly so a malformed turn never costs the user
+       their conversation. The harness does the same, because losing an eight
+       turn run to one bad brace wastes the calls, but it COUNTS the failures:
+       how often the patient breaks its own output contract is itself a result,
+       and a high rate is a reason not to ship regardless of the five criteria. */
+    var parsed, o = null;
+    try { o = firstJson(raw); } catch(e){}
+    if(o && typeof o.say === 'string' && o.say.trim()){
+      parsed = {
+        say: o.say.trim(),
+        readiness: clampNum(o.readiness, last.readiness),
+        alliance:  clampNum(o.alliance,  last.alliance),
+        note: String(o.note||'').trim()
+      };
+    } else {
+      malformed++;
+      log('   ! malformed patient turn ('+sc.id+'/'+arm+' turn '+(i+1)+') — state carried forward');
+      parsed = { say: raw.replace(/```json|```/g,'').trim(), readiness:last.readiness, alliance:last.alliance, note:'[malformed output contract]' };
+    }
+    msgs.push({role:'assistant', content:JSON.stringify(parsed)});
+    transcript.push({who:'patient', text:parsed.say});
+    traj.push({turn:i+1, readiness:parsed.readiness, alliance:parsed.alliance, note:parsed.note});
+    setStatus(sc.id+' / '+arm+' / rep '+rep+' — turn '+(i+1)+' of '+lines.length+
+              '  (readiness '+parsed.readiness+', alliance '+parsed.alliance+')');
+    await sleep(250);
+  }
+
+  var tText = transcript.map(function(t,i){
+    return (t.who==='clinician' ? 'CLINICIAN' : 'PATIENT') + ' [' + i + ']: ' + t.text;
+  }).join('\n\n');
+
+  var userPrompt =
+    'SCENARIO: '+sc.title+'\n'+
+    'PATIENT: '+sc.chart.name+', '+sc.chart.sub.replace(/&bull;/g,'-')+'\n'+
+    'THE CHANGE TARGET FOR THIS VISIT: '+sc.target+'\n'+
+    'The patient began the visit closed to this change.\n\n'+
+    'TRANSCRIPT\n\n'+tText+'\n\n'+
+    'Code the CLINICIAN turns only. Return the JSON object.';
+
+  setStatus(sc.id+' / '+arm+' / rep '+rep+' — scoring the transcript');
+  var debrief = firstJson(await call('harness debrief: '+sc.id+'/'+arm, COACH_MODEL, 3000, SIMCORE.coachSystem(), [{role:'user',content:userPrompt}]));
+
+  var start = traj[0], end = traj[traj.length-1];
+  return {
+    scenario: sc.id, scenarioTitle: sc.title, arm: arm, rep: rep,
+    start: {readiness:start.readiness, alliance:start.alliance},
+    end:   {readiness:end.readiness,   alliance:end.alliance},
+    deltaReadiness: end.readiness - start.readiness,
+    deltaAlliance:  end.alliance  - start.alliance,
+    deltaTotal: (end.readiness+end.alliance) - (start.readiness+start.alliance),
+    endTotal: end.readiness + end.alliance,
+    malformed: malformed,
+    traj: traj, transcript: transcript, debrief: debrief,
+    quoteCheck: checkQuotes(transcript, debrief)
+  };
+}
+
+/* ── C1: QUOTE FIDELITY ───────────────────────────────────────────────────── */
+/* The coach is told every claim must rest on a verbatim quote. Because the
+   clinician turns are scripted we know the exact corpus, so an attributed line
+   that is not in it is a fabrication, not a judgement call. Normalization is
+   deliberately generous — case, whitespace, smart quotes, and terminal
+   punctuation are not what we are testing. Anything beyond that is invention. */
+function norm(s){
+  return String(s==null?'':s)
+    .replace(/[‘’‛′]/g,"'")
+    .replace(/[“”″]/g,'"')
+    .replace(/[–—]/g,'-')
+    .replace(/\s+/g,' ')
+    .replace(/^[\s"'.,!?;:-]+|[\s"'.,!?;:-]+$/g,'')
+    .toLowerCase();
+}
+function checkQuotes(transcript, d){
+  var clin = transcript.filter(function(t){return t.who==='clinician';}).map(function(t){return norm(t.text);}).join(' ‖ ');
+  var pat  = transcript.filter(function(t){return t.who==='patient';}).map(function(t){return norm(t.text);}).join(' ‖ ');
+  var checked = 0, bad = [];
+  function verify(q, corpus, where, who){
+    if(typeof q !== 'string' || !q.trim()) return;
+    checked++;
+    var n = norm(q);
+    if(n.length < 4) return;
+    if(corpus.indexOf(n) === -1) bad.push({where:where, who:who, quote:q});
+  }
+  (d.strong||[]).forEach(function(x){ verify(x.quote, clin, 'strong', 'clinician'); });
+  (d.costly||[]).forEach(function(x){ verify(x.quote, clin, 'costly', 'clinician'); });
+  (d.change_talk||[]).forEach(function(x){
+    verify(x.quote, pat, 'change_talk.quote', 'patient');
+    verify(x.elicited_by, clin, 'change_talk.elicited_by', 'clinician');
+  });
+  if(d.turning_point) verify(d.turning_point.quote, clin, 'turning_point', 'clinician');
+  return {checked:checked, fabricated:bad.length, bad:bad};
+}
+
+/* ── RUNNER ───────────────────────────────────────────────────────────────── */
+async function run(){
+  if(running) return;
+  var scens = picked('scen'), arms = picked('arm'), reps = Math.max(1, +document.getElementById('reps').value||1);
+  if(!scens.length || !arms.length){ setStatus('Pick at least one scenario and one arm.'); return; }
+
+  running = true; abortRun = false; results = []; doneCells = 0;
+  totalCells = scens.length * arms.length * reps;
+  document.getElementById('go').disabled = true;
+  document.getElementById('stop').style.display = 'inline-block';
+  document.getElementById('log-panel').style.display = 'block';
+  document.getElementById('log').textContent = '';
+  document.getElementById('results').innerHTML = '';
+  log('Harness started ' + new Date().toISOString() + '  (' + totalCells + ' runs)');
+
+  for(var si=0; si<scens.length; si++){
+    var sc = SIMCORE.SCENARIOS.mi.filter(function(s){return s.id===scens[si];})[0];
+    for(var r=1; r<=reps; r++){
+      for(var ai=0; ai<arms.length; ai++){
+        if(abortRun) break;
+        var arm = arms[ai];
+        try{
+          var res = await runCell(sc, arm, r);
+          results.push(res);
+          log('✓ '+sc.id+' / '+arm+' / rep '+r+
+              '  end r'+res.end.readiness+' a'+res.end.alliance+
+              '  (Δ'+(res.deltaTotal>=0?'+':'')+res.deltaTotal+')'+
+              '  technique '+((res.debrief.scores||{}).technique)+
+              '  MI-non-adherent '+((res.debrief.counts||{}).mi_non_adherent)+
+              '  quotes '+res.quoteCheck.checked+' checked, '+res.quoteCheck.fabricated+' fabricated'+
+              (res.malformed ? '  ['+res.malformed+' malformed turns]' : ''));
+        }catch(e){
+          log('✗ '+sc.id+' / '+arm+' / rep '+r+'  FAILED: '+(e && e.message ? e.message : e));
+          if(String(e && e.message)==='stopped') break;
+        }
+        doneCells++;
+        document.getElementById('bar').style.width = Math.round(100*doneCells/totalCells)+'%';
+        render();
+      }
+    }
+  }
+
+  running = false;
+  document.getElementById('go').disabled = false;
+  document.getElementById('stop').style.display = 'none';
+  setStatus(abortRun ? 'Stopped. Partial results below.' : 'Done. '+results.length+' of '+totalCells+' runs completed.');
+  log('Finished ' + new Date().toISOString());
+  render();
+}
+function stopRun(){ abortRun = true; setStatus('Stopping after the current turn...'); }
+
+/* ── VERDICTS ─────────────────────────────────────────────────────────────── */
+function mean(a){ return a.length ? a.reduce(function(x,y){return x+y;},0)/a.length : null; }
+function by(arm, f){ return results.filter(function(r){return r.arm===arm;}).map(f).filter(function(v){return v!=null && isFinite(v);}); }
+function fmt(v){ return v==null ? '—' : (Math.round(v*10)/10).toFixed(1); }
+
+function verdicts(){
+  var v = [];
+  var haveBad = results.some(function(r){return r.arm==='bad';});
+  var haveGood = results.some(function(r){return r.arm==='good';});
+  var haveNeu = results.some(function(r){return r.arm==='neutral';});
+
+  /* C1 */
+  var totalChecked = results.reduce(function(a,r){return a+r.quoteCheck.checked;},0);
+  var totalFab = results.reduce(function(a,r){return a+r.quoteCheck.fabricated;},0);
+  v.push({
+    id:'C1', name:'Quote fidelity', kill:true,
+    verdict: !results.length ? 'mixed' : (totalFab===0 ? 'pass' : 'fail'),
+    line: totalChecked + ' attributed quotes checked against the scripted text, ' + totalFab + ' not found in it.',
+    why: 'The coach claims every point is evidenced by a verbatim quote. The clinician lines were scripted, so a quote that is not in them is invented. Any fabrication at all disqualifies the design as it stands, because a coach that makes up what you said cannot be put in front of a member.',
+    detail: totalFab ? results.filter(function(r){return r.quoteCheck.fabricated;}).map(function(r){
+      return r.scenario+'/'+r.arm+'/rep'+r.rep+':\n'+r.quoteCheck.bad.map(function(b){ return '   ['+b.where+', attributed to '+b.who+'] '+b.quote; }).join('\n');
+    }).join('\n') : ''
+  });
+
+  /* C2 */
+  var badDeltas = by('bad', function(r){return r.deltaTotal;});
+  var badWorst = badDeltas.length ? Math.max.apply(null, badDeltas) : null;
+  v.push({
+    id:'C2', name:'The bad arm is punished', kill:true,
+    verdict: !haveBad ? 'mixed' : (mean(badDeltas) < 0 && badWorst <= 0 ? 'pass' : (mean(badDeltas) <= 0 ? 'mixed' : 'fail')),
+    line: 'Mean change in readiness + alliance across the bad arm: ' + fmt(mean(badDeltas)) +
+          (badWorst!=null ? '. Best single bad run: ' + (badWorst>=0?'+':'') + badWorst + '.' : ''),
+    why: 'Eight turns of warning, persuading without permission and confronting. If that ends level or better, the patient is rewarding persistence rather than technique, and practising on it would teach the righting reflex.'
+  });
+
+  /* C3 */
+  var gEnd = mean(by('good', function(r){return r.endTotal;})), bEnd = mean(by('bad', function(r){return r.endTotal;}));
+  var sep = (gEnd!=null && bEnd!=null) ? gEnd - bEnd : null;
+  v.push({
+    id:'C3', name:'Separation between good and bad', kill:false,
+    verdict: sep==null ? 'mixed' : (sep >= 4 ? 'pass' : (sep >= 2 ? 'mixed' : 'fail')),
+    line: 'Good finishes at ' + fmt(gEnd) + ' out of 20, bad at ' + fmt(bEnd) + '. Gap ' + fmt(sep) + ' points.',
+    why: 'Four points on a twenty point combined scale is the threshold for a difference a member would actually feel in the room. Below two it is noise.'
+  });
+
+  /* C4 */
+  var nEnd = mean(by('neutral', function(r){return r.endTotal;}));
+  var gapGN = (gEnd!=null && nEnd!=null) ? gEnd - nEnd : null;
+  v.push({
+    id:'C4', name:'The empty control does not score like good', kill:false,
+    verdict: gapGN==null ? 'mixed' : (gapGN >= 2 ? 'pass' : (gapGN >= 0.5 ? 'mixed' : 'fail')),
+    line: 'Neutral finishes at ' + fmt(nEnd) + ', good at ' + fmt(gEnd) + '. Gap ' + fmt(gapGN) + ' points.' +
+          (nEnd!=null && bEnd!=null ? ' Neutral sits ' + fmt(nEnd-bEnd) + ' above bad.' : ''),
+    why: 'The neutral arm is polite, on topic and reflection shaped with nothing behind it. If it lands with good, the patient is scoring the form of MI rather than the substance, and members would learn to produce MI flavoured noise.'
+  });
+
+  /* C5 */
+  var gT = mean(by('good', function(r){return (r.debrief.scores||{}).technique;}));
+  var bT = mean(by('bad',  function(r){return (r.debrief.scores||{}).technique;}));
+  var nT = mean(by('neutral', function(r){return (r.debrief.scores||{}).technique;}));
+  var gN = mean(by('good', function(r){return (r.debrief.counts||{}).mi_non_adherent;}));
+  var bN = mean(by('bad',  function(r){return (r.debrief.counts||{}).mi_non_adherent;}));
+  var ordered = (gT!=null && bT!=null && gT > bT);
+  var counted = (gN!=null && bN!=null && bN > gN);
+  v.push({
+    id:'C5', name:'The coder discriminates', kill:false,
+    verdict: (gT==null||bT==null) ? 'mixed' : ((ordered && counted) ? 'pass' : ((ordered || counted) ? 'mixed' : 'fail')),
+    line: 'Technique score: good ' + fmt(gT) + ', neutral ' + fmt(nT) + ', bad ' + fmt(bT) + '. ' +
+          'MI non adherent behaviours counted: bad ' + fmt(bN) + ' vs good ' + fmt(gN) + '.',
+    why: 'The bad arm was written straight off the MITI non adherent list. A coder that cannot count them there cannot count them in a real transcript, and the feedback is decoration.'
+  });
+
+  return v;
+}
+
+/* ── RENDER ───────────────────────────────────────────────────────────────── */
+function render(){
+  if(!results.length){ document.getElementById('results').innerHTML=''; return; }
+  var vs = verdicts();
+  var killFail = vs.some(function(x){ return x.kill && x.verdict==='fail'; });
+  var anyFail = vs.some(function(x){ return x.verdict==='fail'; });
+
+  var head =
+    '<div class="panel"><h2>Verdict</h2>' +
+    '<p style="margin-bottom:14px">' +
+      (killFail
+        ? '<b style="color:#ff9a9a">The design does not survive this run.</b> A criterion that kills it failed. Fix it before any more is built on top.'
+        : anyFail
+          ? '<b style="color:#f8c76a">The concept holds, the prompts do not yet.</b> Nothing fatal failed, but at least one prompt level criterion did. That is tuning, not a rethink.'
+          : '<b style="color:#7ee2a8">The simulator discriminates.</b> The patient punished bad technique, the empty control did not pass for good, and the coder quoted only what was actually said.') +
+    '</p>' +
+    vs.map(function(x){
+      return '<div class="crit">'+
+        '<div class="crit-h"><span class="v v-'+x.verdict+'">'+x.verdict.toUpperCase()+'</span>'+
+        '<b>'+x.id+'. '+esc(x.name)+'</b>'+(x.kill?'<span style="color:var(--dim);font-size:11px">decisive</span>':'')+'</div>'+
+        '<div style="margin:2px 0 4px">'+esc(x.line)+'</div>'+
+        '<p>'+esc(x.why)+'</p>'+
+        (x.detail ? '<span class="q-bad">'+esc(x.detail)+'</span>' : '')+
+      '</div>';
+    }).join('') +
+    '</div>';
+
+  var rows = results.map(function(r){
+    var d = r.debrief, c = d.counts||{}, s = d.scores||{};
+    return '<tr>'+
+      '<td>'+esc(r.scenario.replace('mi-',''))+'</td>'+
+      '<td class="arm-'+r.arm+'">'+r.arm+'</td>'+
+      '<td class="num">'+r.rep+'</td>'+
+      '<td class="num">'+r.start.readiness+'→'+r.end.readiness+'</td>'+
+      '<td class="num">'+r.start.alliance+'→'+r.end.alliance+'</td>'+
+      '<td class="num"><b>'+(r.deltaTotal>=0?'+':'')+r.deltaTotal+'</b></td>'+
+      '<td class="num">'+(s.technique==null?'—':s.technique)+' / '+(s.spirit==null?'—':s.spirit)+'</td>'+
+      '<td class="num">'+((c.complex_reflections||0)+(c.simple_reflections||0))+'R / '+((c.open_questions||0)+(c.closed_questions||0))+'Q</td>'+
+      '<td class="num">'+(c.mi_non_adherent==null?'—':c.mi_non_adherent)+'</td>'+
+      '<td class="num">'+(r.quoteCheck.fabricated ? '<span style="color:#ff9a9a">'+r.quoteCheck.fabricated+' bad</span>' : r.quoteCheck.checked+' ok')+'</td>'+
+      '<td class="num">'+(r.malformed ? '<span style="color:#f8c76a">'+r.malformed+'</span>' : '0')+'</td>'+
+    '</tr>';
+  }).join('');
+
+  var table =
+    '<div class="panel"><h2>Every run</h2><div style="overflow-x:auto"><table>'+
+    '<tr><th>Scenario</th><th>Arm</th><th>Rep</th><th>Readiness</th><th>Alliance</th><th>Δ total</th>'+
+    '<th>Tech / spirit</th><th>Refl / quest</th><th>Non-adherent</th><th>Quotes</th><th>Malformed</th></tr>'+
+    rows + '</table></div>' +
+    '<div style="margin-top:14px;display:flex;gap:10px">'+
+      '<button class="btn-ghost" onclick="downloadJson()">Download raw JSON</button>'+
+      '<button class="btn-ghost" onclick="copySummary()">Copy summary</button>'+
+    '</div>'+
+    '<details><summary>Transcripts and full coach output</summary><pre>'+esc(transcriptDump())+'</pre></details>'+
+    '</div>';
+
+  document.getElementById('results').innerHTML = head + table;
+}
+
+function transcriptDump(){
+  return results.map(function(r){
+    return '═══ '+r.scenario+' / '+r.arm+' / rep '+r.rep+' ═══\n\n'+
+      r.traj.map(function(t){ return '  [turn '+t.turn+'] readiness '+t.readiness+', alliance '+t.alliance+' — '+t.note; }).join('\n')+
+      '\n\n'+
+      r.transcript.map(function(t,i){ return (t.who==='clinician'?'CLINICIAN':'PATIENT')+' ['+i+']: '+t.text; }).join('\n\n')+
+      '\n\n--- COACH ---\n'+JSON.stringify(r.debrief, null, 2)+'\n\n';
+  }).join('\n');
+}
+function downloadJson(){
+  var blob = new Blob([JSON.stringify({when:new Date().toISOString(), verdicts:verdicts(), results:results}, null, 2)], {type:'application/json'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'mi-harness-'+new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')+'.json';
+  a.click();
+}
+function copySummary(){
+  var vs = verdicts();
+  var txt = 'MI harness — '+new Date().toISOString()+'\n'+results.length+' runs\n\n'+
+    vs.map(function(x){ return x.verdict.toUpperCase()+'  '+x.id+'. '+x.name+'\n   '+x.line+(x.detail?'\n   '+x.detail.replace(/\n/g,'\n   '):''); }).join('\n\n')+
+    '\n\nPER RUN\n'+results.map(function(r){
+      var s=r.debrief.scores||{}, c=r.debrief.counts||{};
+      return r.scenario+'/'+r.arm+'/rep'+r.rep+'  r'+r.start.readiness+'→'+r.end.readiness+
+             ' a'+r.start.alliance+'→'+r.end.alliance+'  Δ'+(r.deltaTotal>=0?'+':'')+r.deltaTotal+
+             '  tech '+s.technique+' spirit '+s.spirit+'  non-adherent '+c.mi_non_adherent+
+             '  quotes '+r.quoteCheck.checked+'/'+r.quoteCheck.fabricated+' bad';
+    }).join('\n');
+  navigator.clipboard.writeText(txt).then(function(){ setStatus('Summary copied. Paste it back to Claude.'); });
+}
+
+/* ── AUTH ─────────────────────────────────────────────────────────────────── */
+(function(){
+  function launch(){ document.getElementById('app').style.display='block'; buildPickers(); }
+  if(typeof TBPAuth !== 'undefined'){
+    TBPAuth.protect({ toolName:'Clinical Simulation Lab (harness)', skipPHIGate:true, requireFull:true, onVerified:launch });
+  } else {
+    console.warn('auth-gate.js not loaded — launching without auth gate');
+    launch();
+  }
+})();
+</script>
+</body>
+</html>
