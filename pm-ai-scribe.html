@@ -185,7 +185,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-96"></script>
+<script src="/note-engine.js?v=ambient-97"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -212,7 +212,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
     form.parentNode.insertBefore(scrim, form); scrim.appendChild(form);
     scrim.classList.add('hidden');   // note is home base on load; setup opens on demand (or on load in demo)
     window.tbpShowSetup=function(){ scrim.classList.remove('hidden'); try{ tbpUpdateSetupNudge(); }catch(e){} };
-    window.tbpHideSetup=function(){ scrim.classList.add('hidden'); try{ tbpUpdateSetupNudge(); }catch(e){} };
+    window.tbpHideSetup=function(){ scrim.classList.add('hidden'); _pendingRecordOpen=false; var _grh=document.getElementById('record-gate-hint'); if(_grh) _grh.style.display='none'; try{ tbpUpdateSetupNudge(); }catch(e){} };
     // A close (X) and a click on the dark backdrop dismiss setup and return to the note, so opening
     // "Set up this visit" to peek never traps you into completing a setup action.
     form.insertAdjacentHTML('afterbegin', '<button type="button" id="setup-close-btn" title="Close setup, back to your note" style="position:absolute;top:9px;right:12px;background:none;border:0;color:var(--cream-dim);font-size:26px;line-height:1;cursor:pointer;padding:2px 7px;z-index:3">&times;</button>');
@@ -255,6 +255,9 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
         <div class="opt" data-visit="new_eval">New patient evaluation</div>
         <div class="opt" data-visit="follow_up">Follow-up</div>
       </div>
+      <!-- Shown when Record is pressed with no visit type chosen: recording needs the visit type
+           to pick the template, so we ask for it first, then open the recorder automatically. -->
+      <div id="record-gate-hint" style="display:none;margin:8px 0 0;padding:9px 12px;background:var(--teal-glow);border:1px solid var(--teal);border-radius:8px;font-size:.88rem;color:var(--cream)">Pick a visit type above to start recording &mdash; it sets which template your note uses. Recording opens as soon as you choose.</div>
       <div class="tmpl-status" id="tmpl-status">Checking your Vault for a saved template&hellip;</div>
     </div>
 
@@ -469,7 +472,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-96</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-97</span></div>
 </div>
 </div>
 
@@ -973,6 +976,7 @@ var HOUSE = "You are a clinical documentation generator for psychiatric and beha
 
 // ── State ──
 var visitType = null; // no default: force an explicit choice so the wrong template can never ride a silent default
+var _pendingRecordOpen = false; // set when Record is pressed with no visit type; opens the recorder once one is chosen
 var sourceMode = 'typed';
 // Two independent axes (a clinician can do any combination):
 var workflow = null;      // CAPTURE: 'ambient' (record) | 'manual' (type/paste). Vault, never hardcoded.
@@ -1330,6 +1334,14 @@ bindOpts('visit-opts','data-visit', function(v){
     var _rvz = _pendingVisitDraft; _pendingVisitDraft = null;
     try{ if(window.tbpHideSetup) window.tbpHideSetup(); }catch(e){}
     try{ _rvz.resume(); }catch(e){}
+  }
+  // If Record was pressed before a visit type was chosen (see openAmbientSetup), we parked the
+  // intent — now one is set, hide the gate hint and open the recorder for a single continuous flow.
+  var _grh = document.getElementById('record-gate-hint'); if(_grh) _grh.style.display = 'none';
+  if(!_tbpRestoringVisit && _pendingRecordOpen && visitType){
+    _pendingRecordOpen = false;
+    try{ if(window.tbpHideSetup) window.tbpHideSetup(); }catch(e){}
+    try{ openAmbientSetup(); }catch(e){}
   }
 });
 // On load, restore a previously-chosen visit type so a reopened/reloaded frame comes back
@@ -7254,6 +7266,17 @@ function loadVaultTemplates(){
 // Typing/pasting is always available and needs no button. In the public demo the live action is gated.
 function openAmbientSetup(){
   if(typeof tbpDemoBlock === 'function' && tbpDemoBlock()) return;
+  // Require a visit type BEFORE recording. It sets which template the note uses, and starting a
+  // recording without it strands the clinician at a "no visit type" prompt AFTER the visit. If it
+  // is not set, reveal the setup so they choose one, remember they were trying to record, and open
+  // the recorder automatically the moment they pick (see bindOpts('visit-opts')).
+  if(!visitType){
+    _pendingRecordOpen = true;
+    var gh = document.getElementById('record-gate-hint'); if(gh) gh.style.display = '';
+    try{ if(window.tbpShowSetup) window.tbpShowSetup(); }catch(e){}
+    try{ var vo = document.getElementById('visit-opts'); if(vo) vo.scrollIntoView({ behavior:'smooth', block:'center' }); }catch(e){}
+    return;
+  }
   var m = document.getElementById('ambient-modal'); if(!m) return;
   // Reparent to <body> so the modal is never trapped inside a display:none ancestor (it is authored
   // inside the work-area for locality). getElementById wiring is unaffected by the move.
