@@ -350,6 +350,47 @@ solving them deepens the "operating layer" position.
 
 ---
 
+## 8. Member communication
+
+### Split the weekly broadcast into labelled, opt-in-able streams
+
+Michael's call, Sept 2026. Rather than one large weekly send carrying everything, run several
+narrower broadcasts that members can opt into or out of individually:
+
+- **This week's posts** — what is coming out this week and what went out last week.
+- **Development** — what is being built, shipped and fixed in the AI Scribe and the tools.
+
+More sends, but each one is a single job, which is the same principle the broadcast rewrites kept
+landing on. A member who only wants the forum digest stops getting build notes; someone following
+the Scribe's development stops having to dig it out of a long email. Reluctance to add another
+broadcast is the right instinct, and the answer is that these are narrower, not additive: the
+current weekly gets split rather than supplemented.
+
+**Why it matters:** the weekly send is the only regular contact with `free` and `forum` tiers, and
+we know from the Scribe telemetry work that engagement is the open question, not reach. A member who
+opts out of one stream is a better outcome than one who stops opening anything.
+
+**Prerequisite — this is the part that is not free.** Unsubscribe today is GLOBAL, not per topic:
+`broadcast-unsub.js` flips a single `contacts.subscribed` boolean, and `broadcast-send.js` drops
+anyone with `subscribed=false` from every send. Audiences are tier-shaped (`all` / `members` /
+`nonmembers` / `free` / `forum` / `full`) plus a usage-based custom option; there is no notion of a
+topic. Per-stream opt-in needs:
+
+1. A place to store per-topic preference (a column set on `public.contacts`, or a small
+   `contact_topic_prefs` table), with absent meaning subscribed so nothing breaks for existing
+   members.
+2. `broadcast-send.js` to filter on the stream as well as the audience.
+3. `broadcast-unsub.js` to unsubscribe from ONE stream when the link carries a topic, while keeping
+   the global unsubscribe intact — CAN-SPAM requires a working global opt-out, so per-topic must be
+   in addition to it, never a replacement.
+4. A preferences page, or at minimum per-topic links in the footer.
+
+**Business model:** none directly; retention and engagement.
+
+**Status:** decided in principle, not scheduled. Do not build before the phase-telemetry data lands
+— if it shows most members barely open anything, the answer may be fewer sends rather than more
+finely divided ones.
+
 ## How to add to this file
 
 Drop the idea under the right category. If it's a big one, add the four-line annotation
