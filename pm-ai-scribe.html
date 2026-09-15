@@ -185,7 +185,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-95"></script>
+<script src="/note-engine.js?v=ambient-96"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -469,7 +469,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-95</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-96</span></div>
 </div>
 </div>
 
@@ -1321,6 +1321,16 @@ bindOpts('visit-opts','data-visit', function(v){
   }
   visitType=v; try{ localStorage.setItem(tbpVisitKey(), v); }catch(e){}
   renderTemplateStatus(); revealWorkArea();
+  // If a draft was blocked waiting on a visit type, ANY selection here continues that same draft.
+  // The inline chooser lives inside #work-area (hidden when no visit type is set), so on the
+  // recording path the clinician usually sees and clicks the NATIVE buttons in the revealed
+  // setup, not the chooser — make those resume too, so the note finishes without a second click.
+  // Skipped during the on-load restore replay (that is not a clinician choosing anything).
+  if(!_tbpRestoringVisit && visitType && _pendingVisitDraft && typeof _pendingVisitDraft.resume === 'function'){
+    var _rvz = _pendingVisitDraft; _pendingVisitDraft = null;
+    try{ if(window.tbpHideSetup) window.tbpHideSetup(); }catch(e){}
+    try{ _rvz.resume(); }catch(e){}
+  }
 });
 // On load, restore a previously-chosen visit type so a reopened/reloaded frame comes back
 // to the visit the clinician was on (recording UI visible, Draft not falsely blocked). The
@@ -1971,12 +1981,15 @@ function tbpAutoDraftAmbient(){
   if(!visitType){
     var _ra = tbpTryRestoreVisitType();
     if(!_ra.ok){
-      try { tbpLogError('Ambient draft blocked: no visit type. savedDraft=' + (_ra.saved ? _ra.saved : 'none')
-        + ' optionFound=' + (!!_ra.optionFound) + ' rawLen=' + src.length
-        + ' wnMode=' + (typeof wnMode !== 'undefined' ? wnMode : '?')); } catch(e){}
+      // Not an error — a handled prompt. Track it (frequency signal) instead of logging to the
+      // red client-errors panel, which made a recoverable, one-tap state look like a failure.
+      try { tbpTrack('ambient_visit_prompt'); } catch(e){}
       _pendingVisitDraft = { resume: function(){ tbpAutoDraftAmbient(); } };
+      // Reveal the setup so the native visit-type buttons are on screen (the chooser in #err-box
+      // is hidden while no visit type is set); picking either now auto-continues this draft.
+      try { if(window.tbpShowSetup) window.tbpShowSetup(); } catch(e){}
       tbpShowBlockingMsg(tbpVisitChooserHtml(), document.getElementById('err-box'));
-      if(window.setStatus) window.setStatus('One quick thing: pick the visit type to finish your note.');
+      if(window.setStatus) window.setStatus('One quick thing: choose the visit type (New patient evaluation or Follow-up) and your note finishes on its own.');
       return;
     }
   }
@@ -2096,12 +2109,9 @@ function tbpTypedDraft(btn, src, errEl){
     // saved key/draft still carries it); otherwise offer the inline chooser instead of stopping.
     var _r = tbpTryRestoreVisitType();
     if(!_r.ok){
-      // Log the shape of the failure (never the note) so a recurrence is identifiable.
-      try {
-        tbpLogError('Draft blocked: no visit type. savedDraft=' + (_r.saved ? _r.saved : 'none')
-          + ' optionFound=' + (!!_r.optionFound) + ' rawLen=' + ((document.getElementById('raw')||{}).value||'').length
-          + ' wnMode=' + (typeof wnMode !== 'undefined' ? wnMode : '?'));
-      } catch(e){}
+      // Not an error — a handled, one-tap prompt. Track frequency instead of logging to the red
+      // client-errors panel (which made this recoverable state look like a failure).
+      try { tbpTrack('typed_visit_prompt'); } catch(e){}
       _pendingVisitDraft = { resume: function(){ tbpTypedDraft(btn, src, errEl); } };
       return draftFail(tbpVisitChooserHtml());
     }
