@@ -130,9 +130,27 @@ delete it; just leave it in place and only advance it when a deploy is worth int
 - `MARKETING-SPINE.md` is the **canonical, approved marketing narrative** for the AI Scribe and
   the Think Beyond Practice membership. Read it before drafting ANY pitch, ad, post, reply,
   email, landing page, or sales copy about the Scribe/membership, and reuse it rather than
-  reinventing the pitch. It holds the master narrative, the compact (Facebook/forum) cut, and
-  the landing-page headline. House style: no em-dashes; lead with the **audit** differentiator;
-  do not claim "no other scribe audits notes" as an absolute.
+  reinventing the pitch. It holds the master narrative, the channel cuts, the landing-page
+  headline and the ready-to-fire reply variants. House style: **no em-dashes**; do not claim
+  "no other scribe audits notes" as an absolute.
+  **What to lead with is channel-dependent, and this changed in Sept 2026** — the old blanket
+  "lead with the audit differentiator" rule is superseded, and applying it everywhere now walks
+  the site back to a smaller claim than the product makes:
+  - **Owned channels** (homepage, demo page, launch posts, email): lead with the whole-workflow,
+    clinical-assistant positioning, before/during/after the visit. Audit is the strongest single
+    capability inside that, not the frame.
+  - **Comparison threads** ("which AI scribe do you use?"): lead audit-first. It is still the
+    best acquisition hook, because it is the thing the reader did not know to ask for.
+- `PRODUCT-ARCHITECTURE-AND-NAMING.md` (Sept 2026) sits UNDER the marketing spine and **wins
+  where the two disagree.** Read it before writing new copy or naming anything member-facing. It
+  holds what the product is called at each level, why "Scribe" is now one capability within the
+  workspace rather than the whole thing, the decision to change the vocabulary now and NOT rename
+  the product yet, and the Read -> Prepare -> Reason -> Interview story. Two rules it enforces:
+  the product is an AI scribe and is not only an AI scribe (keep "AI scribe" where people need
+  the category term, say "the workspace" or name the capability for everything else; the
+  positioning line is **Think beyond the scribe**), and **never write "six modules"** — they are
+  capabilities, they are not six equivalent components, and they are best named by where they
+  fall in the work.
 - **The product thesis, which every Scribe/Companion feature is judged against:** *AI reduces the
   amount of attention the clinician has to spend retrieving, checking, remembering, organizing and
   documenting information while they are trying to think with another human being.* The test is
