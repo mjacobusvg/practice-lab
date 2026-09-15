@@ -38,6 +38,55 @@
 | clinical-proxy.js | claude-haiku-4-5-20251001 | PHI tools (Letter Gen, Note Builder, Termination, Monitoring). Streams from Anthropic; logs USAGE METADATA ONLY (counts + cost + email/tier), never content. Covered by Anthropic API BAA. |
 | clinical-proxy-stream.mjs | claude-haiku-4-5-20251001 | Streaming PHI proxy. Tees the passthrough stream to read token counts; logs usage metadata only (counts + cost + email/tier), never content. Wraps large (>~4096-char) system prompts in a **1-hour prompt-cache** block (`cache_control` ephemeral, ttl 1h) — chosen from real traffic (notes cluster ~26 min apart, ~75% within an hour). `est_cost_usd` is cache-aware (writes 2x, reads 0.1x); `input_tokens` logs total input incl. cache tokens. Verify caching via `cache_read_input_tokens` in the Anthropic usage. |
 
+## Prompt caching on Bedrock (AWS case 178934455100974, Sept 2026)
+
+Caching was working all along and visible on the bill (Sonnet at roughly 41% of the uncached
+estimate) but was invisible to our own metering, which made `est_cost_usd` overstate Sonnet by
+about 2.4x. AWS Premium Support answered three things; all three are now implemented in
+`aws-lambda/clinical-proxy-stream-bedrock.mjs` and `aws-lambda/clinical-proxy-bedrock.mjs`.
+
+**1. The cache counters are not final on `message_start`.** That is where both proxies were
+reading them, and there they are absent or zero. The finalized counts arrive later, in
+`message_delta.usage` and in `amazon-bedrock-invocationMetrics`, which Bedrock appends to the
+final chunk and which is authoritative. The old parser did receive that final chunk, parsed it
+successfully, matched none of its branches, and dropped it. Both proxies now feed every event
+to `readUsage()`, and Bedrock's own metrics win over the Anthropic-shaped numbers.
+
+**2. Cached input is counted separately from `input_tokens`.** The real total is
+`input_tokens + cache_read + cache_write`, and the three parts bill at different rates
+(non-cached 1x, read 0.1x, write 1.25x on a 5 minute TTL or 2x on a 1 hour TTL).
+
+**3. `ttl: "1h"` is supported on both Sonnet 4.6 and Haiku 4.5.** The Netlify predecessor used
+it, chosen from real traffic (calls cluster ~26 min apart, ~75% of reuse inside an hour). The
+Bedrock port silently dropped the ttl **while keeping the 2x one-hour write multiplier in the
+cost formula**, so we were buying five minute caching and pricing one hour caching. The ttl is
+restored rather than the multiplier lowered, because at a 26 minute gap the hour is genuinely
+cheaper: `2.00x + 0.10x` beats `1.25x + 1.25x`, and the gap widens with every further call.
+
+**The Haiku finding, which is separate and was not part of the case.** The minimum size for a
+cache checkpoint is per model and differs fourfold: **Sonnet 4.6 needs 1,024 tokens, Haiku 4.5
+needs 4,096.** Below the minimum the checkpoint is silently discarded. Our threshold was 4,096
+**characters**, roughly 1,170 tokens: about right for Sonnet, nowhere near Haiku's floor. So
+every Haiku checkpoint we ever sent was thrown away, which is exactly why Haiku bills at ~110%
+of the uncached estimate while Sonnet bills well under it. `cacheableSystem()` now takes the
+model and uses the real per-model minimum.
+
+**Verifying it, without model invocation logging.** AWS confirmed the CloudWatch runtime
+metrics under `AWS/Bedrock` dimensioned by `ModelId` are token counts only, with no request or
+response content, so they are safe to use under the BAA where invocation logging is not:
+
+    CacheReadInputTokenCount / (InputTokenCount + CacheReadInputTokenCount + CacheWriteInputTokenCount)
+
+`public.tool_usage` also now carries `cache_creation_tokens`, `cache_read_tokens`, `cache_ttl`
+and `usage_source`, so the same question is answerable in SQL. `input_tokens` keeps its old
+meaning (the total including cache tokens) so existing dashboards do not move. `usage_source`
+records which event the counts came from, so a real zero is distinguishable from a call that
+was metered blind. NULL in these columns means unknown, not zero, and every row written before
+Sept 2026 is genuinely unknown.
+
+Offline tests: `node test/bedrock-usage-checks.mjs`. It also fails if the two lambda copies
+drift apart, which matters because each is pasted into its Lambda by hand.
+
 ## Usage tracking (tracking overhaul, 2026-07)
 
 All AI-calling surfaces log one row to `public.tool_usage` via `_lib/usage.js`
