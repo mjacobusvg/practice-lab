@@ -1410,11 +1410,23 @@ The cost objection to a live companion is real but it is aimed at the wrong thin
 separate costs and only one of them is continuous.
 
 **Hearing the visit** is the unavoidable continuous cost, and it is not the frightening part.
-Michael's own Azure bill confirms batch transcription at **$0.18 per audio hour** (S1 Speech to Text
-Batch; 41.43 hours billed $7.458 over Aug 16 to Sep 14). Streaming alternatives quoted around
-$0.27/hour all-in for a cheap model with diarization — secondary sources, unverified, treat as
-indicative. If a live transcript REPLACES the final batch transcript rather than being added on top,
-the delta is single-digit cents per visit. See §35.5 and the Ambient dependency in §34.
+
+**Verified:** batch transcription costs **$0.18 per audio hour**, from Michael's own Azure bill
+(S1 Speech to Text Batch; 41.43 hours billed $7.458 over Aug 16 to Sep 14). This is the only
+transcription price in this document taken from a primary source.
+
+**Not verified, and to be treated as indicative only:** figures circulating for streaming
+alternatives — roughly $0.15/hour for a cheap streaming model, about $0.12/hour more for real-time
+diarization, so ~$0.27/hour all-in; Azure real-time at $1.00/hour plus a $0.30/hour diarization
+add-on. **None of these has been confirmed against a vendor's own pricing page from inside this
+environment, because the egress proxy blocks azure.microsoft.com, learn.microsoft.com and
+assemblyai.com.** They reached this document through conversation, not through a fetch. Confirm
+every one against the vendor's page and the specific configuration TBP would actually use before
+any of them enters a business model or a pricing decision.
+
+If a live transcript REPLACES the final batch transcript rather than being added on top, the delta
+is plausibly single-digit cents per visit. That conclusion depends entirely on the unverified
+numbers above. See §35.5 and the Ambient dependency in §34.
 
 **Thinking about what it hears** is where an architecture gets expensive or stays cheap. The
 expensive design is: every 15 seconds, send the whole transcript plus all records plus the framework
@@ -1493,7 +1505,48 @@ That cannot support automatic alerts, because the system cannot understand audio
 transcribed. But it gives an on-demand companion at a fraction of continuous-streaming cost, and it
 is a genuinely smaller first step than streaming the whole appointment.
 
-### 36.5 Why this fits the thesis
+### 36.5 The pipeline
+
+> **Listen -> detect -> route -> answer -> remember**
+
+- **Listen.** Continuous transcription, when it exists. Not required for anything below except the
+  automatic trigger.
+- **Detect.** Cheap text matching for medication names, treatment decisions, safety language,
+  symptom changes, contradictions, labs, diagnoses.
+- **Route.** *This is the step that decides the cost.* A deterministic tool if one exists; model
+  reasoning ONLY when interpretation is actually required.
+- **Answer.** The smallest useful thing, in a card, in the encounter.
+- **Remember.** The result becomes part of the encounter state.
+
+**Remember is not optional.** If the clinician opened an interaction check, completed a safety
+assessment, scored a scale or reviewed monitoring, that work must reach the note without being
+retyped. Otherwise the clinician does it twice, and a tool that makes you document your own use of
+it has taken attention rather than given it back — the thesis inverted, in the one place it is
+easiest to invert by accident.
+
+### 36.6 The version that is buildable now, before live transcription
+
+Nothing in this needs streaming. A compact row in the working screen:
+
+    Check:  Interactions · Monitoring · Safety · Scale · EPS · Discern
+
+- **Interactions** -> the existing local engine, in a card, not a new tab.
+- **Monitoring** -> the relevant requirements for a medication being considered, from the local
+  rules. Not "her TSH is overdue" — that needs the chart (§35.5).
+- **Safety** -> the assessment opens in the workspace and is walked through with the patient.
+- **Scale** -> pick, use and score it in place, from `scales-data.js`.
+- **EPS** -> the applicable local guidance.
+- **Discern** -> the only one of the six that invokes reasoning.
+
+Five of the six are deterministic. Every card follows the §35 rule: show the answer needed now,
+expand to the full tool only on request, collapse into the tray when read. The automatic trigger
+layer arrives later and changes nothing about this surface except who initiates it.
+
+This is the first Companion version, and it is mostly plumbing over capability that already exists.
+**It should come before another large clinical feature.** TBP already owns more of the intelligence
+than it looks like; what it lacks is behaving like an assistant rather than a toolbox.
+
+### 36.7 Why this fits the thesis
 
 Computation is spent only when spending it might save the clinician attention — not because another
 thirty seconds of audio happened. An always-on system that reasons continuously would burn money to

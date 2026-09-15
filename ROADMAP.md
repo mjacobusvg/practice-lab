@@ -222,6 +222,21 @@ connected psychiatric workflow.** Concretely, in build order:
 7. Pre-visit -> live-visit continuity
 8. Contextual "Relevant next steps" area
 
+**Items 2, 3, 5 and 8 are ONE surface, and it is cheaper than the list implies.** Verified
+in-repo Sept 2026: `pm-interaction-checker.html` (~490 KB, ~311 pharmacokinetic relationships
+plus 16 named risk mechanisms) and `scales-data.js` make **zero model calls**, and
+`pm-monitoring-protocol.html` keeps its rules locally and calls a model only for the patient
+handout. The intelligence is already built and already paid for; it is delivered through
+`window.open(u, '_blank')`, which is the worst possible mid-visit packaging.
+
+So the first Companion version is one compact row inside the encounter —
+`Check: Interactions · Monitoring · Safety · Scale · EPS · Discern` — where five of the six are
+deterministic and only Discern reasons. It is mostly plumbing over existing capability, it needs
+no live transcription, and **it should come before another large clinical feature** (owner call,
+Sept 2026). Whatever the clinician does with a card has to reach the note without retyping, or
+the tool has taken attention instead of giving it back. Design and costing in
+`CLINICAL-OS-STRATEGY.md` §36; the phase rule it must obey is §35.
+
 Detail for each:
 
 #### Lane 0 — Encounter-context foundation (do this first)
