@@ -15,6 +15,45 @@ const { verifyToken } = require('./_lib/session');
 
 function clip(v, n) { return v == null ? null : String(v).slice(0, n); }
 
+// ── PHI guards ───────────────────────────────────────────────────────────────
+// This table lives in Supabase, which has NO BAA, and pm-ai-scribe.html posts here.
+// A thrown Error can carry whatever it was handed — `new Error('save failed: ' +
+// noteText)` or a JSON.parse failure quoting its input — so neither field may be
+// stored raw. Audit finding M3.
+
+// Replace identifier-SHAPED substrings. Same deterministic patterns as the second
+// pass in deidentify-note.js, kept narrow: this is a safety net over machine-written
+// error text, not a de-identifier for prose.
+function scrubIdentifiers(s) {
+  return String(s == null ? '' : s)
+    .replace(/\b\d{3}-\d{2}-\d{4}\b/g, '[SSN]')
+    .replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g, '[EMAIL]')
+    .replace(/\b(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/g, '[PHONE]')
+    .replace(/\b(0?[1-9]|1[0-2])[\/\-.](0?[1-9]|[12]\d|3[01])[\/\-.](\d{4}|\d{2})\b/g, '[DATE]')
+    .replace(/\b(?:MRN|Medical Record(?: Number)?|Acct(?:ount)?|Member(?:\s*ID)?|Policy|Chart)\s*#?:?\s*[A-Z0-9-]{4,}\b/gi, '[ID]')
+    .replace(/\b\d{7,}\b/g, '[ID]');
+}
+
+// A stack is only useful as FRAMES. Keep the lines that look like one
+// ("  at fn (https://host/file.js:12:34)" or a bare "file.js:12:34") and drop
+// everything else, which is where interpolated content would sit. Then scrub and
+// cap hard — 600 chars is ~6 frames, plenty to locate a bug.
+function safeStack(v) {
+  if (v == null) return null;
+  const frames = String(v)
+    .split('\n')
+    .map(function (l) { return l.trim(); })
+    .filter(function (l) { return /^at\s/.test(l) || /:\d+:\d+\)?$/.test(l); });
+  if (!frames.length) return null;
+  return scrubIdentifiers(frames.join('\n')).slice(0, 600);
+}
+
+// Error messages are free text, so they get the scrub plus a much tighter cap.
+function safeMessage(v) {
+  if (v == null) return null;
+  return scrubIdentifiers(String(v)).slice(0, 300) || null;
+}
+
 exports.handler = async function (event) {
   const headers = {
     'Access-Control-Allow-Origin': '*',
@@ -78,8 +117,8 @@ exports.handler = async function (event) {
       headers: { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
       body: JSON.stringify({
         email: email, tier: tier,
-        page: clip(p.page, 300), message: message,
-        stack: clip(p.stack, 4000), user_agent: clip(p.ua || event.headers['user-agent'], 400)
+        page: clip(p.page, 300), message: safeMessage(message),
+        stack: safeStack(p.stack), user_agent: clip(p.ua || event.headers['user-agent'], 400)
       })
     });
   } catch (e) { /* best-effort */ }
