@@ -17,6 +17,7 @@
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY (+ SES_AWS_* / LETTERS_S3_BUCKET for S3).
 
 const phiS3 = require('./_lib/phi-s3');
+const lettersPhi = require('./_lib/letters-phi');
 
 const ASSESSMENT_RAW_TTL_DAYS = 30;
 
@@ -41,6 +42,14 @@ async function sbDelete(url) {
   return fetch(url, { method: 'DELETE', headers: Object.assign({ Prefer: 'return=minimal' }, sbHeaders()) });
 }
 
+// Adapter: _lib/letters-phi expects patchRow(table, id, patch); this file's sbPatch
+// takes a full URL. Bound to SUPABASE_URL inside the handler via purgePatchRow.
+function makePatchRow(baseUrl) {
+  return function (table, id, patch) {
+    return sbPatch(baseUrl + '/rest/v1/' + table + '?id=eq.' + encodeURIComponent(id), patch);
+  };
+}
+
 // Purge expired stored PDFs from one letter table.
 async function purgeLetters(URL, table) {
   let purged = 0;
@@ -63,7 +72,9 @@ exports.handler = async function () {
     return { statusCode: 500, body: JSON.stringify({ error: 'Server not configured' }) };
   }
 
-  const result = { letters_send_log: 0, letter_charges: 0, schedules_closed: 0, charges_released: 0,
+  const purgePatchRow = makePatchRow(URL);
+  const result = { letters_send_log: 0, letter_charges: 0, schedules_healed: 0, charges_healed: 0,
+                   schedules_closed: 0, charges_released: 0,
                    assessments_completed: 0, assessments_abandoned: 0 };
   try {
     // ── Letters: delete at the clinician-chosen window ──
@@ -71,6 +82,30 @@ exports.handler = async function () {
     result.letter_charges = await purgeLetters(URL, 'letter_charges');
 
     const nowIso = new Date().toISOString();
+
+    // ── Heal sweep: migrate any letter row still holding PHI inline ──
+    // The read paths self-heal, but only when something reads them. An active schedule
+    // on a long cadence may not run for weeks (the live one is 25 days out), and a
+    // provider may not open the Letter Generator. That would leave a real patient
+    // address sitting in Supabase for the whole window, which is the thing this
+    // migration exists to stop. Sweeping here bounds it to 24 hours regardless of
+    // traffic. Idempotent: rows that already carry a key are skipped by the filter.
+    const unhealed = await sbGet(URL + '/rest/v1/letter_schedules' +
+      '?patient_s3_key=is.null' +
+      '&or=(patient_email.not.is.null,patient_label.not.is.null,' +
+      'patient_message.not.is.null,first_message.not.is.null)' +
+      '&select=id,patient_email,patient_label,patient_message,first_message&limit=500');
+    for (const s of unhealed) {
+      const key = await lettersPhi.healSchedule(purgePatchRow, s);
+      if (key) result.schedules_healed++;
+    }
+
+    const unhealedCharges = await sbGet(URL + '/rest/v1/letter_charges' +
+      '?patient_s3_key=is.null&patient_email=not.is.null&select=id,patient_email&limit=500');
+    for (const c of unhealedCharges) {
+      const key = await lettersPhi.healCharge(purgePatchRow, c);
+      if (key) result.charges_healed++;
+    }
 
     // ── Letter schedules that are finished: drop the patient record entirely ──
     // A cancelled / opted-out / ended schedule will never send again, so its patient
