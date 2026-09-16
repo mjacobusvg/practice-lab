@@ -77,7 +77,7 @@ was wrong — is the reason `phi-drift-check.js` now exists.
 | `assessment_schedules.patient_email` / `.patient_label` | 0 (0 rows) | holds |
 | `certified_mail_jobs.letter_text` / `to_name` / `to_address` | 0 (0 rows) | stub, write path blocked |
 | `letter_send_log.recipient_masked` not masked | 0 of 11 non-null | all `@domain.tld` or `••••1234`; watched because the masking happens client-side |
-| `pdf_filename` not derived from letter type | **4** (3 send_log, 1 charges) | pre-migration, browser-supplied; a filename is a place a patient name hides |
+| `pdf_filename` not derived from letter type | 0 (was 4, fixed 2026-09-16) | the 4 legacy browser-supplied names were rewritten to their letter-type slug; two of them read as a patient surname |
 | `tool_usage` | token/metadata only | holds |
 
 Between them these rows cover all 20 automated checks — the 17 `COUNT_CHECKS` and 3 `SHAPE_CHECKS`
@@ -88,9 +88,14 @@ Keep the two in step: a column added to one and not the other is how the 09-09 i
 in the first place.
 
 The four `letter_schedules` / `letter_charges` rows are what the daily heal sweep in
-`phi-purge-expired.js` (08:00 UTC) exists to clear. `pdf_filename` is NOT cleared by the purge —
-new writes use `safePdfFilename()` (letter type only), but the four existing values persist and
-will keep being flagged until someone decides what to do with them.
+`phi-purge-expired.js` (08:00 UTC) exists to clear.
+
+`pdf_filename` is **resolved**: both writers already generated it from the letter type
+(`safePdfFilename()`), but the purge cleared the bytes and the key and *left the name behind* —
+so three already-purged rows were still holding a browser-supplied string, two of which read as a
+patient surname. The purge now nulls `pdf_filename` too, and the four legacy values were rewritten
+in place to their letter-type slug. Rewritten, not exempted in the drift check: silencing the alarm
+for the first thing it caught would defeat building it.
 
 ### Superseded: the 2026-09-09 claim (wrong — kept as the record)
 
