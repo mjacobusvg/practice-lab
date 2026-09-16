@@ -244,6 +244,9 @@ async function runCell(sc, arm, rep){
     traj.push({turn:i+1, readiness:parsed.readiness, alliance:parsed.alliance, note:parsed.note});
     setStatus(sc.id+' / '+arm+' / rep '+rep+' — turn '+(i+1)+' of '+lines.length+
               '  (readiness '+parsed.readiness+', alliance '+parsed.alliance+')');
+    log('   '+sc.id+'/'+arm+' turn '+(i+1)+'/'+lines.length+
+        '  readiness '+parsed.readiness+'  alliance '+parsed.alliance+
+        (parsed.note ? '  — '+parsed.note.slice(0,90) : ''));
     await sleep(250);
   }
 
@@ -251,16 +254,18 @@ async function runCell(sc, arm, rep){
     return (t.who==='clinician' ? 'CLINICIAN' : 'PATIENT') + ' [' + i + ']: ' + t.text;
   }).join('\n\n');
 
-  var userPrompt =
-    'SCENARIO: '+sc.title+'\n'+
-    'PATIENT: '+sc.chart.name+', '+sc.chart.sub.replace(/&bull;/g,'-')+'\n'+
-    'THE CHANGE TARGET FOR THIS VISIT: '+sc.target+'\n'+
-    'The patient began the visit closed to this change.\n\n'+
-    'TRANSCRIPT\n\n'+tText+'\n\n'+
-    'Code the CLINICIAN turns only. Return the JSON object.';
+  /* Two passes, same as the lab. A single call generated ~1,460 tokens in ~31s
+     and was killed by Netlify's 26s ceiling, which is how this harness found
+     that the lab's feedback screen had never worked in production. */
+  setStatus(sc.id+' / '+arm+' / rep '+rep+' — coding the transcript');
+  var coding = firstJson(await call('harness debrief coding: '+sc.id+'/'+arm, COACH_MODEL, 1800,
+                                    SIMCORE.codingSystem(), [{role:'user', content: SIMCORE.debriefUserPrompt(sc, tText)}]));
 
-  setStatus(sc.id+' / '+arm+' / rep '+rep+' — scoring the transcript');
-  var debrief = firstJson(await call('harness debrief: '+sc.id+'/'+arm, COACH_MODEL, 3000, SIMCORE.coachSystem(), [{role:'user',content:userPrompt}]));
+  setStatus(sc.id+' / '+arm+' / rep '+rep+' — writing the feedback');
+  var narrative = firstJson(await call('harness debrief narrative: '+sc.id+'/'+arm, COACH_MODEL, 1500,
+                                       SIMCORE.narrativeSystem(), [{role:'user', content: SIMCORE.narrativeUserPrompt(sc, tText, coding)}]));
+
+  var debrief = Object.assign({}, coding, narrative);
 
   var start = traj[0], end = traj[traj.length-1];
   return {

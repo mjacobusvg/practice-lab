@@ -145,8 +145,27 @@ function patientSystem(sc){
   );
 }
 
-function coachSystem(){
-  return (
+/* ── THE DEBRIEF, IN TWO PASSES ──────────────────────────────────────────────
+   This was one call returning the whole debrief object. It generated about
+   1,460 tokens and took ~31 seconds, which is past Netlify's 26 second
+   synchronous function ceiling (26 is the maximum, and it applies to streaming
+   functions too, which is why the Scribe moved to an AWS Lambda Function URL).
+   Netlify killed the HTTP response and returned an HTML error page while the
+   generation itself completed and billed. The feedback screen, which is the
+   entire point of the lab, never worked in production.
+
+   So it is two calls of roughly half the output each, both comfortably inside
+   the ceiling. They run in sequence rather than in parallel on purpose: the
+   narrative pass is handed the CODING pass's output, so the judgements and the
+   scores are written from evidence that has already been pinned to verbatim
+   quotes. That is the editorial stance of the whole tool, and doing it in one
+   pass only ever hid the ordering.
+
+   Both passes return fragments of the SAME object the renderer and the harness
+   already expect, so merging them is Object.assign and nothing downstream
+   changes.                                                                  */
+
+var COACH_PREAMBLE =
 "You are an MI coding and feedback specialist reviewing a training transcript between a psychiatric prescriber and a simulated patient. You are rigorous and specific. You are not encouraging for its own sake.\n\n"+
 "You code against the behaviour counts used in MI fidelity work (MITI style): open vs closed questions, simple vs complex reflections, affirmations, emphasizing autonomy, seeking collaboration, giving information with permission, and MI non adherent behaviours (persuading without permission, confronting, directing, warning).\n\n"+
 "NON NEGOTIABLE RULES\n"+
@@ -154,26 +173,60 @@ function coachSystem(){
 "2. Judge the technique, not the outcome. A clinician can do excellent MI and the patient still refuses. A clinician can get a compliant answer with a bad question.\n"+
 "3. Be concrete about what to do instead. 'Use more reflections' is useless. Write the actual alternative sentence, in this clinician's voice, for this moment in this conversation.\n"+
 "4. Count only what is there. A short conversation gets small numbers and you say so rather than padding.\n"+
-"5. No praise that is not earned and quoted. If the conversation was poor, say so plainly and respectfully.\n\n"+
+"5. No praise that is not earned and quoted. If the conversation was poor, say so plainly and respectfully.\n\n";
+
+/* PASS 1 — the evidence. Everything that carries a verbatim quote. */
+function codingSystem(){
+  return COACH_PREAMBLE+
+"This is the CODING pass. Produce the behaviour counts and the quoted evidence. Do not write summary judgements, scores, or advice beyond the specific alternative sentences asked for below; a second pass does that from your output.\n\n"+
 "Return ONLY a JSON object, no markdown:\n"+
 '{\n'+
-'  "headline":"2-3 sentences on what actually happened in this conversation",\n'+
 '  "counts":{"open_questions":0,"closed_questions":0,"simple_reflections":0,"complex_reflections":0,"affirmations":0,"autonomy_support":0,"permission_asked":0,"mi_non_adherent":0},\n'+
-'  "ratio_note":"one sentence on the reflection to question ratio and what it means here",\n'+
 '  "strong":[{"label":"Complex reflection","quote":"verbatim clinician line","comment":"why it worked"}],\n'+
 '  "costly":[{"label":"Persuading without permission","quote":"verbatim clinician line","comment":"what it did to the conversation","instead":"the actual sentence to have used"}],\n'+
 '  "change_talk":[{"quote":"verbatim PATIENT line","type":"desire|ability|reason|need|commitment|taking steps","elicited_by":"verbatim clinician line that preceded it"}],\n'+
-'  "turning_point":{"quote":"the single clinician turn that mattered most, verbatim","what_happened":"what it did","better":"if it was costly, the sentence to have used instead; if it was good, say why and leave this short"},\n'+
+'  "turning_point":{"quote":"the single clinician turn that mattered most, verbatim","what_happened":"what it did","better":"if it was costly, the sentence to have used instead; if it was good, say why and leave this short"}\n'+
+'}\n'+
+"Arrays may be empty. Use at most four items in strong, costly and change_talk."
+  ;
+}
+
+/* PASS 2 — the judgement, written from pass 1's evidence. */
+function narrativeSystem(){
+  return COACH_PREAMBLE+
+"This is the NARRATIVE pass. You are given the transcript AND the coding pass's output: the behaviour counts and the lines already pinned to verbatim quotes. Write the summary judgement from that evidence. Do not introduce a quote the coding pass did not find, and do not contradict its counts.\n\n"+
+"Return ONLY a JSON object, no markdown:\n"+
+'{\n'+
+'  "headline":"2-3 sentences on what actually happened in this conversation",\n'+
+'  "ratio_note":"one sentence on the reflection to question ratio and what it means here",\n'+
 '  "did_well":["short specific points"],\n'+
 '  "work_on":["short specific points"],\n'+
 '  "scores":{"technique":1-5,"spirit":1-5,"fit_to_visit":1-5},\n'+
 '  "score_notes":{"technique":"one line","spirit":"one line","fit_to_visit":"one line on whether this was realistic for the minutes available in a med visit"}\n'+
 '}\n'+
-"Arrays may be empty. Use at most four items in strong, costly, change_talk, did_well and work_on."
-  );
+"Use at most four items in did_well and work_on."
+  ;
+}
+
+/* The user-side prompts. These lived duplicated in the lab and the harness; a
+   drifted copy would have meant the harness scoring a different program than
+   the one members use, so they live here now. */
+function debriefUserPrompt(sc, transcriptText){
+  return 'SCENARIO: '+sc.title+'\n'+
+    'PATIENT: '+sc.chart.name+', '+sc.chart.sub.replace(/&bull;/g,'-')+'\n'+
+    'THE CHANGE TARGET FOR THIS VISIT: '+sc.target+'\n'+
+    'The patient began the visit closed to this change.\n\n'+
+    'TRANSCRIPT\n\n'+transcriptText+'\n\n'+
+    'Code the CLINICIAN turns only. Return the JSON object.';
+}
+function narrativeUserPrompt(sc, transcriptText, coding){
+  return debriefUserPrompt(sc, transcriptText)+
+    '\n\nCODING PASS OUTPUT\n\n'+JSON.stringify(coding, null, 2);
 }
 
 return { SCENARIOS: SCENARIOS, TECH_META: TECH_META,
-         patientSystem: patientSystem, coachSystem: coachSystem };
+         patientSystem: patientSystem,
+         codingSystem: codingSystem, narrativeSystem: narrativeSystem,
+         debriefUserPrompt: debriefUserPrompt, narrativeUserPrompt: narrativeUserPrompt };
 
 })();

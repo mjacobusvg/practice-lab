@@ -565,7 +565,7 @@ function transcriptText(){
   }).join('\n\n');
 }
 
-function coachSystem(){ return SIMCORE.coachSystem(); }
+
 
 function endSim(){
   if(transcript.filter(function(t){return t.who==='clinician';}).length === 0){
@@ -579,34 +579,48 @@ function endSim(){
     '<div class="debrief-sub">Coding your turns against the MI rubric. This takes a few seconds.</div>';
   show('screen-debrief');
 
-  var userPrompt =
-    'SCENARIO: '+sc.title+'\n'+
-    'PATIENT: '+sc.chart.name+', '+sc.chart.sub.replace(/&bull;/g,'-')+'\n'+
-    'THE CHANGE TARGET FOR THIS VISIT: '+sc.target+'\n'+
-    'The patient began the visit closed to this change.\n\n'+
-    'TRANSCRIPT\n\n'+transcriptText()+'\n\n'+
-    'Code the CLINICIAN turns only. Return the JSON object.';
+  /* Two passes. One call generated ~1,460 tokens in ~31s and was killed by
+     Netlify's 26s ceiling before it ever reached the browser, so the feedback
+     screen never worked. Each pass is about half that and fits. They are
+     sequential because the narrative is written FROM the coded evidence. */
+  var tText = transcriptText();
 
-  fetch(PROXY,{
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({
-      token: authToken(),
-      tool: 'Clinical Simulation Lab',
-      mode: 'MI debrief: '+sc.id,
-      model: COACH_MODEL,
-      max_tokens: 3000,
-      system: coachSystem(),
-      messages: [{role:'user', content:userPrompt}]
+  function coachCall(system, userPrompt, modeLabel, maxTokens){
+    return fetch(PROXY,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        token: authToken(),
+        tool: 'Clinical Simulation Lab',
+        mode: modeLabel+': '+sc.id,
+        model: COACH_MODEL,
+        max_tokens: maxTokens,
+        system: system,
+        messages: [{role:'user', content:userPrompt}]
+      })
     })
+    .then(function(r){ return r.json(); })
+    .then(function(data){
+      var raw = ((data.content||[]).map(function(c){ return c.text||''; }).join('')).trim();
+      var clean = raw.replace(/```json|```/g,'').trim();
+      var a = clean.indexOf('{'), b = clean.lastIndexOf('}');
+      if(a === -1 || b === -1) throw new Error('bad json');
+      return JSON.parse(clean.slice(a,b+1));
+    });
+  }
+
+  coachCall(SIMCORE.codingSystem(), SIMCORE.debriefUserPrompt(sc, tText), 'MI debrief coding', 1800)
+  .then(function(coding){
+    body.innerHTML =
+      '<div class="debrief-title">Writing your feedback</div>'+
+      '<div class="debrief-sub">Your turns are coded. Now the read on what it added up to.</div>';
+    return coachCall(SIMCORE.narrativeSystem(), SIMCORE.narrativeUserPrompt(sc, tText, coding), 'MI debrief narrative', 1500)
+      .then(function(narrative){
+        /* Both passes return fragments of the same object renderDebrief already
+           expects, so this is the whole merge. */
+        return Object.assign({}, coding, narrative);
+      });
   })
-  .then(function(r){ return r.json(); })
-  .then(function(data){
-    var raw = ((data.content||[]).map(function(c){ return c.text||''; }).join('')).trim();
-    var clean = raw.replace(/```json|```/g,'').trim();
-    var a = clean.indexOf('{'), b = clean.lastIndexOf('}');
-    if(a === -1 || b === -1) throw new Error('bad json');
-    renderDebrief(JSON.parse(clean.slice(a,b+1)));
-  })
+  .then(function(merged){ renderDebrief(merged); })
   .catch(function(){
     document.getElementById('debrief-body').innerHTML =
       '<div class="debrief-title">Feedback did not come back</div>'+

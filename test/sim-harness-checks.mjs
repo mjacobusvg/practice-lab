@@ -44,8 +44,14 @@ for (const [name, re] of [
 
 is(/max_tokens: 700/.test(lab) && /PATIENT_MODEL, 700,/.test(har),
    'patient turn budget is 700 tokens in both');
-is(/max_tokens: 3000/.test(lab) && /COACH_MODEL, 3000,/.test(har),
-   'debrief budget is 3000 tokens in both');
+is(/'MI debrief coding', 1800/.test(lab) && /COACH_MODEL, 1800,/.test(har),
+   'coding pass budget is 1800 tokens in both');
+is(/'MI debrief narrative', 1500/.test(lab) && /COACH_MODEL, 1500,/.test(har),
+   'narrative pass budget is 1500 tokens in both');
+/* One call generated ~1,460 tokens in ~31s and died on Netlify's 26s ceiling.
+   Neither file may go back to a single oversized debrief call. */
+is(!/max_tokens: 3000/.test(lab) && !/COACH_MODEL, 3000,/.test(har),
+   'neither page still makes the single 3000-token debrief call that times out');
 
 const seed = /msgs\.push\(\{role:'assistant', content:JSON\.stringify\(\{say:sc\.opening, readiness:sc\.state\.readiness, alliance:sc\.state\.alliance, note:'opening position'\}\)\}\);/;
 is(seed.test(lab) && seed.test(har), 'opening is seeded as the same assistant JSON turn');
@@ -53,21 +59,22 @@ is(seed.test(lab) && seed.test(har), 'opening is seeded as the same assistant JS
 const ser = /\(t\.who==='clinician' \? 'CLINICIAN' : 'PATIENT'\) \+ ' \[' \+ i \+ '\]: ' \+ t\.text/;
 is(ser.test(lab) && ser.test(har), 'transcript is serialized identically for the coach');
 
-/* The two files name the transcript variable differently (transcriptText() vs
-   tText). That is the only licensed difference; the prompt text around it must
-   match character for character. */
-const promptOf = s => {
-  const m = s.match(/'SCENARIO: '\+sc\.title[\s\S]*?'Code the CLINICIAN turns only\. Return the JSON object\.';/);
-  return m ? m[0].replace(/transcriptText\(\)/g, '«T»').replace(/\btText\b/g, '«T»').replace(/\s+/g, ' ') : null;
-};
-const pl = promptOf(lab), ph = promptOf(har);
-is(pl && pl === ph, 'debrief user prompt is character for character identical');
+/* The debrief user prompts used to be duplicated in both files, where a drifted
+   copy would have meant the harness scoring a different program than the one
+   members use. They now live in the shared core and neither page may rebuild one. */
+is(!/'SCENARIO: '\+sc\.title/.test(lab) && !/'SCENARIO: '\+sc\.title/.test(har),
+   'neither page builds its own debrief user prompt any more');
+is(/SIMCORE\.debriefUserPrompt\(/.test(lab) && /SIMCORE\.debriefUserPrompt\(/.test(har) &&
+   /SIMCORE\.narrativeUserPrompt\(/.test(lab) && /SIMCORE\.narrativeUserPrompt\(/.test(har),
+   'both pages take both debrief user prompts from the shared core');
+is(/SIMCORE\.codingSystem\(\)/.test(lab) && /SIMCORE\.codingSystem\(\)/.test(har) &&
+   /SIMCORE\.narrativeSystem\(\)/.test(lab) && /SIMCORE\.narrativeSystem\(\)/.test(har),
+   'both pages use both shared coach passes');
 
 const core = /<script src="\/clinical-sim-core\.js"><\/script>/;
 is(core.test(lab) && core.test(har), 'both pages load the shared prompt file');
-is(/SIMCORE\.patientSystem\(sc\)/.test(lab) && /SIMCORE\.patientSystem\(sc\)/.test(har) &&
-   /SIMCORE\.coachSystem\(\)/.test(lab)     && /SIMCORE\.coachSystem\(\)/.test(har),
-   'both pages call the shared patient and coach prompts, neither holds a copy');
+is(/SIMCORE\.patientSystem\(sc\)/.test(lab) && /SIMCORE\.patientSystem\(sc\)/.test(har),
+   'both pages call the shared patient prompt, neither holds a copy');
 is(!/You are playing a single simulated patient/.test(lab) && !/You are playing a single simulated patient/.test(har),
    'neither page has re-inlined a private copy of the patient prompt');
 
