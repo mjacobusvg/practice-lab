@@ -494,8 +494,42 @@ demo and teach nothing, and neither is visible from one play-through, which is w
 is not evidence. Voice and avatars are a delivery decision that only matters if the underlying
 conversation discriminates, so this runs first and costs nothing but tokens.
 
+**HARNESS RESULT, 2026-09-16: all five criteria pass, nine runs across all three scenarios.**
+The gate is cleared and lane D proceeds.
+
+| | result |
+|---|---|
+| C1 quote fidelity (decisive) | 83 attributed quotes, **0 fabricated** |
+| C2 bad arm punished (decisive) | mean **-4.7**; best single bad run still **-3** |
+| C3 separation | good 12.0 vs bad 0.7 of 20, gap **11.3** (threshold 4) |
+| C4 empty control | neutral 6.0, sits between; gap to good **6.0** (threshold 2) |
+| C5 coder discriminates | technique good 3.3 / neutral 2.0 / bad 1.0; non-adherent bad 6.3 vs good 0.3 |
+
+The finding that matters more than the pass marks: the empty control bought **alliance and no
+readiness**, in every scenario (mi-weight r2->2 a4->5, mi-alcohol r1->1 a6->6). Reflection-shaped
+talk with nothing behind it makes the patient feel listened to and moves them nowhere. Nobody
+designed that in; it fell out of the patient prompt. That distinction is precisely what the tool
+would be teaching. Two supporting signals: the good arm topped out at technique 3-4 and never 5,
+so the coder is not rubber-stamping a script written to be exemplary; and Theo (Advanced) yielded
+only +5 to good MI against Marcus's +10, so the scenarios are not reskins of each other.
+
+**What it does not establish.** One run per cell, so no variance estimate. The scripted arms are
+deliberate extremes, and separating clean MI from clean anti-MI is the easy version of the
+problem; real prescribers live in the muddy middle. And C1 proves quotes are verbatim, not that
+the CODING is right: a line labelled a complex reflection could be a simple one and nothing here
+would catch it. The next experiment is therefore a fourth arm that is realistically mediocre
+(some genuine reflection, some righting reflex, the way an actual prescriber sounds). If that
+lands between neutral and good, the tool discriminates where its users actually are. If it lands
+on top of good, the separation above is only detecting caricature.
+
+**Found by the harness on its first run:** the lab's debrief call generated ~1,460 tokens in ~31
+seconds and died on Netlify's 26 second ceiling, so the feedback screen had never worked in
+production. Split into a coding pass and a narrative pass. See MODEL-REGISTRY.md.
+
 **Open, in order:**
-- Run the harness. C1 or C2 failing stops lane D until the prompts are fixed.
+- The realistically-mediocre fourth arm. That is the experiment that decides whether this teaches
+  anyone who is not already at the extremes.
+- Play a full session by hand now that the debrief works. Nobody ever has.
 - Watch cost and latency per session; A/B Haiku on the patient turn (the debrief stays Sonnet).
 - Scenario count before technique count. Three MI scenarios that feel real beat four thin techniques.
 - Persistence (Supabase) only when there is a reason: repeat-attempt comparison, or CE credit.
