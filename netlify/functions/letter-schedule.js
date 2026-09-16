@@ -173,8 +173,14 @@ function clampInt(v, min, max, dflt) {
 function publicView(s, phi) {
   if (!s) return s;
   phi = phi || {};
+  // Once a finished schedule is purged there is no patient record left to show. Say so,
+  // rather than rendering a blank row the provider can't identify (the UI falls back to
+  // patient_label, then patient_email, and would otherwise show nothing at all).
+  const purged = !phi.patient_email && !phi.patient_label;
   return {
-    id: s.id, patient_email: phi.patient_email || null, patient_label: phi.patient_label || null,
+    id: s.id,
+    patient_email: phi.patient_email || null,
+    patient_label: phi.patient_label || (purged ? '(patient details purged)' : null),
     cadence_days: s.cadence_days, next_run_at: s.next_run_at, status: s.status,
     sends_count: s.sends_count, last_run_at: s.last_run_at, last_error: s.last_error,
     created_at: s.created_at
