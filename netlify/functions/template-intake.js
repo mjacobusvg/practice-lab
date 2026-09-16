@@ -1,10 +1,28 @@
 // netlify/functions/template-intake.js
-// Admin-only. Actions: list (queue + manifest gaps), publish (intake -> library), dismiss.
+// Admin-only. Actions: create (sign an upload + open an intake row), list (queue +
+// manifest gaps), publish (intake -> library), dismiss.
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY
 
+const crypto = require('crypto');
 const { verifyToken } = require('./_lib/session');
 
 const ADMIN_EMAILS = ['michael@thinkbeyondpsych.com'];
+
+// Upload constraints for the 'create' action. The bucket is NOT caller-selectable
+// and the object path is generated here, never taken from the client, so there is
+// no path-injection or bucket-hopping surface.
+const UPLOAD_BUCKET = 'templates';
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+const ALLOWED_EXT = ['pdf', 'docx', 'doc', 'rtf', 'zip', 'xlsx', 'xls', 'pptx', 'ppt', 'txt', 'csv'];
+
+// One path segment, alphanumerics plus . _ - only. '/' is stripped, so the result
+// can never traverse, and the generated prefix means it can never begin with '..'.
+function safeObjectPath(filename) {
+  const base = String(filename || '')
+    .replace(/[^a-zA-Z0-9._-]/g, '_')
+    .slice(0, 120) || 'upload';
+  return Date.now() + '_' + crypto.randomBytes(4).toString('hex') + '_' + base;
+}
 
 exports.handler = async function (event) {
   const headers = {
@@ -30,6 +48,63 @@ exports.handler = async function (event) {
   const h = { 'apikey': KEY, 'Authorization': 'Bearer ' + KEY, 'Content-Type': 'application/json' };
 
   try {
+    // Signs a one-shot upload into the private 'templates' bucket and opens the
+    // matching intake row, so template-upload.html never needs the anon key.
+    // Replaces the old browser-side SB.storage.upload() + SB.from('template_intake')
+    // .insert(), which only worked because the bucket and table carried anon
+    // INSERT/SELECT/UPDATE policies — i.e. anyone on the internet could upload
+    // arbitrary files and read the whole template library. Security audit finding H2.
+    if (p.action === 'create') {
+      const filename = String(p.filename || '').trim();
+      const fileSize = Number(p.file_size);
+      if (!filename) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'filename required' }) };
+      if (!Number.isFinite(fileSize) || fileSize <= 0) {
+        return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'file_size required' }) };
+      }
+      if (fileSize > MAX_UPLOAD_BYTES) {
+        return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'File is too large (max 25 MB).' }) };
+      }
+      const ext = filename.indexOf('.') === -1 ? '' : filename.split('.').pop().toLowerCase();
+      if (ALLOWED_EXT.indexOf(ext) === -1) {
+        return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Unsupported file type: .' + ext }) };
+      }
+
+      const storagePath = safeObjectPath(filename);
+
+      // Signed upload URL — the browser PUTs the bytes straight to Storage, so this
+      // is not bounded by Netlify's ~6MB function body limit.
+      const signRes = await fetch(
+        URL + '/storage/v1/object/upload/sign/' + UPLOAD_BUCKET + '/' + encodeURIComponent(storagePath),
+        { method: 'POST', headers: h, body: JSON.stringify({}) });
+      const sd = await signRes.json().catch(function () { return null; });
+      if (!signRes.ok || !sd || !sd.url) {
+        return { statusCode: 502, headers, body: JSON.stringify({ ok: false, error: 'Could not create upload URL.' }) };
+      }
+
+      const ins = await fetch(URL + '/rest/v1/template_intake', {
+        method: 'POST', headers: Object.assign({}, h, { 'Prefer': 'return=representation' }),
+        body: JSON.stringify({
+          original_filename: filename.slice(0, 300),
+          storage_path: storagePath,
+          file_size: fileSize,
+          status: 'uploaded'
+        })
+      });
+      if (!ins.ok) { const t = await ins.text(); throw new Error('Intake insert ' + ins.status + ': ' + t.slice(0, 150)); }
+      const insRows = await ins.json();
+      if (!insRows || !insRows.length) throw new Error('Intake insert returned no row');
+
+      return {
+        statusCode: 200, headers,
+        body: JSON.stringify({
+          ok: true,
+          intake_id: insRows[0].id,
+          storage_path: storagePath,
+          upload_url: URL + '/storage/v1' + sd.url
+        })
+      };
+    }
+
     if (p.action === 'list') {
       const qRes = await fetch(URL + '/rest/v1/template_intake?status=in.(uploaded,analyzed)&select=*&order=created_at.asc', { headers: h });
       const queue = await qRes.json();

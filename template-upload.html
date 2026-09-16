@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Template Intake — Think Beyond Practice</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
@@ -95,7 +94,6 @@
 
 <script>
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-var SB = supabase.createClient('https://ubcrrrapedaxkguxniwv.supabase.co','eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InViY3JycmFwZWRheGtndXhuaXd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNjA2MTUsImV4cCI6MjA5MDkzNjYxNX0.CoS_t8EvCsgXJJA1dz4WXYWGsE8OMKEDeaWfsExQ1H0');
 var ADMIN_EMAILS=['michael@thinkbeyondpsych.com','michael@thinkbeyondpractice.com','michael.vangelder@gmail.com'], adminEmail='';
 // Strip whitespace AND zero-width/invisible characters (autofill and copy-paste love to sneak these
 // in), then lowercase, so an email that LOOKS right can't be rejected on an invisible mismatch.
@@ -150,16 +148,18 @@ async function handleFiles(files){
     up.appendChild(row);
     try{
       if(f.size>25*1024*1024){ row.innerHTML='<span class="dot" style="background:#f87171"></span>'+f.name+' — too large (25MB max)'; continue; }
-      var safe=f.name.replace(/[^a-zA-Z0-9._-]/g,'_'); var path=Date.now()+'_'+i+'_'+safe;
-      var u=await SB.storage.from('templates').upload(path,f,{upsert:false});
-      if(u.error) throw u.error;
+      // Ask the server to sign the upload and open the intake row. The bucket and the
+      // object path are decided server-side; this page no longer writes to Storage or
+      // to template_intake with the anon key (see template-intake.js action 'create').
+      var cr=await fetch('/.netlify/functions/template-intake',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_taTok()},body:JSON.stringify({token:_taTok(),action:'create',filename:f.name,file_size:f.size})});
+      var crd=await cr.json();
+      if(!crd.ok) throw new Error(crd.error||'Could not start the upload');
+      var u=await fetch(crd.upload_url,{method:'PUT',body:f});
+      if(!u.ok) throw new Error('Upload failed ('+u.status+')');
       row.innerHTML='<span class="dot" style="background:var(--copper)"></span>'+f.name+' — reading…';
       var text=await extractText(f);
-      // create intake row
-      var ins=await SB.from('template_intake').insert({original_filename:f.name,storage_path:path,file_size:f.size,status:'uploaded'}).select().single();
-      if(ins.error) throw ins.error;
       row.innerHTML='<span class="dot" style="background:var(--teal)"></span>'+f.name+' — analyzing…';
-      await fetch('/.netlify/functions/template-analyze',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_taTok()},body:JSON.stringify({token:_taTok(),intake_id:ins.data.id,filename:f.name,text:text})});
+      await fetch('/.netlify/functions/template-analyze',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+_taTok()},body:JSON.stringify({token:_taTok(),intake_id:crd.intake_id,filename:f.name,text:text})});
       row.innerHTML='<span class="dot" style="background:var(--green)"></span>'+f.name+' — done';
     }catch(e){ row.innerHTML='<span class="dot" style="background:#f87171"></span>'+f.name+' — '+(e.message||'failed'); }
   }
