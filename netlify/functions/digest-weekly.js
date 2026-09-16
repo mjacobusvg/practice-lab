@@ -21,6 +21,8 @@ function esc(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+const guard = require('./_lib/scheduled-guard');
+
 exports.handler = async function (event) {
   const headers = { 'Content-Type': 'application/json' };
   const URL = process.env.SUPABASE_URL, KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -35,13 +37,18 @@ exports.handler = async function (event) {
     return text ? JSON.parse(text) : null;
   };
 
-  // Authorize: Netlify scheduler (body has next_run) or the manual secret.
-  let scheduled = false;
-  try { const b = JSON.parse(event.body || '{}'); if (b && b.next_run) scheduled = true; } catch (e) {}
-  const secret = (event.headers['x-digest-secret'] || event.headers['X-Digest-Secret'] || '').trim();
-  const secretOk = process.env.DIGEST_SECRET && secret && secret === process.env.DIGEST_SECRET;
-  if (!scheduled && !secretOk) {
+  // Authorize. The old check treated a `next_run` field in the request BODY as proof of
+  // a Netlify scheduled invocation — but the body is caller-supplied, so
+  // `curl -d '{"next_run":"x"}'` passed it and mailed every opted-in member on demand.
+  // Netlify sends no signature, so the scheduled path still cannot be authenticated;
+  // the 12-hour run lock is what makes a forged call a no-op. Audit finding H4.
+  const gate = guard.authorize(event, { secrets: [process.env.DIGEST_SECRET, process.env.BACKFILL_SECRET] });
+  if (!gate.ok) {
     return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Not authorized' }) };
+  }
+  const claim = await guard.claimRun('digest-weekly', 12 * 60 * 60 * 1000, gate.via);
+  if (!claim.claimed) {
+    return { statusCode: 429, headers, body: JSON.stringify({ ok: false, skipped: 'ran too recently', last_run_at: claim.lastRunAt }) };
   }
 
   try {

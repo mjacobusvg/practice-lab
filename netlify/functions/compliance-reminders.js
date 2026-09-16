@@ -15,6 +15,7 @@
 
 var crypto = require('crypto');
 var SESv2 = require('@aws-sdk/client-sesv2');
+var guard = require('./_lib/scheduled-guard');
 
 var FROM_ADDRESS = 'reminders@thinkbeyondpractice.com';
 var FROM_NAME = 'Think Beyond Practice';
@@ -30,6 +31,19 @@ exports.handler = async function(event) {
   if (!supabaseUrl || !supabaseKey || !accessKeyId || !secretAccessKey) {
     console.log('Missing environment variables');
     return { statusCode: 500, body: 'Config missing' };
+  }
+
+  // Gate. This job had no check of any kind, and it is the one scheduled sender that
+  // is NOT idempotent: only the upcoming-deadline reminders carry a dedupe key
+  // (_sentReminders), so the OVERDUE email goes out again on every single run. Repeated
+  // invocation therefore mails every member with an overdue item, over and over.
+  // The 12-hour run lock is what actually stops that; the secret only governs manual
+  // runs. See _lib/scheduled-guard.js for why the scheduled path cannot be authenticated.
+  var auth = guard.authorize(event, { secrets: [process.env.BACKFILL_SECRET] });
+  if (!auth.ok) return { statusCode: 403, body: JSON.stringify({ error: 'Forbidden' }) };
+  var claim = await guard.claimRun('compliance-reminders', 12 * 60 * 60 * 1000, auth.via);
+  if (!claim.claimed) {
+    return { statusCode: 429, body: JSON.stringify({ skipped: 'ran too recently', last_run_at: claim.lastRunAt }) };
   }
 
   var sesClient = new SESv2.SESv2Client({

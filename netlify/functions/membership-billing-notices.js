@@ -263,7 +263,17 @@ async function allSubscriptions(stripe) {
   return out;
 }
 
-exports.handler = async function () {
+const guard = require('./_lib/scheduled-guard');
+
+exports.handler = async function (event) {
+  // Gate: this job had no check of any kind. Runs every 15 minutes, so the lock is
+  // short. Its notices are idempotent via Stripe-subscription metadata, so the lock is
+  // mainly about not letting anyone spin it. See _lib/scheduled-guard.js.
+  const auth = guard.authorize(event, { secrets: [process.env.BACKFILL_SECRET] });
+  if (!auth.ok) return { statusCode: 403, body: JSON.stringify({ error: 'Forbidden' }) };
+  const claim = await guard.claimRun('membership-billing-notices', 10 * 60 * 1000, auth.via);
+  if (!claim.claimed) return { statusCode: 429, body: JSON.stringify({ skipped: 'ran too recently', last_run_at: claim.lastRunAt }) };
+
   if (!process.env.STRIPE_SECRET_KEY) return { statusCode: 500, body: 'Missing STRIPE_SECRET_KEY' };
   const ses = makeSes();
   if (!ses) return { statusCode: 500, body: 'Missing SES credentials' };

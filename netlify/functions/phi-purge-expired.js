@@ -18,6 +18,7 @@
 
 const phiS3 = require('./_lib/phi-s3');
 const lettersPhi = require('./_lib/letters-phi');
+const guard = require('./_lib/scheduled-guard');
 
 const ASSESSMENT_RAW_TTL_DAYS = 30;
 
@@ -66,7 +67,16 @@ async function purgeLetters(URL, table) {
   return purged;
 }
 
-exports.handler = async function () {
+exports.handler = async function (event) {
+  // Gate: this job had no check of any kind, and it DELETES PHI from S3 and nulls
+  // columns. Every rule is bounded to data already past its purpose, so the exposure
+  // was limited — but an unauthenticated destructive endpoint on a PHI store should not
+  // exist, and the letters heal sweep added more for it to do. See _lib/scheduled-guard.js.
+  const auth = guard.authorize(event, { secrets: [process.env.BACKFILL_SECRET] });
+  if (!auth.ok) return { statusCode: 403, body: JSON.stringify({ error: 'Forbidden' }) };
+  const claim = await guard.claimRun('phi-purge-expired', 12 * 60 * 60 * 1000, auth.via);
+  if (!claim.claimed) return { statusCode: 429, body: JSON.stringify({ skipped: 'ran too recently', last_run_at: claim.lastRunAt }) };
+
   const URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
   if (!URL || !process.env.SUPABASE_SERVICE_KEY) {
     return { statusCode: 500, body: JSON.stringify({ error: 'Server not configured' }) };
@@ -170,9 +180,13 @@ exports.handler = async function () {
       result.assessments_abandoned++;
     }
 
+    // Close the run record so "did last night's purge actually run, and did it work?"
+    // is answerable from function_run_log instead of trawling Netlify logs.
+    await guard.finishRun(claim.runId, true, result);
     return { statusCode: 200, body: JSON.stringify({ ok: true, purged: result }) };
   } catch (err) {
     console.error('phi-purge-expired failed:', err);
+    await guard.finishRun(claim.runId, false, result, err && err.message);
     return { statusCode: 500, body: JSON.stringify({ ok: false, error: err.message, purged: result }) };
   }
 };

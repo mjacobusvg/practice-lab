@@ -13,15 +13,22 @@
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, BACKFILL_SECRET, URL (Netlify site URL)
 
+const guard = require('./_lib/scheduled-guard');
+
 exports.handler = async function (event) {
   const headers = { 'Content-Type': 'application/json' };
   const URL = process.env.SUPABASE_URL, KEY = process.env.SUPABASE_SERVICE_KEY, SECRET = process.env.BACKFILL_SECRET;
   if (!URL || !KEY || !SECRET) return { statusCode: 500, headers, body: JSON.stringify({ error: 'Missing env' }) };
 
-  // Authorize: Netlify scheduler (body has next_run) or the manual secret.
-  let scheduled = false;
-  try { const b = JSON.parse(event.body || '{}'); if (b && b.next_run) scheduled = true; if (b && b.secret === SECRET) scheduled = true; } catch (e) {}
-  if (!scheduled) return { statusCode: 403, headers, body: JSON.stringify({ error: 'Forbidden' }) };
+  // Authorize. Same forgeable `next_run` body check as digest-weekly: anyone could
+  // force every queued broadcast to send early, and this function then calls
+  // broadcast-send with the real internal secret server-side, so the attacker never
+  // needed it. The per-broadcast status flip (scheduled -> sending) already prevents
+  // double-sending; the 5-minute lock limits forced early sends. Audit finding H4.
+  const gate = guard.authorize(event, { secrets: [SECRET] });
+  if (!gate.ok) return { statusCode: 403, headers, body: JSON.stringify({ error: 'Forbidden' }) };
+  const claim = await guard.claimRun('send-scheduled-broadcasts', 5 * 60 * 1000, gate.via);
+  if (!claim.claimed) return { statusCode: 429, headers, body: JSON.stringify({ skipped: 'ran too recently', last_run_at: claim.lastRunAt }) };
 
   const auth = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };
   const base = process.env.URL || process.env.DEPLOY_PRIME_URL || 'https://thinkbeyondpractice.com';
