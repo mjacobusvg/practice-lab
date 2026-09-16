@@ -63,13 +63,65 @@ cost formula**, so we were buying five minute caching and pricing one hour cachi
 restored rather than the multiplier lowered, because at a 26 minute gap the hour is genuinely
 cheaper: `2.00x + 0.10x` beats `1.25x + 1.25x`, and the gap widens with every further call.
 
-**The Haiku finding, which is separate and was not part of the case.** The minimum size for a
-cache checkpoint is per model and differs fourfold: **Sonnet 4.6 needs 1,024 tokens, Haiku 4.5
-needs 4,096.** Below the minimum the checkpoint is silently discarded. Our threshold was 4,096
-**characters**, roughly 1,170 tokens: about right for Sonnet, nowhere near Haiku's floor. So
-every Haiku checkpoint we ever sent was thrown away, which is exactly why Haiku bills at ~110%
-of the uncached estimate while Sonnet bills well under it. `cacheableSystem()` now takes the
-model and uses the real per-model minimum.
+**The per-model checkpoint minimum (separate from the case, and narrower than it first
+looked).** The minimum size for a cache checkpoint is per model and differs fourfold:
+**Sonnet 4.6 needs 1,024 tokens, Haiku 4.5 needs 4,096.** Below the minimum the checkpoint is
+silently discarded. Our threshold was 4,096 **characters**, roughly 1,170 tokens, so a Haiku
+prompt between about 4,096 and 14,300 characters was marked cacheable and then thrown away by
+Bedrock. `cacheableSystem()` now takes the model and uses the real per-model minimum.
+
+**This was a latent bug, not an active one, and it does NOT explain Haiku's billing.** Measured
+against the live prompts in `note-engine.js`, nothing was ever in the broken window:
+
+| prompt | model | chars | ~tokens | floor | marked? |
+|---|---|---|---|---|---|
+| ASSESS_SYS | Sonnet | 32,197 | ~9,200 | 1,024 | yes, caches |
+| THERAPY_SYS | Sonnet | 19,598 | ~5,600 | 1,024 | yes, caches |
+| REVIEW_SYS | Sonnet | 9,734 | ~2,780 | 1,024 | yes, caches |
+| MSE_SYS | Sonnet | 3,290 | ~940 | 1,024 | no, below threshold either way |
+| PREFLIGHT_SYS | Haiku | 20,867 | ~5,960 | 4,096 | yes, caches |
+| PLAN_SYS | Haiku | 3,066 | ~880 | 4,096 | no, below threshold either way |
+
+An earlier version of this section claimed every Haiku checkpoint we ever sent was discarded,
+and that this was why Haiku bills at ~110% of the uncached estimate. That was wrong. The fix is
+still worth having, because the window reopens the moment a Haiku prompt grows past 4,096
+characters without reaching 4,096 tokens (PLAN_SYS is one edit away from it), but Haiku's
+billing needs a different explanation. See below.
+
+**The open question: writes with no reads.** The first session after the fix produced seven
+calls, every one of them a cache WRITE and not one a cache READ:
+
+    mode            model    fresh in   wrote   read
+    prep_followup   sonnet       2,534   3,758      0
+    draft           sonnet       4,053   8,453      0
+    audit           sonnet       5,282   2,252      0
+    (preflight)     haiku        4,178   4,779      0
+    ...
+
+That is expected for a single session, because each mode has its own system prompt and each was
+called once, so every one was a first write by construction. It is NOT yet evidence that caching
+pays. A write costs 2x the base input rate and a read costs 0.1x, so a prompt that is written
+and never read is strictly more expensive than not caching it at all.
+
+The structure is right for caching to hit: all six system prompts are module-level constants in
+`note-engine.js` interpolating only `VOICE`, itself a constant, so they are byte-identical on
+every call, for every clinician, and the Bedrock cache is account-scoped. The second Scribe
+session inside the same hour should therefore show reads. **Until a session shows non-zero
+`cache_read_tokens`, treat caching as unproven.** The check:
+
+```sql
+select model, mode, count(*),
+       sum(cache_creation_tokens) as wrote,
+       sum(cache_read_tokens)     as read
+from public.tool_usage
+where usage_source = 'bedrock-metrics'
+group by model, mode order by 1,2;
+```
+
+A plausible reading of Haiku's ~110%, consistent with the above but not yet confirmed:
+PREFLIGHT_SYS is the only cached Haiku prompt and it runs about once per session, so Haiku may
+be paying the 2x write premium and collecting few reads. If reads stay at zero for Haiku across
+sessions, the answer is to stop caching that prompt, not to tune the TTL.
 
 **Verifying it, without model invocation logging.** AWS confirmed the CloudWatch runtime
 metrics under `AWS/Bedrock` dimensioned by `ModelId` are token counts only, with no request or
