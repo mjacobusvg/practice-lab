@@ -20,6 +20,7 @@
 //      SES_AWS_*, PUBLIC_BASE_URL
 
 const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
+const lettersPhi = require('./_lib/letters-phi');
 
 const FROM_NAME = 'Think Beyond Practice';
 const FROM_ADDRESS = 'support@thinkbeyondpractice.com';
@@ -75,7 +76,7 @@ exports.handler = async function (event) {
     // Load the row. Match on our metadata id (authoritative), verify it's still pending.
     const getRes = await fetch(SUPABASE_URL + '/rest/v1/letter_charges?id=eq.' +
       encodeURIComponent(s.metadata.letter_charge_id) +
-      '&select=id,status,patient_email,access_token,line_item,expires_at&limit=1', { headers: sbHeaders });
+      '&select=id,status,patient_email,patient_s3_key,access_token,line_item,expires_at&limit=1', { headers: sbHeaders });
     const rows = getRes.ok ? await getRes.json() : [];
     const row = rows[0];
     if (!row) return { statusCode: 200, headers, body: JSON.stringify({ received: true, no_row: true }) };
@@ -98,7 +99,21 @@ exports.handler = async function (event) {
     // Email the patient a secure, expiring link (no PHI in the email itself).
     const base = (process.env.PUBLIC_BASE_URL || 'https://thinkbeyondpractice.com').replace(/\/$/, '');
     const link = base + '/letter.html?c=' + encodeURIComponent(row.access_token);
-    await sendPatientLink(row.patient_email, link).catch(function () { /* never fail the webhook on email */ });
+    // The address comes from S3 (AWS BAA); a pre-migration row still has it inline.
+    const chargePhi = await lettersPhi.readChargePhi(row);
+    await sendPatientLink(chargePhi.patient_email, link).catch(function () { /* never fail the webhook on email */ });
+
+    // The link is out, so the address has served its only purpose. Drop the inline copy
+    // and the S3 object rather than leaving either sitting there for the retention
+    // window. Best-effort — never fail a paid webhook over cleanup.
+    try {
+      await fetch(SUPABASE_URL + '/rest/v1/letter_charges?id=eq.' + row.id, {
+        method: 'PATCH',
+        headers: Object.assign({}, sbHeaders, { 'Prefer': 'return=minimal' }),
+        body: JSON.stringify({ patient_email: null, patient_s3_key: null })
+      });
+      if (row.patient_s3_key) await require('./_lib/phi-s3').deleteObject(row.patient_s3_key);
+    } catch (e) { /* daily purge backstops it */ }
 
     return { statusCode: 200, headers, body: JSON.stringify({ received: true, released: row.id }) };
   } catch (err) {

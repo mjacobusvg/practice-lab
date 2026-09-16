@@ -20,6 +20,11 @@ const phiS3 = require('./_lib/phi-s3');
 
 const ASSESSMENT_RAW_TTL_DAYS = 30;
 
+// A finished (cancelled / opted-out / ended) letter schedule keeps its patient record
+// for this long before it is cleared, so a provider who cancels by mistake can still
+// see what it was. The old SQL purge used 30 days for patient_email only.
+const SCHEDULE_CLOSED_TTL_DAYS = 30;
+
 function sbHeaders() {
   const KEY = process.env.SUPABASE_SERVICE_KEY;
   return { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };
@@ -58,13 +63,50 @@ exports.handler = async function () {
     return { statusCode: 500, body: JSON.stringify({ error: 'Server not configured' }) };
   }
 
-  const result = { letters_send_log: 0, letter_charges: 0, assessments_completed: 0, assessments_abandoned: 0 };
+  const result = { letters_send_log: 0, letter_charges: 0, schedules_closed: 0, charges_released: 0,
+                   assessments_completed: 0, assessments_abandoned: 0 };
   try {
     // ── Letters: delete at the clinician-chosen window ──
     result.letters_send_log = await purgeLetters(URL, 'letter_send_log');
     result.letter_charges = await purgeLetters(URL, 'letter_charges');
 
     const nowIso = new Date().toISOString();
+
+    // ── Letter schedules that are finished: drop the patient record entirely ──
+    // A cancelled / opted-out / ended schedule will never send again, so its patient
+    // address, label and provider-authored messages have no further purpose. The old
+    // SQL purge only nulled patient_email and only after 30 days, which left labels
+    // sitting there indefinitely. This clears the S3 object AND every inline column,
+    // which is also how the two pre-migration cancelled rows get cleaned up: they will
+    // never be read by the cron, so they can never self-heal. Audit 2026-09-16.
+    const closedCutoff = new Date(Date.now() - SCHEDULE_CLOSED_TTL_DAYS * 86400000).toISOString();
+    const closed = await sbGet(URL + '/rest/v1/letter_schedules' +
+      '?status=in.(cancelled,opted_out,ended)&updated_at=lt.' + encodeURIComponent(closedCutoff) +
+      '&or=(patient_s3_key.not.is.null,patient_email.not.is.null,patient_label.not.is.null,' +
+      'patient_message.not.is.null,first_message.not.is.null)' +
+      '&select=id,patient_s3_key&limit=500');
+    for (const s of closed) {
+      if (s.patient_s3_key) await phiS3.deleteObject(s.patient_s3_key);
+      await sbPatch(URL + '/rest/v1/letter_schedules?id=eq.' + encodeURIComponent(s.id), {
+        patient_s3_key: null, patient_email: null, patient_label: null,
+        patient_message: null, first_message: null, updated_at: nowIso
+      });
+      result.schedules_closed++;
+    }
+
+    // ── Paid letter charges: the pay link has already been emailed ──
+    // letter-charge-webhook.js clears the address inline as soon as it sends, so this
+    // only catches charges paid before that shipped, plus any webhook whose cleanup
+    // failed. The PDF itself is governed separately by expires_at above.
+    const releasedCharges = await sbGet(URL + '/rest/v1/letter_charges' +
+      '?status=eq.paid&or=(patient_s3_key.not.is.null,patient_email.not.is.null)' +
+      '&select=id,patient_s3_key&limit=500');
+    for (const c of releasedCharges) {
+      if (c.patient_s3_key) await phiS3.deleteObject(c.patient_s3_key);
+      await sbPatch(URL + '/rest/v1/letter_charges?id=eq.' + encodeURIComponent(c.id),
+        { patient_s3_key: null, patient_email: null });
+      result.charges_released++;
+    }
 
     // ── Assessments: raw PHI deleted 30 days after completion; de-id metadata kept ──
     const cutoff = new Date(Date.now() - ASSESSMENT_RAW_TTL_DAYS * 86400000).toISOString();

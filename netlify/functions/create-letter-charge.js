@@ -28,6 +28,7 @@ var crypto = require('crypto');
 var { verifyToken } = require('./_lib/session');
 var { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
 var { putLetterPdf } = require('./_lib/letters-s3');
+var lettersPhi = require('./_lib/letters-phi');
 
 var RETENTION_DAYS = 30;               // patient has this long to pay + retrieve the letter
 var MAX_AMOUNT_CENTS = 500000;         // $5,000 sanity cap on an ad-hoc letter charge
@@ -138,7 +139,10 @@ exports.handler = async function (event) {
     var letterType = payload.letter_type ? String(payload.letter_type).slice(0, 120) : null;
     var pdfBase64 = payload.pdf_base64 ? String(payload.pdf_base64) : null;
     if (!pdfBase64) return resp(headers, 400, { error: 'Missing the letter to hold for release.' });
-    var pdfFilename = String(payload.pdf_filename || 'letter.pdf').slice(0, 160);
+    // Filename is derived from the letter TYPE, never taken from the client. It was a
+    // free-text field echoed into Content-Disposition, so a patient name in it was PHI
+    // both at rest here and on the recipient's device. Audit 2026-09-16.
+    var pdfFilename = lettersPhi.safePdfFilename(letterType);
     // Clinician/practice name to show the patient in the pay-request email (no PHI).
     var fromName = payload.from_name ? String(payload.from_name).slice(0, 120) : null;
 
@@ -186,6 +190,17 @@ exports.handler = async function (event) {
       return resp(headers, 502, { error: 'Could not securely store the letter. Please try again.' });
     }
 
+    // ---- Store the patient address in S3 (AWS BAA), not on the row ----
+    // Throws on failure, and we refuse to create the charge rather than fall back to
+    // writing the address into Supabase. Same contract as the PDF store above.
+    var patientS3Key;
+    try {
+      patientS3Key = await lettersPhi.putChargePhi({ patient_email: patientEmail });
+    } catch (e) {
+      console.error('create-letter-charge: patient S3 store failed:', e && e.message);
+      return resp(headers, 502, { error: 'Could not securely store the patient details. Please try again.' });
+    }
+
     // ---- Store the held letter as a PENDING charge row ----
     var accessToken = crypto.randomBytes(24).toString('base64url');
     var expiresAt = new Date(Date.now() + RETENTION_DAYS * 24 * 60 * 60 * 1000).toISOString();
@@ -195,7 +210,7 @@ exports.handler = async function (event) {
       body: JSON.stringify({
         clinician_email: clinicianEmail,
         stripe_connected_account: connectedAccount,
-        patient_email: patientEmail,
+        patient_s3_key: patientS3Key,
         amount_cents: amountCents,
         currency: 'usd',
         line_item: lineItem,

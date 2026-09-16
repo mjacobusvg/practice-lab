@@ -10,8 +10,9 @@
 //   4. Advance next_run_at by cadence_days, bump sends_count. On error, record last_error (don't advance).
 //
 // Auth: shared secret in AUTOSEND_SECRET (must match the pg_cron job header), same pattern as the
-// Assessment Suite autosend. Patient PHI handling: only patient_email + a provider-chosen label are
-// stored; patient name/DOB/ProviderOne/plan are NEVER stored (hand-filled on the form).
+// Assessment Suite autosend. Patient PHI handling: patient_email, the provider-chosen label and the
+// provider-authored intro messages live in S3 under the AWS BAA (_lib/letters-phi.js), never in the
+// Supabase row; patient name/DOB/ProviderOne/plan are NEVER stored at all (hand-filled on the form).
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, AUTOSEND_SECRET,
 //      SES_AWS_ACCESS_KEY_ID, SES_AWS_SECRET_ACCESS_KEY, SES_AWS_REGION,
@@ -19,6 +20,7 @@
 
 const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
 const { buildLetterPdf } = require('./_lib/build-letter-pdf');
+const lettersPhi = require('./_lib/letters-phi');
 
 const FROM_NAME = 'Think Beyond Practice';
 const FROM_ADDRESS = 'support@thinkbeyondpractice.com';
@@ -51,6 +53,13 @@ exports.handler = async function (event) {
         'Accept': 'application/json'
       }, opts.headers || {}),
       body: opts.body
+    });
+  }
+
+  // Patch one row by id — handed to _lib/letters-phi for the self-heal write-back.
+  function sbPatchRow(table, id, patch) {
+    return sb(table + '?id=eq.' + encodeURIComponent(id), {
+      method: 'PATCH', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify(patch)
     });
   }
 
@@ -118,12 +127,20 @@ exports.handler = async function (event) {
         const returnEmail = sch.return_email || 'jesse@corspokane.com';
         const optOutUrl = BASE_URL + '/.netlify/functions/letter-schedule-optout?token=' +
           encodeURIComponent(sch.opt_out_token);
+        // Patient PHI (address + provider-authored intros) comes from S3 under the AWS
+        // BAA, not from the row. A pre-migration row still has them inline; reading it
+        // heals the row afterwards, so an active schedule migrates itself on its next
+        // run. Heal happens AFTER the send so a heal problem can never block a letter.
+        const phi = await lettersPhi.readSchedulePhi(sch);
+        const patientEmail = (phi.patient_email || '').trim();
+        if (!patientEmail) throw new Error('no patient email for schedule ' + sch.id);
+
         // Provider-authored intro shown at the top of the email; falls back to standard wording when blank.
         // The very first send (sends_count 0/null) uses first_message when set; every later send uses
         // the recurring patient_message.
         const isFirstSend = !(sch.sends_count > 0);
-        const firstMsg = (sch.first_message || '').toString().trim();
-        const recurringMsg = (sch.patient_message || '').toString().trim();
+        const firstMsg = (phi.first_message || '').toString().trim();
+        const recurringMsg = (phi.patient_message || '').toString().trim();
         const customMsg = (isFirstSend && firstMsg) ? firstMsg : recurringMsg;
         const ses = sesClient();
 
@@ -154,12 +171,12 @@ exports.handler = async function (event) {
           const subject = 'Action needed: sign your Private-Pay Acknowledgment';
           const textBody = buildSignLinkNote(signUrl, optOutUrl, customMsg);
           const rawMime = buildRawMime({
-            fromName: FROM_NAME, fromAddress: FROM_ADDRESS, to: sch.patient_email,
+            fromName: FROM_NAME, fromAddress: FROM_ADDRESS, to: patientEmail,
             replyTo: returnEmail, subject: subject, textBody: textBody
           });
           await ses.send(new SendEmailCommand({
             FromEmailAddress: FROM_NAME + ' <' + FROM_ADDRESS + '>',
-            Destination: { ToAddresses: [sch.patient_email] },
+            Destination: { ToAddresses: [patientEmail] },
             ReplyToAddresses: [returnEmail],
             Content: { Raw: { Data: Buffer.from(rawMime, 'utf8') } }
           }));
@@ -178,14 +195,14 @@ exports.handler = async function (event) {
           const subject = 'Action needed: Private-Pay Acknowledgment to review and sign';
           const textBody = buildCoverNote(returnEmail, optOutUrl, customMsg);
           const rawMime = buildRawMime({
-            fromName: FROM_NAME, fromAddress: FROM_ADDRESS, to: sch.patient_email,
+            fromName: FROM_NAME, fromAddress: FROM_ADDRESS, to: patientEmail,
             replyTo: returnEmail, subject: subject, textBody: textBody,
             attachmentBase64: pdfB64, attachmentFilename: 'Private-Pay-Acknowledgment.pdf',
             attachmentContentType: 'application/pdf'
           });
           await ses.send(new SendEmailCommand({
             FromEmailAddress: FROM_NAME + ' <' + FROM_ADDRESS + '>',
-            Destination: { ToAddresses: [sch.patient_email] },
+            Destination: { ToAddresses: [patientEmail] },
             ReplyToAddresses: [returnEmail],
             Content: { Raw: { Data: Buffer.from(rawMime, 'utf8') } }
           }));
@@ -204,6 +221,11 @@ exports.handler = async function (event) {
             updated_at: nowIso
           })
         });
+        // The letter is away. Now migrate a pre-migration row's inline PHI into S3 and
+        // null the columns. Deliberately last and best-effort: a heal failure leaves the
+        // row on the legacy path to retry next run, and can never cost a send.
+        if (!sch.patient_s3_key) await lettersPhi.healSchedule(sbPatchRow, sch);
+
         results.sent++;
         results.details.push({ id: sch.id, action: 'sent', next_run_at: next.toISOString() });
       } catch (errOne) {

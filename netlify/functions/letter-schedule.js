@@ -12,6 +12,7 @@
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, SESSION_SIGNING_SECRET (via _lib/session)
 
 const { verifyToken } = require('./_lib/session');
+const lettersPhi = require('./_lib/letters-phi');
 const crypto = require('crypto');
 
 exports.handler = async function (event) {
@@ -54,6 +55,14 @@ exports.handler = async function (event) {
     });
   }
 
+  // Patch one row by id. Handed to _lib/letters-phi so the self-heal path can write
+  // back without that module needing its own Supabase client.
+  function sbPatchRow(table, id, patch) {
+    return sb(table + '?id=eq.' + encodeURIComponent(id), {
+      method: 'PATCH', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify(patch)
+    });
+  }
+
   const action = body.action;
   try {
     if (action === 'create') {
@@ -75,13 +84,25 @@ exports.handler = async function (event) {
       next.setDate(next.getDate() + firstIn);
       const optOutToken = crypto.randomBytes(24).toString('hex');
 
+      // Patient PHI goes to S3 (AWS BAA), never into the row. Throws on failure so we
+      // refuse to create the schedule rather than fall back to storing it in Supabase.
+      let patientS3Key;
+      try {
+        patientS3Key = await lettersPhi.putSchedulePhi({
+          patient_email: String(body.patient_email).trim(),
+          patient_label: (body.patient_label || '').toString().slice(0, 120) || null,
+          patient_message: (body.patient_message || '').toString().slice(0, 2000).trim() || null,
+          first_message: (body.first_message || '').toString().slice(0, 2000).trim() || null
+        });
+      } catch (e) {
+        console.error('letter-schedule create: patient S3 store failed:', e && e.message);
+        return { statusCode: 500, headers, body: JSON.stringify({ error: 'Could not securely store the patient details. Nothing was scheduled.' }) };
+      }
+
       const row = {
         provider_email: providerEmail,
         standard_id: body.standard_id,
-        patient_email: String(body.patient_email).trim(),
-        patient_label: (body.patient_label || '').toString().slice(0, 120) || null,
-        patient_message: (body.patient_message || '').toString().slice(0, 2000).trim() || null,
-        first_message: (body.first_message || '').toString().slice(0, 2000).trim() || null,
+        patient_s3_key: patientS3Key,
         toggles: body.toggles && typeof body.toggles === 'object' ? body.toggles : {},
         sign: body.sign !== false,
         cadence_days: cadence,
@@ -96,14 +117,27 @@ exports.handler = async function (event) {
       });
       if (!ins.ok) { const t = await ins.text(); return { statusCode: 500, headers, body: JSON.stringify({ error: 'Insert failed', detail: t }) }; }
       const created = (await ins.json())[0];
-      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, schedule: publicView(created) }) };
+      // The PHI is already in hand here — no need to read it back out of S3.
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, schedule: publicView(created, {
+        patient_email: String(body.patient_email).trim(),
+        patient_label: (body.patient_label || '').toString().slice(0, 120) || null
+      }) }) };
     }
 
     if (action === 'list') {
       const res = await sb('letter_schedules?provider_email=eq.' + encodeURIComponent(providerEmail) +
         '&order=created_at.desc&limit=200&select=*');
       const arr = await res.json();
-      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, schedules: (arr || []).map(publicView) }) };
+      // Patient fields come from S3. A pre-migration row still has them inline; reading
+      // it heals the row (moves it to S3, nulls the columns), so opening the Letter
+      // Generator once migrates that provider's own backlog. Heal is best-effort and
+      // never blocks the response.
+      const schedules = await Promise.all((arr || []).map(async function (s) {
+        const phi = await lettersPhi.readSchedulePhi(s);
+        if (!s.patient_s3_key) await lettersPhi.healSchedule(sbPatchRow, s);
+        return publicView(s, phi);
+      }));
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, schedules: schedules }) };
     }
 
     if (action === 'cancel') {
@@ -116,7 +150,8 @@ exports.handler = async function (event) {
       });
       const arr = await res.json();
       if (!arr || !arr.length) return { statusCode: 404, headers, body: JSON.stringify({ error: 'Schedule not found' }) };
-      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, schedule: publicView(arr[0]) }) };
+      const cancelledPhi = await lettersPhi.readSchedulePhi(arr[0]);
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, schedule: publicView(arr[0], cancelledPhi) }) };
     }
 
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'Unknown action' }) };
@@ -132,10 +167,14 @@ function clampInt(v, min, max, dflt) {
 }
 
 // Never leak opt_out_token to the provider UI; expose only what the list needs.
-function publicView(s) {
+// Patient fields no longer live on the row — they come from S3 and are passed in as
+// `phi` (see _lib/letters-phi.js). Defaults to {} so a purged row renders blank
+// rather than throwing.
+function publicView(s, phi) {
   if (!s) return s;
+  phi = phi || {};
   return {
-    id: s.id, patient_email: s.patient_email, patient_label: s.patient_label,
+    id: s.id, patient_email: phi.patient_email || null, patient_label: phi.patient_label || null,
     cadence_days: s.cadence_days, next_run_at: s.next_run_at, status: s.status,
     sends_count: s.sends_count, last_run_at: s.last_run_at, last_error: s.last_error,
     created_at: s.created_at

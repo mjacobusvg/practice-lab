@@ -1,4 +1,5 @@
 var { verifyToken } = require('./_lib/session');
+var lettersPhi = require('./_lib/letters-phi');
 var { putLetterPdf, deleteLetterPdf } = require('./_lib/letters-s3');
 // netlify/functions/letter-log.js
 // Sent-log for the Letter Generator. Stores a delivery record and, optionally, the
@@ -142,7 +143,8 @@ exports.handler = async function(event) {
       subject: String(payload.subject || '').slice(0, 200),
       status: String(payload.status || 'sent').slice(0, 24),
       pdf_s3_key: pdfS3Key,
-      pdf_filename: pdfS3Key ? String(payload.pdfFilename || 'letter.pdf').slice(0, 160) : null,
+      // Derived from the letter type, never the client-supplied name (audit 2026-09-16).
+      pdf_filename: pdfS3Key ? lettersPhi.safePdfFilename(payload.letterType) : null,
       expires_at: expiresAt,
       created_at: new Date().toISOString()
     };
