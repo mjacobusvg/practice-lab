@@ -6,9 +6,18 @@ the live code AND the live database — not memory, not the design intent. Writt
 member's compliance review (Elijah, 2026-09) surfaced it. Pairs with `BAA-AND-PHI-ROUTING.md`
 (which describes the *intended* routing); THIS file records the *actual* at-rest reality.
 
-**Verified:** 2026-09-09, against project `ubcrrrapedaxkguxniwv` ("Ask the Archive" = the live
-platform DB) and the code on `main`. Re-verify (counts + code paths) before making any written
-PHI-retention representation to a member or in policy.
+**Verified:** 2026-09-09, then **re-verified 2026-09-16** (security audit) against project
+`ubcrrrapedaxkguxniwv` ("Ask the Archive" = the live platform DB) and the code on `main`.
+Re-verify (counts + code paths) before making any written PHI-retention representation to a
+member or in policy.
+
+**Since 2026-09-16 this file is no longer the only thing looking.** `phi-drift-check.js` (Netlify
+scheduled fn, daily 08:30 UTC) counts every PHI-capable column listed here and emails if any goes
+non-zero. It exists because the 2026-09-09 table below was verified, published as "zero inline PHI
+at rest", and was **wrong within a week** — `letter_schedules` had been carrying `patient_email`,
+`patient_label`, `patient_message` and `first_message` the entire time, because that table was
+never in the inventory it was checked against. A hand-verified inventory is only as good as its
+list of what to look at, and nothing was re-checking the list.
 
 ---
 
@@ -32,8 +41,58 @@ PHI-retention representation to a member or in policy.
 - **Certified mail** — `certified_mail_jobs` (columns `letter_text`, `to_name`, `to_address`) is a
   not-enabled stub, 0 rows. Its write path (`create-certified-checkout`) is now blocked
   **unconditionally** until `letter_text` moves to S3 AND a mail-vendor BAA is executed.
+- **Letter SCHEDULES and CHARGES — the 2026-09-09 gap (found 2026-09-16, code fixed, data pending).**
+  The 09-09 migration moved the letter *PDF* to S3 and stopped. It did not move the patient fields
+  on the recurring-schedule and pay-link rows: `letter_schedules.patient_email`, `.patient_label`,
+  `.patient_message`, `.first_message` and `letter_charges.patient_email`. Those are a patient's
+  address, the clinician's label for them, and provider-authored messages about them — sitting in
+  Supabase, off the AWS BAA. The write and read paths now go through `_lib/letters-phi.js` to S3
+  (`letter-schedule.js`, `letter-autosend-cron.js`, `create-letter-charge.js`,
+  `letter-charge-webhook.js`), and `phi-purge-expired.js` gained a daily heal sweep for rows no read
+  path will reach. **The existing rows are not migrated yet** — see the counts below.
+- **Signed BAAs — bucket was PUBLIC until 2026-09-16.** Not patient PHI, but 49 executed agreements
+  (signer legal name, entity, title, email, signing IP) sat in a public Supabase Storage bucket at a
+  path derived from the signer's email address. Bucket is now private; retrieval goes through
+  `baa-document.js` against a verified session or an expiring single-document token.
 
-## Verified live counts (updated 2026-09-09, after migration + cleanup)
+## Verified live counts (re-verified 2026-09-16)
+
+Counted by direct query against the live DB. **This is not clean.** The table after it is the
+2026-09-09 claim, kept because being able to see what a verified inventory asserted — and where it
+was wrong — is the reason `phi-drift-check.js` now exists.
+
+| Column checked | Live PHI (2026-09-16) | Note |
+|---|---|---|
+| `letter_schedules.patient_email` | **3** of 3 rows | not in the 09-09 inventory; code fixed, rows pending the heal sweep |
+| `letter_schedules.patient_label` | **3** of 3 rows | same |
+| `letter_schedules.patient_message` | **1** of 3 rows | same |
+| `letter_schedules.first_message` | **1** of 3 rows | same |
+| `letter_schedules.patient_s3_key` | **0** of 3 rows | nothing migrated yet — the sweep has not run |
+| `letter_charges.patient_email` | **1** of 1 row | same gap; webhook clears it on send, this row predates that |
+| `letter_schedules.last_error` | 0 of 3 rows | watched: an SES failure string can echo a patient address |
+| `letter_charges.pdf_base64` | 0 | holds as of 09-09 |
+| `letter_send_log.pdf_base64` | 0 | holds |
+| `assessments.patient_name` | 0 | holds |
+| `assessment_results.responses` / `scores` / `flags` | 0 | holds |
+| `assessment_schedules.patient_email` / `.patient_label` | 0 (0 rows) | holds |
+| `certified_mail_jobs.letter_text` / `to_name` / `to_address` | 0 (0 rows) | stub, write path blocked |
+| `letter_send_log.recipient_masked` not masked | 0 of 11 non-null | all `@domain.tld` or `••••1234`; watched because the masking happens client-side |
+| `pdf_filename` not derived from letter type | **4** (3 send_log, 1 charges) | pre-migration, browser-supplied; a filename is a place a patient name hides |
+| `tool_usage` | token/metadata only | holds |
+
+Between them these rows cover all 20 automated checks — the 17 `COUNT_CHECKS` and 3 `SHAPE_CHECKS`
+in `phi-drift-check.js` — with some rows grouping sibling columns (the three assessment-result
+columns, the two assessment-schedule columns, the three certified-mail columns, and `pdf_filename`
+across two tables). `patient_s3_key` and `tool_usage` are here for context and are not checks.
+Keep the two in step: a column added to one and not the other is how the 09-09 inventory went stale
+in the first place.
+
+The four `letter_schedules` / `letter_charges` rows are what the daily heal sweep in
+`phi-purge-expired.js` (08:00 UTC) exists to clear. `pdf_filename` is NOT cleared by the purge —
+new writes use `safePdfFilename()` (letter type only), but the four existing values persist and
+will keep being flagged until someone decides what to do with them.
+
+### Superseded: the 2026-09-09 claim (wrong — kept as the record)
 
 Verified by direct query after moving letters/assessments to S3 and deleting the legacy
 test rows — **zero inline PHI at rest in Supabase across every PHI-capable column:**
@@ -52,6 +111,12 @@ PHI now lives only in **S3 under the AWS BAA** (letter PDFs, assessment name/res
 schedule email) or is transient (scribe/audit/transcription/OCR). Nothing patient-identifying
 rests in Supabase. Re-run these counts before any future compliance representation.
 
+> **The last two sentences above were false when written.** The table never listed
+> `letter_schedules` or `letter_charges` patient fields, so "every PHI-capable column" meant every
+> column someone thought to check. Patient addresses and provider-authored messages about patients
+> were resting in Supabase the whole time. Do not quote the 09-09 table; use the 09-16 one, and
+> confirm against the latest `phi-drift-check` run in `function_run_log` before any representation.
+
 ## Feature-by-feature retention (verified)
 
 | Feature | Path | At rest? | Retention |
@@ -63,14 +128,25 @@ rests in Supabase. Re-run these counts before any future compliance representati
 | Scanned-record OCR | AWS Textract (synchronous) | No | none |
 | **Letter generator** | delivered via SES; PDF in **AWS S3** (`tbp-letters`, AWS BAA) | **PDF in S3, not Supabase**; DB keeps only `pdf_s3_key` + subject/masked-recipient metadata | PDF: clinician-chosen, default 14d / max 90d (app-gated by `expires_at`; S3 90d lifecycle backstop); served by `letter-view.js` from S3, legacy inline fallback |
 | **Assessments** | PHI in **AWS S3** (`assessments/` prefix, AWS BAA); AI scoring via Bedrock | **name/responses/scores + schedule email in S3, not Supabase**; DB keeps keys + de-id metadata | raw PHI auto-deleted 30 days after completion (`phi-purge-expired.js`) or on clinician delete; de-id metadata retained in Supabase for trends |
+| **Letter schedules** (recurring sends) | patient fields in **AWS S3** via `_lib/letters-phi.js`; row keeps `patient_s3_key` | **address, label and provider-authored messages in S3** for new rows; pre-2026-09-16 rows still inline until the heal sweep | cleared 30 days after a schedule is cancelled / opted-out / ended (`SCHEDULE_CLOSED_TTL_DAYS`) |
+| **Letter charges** (pay links) | patient address in **AWS S3**; row keeps `patient_s3_key` | same | cleared by `letter-charge-webhook.js` on send, backstopped by the daily purge |
 | Notifications / email delivery | Amazon SES (AWS BAA) | in transit only | n/a |
 
-## The gap vs. what we tell members — RESOLVED for letters
+## The gap vs. what we tell members — letters RESOLVED in code, data pending
 
 "Supabase is not in the PHI path" is now true for the scribe/tools, for letters (PDFs in S3 as of
 2026-09-09), and for assessments (transient, purged). The letter PDF divergence that this file was
 created to flag has been fixed: letter content lives in S3 under the AWS BAA, the DB holds only a
-key. **Remaining:**
+key.
+
+**It is NOT yet true without qualification.** As of 2026-09-16 there are live rows holding a
+patient's email address, the clinician's label for them, and provider-authored messages about them
+(counts above). The code no longer writes them, and the daily sweep will clear them, but until
+`phi-drift-check` reports clean, the honest statement to a member is "letter content and assessment
+PHI are in S3 under the AWS BAA; a small number of legacy schedule rows are being migrated," not
+"nothing patient-identifying rests in Supabase."
+
+**Remaining:**
 - **Legacy letter rows** created before 2026-09-09 may still hold inline `pdf_base64` in Supabase
   until they hit their `expires_at`/purge (letter-view serves them via a fallback). Small count;
   let them expire, or migrate/purge if a fully-clean Supabase is needed immediately.
@@ -98,7 +174,38 @@ key. **Remaining:**
   unconditionally (stub; move `letter_text` to S3 + execute a mail-vendor BAA before enabling).
   **Verify end-to-end** (send → patient submit → clinician retrieve) before treating as closed.
 
+- **2026-09-16 (security audit):** a full production audit re-checked this file against the DB and
+  found the 09-09 inventory incomplete. Changes, all on `main`:
+  - **Letter schedule / charge patient fields moved to S3** (`_lib/letters-phi.js`, used by
+    `letter-schedule.js`, `letter-autosend-cron.js`, `create-letter-charge.js`,
+    `letter-charge-webhook.js`, `letter-log.js`). Read paths self-heal a legacy row on access;
+    `phi-purge-expired.js` gained a **daily heal sweep** for rows no read path reaches (an active
+    schedule on a long cadence may not run for weeks), plus a 30-day purge of finished schedules
+    and an address purge for paid charges. **Data migration still pending its first 08:00 UTC run.**
+  - **`phi-drift-check.js` added** (daily 08:30 UTC): counts 17 columns that must be NULL plus 3
+    shape checks (recipient masking, PDF filenames), and emails when the failing set changes,
+    clears, or stays broken a week. Counts only — an alert never carries a PHI value. This file is
+    its specification; **add a column here and add it there too.**
+  - **`baa-documents` Storage bucket flipped to private**; retrieval via `baa-document.js` with a
+    verified session or an expiring single-document token. New objects store at a random path
+    rather than one derived from the signer's email.
+  - Also closed, outside this file's scope: public-readable RLS on `accounts` / `user_tool_data` /
+    `providers` / `email_log` (exploitable as `anon` for ~4 months), an ungated `anthropic-proxy`,
+    unauthenticated template uploads, a client error sink that accepted note text, gates on the
+    scheduled jobs, the `AUTOSEND_SECRET` rotation into Supabase Vault, and a fail-OPEN BAA check
+    that let a database blip open the PHI gate for everyone.
+  - **Correction to the audit's own record:** scheduled Netlify functions turned out NOT to be
+    HTTP-reachable (403, empty body, before the handler runs), so the forged-`next_run` finding was
+    theoretical on this deployment, not live. See `_lib/scheduled-guard.js`.
+
 ## Also holds member/business data (PII, not PHI — no BAA needed)
 
 `accounts`, `contacts`, `subscriptions`, `baa_signatures`, consent records — clinician/customer
 info, not patient PHI. Correctly in Supabase.
+
+Not PHI does not mean not confidential. The **`baa-documents` Storage bucket** holding 49 executed
+agreements was PUBLIC until 2026-09-16, at paths derived from the signer's email address, so any
+one of them could be fetched by anyone who could guess a path. Bucket is private as of 2026-09-16;
+`baa-document.js` is the only route in, and new objects store at a random path. Apply the same
+question to any bucket added later: `avatars`, `post-files` and `post-images` remain public by
+design — nothing confidential should be written to them.
