@@ -119,7 +119,7 @@ exports.handler = async (event) => {
   try {
     const sb = supa();
     let q = sb.from('baa_signatures')
-      .select('id, baa_version, signed_at, entity_name, pdf_storage_path')
+      .select('id, member_name, baa_version, signed_at, entity_name, pdf_storage_path')
       .order('signed_at', { ascending: false });
 
     // Scope is the token's email. An admin asking for one specific id is the only way
@@ -138,6 +138,7 @@ exports.handler = async (event) => {
     for (const row of (data || [])) {
       documents.push({
         id: row.id,
+        member_name: row.member_name,
         baa_version: row.baa_version,
         signed_at: row.signed_at,
         entity_name: row.entity_name,

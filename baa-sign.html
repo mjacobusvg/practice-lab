@@ -67,6 +67,16 @@
         .confirmation .download-btn { display: inline-block; padding: 14px 32px; background: var(--navy); color: var(--cream); border: none; border-radius: 6px; font-family: 'DM Sans', sans-serif; font-size: 0.95rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: background-color 0.2s; margin-top: 16px; }
         .confirmation .download-btn:hover { background: #151e35; }
         .confirmation .vault-note { font-size: 0.85rem; color: var(--text-muted); margin-top: 16px; }
+        .confirmation .doc-history { margin-top: 28px; border-top: 1px solid var(--border); padding-top: 20px; text-align: left; }
+        .prior-agreements { background: var(--white); border: 1px solid var(--border); border-radius: 8px; padding: 20px 24px; margin-bottom: 24px; }
+        .doc-history h3, .prior-agreements h3 { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+        .prior-agreements p { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 10px; }
+        .doc-row { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 9px 0; font-size: 0.9rem; border-bottom: 1px solid var(--border); }
+        .doc-row:last-child { border-bottom: none; }
+        .doc-row .doc-label { color: var(--text-dark); }
+        .doc-row .doc-link { color: var(--teal); font-weight: 600; text-decoration: none; white-space: nowrap; }
+        .doc-row .doc-link:hover { text-decoration: underline; }
+        .doc-row .doc-link.off { color: var(--text-muted); font-weight: 500; pointer-events: none; }
         .footer { text-align: center; padding: 32px 20px; color: var(--text-muted); font-size: 0.8rem; }
         @media (max-width: 640px) {
             .container { padding: 0 16px; margin: 24px auto; }
@@ -88,6 +98,12 @@
 
             <div class="version-note" style="margin-bottom:16px">
                 BAA Version <span id="baaVersionDisplay">3.1</span> &mdash; August 2026 | Effective upon electronic signature. Updated versions will be made available to all signatories.
+            </div>
+
+            <div class="prior-agreements" id="priorAgreements" style="display:none">
+                <h3>Your signed agreements</h3>
+                <p>You signed an earlier version of this agreement. Sign the current version below to stay up to date; your earlier copies stay available here.</p>
+                <div id="priorList"></div>
             </div>
 
             <!-- The agreement is displayed from the canonical PDF so what is shown on screen is
@@ -143,8 +159,8 @@
 
         <div class="confirmation" id="confirmationView">
             <div class="check-icon"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg></div>
-            <h2>BAA Signed Successfully</h2>
-            <p>Your Business Associate Agreement has been executed.</p>
+            <h2 id="confirmHeading">BAA Signed Successfully</h2>
+            <p id="confirmLede">Your Business Associate Agreement has been executed.</p>
             <div class="signed-details">
                 <div class="detail-row"><span class="detail-label">Signed by</span><span class="detail-value" id="confirmName"></span></div>
                 <div class="detail-row"><span class="detail-label">Entity</span><span class="detail-value" id="confirmEntity"></span></div>
@@ -152,8 +168,12 @@
                 <div class="detail-row"><span class="detail-label">BAA Version</span><span class="detail-value" id="confirmVersion"></span></div>
             </div>
             <p>A copy has been emailed to you and saved to your account.</p>
-            <a href="#" class="download-btn" id="downloadBtn" target="_blank">Download Signed BAA (PDF)</a>
-            <p class="vault-note">A copy of this signed BAA is also available in your Credentialing Hub Vault.</p>
+            <a href="#" class="download-btn" id="downloadBtn" target="_blank" rel="noopener">Download Signed BAA (PDF)</a>
+            <p class="vault-note">You can return to this page any time you are signed in to download your copy again.</p>
+            <div class="doc-history" id="docHistory" style="display:none">
+                <h3>Earlier agreements</h3>
+                <div id="docList"></div>
+            </div>
         </div>
     </div>
 
@@ -176,6 +196,11 @@
         // signed). The attestation checkbox below is the review gate: checking it is the legal
         // act of confirming the signer has read the agreement.
         const baaOpenLink = document.getElementById('baaOpenLink');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const docHistory = document.getElementById('docHistory');
+        const docList = document.getElementById('docList');
+        const priorAgreements = document.getElementById('priorAgreements');
+        const priorList = document.getElementById('priorList');
 
         // Pre-fill email from URL param (from gate redirect)
         const urlParams = new URLSearchParams(window.location.search);
@@ -253,7 +278,11 @@
                 document.getElementById('confirmEntity').textContent = entityName.value.trim();
                 document.getElementById('confirmDate').textContent = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' });
                 document.getElementById('confirmVersion').textContent = BAA_VERSION;
-                if (data.pdfUrl) document.getElementById('downloadBtn').href = data.pdfUrl;
+                if (data.pdfUrl) downloadBtn.href = data.pdfUrl;
+                // Swap the emailed 30-day token for a URL minted just now, and surface any
+                // earlier versions this member signed.
+                refreshAgreements(true);
+                startAgreementRefresh();
 
                 // Redirect back to tool if came from gate
                 const redirect = urlParams.get('redirect');
@@ -269,6 +298,120 @@
                 submitBtn.textContent = 'Sign Agreement';
             }
         });
+
+        // ── Your signed agreements ───────────────────────────────────────────────
+        // Until now the download button existed only in the few seconds after signing, and
+        // the link in the confirmation email expires after 30 days (audit 2026-09-16, H3).
+        // A member who signed months ago had no way to get their own copy without emailing
+        // Michael. This asks baa-document.js for the agreements belonging to the SESSION's
+        // own identity — the server never takes an email from this page — and keeps the
+        // links fresh while the page sits open.
+        const SIGNED_URL_REFRESH_MS = 4 * 60 * 1000; // the server signs each URL for 5 minutes
+
+        function sessionToken() {
+            try { return localStorage.getItem('tbp_auth_token') || ''; } catch (e) { return ''; }
+        }
+
+        function formatSignedAt(iso) {
+            const d = new Date(iso);
+            if (isNaN(d.getTime())) return 'date unknown';
+            return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+        }
+
+        async function fetchAgreements() {
+            const t = sessionToken();
+            if (!t) return [];
+            try {
+                const res = await fetch('/.netlify/functions/baa-document', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + t },
+                    body: JSON.stringify({ token: t })
+                });
+                if (!res.ok) return [];
+                const data = await res.json();
+                return (data && data.documents) || [];
+            } catch (e) {
+                return []; // a lookup problem must never block someone from signing
+            }
+        }
+
+        // textContent throughout, never innerHTML: entity names are member-supplied text.
+        function renderRows(target, docs) {
+            target.textContent = '';
+            docs.forEach(function (doc) {
+                const row = document.createElement('div');
+                row.className = 'doc-row';
+                const label = document.createElement('span');
+                label.className = 'doc-label';
+                label.textContent = 'Version ' + (doc.baa_version || '\u2014') + ' \u00b7 signed ' + formatSignedAt(doc.signed_at);
+                const link = document.createElement('a');
+                if (doc.url) {
+                    link.className = 'doc-link';
+                    link.href = doc.url;
+                    link.target = '_blank';
+                    link.rel = 'noopener';
+                    link.textContent = 'Download PDF';
+                } else {
+                    link.className = 'doc-link off';
+                    link.href = '#';
+                    link.textContent = 'Unavailable';
+                }
+                row.appendChild(label);
+                row.appendChild(link);
+                target.appendChild(row);
+            });
+        }
+
+        // linksOnly: refresh the URLs without rewriting the headings, so the four-minute
+        // timer does not restate "already signed" at someone who just signed.
+        function applyAgreements(docs, linksOnly) {
+            let current = null;
+            const earlier = [];
+            docs.forEach(function (d) {
+                if (!current && String(d.baa_version) === BAA_VERSION) current = d;
+                else earlier.push(d);
+            });
+
+            if (current) {
+                if (!linksOnly) {
+                    document.getElementById('confirmHeading').textContent = 'Your BAA Is On File';
+                    document.getElementById('confirmLede').textContent = 'You have already signed the current Business Associate Agreement. Nothing further is needed.';
+                    document.getElementById('confirmName').textContent = current.member_name || '';
+                    document.getElementById('confirmEntity').textContent = current.entity_name || '';
+                    document.getElementById('confirmDate').textContent = formatSignedAt(current.signed_at);
+                    document.getElementById('confirmVersion').textContent = current.baa_version || BAA_VERSION;
+                    signingView.style.display = 'none';
+                    confirmationView.classList.add('visible');
+                }
+                if (current.url) downloadBtn.href = current.url;
+                if (earlier.length) {
+                    renderRows(docList, earlier);
+                    docHistory.style.display = 'block';
+                }
+                return;
+            }
+
+            // Only older versions on file: they still have to sign the current one, but
+            // their existing copies should not be stranded behind the form.
+            if (docs.length) {
+                renderRows(priorList, docs);
+                priorAgreements.style.display = 'block';
+            }
+        }
+
+        async function refreshAgreements(linksOnly) {
+            const docs = await fetchAgreements();
+            if (docs.length) applyAgreements(docs, linksOnly);
+            return docs.length;
+        }
+
+        let agreementTimer = null;
+        function startAgreementRefresh() {
+            if (agreementTimer) return;
+            agreementTimer = setInterval(function () { refreshAgreements(true); }, SIGNED_URL_REFRESH_MS);
+        }
+
+        refreshAgreements(false).then(function (n) { if (n) startAgreementRefresh(); });
 
         updateSubmitState();
     </script>
