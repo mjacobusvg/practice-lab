@@ -6,7 +6,9 @@ const { createClient } = require('@supabase/supabase-js');
 const SESv2 = require('@aws-sdk/client-sesv2');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 const https = require('https');
+const crypto = require('crypto');
 const { verifyToken } = require('./_lib/session');
+const { mintLinkToken } = require('./_lib/baa-link');
 
 function escHtml(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
@@ -174,7 +176,11 @@ exports.handler = async (event) => {
         const pdfBuffer = Buffer.from(pdfBytes);
 
         // ---- Store in Supabase ----
-        const fileName = `baa_${signerEmail.replace(/[^a-zA-Z0-9]/g, '_')}_v${baaVersion}_${Date.now()}.pdf`;
+        // The path used to be `baa_<email with non-alphanumerics -> _>_v<ver>_<Date.now()>.pdf`,
+        // which made it derivable from the member's address — the whole exposure in a
+        // public bucket. It is now random, and the bucket is private besides; the row in
+        // baa_signatures is what maps a member to their document. Audit 2026-09-16 (H3).
+        const fileName = `baa_${crypto.randomBytes(24).toString('hex')}.pdf`;
         const storagePath = `baa-signed/${fileName}`;
 
         const { error: storageError } = await supabase.storage
@@ -182,9 +188,6 @@ exports.handler = async (event) => {
             .upload(storagePath, pdfBuffer, { contentType: 'application/pdf', upsert: false });
 
         if (storageError) console.error('Storage error:', storageError);
-
-        const { data: urlData } = supabase.storage.from('baa-documents').getPublicUrl(storagePath);
-        const pdfUrl = urlData?.publicUrl || null;
 
         // ---- Write to DB ----
         const { data: record, error: dbError } = await supabase
@@ -205,6 +208,16 @@ exports.handler = async (event) => {
             console.error('Database error:', dbError);
             return { statusCode: 500, body: JSON.stringify({ error: 'Failed to record signature.' }) };
         }
+
+        // Download link: an expiring, single-document token, redeemed by baa-document.js
+        // for a 5-minute Supabase signed URL. Replaces the permanent public-bucket URL
+        // this used to hand out. Keyed to the signature id, so it can only be minted
+        // once the row exists.
+        let pdfUrl = null;
+        try {
+            pdfUrl = 'https://thinkbeyondpractice.com/.netlify/functions/baa-document?t=' +
+                encodeURIComponent(mintLinkToken(record.id));
+        } catch (e) { console.error('BAA link token error:', e); }
 
         // ---- Email member ----
         try {
@@ -254,7 +267,8 @@ function generateMemberEmail({ signerName, entityName, baaVersion, signedAt, pdf
                 <p style="margin: 4px 0;"><strong>Date:</strong> ${formattedDate}</p>
                 <p style="margin: 4px 0;"><strong>BAA Version:</strong> ${baaVersion}</p>
             </div>
-            ${pdfUrl ? `<p><a href="${pdfUrl}" style="display: inline-block; padding: 12px 24px; background: #0b1120; color: #e8e2d6; text-decoration: none; border-radius: 6px; font-weight: 600;">Download Signed BAA</a></p>` : ''}
+            ${pdfUrl ? `<p><a href="${pdfUrl}" style="display: inline-block; padding: 12px 24px; background: #0b1120; color: #e8e2d6; text-decoration: none; border-radius: 6px; font-weight: 600;">Download Signed BAA</a></p>
+            <p style="font-size: 13px; color: #6b7280;">This download link is good for 30 days and only opens this one agreement. After that, email michael@thinkbeyondpractice.com for a fresh copy.</p>` : ''}
             <p>You are now cleared to use all clinical tools on the platform. If you have any questions, message me directly on the forum or email michael@thinkbeyondpractice.com.</p>
             <p>Michael</p>
         </div>
