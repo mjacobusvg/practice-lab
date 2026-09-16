@@ -404,6 +404,26 @@
     );
   }
 
+  // A check that did not complete is NOT the same as "you have no BAA". Sending an
+  // already-signed member down the signing path ends at the server's 409 and strands
+  // them, so say what actually happened and offer the only useful action: try again.
+  // Access stays blocked either way — this is a message change, not a gate change.
+  function showCheckUnavailable(what, retry) {
+    var o = phiOverlay(
+      '<div style="font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--tbp-teal,#2aabb8);margin-bottom:10px">Think Beyond Practice</div>' +
+      '<h1 style="font-size:19px;color:var(--tbp-white,#f5f4f2);margin:0 0 10px">Could not verify your ' + what + '</h1>' +
+      '<p style="font-size:14px;color:var(--tbp-cream-dim,#b0aa9e);line-height:1.6;margin:0 0 18px">This is on our side, not yours, and it is usually brief. Your agreement is still on file. This tool stays closed until the check succeeds, because it can process protected health information.</p>' +
+      '<button id="tbp-recheck-btn" style="width:100%;padding:13px;background:var(--tbp-teal,#2aabb8);color:var(--tbp-navy,#0b1120);border:none;border-radius:6px;font-size:14px;font-weight:700;cursor:pointer">Try again</button>' +
+      '<p style="font-size:12px;color:var(--tbp-cream-dim,#b0aa9e);margin:18px 0 0">Still stuck? michael@thinkbeyondpractice.com</p>'
+    );
+    var btn = o.querySelector('#tbp-recheck-btn');
+    btn.addEventListener('click', function() {
+      btn.disabled = true; btn.textContent = 'Checking...';
+      removePhiOverlay();
+      retry();
+    });
+  }
+
   function showTermsRequired(email, termsVersion, proceed) {
     var o = phiOverlay(
       '<div style="font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--tbp-teal,#2aabb8);margin-bottom:10px">Think Beyond Practice</div>' +
@@ -434,6 +454,15 @@
     });
   }
 
+  // Status AND body. The old `r.ok ? r.json() : {...}` threw away the status, which is
+  // the only thing that separates "could not check" from "no record".
+  function readGateResponse(r) {
+    return r.json().then(
+      function(d){ return { status: r.status, body: d || {} }; },
+      function(){ return { status: r.status, body: {} }; }
+    );
+  }
+
   function runPHIGate(toolName, termsVersion, baaVersion, proceed) {
     var email = getVerifiedEmail();
     // Fail closed: if we cannot identify the member, require the BAA path.
@@ -448,8 +477,17 @@
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
       body: JSON.stringify({ token: authToken })
     })
-    .then(function(r){ return r.ok ? r.json() : { hasBaa: false }; })
-    .then(function(baa){
+    .then(readGateResponse)
+    .then(function(res){
+      var baa = res.body;
+      // The server answers 503 / check_unavailable when it could not reach the record.
+      // That is not "unsigned" — see showCheckUnavailable.
+      if (res.status === 503 || (baa && baa.error === 'check_unavailable')) {
+        showCheckUnavailable('Business Associate Agreement', function() {
+          runPHIGate(toolName, termsVersion, baaVersion, proceed);
+        });
+        return;
+      }
       var signedCurrent = baa && baa.hasBaa === true &&
         String(baa.baaVersion || '') === String(baaVersion);
       if (!signedCurrent) { showBaaRequired(email); return; }
@@ -459,13 +497,27 @@
         headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + authToken },
         body: JSON.stringify({ action: 'check', token: authToken, terms_version: termsVersion })
       })
-      .then(function(r){ return r.ok ? r.json() : { accepted: false }; })
-      .then(function(terms){
-        if (terms && terms.accepted === true) { proceed(); }
+      .then(readGateResponse)
+      .then(function(tres){
+        // Same distinction here: record-terms-acceptance answers 500 on a lookup failure,
+        // and the acceptance screen would then fail at its own save with a message that
+        // reads like the member did something wrong.
+        if (tres.status >= 500) {
+          showCheckUnavailable('Terms of Use acceptance', function() {
+            runPHIGate(toolName, termsVersion, baaVersion, proceed);
+          });
+          return;
+        }
+        if (tres.body && tres.body.accepted === true) { proceed(); }
         else { showTermsRequired(email, termsVersion, proceed); }
       });
     })
-    .catch(function(){ showBaaRequired(email); });
+    // Network-level failure: nothing was verified, so nothing opens.
+    .catch(function(){
+      showCheckUnavailable('Business Associate Agreement', function() {
+        runPHIGate(toolName, termsVersion, baaVersion, proceed);
+      });
+    });
   }
 
 })();
