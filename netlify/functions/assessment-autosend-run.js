@@ -15,6 +15,7 @@
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, SITE_URL, AUTOSEND_SECRET
 
 const { createClient } = require('@supabase/supabase-js');
+const guard = require('./_lib/scheduled-guard');
 const crypto = require('crypto');
 const phiGate = require('./_lib/assessments-phi-gate');
 const phiS3 = require('./_lib/phi-s3');
@@ -51,15 +52,18 @@ exports.handler = async (event) => {
   const SITE_URL = (process.env.SITE_URL || 'https://thinkbeyondpractice.com').replace(/\/$/, '');
   const AUTOSEND_SECRET = process.env.AUTOSEND_SECRET;
 
-  if (!SERVICE_KEY || !AUTOSEND_SECRET) {
+  if (!SERVICE_KEY || !(AUTOSEND_SECRET || process.env.AUTOSEND_SECRET_PREVIOUS)) {
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Server not configured' }) };
   }
 
-  // Authenticate the caller (cron). Reject anything without the shared secret.
-  const provided = event.headers['x-autosend-secret'] || event.headers['X-Autosend-Secret'];
-  if (provided !== AUTOSEND_SECRET) {
+  // Authenticate the caller (cron). Constant-time, and accepts AUTOSEND_SECRET_PREVIOUS
+  // during a rotation window so the env var and the pg_cron job that sends it can be
+  // changed one at a time without a gap where every run 403s. See _lib/scheduled-guard.
+  const cronAuth = guard.checkCronSecret(event);
+  if (!cronAuth.ok) {
     return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'Forbidden' }) };
   }
+  if (cronAuth.rotating) console.warn('[assessment-autosend-run] accepted PREVIOUS cron secret — finish the rotation and delete AUTOSEND_SECRET_PREVIOUS');
 
   const sb = createClient(SUPABASE_URL, SERVICE_KEY);
   const now = new Date();

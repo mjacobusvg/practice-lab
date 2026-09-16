@@ -158,3 +158,34 @@ async function finishRun(runId, ok, summary, errorMessage) {
 }
 
 module.exports = { authorize: authorize, claimRun: claimRun, finishRun: finishRun };
+
+/**
+ * Constant-time check of the cron shared secret, accepting the CURRENT value or a
+ * PREVIOUS one during a rotation window.
+ *
+ * Rotating a secret that lives in two places (a Netlify env var and the pg_cron job
+ * that sends it) cannot be atomic: whichever side moves first, the other is briefly
+ * wrong and every run in the gap fails. Accepting both values removes the gap, so the
+ * rotation is: set AUTOSEND_SECRET to the new value and AUTOSEND_SECRET_PREVIOUS to the
+ * old one, update the cron side, then delete AUTOSEND_SECRET_PREVIOUS.
+ *
+ * Also replaces a plain !== comparison, which leaked timing.
+ */
+function checkCronSecret(event, envNames) {
+  var provided = headerOf(event, 'x-autosend-secret');
+  if (!provided) return { ok: false, reason: 'missing' };
+  var names = envNames || ['AUTOSEND_SECRET', 'AUTOSEND_SECRET_PREVIOUS'];
+  var anyConfigured = false;
+  for (var i = 0; i < names.length; i++) {
+    var expected = process.env[names[i]];
+    if (!expected) continue;
+    anyConfigured = true;
+    if (timingSafeEqual(provided, expected)) {
+      return { ok: true, matched: names[i], rotating: i > 0 };
+    }
+  }
+  if (!anyConfigured) return { ok: false, reason: 'not_configured' };
+  return { ok: false, reason: 'mismatch' };
+}
+
+module.exports.checkCronSecret = checkCronSecret;

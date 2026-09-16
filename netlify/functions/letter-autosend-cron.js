@@ -21,6 +21,7 @@
 const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
 const { buildLetterPdf } = require('./_lib/build-letter-pdf');
 const lettersPhi = require('./_lib/letters-phi');
+const guard = require('./_lib/scheduled-guard');
 
 const FROM_NAME = 'Think Beyond Practice';
 const FROM_ADDRESS = 'support@thinkbeyondpractice.com';
@@ -28,12 +29,15 @@ const FROM_ADDRESS = 'support@thinkbeyondpractice.com';
 exports.handler = async function (event) {
   const headers = { 'Content-Type': 'application/json' };
 
-  // Auth: only the cron (or an admin with the secret) may trigger sends.
-  const provided = (event.headers['x-autosend-secret'] || event.headers['X-Autosend-Secret'] || '').trim();
-  const secret = process.env.AUTOSEND_SECRET;
-  if (!secret || provided !== secret) {
+  // Auth: only the cron (or an admin with the secret) may trigger sends. Constant-time,
+  // and accepts AUTOSEND_SECRET_PREVIOUS during a rotation window so the env var and the
+  // pg_cron job that sends it can be changed one at a time without a gap where every run
+  // 401s. See _lib/scheduled-guard.
+  const cronAuth = guard.checkCronSecret(event);
+  if (!cronAuth.ok) {
     return { statusCode: 401, headers, body: JSON.stringify({ error: 'Unauthorized' }) };
   }
+  if (cronAuth.rotating) console.warn('[letter-autosend-cron] accepted PREVIOUS cron secret — finish the rotation and delete AUTOSEND_SECRET_PREVIOUS');
 
   const SUPABASE_URL = process.env.SUPABASE_URL;
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
