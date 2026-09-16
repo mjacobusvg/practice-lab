@@ -290,7 +290,27 @@ const bedrock = new BedrockRuntimeClient({ region: REGION });
 
 // Invoke Claude on Bedrock and reassemble the streamed events into one text answer
 // plus usage counts (Bedrock returns the same Anthropic event objects).
+// Bedrock returns transient failures under several names, and losing one costs the clinician a
+// whole assessment they must re-request. ONE retry after a short pause: enough for a blip, not
+// enough to double-bill a genuine failure or leave the request hanging.
+const BEDROCK_TRANSIENT = /^(ThrottlingException|ServiceUnavailableException|InternalServerException|ModelTimeoutException|ModelNotReadyException|TooManyRequestsException)$/;
+function bedrockTransient(err) {
+  if (!err) return false;
+  if (BEDROCK_TRANSIENT.test(String(err.name || ''))) return true;
+  const code = err.$metadata && err.$metadata.httpStatusCode;
+  return code === 429 || code === 500 || code === 502 || code === 503 || code === 504;
+}
 async function callBedrock(modelId, payloadObj) {
+  try {
+    return await callBedrockOnce(modelId, payloadObj);
+  } catch (err) {
+    if (!bedrockTransient(err)) throw err;
+    console.log('bedrock transient, retrying once:', err && err.name);
+    await new Promise(function (r) { setTimeout(r, 900); });
+    return await callBedrockOnce(modelId, payloadObj);
+  }
+}
+async function callBedrockOnce(modelId, payloadObj) {
   const resp = await bedrock.send(new InvokeModelWithResponseStreamCommand({
     modelId: modelId,
     contentType: 'application/json',
@@ -431,6 +451,15 @@ export const handler = async (event) => {
     });
     return json(200, { content: [{ type: 'text', text: result.text }] });
   } catch (err) {
-    return json(502, { error: 'Bedrock invoke failed: ' + String(err && err.message || err).slice(0, 400) });
+    // A bare "Bedrock is unable to process your request" is undiagnosable: it names no exception
+    // class, no HTTP status and no request id, so neither the clinician nor AWS support can act
+    // on it. Surface what the SDK actually knows. None of this is PHI.
+    const meta = (err && err.$metadata) || {};
+    const bits = [String((err && err.message) || err).slice(0, 300)];
+    if (err && err.name) bits.push('[' + err.name + ']');
+    if (meta.httpStatusCode) bits.push('HTTP ' + meta.httpStatusCode);
+    if (meta.requestId) bits.push('reqId ' + meta.requestId);
+    console.log('bedrock invoke failed:', err && err.name, meta.httpStatusCode, meta.requestId, String((err && err.message) || err).slice(0, 300));
+    return json(502, { error: 'Bedrock invoke failed: ' + bits.join(' ') });
   }
 };
