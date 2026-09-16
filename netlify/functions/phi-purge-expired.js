@@ -60,8 +60,14 @@ async function purgeLetters(URL, table) {
     '&pdf_purged_at=is.null&select=id,pdf_s3_key&limit=500');
   for (const row of rows) {
     if (row.pdf_s3_key) await phiS3.deleteObject(row.pdf_s3_key);
+    // pdf_filename goes too. The purge used to clear the bytes and the key and leave the
+    // NAME behind, and a name is a place PHI hides: rows written before
+    // _lib/letters-phi.js safePdfFilename() took over stored whatever the browser sent, and
+    // two of the legacy ones carried what reads as a patient surname. Once the PDF is gone
+    // the filename describes nothing, and letter-view answers 410 for a purged row before
+    // it ever reads this field. Audit 2026-09-16.
     await sbPatch(URL + '/rest/v1/' + table + '?id=eq.' + encodeURIComponent(row.id),
-      { pdf_s3_key: null, pdf_base64: null, pdf_purged_at: nowIso });
+      { pdf_s3_key: null, pdf_base64: null, pdf_filename: null, pdf_purged_at: nowIso });
     purged++;
   }
   return purged;
