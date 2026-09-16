@@ -25,6 +25,14 @@
 // something clears, and otherwise at most once every 7 days while it stays broken. State
 // rides in function_run_log.summary from the previous run — no new table.
 //
+// CANNOT BE RUN BY HAND. Netlify refuses HTTP invocation of a function carrying a
+// `schedule` in netlify.toml (403, empty body, before the handler runs — verified
+// 2026-09-16, see _lib/scheduled-guard.js). Its first run is its next scheduled one, and
+// the only way to force one early is to temporarily remove the schedule entry. The count
+// syntax it depends on was verified against the live PostgREST instead: a valid filter
+// answers 200 with `content-range: */N`, a malformed one answers 400 with no header, which
+// countRows() turns into a reported error rather than a silent zero.
+//
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, SES_AWS_ACCESS_KEY_ID, SES_AWS_SECRET_ACCESS_KEY,
 //      SES_AWS_REGION, optional SES_FROM / NOTIFY_TO.
 

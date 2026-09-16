@@ -14,6 +14,28 @@
 // Three other jobs (compliance-reminders, membership-billing-notices,
 // phi-purge-expired) had no check at all.
 //
+// CORRECTION, VERIFIED 2026-09-16. When this was written I flagged that I had NOT
+// established whether these endpoints are reachable over HTTP at all. They are not.
+// Netlify refuses HTTP invocation of any function carrying a `schedule` in netlify.toml,
+// with a 403 and an EMPTY body — the platform's, returned before the handler runs. Probed
+// from outside against production:
+//
+//   phi-drift-check       scheduled      403, 0-byte body
+//   phi-purge-expired     scheduled      403, 0-byte body
+//   compliance-reminders  scheduled      403, 0-byte body
+//   check-baa-status      not scheduled  401, the handler's own JSON
+//   letter-autosend-cron  not scheduled  401, the handler's own JSON
+//
+// So the forgeable-`next_run` exposure was theoretical on this deployment, not live, and
+// my original severity claim on H4/H5 was too high. What is NOT theoretical: the moment a
+// job is taken off the schedule list and driven some other way — which is exactly what
+// letter-autosend-cron is, a pg_cron-driven job that IS reachable — the platform's refusal
+// disappears and only this gate is left. That is the case these checks are written for.
+//
+// One practical consequence: the secret path below cannot be exercised over HTTP for a
+// SCHEDULED job, so such a job cannot be run manually and cannot be smoke-tested that way.
+// Its first real run is its next scheduled one.
+//
 // WHAT THIS CAN AND CANNOT DO
 // Netlify's scheduler sends no signature or shared secret — only that body. So there
 // is NO way to cryptographically distinguish a genuine scheduled invocation from a
