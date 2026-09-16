@@ -25,7 +25,7 @@ exports.handler = async function (event) {
   // broadcast-send with the real internal secret server-side, so the attacker never
   // needed it. The per-broadcast status flip (scheduled -> sending) already prevents
   // double-sending; the 5-minute lock limits forced early sends. Audit finding H4.
-  const gate = guard.authorize(event, { secrets: [SECRET] });
+  const gate = guard.authorize(event, { name: 'send-scheduled-broadcasts', secrets: [SECRET] });
   if (!gate.ok) return { statusCode: 403, headers, body: JSON.stringify({ error: 'Forbidden' }) };
   const claim = await guard.claimRun('send-scheduled-broadcasts', 5 * 60 * 1000, gate.via);
   if (!claim.claimed) return { statusCode: 429, headers, body: JSON.stringify({ skipped: 'ran too recently', last_run_at: claim.lastRunAt }) };

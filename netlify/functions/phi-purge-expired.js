@@ -72,7 +72,7 @@ exports.handler = async function (event) {
   // columns. Every rule is bounded to data already past its purpose, so the exposure
   // was limited — but an unauthenticated destructive endpoint on a PHI store should not
   // exist, and the letters heal sweep added more for it to do. See _lib/scheduled-guard.js.
-  const auth = guard.authorize(event, { secrets: [process.env.BACKFILL_SECRET] });
+  const auth = guard.authorize(event, { name: 'phi-purge-expired', secrets: [process.env.BACKFILL_SECRET] });
   if (!auth.ok) return { statusCode: 403, body: JSON.stringify({ error: 'Forbidden' }) };
   const claim = await guard.claimRun('phi-purge-expired', 12 * 60 * 60 * 1000, auth.via);
   if (!claim.claimed) return { statusCode: 429, body: JSON.stringify({ skipped: 'ran too recently', last_run_at: claim.lastRunAt }) };

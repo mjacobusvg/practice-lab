@@ -39,7 +39,7 @@ exports.handler = async function(event) {
   // invocation therefore mails every member with an overdue item, over and over.
   // The 12-hour run lock is what actually stops that; the secret only governs manual
   // runs. See _lib/scheduled-guard.js for why the scheduled path cannot be authenticated.
-  var auth = guard.authorize(event, { secrets: [process.env.BACKFILL_SECRET] });
+  var auth = guard.authorize(event, { name: 'compliance-reminders', secrets: [process.env.BACKFILL_SECRET] });
   if (!auth.ok) return { statusCode: 403, body: JSON.stringify({ error: 'Forbidden' }) };
   var claim = await guard.claimRun('compliance-reminders', 12 * 60 * 60 * 1000, auth.via);
   if (!claim.claimed) {

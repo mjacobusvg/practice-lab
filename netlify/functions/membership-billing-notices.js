@@ -269,7 +269,7 @@ exports.handler = async function (event) {
   // Gate: this job had no check of any kind. Runs every 15 minutes, so the lock is
   // short. Its notices are idempotent via Stripe-subscription metadata, so the lock is
   // mainly about not letting anyone spin it. See _lib/scheduled-guard.js.
-  const auth = guard.authorize(event, { secrets: [process.env.BACKFILL_SECRET] });
+  const auth = guard.authorize(event, { name: 'membership-billing-notices', secrets: [process.env.BACKFILL_SECRET] });
   if (!auth.ok) return { statusCode: 403, body: JSON.stringify({ error: 'Forbidden' }) };
   const claim = await guard.claimRun('membership-billing-notices', 10 * 60 * 1000, auth.via);
   if (!claim.claimed) return { statusCode: 429, body: JSON.stringify({ skipped: 'ran too recently', last_run_at: claim.lastRunAt }) };

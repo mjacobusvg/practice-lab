@@ -42,7 +42,7 @@ exports.handler = async function (event) {
   // `curl -d '{"next_run":"x"}'` passed it and mailed every opted-in member on demand.
   // Netlify sends no signature, so the scheduled path still cannot be authenticated;
   // the 12-hour run lock is what makes a forged call a no-op. Audit finding H4.
-  const gate = guard.authorize(event, { secrets: [process.env.DIGEST_SECRET, process.env.BACKFILL_SECRET] });
+  const gate = guard.authorize(event, { name: 'digest-weekly', secrets: [process.env.DIGEST_SECRET, process.env.BACKFILL_SECRET] });
   if (!gate.ok) {
     return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Not authorized' }) };
   }

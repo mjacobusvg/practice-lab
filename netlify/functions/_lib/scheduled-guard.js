@@ -53,6 +53,21 @@ function headerOf(event, name) {
   return (h[name] || h[name.toLowerCase()] || h[name.toUpperCase()] || '').toString().trim();
 }
 
+// Every refusal goes through here, so no branch can fail silently. These gates are new
+// on jobs that previously ran ungated, and the scheduled path depends on Netlify putting
+// `next_run` in event.body for a legacy exports.handler function. Two production jobs
+// already rely on that, but if it ever stopped being true a silent 403 would just look
+// like the nightly purge quietly not running. Logs the body's SHAPE (keys only, never
+// values — a body can carry a secret).
+function refuse(name, body, provided) {
+  try {
+    console.error('[scheduled-guard] refused ' + (name || 'job') +
+      ' — body keys: ' + JSON.stringify(Object.keys(body || {})) +
+      ', had_secret: ' + (provided ? 'yes(wrong)' : 'no'));
+  } catch (e) { /* logging must never throw */ }
+  return { ok: false, via: null, authenticated: false };
+}
+
 /**
  * Decide whether this invocation may proceed, and say how it got in.
  * @returns {{ok:boolean, via:'secret'|'schedule'|null, authenticated:boolean}}
@@ -75,13 +90,13 @@ function authorize(event, opts) {
       if (timingSafeEqual(provided, secrets[i])) return { ok: true, via: 'secret', authenticated: true };
     }
     // A wrong secret is a refusal, never a fall-through to the weaker path.
-    return { ok: false, via: null, authenticated: false };
+    return refuse(opts.name, body, provided);
   }
 
   // Scheduled path: Netlify's body hint. Unauthenticated on purpose — see the header.
   if (body && body.next_run) return { ok: true, via: 'schedule', authenticated: false };
 
-  return { ok: false, via: null, authenticated: false };
+  return refuse(opts.name, body, provided);
 }
 
 function sbHeaders() {
