@@ -167,7 +167,7 @@
                 <div class="detail-row"><span class="detail-label">Date</span><span class="detail-value" id="confirmDate"></span></div>
                 <div class="detail-row"><span class="detail-label">BAA Version</span><span class="detail-value" id="confirmVersion"></span></div>
             </div>
-            <p>A copy has been emailed to you and saved to your account.</p>
+            <p id="confirmNote">A copy has been emailed to you and saved to your account.</p>
             <a href="#" class="download-btn" id="downloadBtn" target="_blank" rel="noopener">Download Signed BAA (PDF)</a>
             <p class="vault-note">You can return to this page any time you are signed in to download your copy again.</p>
             <div class="doc-history" id="docHistory" style="display:none">
@@ -270,6 +270,19 @@
                     })
                 });
                 const data = await response.json();
+
+                // 409 means the server found a BAA already signed with this identity at THIS
+                // version. It is the one error response that is really a confirmation, and
+                // showing it as a red failure strands the member: they arrived here because
+                // the gate could not verify their BAA, and the 409 is the server telling us
+                // it exists. Recover into the on-file view instead. (The gate now
+                // distinguishes "could not check" from "not signed", so this path is the
+                // narrow leftover: a tab still running the older gate during an outage.)
+                if (response.status === 409) {
+                    showAlreadyOnFile();
+                    return;
+                }
+
                 if (!response.ok) throw new Error(data.error || 'Failed to process BAA signature.');
 
                 signingView.style.display = 'none';
@@ -397,6 +410,39 @@
                 renderRows(priorList, docs);
                 priorAgreements.style.display = 'block';
             }
+        }
+
+        // Shown when the server says this member already signed the current version. The
+        // form values are a placeholder; refreshAgreements then overwrites them with the
+        // real record and a live download link if the lookup succeeds. If it does not —
+        // the same outage that sent them here — the placeholder still tells them the truth.
+        function showAlreadyOnFile() {
+            // What this member most needs to know is that the form they just submitted did
+            // NOT sign them up a second time. refreshAgreements would overwrite that with
+            // the generic returning-member wording, so re-apply it once the lookup settles.
+            function say() {
+                document.getElementById('confirmHeading').textContent = 'Your BAA Is On File';
+                document.getElementById('confirmLede').textContent = 'You have already signed version ' + BAA_VERSION + ' of the Business Associate Agreement. Nothing further is needed, and you have not been asked to sign twice.';
+                document.getElementById('confirmNote').textContent = 'Your signed copy was emailed to you when you first signed.';
+            }
+            say();
+            document.getElementById('confirmName').textContent = signerName.value.trim();
+            document.getElementById('confirmEntity').textContent = entityName.value.trim();
+            document.getElementById('confirmDate').textContent = 'on file';
+            document.getElementById('confirmVersion').textContent = BAA_VERSION;
+            signingView.style.display = 'none';
+            confirmationView.classList.add('visible');
+
+            // Best effort: the real signing date and a fresh download link. The form values
+            // above stand in if the lookup fails, which is the outage that sent them here.
+            refreshAgreements(false).then(say, say);
+            startAgreementRefresh();
+
+            // Send them back to the tool they came from. The gate re-checks there; if it
+            // still cannot reach the record it shows its own retry rather than bouncing
+            // them back to this page, so this cannot loop.
+            const back = urlParams.get('redirect');
+            if (back) setTimeout(() => { window.location.href = back; }, 3000);
         }
 
         async function refreshAgreements(linksOnly) {
