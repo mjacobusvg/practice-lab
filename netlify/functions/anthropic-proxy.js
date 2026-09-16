@@ -11,6 +11,14 @@ const https = require('https');
 const { verifyToken } = require('./_lib/session');
 const { logUsage, toolFromReferer, detectPracticeLabMode } = require('./_lib/usage');
 
+// Models this proxy may call, and the output ceiling it will honour. Locks out a
+// caller-chosen expensive model and an unbounded completion. The two ids are the
+// ones this proxy's callers already use per MODEL-REGISTRY.md; the ceiling sits
+// well above the largest max_tokens any caller asks for (3000).
+const ALLOWED_MODELS = ['claude-haiku-4-5-20251001', 'claude-sonnet-4-6'];
+const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
+const MAX_TOKENS_CEILING = 8000;
+
 exports.handler = async function(event, context) {
   if (event.httpMethod === 'OPTIONS') {
     return {
@@ -47,19 +55,24 @@ exports.handler = async function(event, context) {
     const systemPrompt = body.system || '';
     const messages = body.messages || [];
 
-    // Identity for attribution only — this endpoint is NOT gated (Practice Lab
-    // is open to members without a hard token requirement). If the caller sent a
-    // valid signed token, capture email + tier; otherwise the row is anonymous.
+    // AUTH. This endpoint used to be ungated — with CORS '*', a caller-chosen model
+    // and no max_tokens ceiling, it was a free Anthropic API for the whole internet
+    // on our key. It now requires a valid signed session token, the same credential
+    // every other gated function takes. Audit finding C3.
+    //
+    // Deliberately a token check and NOT a tier check: every caller (Practice Lab
+    // billing + clinical sim, Interaction Checker, archive diagnostics) already sits
+    // behind auth-gate.js, so requiring authentication changes nothing for real users.
+    // Tightening to scope 'member' or tier 'full' would be an access-policy change,
+    // which belongs to the page's own gate, not to the proxy.
     const authHeader = event.headers.authorization || event.headers.Authorization || '';
     const sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
-    let email = null, tier = null;
-    if (sessionToken) {
-      const session = verifyToken(sessionToken);
-      if (session.valid) {
-        email = session.claims.email || null;
-        tier = session.claims.tier || null;
-      }
+    const session = verifyToken(sessionToken);
+    if (!session.valid) {
+      return { statusCode: 401, headers, body: JSON.stringify({ error: 'Invalid or expired session.' }) };
     }
+    const email = session.claims.email || null;
+    const tier = session.claims.tier || null;
 
     // Tool label: explicit body.tool wins, then the calling page (Referer),
     // then default to Practice Lab (this proxy's primary caller).
@@ -67,15 +80,22 @@ exports.handler = async function(event, context) {
     const tool = body.tool || toolFromReferer(referer) || 'Practice Lab';
     const mode = body.mode || detectPracticeLabMode(systemPrompt) || null;
 
+    // Model, ceiling and tools are all fixed server-side. Previously the caller chose
+    // the model with no allowlist, set max_tokens with no ceiling, and could pass
+    // arbitrary tools — so a single request could be pointed at the most expensive
+    // model and asked for a 200k-token completion. Same shape as clinical-proxy.js:93.
+    //
+    // Model ids are the two this proxy's callers already use (MODEL-REGISTRY.md).
+    // An unrecognised model silently falls back to the default rather than erroring,
+    // so archive-diagnostics.html's stale id keeps working.
     const requestPayload = {
-      model: body.model || 'claude-haiku-4-5-20251001',
-      max_tokens: body.max_tokens || 1000,
+      model: (ALLOWED_MODELS.indexOf(body.model) !== -1 ? body.model : DEFAULT_MODEL),
+      max_tokens: Math.min(Math.max(parseInt(body.max_tokens, 10) || 1000, 1), MAX_TOKENS_CEILING),
       system: systemPrompt,
       messages: messages
     };
-    if (body.tools && Array.isArray(body.tools)) {
-      requestPayload.tools = body.tools;
-    }
+    // Caller-supplied tools are dropped. No caller of this proxy uses tool calling,
+    // and accepting them is a way to smuggle expensive work through a cheap endpoint.
     const requestBody = JSON.stringify(requestPayload);
 
     const result = await new Promise((resolve, reject) => {
@@ -127,6 +147,9 @@ exports.handler = async function(event, context) {
     return { statusCode: 200, headers, body: JSON.stringify(result) };
 
   } catch(err) {
-    return { statusCode: 500, headers, body: JSON.stringify({ error: err.message }) };
+    // err.message here can carry the raw upstream Anthropic response body, which is
+    // internal detail the browser has no use for. Log it, return something generic.
+    console.error('anthropic-proxy upstream failure:', err && err.message);
+    return { statusCode: 500, headers, body: JSON.stringify({ error: 'Generation failed. Please try again.' }) };
   }
 };
