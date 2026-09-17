@@ -342,7 +342,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-102-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-103-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -630,7 +630,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-102-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-103-sub</span></div>
 </div>
 </div>
 
@@ -1254,9 +1254,30 @@ function tbpLogError(message, stack){
   } catch(e){}
 }
 
+// ── Practice-desk telemetry marker ──
+// The practice desk is NOT instrumented the way the live Scribe is: workflow events would only
+// ever measure Michael, so there is no tbpTrack here. But every model call it makes still lands
+// in public.tool_usage via the clinical proxy, and unlabelled rows are indistinguishable from
+// pre-ambient-102 live rows. So practice rows self-identify in BOTH columns:
+//   mode        → 'practice_<mode>' (or bare 'practice' for an unlabelled call site)
+//   session_id  → the sentinel prefix below
+// Excluding the practice desk from any analysis is therefore one predicate:
+//   WHERE session_id NOT LIKE 'dddddddd%'
+// The prefix has to be HEX: both Lambda proxies gate session_id on /^[a-f0-9]{8,40}$/ and drop
+// anything else to NULL, which is the very ambiguity this exists to remove.
+var TBP_PRACTICE_SESS_PREFIX = 'dddddddd';
+var _tbpPracticeSess = null;
+function tbpPracticeSession(){
+  if(_tbpPracticeSess) return _tbpPracticeSess;
+  var hex = '';
+  while(hex.length < 20){ hex += Math.floor(Math.random()*16).toString(16); }
+  _tbpPracticeSess = TBP_PRACTICE_SESS_PREFIX + hex;
+  return _tbpPracticeSess;
+}
+
 // ── Streaming proxy call (mirrors the Note Builder / Chart Coder pattern) ──
 var _lastCallTruncated = false;   // set true when the model stopped because it hit max_tokens (note cut off)
-async function callAPI(systemPrompt, messages, maxTokens, onDelta, model){
+async function callAPI(systemPrompt, messages, maxTokens, onDelta, model, mode){
   _lastCallTruncated = false;
   // Hard backstop: in demo mode nothing is ever sent to the clinical backend. Live buttons are
   // already intercepted (tbpDemoBlock) so this rarely fires, but it guarantees no visitor content
@@ -1284,7 +1305,9 @@ async function callAPI(systemPrompt, messages, maxTokens, onDelta, model){
         model: model || 'claude-sonnet-4-6',   // per-call override; defaults to Sonnet. Haiku is used for the mechanical calls (verify, plan) — see MODEL-REGISTRY.md.
         max_tokens: maxTokens || 2000,
         system: systemPrompt,
-        messages: messages
+        messages: messages,
+        mode: mode ? ('practice_' + mode) : 'practice',
+        session_id: tbpPracticeSession()
       })
     });
   } catch(netErr){
