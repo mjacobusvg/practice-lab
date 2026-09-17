@@ -342,7 +342,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-105-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-106-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -630,7 +630,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-105-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-106-sub</span></div>
 </div>
 </div>
 
@@ -3844,14 +3844,24 @@ function tbpAdhdStripTags(t){
     return '\n' + name.replace(/_/g, ' ') + '\n';
   }).replace(/\n{3,}/g, '\n\n').trim();
 }
-function tbpAdhdQuestionList(){
+// scope: 'next' = only the check's top-priority ASK NEXT (what the CARD adds, mid-visit)
+//        'more' = only the lower-priority ALSO WORTH ASKING overflow
+//        omitted = everything the check raised (the Framework panel's own add)
+// The card used to add ASKNEXT + MOREQ together, which put six or seven questions into CHECK /
+// ASK TODAY from one click and turned the working note back into a case file — the exact thing the
+// mid-visit card exists to prevent. The model may well have nine things it could clarify; mid-visit
+// it gets to say the two or three worth asking NOW. The rest stay one click deeper, in the panel.
+function tbpAdhdQuestionList(scope){
   if(!adhdFw) return [];
   // After a mid-visit check, "add to CHECK / ASK TODAY" means the questions THAT CHECK raised,
   // not the whole pre-visit list again. The append is de-duplicated downstream anyway, but
   // sending the baseline list here would make the button look like it had done nothing.
   var src = adhdFw.QUESTIONS;
   if(adhdFw.delta && (adhdFw.delta.ASKNEXT || adhdFw.delta.MOREQ)){
-    src = [adhdFw.delta.ASKNEXT || '', adhdFw.delta.MOREQ || ''].filter(Boolean).join('\n');
+    var d = adhdFw.delta;
+    src = (scope === 'next') ? (d.ASKNEXT || '')
+        : (scope === 'more') ? (d.MOREQ || '')
+        : [d.ASKNEXT || '', d.MOREQ || ''].filter(Boolean).join('\n');
   }
   if(!src) return [];
   var lines = src.split('\n');
@@ -3910,9 +3920,9 @@ function tbpAdhdQKey(s){
 // msgId lets the card and the panel each own their own feedback line. They can both be in the
 // DOM at once (the panel body is rendered even while closed), so a single hard-coded id meant
 // the card's message silently went to the panel's hidden element.
-function tbpAdhdQuestionsToNote(silent, msgId){
+function tbpAdhdQuestionsToNote(silent, msgId, scope){
   var msg = silent ? null : document.getElementById(msgId || 'adhd-q-msg');
-  var qs = tbpAdhdQuestionList();
+  var qs = tbpAdhdQuestionList(scope);
   if(!qs.length) return false;
   var raw = document.getElementById('raw');
   if(!raw) return false;
@@ -4000,7 +4010,11 @@ function tbpAdhdFlashShow(){
   if(!changed && !ask && !why) h += '<div class="fl-v">Nothing new was established.</div>';
   h += '<div style="border-top:1px solid var(--rule);padding-top:10px;margin-top:2px">';
   if(ask){
-    h += '<button class="btn" type="button" id="adhd-flash-add" style="margin-top:0;padding:6px 12px;font-size:.8rem;background:#a78bfa;color:#1a1033">Add to CHECK / ASK TODAY</button>';
+    // Name the count on the button. The clinician should know what is about to land in their note
+    // before they click, not only from the confirmation afterwards.
+    var nNext = tbpAdhdQuestionList('next').length;
+    h += '<button class="btn" type="button" id="adhd-flash-add" style="margin-top:0;padding:6px 12px;font-size:.8rem;background:#a78bfa;color:#1a1033">Add '
+      + (nNext ? (nNext === 1 ? 'this question' : 'these ' + nNext) : 'to CHECK / ASK TODAY') + '</button>';
   }
   h += '<a href="#" id="adhd-flash-more" style="margin-left:' + (ask ? '10px' : '0') + ';color:var(--cream-dim);text-decoration:none;font-size:.79rem">View full reasoning &rsaquo;</a>';
   h += '<div class="hint" id="adhd-flash-msg" style="margin-top:6px"></div></div>';
@@ -4069,9 +4083,23 @@ function tbpAdhdRender(){
       h += '<div style="border-top:1px solid var(--rule);padding-top:9px;font-size:.85rem;line-height:1.5;color:var(--cream-dim)">'
         + '<span style="color:#a78bfa;font-weight:600">Diagnostic impact:</span> ' + esc(dl.IMPACT.trim()) + '</div>';
     }
+    // Two separate adds, because they are two separate decisions. The primary one matches the card
+    // exactly (ASK NEXT only), so clicking here does not silently do something bigger than clicking
+    // there. The overflow is its own opt-in, and it lives HERE rather than on the card because this
+    // is where the clinician came to read the reasoning — they are no longer mid-sentence.
     if(dl.ASKNEXT || dl.MOREQ){
-      h += '<div style="margin-top:11px"><button class="btn" type="button" id="adhd-q-add" style="margin-top:0;padding:6px 12px;font-size:.81rem;background:#a78bfa;color:#1a1033">Add to CHECK / ASK TODAY &rarr;</button>'
-        + '<span class="hint" id="adhd-q-msg" style="margin-left:8px">Appends. Your answers stay put.</span></div>';
+      var nNext = tbpAdhdQuestionList('next').length;
+      var nMore = tbpAdhdQuestionList('more').length;
+      h += '<div style="margin-top:11px">';
+      if(nNext){
+        h += '<button class="btn" type="button" id="adhd-q-add" style="margin-top:0;padding:6px 12px;font-size:.81rem;background:#a78bfa;color:#1a1033">Add the '
+          + (nNext === 1 ? 'Ask next question' : nNext + ' under Ask next') + ' &rarr;</button>';
+      }
+      if(nMore){
+        h += '<button class="btn-ghost" type="button" id="adhd-q-add-more" style="margin:0 0 0 ' + (nNext ? '8px' : '0') + ';padding:6px 12px;font-size:.81rem">Also add the '
+          + nMore + ' lower-priority</button>';
+      }
+      h += '<div class="hint" id="adhd-q-msg" style="margin-top:7px">Appends to the bottom. Your answers stay put.</div></div>';
     }
     h += '</div>';
   }
@@ -4406,7 +4434,7 @@ document.getElementById('adhd-flash').addEventListener('click', function(e){
   if(e.target.closest('#adhd-flash-more')){ e.preventDefault(); tbpAdhdFlashHide(); tbpAdhdShowPanel(); return; }
   // The add button lives in the card now, so its handler has to be here too. Same append-only
   // function the panel uses: nothing already in CHECK / ASK TODAY is rewritten or removed.
-  if(e.target.closest('#adhd-flash-add')){ tbpAdhdQuestionsToNote(false, 'adhd-flash-msg'); return; }
+  if(e.target.closest('#adhd-flash-add')){ tbpAdhdQuestionsToNote(false, 'adhd-flash-msg', 'next'); return; }
 });
 document.getElementById('adhd-rebuild').addEventListener('click', function(e){
   e.preventDefault();
@@ -4417,7 +4445,8 @@ document.getElementById('adhd-rebuild').addEventListener('click', function(e){
 });
 document.getElementById('adhd-body').addEventListener('click', function(e){
   if(!e.target || !e.target.closest) return;
-  if(e.target.closest('#adhd-q-add')){ tbpAdhdQuestionsToNote(); return; }
+  if(e.target.closest('#adhd-q-add-more')){ tbpAdhdQuestionsToNote(false, 'adhd-q-msg', 'more'); return; }
+  if(e.target.closest('#adhd-q-add')){ tbpAdhdQuestionsToNote(false, 'adhd-q-msg', 'next'); return; }
   if(e.target.closest('#adhd-chart-add')){
     var cm = document.getElementById('adhd-chart-msg');
     var cok = tbpAppendToNote(adhdFw && adhdFw.CHARTNOTE);
