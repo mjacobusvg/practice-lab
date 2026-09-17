@@ -342,7 +342,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-103-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-104-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -630,7 +630,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-103-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-104-sub</span></div>
 </div>
 </div>
 
@@ -2142,6 +2142,7 @@ function tbpRevealDraftedNote(){
 
 var _typedDraftInFlight = false;
 var _preflightRendered = false;   // did the clinical-calls step put questions on screen this run?
+var _preflightAttempts = 0;      // stamped into a failed preflight so a retry is visibly a NEW attempt
 // When Draft is blocked purely because no visit type was ever chosen (e.g. a full visit was
 // recorded/typed but the clinician never picked New-eval vs Follow-up), offer an inline
 // one-click chooser instead of a dead-end. Both draft paths — typed (tbpTypedDraft) and the
@@ -5763,7 +5764,24 @@ async function buildAssessment(btn, force){
       renderPreflightCards(inp, scope, qs, planDetected); box.scrollIntoView({ behavior:'smooth', block:'start' }); }
   } catch(err){
     if(_ambientFlow){ _ambientFlow = false; tbpAmbientProgress('clear'); }
-    box.innerHTML = '<div class="err">'+esc(err.message || 'Could not read the visit.')+'</div>';
+    // A failed preflight used to render the bare message and nothing else. When the failure is fast
+    // (a Bedrock 502 comes back in well under a second) the spinner above flashes for a frame and the
+    // identical error paints again, so pressing Build a second time looks like a dead button — the
+    // clinician cannot tell a retry happened at all. Reported from a real visit: "it won't let me
+    // rerun it". So every attempt is STAMPED, and the retry lives in the error box itself rather than
+    // in a button further up the page that the error has scrolled away from.
+    _preflightAttempts++;
+    var stamp = 'Attempt ' + _preflightAttempts + ' \u00b7 ' + new Date().toLocaleTimeString();
+    box.innerHTML = '<div class="err">' + esc(err.message || 'Could not read the visit.')
+      + '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">'
+      + '<button class="btn-mini" type="button" id="pf-retry">Try again</button>'
+      + '<span class="hint">' + esc(stamp) + '</span></div>'
+      + '<div class="hint" style="margin-top:8px">Your note is drafted and safe. This is the clinical-calls step only \u2014 retrying does not redraft anything.</div>'
+      + '</div>';
+    var rb = document.getElementById('pf-retry');
+    // Carries `force` through, so a retry after "Build without it anyway" stays forced instead of
+    // bouncing off the paste-last-visit guard again.
+    if(rb) rb.addEventListener('click', function(){ if(tbpDemoBlock()) return; buildAssessment(btn, force); });
   } finally {
     btn.disabled = false; btn.innerHTML = label;
   }

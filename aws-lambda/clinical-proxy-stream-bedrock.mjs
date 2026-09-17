@@ -310,6 +310,38 @@ function readUsage(evt, acc) {
 
 const bedrock = new BedrockRuntimeClient({ region: REGION });
 
+// Bedrock returns transient failures under several names, and losing one costs the clinician the
+// whole step they just waited for. ONE retry after a short pause: enough for a blip, not enough to
+// double-bill a genuine failure or leave the request hanging.
+//
+// This retry can ONLY wrap the initial InvokeModelWithResponseStream call, which is why it is a
+// separate function from the streaming loop below. Once the first byte has been written to the
+// response stream the browser is already parsing SSE, so there is nothing left to retry into — a
+// mid-stream failure ends the stream and the front end keeps whatever it assembled.
+const BEDROCK_TRANSIENT = /^(ThrottlingException|ServiceUnavailableException|InternalServerException|ModelTimeoutException|ModelNotReadyException|TooManyRequestsException)$/;
+function bedrockTransient(err) {
+  if (!err) return false;
+  if (BEDROCK_TRANSIENT.test(String(err.name || ''))) return true;
+  const code = err.$metadata && err.$metadata.httpStatusCode;
+  return code === 429 || code === 500 || code === 502 || code === 503 || code === 504;
+}
+async function invokeStreamWithRetry(modelId, payloadObj) {
+  const cmd = () => new InvokeModelWithResponseStreamCommand({
+    modelId: modelId,
+    contentType: 'application/json',
+    accept: 'application/json',
+    body: JSON.stringify(payloadObj)
+  });
+  try {
+    return await bedrock.send(cmd());
+  } catch (err) {
+    if (!bedrockTransient(err)) throw err;
+    console.log('bedrock transient, retrying once:', err && err.name, err.$metadata && err.$metadata.httpStatusCode);
+    await new Promise(function (r) { setTimeout(r, 900); });
+    return await bedrock.send(cmd());
+  }
+}
+
 export const handler = awslambda.streamifyResponse(async (event, responseStream, context) => {
   const method = (event.requestContext && event.requestContext.http && event.requestContext.http.method) || 'POST';
   const headers = event.headers || {};
@@ -382,14 +414,18 @@ export const handler = awslambda.streamifyResponse(async (event, responseStream,
 
   let bedrockResp;
   try {
-    bedrockResp = await bedrock.send(new InvokeModelWithResponseStreamCommand({
-      modelId: modelId,
-      contentType: 'application/json',
-      accept: 'application/json',
-      body: JSON.stringify(payloadObj)
-    }));
+    bedrockResp = await invokeStreamWithRetry(modelId, payloadObj);
   } catch (e) {
-    respondJson(responseStream, 502, { error: 'Bedrock invoke failed: ' + String(e && e.message || e).slice(0, 400) });
+    // A bare "Bedrock is unable to process your request" is undiagnosable: it names no exception
+    // class, no HTTP status and no request id, so neither the clinician nor AWS support can act on
+    // it. Surface what the SDK actually knows. None of this is PHI.
+    const meta = (e && e.$metadata) || {};
+    const bits = [String((e && e.message) || e).slice(0, 300)];
+    if (e && e.name) bits.push('[' + e.name + ']');
+    if (meta.httpStatusCode) bits.push('HTTP ' + meta.httpStatusCode);
+    if (meta.requestId) bits.push('reqId ' + meta.requestId);
+    console.log('bedrock invoke failed:', e && e.name, meta.httpStatusCode, meta.requestId, String((e && e.message) || e).slice(0, 300));
+    respondJson(responseStream, 502, { error: 'Bedrock invoke failed: ' + bits.join(' ') });
     return;
   }
 
