@@ -64,7 +64,11 @@ exports.handler = async function(event) {
     var subject = payload.subject || '';
     var coverNote = payload.coverNote || '';
     var tool = payload.tool || 'Practice Manager';
-    var clinicianEmail = payload.clinicianEmail || '';
+    // From the VERIFIED token, never payload.clinicianEmail. It used to be whatever the
+    // caller sent, and it is embedded in clientReference — which fax-webhook.js then read
+    // back to decide who to email. A full-tier member could therefore put someone else's
+    // address on a fax and route its delivery notices to them. Audit 2026-09-17.
+    var clinicianEmail = String(__session.claims.email || '').toLowerCase().trim();
 
     if (!to || (!content && !pdfBase64)) {
       return {
@@ -246,12 +250,41 @@ exports.handler = async function(event) {
       }).catch(function(e) { console.log('Usage log error:', e.message); });
     }
 
+    var __p = sendResult.payload || sendResult.Payload || {};
+    var faxId = __p.faxID || __p.FaxID || __p.id || __p.ID || null;
+
+    // Record who sent this fax, keyed by the provider's id. fax-webhook.js resolves the
+    // notification recipient from HERE rather than from the Reference string in the
+    // webhook payload, which anyone can forge. Only the last four digits of the number
+    // are kept: the recipient of a clinical letter is PHI-adjacent and nothing here needs
+    // the whole thing. Best-effort — a logging failure must not fail a sent fax.
+    if (faxId && supabaseUrl && supabaseKey) {
+      try {
+        await fetch(supabaseUrl + '/rest/v1/fax_jobs?on_conflict=fax_id', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': supabaseKey,
+            'Authorization': 'Bearer ' + supabaseKey,
+            'Prefer': 'resolution=merge-duplicates,return=minimal'
+          },
+          body: JSON.stringify({
+            fax_id: String(faxId),
+            clinician_email: clinicianEmail,
+            to_last4: cleanNumber.slice(-4),
+            tool: tool,
+            created_at: new Date().toISOString()
+          })
+        });
+      } catch (e) { console.log('[send-fax] fax_jobs record failed:', e.message); }
+    }
+
     return {
       statusCode: 200,
       headers: headers,
       body: JSON.stringify({
         success: true,
-        faxId: (sendResult.payload || sendResult.Payload || {}).faxID || (sendResult.payload || sendResult.Payload || {}).FaxID || null,
+        faxId: faxId,
         message: 'Fax queued for delivery to ' + cleanNumber
       })
     };

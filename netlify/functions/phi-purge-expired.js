@@ -27,6 +27,9 @@ const ASSESSMENT_RAW_TTL_DAYS = 30;
 // see what it was. The old SQL purge used 30 days for patient_email only.
 const SCHEDULE_CLOSED_TTL_DAYS = 30;
 
+// A fax delivery webhook never arrives months late; after this the mapping is dead weight.
+const FAX_JOB_TTL_DAYS = 90;
+
 function sbHeaders() {
   const KEY = process.env.SUPABASE_SERVICE_KEY;
   return { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };
@@ -90,7 +93,7 @@ exports.handler = async function (event) {
 
   const purgePatchRow = makePatchRow(URL);
   const result = { letters_send_log: 0, letter_charges: 0, schedules_healed: 0, charges_healed: 0,
-                   schedules_closed: 0, charges_released: 0,
+                   schedules_closed: 0, charges_released: 0, fax_jobs_purged: 0,
                    assessments_completed: 0, assessments_abandoned: 0 };
   try {
     // ── Letters: delete at the clinician-chosen window ──
@@ -157,6 +160,20 @@ exports.handler = async function (event) {
       await sbPatch(URL + '/rest/v1/letter_charges?id=eq.' + encodeURIComponent(c.id),
         { patient_s3_key: null, patient_email: null });
       result.charges_released++;
+    }
+
+    // ── Fax send records: correlation only, and only for as long as that is useful ──
+    // fax_jobs maps a provider fax id to the clinician who sent it, so fax-webhook.js can
+    // decide who to notify without trusting the Reference string in the webhook payload.
+    // It holds no patient PHI (clinician email plus the last four digits of the number),
+    // but a delivery webhook never arrives 90 days late, so keeping them past that is
+    // storage without a purpose. Added with the table, so it never becomes an unbounded
+    // store somebody finds later. Audit 2026-09-17.
+    const faxCutoff = new Date(Date.now() - FAX_JOB_TTL_DAYS * 86400000).toISOString();
+    const staleFax = await sbGet(URL + '/rest/v1/fax_jobs?created_at=lt.' + encodeURIComponent(faxCutoff) + '&select=fax_id&limit=500');
+    for (const f of staleFax) {
+      await sbDelete(URL + '/rest/v1/fax_jobs?fax_id=eq.' + encodeURIComponent(f.fax_id));
+      result.fax_jobs_purged++;
     }
 
     // ── Assessments: raw PHI deleted 30 days after completion; de-id metadata kept ──

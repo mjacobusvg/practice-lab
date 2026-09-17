@@ -120,17 +120,33 @@ function verifyNotifyreSignature(event, rawBody) {
   return { matched: !!matchedAs, attempted: true, matchedAs: matchedAs, detail: 'header=' + usedHeader };
 }
 
-// The recipient used to be whatever address the payload's Reference field carried, which
-// is what made this an open relay. A fax-id -> clinician mapping is not persisted at send
-// time (send-fax.js logs a usage row and returns the id to the caller, nothing queryable),
-// so the webhook cannot resolve the owner from our own records. The next best bound, and a
-// decisive one: the address must already be an account here. That turns "mail anyone on the
-// internet" into "mail a member who already gets mail from us", and an unknown address is
-// dropped with a log rather than delivered.
+// WHO GETS THE FAILURE NOTICE.
 //
-// The durable fix is for send-fax.js to record faxId -> clinician_email when it sends, and
-// for this to look the fax up by ID; then a forged Reference is irrelevant. Noted, not done
-// here — it is a schema change, not a webhook fix.
+// First choice, and the one that makes a forged payload irrelevant: our OWN record of who
+// sent this fax. send-fax.js writes fax_jobs(fax_id -> clinician_email) at send time, so
+// the webhook can look the fax up by the provider's id and never consult the caller's
+// Reference string at all.
+//
+// Fallback, for a fax that was in flight before fax_jobs existed: the old Reference parse,
+// still bounded by requiring the address to be a known account. That bound is what stopped
+// this being an open mail relay, and it stays as the floor.
+async function resolveByFaxId(faxId) {
+  var id = String(faxId || '').trim();
+  if (!id) return null;
+  var URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
+  var KEY = process.env.SUPABASE_SERVICE_KEY;
+  if (!URL || !KEY) return null;
+  try {
+    var r = await fetch(URL + '/rest/v1/fax_jobs?fax_id=eq.' + encodeURIComponent(id) + '&select=clinician_email&limit=1',
+      { headers: { apikey: KEY, Authorization: 'Bearer ' + KEY } });
+    if (!r.ok) return null;
+    var rows = await r.json();
+    return (rows && rows[0] && rows[0].clinician_email) ? String(rows[0].clinician_email).toLowerCase().trim() : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 async function resolveKnownRecipient(candidate) {
   var email = String(candidate || '').trim().toLowerCase();
   if (!email || email.indexOf('@') === -1 || email.length > 254) return null;
@@ -233,13 +249,18 @@ exports.handler = async function(event) {
       clinicianEmail = reference.split('|').pop().trim();
     }
 
-    // The address must be one of ours. Anything else is a forged Reference trying to use
-    // this endpoint as a mailer.
-    var verifiedRecipient = await resolveKnownRecipient(clinicianEmail);
+    // Our own record first; the payload's Reference is only consulted if we have none.
+    var verifiedRecipient = await resolveByFaxId(faxId);
+    var resolvedVia = verifiedRecipient ? 'fax_jobs' : null;
     if (!verifiedRecipient) {
-      console.warn('[fax-webhook] refusing to notify: address in Reference is not a known account');
+      verifiedRecipient = await resolveKnownRecipient(clinicianEmail);
+      if (verifiedRecipient) resolvedVia = 'reference+account';
+    }
+    if (!verifiedRecipient) {
+      console.warn('[fax-webhook] refusing to notify: no fax_jobs record for this id and the Reference address is not a known account');
       return { statusCode: 200, headers: headers, body: JSON.stringify({ status: 'failed_no_notify', reason: 'recipient not recognised' }) };
     }
+    console.log('[fax-webhook] notifying sender, resolved via ' + resolvedVia);
 
     // Build failure reason
     var failureReasons = {
