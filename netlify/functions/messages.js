@@ -130,6 +130,26 @@ exports.handler = async function (event) {
         convId = created[0].id;
       }
 
+      // Idempotency guard: a duplicate send (a second Enter, or a retry after a
+      // slow response) would insert a second identical message. If the sender
+      // already has an identical message in this conversation within the last 30s,
+      // return it instead of inserting again. Best-effort — never blocks a real send.
+      try {
+        const sinceIso = new Date(Date.now() - 30000).toISOString();
+        const recent = await sb('dm_messages?conversation_id=eq.' + convId
+          + '&sender_id=eq.' + encodeURIComponent(me.id)
+          + '&created_at=gte.' + encodeURIComponent(sinceIso)
+          + '&select=id,body_plain,body_html,image_urls,created_at&order=created_at.desc&limit=1', 'GET');
+        if (recent && recent.length && String(recent[0].body_plain || '') === raw
+            && JSON.stringify(recent[0].image_urls || []) === JSON.stringify(images)) {
+          const m0 = recent[0];
+          return { statusCode: 200, headers, body: JSON.stringify({ ok: true, deduped: true, message: {
+            id: m0.id, conversation_id: convId, sender_id: me.id, recipient_id: toId,
+            body_html: m0.body_html, image_urls: m0.image_urls || images, created_at: m0.created_at
+          } }) };
+        }
+      } catch (e) { /* dedup best-effort */ }
+
       const preview = (raw.replace(/\s+/g, ' ').slice(0, 140)) || (images.length ? '📷 Photo' : '');
       // In a 1:1 DM the only mentionable person is the recipient; linkify their
       // name for visual consistency (no extra notification — they get the DM).

@@ -144,6 +144,46 @@ exports.handler = async function (event) {
     }
   }
 
+  // ── DELETE a post (author or admin) ──────────────────────────────────────
+  // Hard delete, matching the comment/message convention. Dependents are removed
+  // first so no FK constraint blocks the delete and no orphan rows survive; the
+  // Ask-the-Archive embedding for the post is cleaned too so a deleted post can't
+  // keep surfacing in search. Each dependent delete is best-effort — a missing
+  // table or zero matches must never stop the post itself from being removed.
+  if (p.action === 'delete') {
+    const postId = String(p.post_id || '').trim();
+    if (!postId) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'post_id required' }) };
+    try {
+      const accts = await sb('accounts?email=eq.' + encodeURIComponent(email) + '&select=id,is_admin&limit=1', 'GET');
+      if (!accts || !accts.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'No account found.' }) };
+      const meId = accts[0].id, isAdmin = !!accts[0].is_admin;
+      const rows = await sb('forum_posts?id=eq.' + encodeURIComponent(postId) + '&select=id,author_id&limit=1', 'GET');
+      if (!rows || !rows.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'Post not found' }) };
+      if (rows[0].author_id !== meId && !isAdmin) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Not allowed' }) };
+
+      const scope = 'post_id=eq.' + encodeURIComponent(postId);
+      const dependents = [
+        'reactions?' + scope,
+        'poll_votes?' + scope,
+        'post_tags?' + scope,
+        'post_members_extra?' + scope,
+        'forum_comments?' + scope
+      ];
+      for (let i = 0; i < dependents.length; i++) {
+        try { await sb(dependents[i], 'DELETE'); } catch (e) { /* best-effort cleanup */ }
+      }
+      // Ask-the-Archive chunk store (public.posts): chunks key by a text id (fp_<post>,
+      // fpc_<comment>) but every chunk for this thread carries ?post=<id> in its url, so
+      // one url match clears the post's chunks AND its comments' chunks. Best-effort, so a
+      // stale index can never block the delete.
+      try { await sb('posts?url=like.*' + encodeURIComponent('post=' + postId) + '*', 'DELETE'); } catch (e) { /* best-effort */ }
+      await sb('forum_posts?id=eq.' + encodeURIComponent(postId), 'DELETE');
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, deleted: postId }) };
+    } catch (e) {
+      return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: e.message }) };
+    }
+  }
+
   const space = String(p.space || '').trim();
   const title = String(p.title || '').trim();
   const rawBody = String(p.body || '').trim();
@@ -179,6 +219,22 @@ exports.handler = async function (event) {
     const imageUrls = cleanImageUrls(p.image_urls);
     const poll = cleanPoll(p.poll);
     const attachments = cleanAttachments(p.attachments);
+
+    // Idempotency guard: if this author already created an identical post (same
+    // title AND body) in the last 60 seconds, treat this as a double-submit or a
+    // network retry and return that existing post instead of inserting a duplicate.
+    // Cheap, needs no schema change, and the body match keeps a genuine same-title
+    // post from being swallowed. Best-effort — never blocks a legitimate post.
+    try {
+      const sinceIso = new Date(Date.now() - 60000).toISOString();
+      const dup = await sb('forum_posts?author_id=eq.' + encodeURIComponent(authorId)
+        + '&title=eq.' + encodeURIComponent(title)
+        + '&created_at=gte.' + encodeURIComponent(sinceIso)
+        + '&select=id,body_plain&order=created_at.desc&limit=1', 'GET');
+      if (dup && dup.length && String(dup[0].body_plain || '') === rawBody) {
+        return { statusCode: 200, headers, body: JSON.stringify({ ok: true, post_id: dup[0].id, deduped: true }) };
+      }
+    } catch (e) { /* dedup is best-effort */ }
 
     const excerpt = rawBody.replace(/\s+/g, ' ').slice(0, 200);
     const row = {

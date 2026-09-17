@@ -3976,6 +3976,7 @@ async function viewPost(postId) {
       }
       h += '<button class="save-btn' + (isSaved ? ' on' : '') + '" id="save-btn" onclick="toggleSave(\'' + post.id + '\')">' + (isSaved ? '&#128278; Saved' : '&#128278; Save') + '</button>';
       if (canEditPost) h += '<button class="save-btn" id="editpost-btn" onclick="editPost()">&#9998; Edit</button>';
+      if (canEditPost) h += '<button class="save-btn" id="deletepost-btn" onclick="deletePost()" style="color:var(--red,#f87171);border-color:var(--red,#f87171)">&#128465; Delete</button>';
       h += '</div>';
     }
     h += '</div>';
@@ -4461,6 +4462,29 @@ async function savePostEdit() {
     if (!res.ok || !data.ok) throw new Error(data.error || 'Could not save');
     viewPost(post.id);
   } catch (e) { if (st) { st.textContent = e.message || 'Could not save.'; st.className = 'composer-status err'; } }
+}
+
+// Delete a whole post (author or admin). Hard delete on the server (takes its
+// comments with it), so we confirm clearly, then return to the home feed since
+// the post view can no longer be reloaded.
+async function deletePost() {
+  var post = window.__currentPost; if (!post) return;
+  if (!window.confirm('Delete this post? It will be removed for everyone, along with its comments, and this cannot be undone.')) return;
+  var btn = document.getElementById('deletepost-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Deleting…'; }
+  try {
+    var res = await fetch('/.netlify/functions/create-member-post', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: getAuthToken(), action: 'delete', post_id: post.id })
+    });
+    var data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not delete.');
+    window.__currentPost = null;
+    showHome();
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.innerHTML = '&#128465; Delete'; }
+    alert(e.message || 'Could not delete this post.');
+  }
 }
 
 // Delete a comment (author or admin). Reloads the thread on success.
@@ -6893,6 +6917,12 @@ async function sendMessage() {
   var imgs = (S.dmImages || []).map(function (im) { return im.url; });
   var errEl = document.getElementById('dm-error'); if (errEl) errEl.style.display = 'none';
   if (!body && !imgs.length) return;
+  // Re-entrancy guard: Send is bound to Enter (dmKey), and the textarea is only
+  // cleared AFTER the round-trip, so a second Enter during a slow request used to
+  // fire a duplicate message. Disabling the button doesn't stop the keyboard path;
+  // this flag does. Held until the whole send (incl. thread reload) settles.
+  if (S.dmSending) return;
+  S.dmSending = true;
   var btn = document.getElementById('dm-send'); if (btn) btn.disabled = true;
   try {
     var res = await fetch('/.netlify/functions/messages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: getAuthToken(), action: 'send', to_id: S.threadWith, body: body, image_urls: imgs }) });
@@ -6904,6 +6934,8 @@ async function sendMessage() {
   } catch (e) {
     if (btn) btn.disabled = false;
     if (errEl) { errEl.style.display = 'block'; errEl.textContent = e.message; }
+  } finally {
+    S.dmSending = false;
   }
 }
 
