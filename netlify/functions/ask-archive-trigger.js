@@ -2,6 +2,7 @@
 // Lightweight dispatcher — creates job row in Supabase, sends event to Inngest, returns job_id immediately.
 
 const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
+const crypto = require('crypto');
 const { verifyToken } = require('./_lib/session');
 
 // Internal notification email via Amazon SES (under the AWS BAA).
@@ -66,7 +67,23 @@ exports.handler = async function(event, context) {
     return { statusCode: 200, headers: CORS, body: JSON.stringify({ success: true, message: 'Template request submitted.' }) };
   }
   // Generate job ID
-  const job_id = 'job_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+  // Identity is resolved BEFORE the row is written so the job can be bound to its
+  // creator. Ask the Archive is deliberately open to anonymous askers, so this stays
+  // best-effort: no token means owner_email null, and ask-archive-poll treats an
+  // unowned job as readable by whoever holds its id. What changes is that a SIGNED-IN
+  // member's question is now theirs alone, and the id is a UUID rather than
+  // Date.now() plus six chars of Math.random().
+  let account_email = null, tier = null;
+  try {
+    const authHeader = event.headers.authorization || event.headers.Authorization || '';
+    const sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
+    if (sessionToken) {
+      const session = verifyToken(sessionToken);
+      if (session.valid) { account_email = (session.claims.email || '').toLowerCase().trim() || null; tier = session.claims.tier || null; }
+    }
+  } catch (e) {}
+
+  const job_id = 'job_' + crypto.randomUUID();
   // Create job row in Supabase
   try {
     await fetch(`${supabaseUrl}/rest/v1/archive_jobs?on_conflict=job_id`, {
@@ -77,23 +94,12 @@ exports.handler = async function(event, context) {
         'Authorization': `Bearer ${supabaseKey}`,
         'Prefer': 'resolution=merge-duplicates,return=minimal'
       },
-      body: JSON.stringify({ job_id, status: 'pending', created_at: new Date().toISOString() })
+      body: JSON.stringify({ job_id, status: 'pending', owner_email: account_email, created_at: new Date().toISOString() })
     });
   } catch(e) {
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Failed to create job' }) };
   }
-  // Best-effort identity for usage attribution. Ask the Archive is mostly public,
-  // so a token may not be present; when it is, forward the verified email + tier
-  // to the pipeline so its AI usage is attributed. Never gates the request.
-  let account_email = null, tier = null;
-  try {
-    const authHeader = event.headers.authorization || event.headers.Authorization || '';
-    const sessionToken = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
-    if (sessionToken) {
-      const session = verifyToken(sessionToken);
-      if (session.valid) { account_email = session.claims.email || null; tier = session.claims.tier || null; }
-    }
-  } catch (e) {}
+  // (identity resolved above, before the job row was created)
 
   // Send event to Inngest
   try {

@@ -8,6 +8,7 @@
 // PHI note: the chart note is forwarded to the background function and the
 // Anthropic API (BAA-covered). It is NOT written to the job row or logged.
 
+const crypto = require('crypto');
 const { verifyToken } = require('./_lib/session');
 
 exports.handler = async function (event) {
@@ -40,7 +41,11 @@ exports.handler = async function (event) {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 
-  const job_id = 'cc_' + Date.now() + '_' + Math.random().toString(36).substring(2, 8);
+  // crypto.randomUUID, not Date.now + Math.random: the old id was guessable given a
+  // rough send time, and Math.random is not a CSPRNG. The owner binding below is the
+  // real control; this removes the fallback of simply guessing an id.
+  const job_id = 'cc_' + crypto.randomUUID();
+  const ownerEmail = String(session.claims.email || '').toLowerCase().trim();
 
   // Create the pending job row
   try {
@@ -52,7 +57,7 @@ exports.handler = async function (event) {
         'Authorization': `Bearer ${supabaseKey}`,
         'Prefer': 'resolution=merge-duplicates,return=minimal'
       },
-      body: JSON.stringify({ job_id, tool: 'chart-coder', status: 'pending', created_at: new Date().toISOString() })
+      body: JSON.stringify({ job_id, tool: 'chart-coder', status: 'pending', owner_email: ownerEmail, created_at: new Date().toISOString() })
     });
   } catch (e) {
     return { statusCode: 500, headers: CORS, body: JSON.stringify({ error: 'Failed to create job' }) };

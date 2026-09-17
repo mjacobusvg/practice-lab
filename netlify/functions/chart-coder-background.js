@@ -312,7 +312,7 @@ function ccParseJSON(text) {
 }
 
 async function saveResult(supabaseUrl, supabaseKey, job_id, status, result) {
-  const res = await fetch(`${supabaseUrl}/rest/v1/tool_jobs?job_id=eq.${job_id}`, {
+  const res = await fetch(`${supabaseUrl}/rest/v1/tool_jobs?job_id=eq.${encodeURIComponent(job_id)}`, {
     method: 'PATCH',
     headers: {
       'Content-Type': 'application/json',

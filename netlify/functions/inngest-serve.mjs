@@ -382,7 +382,7 @@ const askArchivePipeline = inngest.createFunction(
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
 
     async function saveResult(result) {
-      const saveRes = await fetch(`${supabaseUrl}/rest/v1/archive_jobs?job_id=eq.${job_id}`, {
+      const saveRes = await fetch(`${supabaseUrl}/rest/v1/archive_jobs?job_id=eq.${encodeURIComponent(job_id)}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -1162,7 +1162,7 @@ const chartCoderPipeline = inngest.createFunction(
     const anthropicKey = process.env.ANTHROPIC_API_KEY;
 
     async function saveResult(status, result) {
-      const saveRes = await fetch(`${supabaseUrl}/rest/v1/tool_jobs?job_id=eq.${job_id}`, {
+      const saveRes = await fetch(`${supabaseUrl}/rest/v1/tool_jobs?job_id=eq.${encodeURIComponent(job_id)}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',

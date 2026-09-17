@@ -1,6 +1,34 @@
 // netlify/functions/ask-archive-poll.js
 // Checks if a background job is complete and returns the result
 
+const { verifyToken } = require('./_lib/session');
+
+// Does this caller own the job? Returns true when the row is unowned (an anonymous
+// Ask the Archive question, which is a supported case) or when a valid session token
+// carries the same email the job was created with.
+//
+// SECURITY 2026-09-17. These pollers took a job_id and returned that job's `result` to
+// anybody, with the service key, no session check — and the same pattern drives a DELETE,
+// so a known id also let a third party destroy someone else's job. For chart-coder the
+// result is coding analysis derived from a clinical note. The exposure window is short
+// (the poller deletes on retrieval, and tool_jobs holds 0 rows at rest) but "short" is
+// not "closed", and the id was `Date.now()` plus six chars of Math.random(), which is not
+// a CSPRNG. Jobs are now bound to their creator at trigger time and the id is a UUID.
+function ownerMatches(row, event, body) {
+  var owner = row && row.owner_email ? String(row.owner_email).toLowerCase().trim() : '';
+  if (!owner) return true;  // unowned: anonymous archive question
+  try {
+    var authHeader = event.headers.authorization || event.headers.Authorization || '';
+    var token = ((body && body.token) || authHeader.replace(/^Bearer\s+/i, '')).trim();
+    if (!token) return false;
+    var session = verifyToken(token);
+    if (!session.valid) return false;
+    return String(session.claims.email || '').toLowerCase().trim() === owner;
+  } catch (e) {
+    return false;
+  }
+}
+
 exports.handler = async function(event, context) {
   const CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -23,7 +51,7 @@ exports.handler = async function(event, context) {
   const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 
   try {
-    const res = await fetch(`${supabaseUrl}/rest/v1/archive_jobs?job_id=eq.${job_id}&select=status,result&limit=1`, {
+    const res = await fetch(`${supabaseUrl}/rest/v1/archive_jobs?job_id=eq.${encodeURIComponent(job_id)}&select=status,result,owner_email&limit=1`, {
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     });
 
@@ -36,6 +64,12 @@ exports.handler = async function(event, context) {
     }
 
     const row = rows[0];
+
+    // Not yours: answer exactly as if it did not exist. A distinct 403 would confirm
+    // that this job id is real, which is the thing an id-guesser is probing for.
+    if (!ownerMatches(row, event, body)) {
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ status: 'pending' }) };
+    }
     if (row.status !== 'complete') {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ status: 'pending' }) };
     }
@@ -43,7 +77,7 @@ exports.handler = async function(event, context) {
     const result = typeof row.result === 'string' ? JSON.parse(row.result) : row.result;
 
     // Clean up job after retrieval
-    fetch(`${supabaseUrl}/rest/v1/archive_jobs?job_id=eq.${job_id}`, {
+    fetch(`${supabaseUrl}/rest/v1/archive_jobs?job_id=eq.${encodeURIComponent(job_id)}`, {
       method: 'DELETE',
       headers: { 'apikey': supabaseKey, 'Authorization': `Bearer ${supabaseKey}` }
     }).catch(function() {});
