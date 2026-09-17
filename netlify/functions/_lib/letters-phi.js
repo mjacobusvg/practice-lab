@@ -77,7 +77,17 @@ async function healRow(sbPatch, table, row, prefix, fields) {
     var phi = pick(row, fields);
     if (!Object.keys(phi).length) return null;       // nothing inline worth moving
     var key = await phiS3.putJson(prefix, phi);
-    await sbPatch(table, row.id, Object.assign({ patient_s3_key: key }, nulls(fields)));
+    // The PATCH result is CHECKED. It used to be awaited and ignored, so when the write
+    // was rejected this still returned the key and phi-purge-expired counted a heal that
+    // had not happened — it reported schedules_healed: 3 against rows whose updated_at
+    // had not moved since July. A migration that cannot fail visibly is a migration you
+    // cannot trust, and it hid a NOT NULL constraint on patient_email for a full day.
+    var res = await sbPatch(table, row.id, Object.assign({ patient_s3_key: key }, nulls(fields)));
+    if (res && res.ok === false) {
+      var detail = '';
+      try { detail = (await res.text()).slice(0, 200); } catch (e) { detail = '(no body)'; }
+      throw new Error('patch rejected ' + res.status + ': ' + detail);
+    }
     return key;
   } catch (e) {
     console.log('[letters-phi] heal failed for ' + table + ' ' + (row && row.id) + ':', e && e.message);
