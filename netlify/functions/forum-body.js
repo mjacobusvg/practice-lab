@@ -53,9 +53,8 @@
 // and the teaser keep working untouched. Every remaining client query was checked to be
 // metadata-only first.
 //
-// STILL OPEN: `canonical_synthesis` is gated in the UI the same way a body is, but is
-// still readable directly. One post has it today, so it was left rather than delay
-// closing 554 bodies; fold it into this endpoint and drop it from the client select.
+// `canonical_synthesis` rides along for the same reason: the UI shows it only after the
+// teaser gate, so it is members-only content, and it was readable straight off the table.
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, SESSION_SIGNING_SECRET
 
@@ -98,7 +97,7 @@ exports.handler = async function (event) {
 
   try {
     const postRows = await sb('forum_posts?id=eq.' + encodeURIComponent(postId) +
-      '&select=id,free_visible,body_html,body_plain&limit=1');
+      '&select=id,free_visible,body_html,body_plain,canonical_synthesis&limit=1');
     const post = postRows && postRows[0];
     if (!post) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'Post not found' }) };
 
@@ -145,6 +144,9 @@ exports.handler = async function (event) {
         via: via,
         body_html: post.body_html,
         body_plain: post.body_plain,
+        // Rendered at platform.html:4122, i.e. AFTER the teaser gate returns, so it was
+        // always members-only in the UI while being readable straight off the table.
+        canonical_synthesis: post.canonical_synthesis,
         comments: comments || []
       })
     };

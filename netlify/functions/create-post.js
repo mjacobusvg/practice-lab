@@ -182,10 +182,20 @@ exports.handler = async function (event) {
     if (p.action === 'synthesis') {
       const postId = String(p.post_id || '').trim();
       if (!postId) return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'post_id required' }) };
-      const patch = {
-        canonical_synthesis: String(p.synthesis || '').trim() || null,
-        ce_candidate: !!p.ce_candidate
-      };
+      // Patch only what the caller actually sent. This used to always write
+      // canonical_synthesis, so any caller that omitted it — the CE toggle did —
+      // silently nulled the summary. An absent key now means "leave it alone"; an
+      // explicitly empty string still clears it, which is how the composer deletes one.
+      const patch = {};
+      if (Object.prototype.hasOwnProperty.call(p, 'synthesis')) {
+        patch.canonical_synthesis = String(p.synthesis || '').trim() || null;
+      }
+      if (Object.prototype.hasOwnProperty.call(p, 'ce_candidate')) {
+        patch.ce_candidate = !!p.ce_candidate;
+      }
+      if (!Object.keys(patch).length) {
+        return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Nothing to update' }) };
+      }
       const updated = await sb('forum_posts?id=eq.' + encodeURIComponent(postId), 'PATCH', patch, env);
       if (!updated || !updated.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'Post not found' }) };
       return { statusCode: 200, headers, body: JSON.stringify({ ok: true, post_id: postId }) };
