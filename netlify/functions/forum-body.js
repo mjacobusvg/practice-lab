@@ -37,6 +37,26 @@
 // A refusal is a 200 with entitled:false, not a 403: not being entitled is the normal
 // state for a logged-out reader, and the client renders the teaser from it.
 //
+// THE DATABASE SIDE, APPLIED 2026-09-17 — recorded here because a grant is invisible
+// state that lives in no file otherwise. A table-level SELECT grant covers every column,
+// so revoking one column is a no-op; the table grant has to go and the wanted columns be
+// granted back:
+//
+//   revoke select on public.forum_posts from anon, authenticated;
+//   grant  select (<every column except body_html, body_plain>) on public.forum_posts
+//     to anon, authenticated;
+//   -- and the same for public.forum_comments
+//
+// Verified after applying: `select=id,title,body_plain` and `select=*` both answer
+// 401 permission denied, while `select=id,title,excerpt,free_visible,members_teaser,
+// comment_count` still answers 206 with all 578 rows — so feeds, search, space listings
+// and the teaser keep working untouched. Every remaining client query was checked to be
+// metadata-only first.
+//
+// STILL OPEN: `canonical_synthesis` is gated in the UI the same way a body is, but is
+// still readable directly. One post has it today, so it was left rather than delay
+// closing 554 bodies; fold it into this endpoint and drop it from the client select.
+//
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, SESSION_SIGNING_SECRET
 
 const { verifyToken } = require('./_lib/session');
