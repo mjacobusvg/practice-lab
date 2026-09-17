@@ -471,11 +471,11 @@ async function runAssessment(inp, clinBlock, lengthBlock, lockDx, assessStyle){
   if(lockDx && String(lockDx).trim()){
     lockBlock = '\n\n---\n\nDIAGNOSIS LIST IS LOCKED FOR THIS REGENERATION. The assessment below was already generated for THIS SAME visit at a different length. Reproduce its diagnosis list EXACTLY: the same conditions, the same ICD-10 codes, the same order, and the same severity/course specifiers, verbatim. You may NOT add, remove, reorder, or re-specify any diagnosis. This regeneration changes ONLY the amount of formulation prose to match the requested length. The length setting must never change the diagnosis list.\n\nPREVIOUSLY GENERATED ASSESSMENT (authoritative source of the locked diagnosis list):\n\n' + String(lockDx).trim();
   }
-  var assessText = await callAPI(ASSESS_SYS, [{role:'user', content: contextBlock(inp) + clinBlock + lengthBlock + styleBlock + lockBlock}], 4000);
+  var assessText = await callAPI(ASSESS_SYS, [{role:'user', content: contextBlock(inp) + clinBlock + lengthBlock + styleBlock + lockBlock}], 4000, undefined, undefined, 'assessment');
   if(!assessText) throw new Error('No assessment came back.');
   var reviewMsg = 'ORIGINAL SOURCE:\n\n' + contextBlock(inp) + clinBlock + lengthBlock + styleBlock + lockBlock +
     '\n\n---\n\nDRAFT ASSESSMENT:\n\n' + assessText;
-  var reviewRaw = await callAPI(REVIEW_SYS, [{role:'user', content: reviewMsg}], 4000);
+  var reviewRaw = await callAPI(REVIEW_SYS, [{role:'user', content: reviewMsg}], 4000, undefined, undefined, 'assessment_review');
   // The reviewer returns PLAIN TEXT with <<<ASSESSMENT>>> / <<<FLAGS>>> markers, NOT JSON. The
   // assessment is full of patient quotes and line breaks; as JSON, one unescaped quote broke
   // JSON.parse and silently dropped the whole review + its flags, falling back to the un-reviewed
@@ -541,7 +541,7 @@ async function runPreflight(inp, scope){
   // hit the mandatory dx card + correct modalities; slightly thinner (missed one nuance attribution
   // card, used an unspecified vs severity-specified code). On trial — flip back to Sonnet if the
   // cards feel thin. callAPI's 5th arg is the per-call model override. See MODEL-REGISTRY.md.
-  var raw = await callAPI(PREFLIGHT_SYS, [{role:'user', content: contextBlock(inp) + scopeNote(scope) + dxSignal}], 2000, null, 'claude-haiku-4-5-20251001');
+  var raw = await callAPI(PREFLIGHT_SYS, [{role:'user', content: contextBlock(inp) + scopeNote(scope) + dxSignal}], 2000, null, 'claude-haiku-4-5-20251001', 'preflight');
   var txt = String(raw).replace(/```json|```/g,'').trim();
   var parsed;
   try { parsed = JSON.parse(txt); }
@@ -597,7 +597,7 @@ async function runTherapy(inp, modality, code){
     '\n\n---\n\n' + modLine +
     '\nAdd-on code intended: ' + (code||'90833') +
     '\n\nGenerate the psychotherapy add-on documentation using the five labeled sections. Infer the therapeutic focus from ' + (hasMod ? 'the modality and HPI.' : 'the documented work and HPI.');
-  var t = String(await callAPI(THERAPY_SYS, [{role:'user', content: userMsg}], 2000) || '');
+  var t = String(await callAPI(THERAPY_SYS, [{role:'user', content: userMsg}], 2000, undefined, undefined, 'psychotherapy') || '');
   // Backstop: drop any preamble the model may add before the note (it must start at "Modality:").
   var mi = t.search(/Modality\s*:/i); if(mi > 0) t = t.slice(mi);
   return chartClean(t);
@@ -632,7 +632,7 @@ async function runMSE(narrative, mseMacro){
   if(!base) return '';
   var msg = "CLINICIAN'S STANDARD MSE:\n\n" + base +
     "\n\n---\n\nTODAY'S VISIT NARRATIVE (the ONLY source for any update):\n\n" + String(narrative || '').trim();
-  var t = await callAPI(MSE_SYS, [{role:'user', content: msg}], 900);
+  var t = await callAPI(MSE_SYS, [{role:'user', content: msg}], 900, undefined, undefined, 'mse');
   return chartClean(String(t || base).trim());
 }
 
@@ -664,7 +664,7 @@ async function runPlan(inp, planMacro){
   // Plan is a template-fill (fill med line + follow-up, preserve boilerplate) — A/B tested as a tie
   // with Sonnet, so it runs on Haiku (cheaper). callAPI's 5th arg is a per-call model override; hosts
   // whose callAPI ignores it (e.g. the Note Builder, which never calls runPlan) are unaffected.
-  var t = await callAPI(PLAN_SYS, [{role:'user', content: msg}], 1400, null, 'claude-haiku-4-5-20251001');
+  var t = await callAPI(PLAN_SYS, [{role:'user', content: msg}], 1400, null, 'claude-haiku-4-5-20251001', 'plan');
   return chartClean(String(t || base).trim());
 }
 
