@@ -179,7 +179,45 @@ async function finishRun(runId, ok, summary, errorMessage) {
   } catch (e) { /* best-effort */ }
 }
 
-module.exports = { authorize: authorize, claimRun: claimRun, finishRun: finishRun };
+/**
+ * Run `work`, then close the run record however it ends — including a throw.
+ *
+ * finishRun was added with claimRun, and then four of the six gated jobs never called
+ * it: compliance-reminders, digest-weekly, membership-billing-notices and
+ * send-scheduled-broadcasts. Every function_run_log row they wrote had finished_at, ok
+ * and summary NULL, so the table answered "did it start?" and could not answer "did it
+ * work?" — which was the other half of why it exists. The jobs each have five or six
+ * exits after the claim, so per-exit calls are a thing to forget; this makes forgetting
+ * impossible by having exactly one place that closes the record.
+ *
+ * `ok` is taken from the status the handler chose, so a job that returns 500 is recorded
+ * as a failure without having to say so twice.
+ */
+async function settle(claim, work) {
+  var res;
+  try {
+    res = await work();
+  } catch (e) {
+    await finishRun(claim && claim.runId, false, null, (e && e.message) || String(e));
+    throw e;
+  }
+  var status = (res && res.statusCode) || 200;
+  var ok = status >= 200 && status < 400;
+  var summary = null;
+  try {
+    // The handler's own response body is the best summary available, and these jobs
+    // already put their counts in it. Keep it small and never let a parse failure
+    // become the job's failure.
+    var parsed = res && typeof res.body === 'string' ? JSON.parse(res.body) : null;
+    summary = parsed && typeof parsed === 'object' ? parsed : (res && res.body ? { note: String(res.body).slice(0, 300) } : null);
+  } catch (e) {
+    summary = res && res.body ? { note: String(res.body).slice(0, 300) } : null;
+  }
+  await finishRun(claim && claim.runId, ok, summary, ok ? null : 'status ' + status);
+  return res;
+}
+
+module.exports = { authorize: authorize, claimRun: claimRun, finishRun: finishRun, settle: settle };
 
 /**
  * Constant-time check of the cron shared secret, accepting the CURRENT value or a

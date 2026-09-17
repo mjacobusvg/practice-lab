@@ -273,75 +273,79 @@ exports.handler = async function (event) {
   if (!auth.ok) return { statusCode: 403, body: JSON.stringify({ error: 'Forbidden' }) };
   const claim = await guard.claimRun('membership-billing-notices', 10 * 60 * 1000, auth.via);
   if (!claim.claimed) return { statusCode: 429, body: JSON.stringify({ skipped: 'ran too recently', last_run_at: claim.lastRunAt }) };
+  // Every exit below closes the run record, including a throw. See guard.settle:
+  // this job used to claim a slot and never write finished_at/ok/summary.
+  return guard.settle(claim, async function () {
 
-  if (!process.env.STRIPE_SECRET_KEY) return { statusCode: 500, body: 'Missing STRIPE_SECRET_KEY' };
-  const ses = makeSes();
-  if (!ses) return { statusCode: 500, body: 'Missing SES credentials' };
+    if (!process.env.STRIPE_SECRET_KEY) return { statusCode: 500, body: 'Missing STRIPE_SECRET_KEY' };
+    const ses = makeSes();
+    if (!ses) return { statusCode: 500, body: 'Missing SES credentials' };
 
-  const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-  const nowMs = Date.now();
-  let ackSent = 0, remindersSent = 0, skipped = 0, failed = 0;
+    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+    const nowMs = Date.now();
+    let ackSent = 0, remindersSent = 0, skipped = 0, failed = 0;
 
-  let subs;
-  try { subs = await allSubscriptions(stripe); }
-  catch (e) {
-    console.error('membership billing notices: Stripe list failed:', e.message);
-    return { statusCode: 500, body: 'Stripe list failed' };
-  }
+    let subs;
+    try { subs = await allSubscriptions(stripe); }
+    catch (e) {
+      console.error('membership billing notices: Stripe list failed:', e.message);
+      return { statusCode: 500, body: 'Stripe list failed' };
+    }
 
-  for (const sub of subs) {
-    try {
-      const facts = subscriptionFacts(sub);
-      if (!facts.tier) { skipped++; continue; } // not a TBP membership product
-      if (!ACCESS_STATUSES.has(sub.status)) { skipped++; continue; }
-      if (sub.cancel_at_period_end) { skipped++; continue; }
+    for (const sub of subs) {
+      try {
+        const facts = subscriptionFacts(sub);
+        if (!facts.tier) { skipped++; continue; } // not a TBP membership product
+        if (!ACCESS_STATUSES.has(sub.status)) { skipped++; continue; }
+        if (sub.cancel_at_period_end) { skipped++; continue; }
 
-      const email = await customerEmail(stripe, sub);
-      if (!email) { skipped++; continue; }
+        const email = await customerEmail(stripe, sub);
+        if (!email) { skipped++; continue; }
 
-      // Post-purchase acknowledgment for new subscriptions only. The fixed cutover
-      // prevents retroactive confirmation emails to members who subscribed before
-      // this feature existed.
-      if ((sub.created || 0) >= ACK_CUTOFF_UNIX && !(sub.metadata && sub.metadata.tbp_billing_ack_sent_at)) {
-        const msg = buildAcknowledgment(sub, facts);
+        // Post-purchase acknowledgment for new subscriptions only. The fixed cutover
+        // prevents retroactive confirmation emails to members who subscribed before
+        // this feature existed.
+        if ((sub.created || 0) >= ACK_CUTOFF_UNIX && !(sub.metadata && sub.metadata.tbp_billing_ack_sent_at)) {
+          const msg = buildAcknowledgment(sub, facts);
+          await send(ses, email, msg);
+          await stripe.subscriptions.update(sub.id, {
+            metadata: { tbp_billing_ack_sent_at: new Date().toISOString() }
+          });
+          ackSent++;
+          // Update our local copy so later logic in this same run sees the marker.
+          sub.metadata = Object.assign({}, sub.metadata || {}, { tbp_billing_ack_sent_at: new Date().toISOString() });
+        }
+
+        // National renewal baseline: 25-40 days before each annual renewal, or before
+        // the renewal that crosses each continuous 12-month anniversary on a shorter plan.
+        const target = renewalTarget(sub, facts);
+        if (!target) continue;
+        const daysUntil = Math.ceil((target.targetUnix * 1000 - nowMs) / DAY_MS);
+        if (daysUntil < 25 || daysUntil > 40) continue;
+        const already = sub.metadata && sub.metadata.tbp_renewal_notice_key;
+        if (already === target.key) continue;
+
+        const msg = buildRenewalReminder(sub, facts, target, daysUntil);
         await send(ses, email, msg);
         await stripe.subscriptions.update(sub.id, {
-          metadata: { tbp_billing_ack_sent_at: new Date().toISOString() }
+          metadata: {
+            tbp_renewal_notice_key: target.key,
+            tbp_renewal_notice_sent_at: new Date().toISOString()
+          }
         });
-        ackSent++;
-        // Update our local copy so later logic in this same run sees the marker.
-        sub.metadata = Object.assign({}, sub.metadata || {}, { tbp_billing_ack_sent_at: new Date().toISOString() });
+        remindersSent++;
+      } catch (e) {
+        failed++;
+        console.error('membership billing notice failed for', sub && sub.id, e && e.message);
       }
-
-      // National renewal baseline: 25-40 days before each annual renewal, or before
-      // the renewal that crosses each continuous 12-month anniversary on a shorter plan.
-      const target = renewalTarget(sub, facts);
-      if (!target) continue;
-      const daysUntil = Math.ceil((target.targetUnix * 1000 - nowMs) / DAY_MS);
-      if (daysUntil < 25 || daysUntil > 40) continue;
-      const already = sub.metadata && sub.metadata.tbp_renewal_notice_key;
-      if (already === target.key) continue;
-
-      const msg = buildRenewalReminder(sub, facts, target, daysUntil);
-      await send(ses, email, msg);
-      await stripe.subscriptions.update(sub.id, {
-        metadata: {
-          tbp_renewal_notice_key: target.key,
-          tbp_renewal_notice_sent_at: new Date().toISOString()
-        }
-      });
-      remindersSent++;
-    } catch (e) {
-      failed++;
-      console.error('membership billing notice failed for', sub && sub.id, e && e.message);
     }
-  }
 
-  console.log('membership billing notices:', { subscriptions: subs.length, ackSent, remindersSent, skipped, failed });
-  return {
-    statusCode: 200,
-    body: JSON.stringify({ subscriptions: subs.length, acknowledgments_sent: ackSent, renewal_reminders_sent: remindersSent, failed })
-  };
+    console.log('membership billing notices:', { subscriptions: subs.length, ackSent, remindersSent, skipped, failed });
+    return {
+      statusCode: 200,
+      body: JSON.stringify({ subscriptions: subs.length, acknowledgments_sent: ackSent, renewal_reminders_sent: remindersSent, failed })
+    };
+  });
 };
 
 module.exports._test = { subscriptionFacts, renewalTarget, buildAcknowledgment, buildRenewalReminder };

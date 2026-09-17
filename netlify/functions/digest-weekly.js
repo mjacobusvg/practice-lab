@@ -50,56 +50,60 @@ exports.handler = async function (event) {
   if (!claim.claimed) {
     return { statusCode: 429, headers, body: JSON.stringify({ ok: false, skipped: 'ran too recently', last_run_at: claim.lastRunAt }) };
   }
+  // Every exit below closes the run record, including a throw. See guard.settle:
+  // this job used to claim a slot and never write finished_at/ok/summary.
+  return guard.settle(claim, async function () {
 
-  try {
-    // Don't send twice in a short window (double-fire or manual + scheduled).
-    const recent = await sb('digest_sends?order=sent_at.desc&limit=1&select=sent_at', 'GET');
-    if (recent && recent.length) {
-      const last = new Date(recent[0].sent_at).getTime();
-      if (Date.now() - last < MIN_GAP_DAYS * 24 * 60 * 60 * 1000) {
-        return { statusCode: 200, headers, body: JSON.stringify({ ok: true, skipped: 'sent recently' }) };
+    try {
+      // Don't send twice in a short window (double-fire or manual + scheduled).
+      const recent = await sb('digest_sends?order=sent_at.desc&limit=1&select=sent_at', 'GET');
+      if (recent && recent.length) {
+        const last = new Date(recent[0].sent_at).getTime();
+        if (Date.now() - last < MIN_GAP_DAYS * 24 * 60 * 60 * 1000) {
+          return { statusCode: 200, headers, body: JSON.stringify({ ok: true, skipped: 'sent recently' }) };
+        }
       }
+
+      const since = new Date(Date.now() - WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+      const sinceEnc = encodeURIComponent(since);
+
+      // Most-discussed first, then newest; a small curated set for the email.
+      const posts = await sb('forum_posts?created_at=gt.' + sinceEnc + '&order=comment_count.desc,created_at.desc&limit=8&select=id,title,excerpt,comment_count,created_at,spaces(name)', 'GET');
+      if (!posts || !posts.length) {
+        return { statusCode: 200, headers, body: JSON.stringify({ ok: true, skipped: 'no new posts' }) };
+      }
+
+      const recips = await sb('accounts?tier=in.(forum,full)&notify_email_posts=is.true&select=email', 'GET');
+      const emails = (recips || []).map(function (r) { return r.email; }).filter(function (e) { return e && e.indexOf('@') !== -1; });
+      if (!emails.length) {
+        return { statusCode: 200, headers, body: JSON.stringify({ ok: true, skipped: 'no opted-in recipients' }) };
+      }
+
+      let list = '';
+      posts.forEach(function (p) {
+        const sp = p.spaces ? p.spaces.name : '';
+        const c = Number(p.comment_count) || 0;
+        list += '<li style="margin-bottom:14px">' +
+          '<a href="' + PLATFORM_URL + '" style="font-size:15px;font-weight:600;color:#0b7285;text-decoration:none">' + esc(p.title || 'Untitled') + '</a>' +
+          '<div style="font-size:12px;color:#888;margin-top:2px">' + (sp ? esc(sp) + ' &middot; ' : '') + c + ' comment' + (c === 1 ? '' : 's') + '</div>' +
+          (p.excerpt ? '<div style="font-size:13px;color:#444;margin-top:4px">' + esc(String(p.excerpt).slice(0, 160)) + '</div>' : '') +
+          '</li>';
+      });
+
+      const bodyTop =
+        '<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto">' +
+        '<p style="font-size:16px"><strong>This week on Think Beyond Practice</strong></p>' +
+        '<p style="font-size:13px;color:#555">The threads your peers have been discussing over the last ' + WINDOW_DAYS + ' days.</p>' +
+        '<ul style="padding-left:18px;margin:16px 0">' + list + '</ul>' +
+        '<p><a href="' + PLATFORM_URL + '" style="display:inline-block;background:#0b7285;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-size:14px">Open the platform &rarr;</a></p>';
+
+      // One email per recipient so each carries its own preferences link.
+      await emailEach(emails, 'This week on Think Beyond Practice', function (email) { return bodyTop + prefsFooter(email) + '</div>'; });
+      try { await sb('digest_sends', 'POST', { recipient_count: emails.length, post_count: posts.length }, 'return=minimal'); } catch (e) {}
+
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, recipients: emails.length, posts: posts.length }) };
+    } catch (e) {
+      return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: e.message }) };
     }
-
-    const since = new Date(Date.now() - WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
-    const sinceEnc = encodeURIComponent(since);
-
-    // Most-discussed first, then newest; a small curated set for the email.
-    const posts = await sb('forum_posts?created_at=gt.' + sinceEnc + '&order=comment_count.desc,created_at.desc&limit=8&select=id,title,excerpt,comment_count,created_at,spaces(name)', 'GET');
-    if (!posts || !posts.length) {
-      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, skipped: 'no new posts' }) };
-    }
-
-    const recips = await sb('accounts?tier=in.(forum,full)&notify_email_posts=is.true&select=email', 'GET');
-    const emails = (recips || []).map(function (r) { return r.email; }).filter(function (e) { return e && e.indexOf('@') !== -1; });
-    if (!emails.length) {
-      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, skipped: 'no opted-in recipients' }) };
-    }
-
-    let list = '';
-    posts.forEach(function (p) {
-      const sp = p.spaces ? p.spaces.name : '';
-      const c = Number(p.comment_count) || 0;
-      list += '<li style="margin-bottom:14px">' +
-        '<a href="' + PLATFORM_URL + '" style="font-size:15px;font-weight:600;color:#0b7285;text-decoration:none">' + esc(p.title || 'Untitled') + '</a>' +
-        '<div style="font-size:12px;color:#888;margin-top:2px">' + (sp ? esc(sp) + ' &middot; ' : '') + c + ' comment' + (c === 1 ? '' : 's') + '</div>' +
-        (p.excerpt ? '<div style="font-size:13px;color:#444;margin-top:4px">' + esc(String(p.excerpt).slice(0, 160)) + '</div>' : '') +
-        '</li>';
-    });
-
-    const bodyTop =
-      '<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto">' +
-      '<p style="font-size:16px"><strong>This week on Think Beyond Practice</strong></p>' +
-      '<p style="font-size:13px;color:#555">The threads your peers have been discussing over the last ' + WINDOW_DAYS + ' days.</p>' +
-      '<ul style="padding-left:18px;margin:16px 0">' + list + '</ul>' +
-      '<p><a href="' + PLATFORM_URL + '" style="display:inline-block;background:#0b7285;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-size:14px">Open the platform &rarr;</a></p>';
-
-    // One email per recipient so each carries its own preferences link.
-    await emailEach(emails, 'This week on Think Beyond Practice', function (email) { return bodyTop + prefsFooter(email) + '</div>'; });
-    try { await sb('digest_sends', 'POST', { recipient_count: emails.length, post_count: posts.length }, 'return=minimal'); } catch (e) {}
-
-    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, recipients: emails.length, posts: posts.length }) };
-  } catch (e) {
-    return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: e.message }) };
-  }
+  });
 };

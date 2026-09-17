@@ -29,50 +29,54 @@ exports.handler = async function (event) {
   if (!gate.ok) return { statusCode: 403, headers, body: JSON.stringify({ error: 'Forbidden' }) };
   const claim = await guard.claimRun('send-scheduled-broadcasts', 5 * 60 * 1000, gate.via);
   if (!claim.claimed) return { statusCode: 429, headers, body: JSON.stringify({ skipped: 'ran too recently', last_run_at: claim.lastRunAt }) };
+  // Every exit below closes the run record, including a throw. See guard.settle:
+  // this job used to claim a slot and never write finished_at/ok/summary.
+  return guard.settle(claim, async function () {
 
-  const auth = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };
-  const base = process.env.URL || process.env.DEPLOY_PRIME_URL || 'https://thinkbeyondpractice.com';
-  const nowIso = new Date().toISOString();
+    const auth = { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };
+    const base = process.env.URL || process.env.DEPLOY_PRIME_URL || 'https://thinkbeyondpractice.com';
+    const nowIso = new Date().toISOString();
 
-  try {
-    // Find due, still-scheduled broadcasts.
-    const dueRes = await fetch(URL + '/rest/v1/scheduled_broadcasts?status=eq.scheduled&scheduled_at=lte.' + encodeURIComponent(nowIso) + '&order=scheduled_at.asc&select=id,subject,markdown,preheader,audience,emails,from_email,reply_to&limit=20', { headers: auth });
-    const due = dueRes.ok ? await dueRes.json() : [];
-    const results = [];
+    try {
+      // Find due, still-scheduled broadcasts.
+      const dueRes = await fetch(URL + '/rest/v1/scheduled_broadcasts?status=eq.scheduled&scheduled_at=lte.' + encodeURIComponent(nowIso) + '&order=scheduled_at.asc&select=id,subject,markdown,preheader,audience,emails,from_email,reply_to&limit=20', { headers: auth });
+      const due = dueRes.ok ? await dueRes.json() : [];
+      const results = [];
 
-    for (const b of due) {
-      // Claim it: flip scheduled -> sending only if still scheduled. Empty result
-      // means another run already claimed it — skip.
-      const claim = await fetch(URL + '/rest/v1/scheduled_broadcasts?id=eq.' + b.id + '&status=eq.scheduled', {
-        method: 'PATCH', headers: Object.assign({}, auth, { Prefer: 'return=representation' }),
-        body: JSON.stringify({ status: 'sending' })
-      });
-      const claimed = claim.ok ? await claim.json() : [];
-      if (!claimed.length) continue;
-
-      try {
-        const sendRes = await fetch(base + '/.netlify/functions/broadcast-send', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ internal_secret: SECRET, subject: b.subject, markdown: b.markdown, preheader: b.preheader || '', audience: b.audience, emails: b.emails || '', from: b.from_email || undefined, reply_to: b.reply_to || undefined })
+      for (const b of due) {
+        // Claim it: flip scheduled -> sending only if still scheduled. Empty result
+        // means another run already claimed it — skip.
+        const claim = await fetch(URL + '/rest/v1/scheduled_broadcasts?id=eq.' + b.id + '&status=eq.scheduled', {
+          method: 'PATCH', headers: Object.assign({}, auth, { Prefer: 'return=representation' }),
+          body: JSON.stringify({ status: 'sending' })
         });
-        const sd = await sendRes.json().catch(function () { return {}; });
-        if (sendRes.ok && sd.ok) {
-          await patch(URL, auth, b.id, { status: 'sent', sent_at: new Date().toISOString(), broadcast_id: sd.broadcast_id || null });
-          results.push({ id: b.id, sent: sd.sent });
-        } else {
-          await patch(URL, auth, b.id, { status: 'error', error: String(sd.error || ('send ' + sendRes.status)).slice(0, 300) });
-          results.push({ id: b.id, error: sd.error || sendRes.status });
-        }
-      } catch (e) {
-        await patch(URL, auth, b.id, { status: 'error', error: String(e.message).slice(0, 300) });
-        results.push({ id: b.id, error: e.message });
-      }
-    }
+        const claimed = claim.ok ? await claim.json() : [];
+        if (!claimed.length) continue;
 
-    return { statusCode: 200, headers, body: JSON.stringify({ ok: true, due: due.length, results }) };
-  } catch (e) {
-    return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: e.message }) };
-  }
+        try {
+          const sendRes = await fetch(base + '/.netlify/functions/broadcast-send', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ internal_secret: SECRET, subject: b.subject, markdown: b.markdown, preheader: b.preheader || '', audience: b.audience, emails: b.emails || '', from: b.from_email || undefined, reply_to: b.reply_to || undefined })
+          });
+          const sd = await sendRes.json().catch(function () { return {}; });
+          if (sendRes.ok && sd.ok) {
+            await patch(URL, auth, b.id, { status: 'sent', sent_at: new Date().toISOString(), broadcast_id: sd.broadcast_id || null });
+            results.push({ id: b.id, sent: sd.sent });
+          } else {
+            await patch(URL, auth, b.id, { status: 'error', error: String(sd.error || ('send ' + sendRes.status)).slice(0, 300) });
+            results.push({ id: b.id, error: sd.error || sendRes.status });
+          }
+        } catch (e) {
+          await patch(URL, auth, b.id, { status: 'error', error: String(e.message).slice(0, 300) });
+          results.push({ id: b.id, error: e.message });
+        }
+      }
+
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: true, due: due.length, results }) };
+    } catch (e) {
+      return { statusCode: 200, headers, body: JSON.stringify({ ok: false, error: e.message }) };
+    }
+  });
 };
 
 function patch(URL, auth, id, body) {
