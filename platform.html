@@ -3854,7 +3854,7 @@ async function viewPost(postId) {
     // Load post
     var { data: post, error } = await SB
       .from('forum_posts')
-      .select('id, author_id, title, body_html, body_plain, excerpt, comment_count, reaction_count, created_at, edited_at, is_locked, image_urls, poll, attachments, canonical_synthesis, ce_candidate, free_visible, free_readonly, members_teaser, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name)), post_collection_items(post_collections(id, name, spaces(slug)))')
+      .select('id, author_id, title, excerpt, comment_count, reaction_count, created_at, edited_at, is_locked, image_urls, poll, attachments, canonical_synthesis, ce_candidate, free_visible, free_readonly, members_teaser, spaces(name, slug), accounts(name, avatar_url, credentials), post_tags(tags(name)), post_collection_items(post_collections(id, name, spaces(slug)))')
       .eq('id', postId)
       .single();
     if (error) {
@@ -3875,11 +3875,39 @@ async function viewPost(postId) {
     // Load comments (parent_comment_id drives the threaded tree below)
     var { data: comments, error: cErr } = await SB
       .from('forum_comments')
-      .select('id, author_id, parent_comment_id, body_html, body_plain, image_urls, created_at, edited_at, accounts(name, avatar_url)')
+      .select('id, author_id, parent_comment_id, image_urls, created_at, edited_at, accounts(name, avatar_url)')
       .eq('post_id', postId)
       .order('created_at', { ascending: true })
       .limit(200);
     if (cErr) throw cErr;
+
+    // ── Bodies come from the server, which decides who may have them ──────────
+    // The two queries above deliberately no longer select body_html/body_plain. They
+    // used to, for every post, and the browser then chose whether to paint it — so the
+    // paywall was a rendering decision and 554 member-only bodies were readable with
+    // the anon key printed in this file. forum-body.js applies the SAME rule this page
+    // used to apply (free_visible, or paid, or a recorded unlock for this post), so no
+    // reader loses anything; the bytes simply stop travelling to people not entitled
+    // to them. When it says no, `post.excerpt` still drives the existing teaser below.
+    try {
+      var _bodyRes = await fetch('/.netlify/functions/forum-body', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ post_id: postId, token: getAuthToken() })
+      }).then(function (r) { return r.json(); });
+      if (_bodyRes && _bodyRes.ok && _bodyRes.entitled) {
+        post.body_html = _bodyRes.body_html;
+        post.body_plain = _bodyRes.body_plain;
+        var _cb = {};
+        (_bodyRes.comments || []).forEach(function (c) { _cb[c.id] = c; });
+        (comments || []).forEach(function (c) {
+          if (_cb[c.id]) { c.body_html = _cb[c.id].body_html; c.body_plain = _cb[c.id].body_plain; }
+        });
+      }
+    } catch (e) {
+      // Leave the bodies unset: the teaser path renders from excerpt rather than
+      // showing a blank post. A network failure must not look like empty content.
+    }
 
     // Load reactions for the post and every loaded comment in two small reads
     // (reactions has a public SELECT policy; writes go through the endpoint).
