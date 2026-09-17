@@ -1552,6 +1552,43 @@ Computation is spent only when spending it might save the clinician attention �
 thirty seconds of audio happened. An always-on system that reasons continuously would burn money to
 produce interruptions, which is the thesis inverted.
 
+### 36.8 The surface now exists, and it is not an ADHD feature
+
+**Decided Sept 2026, from the first real mid-visit use.** The ADHD Framework's mid-visit check
+produced a small floating card — WHAT CHANGED / ASK NEXT / WHY IT MATTERS — sitting over the working
+note, with the full framework collapsed behind a folder tab. That card is the encounter-assist
+surface described in 36.6. It was built for the ADHD Framework and it is not an ADHD feature; the
+Framework is simply the first thing that had something to say into it.
+
+Stop calling it the Framework delta popup. It is the surface; the Framework is a producer.
+
+Every capability in the 36.6 row targets the same physical card, with the same contract:
+
+| Producer | The card says | Expands to |
+|---|---|---|
+| Interaction check | Fluoxetine may meaningfully increase exposure to X | `pm-interaction-checker.html` |
+| Monitoring rules | Lithium level appears overdue | the monitoring view |
+| Safety detection | Suicidal thoughts mentioned | the safety assessment |
+| Scales | PHQ-9 fits what is being described | `scales-data.js` |
+| Discern | One unresolved issue may change the differential | Discern |
+| ADHD Framework | Prior 'strong student' account retracted | the Framework panel |
+
+Three rules the first build established, which any new producer inherits:
+
+1. **One thing owns the clinician's attention.** The card arriving collapses whatever long document
+   produced it. Holding the working note, a full reference panel and a new card at once is the
+   attention split the card exists to end — and it is what the first version accidentally did.
+2. **Telegraphic, not merely short.** "One sentence" is not a length limit; a forty-word sentence
+   satisfies it and is still a paragraph to someone mid-interview. Sixteen words per line, the fact
+   rather than the narration of it, no parenthetical explaining the reasoning. The reader was in the
+   room. Depth lives one click away, never on the card.
+3. **Dismissal is not deletion.** A read card collapses into the encounter's tray and stays part of
+   encounter state, so the Scribe can use it when the note is drafted.
+
+Not yet built: the shared tray, the non-ADHD producers, and any automatic trigger. What exists is
+one producer and the card. That is the right order — the surface is proven against a real visit
+before anything else is pointed at it.
+
 ---
 
 ## 33. This document is intentionally incomplete
