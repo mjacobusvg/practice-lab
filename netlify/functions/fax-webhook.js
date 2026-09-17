@@ -21,13 +21,56 @@
 const { SESv2Client, SendEmailCommand } = require('@aws-sdk/client-sesv2');
 const crypto = require('crypto');
 
-// Verifies a Notifyre webhook signature in a fail-open-with-logging posture.
-// Returns { matched: bool, attempted: bool, detail }. While Notifyre's exact scheme
-// (header name, hex vs base64, body-only vs timestamp+body) is unconfirmed, this tries
-// the common variants and LOGS the outcome but does not reject — so a wrong guess can
-// never silently kill failure notifications. Once the real scheme is confirmed from a
-// captured webhook, flip WEBHOOK_VERIFY_ENFORCE to true to reject on mismatch.
-var WEBHOOK_VERIFY_ENFORCE = false;
+// SECURITY, 2026-09-17. This endpoint is unauthenticated and its signature check was
+// fail-open behind three ANDed conditions, so in practice nothing was ever rejected:
+//
+//     if (WEBHOOK_VERIFY_ENFORCE && sig.attempted && !sig.matched) return 401;
+//
+// WEBHOOK_VERIFY_ENFORCE was a hardcoded false, and `attempted` is false whenever no
+// signature header arrives — so even flipping the constant would still have accepted an
+// unsigned POST. That mattered far more than "log poisoning", because of what the
+// handler does further down: it parses a recipient address out of the payload's own
+// Reference field and SES-mails it, with the payload's fax number in the subject and its
+// StatusMessage in the body. That is an unauthenticated open relay from
+// thinkbeyondpractice.com, signed by our SES with our SPF/DKIM — usable to phish anyone,
+// and to burn the sending reputation that the BAA-covered clinical mail depends on.
+//
+// Notifyre's exact scheme (header name, hex vs base64, body-only vs timestamp+body) is
+// still unconfirmed, and 3 of 11 letters have gone by fax, so rejecting on a WRONG guess
+// would silently kill delivery-failure notices for real clinical faxes. So the two
+// concerns are separated:
+//
+//   1. The relay is closed regardless of signature state (see resolveKnownRecipient and
+//      the sanitisers below). An unverified webhook can no longer be weaponised.
+//   2. Enforcement is now switchable and correct when switched: set
+//      NOTIFYRE_WEBHOOK_ENFORCE=true once a real webhook confirms the scheme, and a
+//      MISSING signature is then rejected too, not just a mismatched one.
+//
+// Every signature attempt logs which candidate scheme matched, so the next genuine fax
+// confirms the scheme and lets enforcement go on. Until then this is honestly described
+// as unverified-but-harmless rather than verified.
+var WEBHOOK_VERIFY_ENFORCE = process.env.NOTIFYRE_WEBHOOK_ENFORCE === 'true';
+
+// Constant-time equality over strings of possibly different length.
+function safeEqual(a, b) {
+  var ba = Buffer.from(String(a || ''));
+  var bb = Buffer.from(String(b || ''));
+  if (ba.length !== bb.length || ba.length === 0) return false;
+  return crypto.timingSafeEqual(ba, bb);
+}
+
+// A fax number for display: digits, spaces and the usual separators only, length-capped.
+// Anything else is attacker text heading for an email subject line.
+function safeFaxNumber(v) {
+  var cleaned = String(v == null ? '' : v).replace(/[^0-9+()\-\s]/g, '').trim().slice(0, 24);
+  return cleaned || 'the number on file';
+}
+
+// Free text from the payload, rendered into an email body. Strip CR/LF so it cannot forge
+// extra lines or headers, cap it, and keep it plainly delimited.
+function safeDetail(v) {
+  return String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+}
 
 function verifyNotifyreSignature(event, rawBody) {
   var secret = process.env.NOTIFYRE_WEBHOOK_SECRET;
@@ -65,8 +108,44 @@ function verifyNotifyreSignature(event, rawBody) {
     tries.push(crypto.createHmac('sha256', secret).update(ts + '.' + rawBody, 'utf8').digest('hex'));
     tries.push(crypto.createHmac('sha256', secret).update(ts + '.' + rawBody, 'utf8').digest('base64'));
   }
-  var matched = tries.some(function(t) { return t === providedClean; });
-  return { matched: matched, attempted: true, detail: 'header=' + usedHeader, provided: providedClean };
+  // Constant-time, and record WHICH variant matched so one genuine webhook is enough to
+  // confirm the scheme and let NOTIFYRE_WEBHOOK_ENFORCE be turned on.
+  var names = ['body-hex', 'body-base64', 'ts.body-hex', 'ts.body-base64'];
+  var matchedAs = null;
+  for (var t = 0; t < tries.length; t++) {
+    if (safeEqual(tries[t], providedClean)) { matchedAs = names[t] || ('variant-' + t); break; }
+  }
+  // `provided` is deliberately NOT returned any more: it was logged, and a signature is a
+  // credential even when it is the attacker's own.
+  return { matched: !!matchedAs, attempted: true, matchedAs: matchedAs, detail: 'header=' + usedHeader };
+}
+
+// The recipient used to be whatever address the payload's Reference field carried, which
+// is what made this an open relay. A fax-id -> clinician mapping is not persisted at send
+// time (send-fax.js logs a usage row and returns the id to the caller, nothing queryable),
+// so the webhook cannot resolve the owner from our own records. The next best bound, and a
+// decisive one: the address must already be an account here. That turns "mail anyone on the
+// internet" into "mail a member who already gets mail from us", and an unknown address is
+// dropped with a log rather than delivered.
+//
+// The durable fix is for send-fax.js to record faxId -> clinician_email when it sends, and
+// for this to look the fax up by ID; then a forged Reference is irrelevant. Noted, not done
+// here — it is a schema change, not a webhook fix.
+async function resolveKnownRecipient(candidate) {
+  var email = String(candidate || '').trim().toLowerCase();
+  if (!email || email.indexOf('@') === -1 || email.length > 254) return null;
+  var URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
+  var KEY = process.env.SUPABASE_SERVICE_KEY;
+  if (!URL || !KEY) return null;   // cannot check => do not send
+  try {
+    var r = await fetch(URL + '/rest/v1/accounts?email=eq.' + encodeURIComponent(email) + '&select=email&limit=1',
+      { headers: { apikey: KEY, Authorization: 'Bearer ' + KEY } });
+    if (!r.ok) return null;
+    var rows = await r.json();
+    return (rows && rows[0] && rows[0].email) ? rows[0].email : null;
+  } catch (e) {
+    return null;
+  }
 }
 
 exports.handler = async function(event) {
@@ -85,8 +164,14 @@ exports.handler = async function(event) {
     // names present so the real Notifyre scheme can be confirmed from a live call.
     var sig = verifyNotifyreSignature(event, rawBody);
     console.log('[fax-webhook] sig check:', JSON.stringify(sig), 'headers present:', JSON.stringify(Object.keys(event.headers || {})));
-    if (WEBHOOK_VERIFY_ENFORCE && sig.attempted && !sig.matched) {
+    // When enforcing, an ABSENT signature is a rejection as well. The old condition also
+    // required sig.attempted, so an unsigned POST sailed through even with enforcement on.
+    if (WEBHOOK_VERIFY_ENFORCE && !sig.matched) {
       return { statusCode: 401, headers: headers, body: JSON.stringify({ error: 'Invalid signature' }) };
+    }
+    if (!WEBHOOK_VERIFY_ENFORCE) {
+      console.warn('[fax-webhook] UNVERIFIED webhook accepted — set NOTIFYRE_WEBHOOK_ENFORCE=true once the scheme is confirmed' +
+        (sig.matchedAs ? ' (this one matched ' + sig.matchedAs + ')' : ''));
     }
 
     var payload = JSON.parse(rawBody);
@@ -148,10 +233,12 @@ exports.handler = async function(event) {
       clinicianEmail = reference.split('|').pop().trim();
     }
 
-    // If no clinician email in reference, we can't notify anyone
-    if (!clinicianEmail || clinicianEmail.indexOf('@') === -1) {
-      console.log('Fax failed but no clinician email in reference:', reference);
-      return { statusCode: 200, headers: headers, body: JSON.stringify({ status: 'failed_no_notify', reason: 'no clinician email in reference' }) };
+    // The address must be one of ours. Anything else is a forged Reference trying to use
+    // this endpoint as a mailer.
+    var verifiedRecipient = await resolveKnownRecipient(clinicianEmail);
+    if (!verifiedRecipient) {
+      console.warn('[fax-webhook] refusing to notify: address in Reference is not a known account');
+      return { statusCode: 200, headers: headers, body: JSON.stringify({ status: 'failed_no_notify', reason: 'recipient not recognised' }) };
     }
 
     // Build failure reason
@@ -163,10 +250,14 @@ exports.handler = async function(event) {
     };
     var reason = failureReasons[status] || 'The fax could not be delivered (status: ' + status + ').';
 
-    var subject = 'Fax Delivery Failed - ' + to;
-    var emailBody = 'Your fax to ' + to + ' was not delivered.\n\n';
+    // Both of these come straight off the wire, so neither reaches the mail unfiltered:
+    // `to` shaped as a phone number, `statusMessage` stripped of newlines and capped.
+    var safeTo = safeFaxNumber(to);
+    var safeMsg = safeDetail(statusMessage);
+    var subject = 'Fax Delivery Failed - ' + safeTo;
+    var emailBody = 'Your fax to ' + safeTo + ' was not delivered.\n\n';
     emailBody += 'Reason: ' + reason + '\n';
-    if (statusMessage) emailBody += 'Details: ' + statusMessage + '\n';
+    if (safeMsg) emailBody += 'Details: ' + safeMsg + '\n';
     emailBody += '\nWhat to do next:\n';
     emailBody += '1. Verify the fax number is correct\n';
     emailBody += '2. Try sending again (the recipient fax machine may have been busy or turned off)\n';
@@ -190,7 +281,7 @@ exports.handler = async function(event) {
     var sesClient = new SESv2Client(sesConfig);
     await sesClient.send(new SendEmailCommand({
       FromEmailAddress: fromAddress,
-      Destination: { ToAddresses: [clinicianEmail] },
+      Destination: { ToAddresses: [verifiedRecipient] },
       Content: {
         Simple: {
           Subject: { Data: subject, Charset: 'UTF-8' },
@@ -202,7 +293,7 @@ exports.handler = async function(event) {
     return {
       statusCode: 200,
       headers: headers,
-      body: JSON.stringify({ status: 'failure_notification_sent', to: clinicianEmail })
+      body: JSON.stringify({ status: 'failure_notification_sent' })
     };
 
   } catch (err) {
