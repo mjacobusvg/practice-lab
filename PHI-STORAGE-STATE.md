@@ -203,6 +203,32 @@ PHI are in S3 under the AWS BAA; a small number of legacy schedule rows are bein
     HTTP-reachable (403, empty body, before the handler runs), so the forged-`next_run` finding was
     theoretical on this deployment, not live. See `_lib/scheduled-guard.js`.
 
+- **2026-09-17:** the letters migration recorded on 2026-09-16 **had never actually run**.
+  `phi-purge-expired` reported `schedules_healed: 3, charges_healed: 1, ok: true` at 08:00, and
+  `phi-drift-check` at 08:30 still counted the same 3/3/1/1/1 inline columns, with the rows'
+  `updated_at` unmoved since July. Root cause: **`letter_schedules.patient_email` and
+  `letter_charges.patient_email` were NOT NULL**, so every heal, close and release was rejected
+  23502 the moment it tried to empty one. `assessments.patient_name` is nullable, which is why
+  the 09-09 assessment migration worked and this one silently could not.
+  - It was invisible because `healRow` awaited the PATCH and ignored the result, returning the
+    S3 key regardless — so a rejected write was counted as a heal. Both that and
+    `phi-purge-expired`'s `sbPatch` now throw on a non-ok response; each row is attempted
+    independently, failures are counted into `result.failures`, and a run with any failure is
+    recorded **not ok**. A job that cannot fail visibly is worse than no job.
+  - **Two paid paths were broken for a day by the same constraint:** `letter-schedule.js`
+    create and `create-letter-charge.js` correctly omit `patient_email` from their INSERTs,
+    against a NOT NULL column with no default, so creating a recurring letter schedule or a
+    letter pay-link returned 500. Constraint dropped on both tables; verified by inserting a
+    row without `patient_email` and nulling it afterwards.
+  - **Still outstanding:** the 3 schedules and 1 charge are unmigrated (counts above stand).
+    They heal on the next 08:00 run now that the write can succeed, or sooner when the
+    provider opens the Letter Generator (the list path self-heals). All four rows belong to
+    `michael@thinkbeyondpsych.com`.
+  - `putJson` runs before the PATCH, so each failed heal DID write the PHI to S3 and then fail
+    to record the key. Orphaned objects exist under the schedule/charge prefixes; they are
+    inside the AWS BAA and covered by the bucket lifecycle, but they are unreferenced and
+    should be reconciled.
+
 ## Also holds member/business data (PII, not PHI — no BAA needed)
 
 `accounts`, `contacts`, `subscriptions`, `baa_signatures`, consent records — clinician/customer
