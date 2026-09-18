@@ -377,7 +377,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-115-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-116-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -714,7 +714,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-115-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-116-sub</span></div>
 </div>
 </div>
 
@@ -3622,24 +3622,42 @@ function adhdBuildSystem(){
 // something under it, keeps a question only when the clinician wrote beneath it, and drops the rest.
 function tbpInterviewAnswered(text){
   var lines = String(text || '').split('\n');
-  var out = [], pendingHead = null, wroteUnderHead = false;
   function isQ(l){ return /^\s*[\u2022\-*]/.test(l); }
   function isHead(l){
     var t = l.trim();
     return !!t && !isQ(l) && !/^\s/.test(l) && t.length <= 64 && !/[.?!]$/.test(t)
       && t.replace(/[^A-Za-z]/g,'') && t.replace(/[^A-Za-z]/g,'') === t.replace(/[^A-Za-z]/g,'').toUpperCase();
   }
-  for(var i = 0; i < lines.length; i++){
-    var l = lines[i];
-    if(isHead(l)){ pendingHead = l.trim(); wroteUnderHead = false; continue; }
-    if(!isQ(l)) continue;                       // a stray answer line with no question above it
-    var ans = [];
-    for(var j = i + 1; j < lines.length && !isQ(lines[j]) && !isHead(lines[j]); j++){
-      if(lines[j].trim()) ans.push(lines[j].trim());
-    }
-    if(!ans.length) continue;                    // UNANSWERED: it establishes nothing, so it is not sent
+  // THE RULE IS: DROP THE UNANSWERED SCAFFOLD, KEEP EVERYTHING A HUMAN WROTE.
+  // The first version kept only bullet questions that had an answer indented beneath them and
+  // skipped every other line, which silently DELETED free prose typed straight into a section --
+  // a clinician writing their history under a heading instead of under a question lost all of it
+  // before the model ever saw it, and the draft came back "no clinical source material was
+  // submitted". Destroying real documentation is a far worse failure than the fabrication pressure
+  // this filter exists to remove, so the test is authorship, not shape: a bullet with nothing under
+  // it is OUR question and goes; anything the clinician typed stays, wherever they put it.
+  var out = [], pendingHead = null, wroteUnderHead = false;
+  function emitHead(){
     if(pendingHead && !wroteUnderHead){ out.push('', pendingHead); wroteUnderHead = true; }
-    out.push(l.trim(), '  ' + ans.join(' '));
+  }
+  var i = 0;
+  while(i < lines.length){
+    var l = lines[i];
+    if(isHead(l)){ pendingHead = l.trim(); wroteUnderHead = false; i++; continue; }
+    if(isQ(l)){
+      // Collect whatever the clinician wrote under this question.
+      var ans = [], j = i + 1;
+      while(j < lines.length && !isQ(lines[j]) && !isHead(lines[j])){
+        if(lines[j].trim()) ans.push(lines[j].trim());
+        j++;
+      }
+      if(ans.length){ emitHead(); out.push(l.trim(), '  ' + ans.join(' ')); }
+      // Unanswered: the question goes, but the lines after it were already consumed either way.
+      i = j; continue;
+    }
+    // Free prose with no question above it. This is the clinician's own writing and it is kept.
+    if(l.trim()){ emitHead(); out.push(l.trim()); }
+    i++;
   }
   return out.join('\n').trim();
 }
