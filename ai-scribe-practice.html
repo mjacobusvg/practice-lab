@@ -75,6 +75,15 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
 /* The interview reads as the clinician's own backbone, visually separate from the Framework's
    purple additions in CHECK / ASK TODAY. */
 .wn-interview{border-left:3px solid #6ea8fe}
+.wn-iv-sec{border-top:1px solid var(--border2,var(--rule));padding-top:2px}
+.wn-iv-sec:first-child{border-top:0}
+.wn-iv-head{display:flex;align-items:center;gap:8px;cursor:pointer;padding:9px 2px 7px;user-select:none}
+.wn-iv-head:hover .wn-iv-h{color:#cfe2ff}
+.wn-iv-chev{color:#6ea8fe;font-size:.7rem;transition:transform .12s ease}
+.wn-iv-sec.folded .wn-iv-chev{transform:rotate(-90deg)}
+.wn-iv-h{font-size:.76rem;font-weight:700;letter-spacing:.06em;color:#9ec5ff;flex:1}
+.wn-iv-n{font-size:.72rem;color:var(--cream-dim);opacity:.8;white-space:nowrap}
+.wn-iv-sec.folded .wn-iv-ta{display:none}
 .wn-interview .wn-title{color:#9ec5ff}
 /* Full-screen focus editor for working the note during the visit */
 .focus-overlay{position:fixed;inset:0;background:var(--navy);z-index:9500;display:none;flex-direction:column;padding:14px 16px 16px;
@@ -360,7 +369,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-108-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-109-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -667,7 +676,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-108-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-109-sub</span></div>
 </div>
 </div>
 
@@ -5504,6 +5513,61 @@ function wnParseSerialized(text){
 // (never shrink), so a panel the clinician dragged taller stays put and content never clips.
 function wnFit(ta){ ta.style.height='auto'; ta.style.height=(ta.scrollHeight+6)+'px'; }
 function wnGrow(ta){ if(ta.scrollHeight > ta.clientHeight + 1){ ta.style.height=(ta.scrollHeight+6)+'px'; } }
+
+// ── Interview headings: collapsible, one block per heading ───────────────────────────────────
+// A whole interview in ONE textarea cannot have collapsible headings — you cannot fold a region
+// inside a <textarea>. So the interview is SPLIT on its headings and rendered as one collapsible
+// block each, and edits are reassembled back into the single wnSections.interview string. Storage
+// stays one field (serialization, persistence and Draft stripping are untouched); only the render
+// changes.
+//
+// A heading is a non-empty line that starts no bullet and is not a typed answer: in practice an
+// ALL-CAPS or Title Case line standing above its questions. If a clinician's own interview has no
+// headings at all, the split returns null and the panel falls back to the plain textarea it is
+// today — writing an interview without headings must never break it.
+var wnIvCollapsed = {};   // heading -> true, so a re-render does not reopen what was folded away
+function tbpInterviewSplit(text){
+  var lines = String(text || '').split('\n');
+  var secs = [], cur = null;
+  function isHeading(l){
+    var t = l.trim();
+    if(!t) return false;
+    if(/^[•\-*\u2192>]/.test(t)) return false;        // a question or a typed answer
+    if(/^\s/.test(l)) return false;                   // indented: an answer under a question
+    if(t.length > 64) return false;                   // prose, not a heading
+    if(/[.?!]$/.test(t)) return false;                // a sentence
+    var letters = t.replace(/[^A-Za-z]/g, '');
+    if(!letters) return false;
+    return letters === letters.toUpperCase();          // ALL CAPS is the heading signal
+  }
+  lines.forEach(function(l){
+    if(isHeading(l)){ cur = { h: l.trim(), body: [] }; secs.push(cur); }
+    else if(cur){ cur.body.push(l); }
+    else { if(!secs.length){ cur = { h: '', body: [] }; secs.push(cur); } cur.body.push(l); }
+  });
+  var named = secs.filter(function(x){ return x.h; });
+  if(named.length < 2) return null;                    // not sectioned enough to be worth folding
+  return secs.map(function(x){ return { h: x.h, body: x.body.join('\n').replace(/^\n+|\s+$/g, '') }; });
+}
+function tbpInterviewJoin(secs){
+  return secs.map(function(x){
+    return (x.h ? x.h + '\n' : '') + (x.body || '');
+  }).join('\n\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+// How many questions are in a block, and how many the clinician has already written under.
+// Shown on the collapsed heading so a folded section still reports where it stands.
+function tbpInterviewCounts(body){
+  var lines = String(body || '').split('\n');
+  var q = 0, a = 0;
+  for(var i = 0; i < lines.length; i++){
+    if(/^\s*[•\-*]/.test(lines[i])){
+      q++;
+      var nxt = lines[i+1] || '';
+      if(nxt.trim() && !/^\s*[•\-*]/.test(nxt)) a++;
+    }
+  }
+  return { q: q, a: a };
+}
 function buildFocusSections(){
   var host = document.getElementById('focus-sections');
   var s = wnSections || {checklist:'',guide:'',note:''};
@@ -5521,14 +5585,37 @@ function buildFocusSections(){
       ? 'Built from the outside records you supplied, not from a visit with this patient. Everything in it is historical until you verify it today. Answer above and Draft fills in the updates; edit here only if you want.'
       : 'Last visit\'s note, brought forward as your starting point for today. Answer above and Draft fills in the updates; edit here only if you want.'});
   var html = '';
+  var ivSecs = null;
   panels.forEach(function(p){
     html += '<div class="wn-panel '+p.cls+'"><div class="wn-head">'
       + '<div class="wn-head-row"><span class="wn-title">'+p.title+'</span>'
         + '<span class="wn-ctrls"><button type="button" class="wn-move" data-dir="up" title="Move up">&#9650;</button>'
         + '<button type="button" class="wn-move" data-dir="down" title="Move down">&#9660;</button>'
         + '<span class="wn-chev">&#9662;</span></span></div>'
-      + '<span class="wn-sub">'+p.sub+'</span></div>'
-      + '<textarea class="wn-ta" data-key="'+p.key+'">'+esc(s[p.key]||'')+'</textarea></div>';
+      + '<span class="wn-sub">'+p.sub+'</span></div>';
+    // The interview folds by heading so a long one can be worked a section at a time, and a
+    // section the clinician is done with gets out of the way without being deleted.
+    var secs = (p.key === 'interview') ? tbpInterviewSplit(s.interview) : null;
+    if(secs){
+      ivSecs = secs;
+      html += '<div class="wn-iv">';
+      secs.forEach(function(sec, i){
+        if(!sec.h && !(sec.body || '').trim()) return;
+        var c = tbpInterviewCounts(sec.body);
+        var folded = sec.h && wnIvCollapsed[sec.h];
+        html += '<div class="wn-iv-sec'+(folded?' folded':'')+'" data-i="'+i+'">';
+        if(sec.h){
+          html += '<div class="wn-iv-head"><span class="wn-iv-chev">&#9662;</span>'
+            + '<span class="wn-iv-h">'+esc(sec.h)+'</span>'
+            + '<span class="wn-iv-n">'+(c.q ? (c.a + ' of ' + c.q + ' answered') : '')+'</span></div>';
+        }
+        html += '<textarea class="wn-ta wn-iv-ta" data-i="'+i+'">'+esc(sec.body||'')+'</textarea></div>';
+      });
+      html += '</div>';
+    } else {
+      html += '<textarea class="wn-ta" data-key="'+p.key+'">'+esc(s[p.key]||'')+'</textarea>';
+    }
+    html += '</div>';
   });
   host.innerHTML = html;
   // Each work area collapses from its header, so the clinician keeps only the ones they want open.
@@ -5556,8 +5643,32 @@ function buildFocusSections(){
   });
   wnRefreshMoveBtns();
   host.querySelectorAll('.wn-ta').forEach(function(ta){
-    ta.addEventListener('input', function(){ wnSections[ta.getAttribute('data-key')] = ta.value; syncRawFromSections(); wnGrow(ta); });
+    var key = ta.getAttribute('data-key');
+    if(!key) return;   // an interview sub-block; it has its own handler below
+    ta.addEventListener('input', function(){ wnSections[key] = ta.value; syncRawFromSections(); wnGrow(ta); });
   });
+  // Interview sub-blocks write back into the ONE interview string, so nothing downstream —
+  // serialization, the draft, the Framework Check — has to know the panel was split at all.
+  if(ivSecs){
+    host.querySelectorAll('.wn-iv-ta').forEach(function(ta){
+      ta.addEventListener('input', function(){
+        var i = parseInt(ta.getAttribute('data-i'), 10);
+        if(!isNaN(i) && ivSecs[i]){ ivSecs[i].body = ta.value; }
+        wnSections.interview = tbpInterviewJoin(ivSecs);
+        syncRawFromSections(); wnGrow(ta);
+      });
+    });
+    host.querySelectorAll('.wn-iv-head').forEach(function(h){
+      h.addEventListener('click', function(e){
+        e.stopPropagation();   // do not also collapse the whole interview panel
+        var sec = h.closest('.wn-iv-sec'); if(!sec) return;
+        sec.classList.toggle('folded');
+        var name = (h.querySelector('.wn-iv-h') || {}).textContent || '';
+        if(name){ if(sec.classList.contains('folded')) wnIvCollapsed[name] = true; else delete wnIvCollapsed[name]; }
+        if(!sec.classList.contains('folded')){ var ta = sec.querySelector('textarea'); if(ta) wnGrow(ta); }
+      });
+    });
+  }
   wnFitSoon(host);
 }
 // Size every section to its full content, but ONLY once the textareas actually have layout width.
@@ -6586,6 +6697,108 @@ async function buildTemplate(qaBlock){
 // stripping, and the Framework Check reading it) but is its OWN panel, because it is a different
 // thing from CHECK / ASK TODAY: the clinician's planned backbone versus what this case turned out
 // to need. Sharing a data structure is not a reason to look like the same thing.
+// The starter ADHD interview. It SEEDS THE EDITOR ONLY — it is deliberately not a third
+// resolution layer behind vault -> house. The clinician (here, Michael) opens Edit, adjusts it, and
+// saves; that save becomes the house default every other clinician inherits, live from his Vault.
+//
+// DIVA-like in function, not a DIVA clone: systematic enough to establish childhood and adult
+// criteria and to force the differential, without being an 18-item symptom march. DSM criterion
+// letters are deliberately absent from the headings — a clinician reading "Current attention /
+// executive function" has a conversation; one reading "Criterion A1a-A1i" administers a form. The
+// mapping to symptom domains is the model's job underneath, not the clinician's on screen.
+//
+// It is a STARTING BACKBONE, not a prescribed interviewing style. Deleting half of it and saving
+// must work and does: the editor saves whatever is in it, and the heading split falls back to a
+// plain textarea if someone strips the headings out entirely.
+var TBP_ADHD_INTERVIEW_SEED = `ADHD EVALUATION INTERVIEW
+
+REASON FOR EVALUATION
+• What makes you wonder about ADHD now?
+• What problems are you hoping an ADHD diagnosis or treatment would help with?
+• Have you ever been evaluated or diagnosed with ADHD before? By whom, and what did that evaluation involve?
+• What treatments have you tried, and what did you notice from them?
+
+DEVELOPMENTAL HISTORY / BEFORE AGE 12
+• What were you like as a child at home and at school?
+• Before age 12, what did teachers, parents, coaches, or other adults complain about or repeatedly have to help you with?
+• How did you do academically? Were there subjects you struggled with, failed, avoided, or needed extra help with?
+• Did you lose homework, forget assignments, leave things at school, rush through work, daydream, talk excessively, leave your seat, or get redirected frequently?
+• Were you able to do well because the work came easily, despite poor study habits or inconsistent effort?
+• Did you need unusually high levels of structure, reminders, supervision, tutoring, or parental involvement to keep up?
+• Were similar difficulties present outside school — at home, sports, activities, friendships, chores, or other settings?
+• Did anyone ever suggest ADHD, a learning disorder, behavioral concerns, or another developmental issue when you were young?
+
+CURRENT ATTENTION / EXECUTIVE FUNCTION
+• What happens when you need to focus on something that is boring, repetitive, or not immediately rewarding?
+• Do you make avoidable mistakes or miss details even when you understand what you are doing?
+• Do you lose track during conversations, meetings, reading, television, or instructions?
+• How often do you start something and then move to something else before finishing it?
+• What kinds of tasks do you procrastinate on most?
+• How do you manage multi-step tasks, deadlines, appointments, paperwork, bills, and competing responsibilities?
+• How often are you looking for things you misplaced — phone, keys, wallet, work items, paperwork?
+• How easily are you pulled away by sounds, notifications, thoughts, other people, or things happening around you?
+• How often do you remember something important only after it has become urgent?
+• What systems have you built to compensate — calendars, alarms, lists, routines, putting things in sight, overpreparing, relying on another person?
+
+HYPERACTIVITY / IMPULSIVITY
+• Do you feel physically restless, internally restless, or like you need to stay busy?
+• What happens when you have to sit still for a long meeting, movie, meal, class, or appointment?
+• Do you find yourself fidgeting, pacing, changing position, getting up, or needing something to do with your hands?
+• Do you talk more than you intend to, interrupt, finish other people's sentences, or answer before someone is done asking?
+• How difficult is waiting — in lines, traffic, conversations, meetings, or for other people to finish?
+• Do you make decisions quickly and deal with the consequences afterward — spending, commitments, driving, messages, quitting jobs, relationships, or other choices?
+• When you were younger, were these behaviors more obvious than they are now?
+
+INTEREST, NOVELTY, AND VARIABLE PERFORMANCE
+• Are there things you can focus on for hours when they are interesting, urgent, competitive, or new?
+• What is different about those situations compared with the things you struggle to start or finish?
+• Are there environments or jobs where you function unusually well?
+• Have there been periods when your difficulties seemed much less noticeable because the structure, workload, interest level, or environment fit you better?
+
+IMPAIRMENT
+• Which of these difficulties actually cause problems in your life rather than simply being personality traits?
+• How have they affected school or training?
+• How have they affected work — performance, deadlines, documentation, promotions, job changes, burnout, or conflict?
+• How have they affected relationships or family responsibilities?
+• How have they affected finances, driving, household tasks, health care, or keeping track of daily responsibilities?
+• Where do you function well, and what allows you to function well there?
+• What is the biggest consequence of these difficulties right now?
+
+MORE THAN ONE SETTING
+• Do these problems occur only at work or school, or do they show up in other parts of your life too?
+• What do they look like at home?
+• What do they look like socially or in relationships?
+• What happens on weekends, vacations, or when external structure disappears?
+
+TIMELINE
+• Were these difficulties clearly present before your current job, relationship, medical problem, mood episode, or major stressor?
+• Have they been fairly persistent across your life, or did they begin during a particular period?
+• Were there years when they were largely absent? What was different then?
+
+OTHER EXPLANATIONS TO CLARIFY
+• How is your sleep? Do you wake rested? Snoring, apnea, restless legs, very short sleep, or an unusual sleep schedule?
+• How much anxiety do you experience, and does worry itself interfere with concentration?
+• During depression, does your attention become noticeably worse than your usual baseline?
+• Have you had periods of unusually elevated or irritable mood with decreased need for sleep, increased activity, impulsivity, or markedly increased confidence?
+• Are there trauma symptoms, dissociation, intrusive thoughts, compulsions, or hypervigilance that interfere with attention?
+• Any longstanding social-communication differences, sensory sensitivities, repetitive behaviors, rigid routines, or masking that raise the question of autism?
+• Any history of reading, writing, math, language, or other learning difficulties?
+• Any medical condition, neurologic issue, medication, substance, or cannabis use that could be affecting attention or energy?
+
+COLLATERAL / PRIOR EVIDENCE
+• Is there anyone who knew you well before age 12 who could describe what you were like?
+• Do you have report cards, evaluations, teacher comments, prior testing, or previous ADHD records?
+• If someone close to you now described your attention, organization, or impulsivity, what would they probably say?
+• Has anyone previously completed an ADHD questionnaire about you? Do you know which one?
+
+PATIENT'S OWN EXPLANATION
+• When you look across your life, what do you think explains these patterns?
+• What makes ADHD seem like the best explanation to you?
+• Is there anything about the ADHD explanation that does not seem to fit?
+
+BEFORE WRAPPING UP
+• Is there an example of your difficulties that I haven't asked about but that you think is important?
+• Is there anything you told a prior clinician that you think was misunderstood or left out?`;
 var INTERVIEW_KIND = 'interview_adhd';
 var INTERVIEW_LABEL = 'ADHD interview';
 function tbpRenderInterviewBlock(){
@@ -6594,7 +6807,7 @@ function tbpRenderInterviewBlock(){
   var st = document.getElementById('interview-status');
   box.style.display = '';
   if(!txt){
-    if(st) st.innerHTML = 'No ' + INTERVIEW_LABEL + ' yet. Write one and it loads into every evaluation from then on.';
+    if(st) st.innerHTML = 'No ' + INTERVIEW_LABEL + ' yet. <strong style="color:var(--cream)">Edit my interview</strong> opens a starting backbone you can cut down, rewrite, or replace entirely — then it loads into every evaluation.';
   } else {
     var n = txt.split('\n').filter(function(l){ return l.trim(); }).length;
     // "Your interview" whether it is theirs or the house one. The distinction is real in the data
@@ -6686,7 +6899,7 @@ document.addEventListener('DOMContentLoaded', function(){
       // Editing with nothing of their own starts from the house interview, so "make it mine" is an
       // edit rather than a blank page.
       var ta = document.getElementById('interview-text');
-      if(ta && !ta.value.trim()) ta.value = tbpInterviewText(INTERVIEW_KIND);
+      if(ta && !ta.value.trim()) ta.value = tbpInterviewText(INTERVIEW_KIND) || TBP_ADHD_INTERVIEW_SEED;
       if(ta) ta.focus();
     }
   });

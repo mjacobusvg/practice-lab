@@ -1629,6 +1629,74 @@ where its actual advantage is.
 
 ---
 
+## 38. The interview as an evidence-aware question bank (designed Sept 2026, NOT built)
+
+**Built so far (`ambient-108-sub` / `109-sub`, practice):** the interview is a Vault-stored
+`interview_<kind>` with a house default served live from Michael's Vault, loaded by an explicit
+prep-screen action into its own collapsible work area, with per-heading folding. It is a static
+question list. Everything below is designed and deliberately not built.
+
+**The idea.** Record review should change what the interview *shows you*. If the clinician uploaded
+prior records, the product should not make them look at 35 questions whose answers are already in
+those records. Each section carries an evidence state:
+
+| State | Meaning | Default |
+|---|---|---|
+| **Established** | Enough credible information is already in the record | Collapsed |
+| **Partial** | Some information exists, an important piece is missing | Open, showing only the gap |
+| **Open** | Little or nothing useful established | Open |
+
+```
+DEVELOPMENTAL HISTORY            Mostly established
+5 questions covered by records · 2 worth asking
+  ASK
+  • Before age 12, did these problems also happen at home or outside school?
+  • Did you need unusual supervision or reminders to keep up?
+  Show record evidence · Show 5 covered questions
+```
+
+**The rule that makes this safe, and it is not optional.** Record-derived information populates a
+separate **Known from records** layer WITH PROVENANCE. It must never autofill as though the patient
+said it today:
+
+```
+Known from records
+  Mother reportedly described frequent homework loss and classroom redirection in elementary school.
+  Source: prior psychiatric evaluation, 5/22/26
+Ask today
+  Were those difficulties also present at home or in activities outside school?
+```
+
+This preserves attribution, lets contradictions surface rather than being silently reconciled, and
+keeps historical documentation from becoming present-tense patient report — the same rule
+`ROADMAP.md` lane 7 already states for outside records, and the same failure the draft prompt's
+interview rule guards against today.
+
+**Never delete a bypassed question — recede it.** A clinician will sometimes read the record-derived
+evidence and decide they do not trust it. `Show covered questions` must always be there.
+
+**Division of labour.** The Interview does not judge sufficiency. The Framework does, and the
+Interview renders the consequence:
+
+> Current inattention: well supported. Childhood school impairment: supported.
+> Childhood cross-setting symptoms: unresolved. Learning disorder: unresolved.
+
+The loop: upload records -> Framework interprets evidence -> Interview compresses around what is
+still missing -> clinician conducts the visit -> Framework Check updates the gaps -> Interview
+adapts again.
+
+**Why this is the leap.** It lets the default interview be comprehensive WITHOUT FEELING
+comprehensive. Forty or fifty questions can sit underneath it because the clinician should rarely
+see forty or fifty; they are the question bank, and the encounter view is the subset this patient
+still needs. That is the difference between this and a PDF.
+
+**Prerequisites, in order.** (1) The static interview has to be used on real visits first — it is
+untested. (2) The Framework must already produce per-domain evidence states; today it produces
+prose sections, not a structured state per interview heading. (3) Provenance has to survive the
+record-extraction path. None of these is blocked; none should be skipped.
+
+---
+
 ## 33. This document is intentionally incomplete
 
 This is a starting point.
