@@ -424,39 +424,46 @@ and is correctly closed to `anon` — no schema USAGE, no table SELECT.
 
 ---
 
-## 9. Password policy — weak, and enforced only in the browser (18 Sept 2026)
+## 9. Password policy — was weak and browser-enforced; FIXED 18 Sept 2026
 
 The `auth_leaked_password_protection` advisor is not a formality here. **122 of 128 auth
 users have a password** (`auth.users.encrypted_password` not null, 18 Sept 2026), because
 `platform.html` offers an opt-in password alongside the magic link. So GoTrue's password
 rules are a live control on 122 accounts.
 
-**What the server actually enforces.** Probed live against the deployed GoTrue, no account
-created (see the safety note below):
+**What the server enforced, before and after.** Probed live against the deployed GoTrue, no
+account created (see the safety note below):
 
-| probe | result |
-|---|---|
-| password `abc` | 422 `weak_password`, `reasons: ["length"]`, *"Password should be at least 6 characters"* |
-| password `aB3$xY9` (7 chars) | **accepted** — falls through to the email error |
-| password `password123` | **accepted** — falls through to the email error |
+| probe | before | after |
+|---|---|---|
+| `abc` | 422 `weak_password`, `["length"]`, *"at least 6 characters"* | — |
+| `aB3$xY9` (7 chars) | **accepted** | 422 `weak_password`, `["length"]`, *"at least 8 characters"* |
+| `password123` | **accepted** | 422 `weak_password`, **`["pwned"]`**, *"known to be weak and easy to guess"* |
+| `tbp-Quiet7Harbor-x9` (strong, 19) | — | passes the password rules, falls through to the email error |
 
-So: minimum **6**, no character-class rule, and no breach check. `password123` — one of the
-most-breached strings in existence — is a valid password on this project today.
+Before: minimum **6**, no character-class rule, no breach check — `password123`, one of the
+most-breached strings in existence, was a valid password on this project. After Michael set
+the two dashboard toggles on 18 Sept: minimum **8** and the HIBP check **on**, both confirmed
+by live probe. The fourth row matters as much as the other two: a genuinely strong password
+still gets through, so the tightening did not break signup.
 
 **The browser is doing the work.** `platform.html` requires 8 characters in both places that
 set one (`signUpFree()` at :2593, `saveNewPassword()` at :2472). That is a nudge, not
 enforcement: it is client-side JavaScript in front of an API that accepts 6. Anyone posting
 straight to `/auth/v1/signup` gets the server's rule, which is the only rule that counts.
 
-**This cannot be changed from a repo session.** It is not SQL and not a file — the auth
+**This could not be changed from a repo session.** It is not SQL and not a file — the auth
 config is a platform setting, and the Supabase MCP surface available here has no write for
-it. Michael has to set it in the dashboard:
+it. **Michael set it in the dashboard on 18 Sept 2026**, in the panel that expands from the
+`Email` row (the settings are not on the Sign In / Providers page itself, which is the step
+that cost a round):
 
-> **Authentication -> Sign In / Providers -> Email** (password settings)
-> 1. **Minimum password length: 8** (matches what the UI already promises)
-> 2. **Leaked password protection: ON** — checks new passwords against HaveIBeenPwned
-> 3. Character requirements: optional. Length plus the HIBP check buys more than forcing a
->    symbol does, and symbol rules push people toward predictable substitutions.
+> **Authentication -> Sign In / Providers -> Email** (expand the row)
+> 1. **Minimum password length: 8** — DONE, matches what the UI already promised
+> 2. **Leaked password protection: ON** — DONE, checks against HaveIBeenPwned
+> 3. Character requirements: left at none, deliberately. Length plus the HIBP check buys
+>    more than forcing a symbol does, and symbol rules push people toward predictable
+>    substitutions.
 
 **Residual after the toggle.** HIBP is checked at signup and at password change. It does
 **not** re-check the 122 passwords already set, so a member who chose `password123` in July
@@ -471,9 +478,9 @@ over on its own.
 - `auth.leaked_password_protection_off` — sends `password123` and fails unless GoTrue
   rejects it with `reasons` containing `pwned`.
 
-**Both will report as failing until the toggles are set**, which is correct: they are
-reporting today's real state. The first scheduled run after this lands will therefore send
-one alert.
+Both reported failing on the 08:30 run of 18 Sept, correctly, and that is the alert Michael
+received that morning — it was the password policy, not PHI. Both pass as of the toggles
+being set the same day, so the next scheduled run goes quiet.
 
 **Why the probe is safe.** GoTrue validates the password BEFORE the email (proved: an
 invalid email with a 3-character password came back `weak_password`, not an email error). So
