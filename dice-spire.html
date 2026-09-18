@@ -304,13 +304,13 @@ const faceLabel = f => f.k === 'blank' ? 'Blank' : `${KIND[f.k].name}${f.v ? ' '
 const HEROES = [
   { key:'vanguard', name:'Vanguard', av:'🛡️', hp:24,
     blurb:'A wall with a sword arm. The only one who can Guard, pulling the whole enemy turn onto himself.',
-    faces:[F('shield',3),F('shield',2),F('guard',2),F('dmg',3),F('mana',1),F('blank')], spell:'bulwark' },
+    faces:[F('shield',3),F('shield',2),F('guard',4),F('dmg',3),F('mana',1),F('blank')], spell:'bulwark' },
   { key:'duelist', name:'Duelist', av:'🗡️', hp:15,
     blurb:'Enormous damage, no defence at all. The only one who can Stun.',
     faces:[F('dmg',5),F('dmg',4),F('dmg',3),F('mana',1),F('stun',1),F('blank')], spell:'finisher' },
   { key:'warden', name:'Warden', av:'🌿', hp:18,
     blurb:'Keeps the party upright. The only one with Regrowth, which mends a little every round.',
-    faces:[F('heal',3),F('heal',2),F('regen',3),F('dmg',2),F('mana',1),F('blank')], spell:'mend' },
+    faces:[F('heal',3),F('heal',2),F('regen',4),F('dmg',2),F('mana',1),F('blank')], spell:'mend' },
   { key:'pyromancer', name:'Pyromancer', av:'🔥', hp:14,
     blurb:'Answers crowds. The only one who can Ignite, and her fire grows and spreads.',
     faces:[F('dmgAll',2),F('burn',2),F('dmg',3),F('mana',2),F('mana',1),F('blank')], spell:'conflag' },
@@ -538,7 +538,7 @@ const FACE_POOL = [
   {f:F('summon',2),   w:2},
   {f:F('stun',2),     w:2},  {f:F('mana',2),     w:6},  {f:F('mana',3),     w:3},
   {f:F('power',1),    w:5},  {f:F('power',2),    w:2},
-  {f:F('guard',2),    w:5},  {f:F('guard',3),    w:2},  {f:F('regen',3),    w:5},  {f:F('regen',5),    w:2}
+  {f:F('guard',4),    w:5},  {f:F('guard',6),    w:2},  {f:F('regen',4),    w:5},  {f:F('regen',6),    w:2}
 ];
 function rollFaceReward(){
   /* a Dominate face is worthless to a party with no Sorcerer, so it is never
@@ -585,7 +585,7 @@ function newRun(heroKeys){
     party: heroKeys.map(k => {
       const h = HEROES.find(x => x.key === k);
       return { uid:uid(), key:h.key, name:h.name, av:h.av, maxHp:h.hp, hp:h.hp,
-               faces:h.faces.map(f => ({...f})), shield:0, power:0, poison:0, burn:0, regen:0, charmed:0, guarding:false, downed:false,
+               faces:h.faces.map(f => ({...f})), shield:0, power:0, poison:0, burn:0, regen:0, charmed:0, steeled:0, guarding:false, downed:false,
                gear:{weapon:null, armour:null, trinket:null} };
     }),
     gold: 60,
@@ -845,7 +845,7 @@ function startCombat(type){
     over: null
   };
   S.party.forEach(h => {
-    h.shield = 0; h.poison = 0; h.burn = 0; h.charmed = 0; h.regen = 0; h.guarding = false;
+    h.shield = 0; h.poison = 0; h.burn = 0; h.charmed = 0; h.regen = 0; h.steeled = 0; h.guarding = false;
     h.power = has('warhorn') ? 1 : 0;
     if(h.hp <= 0){ h.hp = 1; }
     h.downed = h.hp <= 0;
@@ -1330,7 +1330,13 @@ function enemyPhase(){
         break;
       case 'charm':
         if(tgt && !tgt.isSummon){
+          if(tgt.steeled > 0){
+            floatOn(tgt.uid, 'RESISTS', 'var(--ink-dim)');
+            logc(`${tgt.name} is braced, and shrugs ${e.name} off.`);
+            break;
+          }
           tgt.charmed += it.v;
+          tgt.steeled = it.v + 1;
           C.dice = C.dice.filter(d => d.ownerUid !== tgt.uid || d.used);
           floatOn(tgt.uid, 'THEIRS', 'var(--violet)');
           logc(`${e.name} takes ${tgt.name}. They strike the party at the end of this turn and roll for nobody on the next.`);
@@ -1420,6 +1426,7 @@ function endOfRound(){
       logc(`${h.name} mends ${h.regen}.`);
       h.regen--;
     }
+    if(h.steeled > 0) h.steeled--;
   });
   if(!livingEnemies().length){ endCombat(true); return; }
   if(!livingHeroes().length){ endCombat(false); return; }
@@ -2295,6 +2302,7 @@ function viewCombat(){
     if(h.poison) badges.push(`<span class="badge" style="color:var(--lime)" data-tip="Poison|Loses this much HP at the end of the round, ignoring shield.">☠️ ${h.poison}</span>`);
     if(h.power)  badges.push(`<span class="badge" style="color:var(--pink)" data-tip="Power|Added to every Strike and Cleave this hero rolls.">💢 ${h.power}</span>`);
     if(h.burn)   badges.push(`<span class="badge" style="color:var(--orange)" data-tip="Burning|Loses this much at the end of the round, ignoring shields and armour, then dies down by one. A Mend smothers it faster.">🔥 ${h.burn}</span>`);
+    if(h.steeled) badges.push(`<span class="badge" style="color:var(--ink-dim)" data-tip="Braced|Cannot be taken again while this lasts, so no enemy can hold them turn after turn.">⛓️ ${h.steeled}</span>`);
     if(h.guarding) badges.push(`<span class="badge" style="color:var(--blue)" data-tip="Guarding|Every single-target attack this round lands on them instead of whoever it was aimed at.">🪖 guard</span>`);
     if(h.regen)  badges.push(`<span class="badge" style="color:var(--green)" data-tip="Regrowth|Mends this much at the end of the round, then one less each round after.">🌱 ${h.regen}</span>`);
     if(h.charmed) badges.push(`<span class="badge" style="color:var(--violet)" data-tip="Taken|Not yours for this many turns. They will not roll for you, and at the end of the enemy turn they swing at the party.">🧠 ${h.charmed}</span>`);
