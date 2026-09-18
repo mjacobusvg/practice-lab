@@ -424,6 +424,67 @@ and is correctly closed to `anon` — no schema USAGE, no table SELECT.
 
 ---
 
+## 9. Password policy — weak, and enforced only in the browser (18 Sept 2026)
+
+The `auth_leaked_password_protection` advisor is not a formality here. **122 of 128 auth
+users have a password** (`auth.users.encrypted_password` not null, 18 Sept 2026), because
+`platform.html` offers an opt-in password alongside the magic link. So GoTrue's password
+rules are a live control on 122 accounts.
+
+**What the server actually enforces.** Probed live against the deployed GoTrue, no account
+created (see the safety note below):
+
+| probe | result |
+|---|---|
+| password `abc` | 422 `weak_password`, `reasons: ["length"]`, *"Password should be at least 6 characters"* |
+| password `aB3$xY9` (7 chars) | **accepted** — falls through to the email error |
+| password `password123` | **accepted** — falls through to the email error |
+
+So: minimum **6**, no character-class rule, and no breach check. `password123` — one of the
+most-breached strings in existence — is a valid password on this project today.
+
+**The browser is doing the work.** `platform.html` requires 8 characters in both places that
+set one (`signUpFree()` at :2593, `saveNewPassword()` at :2472). That is a nudge, not
+enforcement: it is client-side JavaScript in front of an API that accepts 6. Anyone posting
+straight to `/auth/v1/signup` gets the server's rule, which is the only rule that counts.
+
+**This cannot be changed from a repo session.** It is not SQL and not a file — the auth
+config is a platform setting, and the Supabase MCP surface available here has no write for
+it. Michael has to set it in the dashboard:
+
+> **Authentication -> Sign In / Providers -> Email** (password settings)
+> 1. **Minimum password length: 8** (matches what the UI already promises)
+> 2. **Leaked password protection: ON** — checks new passwords against HaveIBeenPwned
+> 3. Character requirements: optional. Length plus the HIBP check buys more than forcing a
+>    symbol does, and symbol rules push people toward predictable substitutions.
+
+**Residual after the toggle.** HIBP is checked at signup and at password change. It does
+**not** re-check the 122 passwords already set, so a member who chose `password123` in July
+keeps it. Nothing forces a reset without a flow that interrupts everyone at sign-in, which
+is a product decision, not a security patch. Worth knowing; not worth ambushing 122 people
+over on its own.
+
+**Now monitored.** `phi-drift-check.js` runs both probes daily:
+
+- `auth.password_min_too_low` — sends a password one character under 8 and fails if GoTrue
+  takes it.
+- `auth.leaked_password_protection_off` — sends `password123` and fails unless GoTrue
+  rejects it with `reasons` containing `pwned`.
+
+**Both will report as failing until the toggles are set**, which is correct: they are
+reporting today's real state. The first scheduled run after this lands will therefore send
+one alert.
+
+**Why the probe is safe.** GoTrue validates the password BEFORE the email (proved: an
+invalid email with a 3-character password came back `weak_password`, not an email error). So
+the probe sends an email address with no `@` in it at all — `phi-drift-check-probe` — which
+can never pass format validation. A rejected password answers 422 `weak_password`; an
+accepted one falls through to 400 *"Unable to validate email address"*. No account is
+created on either branch, and a 200 would be treated as an error rather than a pass.
+Confirmed: zero rows in `auth.users` matching any probe address after all of them ran.
+
+---
+
 ## Note
 
 The AWS deploy itself requires access to the AWS account and cannot be done from a repo-only

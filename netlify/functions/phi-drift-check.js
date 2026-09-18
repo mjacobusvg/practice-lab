@@ -123,6 +123,40 @@ var EXPOSED_SCHEMA_CHECK = {
   label: 'PostgREST is exposing the `net` schema (pg_net reachable over the API)'
 };
 
+// ── Two more that are about the auth policy, not about a column ────────────────────────
+// 122 of 128 auth users have a password (18 Sept 2026), so GoTrue's password rules are a
+// real control here, not a formality. Both rules live in the Supabase dashboard and in no
+// file in this repo, which is exactly why they are checked from outside instead of assumed.
+//
+// The probe is safe by construction. GoTrue validates the PASSWORD BEFORE the EMAIL
+// (verified 2026-09-18: an invalid email with a 3-character password came back
+// weak_password, not an email error). So sending a deliberately invalid email — no `@` at
+// all, so it can never be accepted — plus a chosen password reads the policy back:
+//
+//   password rejected  -> 422 weak_password, with `reasons` naming length or pwned
+//   password accepted  -> falls through to 400 "Unable to validate email address"
+//
+// No account can be created on either branch. Baseline when this was written: minimum 6,
+// reasons ["length"] only, and `password123` was ACCEPTED, i.e. HIBP was off.
+var PASSWORD_MIN_REQUIRED = 8;
+var PASSWORD_PROBE_EMAIL = 'phi-drift-check-probe';   // no '@' — can never be created
+var AUTH_CHECKS = {
+  minLength: {
+    id: 'auth.password_min_too_low',
+    label: 'GoTrue accepts a password shorter than ' + PASSWORD_MIN_REQUIRED + ' characters'
+  },
+  hibp: {
+    id: 'auth.leaked_password_protection_off',
+    label: 'GoTrue accepts a password known to be in a breach corpus (HIBP check off)'
+  }
+};
+
+// The publishable key, the same one platform.html ships to every browser. Hardcoded on
+// purpose: the point is to test the policy a real signup meets, and the service key is a
+// different caller. It is public by design; it is not a secret and must not be treated as
+// one here. SUPABASE_ANON_KEY overrides it if the key is ever rotated.
+var ANON_KEY_FALLBACK = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InViY3JycmFwZWRheGtndXhuaXd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUzNjA2MTUsImV4cCI6MjA5MDkzNjYxNX0.CoS_t8EvCsgXJJA1dz4WXYWGsE8OMKEDeaWfsExQ1H0';
+
 function sbHeaders() {
   var KEY = process.env.SUPABASE_SERVICE_KEY;
   return { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };
@@ -163,6 +197,22 @@ async function netSchemaExposed(base) {
   if (res.status === 406) return 0;
   if (res.ok) return 1;
   throw new Error('exposed-schema probe returned ' + res.status);
+}
+
+// Sends one signup attempt and reports whether GoTrue REJECTED the password.
+// Throws on anything it does not recognise, so an unreadable policy is not a pass.
+async function passwordRejected(base, password) {
+  var key = process.env.SUPABASE_ANON_KEY || ANON_KEY_FALLBACK;
+  var res = await fetch(base + '/auth/v1/signup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: key },
+    body: JSON.stringify({ email: PASSWORD_PROBE_EMAIL, password: password })
+  });
+  var out = await res.json().catch(function () { return {}; });
+  if (out && out.error_code === 'weak_password') return { rejected: true, reasons: (out.weak_password && out.weak_password.reasons) || [] };
+  if (out && /Unable to validate email address/i.test(out.msg || '')) return { rejected: false, reasons: [] };
+  // A 200 would mean the invalid email was accepted, which must never happen.
+  throw new Error('password probe returned ' + res.status + ' ' + JSON.stringify(out).slice(0, 160));
 }
 
 // The previous run's failing set, so an unchanged alert can stay quiet.
@@ -253,6 +303,29 @@ exports.handler = async function (event) {
   } catch (e4) {
     counts[EXPOSED_SCHEMA_CHECK.id] = null;
     errors.push(EXPOSED_SCHEMA_CHECK.id + ': ' + (e4 && e4.message));
+  }
+
+  // A password one character under the required minimum must be refused for length.
+  try {
+    var shortPw = 'aB3$xY9z'.slice(0, PASSWORD_MIN_REQUIRED - 1);
+    var shortRes = await passwordRejected(base, shortPw);
+    var tooLow = shortRes.rejected ? 0 : 1;
+    counts[AUTH_CHECKS.minLength.id] = tooLow;
+    if (tooLow) failing.push({ id: AUTH_CHECKS.minLength.id, label: AUTH_CHECKS.minLength.label, count: 1 });
+  } catch (e5) {
+    counts[AUTH_CHECKS.minLength.id] = null;
+    errors.push(AUTH_CHECKS.minLength.id + ': ' + (e5 && e5.message));
+  }
+
+  // A long-but-breached password must be refused for `pwned`, not merely for length.
+  try {
+    var pwnedRes = await passwordRejected(base, 'password123');
+    var hibpOff = (pwnedRes.rejected && pwnedRes.reasons.indexOf('pwned') !== -1) ? 0 : 1;
+    counts[AUTH_CHECKS.hibp.id] = hibpOff;
+    if (hibpOff) failing.push({ id: AUTH_CHECKS.hibp.id, label: AUTH_CHECKS.hibp.label, count: 1 });
+  } catch (e6) {
+    counts[AUTH_CHECKS.hibp.id] = null;
+    errors.push(AUTH_CHECKS.hibp.id + ': ' + (e6 && e6.message));
   }
 
   var failingIds = failing.map(function (f) { return f.id; });
