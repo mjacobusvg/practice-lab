@@ -205,6 +205,42 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 #tip{position:fixed;z-index:300;max-width:250px;pointer-events:none;opacity:0;background:#0b1220;border:1px solid var(--line-hi);border-radius:10px;padding:8px 11px;font-size:12.5px;line-height:1.4;box-shadow:0 12px 34px rgba(0,0,0,.6);transition:opacity .1s}
 #tip.on{opacity:1}
 #tip b{display:block;margin-bottom:3px;font-size:13px;color:var(--gold)}
+
+/* ---------- ability cards ---------- */
+.hand{display:flex;flex-wrap:wrap;gap:8px;padding:11px 0 4px}
+.hand.draftgrid{justify-content:center}
+.acard{
+  flex:1 1 168px;max-width:230px;min-width:158px;border:1px solid var(--line);border-radius:12px;overflow:hidden;
+  background:linear-gradient(180deg,#182233,#111a28);transition:.13s;display:flex;flex-direction:column;
+}
+@media(max-width:560px){.acard{flex:1 1 100%;max-width:none}}
+.acard.on{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 8px 24px rgba(232,180,74,.16)}
+.acard.pick{cursor:pointer;flex:0 1 238px;max-width:238px}
+.acard.pick:hover{border-color:var(--gold);transform:translateY(-2px)}
+.acard .ahd{display:flex;align-items:center;gap:7px;padding:7px 9px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.035)}
+.acard .aic{font-size:15px}
+.acard .anm{font-family:'DM Serif Display',serif;font-size:14.5px;line-height:1.1;flex:1;min-width:0}
+.initb{
+  display:inline-grid;place-items:center;min-width:26px;height:22px;padding:0 5px;border-radius:7px;
+  background:#0a1220;border:1px solid var(--line-hi);font-size:12px;font-weight:800;color:var(--ink-dim);flex:none;
+}
+.acard .ahalf{
+  display:block;width:100%;flex:1;text-align:left;padding:8px 9px;border:none;background:none;
+  border-top:1px solid rgba(255,255,255,.04);transition:.12s;
+}
+button.ahalf{cursor:pointer}
+button.ahalf:hover:not(:disabled){background:rgba(255,255,255,.05)}
+button.ahalf:disabled{opacity:.3;cursor:not-allowed}
+.acard .ahalf.sel{background:rgba(232,180,74,.14);box-shadow:inset 3px 0 0 var(--gold)}
+.acard .ahalf .lbl{display:block;font-size:9.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--ink-faint);margin-bottom:2px}
+.acard .ahalf.sel .lbl{color:var(--gold)}
+.acard .ahalf .atx{font-size:12.5px;line-height:1.35;color:var(--ink)}
+.intent{margin-top:9px;padding:8px 10px;border:1px solid rgba(239,83,80,.4);border-radius:10px;background:rgba(239,83,80,.07)}
+.intent .inm{font-family:'DM Serif Display',serif;font-size:17px;line-height:1.15;margin-top:1px}
+.played{display:flex;gap:9px;flex-wrap:wrap;margin-top:10px}
+.played .pl{flex:1;min-width:210px;font-size:12.5px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:var(--card)}
+.played .pl .lbl{display:inline-block;font-size:9.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--gold);margin-right:6px}
+.deckgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
 </style>
 </head>
 <body>
@@ -775,14 +811,18 @@ function newRun(heroId, seedStr){
       dice:H.dice.slice(), move:H.move,
       gear:{weapon:null, offhand:null, armor:null, trinket1:null, trinket2:null},
       bag:['bandage','bandage','tonic','rations'], talents:[], perks:[], fated:true, pts:0, drafts:0,
+      deck:[], hand:[], discard:[], lost:[], cardDrafts:0,
     },
   };
+  S.hero.deck = (CARDS[H.id] || []).filter(c => c.start).map(c => c.id);
+  S.hero.hand = S.hero.deck.slice();
   S.hero.hp = D().maxHp;
   S.hero.en = D().maxEn;
   reveal(S.pos, 1 + D().scout);
   S.map[key(0,0)].explored = true;
   log('You ride out of Kestrel Hold at first light. Seed ' + S.seed + '.', 'y');
   log('Three lairs feed the Sable Crown. Break them, then break it.', 'v');
+  log(`You carry ${plural(S.hero.hand.length,'ability card')}. Spend them wisely; a night's sleep returns the lost ones.`, 'b');
   rollMovement(true);
   save();
 }
@@ -1091,6 +1131,9 @@ function endDay(opt){
   let heal = d.regen + (S.hero.id === 'priest' ? 2 : 0);
   if(heal) healHero(heal, 'the night\'s rest');
   S.hero.en = clamp(S.hero.en + 2, 0, d.maxEn);
+  const wasLost = S.hero.lost.length;
+  recoverAll();
+  if(wasLost) log(`${plural(wasLost,'spent card')} back in your hand.`, 'v');
   rollMovement();
   if(S.dread >= S.dreadMax){
     if(!S.crownAwake) crownMarches();
@@ -1126,9 +1169,9 @@ function crownMarches(){
 }
 function crownStats(){
   const c = JSON.parse(JSON.stringify(CROWN));
-  const short = 3 - S.seals;
-  c.hp += short * 34; c.arm += short; c.atk += short * 2;
-  if(S.seals >= 3){ c.hp -= 10; }
+  const short = 3 - S.seals;            // every seal you skipped is a Crown that much less diminished
+  c.hp += short * 30; c.arm += short; c.atk += short;
+  if(S.seals >= 3){ c.hp -= 14; c.arm -= 1; }
   return c;
 }
 function dreadTier(){ return S.dread >= 24 ? 2 : S.dread >= 12 ? 1 : 0; }
@@ -1185,6 +1228,7 @@ function heroFalls(){
     }
     S.pos = best ? {q:best.q, r:best.r} : {q:0,r:0};
     S.hero.hp = Math.max(1, Math.round(D().maxHp * 0.4));
+    recoverAll();
     S.day += 3; S.dread += 3;
     V.combat = null;
     reveal(S.pos, 1); centreOnHero(); rollMovement(true);
@@ -1564,64 +1608,388 @@ function resolveEvent(ev){
   });
 }
 
+
+/* =========================================================================
+   ABILITY CARDS  —  the Gloomhaven layer
+   Each hero owns a deck nobody else can play. Every round you play the TOP
+   half of one card and the BOTTOM half of another; the lower initiative of
+   the two you lead with decides who swings first. Cards go to your discard
+   as you spend them, and anything marked LOST is gone until you sleep.
+   Card numbers are the base; your dice pool is the modifier rolled on top.
+
+   action keys: atk sh heal ward rr en  pierce stun dbl leech refresh
+                burn psn (on the enemy)  curse (enemy hits softer)
+                retal  dice[]  surge[]  gold  lost
+   ========================================================================= */
+const CARDS = {
+warden: [
+ {id:'w1', nm:'Shield Wall',      ic:'🛡️', init:62, start:1, top:{tx:'Attack +2, prevent 2 more this round', atk:2, ward:2}, bot:{tx:'Shield 3', sh:3}},
+ {id:'w2', nm:'Ash Cloud',        ic:'💨', init:45, start:1, top:{tx:'Attack +1, it hits 2 softer next round', atk:1, curse:2}, bot:{tx:'Shield 2, heal 2', sh:2, heal:2}},
+ {id:'w3', nm:'Grind Them Down',  ic:'⚙️', init:55, start:1, top:{tx:'Attack +4', atk:4}, bot:{tx:'Shield 1, +1 reroll', sh:1, rr:1}},
+ {id:'w4', nm:'Hold Fast',        ic:'✊', init:70, start:1, top:{tx:'Attack +2, stagger it', atk:2, stun:1}, bot:{tx:'Shield 2, heal 3', sh:2, heal:3}},
+ {id:'w5', nm:'Weight of Duty',   ic:'⚖️', init:40, start:1, top:{tx:'Attack +3, pierce', atk:3, pierce:1}, bot:{tx:'Shield 2', sh:2}},
+ {id:'w6', nm:'Second Wind',      ic:'🌬️', init:88, start:1, top:{tx:'Attack +1', atk:1}, bot:{tx:'LOST: heal 6, +2 energy', heal:6, en:2, lost:1}},
+ {id:'w7', nm:'Unyielding',       ic:'🗿', init:66, start:1, top:{tx:'Attack +2, +1 Guard die', atk:2, dice:['guard']}, bot:{tx:'Prevent 4 more this round', ward:4}},
+ {id:'w8', nm:'Bulwark',          ic:'🧱', init:78, start:1, top:{tx:'Attack +3, it takes 2 when it hits you', atk:3, retal:2}, bot:{tx:'LOST: shield 4, heal 3', sh:4, heal:3, lost:1}},
+ {id:'w9', nm:'The Long Siege',   ic:'⏳', init:50, top:{tx:'Attack +5, prevent 2 more', atk:5, ward:2}, bot:{tx:'Shield 3, it takes 2 when it hits you', sh:3, retal:2}},
+ {id:'w10',nm:'Ashfall',          ic:'🌋', init:35, top:{tx:'LOST: attack +6, set it burning', atk:6, burn:3, lost:1}, bot:{tx:'Shield 2, stagger it', sh:2, stun:1}},
+ {id:'w11',nm:'Immovable',        ic:'⛰️', init:90, top:{tx:'Attack +2, it takes 3 when it hits you', atk:2, retal:3}, bot:{tx:'LOST: shield 5, heal 4', sh:5, heal:4, lost:1}},
+ {id:'w12',nm:'Last Wall Standing',ic:'👑',init:25, top:{tx:'LOST: attack +4, pierce, stagger it', atk:4, pierce:1, stun:1, lost:1}, bot:{tx:'Shield 3, +2 rerolls', sh:3, rr:2}},
+],
+ranger: [
+ {id:'r1', nm:'Loose',            ic:'🏹', init:18, start:1, top:{tx:'Attack +3, +1 Hunt die', atk:3, dice:['hunt']}, bot:{tx:'+1 reroll, heal 1', rr:1, heal:1}},
+ {id:'r2', nm:'Snapshot',         ic:'⚡', init:10, start:1, top:{tx:'Attack +2, pierce', atk:2, pierce:1}, bot:{tx:'Shield 1, +1 energy', sh:1, en:1}},
+ {id:'r3', nm:"Hunter's Mark",    ic:'🎯', init:24, start:1, top:{tx:'Attack +1, poison it', atk:1, psn:3}, bot:{tx:'+2 rerolls', rr:2}},
+ {id:'r4', nm:'Brush Cover',      ic:'🌿', init:30, start:1, top:{tx:'Attack +2', atk:2}, bot:{tx:'Shield 3, prevent 1 more', sh:3, ward:1}},
+ {id:'r5', nm:'Twin Shot',        ic:'🎴', init:22, start:1, top:{tx:'Attack +4', atk:4}, bot:{tx:'+1 Hunt die this round', dice:['hunt']}},
+ {id:'r6', nm:'Field Dressing',   ic:'🩹', init:55, start:1, top:{tx:'Attack +1', atk:1}, bot:{tx:'Heal 5, clear burning and venom', heal:5, cure:1}},
+ {id:'r7', nm:'Read the Ground',  ic:'👣', init:40, start:1, top:{tx:'Attack +2, surge: Pierce', atk:2, surge:['pierce']}, bot:{tx:'+1 reroll, +2 energy', rr:1, en:2}},
+ {id:'r8', nm:'Called Shot',      ic:'💥', init:14, start:1, top:{tx:'LOST: attack +5, pierce', atk:5, pierce:1, lost:1}, bot:{tx:'Shield 1, +1 reroll', sh:1, rr:1}},
+ {id:'r9', nm:'Rain of Arrows',   ic:'🌧️', init:16, top:{tx:'LOST: attack +6', atk:6, lost:1}, bot:{tx:'+2 Hunt dice this round', dice:['hunt','hunt']}},
+ {id:'r10',nm:'Ghost in the Trees',ic:'🌲',init:8,  top:{tx:'Attack +3, stagger it', atk:3, stun:1}, bot:{tx:'Shield 4', sh:4}},
+ {id:'r11',nm:'Killing Distance', ic:'📏', init:12, top:{tx:'Attack +4, pierce, poison it', atk:4, pierce:1, psn:3}, bot:{tx:'+2 rerolls, heal 2', rr:2, heal:2}},
+ {id:'r12',nm:'One Arrow Left',   ic:'🕊️', init:5,  top:{tx:'LOST: double your dice attack', dbl:1, lost:1}, bot:{tx:'Shield 2, take back a lost card', sh:2, refresh:1}},
+],
+runecarver: [
+ {id:'c1', nm:'Chalk Line',       ic:'✏️', init:44, start:1, top:{tx:'Attack +2, +1 Arcane die', atk:2, dice:['arcane']}, bot:{tx:'Shield 2, +1 reroll', sh:2, rr:1}},
+ {id:'c2', nm:'Kindle',           ic:'🔥', init:30, start:1, top:{tx:'Attack +2, set it burning', atk:2, burn:3}, bot:{tx:'+2 rerolls', rr:2}},
+ {id:'c3', nm:'Ward of Stone',    ic:'⭕', init:60, start:1, top:{tx:'Attack +1', atk:1}, bot:{tx:'Shield 3, prevent 2 more', sh:3, ward:2}},
+ {id:'c4', nm:'Unmake',           ic:'🕳️', init:26, start:1, top:{tx:'Attack +3, pierce', atk:3, pierce:1}, bot:{tx:'Shield 1, +1 energy', sh:1, en:1}},
+ {id:'c5', nm:'Second Reading',   ic:'📖', init:50, start:1, top:{tx:'Attack +2, +2 rerolls', atk:2, rr:2}, bot:{tx:'Heal 4', heal:4}},
+ {id:'c6', nm:'Bind',             ic:'⛓️', init:36, start:1, top:{tx:'Attack +1, stagger it', atk:1, stun:1}, bot:{tx:'Shield 2, +1 reroll', sh:2, rr:1}},
+ {id:'c7', nm:'Siphon',           ic:'🌀', init:42, start:1, top:{tx:'Attack +3, heal for half you deal', atk:3, leech:1}, bot:{tx:'+3 energy, heal 2', en:3, heal:2}},
+ {id:'c8', nm:'Glyph of Ruin',    ic:'🔯', init:20, start:1, top:{tx:'LOST: attack +5, set it burning', atk:5, burn:3, lost:1}, bot:{tx:'Shield 2', sh:2}},
+ {id:'c9', nm:'The Whole Alphabet',ic:'📜',init:15, top:{tx:'LOST: attack +4, +2 Arcane dice', atk:4, dice:['arcane','arcane'], lost:1}, bot:{tx:'+3 rerolls', rr:3}},
+ {id:'c10',nm:'Sear',             ic:'☄️', init:25, top:{tx:'Attack +3, pierce, set it burning', atk:3, pierce:1, burn:3}, bot:{tx:'Shield 2, heal 3', sh:2, heal:3}},
+ {id:'c11',nm:'Rewrite',          ic:'🔁', init:55, top:{tx:'Attack +2, it hits 3 softer next round', atk:2, curse:3}, bot:{tx:'LOST: take back a lost card, heal 2', refresh:1, heal:2, lost:1}},
+ {id:'c12',nm:'Last Rune',        ic:'💠', init:10, top:{tx:'LOST: double your dice attack, pierce', dbl:1, pierce:1, lost:1}, bot:{tx:'Shield 4, prevent 2 more', sh:4, ward:2}},
+],
+blade: [
+ {id:'b1', nm:'Opening Stroke',   ic:'⚔️', init:20, start:1, top:{tx:'Attack +4', atk:4}, bot:{tx:'Shield 1, +1 reroll', sh:1, rr:1}},
+ {id:'b2', nm:'Riposte',          ic:'🔁', init:34, start:1, top:{tx:'Attack +2, it takes 2 when it hits you', atk:2, retal:2}, bot:{tx:'Shield 3', sh:3}},
+ {id:'b3', nm:'Press',            ic:'➡️', init:16, start:1, top:{tx:'Attack +3, +1 Steel die', atk:3, dice:['steel']}, bot:{tx:'+1 reroll, +1 energy', rr:1, en:1}},
+ {id:'b4', nm:'Feint',            ic:'🎭', init:28, start:1, top:{tx:'Attack +2, stagger it', atk:2, stun:1}, bot:{tx:'Shield 2, heal 2', sh:2, heal:2}},
+ {id:'b5', nm:'Run Through',      ic:'🗡️', init:12, start:1, top:{tx:'Attack +4, pierce', atk:4, pierce:1}, bot:{tx:'Shield 1, +1 energy', sh:1, en:1}},
+ {id:'b6', nm:'Second Oath',      ic:'📿', init:48, start:1, top:{tx:'Attack +2', atk:2}, bot:{tx:'Heal 5, +1 reroll', heal:5, rr:1}},
+ {id:'b7', nm:'Footwork',         ic:'👞', init:40, start:1, top:{tx:'Attack +2, prevent 2 more', atk:2, ward:2}, bot:{tx:'Shield 2, +2 rerolls', sh:2, rr:2}},
+ {id:'b8', nm:'Cleave',           ic:'🪓', init:24, start:1, top:{tx:'LOST: attack +5', atk:5, lost:1}, bot:{tx:'Shield 2', sh:2}},
+ {id:'b9', nm:'Blade Dance',      ic:'🌀', init:14, top:{tx:'Attack +4, +2 Steel dice', atk:4, dice:['steel','steel']}, bot:{tx:'Shield 3, it takes 2 when it hits you', sh:3, retal:2}},
+ {id:'b10',nm:'The Long Duel',    ic:'🤺', init:30, top:{tx:'Attack +3, heal for half you deal', atk:3, leech:1}, bot:{tx:'Heal 4, +1 reroll', heal:4, rr:1}},
+ {id:'b11',nm:'Perfect Form',     ic:'💫', init:6,  top:{tx:'LOST: attack +6, pierce', atk:6, pierce:1, lost:1}, bot:{tx:'Shield 2, prevent 2 more', sh:2, ward:2}},
+ {id:'b12',nm:'One Oath, One Edge',ic:'🏆',init:8,  top:{tx:'LOST: double your dice attack, stagger it', dbl:1, stun:1, lost:1}, bot:{tx:'Take back a lost card, shield 2', refresh:1, sh:2}},
+],
+priest: [
+ {id:'p1', nm:'Small Rite',       ic:'🕯️', init:52, start:1, top:{tx:'Attack +2', atk:2}, bot:{tx:'Heal 4', heal:4}},
+ {id:'p2', nm:'Litany',           ic:'📿', init:38, start:1, top:{tx:'Attack +2, +1 Arcane die', atk:2, dice:['arcane']}, bot:{tx:'Shield 2, heal 2', sh:2, heal:2}},
+ {id:'p3', nm:'Laying On',        ic:'🤲', init:66, start:1, top:{tx:'Attack +1', atk:1}, bot:{tx:'Heal 7, clear burning and venom', heal:7, cure:1}},
+ {id:'p4', nm:'Consecrate',       ic:'✨', init:30, start:1, top:{tx:'Attack +3, set it burning', atk:3, burn:2}, bot:{tx:'Shield 3', sh:3}},
+ {id:'p5', nm:'Steady the Hand',  ic:'🫱', init:44, start:1, top:{tx:'Attack +2, +2 rerolls', atk:2, rr:2}, bot:{tx:'+3 energy', en:3}},
+ {id:'p6', nm:'Benediction',      ic:'🙏', init:58, start:1, top:{tx:'Attack +1, prevent 3 more', atk:1, ward:3}, bot:{tx:'Shield 2, heal 3', sh:2, heal:3}},
+ {id:'p7', nm:'Rebuke',           ic:'📢', init:26, start:1, top:{tx:'Attack +4, stagger it', atk:4, stun:1}, bot:{tx:'Shield 1, +1 reroll', sh:1, rr:1}},
+ {id:'p8', nm:'Vigil',            ic:'🌜', init:70, start:1, top:{tx:'Attack +2, it takes 2 when it hits you', atk:2, retal:2}, bot:{tx:'Heal 3, +1 reroll', heal:3, rr:1}},
+ {id:'p9', nm:'Dawnsong',         ic:'🌅', init:20, top:{tx:'LOST: attack +4, heal for half you deal', atk:4, leech:1, lost:1}, bot:{tx:'Heal 8, +2 energy', heal:8, en:2}},
+ {id:'p10',nm:'Sanctuary',        ic:'⛪', init:60, top:{tx:'Attack +2', atk:2}, bot:{tx:'Shield 5, prevent 3 more', sh:5, ward:3}},
+ {id:'p11',nm:'Old Words',        ic:'📜', init:34, top:{tx:'Attack +3, pierce, set it burning', atk:3, pierce:1, burn:3}, bot:{tx:'LOST: heal 5, take back a lost card', heal:5, refresh:1, lost:1}},
+ {id:'p12',nm:'The Last Rite',    ic:'🔔', init:12, top:{tx:'LOST: double your dice attack', dbl:1, lost:1}, bot:{tx:'LOST: heal 10, clear everything', heal:10, cure:1, lost:1}},
+],
+reaver: [
+ {id:'v1', nm:'Cut and Run',      ic:'🏃', init:9,  start:1, top:{tx:'Attack +3', atk:3}, bot:{tx:'Shield 2, +1 energy', sh:2, en:1}},
+ {id:'v2', nm:'Pickpocket',       ic:'👝', init:15, start:1, top:{tx:'Attack +2, take 12 gold off it', atk:2, gold:12}, bot:{tx:'+2 rerolls', rr:2}},
+ {id:'v3', nm:'Backstab',         ic:'🔪', init:11, start:1, top:{tx:'Attack +4, pierce', atk:4, pierce:1}, bot:{tx:'Shield 1, +1 reroll', sh:1, rr:1}},
+ {id:'v4', nm:'Smoke and Mirrors',ic:'💨', init:25, start:1, top:{tx:'Attack +1, stagger it', atk:1, stun:1}, bot:{tx:'Shield 3, prevent 2 more', sh:3, ward:2}},
+ {id:'v5', nm:'Opportunist',      ic:'🎯', init:19, start:1, top:{tx:'Attack +3, +1 Hunt die', atk:3, dice:['hunt']}, bot:{tx:'Heal 3', heal:3}},
+ {id:'v6', nm:'Slip',             ic:'🌫️', init:6,  start:1, top:{tx:'Attack +2, prevent 3 more', atk:2, ward:3}, bot:{tx:'Shield 2, +1 reroll', sh:2, rr:1}},
+ {id:'v7', nm:'Count the Take',   ic:'🪙', init:50, start:1, top:{tx:'Attack +2', atk:2}, bot:{tx:'Heal 4, take 14 gold off it', heal:4, gold:14}},
+ {id:'v8', nm:'Throat Cut',       ic:'🗡', init:13, start:1, top:{tx:'LOST: attack +5, poison it', atk:5, psn:3, lost:1}, bot:{tx:'Shield 1, +1 energy', sh:1, en:1}},
+ {id:'v9', nm:'The Good Half',    ic:'✂️', init:17, top:{tx:'Attack +4, heal for half you deal, take 18 gold', atk:4, leech:1, gold:18}, bot:{tx:'+2 rerolls, heal 2', rr:2, heal:2}},
+ {id:'v10',nm:'Vanish',           ic:'🌑', init:4,  top:{tx:'Attack +3, stagger it', atk:3, stun:1}, bot:{tx:'Shield 4, take back a lost card', sh:4, refresh:1}},
+ {id:'v11',nm:'Every Pocket',     ic:'🧵', init:21, top:{tx:'Attack +4, pierce, poison it', atk:4, pierce:1, psn:3}, bot:{tx:'+3 energy, take 22 gold off it', en:3, gold:22}},
+ {id:'v12',nm:'Took It All',      ic:'👑', init:7,  top:{tx:'LOST: double your dice attack, pierce', dbl:1, pierce:1, lost:1}, bot:{tx:'Shield 3, heal 5', sh:3, heal:5}},
+],
+};
+const CARD = id => { for(const k in CARDS){ const c = CARDS[k].find(x => x.id === id); if(c) return c; } return null; };
+
+/* ---------- enemy intent decks ---------- */
+const INTENTS = {
+ skulk: [
+  {nm:'Dart In',      init:10, atk:2},
+  {nm:'Harry',        init:14, atk:1, psn:2},
+  {nm:'Circle',       init:22, atk:1, sh:2},
+  {nm:'Rip',          init:8,  atk:3},
+  {nm:'Watch and Wait',init:60, sh:3, heal:2},
+  {nm:'Pack Strike',  init:12, atk:4},
+ ],
+ brute: [
+  {nm:'Gore',         init:30, atk:3},
+  {nm:'Trample',      init:20, atk:2, pierce:1},
+  {nm:'Bellow',       init:75, atk:1, sh:3},
+  {nm:'Wide Swing',   init:40, atk:4},
+  {nm:'Shake It Off', init:80, heal:4, sh:1},
+  {nm:'Crushing Blow',init:25, atk:5, pierce:1},
+ ],
+ guard: [
+  {nm:'Shield Up',    init:50, sh:4},
+  {nm:'Measured Strike',init:30, atk:3},
+  {nm:'Advance',      init:26, atk:2, sh:1},
+  {nm:'Bash',         init:22, atk:3, stun:1},
+  {nm:'Regroup',      init:65, sh:2, heal:3},
+  {nm:'Lance',        init:16, atk:4, pierce:1},
+ ],
+ caster: [
+  {nm:'Hex',          init:35, atk:2, curse:2},
+  {nm:'Drain',        init:28, atk:2, leech:1},
+  {nm:'Ward',         init:55, sh:3},
+  {nm:'Bolt',         init:18, atk:3, pierce:1},
+  {nm:'Gather',       init:70, heal:4, atk:1},
+  {nm:'Blight',       init:32, atk:2, psn:3},
+ ],
+ rot: [
+  {nm:'Claw',         init:24, atk:2, psn:2},
+  {nm:'Moan',         init:60, atk:1, curse:2},
+  {nm:'Feed',         init:30, atk:2, leech:1},
+  {nm:'Grave Chill',  init:40, atk:3},
+  {nm:'Rise Again',   init:70, heal:5},
+  {nm:'Rend',         init:20, atk:4, pierce:1},
+ ],
+ lair1: [
+  {nm:'Bone Tide',    init:25, atk:4},
+  {nm:'Interment',    init:40, atk:3, sh:2},
+  {nm:'Harvest',      init:30, atk:3, leech:1},
+  {nm:'Grave Cold',   init:20, atk:5, pierce:1},
+  {nm:'Reconsecrate', init:60, heal:6, sh:2},
+  {nm:'Open the Barrow',init:15, atk:6, psn:3},
+ ],
+ lair2: [
+  {nm:'Engulf',       init:22, atk:4, psn:3},
+  {nm:'Mire Grip',    init:35, atk:2, curse:2},
+  {nm:'Drag Under',   init:18, atk:5, pierce:1},
+  {nm:'Settle',       init:65, heal:6, sh:3},
+  {nm:'Lash',         init:28, atk:3},
+  {nm:'Bloom',        init:45, atk:3, psn:3, sh:1},
+ ],
+ lair3: [
+  {nm:'Bellows',      init:30, atk:3, burn:3},
+  {nm:'White Heat',   init:20, atk:5},
+  {nm:'Quench',       init:60, heal:5, sh:3},
+  {nm:'Hammer Fall',  init:25, atk:4, pierce:1, stun:1},
+  {nm:'Forge Light',  init:40, atk:2, burn:3, sh:2},
+  {nm:'Slag',         init:15, atk:6, burn:3},
+ ],
+ crown: [
+  {nm:'Decree',       init:10, atk:6, pierce:1},
+  {nm:'The Long Shadow',init:30, atk:4, curse:3},
+  {nm:'Sovereign Will',init:20, atk:5, leech:1},
+  {nm:'Unmaking',     init:15, atk:7, pierce:1, stun:1},
+  {nm:'Regard',       init:50, heal:8, sh:4},
+  {nm:'Coronation',   init:5,  atk:8},
+ ],
+};
+const MDECK = {
+  wolf:'skulk', bandit:'skulk', spider:'skulk', hound:'skulk',
+  ghoul:'rot', wight:'rot', revenant:'rot',
+  ogre:'brute', troll:'brute', golem:'brute', wyvern:'brute', drake:'brute',
+  brigand:'guard', knight:'guard', warlock:'caster',
+  lair1:'lair1', lair2:'lair2', lair3:'lair3', crown:'crown',
+};
+const intentDeck = foe => INTENTS[MDECK[foe.id] || (foe.tier >= 4 ? 'brute' : 'skulk')] || INTENTS.skulk;
+
 /* =========================================================================
    COMBAT
+   Each round: the enemy reveals its intent, you play the TOP half of one
+   ability card and the BOTTOM half of another, initiative decides who
+   swings first, and your dice pool is the modifier rolled on top.
    ========================================================================= */
 function startCombat(foe, opts){
   opts = opts || {};
+  const deck = intentDeck(foe);
   const C = {
-    foe: Object.assign({}, foe, {maxHp: foe.hp, burn:0, poison:0, stun:0, shieldBonus:0, rage:0}),
-    opts, round:1, phase:'allocate',
-    myDice:[], foeDice:[], rrLeft:0, marks:[], spentSurge:0,
+    foe: Object.assign({}, foe, {maxHp: foe.hp, burn:0, psn:0, stun:0, shieldBonus:0, rage:0, curse:0}),
+    opts, round:1, phase:'cards',
+    intentDeck: deck, order: shuffle(deck.map((x,i) => i)), intent: null,
+    myDice:[], foeDice:[], rrLeft:0, spentSurge:0, sharp:0,
+    pickTop:null, pickBot:null, play:null, myInit:99, resting:false,
     pend:{dmg:0, pierce:false, guard:0},
-    me:{burn:0, poison:0, stun:0, hexed:0, stone:0, fury:0},
+    me:{burn:0, poison:0, stun:0, hexed:0, stone:0, fury:0, curse:0},
     done:false, hist:[],
   };
   V.combat = C;
   V.lastBoss = null;
   log(`${foe.ic} ${foe.nm} blocks the way.`, 'r');
-  rollCombatRound(true);
+  newCombatRound(true);
 }
 function cPool(){ return D().pool; }
+function cLog(t, cls){ const C = V.combat; if(C){ C.hist.push((cls?'§'+cls+'§':'')+t); if(C.hist.length>40) C.hist.shift(); } log(t, cls); }
 
-function rollCombatRound(first){
-  const C = V.combat; if(!C) return;
-  const d = D();
-  // damage over time
+/* ---------- hand ---------- */
+function handIds(){ return S.hero.hand.slice(); }
+function spendCard(id, lost){
+  const h = S.hero;
+  const i = h.hand.indexOf(id);
+  if(i >= 0) h.hand.splice(i, 1);
+  (lost ? h.lost : h.discard).push(id);
+}
+function recoverDiscards(){
+  const h = S.hero;
+  if(!h.discard.length) return;
+  h.hand = h.hand.concat(h.discard);
+  h.discard = [];
+}
+function recoverAll(){
+  const h = S.hero;
+  h.hand = h.deck.slice();
+  h.discard = []; h.lost = [];
+}
+
+function drawIntent(){
+  const C = V.combat;
+  if(!C.order.length) C.order = shuffle(C.intentDeck.map((x,i) => i));
+  C.intent = C.intentDeck[C.order.shift()];
+}
+
+function newCombatRound(first){
+  const C = V.combat;
+  if(!C || C.done) return;
   if(!first){
     if(C.me.burn > 0){ C.me.burn--; dealToMe(3, 'burning', true); }
     if(C.me.poison > 0){ C.me.poison--; dealToMe(2, 'venom', true); }
     if(C.foe.burn > 0){ C.foe.burn--; dealToFoe(2, 'cinders', true); }
+    if(C.foe.psn > 0){ C.foe.psn--; dealToFoe(2, 'venom', true); }
     if(C.foe.spec === 'regen' && C.foe.hp > 0){ C.foe.hp = Math.min(C.foe.maxHp, C.foe.hp + 3); cLog(`${C.foe.nm} knits itself back together (+3).`); }
     if(C.foe.spec === 'crown'){ C.foe.rage++; cLog('The Crown grows heavier. +1 attack.'); }
   }
   if(C.done) return;
-  C.myDice = cPool().map(k => Object.assign(rollDie(k), {mark:false}));
-  C.foeDice = C.foe.pool.map(k => rollDie(k));
-  C.rrLeft = d.rrTotal - (C.me.hexed ? 1 : 0);
-  C.pend = {dmg:0, pierce:false, guard:0};
-  C.spentSurge = 0;
-  C.phase = 'allocate';
+  if(C.me.stun > 0) C.me.stun--;
+  if(C.foe.stun > 0) C.foe.stun--;
+  if(C.me.curse > 0) C.me.curseNow = C.me.curse, C.me.curse = 0; else C.me.curseNow = 0;
+  if(C.foe.curse > 0) C.foe.curseNow = C.foe.curse, C.foe.curse = 0; else C.foe.curseNow = 0;
+
+  C.mustRest = false;
+  if(S.hero.hand.length < 2){
+    if(S.hero.discard.length >= 2){
+      C.mustRest = true;
+      cLog('You are down to your last card. Catch your breath or it is over.', 'y');
+    } else { exhausted(); return; }
+  }
+
+  drawIntent();
+  C.pickTop = null; C.pickBot = null; C.play = null; C.resting = false; C.shown = null;
+  C.myDice = []; C.foeDice = []; C.pend = {dmg:0, pierce:false, guard:0}; C.spentSurge = 0;
+  C.phase = 'cards';
   renderCombat();
 }
-function cLog(t, cls){ const C = V.combat; if(C){ C.hist.push((cls?'§'+cls+'§':'')+t); if(C.hist.length>40) C.hist.shift(); } log(t, cls); }
 
+function pickHalf(id, half){
+  const C = V.combat;
+  if(!C || C.phase !== 'cards') return;
+  if(half === 'top'){
+    if(C.pickTop === id){ C.pickTop = null; }
+    else { if(C.pickBot === id) C.pickBot = null; C.pickTop = id; }
+  } else {
+    if(C.pickBot === id){ C.pickBot = null; }
+    else { if(C.pickTop === id) C.pickTop = null; C.pickBot = id; }
+  }
+  renderCombat();
+}
+function commitCards(){
+  const C = V.combat;
+  if(!C || C.phase !== 'cards' || !C.pickTop || !C.pickBot) return;
+  const topCard = CARD(C.pickTop), botCard = CARD(C.pickBot);
+  const A = topCard.top, B = botCard.bot;
+  const play = {atk:0, sh:0, heal:0, ward:0, rr:0, en:0, pierce:0, stun:0, dbl:0, leech:0,
+                refresh:0, burn:0, psn:0, curse:0, retal:0, gold:0, cure:0, dice:[], surge:[]};
+  for(const a of [A, B]){
+    for(const k in a){
+      if(k === 'tx' || k === 'lost') continue;
+      if(k === 'dice' || k === 'surge') play[k] = play[k].concat(a[k]);
+      else play[k] = (play[k] || 0) + a[k];
+    }
+  }
+  C.play = play;
+  C.myInit = topCard.init;
+  C.shown = {topNm:topCard.nm, topTx:A.tx, botNm:botCard.nm, botTx:B.tx};
+  cLog(`${topCard.nm} (top) into ${botCard.nm} (bottom).`, 'b');
+  spendCard(C.pickTop, A.lost);
+  spendCard(C.pickBot, B.lost);
+
+  if(play.heal) healHero(play.heal, 'your own hand');
+  if(play.en){ S.hero.en = clamp(S.hero.en + play.en, 0, D().maxEn); cLog(`+${play.en} energy.`, 'b'); }
+  if(play.cure){ C.me.burn = 0; C.me.poison = 0; cLog('You are clean of it.', 'g'); }
+  if(play.burn){ C.foe.burn = play.burn; cLog(`${C.foe.nm} catches light.`, 'y'); }
+  if(play.psn){ C.foe.psn = play.psn; cLog(`${C.foe.nm} is poisoned.`, 'y'); }
+  if(play.stun){ C.foe.stun = 2; cLog(`${C.foe.nm} is staggered.`, 'y'); }
+  if(play.curse){ C.foe.curse = play.curse; cLog(`${C.foe.nm} will hit ${play.curse} softer next round.`, 'y'); }
+  if(play.gold) gainGold(play.gold);
+  if(play.refresh){
+    if(S.hero.lost.length){
+      const id = S.hero.lost.pop();
+      S.hero.hand.push(id);
+      cLog(`${CARD(id).nm} comes back to your hand.`, 'v');
+    } else cLog('Nothing lost to take back.', 'y');
+  }
+
+  C.myDice = cPool().concat(play.dice).map(k => Object.assign(rollDie(k), {mark:false, fresh:true}));
+  C.foeDice = C.foe.pool.map(k => rollDie(k));
+  C.rrLeft = Math.max(0, D().rrTotal + play.rr - (C.me.hexed ? 1 : 0));
+  C.pend = {dmg:0, pierce:!!play.pierce, guard:0};
+  C.spentSurge = 0;
+  C.phase = 'dice';
+  renderCombat();
+}
+function catchBreath(){
+  const C = V.combat, h = S.hero;
+  if(!C || C.phase !== 'cards') return;
+  if(h.discard.length < 2){ flash('You need at least two cards in the discard to make it worth the round.'); return; }
+  const i = Math.floor(rnd() * h.discard.length);
+  const lostId = h.discard.splice(i, 1)[0];
+  h.lost.push(lostId);
+  h.hand = h.hand.concat(h.discard);
+  h.discard = [];
+  cLog(`You catch your breath. ${CARD(lostId).nm} is spent for good.`, 'y');
+  C.play = null; C.myInit = 99; C.resting = true;
+  C.myDice = [];
+  C.foeDice = C.foe.pool.map(k => rollDie(k));
+  C.rrLeft = 0; C.spentSurge = 0; C.pend = {dmg:0, pierce:false, guard:0};
+  C.phase = 'dice';
+  renderCombat();
+}
+function exhausted(){
+  const C = V.combat;
+  const dmg = Math.max(2, (C.foe.tier || 1) * 2);
+  cLog('Your hand is empty. You break off and run for it.', 'r');
+  V.combat = null;
+  closeModal();
+  recoverDiscards();
+  S.dice.forEach(d => d.spent = true);
+  log('Out of cards and out of the fight. Camp or take a room to get the lost ones back.', 'y');
+  hurtHero(dmg, 'a parting blow as you break off');
+  save(); render();
+}
+
+/* ---------- the numbers ---------- */
 function mySurges(){ const C = V.combat; return C.myDice.reduce((s,d)=>s+d.s,0) - C.spentSurge; }
+function surgeOptions(){ const C = V.combat; return Array.from(new Set(D().surge.concat((C.play && C.play.surge) || []))); }
 function myAttack(){
-  const C = V.combat, d = D();
-  let a = C.myDice.reduce((s,x)=>s+x.a,0) + d.atk + C.pend.dmg + C.me.fury + (C.sharp||0);
+  const C = V.combat, d = D(), p = C.play || {};
+  if(C.me.stun > 0) return 0;
+  let diceAtk = C.myDice.reduce((s,x)=>s+x.a,0);
+  if(p.dbl) diceAtk *= 2;
+  let a = diceAtk + d.atk + (p.atk||0) + C.pend.dmg + C.me.fury + (C.sharp||0);
   if(S.hero.id === 'blade' && C.round === 1) a += 3;
-  if(d.zeal && S.hero.hp <= D().maxHp/2) a += d.zeal;
+  if(d.zeal && S.hero.hp <= d.maxHp/2) a += d.zeal;
+  if(C.me.curseNow) a -= C.me.curseNow;
   if(C.me.hexed) a -= 2;
   return Math.max(0, a);
 }
-function myShields(){ const C = V.combat; return C.myDice.reduce((s,x)=>s+x.d,0) + C.pend.guard; }
+function myShields(){ const C = V.combat, p = C.play || {}; return C.myDice.reduce((s,x)=>s+x.d,0) + C.pend.guard + (p.sh||0); }
+function myWard(){ const C = V.combat, p = C.play || {}; return D().ward + (p.ward||0) + (C.me.stone ? 3 : 0); }
 function foeAttackVal(){
   const C = V.combat;
-  if(C.foe.stun) return 0;
-  return C.foeDice.reduce((s,x)=>s+x.a,0) + (C.foe.atk||0) + (C.foe.rage||0);
+  if(C.foe.stun > 0) return 0;
+  const it = C.intent || {};
+  // the revealed intent replaces the monster's old flat attack bonus rather than stacking on it
+  return Math.max(0, C.foeDice.reduce((s,x)=>s+x.a,0) + (it.atk||0) + (C.foe.rage||0) - (C.foe.curseNow||0));
 }
-function foeShields(){ const C = V.combat; return C.foeDice.reduce((s,x)=>s+x.d,0) + (C.foe.shieldBonus||0); }
+function foeShields(){ const C = V.combat; return C.foeDice.reduce((s,x)=>s+x.d,0) + (C.foe.shieldBonus||0) + ((C.intent && C.intent.sh)||0); }
 
 function dealToFoe(n, src, quiet){
   const C = V.combat;
@@ -1633,19 +2001,19 @@ function dealToFoe(n, src, quiet){
 function dealToMe(n, src, quiet){
   const C = V.combat, d = D();
   let dmg = n;
-  const ward = d.ward + (C.me.stone ? 3 : 0);
-  if(!quiet) dmg = Math.max(0, dmg - ward);
-  if(dmg <= 0){ cLog(`You shrug off ${src}.`); return; }
+  if(!quiet) dmg = Math.max(0, dmg - myWard());
+  if(dmg <= 0){ cLog(`You shrug off ${src}.`); return 0; }
   S.hero.hp -= dmg;
   cLog(`${cap(src)} costs you ${dmg}.`, 'r');
   floatText('-' + dmg, '#ef5350', '#meCard');
   const el = $('#meCard'); if(el){ el.classList.add('hit'); setTimeout(()=>el.classList.remove('hit'), 320); }
   if(S.hero.hp <= 0 && !C.done){ C.done = true; V.lastBoss = C.opts.boss || null; V.combat = null; setTimeout(heroFalls, T(400)); }
+  return dmg;
 }
 
 function doReroll(){
   const C = V.combat;
-  if(!C || C.done) return;
+  if(!C || C.done || C.phase !== 'dice') return;
   const marks = C.myDice.filter(d => d.mark);
   if(!marks.length || C.rrLeft <= 0) return;
   const n = Math.min(marks.length, C.rrLeft);
@@ -1689,7 +2057,7 @@ function foeSurgeSpend(){
       const r = pick(['poison','burn','drain','crush']);
       if(r === 'poison') C.me.poison = 3;
       if(r === 'burn') C.me.burn = 3;
-      if(r === 'drain'){ C.foe.hp = Math.min(C.foe.maxHp, C.foe.hp + 4); }
+      if(r === 'drain') C.foe.hp = Math.min(C.foe.maxHp, C.foe.hp + 4);
       if(r === 'crush') C.foe.crush = true;
       cLog('The Crown does something you have no name for.', 'r');
     }
@@ -1697,38 +2065,60 @@ function foeSurgeSpend(){
     s--;
   }
 }
+
 function strike(){
   const C = V.combat;
-  if(!C || C.phase !== 'allocate' || C.done) return;
+  if(!C || C.phase !== 'dice' || C.done) return;
   C.phase = 'resolve';
   C.foe.crush = false;
   foeSurgeSpend();
-  const d = D();
-  const mine = myAttack();
-  const fsh = C.pend.pierce ? 0 : foeShields();
-  const toFoe = Math.max(0, mine - fsh);
-  if(toFoe > 0) dealToFoe(toFoe);
-  else cLog('Your blow finds nothing but shield.', 'y');
+  const d = D(), p = C.play || {}, it = C.intent || {};
+  const meFirst = (C.myInit || 99) <= (it.init || 99);
 
-  if(!C.done){
+  const swingMine = () => {
+    if(C.done) return;
+    const mine = myAttack();
+    const fsh = C.pend.pierce ? 0 : foeShields();
+    const toFoe = Math.max(0, mine - fsh - (C.foe.arm || 0));
+    if(C.me.stun > 0){ cLog('You are still shaking off the blow.', 'y'); return; }
+    if(toFoe > 0){
+      dealToFoe(toFoe);
+      if(p.leech){ const h = Math.ceil(toFoe / 2); healHero(h, 'the wound you opened'); }
+    } else if(C.resting){ /* resting: no swing */ }
+    else cLog('Your blow finds nothing but shield and plate.', 'y');
+  };
+  const swingTheirs = () => {
+    if(C.done) return;
+    if(it.heal){ C.foe.hp = Math.min(C.foe.maxHp, C.foe.hp + it.heal); cLog(`${C.foe.nm} recovers ${it.heal}.`, 'r'); }
     const fatk = foeAttackVal();
-    const msh = myShields() + (C.foe.crush ? 0 : 0);
-    const flat = d.arm + (C.me.stone ? 3 : 0);
-    const raw = Math.max(0, fatk - (C.foe.crush ? 0 : msh) - flat);
-    if(C.foe.stun){ C.foe.stun--; cLog(`${C.foe.nm} is still recovering.`, 'y'); }
-    if(raw > 0) dealToMe(raw, C.foe.nm + '\'s attack');
-    else if(fatk > 0) cLog('You take the blow on your guard.', 'g');
-  }
-  // tick down transient statuses
+    if(fatk <= 0){ if(C.foe.stun > 0) cLog(`${C.foe.nm} is still recovering.`, 'y'); return; }
+    const msh = (C.foe.crush || it.pierce) ? 0 : myShields();
+    const raw = Math.max(0, fatk - msh - d.arm);
+    const dealt = raw > 0 ? dealToMe(raw, C.foe.nm + '\'s ' + (it.nm || 'attack')) : 0;
+    if(raw <= 0){ cLog('You take the blow on your guard.', 'g'); return; }
+    if(dealt > 0){
+      if(it.leech){ C.foe.hp = Math.min(C.foe.maxHp, C.foe.hp + Math.ceil(dealt/2)); cLog(`${C.foe.nm} feeds on it.`, 'r'); }
+      if(it.psn){ C.me.poison = it.psn; cLog('Venom.', 'r'); }
+      if(it.burn){ C.me.burn = it.burn; cLog('You are burning.', 'r'); }
+      if(it.stun){ C.me.stun = 2; cLog('You are knocked off your feet.', 'r'); }
+      if(it.curse){ C.me.curse = it.curse; cLog(`You will hit ${it.curse} softer next round.`, 'r'); }
+      if(p.retal && !C.done) dealToFoe(p.retal, 'your guard', true);
+    }
+  };
+
+  if(meFirst){ swingMine(); swingTheirs(); }
+  else { swingTheirs(); swingMine(); }
+
   if(C.me.hexed) C.me.hexed--;
   C.me.fury = 0;
   C.foe.shieldBonus = 0;
   if(!C.done){
     C.round++;
-    setTimeout(() => rollCombatRound(false), T(380));
+    setTimeout(() => newCombatRound(false), T(420));
   }
   renderCombat();
 }
+
 function tryFlee(){
   const C = V.combat;
   if(!C || C.done) return;
@@ -1738,6 +2128,7 @@ function tryFlee(){
   const finish = ok => {
     if(ok){
       V.combat = null; closeModal();
+      recoverDiscards();
       log('You break contact and go.', 'y');
       S.dice.forEach(x => x.spent = true);
       save(); render();
@@ -1754,13 +2145,14 @@ function tryFlee(){
     okTx:'You are gone before it decides to follow.', failTx:'It follows.',
     ok:()=>finish(true), fail:()=>finish(false)});
 }
+
 function winCombat(C){
   C = C || V.combat;
   if(!C || C.paid) return;
   C.paid = true;
   const foe = C.foe;
   S.kills++;
-  if(S.bounty && !S.bounty.done && S.bounty.id === foe.id){ S.bounty.done = true; log(`Bounty target down. Collect in any settlement.`, 'y'); }
+  if(S.bounty && !S.bounty.done && S.bounty.id === foe.id){ S.bounty.done = true; log('Bounty target down. Collect in any settlement.', 'y'); }
   const g = gainGold(ri(foe.gold[0], foe.gold[1]) * (C.opts.gold || 1));
   gainXp(foe.xp);
   let loot = null;
@@ -1769,7 +2161,9 @@ function winCombat(C){
   if(foe.tier >= 4 && chance(0.25)){ const rel = pick(RELICS().filter(r => !S.hero.bag.includes(r.id))); if(rel){ giveItem(rel.id); loot = rel; } }
   if(C.opts.camp){ const m = S.map[C.opts.camp]; if(m){ m.feat = null; m.threat = null; S.dread = Math.max(0, S.dread - 1); } }
   const boss = C.opts.boss;
+  const spent = S.hero.discard.length + S.hero.lost.length;
   V.combat = null;
+  recoverDiscards();
   if(boss === 'crown'){ victory(); return; }
   if(boss === 'lair'){
     const m = hereHex();
@@ -1789,7 +2183,8 @@ function winCombat(C){
      <div class="kv"><span>Experience</span><b>+${foe.xp}</b></div>
      <div class="kv"><span>Gold</span><b>+${g}</b></div>
      ${loot ? `<div class="kv"><span>Salvage</span><b>${loot.ic} ${esc(loot.nm)}</b></div>` : ''}
-     <div class="kv"><span>Health</span><b>${S.hero.hp} / ${D().maxHp}</b></div>`,
+     <div class="kv"><span>Health</span><b>${S.hero.hp} / ${D().maxHp}</b></div>
+     <div class="kv"><span>Cards in hand</span><b>${S.hero.hand.length}${S.hero.lost.length ? ` <span class="mini faint">(${S.hero.lost.length} lost until you sleep)</span>` : ''}</b></div>`,
     f:[{lb:'Continue', cls:'primary', fn:()=>{ closeModal(); save(); render(); }}], noClose:true});
   save();
 }
@@ -1900,7 +2295,8 @@ function levelUp(){
     h.perks.push({nm:entry.nm, ic:entry.ic, tx:entry.tx, bon:entry.bon, dice:entry.dice, surge:entry.surge});
   }
   h.pts += 1;
-  if(h.lvl % 2 === 1) h.drafts += 1;     // talent draft on odd levels: 3,5,7,9
+  if(h.lvl % 2 === 1) h.drafts += 1;                           // talent draft on odd levels
+  if(h.lvl % 2 === 0) h.cardDrafts = (h.cardDrafts||0) + 1;    // new ability card on even levels
   const d = D();
   S.hero.hp = clamp(S.hero.hp + 6, 0, d.maxHp);
   log(`Level ${h.lvl}. ${entry ? entry.nm + ' — ' + entry.tx : ''}`, 'v');
@@ -1921,6 +2317,7 @@ function showLevelUp(entry){
           <div class="kv"><span>Max health</span><b>${D().maxHp}</b></div>
           <div class="kv"><span>Stat points to spend</span><b>${h.pts}</b></div>
           <div class="kv"><span>Talent drafts waiting</span><b>${h.drafts}</b></div>
+          <div class="kv"><span>New ability cards waiting</span><b>${h.cardDrafts||0}</b></div>
         </div>`,
     f:[{lb:'Spend rewards', cls:'primary', fn:() => { closeModal(); spendRewards(); }}],
     noClose:true,
@@ -1929,6 +2326,7 @@ function showLevelUp(entry){
 function spendRewards(){
   const h = S.hero;
   if(h.pts > 0){ pickStat(); return; }
+  if(h.cardDrafts > 0){ draftCard(); return; }
   if(h.drafts > 0){ draftTalent(); return; }
   if(h.lvl < 10 && h.xp >= h.xpNext){ setTimeout(tryLevelUp, T(150)); return; }
   save(); render();
@@ -1971,6 +2369,32 @@ function draftTalent(){
     h.talents.push(b.dataset.tal);
     h.drafts--;
     log(`You take ${TAL(b.dataset.tal).nm}.`, 'v');
+    closeModal();
+    setTimeout(spendRewards, T(120));
+  });
+}
+
+function draftCard(){
+  const h = S.hero;
+  const pool = (CARDS[h.id] || []).filter(c => !h.deck.includes(c.id));
+  if(!pool.length){ h.cardDrafts = 0; save(); render(); return; }
+  modal({
+    ic:'🃏', h:'A New Ability', wide:true, noClose:true,
+    b:`<p class="muted">Something you have been working towards. Take one into your deck — it joins your hand now.</p><div class="sep"></div>
+       <div class="hand draftgrid">${pool.map(c => `
+         <div class="acard pick" data-newcard="${c.id}">
+           <div class="ahd"><span class="initb">${c.init}</span><span class="aic">${c.ic}</span><span class="anm">${esc(c.nm)}</span></div>
+           <div class="ahalf top"><span class="lbl">Top</span><span class="atx">${esc(c.top.tx)}</span></div>
+           <div class="ahalf bot"><span class="lbl">Bottom</span><span class="atx">${esc(c.bot.tx)}</span></div>
+         </div>`).join('')}</div>`,
+    f:[],
+  });
+  $$('#scrim [data-newcard]').forEach(el => el.onclick = () => {
+    const id = el.dataset.newcard;
+    h.deck.push(id);
+    h.hand.push(id);
+    h.cardDrafts--;
+    log(`${CARD(id).nm} joins your deck.`, 'v');
     closeModal();
     setTimeout(spendRewards, T(120));
   });
@@ -2080,6 +2504,18 @@ function openCard(){
           }).join('')}
         </div>
         <div class="card" style="margin-top:10px">
+          <div class="spread"><h3>Ability Deck</h3>${h.cardDrafts?`<span class="pill t2">${h.cardDrafts} new card waiting</span>`:''}</div>
+          <div class="mini faint" style="margin-bottom:8px">${h.deck.length} of ${(CARDS[h.id]||[]).length} known · hand ${h.hand.length}, discard ${h.discard.length}, lost ${h.lost.length}</div>
+          <div class="deckgrid">${h.deck.map(id => { const c = CARD(id); if(!c) return '';
+            const where = h.lost.includes(id) ? 'lost' : h.discard.includes(id) ? 'spent' : 'in hand';
+            return `<div class="acard" style="width:auto">
+              <div class="ahd"><span class="initb">${c.init}</span><span class="aic">${c.ic}</span><span class="anm">${esc(c.nm)}</span>
+                <span class="mini faint">${where}</span></div>
+              <div class="ahalf top"><span class="lbl">Top</span><span class="atx">${esc(c.top.tx)}</span></div>
+              <div class="ahalf bot"><span class="lbl">Bottom</span><span class="atx">${esc(c.bot.tx)}</span></div>
+            </div>`; }).join('')}</div>
+        </div>
+        <div class="card" style="margin-top:10px">
           <div class="spread"><h3>Talents</h3>${h.drafts?`<span class="pill t2">${h.drafts} draft waiting</span>`:''}</div>
           ${h.talents.length ? h.talents.map(id => { const t = TAL(id); return `<div class="item" style="padding:6px 9px;margin-bottom:5px"><div class="ic" style="width:26px;height:26px;font-size:13px">${t.ic}</div><div><div class="nm" style="font-size:12.5px">${esc(t.nm)}</div><div class="tx mini">${esc(t.tx)}</div></div></div>`; }).join('')
             : '<div class="tiny faint">None yet. Odd levels give you a draft of three.</div>'}
@@ -2087,7 +2523,7 @@ function openCard(){
       </div>
     </div>`,
     f:[
-      ...(h.pts || h.drafts ? [{lb:`Spend rewards (${h.pts + h.drafts})`, cls:'primary', fn:()=>{ closeModal(); spendRewards(); }}] : []),
+      ...(h.pts || h.drafts || h.cardDrafts ? [{lb:`Spend rewards (${h.pts + h.drafts + (h.cardDrafts||0)})`, cls:'primary', fn:()=>{ closeModal(); spendRewards(); }}] : []),
       {lb:'Gear & Pack', fn:()=>{ closeModal(); openInventory(); }},
     ],
   });
@@ -2206,7 +2642,7 @@ function useItem(id, inCombat){
     case 'stagger': C.foe.stun = 2; cLog(`${C.foe.nm} reels.`, 'y'); break;
     case 'rrs': C.rrLeft += 3; cLog('+3 rerolls.', 'y'); break;
     case 'bomb': dealToFoe(14, 'the bomb', true); break;
-    case 'flee': if(C && !C.opts.boss){ V.combat = null; closeModal(); log('You vanish into the smoke.', 'y'); consume(); save(); render(); return; } flash('Not from this one.'); return;
+    case 'flee': if(C && !C.opts.boss){ V.combat = null; closeModal(); recoverDiscards(); log('You vanish into the smoke.', 'y'); consume(); save(); render(); return; } flash('Not from this one.'); return;
     case 'reveal': { const n = reveal(S.pos, 3); log(`${plural(n,'hex')} revealed.`, 'b'); break; }
     case 'boat': { V.boat = true; flash('You may cross one water hex this turn.'); break; }
     default: break;
@@ -2448,100 +2884,173 @@ function dieFaceHtml(die, cls, idx){
 function statusChips(o){
   const out = [];
   if(o.burn) out.push(`<span class="status" style="color:#fb923c">🔥 burning ${o.burn}</span>`);
-  if(o.poison) out.push(`<span class="status" style="color:#a3e635">🧪 venom ${o.poison}</span>`);
+  if(o.poison || o.psn) out.push(`<span class="status" style="color:#a3e635">🧪 venom ${o.poison||o.psn}</span>`);
   if(o.stun) out.push(`<span class="status" style="color:#e8b44a">💫 staggered</span>`);
   if(o.hexed) out.push(`<span class="status" style="color:#a78bfa">🔯 hexed</span>`);
   if(o.stone) out.push(`<span class="status" style="color:#38bdf8">🪨 stoneskin</span>`);
+  if(o.curseNow) out.push(`<span class="status" style="color:#f472b6">🩶 hitting ${o.curseNow} softer</span>`);
   return out.join('');
+}
+function intentHtml(){
+  const C = V.combat, it = C.intent;
+  if(!it) return '';
+  const bits = [];
+  if(it.atk) bits.push(`<b style="color:#ff9b99">⚔ +${it.atk}</b>`);
+  if(it.sh) bits.push(`<b style="color:#7fe6b6">🛡 +${it.sh}</b>`);
+  if(it.heal) bits.push(`<b style="color:#7fe6b6">✚ ${it.heal}</b>`);
+  if(it.pierce) bits.push('<span style="color:var(--gold)">pierce</span>');
+  if(it.stun) bits.push('<span style="color:var(--gold)">knockdown</span>');
+  if(it.leech) bits.push('<span style="color:var(--gold)">feeds</span>');
+  if(it.psn) bits.push('<span style="color:var(--lime)">venom</span>');
+  if(it.burn) bits.push('<span style="color:var(--orange)">burn</span>');
+  if(it.curse) bits.push('<span style="color:var(--pink)">saps you</span>');
+  return `<div class="intent">
+    <div class="spread"><div class="tiny muted">Its intent this round</div><span class="initb">${it.init}</span></div>
+    <div class="inm">${esc(it.nm)}</div>
+    <div class="row wr tiny" style="gap:9px;margin-top:3px">${bits.join('')}</div>
+  </div>`;
+}
+function acardHtml(id){
+  const C = V.combat, c = CARD(id);
+  if(!c) return '';
+  const topOn = C.pickTop === id, botOn = C.pickBot === id;
+  const topTaken = C.pickTop && !topOn, botTaken = C.pickBot && !botOn;
+  return `<div class="acard ${topOn||botOn?'on':''}">
+    <div class="ahd"><span class="initb">${c.init}</span><span class="aic">${c.ic}</span><span class="anm">${esc(c.nm)}</span></div>
+    <button class="ahalf top ${topOn?'sel':''}" data-card="${id}" data-half="top" ${topTaken?'disabled':''}>
+      <span class="lbl">Top</span><span class="atx">${esc(c.top.tx)}</span></button>
+    <button class="ahalf bot ${botOn?'sel':''}" data-card="${id}" data-half="bot" ${botTaken?'disabled':''}>
+      <span class="lbl">Bottom</span><span class="atx">${esc(c.bot.tx)}</span></button>
+  </div>`;
 }
 function renderCombat(){
   const C = V.combat;
-  if(!C || C.paid){ return; }
+  if(!C || C.paid) return;
   const d = D();
-  const mine = myAttack();
-  const fsh = C.pend.pierce ? 0 : foeShields();
-  const toFoe = Math.max(0, mine - fsh);
-  const fatk = foeAttackVal();
-  const msh = myShields();
-  const toMe = Math.max(0, fatk - msh - d.arm - d.ward - (C.me.stone?3:0));
-  const surges = mySurges();
-  const usables = S.hero.bag.map(id => ITEM(id)).filter(i => i && i.slot === 'use');
+  const h = S.hero;
+  const cards = C.phase === 'cards';
+  const p = C.play || {};
+  const it = C.intent || {};
 
-  modal({
-    ic: C.foe.ic, h: C.foe.nm, wide:true, noClose:true,
-    sub:`Round ${C.round}${C.opts.boss ? ' · no retreat' : ''}${MSPEC[C.foe.spec] ? ' · ' + MSPEC[C.foe.spec].nm + ': ' + MSPEC[C.foe.spec].tx : ''}`,
-    b:`
+  // previewed numbers (dice phase only)
+  const mine = cards ? 0 : myAttack();
+  const fsh = C.pend.pierce ? 0 : foeShields();
+  const toFoe = cards ? 0 : Math.max(0, mine - fsh - (C.foe.arm||0));
+  const fatk = cards ? 0 : foeAttackVal();
+  const msh = (C.foe.crush || it.pierce) ? 0 : myShields();
+  const toMe = cards ? 0 : Math.max(0, fatk - msh - d.arm - myWard());
+  const surges = cards ? 0 : mySurges();
+  const usables = h.bag.map(id => ITEM(id)).filter(i => i && i.slot === 'use');
+  const meFirst = (C.myInit || 99) <= (it.init || 99);
+
+  const body = `
     <div class="duel">
       <div class="fighter me" id="meCard">
-        <div class="nm">${S.hero.ic} ${esc(S.hero.nm)}</div>
-        <div class="hpbar"><i style="width:${clamp(S.hero.hp/d.maxHp*100,0,100)}%"></i></div>
-        <div class="spread tiny"><span class="muted">${S.hero.hp} / ${d.maxHp} HP</span><span class="muted">⚡ ${S.hero.en}/${d.maxEn}</span></div>
+        <div class="nm">${h.ic} ${esc(h.nm)}</div>
+        <div class="hpbar"><i style="width:${clamp(h.hp/d.maxHp*100,0,100)}%"></i></div>
+        <div class="spread tiny"><span class="muted">${Math.max(0,h.hp)} / ${d.maxHp} HP</span><span class="muted">⚡ ${h.en}/${d.maxEn}</span></div>
         <div>${statusChips(C.me)}</div>
-        <div class="tray" style="margin-top:9px">${C.myDice.map((x,i)=>dieFaceHtml(x,'',i)).join('')}</div>
-        <div class="tot">
-          <span>⚔ Attack <b>${mine}</b></span>
-          <span>🛡 Shields <b>${msh + d.arm + d.ward}</b></span>
-          <span style="color:var(--gold)">✦ Surges <b>${surges}</b></span>
-        </div>
+        ${cards ? `<div class="tiny muted" style="margin-top:9px">
+            Hand <b style="color:var(--ink)">${h.hand.length}</b> · discard ${h.discard.length} · lost ${h.lost.length}</div>`
+          : `<div class="tray" style="margin-top:9px">${C.myDice.length ? C.myDice.map((x,i)=>dieFaceHtml(x,'',i)).join('') : '<span class="tiny faint">No dice — you spent the round recovering.</span>'}</div>
+            <div class="tot">
+              <span>⚔ Attack <b>${mine}</b></span>
+              <span>🛡 Shields <b>${msh + d.arm + myWard()}</b></span>
+              <span style="color:var(--gold)">✦ Surges <b>${surges}</b></span>
+              <span class="${meFirst?'':'faint'}" style="color:${meFirst?'var(--green)':''}">${meFirst ? '⚡ you swing first' : '⏱ it swings first'}</span>
+            </div>`}
       </div>
       <div class="fighter foe" id="foeCard">
         <div class="nm">${C.foe.ic} ${esc(C.foe.nm)} <span class="pill t${clamp(C.foe.tier,1,4)}" style="margin-left:auto">T${C.foe.tier}</span></div>
         <div class="hpbar"><i style="width:${clamp(C.foe.hp/C.foe.maxHp*100,0,100)}%"></i></div>
         <div class="spread tiny"><span class="muted">${Math.max(0,C.foe.hp)} / ${C.foe.maxHp} HP</span><span class="muted">Armor ${C.foe.arm}</span></div>
         <div>${statusChips(C.foe)}</div>
-        <div class="tray" style="margin-top:9px">${C.foeDice.map(x=>dieFaceHtml(x)).join('')}</div>
-        <div class="tot">
-          <span>⚔ Attack <b>${fatk}</b></span>
-          <span>🛡 Shields <b>${foeShields() + C.foe.arm}</b></span>
-        </div>
+        ${intentHtml()}
+        ${cards ? '' : `<div class="tray" style="margin-top:9px">${C.foeDice.map(x=>dieFaceHtml(x)).join('')}</div>
+          <div class="tot">
+            <span>⚔ Attack <b>${fatk}</b></span>
+            <span>🛡 Shields <b>${foeShields() + C.foe.arm}</b></span>
+          </div>`}
       </div>
     </div>
 
-    <div class="card" style="margin-top:11px">
-      <div class="spread">
-        <div class="tiny"><b style="color:var(--green)">You deal ${Math.max(0, toFoe - C.foe.arm)}</b> · <b style="color:#ff9b99">you take ${toMe}</b></div>
-        <div class="row">
-          <span class="tiny muted">Rerolls ${C.rrLeft}</span>
-          <button class="btn sm ${C.myDice.some(x=>x.mark) ? 'primary' : ''}" id="cRR" ${C.rrLeft <= 0 || !C.myDice.some(x=>x.mark) ? 'disabled' : ''}>🎲 Reroll ${C.myDice.filter(x=>x.mark).length || 'marked'}</button>
+    ${cards ? `
+      <div class="card" style="margin-top:11px${C.mustRest ? ';border-color:rgba(232,180,74,.55)' : ''}">
+        <div class="spread">
+          <div class="tiny">${C.mustRest
+            ? '<b style="color:var(--gold)">You are out of cards.</b> <span class="muted">Catch your breath to pull your discard back, or break off.</span>'
+            : '<b>Play a top and a bottom.</b> <span class="muted">The card you take the top from sets your initiative — lower swings first.</span>'}</div>
+          <button class="btn sm ${C.mustRest ? 'primary' : 'ghost'}" id="cBreath" ${h.discard.length >= 2 ? '' : 'disabled'}>😮‍💨 Catch your breath</button>
+        </div>
+        <div class="row wr tiny" style="margin-top:6px">
+          <span class="sb">Top: <b>${C.pickTop ? esc(CARD(C.pickTop).nm) : '—'}</b></span>
+          <span class="sb">Bottom: <b>${C.pickBot ? esc(CARD(C.pickBot).nm) : '—'}</b></span>
+          <span class="sb">Initiative: <b>${C.pickTop ? CARD(C.pickTop).init : '—'}</b> vs <b>${it.init}</b></span>
         </div>
       </div>
-      <div class="mini faint" style="margin-top:4px">Click your own dice to mark them (dashed outline), then hit <b>Reroll</b>. Spend surges, then strike.</div>
-    </div>
+      <div class="hand" ${C.mustRest ? 'style="opacity:.45;pointer-events:none"' : ''}>${h.hand.map(acardHtml).join('')}</div>
+      ${h.lost.length ? `<div class="tiny faint" style="margin-top:8px">Lost this day: ${h.lost.map(i=>esc(CARD(i).nm)).join(', ')}. Camping brings them back.</div>` : ''}
+    ` : `
+      ${C.shown && !C.resting ? `<div class="played">
+        <div class="pl"><span class="lbl">Top</span><b>${esc(C.shown.topNm)}</b> <span class="muted">${esc(C.shown.topTx)}</span></div>
+        <div class="pl"><span class="lbl">Bot</span><b>${esc(C.shown.botNm)}</b> <span class="muted">${esc(C.shown.botTx)}</span></div>
+      </div>` : ''}
+      <div class="card" style="margin-top:11px">
+        <div class="spread">
+          <div class="tiny"><b style="color:var(--green)">You deal ${toFoe}</b> · <b style="color:#ff9b99">you take ${toMe}</b></div>
+          <div class="row">
+            <span class="tiny muted">Rerolls ${C.rrLeft}</span>
+            <button class="btn sm ${C.myDice.some(x=>x.mark) ? 'primary' : ''}" id="cRR" ${C.rrLeft <= 0 || !C.myDice.some(x=>x.mark) ? 'disabled' : ''}>🎲 Reroll ${C.myDice.filter(x=>x.mark).length || 'marked'}</button>
+          </div>
+        </div>
+        <div class="mini faint" style="margin-top:4px">${C.resting ? 'You spent the round recovering. Take the hit.' : 'Click your own dice to mark them (dashed outline), then hit Reroll. Spend surges, then strike.'}</div>
+      </div>
 
-    ${surges > 0 ? `<div style="margin-top:10px">
-      <div class="tiny muted" style="margin-bottom:5px">Spend surges (${surges} available)</div>
-      ${d.surge.map(s => {
-        const so = SURGES[s];
-        const can = surges >= so.cost;
-        return `<div class="surge-opt ${can?'can':''}" ${can?`data-surge="${s}"`:''} style="${can?'cursor:pointer':'opacity:.4'}">
-          <div><b>${esc(so.nm)}</b> <span class="muted">${esc(so.tx)}</span></div>
-          <div style="color:var(--gold);font-weight:700">${'✦'.repeat(so.cost)}</div></div>`;
-      }).join('')}
-    </div>` : ''}
+      ${surges > 0 ? `<div style="margin-top:10px">
+        <div class="tiny muted" style="margin-bottom:5px">Spend surges (${surges} available)</div>
+        ${surgeOptions().map(s => {
+          const so = SURGES[s];
+          const can = surges >= so.cost;
+          return `<div class="surge-opt ${can?'can':''}" ${can?`data-surge="${s}"`:''} style="${can?'cursor:pointer':'opacity:.4'}">
+            <div><b>${esc(so.nm)}</b> <span class="muted">${esc(so.tx)}</span></div>
+            <div style="color:var(--gold);font-weight:700">${'✦'.repeat(so.cost)}</div></div>`;
+        }).join('')}
+      </div>` : ''}
 
-    ${usables.length ? `<div style="margin-top:10px">
-      <div class="tiny muted" style="margin-bottom:5px">Pack</div>
-      <div class="row wr">${usables.map(it => `<button class="btn sm" data-uitem="${it.id}">${it.ic} ${esc(it.nm)}</button>`).join('')}</div>
-    </div>` : ''}
+      ${usables.length ? `<div style="margin-top:10px">
+        <div class="tiny muted" style="margin-bottom:5px">Pack</div>
+        <div class="row wr">${usables.map(i => `<button class="btn sm" data-uitem="${i.id}">${i.ic} ${esc(i.nm)}</button>`).join('')}</div>
+      </div>` : ''}
+    `}
 
-    <div class="log" style="height:96px;margin-top:11px">${C.hist.slice(-16).map(l => {
+    <div class="log" style="height:${cards ? 78 : 96}px;margin-top:11px">${C.hist.slice(-16).map(l => {
       const m = /^§(\w+)§/.exec(l); const cls = m?m[1]:''; const t = m?l.slice(m[0].length):l;
       return `<div class="${cls}">${esc(t)}</div>`;
-    }).join('')}</div>`,
-    f:[
-      ...(C.opts.boss ? [] : [{lb:'🏃 Break away', cls:'ghost', fn:tryFlee}]),
-      {lb:'⚔️ Strike', cls:'primary', fn:strike, dis: C.phase !== 'allocate' || C.done},
-    ],
+    }).join('')}</div>`;
+
+  modal({
+    ic: C.foe.ic, h: C.foe.nm, wide:true, noClose:true,
+    sub:`Round ${C.round}${C.opts.boss ? ' · no retreat' : ''}${MSPEC[C.foe.spec] ? ' · ' + MSPEC[C.foe.spec].nm + ': ' + MSPEC[C.foe.spec].tx : ''}`,
+    b: body,
+    f: cards
+      ? [ ...(C.opts.boss ? [] : [{lb:'🏃 Break away', cls:'ghost', fn:tryFlee}]),
+          C.mustRest
+            ? {lb:'😮‍💨 Catch your breath', cls:'primary', fn:catchBreath, dis: h.discard.length < 2}
+            : {lb:'▶️ Commit', cls:'primary', fn:commitCards, dis: !(C.pickTop && C.pickBot)} ]
+      : [ ...(C.opts.boss ? [] : [{lb:'🏃 Break away', cls:'ghost', fn:tryFlee}]),
+          {lb:'⚔️ Strike', cls:'primary', fn:strike, dis: C.phase !== 'dice' || C.done} ],
   });
+
+  $$('#scrim [data-card]').forEach(el => el.onclick = () => pickHalf(el.dataset.card, el.dataset.half));
+  const breath = $('#cBreath'); if(breath) breath.onclick = catchBreath;
+  const rrBtn = $('#cRR'); if(rrBtn) rrBtn.onclick = doReroll;
   $$('#scrim [data-die]').forEach(el => el.onclick = () => {
     const i = +el.dataset.die;
     const marked = C.myDice.filter(x=>x.mark).length;
-    if(!C.myDice[i].mark && marked >= C.rrLeft) { flash('No rerolls left for that many.'); return; }
+    if(!C.myDice[i].mark && marked >= C.rrLeft){ flash('No rerolls left for that many.'); return; }
     C.myDice[i].mark = !C.myDice[i].mark;
     renderCombat();
   });
-  const rrBtn = $('#cRR');
-  if(rrBtn) rrBtn.onclick = doReroll;
   $$('#scrim [data-surge]').forEach(el => el.onclick = () => spendSurge(el.dataset.surge));
   $$('#scrim [data-uitem]').forEach(el => el.onclick = () => useItem(el.dataset.uitem, true));
   C.myDice.forEach(x => x.fresh = false);
@@ -2636,7 +3145,7 @@ function renderTop(){
     <span class="stat" title="Seals taken">🔱 <b>${S.seals}</b>/3</span>
     <span class="stat topspacer" title="Dread. At ${S.dreadMax} the Crown marches.">🌑 <b>${S.dread}</b>/${S.dreadMax}
       <span class="bar dread"><i style="width:${clamp(S.dread/S.dreadMax*100,0,100)}%"></i></span></span>
-    ${h.pts || h.drafts ? `<button class="btn sm primary" id="tbLvl">⬆️ ${h.pts + h.drafts} reward${h.pts+h.drafts>1?'s':''}</button>` : ''}
+    ${h.pts || h.drafts || h.cardDrafts ? `<button class="btn sm primary" id="tbLvl">⬆️ ${h.pts + h.drafts + (h.cardDrafts||0)} reward${(h.pts+h.drafts+(h.cardDrafts||0))>1?'s':''}</button>` : ''}
     <button class="btn sm" id="tbCard">${h.ic} Card</button>
     <button class="btn sm" id="tbBag">🎒 Gear</button>
     <button class="btn sm ghost" id="tbMenu">☰</button>`;
@@ -2765,10 +3274,14 @@ function openCodex(){
       </div>
       <div>
         <div class="card"><h3>Combat</h3><div class="tiny muted">
-          Both sides roll a pool of dice. Faces show ⚔ attack, 🛡 shields, ✦ surges. Mark your dice and reroll them (you get Wits-many rerolls a round, plus gear). Spend surges on effects, then strike.
-          <br><br>Damage dealt = your attack − their shields − their armor. Damage taken = their attack − your shields − your armor − whatever you prevent.</div></div>
+          Every round the enemy <b style="color:var(--ink)">reveals its intent first</b>. Then you play two ability cards from your hand: the <b style="color:var(--ink)">top half of one</b> and the <b style="color:var(--ink)">bottom half of the other</b>. The card you take the top from sets your initiative, and the lower number swings first — kill it before it acts and it never acts.
+          <br><br>Then both sides roll dice as the <b style="color:var(--ink)">modifier</b> on top of those card numbers. Faces show ⚔ attack, 🛡 shields, ✦ surges. Mark dice and reroll them (Wits-many a round, plus gear), spend surges, then strike.
+          <br><br>Damage dealt = card + dice + gear − their shields − their armor.</div></div>
+        <div class="card" style="margin-top:10px"><h3>Your hand is a second health bar</h3><div class="tiny muted">
+          Cards you play go to your <b style="color:var(--ink)">discard</b> and come back when the fight ends. Cards marked LOST are gone until you sleep. If you are ever down to fewer than two cards you break off and run, taking a parting blow.
+          <br><br><b style="color:var(--ink)">Catch your breath</b> mid-fight to pull your whole discard back, at the cost of the round and one random card burned for good. You will be made to do it when you run dry, so a long fight is really a question of how many breaths you can afford. Camping, an inn, or simply ending the day returns everything.</div></div>
         <div class="card" style="margin-top:10px"><h3>Levelling</h3><div class="tiny muted">
-          XP levels you to 10. Every level hands you the next reward printed on your character card, plus a stat point. Odd levels also give you a draft of three talents. Nothing is random about your card: the track is the same every run, so you can plan around it.</div></div>
+          XP levels you to 10. Every level hands you the next reward printed on your character card, plus a stat point. Odd levels give you a draft of three talents; even levels give you a <b style="color:var(--ink)">new ability card</b> for your deck. Nothing is random about the track — it is the same every run, so you can plan around it.</div></div>
         <div class="card" style="margin-top:10px"><h3>Winning</h3><div class="tiny muted">
           Three lairs. Break each one for a seal, and dread falls by 4. With all three, the Obsidian Gate opens and you can finish the Sable Crown on your terms. Let dread hit ${(S&&S.dreadMax)||30} and it finishes you on its.</div></div>
       </div>
@@ -2808,7 +3321,7 @@ function renderTitle(){
             </div>
             <div class="sep" style="margin:9px 0"></div>
             <div class="tiny"><b style="color:var(--gold)">${esc(h.power.nm)}</b><div class="muted">${esc(h.power.tx)}</div></div>
-            <div class="tiny muted" style="margin-top:7px">Pool: ${h.dice.map(k=>DICE[k].ic).join(' ')}</div>
+            <div class="tiny muted" style="margin-top:7px">Pool: ${h.dice.map(k=>DICE[k].ic).join(' ')} · deck of ${(CARDS[h.id]||[]).length} abilities nobody else can play</div>
           </div>`).join('')}
       </div>
       <div class="sep"></div>
@@ -2829,7 +3342,7 @@ function renderTitle(){
           <p style="margin-top:8px"><b style="color:var(--ink)">The map is unknown.</b> A region of 91 hexes, generated fresh, revealed as you push into it. Settlements, landmarks, lairs and one gate.</p>
         </div>
         <div class="tiny muted">
-          <p><b style="color:var(--ink)">Fights are a dice pool.</b> Attack, shields and surges, with rerolls and spendable effects. Gear changes which dice you roll, not just the numbers.</p>
+          <p><b style="color:var(--ink)">Fights are cards over dice.</b> The enemy shows its intent, then you play the top of one ability card and the bottom of another, and initiative decides who swings first. Your dice are the modifier rolled on top, so gear still changes what you roll.</p>
           <p style="margin-top:8px"><b style="color:var(--ink)">Dread is the clock.</b> It rises every day and hardens the whole region twice on the way up. Breaking a lair pushes it back. You are always trading time for strength.</p>
         </div>
       </div>
