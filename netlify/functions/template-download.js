@@ -78,29 +78,24 @@ exports.handler = async function (event) {
       } catch (e) { /* if the check fails, fall through to normal access rules */ }
     }
 
-    // Access model:
-    //  - Admins/owner: everything.
-    //  - member_price_cents set (premium/flagship, e.g. the Complete Toolkit): NOBODY
-    //    gets it via tier; forum/full members pay the reduced price too, so access
-    //    requires an individual purchase.
-    //  - Otherwise: every PAYING member (forum or full) gets all templates; free
-    //    members get free/open templates, or a paid one they specifically bought.
-    const paying = (tier === 'forum' || tier === 'full');
+    // Access model (generic + tier-hierarchy aware, so min_tier is actually honored):
+    //  1. Admin or an explicit purchase -> always allowed.
+    //  2. member_price_cents set (premium/flagship, e.g. the Complete Toolkit): NOBODY
+    //     gets it via tier; access requires an individual purchase.
+    //  3. Otherwise, included when the member's tier MEETS the item's min_tier. This is
+    //     what makes the Foundations Pack (min_tier=full) a Full benefit: Forum does NOT
+    //     get it, and free / non-members hit the standalone purchase.
+    // Replaces the old `paying = forum||full` branch, which granted Forum members every
+    // non-premium paid template and made min_tier dead configuration.
     const memberPriced = tpl.member_price_cents != null && tpl.member_price_cents > 0;
+    const rank = TIER_RANK[tier] || 0;
+    const minRank = (TIER_RANK[tpl.min_tier] != null) ? TIER_RANK[tpl.min_tier] : TIER_RANK.full;
     let allowed = false;
-    if (ADMIN_EMAILS.indexOf(email) !== -1) {
-      allowed = true;
-    } else if (owns) {
-      allowed = true;
-    } else if (memberPriced) {
-      allowed = false; // premium item, not owned -> must purchase
-    } else if (paying) {
-      allowed = true;
-    } else if (!tpl.is_paid && (TIER_RANK[tier] || 0) >= (TIER_RANK[tpl.min_tier] || 2)) {
-      allowed = true;
-    } else if (tpl.is_paid) {
-      allowed = false; // paid item, not owned
-    }
+    if (ADMIN_EMAILS.indexOf(email) !== -1) allowed = true;
+    else if (owns) allowed = true;
+    else if (memberPriced) allowed = false;   // premium item, not owned -> must purchase
+    else if (rank >= minRank) allowed = true; // tier meets min_tier -> included
+    else allowed = false;                     // tier too low -> purchase / upgrade
     if (!allowed) {
       return { statusCode: tpl.is_paid ? 402 : 403, headers, body: JSON.stringify({ ok: false, error: tpl.is_paid ? 'Purchase or join to download this template' : 'Join to download this template' }) };
     }
