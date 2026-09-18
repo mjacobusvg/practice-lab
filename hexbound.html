@@ -246,6 +246,18 @@ button.ahalf:disabled{opacity:.3;cursor:not-allowed}
 .played .pl{flex:1;min-width:210px;font-size:12.5px;padding:7px 10px;border:1px solid var(--line);border-radius:9px;background:var(--card)}
 .played .pl .lbl{display:inline-block;font-size:9.5px;letter-spacing:.7px;text-transform:uppercase;color:var(--gold);margin-right:6px}
 .deckgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+
+/* ---------- drawn die faces ---------- */
+.dieface{width:100%;height:100%;display:block}
+.cdie{padding:3px}
+.cdie .fc{display:none}
+.mdie .tface{width:30px;height:30px;display:block;image-rendering:auto}
+.acard{position:relative}
+.cwm{position:absolute;right:-18px;bottom:-18px;width:92px;height:92px;opacity:.06;pointer-events:none;z-index:0}
+.acard.on .cwm{opacity:.13}
+.acard > *:not(.cwm){position:relative;z-index:1}
+.acard .ahd{border-left:3px solid var(--accent, var(--line-hi))}
+.acard{background-image:repeating-linear-gradient(135deg, rgba(255,255,255,.014) 0 3px, transparent 3px 6px)}
 </style>
 </head>
 <body>
@@ -2673,7 +2685,8 @@ function draftCard(){
     ic:'🃏', h:'A New Ability', wide:true, noClose:true,
     b:`<p class="muted">Something you have been working towards. Take one into your deck — it joins your hand now.</p><div class="sep"></div>
        <div class="hand draftgrid">${pool.map(c => `
-         <div class="acard pick" data-newcard="${c.id}">
+         <div class="acard pick" data-newcard="${c.id}" style="--accent:${heroArt().col}">
+           ${cardWatermark()}
            <div class="ahd"><span class="initb">${c.init}</span><span class="aic">${c.ic}</span><span class="anm">${esc(c.nm)}</span></div>
            <div class="ahalf top"><span class="lbl">Top</span><span class="atx">${gtx(c.top.tx)}</span></div>
            <div class="ahalf bot"><span class="lbl">Bottom</span><span class="atx">${gtx(c.bot.tx)}</span></div>
@@ -3094,7 +3107,8 @@ function openCard(){
           <div class="mini faint" style="margin-bottom:8px">${h.deck.length} of ${(CARDS[h.id]||[]).length} known · hand ${h.hand.length}, discard ${h.discard.length}, lost ${h.lost.length}</div>
           <div class="deckgrid">${h.deck.map(id => { const c = CARD(id); if(!c) return '';
             const where = h.lost.includes(id) ? 'lost' : h.discard.includes(id) ? 'spent' : 'in hand';
-            return `<div class="acard" style="width:auto">
+            return `<div class="acard" style="width:auto;--accent:${heroArt().col}">
+              ${cardWatermark()}
               <div class="ahd"><span class="initb">${c.init}</span><span class="aic">${c.ic}</span><span class="anm">${esc(c.nm)}</span>
                 <span class="mini faint">${where}</span></div>
               <div class="ahalf top"><span class="lbl">Top</span><span class="atx">${gtx(c.top.tx)}</span></div>
@@ -3454,18 +3468,111 @@ function gatePrompt(m){
        {lb:'Prepare first', cls:'ghost', fn:()=>{ closeModal(); save(); render(); }}]});
 }
 
+
+/* =========================================================================
+   DIE FACES
+   Drawn as inline SVG rather than emoji, so a face reads as a face: blades
+   for attack, shields for defence, a star for a surge.
+   ========================================================================= */
+const SYM = {
+  blade:'M6 0.2 L7.25 2.5 L7.25 6.9 L4.75 6.9 L4.75 2.5 Z M1.4 6.9 H10.6 V8.35 H1.4 Z M5.15 8.35 H6.85 V10.5 H5.15 Z M6 9.9 A1.15 1.15 0 1 1 5.99 9.9 Z',
+  shield:'M6 0.4 L11.2 2.5 V6.6 C11.2 9.3 9 11.1 6 11.9 C3 11.1 0.8 9.3 0.8 6.6 V2.5 Z',
+  star:'M6 0 L7.5 4.5 L12 6 L7.5 7.5 L6 12 L4.5 7.5 L0 6 L4.5 4.5 Z',
+};
+const SYMPOS = {
+  1:[[20,20]],
+  2:[[12.5,20],[27.5,20]],
+  3:[[20,12.5],[12,27],[28,27]],
+  4:[[12.5,12.5],[27.5,12.5],[12.5,27.5],[27.5,27.5]],
+};
+function symPath(d, cx, cy, size, fill, op){
+  const k = size / 12;
+  return `<path d="${d}" transform="translate(${(cx - size/2).toFixed(2)} ${(cy - size/2).toFixed(2)}) scale(${k.toFixed(3)})" fill="${fill}"${op?` opacity="${op}"`:''}/>`;
+}
+function dieSvg(die){
+  const marks = [];
+  for(let i=0;i<Math.min(die.a,4);i++) marks.push('blade');
+  for(let i=0;i<Math.min(die.d,4);i++) marks.push('shield');
+  const shown = marks.slice(0,4);
+  const pos = SYMPOS[shown.length] || [];
+  const size = shown.length >= 3 ? 12.5 : shown.length === 2 ? 15 : 18;
+  let body = '';
+  if(!shown.length && !die.s){
+    body = `<rect x="14" y="19" width="12" height="2.4" rx="1.2" fill="rgba(148,163,184,.45)"/>`;
+  }
+  shown.forEach((m, i) => {
+    const [cx, cy] = pos[i];
+    const fill = m === 'blade' ? '#ff9b99' : '#7fe6b6';
+    body += symPath(SYM[m], cx + 0.6, cy + 0.8, size, 'rgba(0,0,0,.45)');   // drop shadow
+    body += symPath(SYM[m], cx, cy, size, fill);
+  });
+  for(let i = 0; i < Math.min(die.s, 2); i++){
+    const bx = 32.5 - i * 10;
+    body += `<circle cx="${bx}" cy="7.5" r="6.6" fill="rgba(10,16,26,.88)" stroke="rgba(232,180,74,.55)" stroke-width="1"/>`;
+    body += symPath(SYM.star, bx, 7.5, 8.6, '#e8b44a');
+  }
+  return `<svg class="dieface" viewBox="0 0 40 40" aria-hidden="true">${body}</svg>`;
+}
+
+/* =========================================================================
+   TRAVEL DIE FACES
+   Each face shows the actual ground it lets you walk onto, painted from the
+   same tile sprites the map uses.
+   ========================================================================= */
+function paintTravelDice(){
+  $$('[data-tface]').forEach(cvs => {
+    const f = cvs.dataset.tface;
+    const px = 30, dpr = window.devicePixelRatio || 1;
+    cvs.width = px * dpr; cvs.height = px * dpr;
+    const x = cvs.getContext('2d');
+    x.setTransform(dpr, 0, 0, dpr, 0, 0);
+    x.clearRect(0, 0, px, px);
+    if(f === 'wild'){
+      const g = x.createLinearGradient(0, 0, 0, px);
+      g.addColorStop(0, '#3b2f5c'); g.addColorStop(1, '#221b38');
+      hexOn(x, px/2, px/2, px*0.46); x.fillStyle = g; x.fill();
+      x.strokeStyle = 'rgba(167,139,250,.8)'; x.lineWidth = 1.2; x.stroke();
+      x.font = '700 15px system-ui, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.fillStyle = '#d6c8ff'; x.fillText('✦', px/2, px/2 + 1);
+      return;
+    }
+    const s = px * 0.46;
+    const sprite = tileFor(f, 0, s);
+    const tsize = s*2 + 6/(window.devicePixelRatio||1);
+    x.drawImage(sprite, px/2 - tsize/2, px/2 - tsize/2, tsize, tsize);
+    hexOn(x, px/2, px/2, s);
+    x.strokeStyle = 'rgba(0,0,0,.5)'; x.lineWidth = 1.2; x.stroke();
+  });
+}
+
+/* =========================================================================
+   HERO EMBLEMS
+   A faint watermark behind every ability card, plus an accent colour, so a
+   hand reads as that hero's hand at a glance.
+   ========================================================================= */
+const HEROART = {
+  warden: {col:'#9ec9ff', svg:'<path d="M50 8 L86 22 L86 52 C86 73 69 86 50 92 C31 86 14 73 14 52 L14 22 Z" fill="currentColor"/>'},
+  ranger: {col:'#a3e635', svg:'<rect x="45" y="18" width="10" height="64" fill="currentColor"/><path d="M50 2 L69 28 L31 28 Z" fill="currentColor"/><path d="M45 68 L28 86 L28 66 Z" fill="currentColor"/><path d="M55 68 L72 86 L72 66 Z" fill="currentColor"/>'},
+  runecarver: {col:'#a78bfa', svg:'<circle cx="50" cy="50" r="38" fill="none" stroke="currentColor" stroke-width="8"/><path d="M50 20 V80 M50 40 L70 26 M50 58 L30 44" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>'},
+  blade: {col:'#ef5350', svg:'<g stroke="currentColor" stroke-width="9" stroke-linecap="round" fill="none"><path d="M20 84 L76 20"/><path d="M80 84 L24 20"/><path d="M12 64 L32 86"/><path d="M88 64 L68 86"/></g>'},
+  priest: {col:'#f0c674', svg:'<circle cx="50" cy="50" r="17" fill="currentColor"/><g stroke="currentColor" stroke-width="8" stroke-linecap="round"><path d="M50 6 V24"/><path d="M50 76 V94"/><path d="M6 50 H24"/><path d="M76 50 H94"/><path d="M19 19 L32 32"/><path d="M68 68 L81 81"/><path d="M81 19 L68 32"/><path d="M32 68 L19 81"/></g>'},
+  reaver: {col:'#38bdf8', svg:'<circle cx="34" cy="34" r="17" fill="none" stroke="currentColor" stroke-width="9"/><g stroke="currentColor" stroke-width="9" stroke-linecap="round"><path d="M46 46 L84 84"/><path d="M62 74 L54 82"/><path d="M74 62 L66 70"/></g>'},
+};
+const heroArt = () => HEROART[S && S.hero ? S.hero.id : 'warden'] || HEROART.warden;
+function cardWatermark(){
+  const a = heroArt();
+  return `<svg class="cwm" viewBox="0 0 100 100" aria-hidden="true" style="color:${a.col}">${a.svg}</svg>`;
+}
+
 /* =========================================================================
    COMBAT UI
    ========================================================================= */
 function dieFaceHtml(die, cls, idx){
-  const parts = [];
-  if(die.a) parts.push(`<span style="color:#ff9b99">⚔${die.a}</span>`);
-  if(die.d) parts.push(`<span style="color:#7fe6b6">🛡${die.d}</span>`);
   const blank = !die.a && !die.d && !die.s;
-  return `<div class="cdie ${DICE[die.k].cls} ${die.mark?'rr':''} ${blank?'blank':''} ${die.fresh?'roll':''}" ${idx!=null?`data-die="${idx}"`:''}>
-    <div class="fc">${blank ? '—' : parts.join('')}</div>
-    ${die.s ? `<div class="sg">✦${die.s>1?die.s:''}</div>` : ''}
-  </div>`;
+  const title = [die.a ? `${die.a} attack` : '', die.d ? `${die.d} shield${die.d>1?'s':''}` : '',
+                 die.s ? `${die.s} surge${die.s>1?'s':''}` : ''].filter(Boolean).join(', ') || 'blank face';
+  return `<div class="cdie ${DICE[die.k].cls} ${die.mark?'rr':''} ${blank?'blank':''} ${die.fresh?'roll':''}"
+    ${idx!=null?`data-die="${idx}"`:''} title="${DICE[die.k].nm} die — ${title}">${dieSvg(die)}</div>`;
 }
 function statusChips(o){
   const out = [];
@@ -3502,7 +3609,8 @@ function acardHtml(id){
   if(!c) return '';
   const topOn = C.pickTop === id, botOn = C.pickBot === id;
   const topTaken = C.pickTop && !topOn, botTaken = C.pickBot && !botOn;
-  return `<div class="acard ${topOn||botOn?'on':''}">
+  return `<div class="acard ${topOn||botOn?'on':''}" style="--accent:${heroArt().col}">
+    ${cardWatermark()}
     <div class="ahd"><span class="initb">${c.init}</span><span class="aic">${c.ic}</span><span class="anm">${esc(c.nm)}</span></div>
     <button class="ahalf top ${topOn?'sel':''}" data-card="${id}" data-half="top" ${topTaken?'disabled':''}>
       <span class="lbl">Top</span><span class="atx">${gtx(c.top.tx)}</span></button>
@@ -3778,8 +3886,10 @@ function renderSide(){
     <div class="card">
       <div class="spread"><h3>Travel</h3><span class="tiny muted">${free} of ${S.dice.length} left</span></div>
       <div class="tray" style="margin-top:7px">${S.dice.map((x,i) => `
-        <div class="mdie ${x.spent?'spent':''} ${x.f==='wild'?'wild':''} ${V.rolled?'roll':''}" data-mdie="${i}">
-          <div>${MFACE[x.f].ic}</div><div class="lb">${MFACE[x.f].lb}</div>
+        <div class="mdie ${x.spent?'spent':''} ${x.f==='wild'?'wild':''} ${V.rolled?'roll':''}" data-mdie="${i}"
+             title="${x.f === 'wild' ? 'Wild — goes onto any ground' : MFACE[x.f].lb}">
+          <canvas class="tface" data-tface="${x.f}" width="30" height="30"></canvas>
+          <div class="lb">${MFACE[x.f].lb}</div>
         </div>`).join('')}</div>
       <div class="mini faint" style="margin-top:7px">${gtx('Click a neighbouring hex to move. You spend a travel die matching its ground; a wild face goes anywhere; roads take any face; mountains cost two dice; water needs a boat.')}</div>
       <button class="btn sm wide ${V.forceMove?'primary':''}" id="aForce" style="margin-top:8px" ${free<2?'disabled':''}>
@@ -3804,6 +3914,7 @@ function renderSide(){
   $('#aCodex').onclick = openCodex;
   $('#aTerms').onclick = () => openGlossary();
   $('#aSeals').onclick = openObjectives;
+  paintTravelDice();
   $('#legend').innerHTML = `<span class="lg">${S.hero.ic} you</span><span class="lg">🕳️ lair</span><span class="lg">🌑 gate</span><span class="lg">⚔️ roaming</span><span class="lg" style="color:var(--gold)">● unexplored</span>`;
   V.rolled = false;
 }
