@@ -326,7 +326,7 @@ const BESTIARY = [
     moves:[{k:'charm',v:1},{k:'drain',v:6},{k:'attack',v:7}] },
   { key:'necro',   name:'Bone Caller',  av:'🕯️', hp:18, acts:[2,3],   dmgW:0.9,
     moves:[{k:'summon',v:1},{k:'attack',v:6},{k:'block',v:7},{k:'summon',v:1}] },
-  { key:'cinder',  name:'Cinder Fiend', av:'🔥', hp:13, acts:[1,2],   dmgW:0.9,
+  { key:'cinder',  name:'Cinder Fiend', av:'🔥', hp:13, acts:[2,3],   dmgW:0.9,
     moves:[{k:'burn',v:3},{k:'attack',v:5},{k:'attackAll',v:3}] },
   { key:'wraith',  name:'Wraith',       av:'👻', hp:19, acts:[3],     dmgW:1.15,
     moves:[{k:'attackAll',v:5},{k:'attack',v:9},{k:'poison',v:4}] }
@@ -1264,7 +1264,7 @@ function enemyPhase(){
         }
         break;
       case 'summon': {
-        if(livingEnemies().length >= 5){ e.shield += 6; logc(`${e.name} calls, and nothing comes.`); break; }
+        if(livingEnemies().length >= 4){ e.shield += 6; logc(`${e.name} calls, and nothing comes.`); break; }
         const weak = BESTIARY.filter(bb => bb.acts.includes(S.act) && bb.hp <= 12);
         const pool = weak.length ? weak : BESTIARY.filter(bb => bb.acts.includes(S.act));
         const spawn = makeEnemy(pick(pool), S.act, undefined, { item:false });
@@ -1288,7 +1288,8 @@ function charmedAllies(){
   const acting = S.party.filter(h => h.charmed > 0 && !h.downed && h.hp > 0);
   acting.forEach(h => {
     const strikes = h.faces.filter(f => f.k === 'dmg').map(f => faceValue(h, f));
-    const dmg = strikes.length ? Math.max(...strikes) : 3;
+    /* losing the roll is most of the cost already, so they pull the blow */
+    const dmg = Math.max(1, Math.ceil((strikes.length ? Math.max(...strikes) : 3) / 2));
     const others = livingAllies().filter(a => a !== h);
     if(others.length){
       const victim = pick(others);
@@ -1338,7 +1339,7 @@ function endOfRound(){
     if(h.burn > 0){
       hurtHero(h, h.burn, {ignoreShield:true, ignoreArmour:true});
       logc(`${h.name} burns for ${h.burn}.`);
-      if(h.hp > 0) h.burn++;          /* it grows on us too, but never spreads */
+      h.burn--;                        /* you beat it out; it does not compound */
     }
   });
   if(!livingEnemies().length){ endCombat(true); return; }
@@ -2210,7 +2211,7 @@ function viewCombat(){
     if(h.shield) badges.push(`<span class="badge" style="color:var(--blue)" data-tip="Shield|Absorbs damage. Fades at the start of your next turn.">🛡️ ${h.shield}</span>`);
     if(h.poison) badges.push(`<span class="badge" style="color:var(--lime)" data-tip="Poison|Loses this much HP at the end of the round, ignoring shield.">☠️ ${h.poison}</span>`);
     if(h.power)  badges.push(`<span class="badge" style="color:var(--pink)" data-tip="Power|Added to every Strike and Cleave this hero rolls.">💢 ${h.power}</span>`);
-    if(h.burn)   badges.push(`<span class="badge" style="color:var(--orange)" data-tip="Burning|Loses this much at the end of the round, ignoring shields and armour, and it grows. A Mend puts it out a point at a time.">🔥 ${h.burn}</span>`);
+    if(h.burn)   badges.push(`<span class="badge" style="color:var(--orange)" data-tip="Burning|Loses this much at the end of the round, ignoring shields and armour, then dies down by one. A Mend smothers it faster.">🔥 ${h.burn}</span>`);
     if(h.charmed) badges.push(`<span class="badge" style="color:var(--violet)" data-tip="Taken|Not yours for this many turns. They will not roll for you, and at the end of the enemy turn they swing at the party.">🧠 ${h.charmed}</span>`);
     if(h.isSummon) badges.push(`<span class="badge" style="color:var(--cyan)" data-tip="Fading|This Thrall unravels after this many more turns. Summon again to renew it.">🌀 ${h.turns}</span>`);
     return `<div class="unit ally ${h.downed ? 'dead' : ''} ${allyTargetable && !h.downed ? 'targetable' : ''}" data-uid="${h.uid}"
