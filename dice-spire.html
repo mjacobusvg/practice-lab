@@ -121,6 +121,7 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .face.big .v{font-size:15px}
 .face.pickable{cursor:pointer}
 .face.pickable:hover{border-color:var(--gold);background:#151f36}
+.face.locked{opacity:.3;cursor:not-allowed}
 .face.sel{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
 
 /* ---------- map ---------- */
@@ -265,35 +266,62 @@ const KIND = {
   mana:     {name:'Focus',   ic:'🔮', col:'var(--violet)', target:'self',       desc:v=>`Gain ${v} mana.`},
   power:    {name:'Empower', ic:'💢', col:'var(--pink)',   target:'ally',       desc:v=>`Give an ally +${v} power for this fight.`},
   charm:    {name:'Dominate',ic:'🧠', col:'var(--violet)', target:'enemy',      desc:v=>`Seize an enemy's mind for ${v} turn${v>1?'s':''}. It turns on its own side.`},
-  daze:     {name:'Mindlock',ic:'💫', col:'var(--gold)',   target:'enemy',      desc:v=>`Stun for ${v} turn${v>1?'s':''} and strip every point of the enemy's power.`},
+  daze:     {name:'Mindlock',ic:'💫', col:'var(--gold)',   target:'enemy',      desc:v=>`Strip every point of the enemy's power, and its attacks land for half for ${v} turn${v>1?'s':''}.`},
+  guard:    {name:'Guard',   ic:'🪖', col:'var(--blue)',   target:'self',       desc:v=>`Take every attack aimed at the rest of the party this round, and gain ${v} shield.`},
+  regen:    {name:'Regrowth',ic:'🌱', col:'var(--green)',  target:'ally',       desc:v=>`An ally mends ${v} at the end of the round, then ${v-1}, and so on.`},
   summon:   {name:'Summon',  ic:'🌀', col:'var(--cyan)',   target:'self',       desc:v=>`Call up a Thrall with ${5+3*v} HP that rolls its own die for ${2+v} turns. Two at a time.`},
   blank:    {name:'Blank',   ic:'·',       col:'var(--ink-faint)', target:'none',    desc:()=>`Nothing happens.`}
 };
 const F = (k, v = 0) => ({ k, v });
+/* Every hero owns one kind of face outright. Nobody else can be given it, so a
+   party is defined by who is in it rather than by whatever the rewards offered.
+   CONTROL is the subset that takes an enemy's turn away: those are capped at
+   one face per hero, because stacking them across a party locks a fight out
+   entirely, which is how this game was beaten. */
+const SIGNATURE = { stun:'duelist', charm:'sorcerer', daze:'sorcerer', summon:'sorcerer',
+                    burn:'pyromancer', poison:'venomist', power:'herald',
+                    guard:'vanguard', regen:'warden' };
+const CONTROL = ['stun','charm'];
+const isControl = k => CONTROL.includes(k);
+const signatureOwner = k => SIGNATURE[k] || null;
+const canTakeFace = (hero, k) => !SIGNATURE[k] || SIGNATURE[k] === hero.key;
+const controlFaces = hero => hero.faces.filter(f => isControl(f.k)).length;
+/* a hero may take this face, replacing the face at idx */
+function mayInstall(hero, k, idx){
+  if(!canTakeFace(hero, k)) return false;
+  if(!isControl(k)) return true;
+  if(controlFaces(hero) === 0) return true;
+  return idx !== undefined && isControl(hero.faces[idx].k);   /* swap one for the other */
+}
+const ownerName = k => {
+  const key = signatureOwner(k);
+  const h = key && HEROES.find(x => x.key === key);
+  return h ? h.name : null;
+};
 const faceLabel = f => f.k === 'blank' ? 'Blank' : `${KIND[f.k].name}${f.v ? ' ' + f.v : ''}`;
 
 /* ------------------------------------------------------------------- heroes */
 const HEROES = [
   { key:'vanguard', name:'Vanguard', av:'🛡️', hp:24,
-    blurb:'A wall with a sword arm. Soaks the hits nobody else survives.',
-    faces:[F('shield',3),F('shield',2),F('shieldAll',1),F('dmg',3),F('mana',1),F('blank')], spell:'bulwark' },
+    blurb:'A wall with a sword arm. The only one who can Guard, pulling the whole enemy turn onto himself.',
+    faces:[F('shield',3),F('shield',2),F('guard',2),F('dmg',3),F('mana',1),F('blank')], spell:'bulwark' },
   { key:'duelist', name:'Duelist', av:'🗡️', hp:15,
-    blurb:'Enormous damage, zero defence, and two sides of pure regret.',
-    faces:[F('dmg',5),F('dmg',4),F('dmg',3),F('mana',1),F('blank'),F('blank')], spell:'finisher' },
+    blurb:'Enormous damage, no defence at all. The only one who can Stun.',
+    faces:[F('dmg',5),F('dmg',4),F('dmg',3),F('mana',1),F('stun',1),F('blank')], spell:'finisher' },
   { key:'warden', name:'Warden', av:'🌿', hp:18,
-    blurb:'Keeps the party upright long enough for the maths to work.',
-    faces:[F('heal',3),F('heal',2),F('shield',2),F('dmg',2),F('mana',1),F('blank')], spell:'mend' },
+    blurb:'Keeps the party upright. The only one with Regrowth, which mends a little every round.',
+    faces:[F('heal',3),F('heal',2),F('regen',3),F('dmg',2),F('mana',1),F('blank')], spell:'mend' },
   { key:'pyromancer', name:'Pyromancer', av:'🔥', hp:14,
-    blurb:'Answers crowds. Her fire does little on impact and a great deal afterwards.',
+    blurb:'Answers crowds. The only one who can Ignite, and her fire grows and spreads.',
     faces:[F('dmgAll',2),F('burn',2),F('dmg',3),F('mana',2),F('mana',1),F('blank')], spell:'conflag' },
   { key:'venomist', name:'Venomist', av:'⚗️', hp:16,
-    blurb:'Patient. Poison ignores shields and does not care how big you are.',
-    faces:[F('poison',3),F('poison',2),F('dmg',3),F('mana',1),F('stun',1),F('blank')], spell:'miasma' },
+    blurb:'Patient. The only one who can apply Venom, which ignores shields entirely.',
+    faces:[F('poison',3),F('poison',2),F('dmg',3),F('mana',1),F('dmg',2),F('blank')], spell:'miasma' },
   { key:'herald', name:'Herald', av:'📯', hp:17,
-    blurb:'Makes everyone else better. Terrifying once the fight runs long.',
+    blurb:'Makes everyone else better. The only one who can Empower.',
     faces:[F('power',1),F('power',1),F('shield',3),F('heal',2),F('mana',1),F('blank')], spell:'rally' },
   { key:'sorcerer', name:'Sorcerer', av:'🧠', hp:15,
-    blurb:'Does not fight the room so much as rearrange who is standing in it.',
+    blurb:'Rearranges who is standing in the room. The only one who can Dominate, Mindlock or Summon.',
     faces:[F('charm',1),F('daze',1),F('summon',1),F('dmg',3),F('mana',2),F('blank')], spell:'dominate' }
 ];
 
@@ -509,12 +537,23 @@ const FACE_POOL = [
   {f:F('daze',1),     w:4},  {f:F('daze',2),     w:1},  {f:F('summon',1),   w:4},
   {f:F('summon',2),   w:2},
   {f:F('stun',2),     w:2},  {f:F('mana',2),     w:6},  {f:F('mana',3),     w:3},
-  {f:F('power',1),    w:5},  {f:F('power',2),    w:2}
+  {f:F('power',1),    w:5},  {f:F('power',2),    w:2},
+  {f:F('guard',2),    w:5},  {f:F('guard',3),    w:2},  {f:F('regen',3),    w:5},  {f:F('regen',5),    w:2}
 ];
 function rollFaceReward(){
-  const total = FACE_POOL.reduce((s,o)=>s+o.w,0);
+  /* a Dominate face is worthless to a party with no Sorcerer, so it is never
+     offered to one; likewise a second control face for a hero already holding
+     one has nowhere to go */
+  const pool = FACE_POOL.filter(o => {
+    const owner = signatureOwner(o.f.k);
+    if(owner && S && !S.party.some(h => h.key === owner)) return false;
+    if(isControl(o.f.k) && S && !S.party.some(h => canTakeFace(h, o.f.k) && controlFaces(h) === 0)) return false;
+    return true;
+  });
+  const use = pool.length ? pool : FACE_POOL.filter(o => !signatureOwner(o.f.k));
+  const total = use.reduce((s,o)=>s+o.w,0);
   let n = rnd(total);
-  for(const o of FACE_POOL){ n -= o.w; if(n < 0) return {k:o.f.k, v:o.f.v}; }
+  for(const o of use){ n -= o.w; if(n < 0) return {k:o.f.k, v:o.f.v}; }
   return F('dmg',4);
 }
 function faceRewards(n){
@@ -527,7 +566,7 @@ function faceRewards(n){
   return out;
 }
 const facePrice = f => {
-  const base = {dmg:11, dmgAll:17, burn:22, shield:10, shieldAll:18, heal:11, poison:13, stun:34, charm:44, daze:30, summon:38, mana:16, power:26, blank:0}[f.k];
+  const base = {dmg:11, dmgAll:17, burn:22, shield:10, shieldAll:18, heal:11, poison:13, stun:34, charm:44, daze:30, summon:38, guard:20, regen:14, mana:16, power:26, blank:0}[f.k];
   return Math.round(20 + base * Math.max(1, f.v) * 0.9);
 };
 
@@ -546,7 +585,7 @@ function newRun(heroKeys){
     party: heroKeys.map(k => {
       const h = HEROES.find(x => x.key === k);
       return { uid:uid(), key:h.key, name:h.name, av:h.av, maxHp:h.hp, hp:h.hp,
-               faces:h.faces.map(f => ({...f})), shield:0, power:0, poison:0, burn:0, charmed:0, downed:false,
+               faces:h.faces.map(f => ({...f})), shield:0, power:0, poison:0, burn:0, regen:0, charmed:0, guarding:false, downed:false,
                gear:{weapon:null, armour:null, trinket:null} };
     }),
     gold: 60,
@@ -738,7 +777,7 @@ function makeEnemy(def, act, depth, opts){
   let hp = Math.max(4, Math.round(def.hp * ACT_HP[act] * d));
   const e = {
     uid: uid(), key:def.key, name:def.name, av:def.av,
-    maxHp:hp, hp, shield:0, poison:0, burn:0, stun:0, charm:0, power:0,
+    maxHp:hp, hp, shield:0, poison:0, burn:0, stun:0, charm:0, steeled:0, weak:0, power:0,
     moves: scaleMoves(def, act, d), mi: 0, intent:null,
     elite: !!def.elite, boss: !!def.boss, item:null, champion:false
   };
@@ -806,7 +845,7 @@ function startCombat(type){
     over: null
   };
   S.party.forEach(h => {
-    h.shield = 0; h.poison = 0; h.burn = 0; h.charmed = 0;
+    h.shield = 0; h.poison = 0; h.burn = 0; h.charmed = 0; h.regen = 0; h.guarding = false;
     h.power = has('warhorn') ? 1 : 0;
     if(h.hp <= 0){ h.hp = 1; }
     h.downed = h.hp <= 0;
@@ -828,7 +867,7 @@ function beginPlayerTurn(){
   C.turn++;
   S.turnsPlayed++;
   /* shields fade between turns */
-  allies().forEach(h => { h.shield = has('bulwark') ? Math.floor(h.shield / 2) : 0; });
+  allies().forEach(h => { h.shield = has('bulwark') ? Math.floor(h.shield / 2) : 0; h.guarding = false; });
   C.mana += (has('wellspring') ? 1 : 0) + glob('manaTurn');
   if(has('sundial') && C.turn % 3 === 0){
     livingAllies().forEach(h => h.shield += 4);
@@ -912,7 +951,26 @@ function setIntents(){
   });
 }
 
+/* Restricting who may carry control faces limits how MANY you can throw, but
+   one hero with rerolls can still find a Stun most turns. This is what stops
+   a lock outright: after an enemy comes round it braces, and for as long as it
+   is braced nothing can take its turn away again. Control becomes a way to
+   buy a turn at the moment you need it, not a way to end the fight. */
+function tryControl(e, kind, v, byName){
+  if(e.steeled > 0){
+    floatOn(e.uid, 'RESISTS', 'var(--ink-dim)');
+    logc(`${e.name} shakes it off. It is still braced.`);
+    return false;
+  }
+  if(kind === 'stun') e.stun += v; else e.charm += v;
+  e.steeled = v + 1;                       /* the effect, then a turn of grace */
+  floatOn(e.uid, kind === 'stun' ? 'STUN' : 'MINE', kind === 'stun' ? 'var(--gold)' : 'var(--violet)');
+  logc(`${byName} ${kind === 'stun' ? 'stuns' : 'seizes'} ${e.name}.`);
+  return true;
+}
+
 /* ------------------------------------------------------------------ damage */
+const enemyAtk = (e, base) => e.weak > 0 ? Math.max(1, Math.ceil(base / 2)) : base;
 function heroDamageToEnemy(e, n){
   if(has('seal') && e.hp <= e.maxHp * 0.3) n += 4;
   return hurtEnemy(e, n);
@@ -1013,6 +1071,7 @@ function applyDie(i, target){
   const d = C.dice[i];
   if(!d || d.used) return;
   const h = unitByUid(d.ownerUid);
+  if(!h){ d.used = true; return; }      /* owner left the field: the die just fizzles */
   const v = faceValue(h, d);
   d.used = true;
   switch(d.k){
@@ -1062,23 +1121,20 @@ function applyDie(i, target){
     }
     case 'stun': {
       const e = enemyByUid(target.uid); if(!e) break;
-      e.stun += v; floatOn(e.uid, 'STUN', 'var(--gold)');
-      logc(`${e.name} is stunned.`);
+      tryControl(e, 'stun', v, h.name);
       break;
     }
     case 'daze': {
       const e = enemyByUid(target.uid); if(!e) break;
       const lost = e.power;
-      e.stun += v; e.power = 0;
-      floatOn(e.uid, 'DAZED', 'var(--gold)');
-      logc(lost ? `${e.name} is dazed and forgets ${lost} power.` : `${e.name} is dazed.`);
+      e.power = 0; e.weak += v;            /* no longer a stun, so no lock to build */
+      floatOn(e.uid, 'REELING', 'var(--gold)');
+      logc(lost ? `${e.name} reels, and forgets ${lost} power.` : `${e.name} reels.`);
       break;
     }
     case 'charm': {
       const e = enemyByUid(target.uid); if(!e) break;
-      e.charm += v;
-      floatOn(e.uid, 'MINE', 'var(--violet)');
-      logc(`${h.name} seizes the mind of ${e.name}.`);
+      tryControl(e, 'charm', v, h.name);
       break;
     }
     case 'summon': {
@@ -1090,6 +1146,19 @@ function applyDie(i, target){
       const t = makeThrall(v);
       C.summons.push(t);
       logc(`${h.name} calls up a Thrall.`);
+      break;
+    }
+    case 'guard': {
+      h.guarding = true; h.shield += v;
+      floatOn(h.uid, 'GUARD', 'var(--blue)');
+      logc(`${h.name} steps in front of the party.`);
+      break;
+    }
+    case 'regen': {
+      const a = unitByUid(target.uid); if(!a) break;
+      a.regen = (a.regen || 0) + v;
+      floatOn(a.uid, '🌱' + v, 'var(--green)');
+      logc(`${h.name} sets ${a.name} mending.`);
       break;
     }
     case 'mana': {
@@ -1116,7 +1185,7 @@ function applySpell(key, target){
     case 'mend':     { const a = unitByUid(target.uid); if(a){ healHero(a, 8); a.poison = Math.max(0, a.poison - 2); a.burn = Math.max(0, a.burn - 2); } logc('Greater Mend restores 8.'); break; }
     case 'bulwark':  { const a = unitByUid(target.uid); if(a){ a.shield += 9; floatOn(a.uid,'+9','var(--blue)'); } logc('Bulwark grants 9 shield.'); break; }
     case 'chain':    { livingEnemies().forEach(e => heroDamageToEnemy(e, 5)); logc('Chain Lightning arcs for 5.'); break; }
-    case 'frost':    { const e = enemyByUid(target.uid); if(e){ e.stun += 1; floatOn(e.uid,'STUN','var(--gold)'); } logc('Frost Nail freezes an enemy.'); break; }
+    case 'frost':    { const e = enemyByUid(target.uid); if(e) tryControl(e, 'stun', 1, 'Frost Nail'); break; }
     case 'siphon':   {
       const e = enemyByUid(target.uid); if(e) heroDamageToEnemy(e, 5);
       const hurt = livingAllies().slice().sort((a,b) => (a.hp/a.maxHp) - (b.hp/b.maxHp))[0];
@@ -1137,8 +1206,7 @@ function applySpell(key, target){
     case 'rally':    { livingAllies().forEach(h => { h.power += 1; floatOn(h.uid, '+1 POW', 'var(--pink)'); }); logc('Rally lifts the whole party.'); break; }
     case 'dominate': {
       const e = enemyByUid(target.uid); if(!e) break;
-      e.charm += 2; floatOn(e.uid, 'MINE', 'var(--violet)');
-      logc(`${e.name} belongs to you for two turns.`);
+      tryControl(e, 'charm', 2, 'Dominate');
       break;
     }
     case 'legion': {
@@ -1183,10 +1251,15 @@ function enemyPhase(){
     const it = e.intent || { k:'attack', v:3, tgt:null };
     let tgt = it.tgt ? unitByUid(it.tgt) : null;
     if(!tgt || tgt.downed || tgt.hp <= 0) tgt = livingAllies().length ? pick(livingAllies()) : null;
+    const guardian = livingAllies().find(a => a.guarding);
+    if(guardian && tgt && tgt !== guardian && it.k === 'attack'){
+      logc(`${guardian.name} takes the blow meant for ${tgt.name}.`);
+      tgt = guardian;
+    }
     switch(it.k){
       case 'attack':
         if(tgt){
-          const dmg = it.v + (e.power || 0) + enemyItemMod(e, 'dmg');
+          const dmg = enemyAtk(e, it.v + (e.power || 0) + enemyItemMod(e, 'dmg'));
           hurtHero(tgt, dmg);
           logc(`${e.name} hits ${tgt.name} for ${dmg}.`);
           const back = (has('thorned') ? 3 : 0) + glob('thorns');
@@ -1194,7 +1267,7 @@ function enemyPhase(){
         }
         break;
       case 'attackAll': {
-        const dmg = it.v + (e.power || 0) + enemyItemMod(e, 'dmg') + enemyItemMod(e, 'cleave');
+        const dmg = enemyAtk(e, it.v + (e.power || 0) + enemyItemMod(e, 'dmg') + enemyItemMod(e, 'cleave'));
         livingAllies().slice().forEach(h => hurtHero(h, dmg));
         logc(`${e.name} sweeps the party for ${dmg}.`);
         const backAll = (has('thorned') ? 3 : 0) + glob('thorns');
@@ -1247,7 +1320,7 @@ function enemyPhase(){
         break;
       case 'drain':
         if(tgt){
-          const dd = it.v + (e.power || 0) + enemyItemMod(e, 'dmg');
+          const dd = enemyAtk(e, it.v + (e.power || 0) + enemyItemMod(e, 'dmg'));
           hurtHero(tgt, dd);
           const before = e.hp;
           e.hp = Math.min(e.maxHp, e.hp + dd);
@@ -1323,6 +1396,7 @@ function endOfRound(){
   if(!livingEnemies().length){ endCombat(true); return; }
 
   /* poison ticks after everyone has acted */
+  livingEnemies().forEach(e => { if(e.steeled > 0) e.steeled--; if(e.weak > 0) e.weak--; });
   livingEnemies().forEach(e => {
     if(e.poison > 0){
       hurtEnemy(e, e.poison, true);
@@ -1340,6 +1414,11 @@ function endOfRound(){
       hurtHero(h, h.burn, {ignoreShield:true, ignoreArmour:true});
       logc(`${h.name} burns for ${h.burn}.`);
       h.burn--;                        /* you beat it out; it does not compound */
+    }
+    if(h.regen > 0){
+      healHero(h, h.regen);
+      logc(`${h.name} mends ${h.regen}.`);
+      h.regen--;
     }
   });
   if(!livingEnemies().length){ endCombat(true); return; }
@@ -1449,6 +1528,7 @@ function doInstall(heroUid, faceIdx){
   const m = UI.modal;
   const h = heroByUid(heroUid);
   if(!h) return;
+  if(m.mode === 'add' ? !canTakeFace(h, m.face.k) : !mayInstall(h, m.face.k, faceIdx)) return;
   if(m.mode === 'add') h.faces.push({...m.face});
   else h.faces[faceIdx] = {...m.face};
   const after = m.after;
@@ -1544,7 +1624,7 @@ function applyItem(i, target){
     case 'shieldAll':{ livingAllies().forEach(a => { a.shield += 9; floatOn(a.uid, '+9', 'var(--blue)'); }); logc(`${it.name}: cover for everyone.`); break; }
     case 'powerOne': { const a = unitByUid(target.uid); if(a){ a.power += 3; floatOn(a.uid, '+3 POW', 'var(--pink)'); } logc(`${it.name} takes hold.`); break; }
     case 'gainFate': { S.fate = Math.min(fateMax(), S.fate + 2); logc(`${it.name}: fate gathers.`); break; }
-    case 'stunAll':  { livingEnemies().forEach(e => { e.stun += 1; floatOn(e.uid, 'STUN', 'var(--gold)'); }); logc(`${it.name}: everything freezes.`); break; }
+    case 'stunAll':  { livingEnemies().forEach(e => tryControl(e, 'stun', 1, it.name)); break; }
     case 'poisonOne':{ const e = enemyByUid(target.uid); if(e){ e.poison += 7; floatOn(e.uid, '☠7', 'var(--lime)'); } logc(`${it.name} splashes.`); break; }
     case 'revive':   {
       const d = S.party.find(x => x.downed);
@@ -1676,7 +1756,7 @@ function forgeFace(heroUid, idx){
   const h = heroByUid(heroUid);
   const f = h.faces[idx];
   if(!f || f.k === 'blank') return;
-  f.v += (['stun','charm','daze','summon','dmgAll','shieldAll','power','mana','burn'].includes(f.k) ? 1 : 2);
+  f.v += (['stun','charm','daze','summon','guard','dmgAll','shieldAll','power','mana','burn'].includes(f.k) ? 1 : 2);
   UI.modal = null; save(); render();
 }
 function campScour(){ openScour(0, null); }
@@ -2191,6 +2271,8 @@ function viewCombat(){
     if(e.poison) badges.push(`<span class="badge" style="color:var(--lime)" data-tip="Poison|Loses this much HP at the end of the round, ignoring shield, then the stack drops by 1.">☠️ ${e.poison}</span>`);
     if(e.burn)   badges.push(`<span class="badge" style="color:var(--orange)" data-tip="Burning|Loses this much HP at the end of the round, ignoring shield. Then the fire GROWS by 1, and spreads to an enemy that is not yet alight.">🔥 ${e.burn}</span>`);
     if(e.stun)   badges.push(`<span class="badge" style="color:var(--gold)" data-tip="Stunned|Loses its next turn.">⚡ ${e.stun}</span>`);
+    if(e.steeled) badges.push(`<span class="badge" style="color:var(--ink-dim)" data-tip="Braced|Nothing can stun or dominate it while this lasts. Every hold leaves it braced afterwards, so it cannot be kept under indefinitely.">⛓️ ${e.steeled}</span>`);
+    if(e.weak)   badges.push(`<span class="badge" style="color:var(--gold)" data-tip="Reeling|Its attacks land for half.">💫 ${e.weak}</span>`);
     if(e.charm)  badges.push(`<span class="badge" style="color:var(--violet)" data-tip="Dominated|Fights for you for this many turns, attacking its own side. With nothing else alive it simply flails.">🧠 ${e.charm}</span>`);
     if(e.power)  badges.push(`<span class="badge" style="color:var(--pink)" data-tip="Power|Added to every attack.">💢 ${e.power}</span>`);
     if(e.item){ const gi = itemDef(e.item);
@@ -2213,6 +2295,8 @@ function viewCombat(){
     if(h.poison) badges.push(`<span class="badge" style="color:var(--lime)" data-tip="Poison|Loses this much HP at the end of the round, ignoring shield.">☠️ ${h.poison}</span>`);
     if(h.power)  badges.push(`<span class="badge" style="color:var(--pink)" data-tip="Power|Added to every Strike and Cleave this hero rolls.">💢 ${h.power}</span>`);
     if(h.burn)   badges.push(`<span class="badge" style="color:var(--orange)" data-tip="Burning|Loses this much at the end of the round, ignoring shields and armour, then dies down by one. A Mend smothers it faster.">🔥 ${h.burn}</span>`);
+    if(h.guarding) badges.push(`<span class="badge" style="color:var(--blue)" data-tip="Guarding|Every single-target attack this round lands on them instead of whoever it was aimed at.">🪖 guard</span>`);
+    if(h.regen)  badges.push(`<span class="badge" style="color:var(--green)" data-tip="Regrowth|Mends this much at the end of the round, then one less each round after.">🌱 ${h.regen}</span>`);
     if(h.charmed) badges.push(`<span class="badge" style="color:var(--violet)" data-tip="Taken|Not yours for this many turns. They will not roll for you, and at the end of the enemy turn they swing at the party.">🧠 ${h.charmed}</span>`);
     if(h.isSummon) badges.push(`<span class="badge" style="color:var(--cyan)" data-tip="Fading|This Thrall unravels after this many more turns. Summon again to renew it.">🌀 ${h.turns}</span>`);
     return `<div class="unit ally ${h.downed ? 'dead' : ''} ${allyTargetable && !h.downed ? 'targetable' : ''}" data-uid="${h.uid}"
@@ -2301,8 +2385,8 @@ function intentHTML(e){
   if(!it) return '<div class="intent">—</div>';
   const tgt = it.tgt ? (it.k === 'charmed' ? enemyByUid(it.tgt) : unitByUid(it.tgt)) : null;
   const map = {
-    attack:    {ic:'⚔️', col:'var(--red)',   v: it.v + (e.power || 0) + enemyItemMod(e, 'dmg')},
-    attackAll: {ic:'🌪️', col:'var(--orange)', v: it.v + (e.power || 0) + enemyItemMod(e, 'dmg') + enemyItemMod(e, 'cleave')},
+    attack:    {ic:'⚔️', col:'var(--red)',   v: enemyAtk(e, it.v + (e.power || 0) + enemyItemMod(e, 'dmg'))},
+    attackAll: {ic:'🌪️', col:'var(--orange)', v: enemyAtk(e, it.v + (e.power || 0) + enemyItemMod(e, 'dmg') + enemyItemMod(e, 'cleave'))},
     block:     {ic:'🛡️', col:'var(--blue)',  v: it.v},
     buff:      {ic:'💢', col:'var(--pink)',  v: it.v},
     heal:      {ic:'❤️', col:'var(--green)', v: it.v},
@@ -2435,7 +2519,16 @@ function mInstall(m){
           <b>${h.av} ${esc(h.name)}</b>
           ${add ? `<button class="btn sm primary" onclick="doInstall(${h.uid},0)">Add here</button>` : `<span class="tiny muted">${h.faces.length} faces</span>`}
         </div>
-        <div class="faces">${h.faces.map((f, i) => faceHTML(f, 'big ' + (add ? '' : 'pickable'), add ? '' : `doInstall(${h.uid},${i})`)).join('')}</div>
+        <div class="faces">${h.faces.map((f, i) => {
+          const okHere = add ? canTakeFace(h, m.face.k) : mayInstall(h, m.face.k, i);
+          return faceHTML(f, 'big ' + (okHere ? 'pickable' : 'locked'), okHere ? `doInstall(${h.uid},${i})` : '');
+        }).join('')}</div>
+        ${(() => {
+          if(canTakeFace(h, m.face.k) && (add || mayInstall(h, m.face.k))) return '';
+          if(!canTakeFace(h, m.face.k))
+            return `<div class="tiny" style="color:var(--ink-faint);margin-top:7px">${esc(KIND[m.face.k].name)} belongs to the ${esc(ownerName(m.face.k) || '')}. No one else can carry it.</div>`;
+          return `<div class="tiny" style="color:var(--ink-faint);margin-top:7px">Already carries a control face. It can only replace that one.</div>`;
+        })()}
       </div>`).join('')}
     </div>
     <div class="sep"></div>
