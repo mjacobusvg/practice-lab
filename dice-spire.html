@@ -259,7 +259,7 @@ const KIND = {
   burn:     {name:'Ignite',  ic:'🕯️', col:'var(--orange)', target:'enemy',      desc:v=>`Set an enemy burning for ${v}. Fire grows by 1 each round and spreads.`},
   shield:   {name:'Shield',  ic:'🛡️', col:'var(--blue)', target:'ally',   desc:v=>`Give an ally ${v} shield.`},
   shieldAll:{name:'Aegis',   ic:'✨',       col:'var(--cyan)',   target:'allAllies',  desc:v=>`Give every hero ${v} shield.`},
-  heal:     {name:'Mend',    ic:'❤️', col:'var(--green)',  target:'ally',       desc:v=>`Heal an ally for ${v} and clear 1 poison.`},
+  heal:     {name:'Mend',    ic:'❤️', col:'var(--green)',  target:'ally',       desc:v=>`Heal an ally for ${v} and clear a point of poison and of burning.`},
   poison:   {name:'Venom',   ic:'☠️', col:'var(--lime)',   target:'enemy',      desc:v=>`Apply ${v} poison.`},
   stun:     {name:'Stun',    ic:'⚡',       col:'var(--gold)',   target:'enemy',      desc:v=>`Stun for ${v} turn${v>1?'s':''}.`},
   mana:     {name:'Focus',   ic:'🔮', col:'var(--violet)', target:'self',       desc:v=>`Gain ${v} mana.`},
@@ -322,6 +322,12 @@ const BESTIARY = [
     moves:[{k:'heal',v:7},{k:'attack',v:7},{k:'buff',v:2}] },
   { key:'knight',  name:'Ashen Knight', av:'⚔️', hp:22, acts:[3],     dmgW:1.25,
     moves:[{k:'attack',v:10},{k:'block',v:9},{k:'attack',v:8}] },
+  { key:'mesmer',  name:'Mesmerist',    av:'🪬', hp:16, acts:[2,3],   dmgW:1,
+    moves:[{k:'charm',v:1},{k:'drain',v:6},{k:'attack',v:7}] },
+  { key:'necro',   name:'Bone Caller',  av:'🕯️', hp:18, acts:[2,3],   dmgW:0.9,
+    moves:[{k:'summon',v:1},{k:'attack',v:6},{k:'block',v:7},{k:'summon',v:1}] },
+  { key:'cinder',  name:'Cinder Fiend', av:'🔥', hp:13, acts:[1,2],   dmgW:0.9,
+    moves:[{k:'burn',v:3},{k:'attack',v:5},{k:'attackAll',v:3}] },
   { key:'wraith',  name:'Wraith',       av:'👻', hp:19, acts:[3],     dmgW:1.15,
     moves:[{k:'attackAll',v:5},{k:'attack',v:9},{k:'poison',v:4}] }
 ];
@@ -331,7 +337,9 @@ const ELITES = [
   { key:'warlock',name:'Blood Warlock', av:'🧛', hp:30, elite:true, dmgW:1.1,
     moves:[{k:'attack',v:8},{k:'heal',v:7},{k:'buff',v:2},{k:'attackAll',v:4}] },
   { key:'twins',  name:'Thorn Sentinel',av:'🌵', hp:32, elite:true, dmgW:1.15,
-    moves:[{k:'block',v:10},{k:'attack',v:9},{k:'poison',v:3},{k:'attack',v:7}] }
+    moves:[{k:'block',v:10},{k:'attack',v:9},{k:'poison',v:3},{k:'attack',v:7}] },
+  { key:'puppeteer',name:'The Puppeteer',av:'🎎', hp:30, elite:true, dmgW:1.1,
+    moves:[{k:'charm',v:1},{k:'attack',v:9},{k:'summon',v:1},{k:'drain',v:7}] }
 ];
 const BOSSES = [
   { key:'maw',   name:'The Gluttonous Maw', av:'👾', hp:40, boss:true, dmgW:1.2,
@@ -339,7 +347,7 @@ const BOSSES = [
   { key:'choir', name:'The Hollow Choir',   av:'🎭', hp:52, boss:true, dmgW:1.15,
     moves:[{k:'buff',v:3},{k:'attackAll',v:7},{k:'attack',v:12},{k:'block',v:14},{k:'poison',v:4}] },
   { key:'crown', name:'The Rusted Crown',   av:'👑', hp:64, boss:true, dmgW:1.3,
-    moves:[{k:'attack',v:13},{k:'block',v:14},{k:'attackAll',v:7},{k:'buff',v:2},{k:'attack',v:11}] }
+    moves:[{k:'attack',v:13},{k:'block',v:14},{k:'attackAll',v:7},{k:'charm',v:1},{k:'attack',v:11}] }
 ];
 
 /* per-act scaling applied to every enemy pulled from the tables above */
@@ -432,6 +440,13 @@ const ITEMS = [
 ];
 const itemDef = k => ITEMS.find(i => i.key === k);
 const GEAR_SLOTS = ['weapon','armour','trinket'];
+/* Gear an enemy can actually use. A bandit with a Silver Sword hits harder
+   and is carrying a Silver Sword, which is the whole point. */
+const ENEMY_GEAR = ITEMS.filter(i => i.slot === 'weapon' || i.slot === 'armour').map(i => i.key);
+function enemyItemMod(e, key){
+  const it = e.item ? itemDef(e.item) : null;
+  return (it && it.mod && it.mod[key]) || 0;
+}
 
 /* every piece of gear currently worn by anybody */
 function wornItems(){
@@ -531,7 +546,7 @@ function newRun(heroKeys){
     party: heroKeys.map(k => {
       const h = HEROES.find(x => x.key === k);
       return { uid:uid(), key:h.key, name:h.name, av:h.av, maxHp:h.hp, hp:h.hp,
-               faces:h.faces.map(f => ({...f})), shield:0, power:0, poison:0, downed:false,
+               faces:h.faces.map(f => ({...f})), shield:0, power:0, poison:0, burn:0, charmed:0, downed:false,
                gear:{weapon:null, armour:null, trinket:null} };
     }),
     gold: 60,
@@ -707,7 +722,8 @@ function scaleMoves(def, act, depth){
   return def.moves.map(m => {
     let v;
     if(m.k === 'block' || m.k === 'heal') v = m.v * ACT_HP[act] * d; /* defence tracks the HP curve */
-    else if(m.k === 'buff' || m.k === 'poison') v = m.v;           /* stacking effects never scale */
+    else if(m.k === 'buff' || m.k === 'poison' || m.k === 'burn' ||
+            m.k === 'charm' || m.k === 'summon') v = m.v;          /* stacking effects never scale */
     else v = m.v * dm;
     return { k:m.k, v:Math.max(1, Math.round(v)) };
   });
@@ -716,15 +732,34 @@ function depthMul(){
   if(!S.pos) return 1;
   return 1 + 0.55 * (S.pos.floor / (FLOORS - 2));
 }
-function makeEnemy(def, act, depth){
+function makeEnemy(def, act, depth, opts){
+  opts = opts || {};
   const d = depth === undefined ? depthMul() : depth;
-  const hp = Math.max(4, Math.round(def.hp * ACT_HP[act] * d));
-  return {
+  let hp = Math.max(4, Math.round(def.hp * ACT_HP[act] * d));
+  const e = {
     uid: uid(), key:def.key, name:def.name, av:def.av,
     maxHp:hp, hp, shield:0, poison:0, burn:0, stun:0, charm:0, power:0,
     moves: scaleMoves(def, act, d), mi: 0, intent:null,
-    elite: !!def.elite, boss: !!def.boss
+    elite: !!def.elite, boss: !!def.boss, item:null, champion:false
   };
+  /* a champion is an ordinary monster that got lucky: bigger, meaner, armed */
+  if(opts.champion){
+    e.champion = true;
+    e.name = pick(['Scarred','Hulking','Ancient','Dread','Gilded']) + ' ' + e.name;
+    e.maxHp = Math.round(e.maxHp * 1.45); e.hp = e.maxHp;
+    e.moves = e.moves.map(m => (m.k === 'attack' || m.k === 'attackAll')
+      ? { k:m.k, v: Math.max(1, Math.round(m.v * 1.2)) } : m);
+  }
+  const wants = opts.item !== undefined ? opts.item
+              : (e.boss || e.elite || e.champion) ? true : Math.random() < 0.12;
+  if(wants){
+    const tier = e.boss ? 3 : (e.elite || e.champion) ? (Math.random() < 0.5 ? 3 : 2) : (Math.random() < 0.3 ? 2 : 1);
+    const pool = ENEMY_GEAR.filter(k => itemDef(k).tier === tier);
+    e.item = pick(pool.length ? pool : ENEMY_GEAR);
+    const bonusHp = enemyItemMod(e, 'maxHp');
+    if(bonusHp > 0){ e.maxHp += bonusHp * 2; e.hp = e.maxHp; }
+  }
+  return e;
 }
 function buildEncounter(type){
   const act = S.act;
@@ -739,7 +774,9 @@ function buildEncounter(type){
   }
   const n = opening ? pick([1,2]) : pick({1:[1,2,2], 2:[2,2,3], 3:[2,2,3]}[act] || [2,2,3]);
   const out = [];
-  for(let i = 0; i < n; i++) out.push(makeEnemy(pick(pool), act));
+  /* deeper in an act, one of them is likely to be something that grew */
+  const champChance = opening ? 0 : 0.1 + 0.25 * ((S.pos ? S.pos.floor : 0) / (FLOORS - 2));
+  for(let i = 0; i < n; i++) out.push(makeEnemy(pick(pool), act, undefined, { champion: Math.random() < champChance }));
   /* a lone normal enemy would be a pushover: give it a boost */
   if(n === 1 && !opening){ out[0].maxHp = Math.round(out[0].maxHp * 1.45); out[0].hp = out[0].maxHp; }
   return out;
@@ -764,11 +801,12 @@ function startCombat(type){
     rerollMode: false,
     pending: null,
     spellsUsed: [],
+    drops: [],
     log: [],
     over: null
   };
   S.party.forEach(h => {
-    h.shield = 0; h.poison = 0;
+    h.shield = 0; h.poison = 0; h.burn = 0; h.charmed = 0;
     h.power = has('warhorn') ? 1 : 0;
     if(h.hp <= 0){ h.hp = 1; }
     h.downed = h.hp <= 0;
@@ -806,12 +844,14 @@ function beginPlayerTurn(){
   C.rerollMode = false;
   C.pending = null;
   rollAll();
+  /* the roll has now passed them by, so their hold ends here */
+  S.party.forEach(h => { if(h.charmed > 0) h.charmed--; });
   setIntents();
   save();
 }
 
 function rollAll(){
-  C.dice = livingAllies().map(h => {
+  C.dice = rollingAllies().map(h => {
     const f = h.faces[rnd(h.faces.length)];
     return { id:uid(), ownerUid:h.uid, k:f.k, v:f.v, used:false, mark:false, fresh:true };
   });
@@ -822,6 +862,7 @@ function rerollMarked(){
   C.rerolls--;
   marked.forEach(d => {
     const h = unitByUid(d.ownerUid);
+    if(!h) return;
     const f = h.faces[rnd(h.faces.length)];
     d.k = f.k; d.v = f.v; d.mark = false; d.fresh = true;
   });
@@ -837,6 +878,9 @@ const heroByUid  = u => S.party.find(h => h.uid === u);
 const summons     = () => (C && C.summons) ? C.summons : [];
 const allies      = () => S.party.concat(summons());
 const livingAllies= () => allies().filter(a => !a.downed && a.hp > 0);
+/* dominated heroes are still alive and still targetable, they just are not
+   yours this turn, so they are excluded from the roll and nothing else */
+const rollingAllies = () => livingAllies().filter(a => !a.charmed);
 const unitByUid   = u => allies().find(a => a.uid === u);
 const enemyByUid = u => C.enemies.find(e => e.uid === u);
 
@@ -855,9 +899,14 @@ function setIntents(){
     const m = e.moves[e.mi % e.moves.length];
     e.mi++;
     let tgt = null;
-    if(m.k === 'attack' || m.k === 'poison'){
+    if(m.k === 'attack' || m.k === 'poison' || m.k === 'burn' || m.k === 'drain'){
       const opts = livingAllies();
       tgt = opts.length ? pick(opts).uid : null;
+    }
+    if(m.k === 'charm'){
+      const opts = livingAllies().filter(a => !a.isSummon && !a.charmed);
+      tgt = opts.length ? pick(opts).uid : null;
+      if(!tgt){ e.intent = { k:'attack', v:m.v * 4, tgt:(livingAllies()[0]||{}).uid || null }; return; }
     }
     e.intent = { k:m.k, v:m.v, tgt };
   });
@@ -871,13 +920,18 @@ function heroDamageToEnemy(e, n){
 function hurtEnemy(e, n, ignoreShield){
   if(e.hp <= 0 || n <= 0) return 0;
   let left = n;
+  const armour = enemyItemMod(e, 'armour');
+  if(armour > 0 && !ignoreShield) left = Math.max(0, left - armour);   /* worn plate, same as ours */
   if(!ignoreShield && e.shield > 0){
     const a = Math.min(e.shield, left);
     e.shield -= a; left -= a;
   }
   e.hp = Math.max(0, e.hp - left);
   floatOn(e.uid, '-' + n, 'var(--red)');
-  if(e.hp === 0){ logc(`${e.name} falls.`); S.kills++; if(e.elite) S.elitesKilled++; }
+  if(e.hp === 0){
+    logc(`${e.name} falls.`); S.kills++; if(e.elite) S.elitesKilled++;
+    if(e.item){ C.drops.push(e.item); logc(`It drops its ${itemDef(e.item).name}.`); e.item = null; }
+  }
   return n;
 }
 function hurtHero(h, n, opts){
@@ -995,6 +1049,7 @@ function applyDie(i, target){
       const a = unitByUid(target.uid); if(!a) break;
       healHero(a, v);
       if(a.poison > 0) a.poison--;
+      if(a.burn > 0) a.burn--;
       logc(`${h.name} mends ${a.name} for ${v}.`);
       break;
     }
@@ -1057,7 +1112,7 @@ function applySpell(key, target){
   C.mana -= sp.cost;
   switch(key){
     case 'firebolt': { const e = enemyByUid(target.uid); if(e) heroDamageToEnemy(e, 7); logc(`Firebolt hits ${e ? e.name : 'nothing'} for 7.`); break; }
-    case 'mend':     { const a = unitByUid(target.uid); if(a){ healHero(a, 8); a.poison = Math.max(0, a.poison - 2); } logc('Greater Mend restores 8.'); break; }
+    case 'mend':     { const a = unitByUid(target.uid); if(a){ healHero(a, 8); a.poison = Math.max(0, a.poison - 2); a.burn = Math.max(0, a.burn - 2); } logc('Greater Mend restores 8.'); break; }
     case 'bulwark':  { const a = unitByUid(target.uid); if(a){ a.shield += 9; floatOn(a.uid,'+9','var(--blue)'); } logc('Bulwark grants 9 shield.'); break; }
     case 'chain':    { livingEnemies().forEach(e => heroDamageToEnemy(e, 5)); logc('Chain Lightning arcs for 5.'); break; }
     case 'frost':    { const e = enemyByUid(target.uid); if(e){ e.stun += 1; floatOn(e.uid,'STUN','var(--gold)'); } logc('Frost Nail freezes an enemy.'); break; }
@@ -1130,7 +1185,7 @@ function enemyPhase(){
     switch(it.k){
       case 'attack':
         if(tgt){
-          const dmg = it.v + (e.power || 0);
+          const dmg = it.v + (e.power || 0) + enemyItemMod(e, 'dmg');
           hurtHero(tgt, dmg);
           logc(`${e.name} hits ${tgt.name} for ${dmg}.`);
           const back = (has('thorned') ? 3 : 0) + glob('thorns');
@@ -1138,7 +1193,7 @@ function enemyPhase(){
         }
         break;
       case 'attackAll': {
-        const dmg = it.v + (e.power || 0);
+        const dmg = it.v + (e.power || 0) + enemyItemMod(e, 'dmg') + enemyItemMod(e, 'cleave');
         livingAllies().slice().forEach(h => hurtHero(h, dmg));
         logc(`${e.name} sweeps the party for ${dmg}.`);
         const backAll = (has('thorned') ? 3 : 0) + glob('thorns');
@@ -1182,6 +1237,40 @@ function enemyPhase(){
           logc(`${e.name} poisons ${tgt.name}.`);
         }
         break;
+      case 'burn':
+        if(tgt){
+          tgt.burn += it.v;
+          floatOn(tgt.uid, '🔥' + it.v, 'var(--orange)');
+          logc(`${e.name} sets ${tgt.name} alight.`);
+        }
+        break;
+      case 'drain':
+        if(tgt){
+          const dd = it.v + (e.power || 0) + enemyItemMod(e, 'dmg');
+          hurtHero(tgt, dd);
+          const before = e.hp;
+          e.hp = Math.min(e.maxHp, e.hp + dd);
+          floatOn(e.uid, '+' + (e.hp - before), 'var(--green)');
+          logc(`${e.name} drains ${dd} out of ${tgt.name}.`);
+        }
+        break;
+      case 'charm':
+        if(tgt && !tgt.isSummon){
+          tgt.charmed += it.v;
+          C.dice = C.dice.filter(d => d.ownerUid !== tgt.uid || d.used);
+          floatOn(tgt.uid, 'THEIRS', 'var(--violet)');
+          logc(`${e.name} takes ${tgt.name}. They strike the party at the end of this turn and roll for nobody on the next.`);
+        }
+        break;
+      case 'summon': {
+        if(livingEnemies().length >= 5){ e.shield += 6; logc(`${e.name} calls, and nothing comes.`); break; }
+        const weak = BESTIARY.filter(bb => bb.acts.includes(S.act) && bb.hp <= 12);
+        const pool = weak.length ? weak : BESTIARY.filter(bb => bb.acts.includes(S.act));
+        const spawn = makeEnemy(pick(pool), S.act, undefined, { item:false });
+        C.enemies.push(spawn);
+        logc(`${e.name} calls up ${spawn.name}.`);
+        break;
+      }
     }
     if(!livingHeroes().length){ endCombat(false); return; }
     if(!livingEnemies().length){ endCombat(true); return; }
@@ -1191,7 +1280,28 @@ function enemyPhase(){
   step();
 }
 
+/* Heroes the enemy has taken act at the END of the enemy phase, swinging at
+   their own side with the best Strike their die carries. Exactly what our own
+   Dominate does to an enemy, pointed the other way. */
+function charmedAllies(){
+  const acting = S.party.filter(h => h.charmed > 0 && !h.downed && h.hp > 0);
+  acting.forEach(h => {
+    const strikes = h.faces.filter(f => f.k === 'dmg').map(f => faceValue(h, f));
+    const dmg = strikes.length ? Math.max(...strikes) : 3;
+    const others = livingAllies().filter(a => a !== h);
+    if(others.length){
+      const victim = pick(others);
+      hurtHero(victim, dmg);
+      logc(`${h.name}, not their own, strikes ${victim.name} for ${dmg}.`);
+    } else {
+      logc(`${h.name} swings at nothing.`);
+    }
+  });
+}
+
 function endOfRound(){
+  charmedAllies();
+  if(!livingHeroes().length){ endCombat(false); return; }
   /* Fire resolves first: it burns, then grows, then jumps to something new.
      Unlike poison it does not decay, so an early Ignite compounds over a long
      fight -- and in a crowd it turns one lit enemy into a spreading problem. */
@@ -1220,9 +1330,14 @@ function endOfRound(){
   });
   livingAllies().slice().forEach(h => {
     if(h.poison > 0){
-      hurtHero(h, h.poison, {ignoreShield:true});
+      hurtHero(h, h.poison, {ignoreShield:true, ignoreArmour:true});
       logc(`${h.name} takes ${h.poison} poison.`);
       h.poison--;
+    }
+    if(h.burn > 0){
+      hurtHero(h, h.burn, {ignoreShield:true, ignoreArmour:true});
+      logc(`${h.name} burns for ${h.burn}.`);
+      if(h.hp > 0) h.burn++;          /* it grows on us too, but never spreads */
     }
   });
   if(!livingEnemies().length){ endCombat(true); return; }
@@ -1247,6 +1362,7 @@ function endCombat(won){
     S.party.forEach(h => healHero(h, Math.round(h.maxHp * 0.15)));
     if(has('bloodstone')) S.party.forEach(h => healHero(h, 3));
     if(glob('postHeal')) S.party.forEach(h => healHero(h, glob('postHeal')));
+    (C.drops || []).forEach(queueItem);          /* what they carried is now yours */
     C = null;
     postCombatRewards(type);
   }, 650);
@@ -1290,7 +1406,7 @@ function postCombatRewards(type){
     ? randomRelic(type === 'boss' ? 'boss' : 'rare')
     : null;
   /* something to carry falls out of most fights, and always off the big ones */
-  if(type === 'elite' || type === 'boss' || Math.random() < (bonus ? 0.6 : 0.3)) UI.pendingItem = rollItem(act);
+  if(Math.random() < (bonus ? 0.5 : 0.2)) queueItem(rollItem(act));
   if(relic) grantRelic(relic);
   if(type === 'boss'){
     S.party.forEach(h => healHero(h, Math.round(h.maxHp * 0.3)));
@@ -1309,7 +1425,7 @@ function postCombatRewards(type){
 
 function finishReward(){
   UI.modal = null;
-  if(UI.pendingItem){ const k = UI.pendingItem; UI.pendingItem = null; grantItem(k, finishReward); return; }
+  if(UI.pendingItems && UI.pendingItems.length){ grantItem(UI.pendingItems.shift(), finishReward); return; }
   if(UI.pendingAncestral){ UI.pendingAncestral = false; UI.modal = { type:'ancestral', after: finishReward }; render(); return; }
   const wasBoss = S.pos && nodeAt(S.pos.floor, S.pos.slot) && nodeAt(S.pos.floor, S.pos.slot).type === 'boss';
   if(wasBoss){
@@ -1569,7 +1685,7 @@ function openTreasure(){
   const g = goldGain(25 + rnd(30));
   /* the act-three hoard is where the Talisman is, so no run can be locked out */
   const item = (S.act >= 3 && !S.talisman) ? 'talisman' : rollItem(S.act);
-  UI.pendingItem = item;
+  queueItem(item);
   UI.modal = { type:'treasure', relic:k, gold:g, item };
   S.screen = 'map'; save(); render();
 }
@@ -1682,7 +1798,7 @@ const ADVENTURE = [
    text:'The dead here were buried with their equipment. They are not using it. They may have opinions.',
    choices:[
      {t:'Take the grave goods', s:'A good item, but whatever is buried here wakes up.', go:()=>{
-        UI.pendingItem = rollItem(Math.min(3, S.act + 1));
+        queueItem(rollItem(Math.min(3, S.act + 1)));
         UI.bonusReward = true; UI.modal = null;
         S.screen = 'combat'; startCombat('combat'); logc('Something sits up behind you.'); render(); }},
      {t:'Leave them their kit', s:'Nothing happens.', go:closeEvent}]},
@@ -1816,13 +1932,13 @@ function advTake(){
 }
 /* a result screen that can also hand over the thing you just found */
 function advResult(text, itemKey){
-  if(itemKey) UI.pendingItem = itemKey;
+  if(itemKey) queueItem(itemKey);
   UI.modal = { type:'advresult', text, item:itemKey || null };
   save(); render();
 }
 function advDone(){
   UI.modal = null;
-  if(UI.pendingItem){ const k = UI.pendingItem; UI.pendingItem = null; grantItem(k, advDone); return; }
+  if(UI.pendingItems && UI.pendingItems.length){ grantItem(UI.pendingItems.shift(), advDone); return; }
   closeEvent();
 }
 
@@ -2069,6 +2185,8 @@ function viewCombat(){
     if(e.stun)   badges.push(`<span class="badge" style="color:var(--gold)" data-tip="Stunned|Loses its next turn.">⚡ ${e.stun}</span>`);
     if(e.charm)  badges.push(`<span class="badge" style="color:var(--violet)" data-tip="Dominated|Fights for you for this many turns, attacking its own side. With nothing else alive it simply flails.">🧠 ${e.charm}</span>`);
     if(e.power)  badges.push(`<span class="badge" style="color:var(--pink)" data-tip="Power|Added to every attack.">💢 ${e.power}</span>`);
+    if(e.item){ const gi = itemDef(e.item);
+      badges.push(`<span class="badge" style="color:var(--gold)" data-tip="Carrying ${esc(gi.name)}|${esc(gi.desc)} It is using this against you, and you take it when it falls.">${gi.ic}</span>`); }
     return `<div class="unit ${e.hp <= 0 ? 'dead' : ''} ${enemyTargetable && e.hp > 0 ? 'targetable' : ''}" data-uid="${e.uid}"
         ${enemyTargetable && e.hp > 0 ? `onclick="clickTarget('enemy',${e.uid})"` : ''}>
       ${e.hp > 0 ? intentHTML(e) : '<div class="intent" style="opacity:.3">—</div>'}
@@ -2086,6 +2204,8 @@ function viewCombat(){
     if(h.shield) badges.push(`<span class="badge" style="color:var(--blue)" data-tip="Shield|Absorbs damage. Fades at the start of your next turn.">🛡️ ${h.shield}</span>`);
     if(h.poison) badges.push(`<span class="badge" style="color:var(--lime)" data-tip="Poison|Loses this much HP at the end of the round, ignoring shield.">☠️ ${h.poison}</span>`);
     if(h.power)  badges.push(`<span class="badge" style="color:var(--pink)" data-tip="Power|Added to every Strike and Cleave this hero rolls.">💢 ${h.power}</span>`);
+    if(h.burn)   badges.push(`<span class="badge" style="color:var(--orange)" data-tip="Burning|Loses this much at the end of the round, ignoring shields and armour, and it grows. A Mend puts it out a point at a time.">🔥 ${h.burn}</span>`);
+    if(h.charmed) badges.push(`<span class="badge" style="color:var(--violet)" data-tip="Taken|Not yours for this many turns. They will not roll for you, and at the end of the enemy turn they swing at the party.">🧠 ${h.charmed}</span>`);
     if(h.isSummon) badges.push(`<span class="badge" style="color:var(--cyan)" data-tip="Fading|This Thrall unravels after this many more turns. Summon again to renew it.">🌀 ${h.turns}</span>`);
     return `<div class="unit ally ${h.downed ? 'dead' : ''} ${allyTargetable && !h.downed ? 'targetable' : ''}" data-uid="${h.uid}"
         ${allyTargetable && !h.downed ? `onclick="clickTarget('ally',${h.uid})"` : ''}>
@@ -2173,19 +2293,27 @@ function intentHTML(e){
   if(!it) return '<div class="intent">—</div>';
   const tgt = it.tgt ? (it.k === 'charmed' ? enemyByUid(it.tgt) : unitByUid(it.tgt)) : null;
   const map = {
-    attack:    {ic:'⚔️', col:'var(--red)',   v: it.v + (e.power || 0)},
-    attackAll: {ic:'🌪️', col:'var(--orange)', v: it.v + (e.power || 0)},
+    attack:    {ic:'⚔️', col:'var(--red)',   v: it.v + (e.power || 0) + enemyItemMod(e, 'dmg')},
+    attackAll: {ic:'🌪️', col:'var(--orange)', v: it.v + (e.power || 0) + enemyItemMod(e, 'dmg') + enemyItemMod(e, 'cleave')},
     block:     {ic:'🛡️', col:'var(--blue)',  v: it.v},
     buff:      {ic:'💢', col:'var(--pink)',  v: it.v},
     heal:      {ic:'❤️', col:'var(--green)', v: it.v},
     poison:    {ic:'☠️', col:'var(--lime)',  v: it.v},
+    burn:      {ic:'🔥', col:'var(--orange)', v: it.v},
+    drain:     {ic:'🩸', col:'var(--red)',    v: it.v + (e.power || 0) + enemyItemMod(e, 'dmg')},
+    charm:     {ic:'🧠', col:'var(--violet)', v: ''},
+    summon:    {ic:'👁️', col:'var(--cyan)',  v: ''},
     charmed:   {ic:'🧠', col:'var(--violet)', v: it.v}
   }[it.k] || {ic:'?', col:'', v:''};
-  const label = it.k === 'attackAll' ? 'all allies' : it.k === 'charmed' && !tgt ? 'nothing' : tgt ? tgt.name : '';
+  const label = it.k === 'attackAll' ? 'all allies'
+              : it.k === 'summon' ? 'reinforcements'
+              : it.k === 'charmed' && !tgt ? 'nothing' : tgt ? tgt.name : '';
   const tips = {
     attack:'It will attack this hero.', attackAll:'It will hit every hero.',
     block:'It will shield itself.', buff:'It will raise its own power.',
     heal:'It will heal itself.', poison:'It will poison this hero.',
+    burn:'It will set this hero alight.', drain:'It will take this much and heal itself for it.',
+    charm:'It will take this hero from you for a turn.', summon:'It will call something else in.',
     charmed:'You control it. It will attack its own side.'
   };
   return `<div class="intent" style="color:${map.col}" data-tip="Intent|${esc(tips[it.k] || '')}">
@@ -2502,7 +2630,7 @@ function mTreasure(m){
 }
 function afterTreasure(){
   UI.modal = null;
-  if(UI.pendingItem){ const k = UI.pendingItem; UI.pendingItem = null; grantItem(k, afterTreasure); return; }
+  if(UI.pendingItems && UI.pendingItems.length){ grantItem(UI.pendingItems.shift(), afterTreasure); return; }
   if(UI.pendingAncestral){ UI.pendingAncestral = false; UI.modal = { type:'ancestral', after: afterTreasure }; render(); return; }
   S.screen = 'map'; save(); render();
 }
@@ -2561,6 +2689,8 @@ function mAct(m){
    EFFECTS, TOOLTIPS, INPUT, BOOT
    ========================================================================== */
 UI.floats = [];
+UI.pendingItems = [];
+function queueItem(k){ if(k){ UI.pendingItems = UI.pendingItems || []; UI.pendingItems.push(k); } }
 function floatOn(uidv, text, color){ UI.floats.push({ uid:uidv, text, color }); }
 function flushFloats(){
   if(!UI.floats.length) return;
