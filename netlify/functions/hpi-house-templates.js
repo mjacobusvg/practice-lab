@@ -48,12 +48,16 @@ exports.handler = async function (event) {
       statusCode: 200, headers,
       body: JSON.stringify({
         new_eval: data.hpiTemplateEval || '',
-        follow_up: data.hpiTemplateFollowup || ''
+        follow_up: data.hpiTemplateFollowup || '',
+        // Interview guides, same live-from-the-house-Vault arrangement as the templates: the
+        // default improves when Michael edits his own Vault, with no deploy and no snapshot to
+        // maintain. interview_<kind> so a second kind is a key, not a migration.
+        interview_adhd: data.interview_adhd || ''
       })
     };
   } catch (e) {
     // Never hard-fail: an empty default just means the Scribe falls back to its
     // built-in conventional structure, exactly as it did before this endpoint existed.
-    return { statusCode: 200, headers, body: JSON.stringify({ new_eval: '', follow_up: '' }) };
+    return { statusCode: 200, headers, body: JSON.stringify({ new_eval: '', follow_up: '', interview_adhd: '' }) };
   }
 };

@@ -72,6 +72,10 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
   transition:color .12s ease,border-color .12s ease,background .12s ease}
 .btn-case:hover{background:var(--navy);border-color:var(--teal);color:var(--teal)}
 .btn-case.adhd-trigger:hover{border-color:#a78bfa;color:#a78bfa}
+/* The interview reads as the clinician's own backbone, visually separate from the Framework's
+   purple additions in CHECK / ASK TODAY. */
+.wn-interview{border-left:3px solid #6ea8fe}
+.wn-interview .wn-title{color:#9ec5ff}
 /* Full-screen focus editor for working the note during the visit */
 .focus-overlay{position:fixed;inset:0;background:var(--navy);z-index:9500;display:none;flex-direction:column;padding:14px 16px 16px;
   /* THE WHOLE WORKING NOTE SCROLLS AS ONE PAGE. This used to be a rigid viewport-height flex
@@ -356,7 +360,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-107-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-108-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -458,6 +462,25 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
         <label for="context" id="carry-label" style="margin-top:6px">Last visit's HPI + assessment</label>
         <textarea id="context" style="min-height:90px" placeholder="Paste last visit's HPI, the assessment (diagnosis list with ICD-10 codes), and current med list. That is all it needs: those feed carry-forward, your follow-up checklist, and the assessment. Today's notes drive everything that changed; safety (SI/HI) is never carried forward as if assessed today. Anything worth carrying is already in the HPI and assessment, so these three are all you need."></textarea>
         <div class="hint" style="margin-top:5px;line-height:1.45"><strong style="color:var(--cream)">Just the HPI, assessment (diagnosis list with ICD-10 codes), and med list</strong> &mdash; no need to paste the whole chart. Those three feed carry-forward, your checklist, and the assessment.</div>
+      </div>
+
+      <!-- Interview guide. Pre-visit only, and explicit: pressed, never inferred. -->
+      <div id="interview-block" style="display:none;margin-top:16px;padding:12px 14px;border:1px solid var(--rule);border-left:3px solid #6ea8fe;border-radius:8px">
+        <div style="font-size:.74rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#9ec5ff;margin-bottom:6px">Interview guide</div>
+        <div id="interview-status" class="hint" style="margin:0 0 9px;line-height:1.5"></div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="btn-mini" type="button" id="interview-load">Load into visit</button>
+          <button class="btn-mini" type="button" id="interview-edit">Edit my interview</button>
+          <span class="hint" id="interview-msg" style="margin-left:2px"></span>
+        </div>
+        <div id="interview-editor" style="display:none;margin-top:10px">
+          <textarea id="interview-text" style="min-height:220px;width:100%" placeholder="One question per line. Blank lines and short ALL-CAPS or Title-Case headings (Developmental history, Current symptoms, Impairment and settings, Differential and context, Collateral) keep it readable in the working note — it loads exactly as you write it."></textarea>
+          <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <button class="btn-mini" type="button" id="interview-save">Save my interview</button>
+            <button class="btn-mini" type="button" id="interview-cancel">Cancel</button>
+            <span class="hint" id="interview-save-msg"></span>
+          </div>
+        </div>
       </div>
 
       <!-- Prep mode, follow-up: Set me up -->
@@ -644,7 +667,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-107-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-108-sub</span></div>
 </div>
 </div>
 
@@ -1191,6 +1214,21 @@ var DEFAULT_MSE = 'No abnormal movements noted. Speech is clear with normal rate
 // bookkeeping — those are clinician-specific and belong in a custom Plan macro, not the house default.
 var DEFAULT_PLAN = 'No medications were changed today.\nContinue all current medications as prescribed.\nLabs and orders as indicated; results will be reviewed with the patient.\nReturn to clinic in ___, sooner if clinically needed.\nCrisis: call or text 988, or go to the nearest emergency room.';
 var vaultTemplates = { new_eval: '', follow_up: '' };
+// INTERVIEWS. Same two-layer shape as the note templates: the clinician's own, falling back to the
+// house one served live from Michael's Vault. Keyed interview_<kind> so adding a second kind is a
+// key, not a migration. There is deliberately NO mode picker anywhere in the UI — the clinician has
+// an interview, and it is theirs unless they never made one, in which case it is ours. Choosing
+// between "mine" and "yours" is a decision handed to someone before they have done anything.
+var vaultInterviews  = { interview_adhd: '' };
+var houseInterviews  = { interview_adhd: '' };
+function tbpInterviewText(kind){
+  kind = kind || 'interview_adhd';
+  return (vaultInterviews[kind] || houseInterviews[kind] || '').trim();
+}
+function tbpInterviewIsMine(kind){
+  kind = kind || 'interview_adhd';
+  return !!(vaultInterviews[kind] || '').trim();
+}
 // Initialised HERE, beside vaultTemplates, and NOT at its loader further down. The saved
 // visit type is restored on load by replaying a click on the visit-type option, which runs
 // renderTemplateStatus() long before execution reaches the house-template loader. Declaring
@@ -1652,11 +1690,12 @@ function draftSystem(){
   s += "=== ABSOLUTE ANTI-FABRICATION RULE ===\n";
   s += "Use ONLY the information present in the raw notes (and the optional prior-context block, for continuity of the narrative only). Never add a symptom, denial, finding, diagnosis, medication, dose, history item, timeframe, or risk statement that is not in the source. If something usual is absent, leave it out; do NOT fill in normal or negative defaults (e.g. do not write 'denies SI' unless the notes say so). If the notes are thin, the HPI is short. You interpret and organize documented data; you never invent it.\n\n";
   s += "=== WORKING SCAFFOLD MARKERS (consume, never echo) ===\n";
-  s += "The notes may contain SCAFFOLDING the tool placed for the clinician to work against: a section headed 'CHECK / ASK TODAY' listing questions to ask, a section headed 'PSYCHOTHERAPY GUIDE' listing suggested techniques and sample prompts, a header 'YOUR NOTE (pre-filled from last visit)' above the carried-forward note, horizontal divider lines made of dashes or box-drawing characters, and inline bracketed placeholders like '[Update today...]' or '[Confirm today.]'. The section headers, the sub-instruction lines under them, the divider lines, and the guidance text are NOT chart content.\n";
+  s += "The notes may contain SCAFFOLDING the tool placed for the clinician to work against: a section headed 'CHECK / ASK TODAY' listing questions to ask, a section headed with an interview name (e.g. 'ADHD INTERVIEW' / 'INTERVIEW') holding the clinician's own planned questioning structure, a section headed 'PSYCHOTHERAPY GUIDE' listing suggested techniques and sample prompts, a header 'YOUR NOTE (pre-filled from last visit)' above the carried-forward note, horizontal divider lines made of dashes or box-drawing characters, and inline bracketed placeholders like '[Update today...]' or '[Confirm today.]'. The section headers, the sub-instruction lines under them, the divider lines, and the guidance text are NOT chart content.\n";
   s += "- Use the clinician's answers written under or beside each checklist item / placeholder / guide entry to build today's note, integrating that information into the appropriate section as flowing clinical narrative. The carried-forward note under 'YOUR NOTE' is the baseline; merge the clinician's answers into it.\n";
   s += "- DEFINING RULE: a checklist question or a psychotherapy technique becomes chart content through what the clinician actually TYPED beneath it, OR through what the AMBIENT TRANSCRIPT documents was actually done and how the patient responded. The scaffold's own suggestion text (the question itself, the technique name, its rationale, its 'In session:' line, its sample prompts) is NEVER evidence — but the transcript IS. If neither a typed answer nor the transcript supports an item, it did not happen for charting purposes.\n";
   s += "- AMBIENT PSYCHOTHERAPY: when the transcript shows the clinician actually DELIVERED a technique from the Therapy Coach (real therapeutic work, not a passing mention) and the patient engaged/responded, credit it exactly as if it were typed under that technique, and DOCUMENT the intervention and the patient's response explicitly so it carries into the psychotherapy add-on. A technique only listed in the guide, or only named in passing without therapeutic delivery, still does not count — that line protects the add-on from being indefensible.\n";
   s += "- PSYCHOTHERAPY GUIDE, HANDLE EACH TECHNIQUE SEPARATELY: the guide may list several techniques. Document a technique ONLY if the clinician wrote what they actually did or how the patient responded under THAT specific technique. Any technique with nothing written under it is dropped entirely, with NO trace: do not name it, do not say it was considered, planned, offered, or recommended, and do not imply therapeutic work that is not documented. Example: if three techniques are listed and the clinician charted under only one, the note reflects that one and the other two vanish completely. Never reproduce the guide's technique names, rationale lines, 'In session:' lines, or sample prompts as if they were performed.\n";
+  s += "- THE INTERVIEW SECTION IS A QUESTION LIST, NOT A RECORD OF THE VISIT. It is the clinician's planned structure, loaded BEFORE the patient arrived, and most of it will be unanswered on any given visit because they only worked through part of it. Treat every line in it exactly as you treat a CHECK / ASK TODAY question: it becomes chart content ONLY through what the clinician typed beneath it or what the ambient transcript documents. An interview question with nothing under it did not happen. Never write that a topic was 'reviewed', 'covered', 'explored', 'assessed' or 'discussed' because the interview listed it, and never present the interview's own coverage as a completed review of systems or history.\n";
   s += "- CHECK / ASK TODAY, PER QUESTION: an unanswered question contributes NOTHING to the note. Do not invent an answer, do not write 'not discussed' or 'deferred', and do not echo the question. (A section that already has carried-forward baseline content under 'YOUR NOTE' still carries as continued/stable; that baseline is independent of whether today's checklist question was answered.)\n";
   s += "- NEVER reproduce a checklist question, a bullet from a scaffold section, a section header line, a divider/rule line (dashes or box-drawing characters), or a bracketed '[...]' instruction in the output. The final HPI contains ZERO scaffolding text.\n";
   s += "- AMBIENT TRANSCRIPT (PRIMARY EVIDENCE, not scaffolding): a block headed 'TODAY'S VISIT — AMBIENT TRANSCRIPT' is the verbatim, speaker-labeled recording of today's visit. UNLIKE the checklist/guide (which are non-evidence prompts), this IS clinical evidence of what happened today — draft today's symptoms, medication decisions, and plan from it, merged with the carried-forward baseline. Strip ONLY its header and divider lines; synthesize the dialogue into clean HPI prose in the clinician's structure and voice, and NEVER reproduce raw 'Speaker 1:/Speaker 2:' lines in the output.\n";
@@ -1752,7 +1791,7 @@ function verifySystem(){
   var thirdDir = thirdPartyDirective((vaultTemplates[visitType] || houseTemplates[visitType] || '').trim());
   var s = HOUSE + "\n\n=== TASK ===\nYou are auditing a drafted HPI against its SOURCE (the clinician's raw notes, plus any prior-context block). Find anything in the HPI that is NOT supported by the source: invented or embellished symptoms, added denials or pertinent negatives, a diagnosis or characterization the notes did not state, altered timeframes, or a patient quote whose wording or meaning was changed (spelling fixes are fine; word substitutions or paraphrases are not).\n\n";
   s += "Silently correct clear, unambiguous fabrications by removing or trimming them back to what the source supports, and do NOT narrate the changes you make. Raise a flag ONLY when you hit a GENUINE question you cannot resolve yourself (see the flags rule below); for everything you can resolve, fix it silently and move on.\n\n";
-  s += "SCAFFOLD IS NOT EVIDENCE: the source may contain the tool's scaffolding, a 'CHECK / ASK TODAY' list of questions and a 'PSYCHOTHERAPY GUIDE' of suggested techniques with rationale and sample prompts. This scaffolding is NOT clinical evidence of what happened. A psychotherapy technique is supported when the clinician TYPED what they did / how the patient responded under it, OR when the ambient transcript documents the actual therapeutic delivery and the patient's response; the guide merely naming it does not count. A checklist topic is supported by the clinician's typed answer OR by the transcript, not by the question existing. If the draft asserts a technique that neither the clinician charted under NOR the transcript delivered, or answers a question with no typed answer and no transcript support, treat it as an unsupported fabrication: remove it (silently) and flag it.\n\n";
+  s += "SCAFFOLD IS NOT EVIDENCE: the source may contain the tool's scaffolding, a 'CHECK / ASK TODAY' list of questions, an interview section ('ADHD INTERVIEW' / 'INTERVIEW') holding the clinician's own planned questions, and a 'PSYCHOTHERAPY GUIDE' of suggested techniques with rationale and sample prompts. This scaffolding is NOT clinical evidence of what happened. A psychotherapy technique is supported when the clinician TYPED what they did / how the patient responded under it, OR when the ambient transcript documents the actual therapeutic delivery and the patient's response; the guide merely naming it does not count. A checklist topic, and equally an interview question, is supported by the clinician's typed answer OR by the transcript, not by the question existing. An interview is a plan, not a record: most of its lines are normally unanswered, and a draft that reports them as covered is fabricating a history that was never taken. If the draft asserts a technique that neither the clinician charted under NOR the transcript delivered, or answers a question with no typed answer and no transcript support, treat it as an unsupported fabrication: remove it (silently) and flag it.\n\n";
   s += "AMBIENT PSYCHOTHERAPY ADD-ON: if the psychotherapy documentation is supported by the ambient transcript rather than typed coach input, do NOT strip it and do NOT flag it as uncounted — the transcript is evidence. Instead flag it once, briefly, for the clinician to confirm the add-on's TIME (psychotherapy-only minutes) and that it was a DISTINCT service from the E/M. Do not treat 'not typed under the coach' as a reason the delivered therapy cannot be counted.\n\n";
   s += "AMBIENT TRANSCRIPT IS EVIDENCE: a 'TODAY'S VISIT — AMBIENT TRANSCRIPT' block is the actual recording of today's visit. Content the draft derived from it is SUPPORTED, not a fabrication — do not strip it. (Only the checklist/guide scaffolds are non-evidence.)\n\n";
   s += "SILENT BY DEFAULT, ASK ONLY WHEN GENUINELY STUCK: This pass fixes what it can and stays quiet. NEVER narrate changes you made, and NEVER ask the clinician to confirm something you already handled (a fabrication you removed, a documented risk you restored, a value the source let you correct) — just do it silently. RAISE A FLAG ONLY for a GENUINE question you cannot resolve yourself: a medication name, dose, or clinically consequential value that looks wrong or internally contradictory AND that the source does not let you fix, or a real clinical ambiguity that needs the clinician's judgment. Keep each flag to ONE sentence, and include only the genuinely unresolved ones. Most notes have zero flags; raise one only when you truly cannot settle it yourself.\n\n";
@@ -5242,7 +5281,14 @@ function renderPrep(j, isEval){
   // scaffold blocks and keeps only what the clinician wrote (see WORKING SCAFFOLD rule).
   // Store the three sections; the structured editor edits these, and #raw holds their serialization.
   var hasScaffold = prepChecklist.length || prepFoci.length;
+  // Prep rebuilds its OWN sections, but the interview is the clinician's and was loaded
+  // deliberately — records arriving late and a second Prep run are a normal Tuesday, and neither
+  // is a reason to throw away the structure they chose to work from.
+  var keptInterview = (typeof wnSections === 'object' && wnSections) ? (wnSections.interview || '') : '';
+  var keptInterviewName = (typeof wnSections === 'object' && wnSections) ? (wnSections.interviewName || '') : '';
   wnSections = {
+    interview: keptInterview,
+    interviewName: keptInterviewName,
     checklist: prepChecklist.length ? prepChecklist.map(function(c){ return "• " + c; }).join("\n\n") : '',
     guide: prepFoci.length ? prepFoci.map(function(f){ return f.trim(); }).join("\n\n") : '',
     note: note,
@@ -5394,6 +5440,10 @@ function serializeSections(){
     out += wnHeader("TODAY'S VISIT — AMBIENT TRANSCRIPT", "Verbatim recording of today's visit. Draft pulls today's findings from this; the raw transcript is not copied into the final note.");
     out += s.transcript.replace(/\s+$/,'') + "\n\n";
   }
+  if(s.interview && s.interview.trim()){
+    out += wnHeader(String(s.interviewName || 'INTERVIEW').toUpperCase(), "The clinician's own interview structure. Answers are typed under each line. Removed automatically when you Draft.");
+    out += s.interview.replace(/\s+$/,'') + "\n\n";
+  }
   if(s.checklist && s.checklist.trim()){
     out += wnHeader("CHECK / ASK TODAY", "Answer under each line as you go. Removed automatically when you Draft.");
     out += s.checklist.replace(/\s+$/,'') + "\n\n";
@@ -5459,7 +5509,8 @@ function buildFocusSections(){
   var s = wnSections || {checklist:'',guide:'',note:''};
   var panels = [];
   if(s.transcript && s.transcript.trim()) panels.push({key:'transcript',cls:'wn-transcript',title:'Today\'s visit — ambient transcript',sub:'The verbatim recording of today\'s visit. Draft pulls today\'s findings from this; the raw transcript is not copied into the final note.'});
-  if(s.checklist && s.checklist.trim()) panels.push({key:'checklist',cls:'wn-checklist',title:'Check / ask today',sub:'Answer under each line as you go. Removed when you Draft.'});
+  if(s.interview && s.interview.trim()) panels.push({key:'interview',cls:'wn-interview',title:(s.interviewName || 'Interview'),sub:'Your interview structure. Work through as much or as little as you want; type answers under each line. Removed when you Draft.'});
+  if(s.checklist && s.checklist.trim()) panels.push({key:'checklist',cls:'wn-checklist',title:'Check / ask today',sub:'What this case turned out to need, on top of your interview. Answer under each line as you go. Removed when you Draft.'});
   if(s.guide && s.guide.trim()) panels.push({key:'guide',cls:'wn-guide',title:'Psychotherapy guide',sub:'Optional. Jot what you did and how they responded. Removed when you Draft.'});
   if(s.coach && s.coach.trim()) panels.push({key:'coach',cls:'wn-coach',title:'Therapy coach',sub:'The therapeutic work you did this visit, from the coach. Becomes your psychotherapy add-on when you Draft.'});
   if(s.screeners && s.screeners.trim()) panels.push({key:'screeners',cls:'wn-screeners',title:'Screeners',sub:'Rating scales you pulled in this visit. Score each item inline; they carry into your note.'});
@@ -6530,6 +6581,127 @@ async function buildTemplate(qaBlock){
   }
 }
 
+// ── Interview guide: render, load into the visit, edit, save ────────────────────────────────
+// The interview reuses the working note's section plumbing (persistence, inline answers, Draft
+// stripping, and the Framework Check reading it) but is its OWN panel, because it is a different
+// thing from CHECK / ASK TODAY: the clinician's planned backbone versus what this case turned out
+// to need. Sharing a data structure is not a reason to look like the same thing.
+var INTERVIEW_KIND = 'interview_adhd';
+var INTERVIEW_LABEL = 'ADHD interview';
+function tbpRenderInterviewBlock(){
+  var box = document.getElementById('interview-block'); if(!box) return;
+  var txt = tbpInterviewText(INTERVIEW_KIND);
+  var st = document.getElementById('interview-status');
+  box.style.display = '';
+  if(!txt){
+    if(st) st.innerHTML = 'No ' + INTERVIEW_LABEL + ' yet. Write one and it loads into every evaluation from then on.';
+  } else {
+    var n = txt.split('\n').filter(function(l){ return l.trim(); }).length;
+    // "Your interview" whether it is theirs or the house one. The distinction is real in the data
+    // and deliberately invisible here — surfacing it just asks them to have an opinion.
+    if(st) st.innerHTML = 'Your ' + INTERVIEW_LABEL + ' is ready &mdash; ' + n + ' line' + (n===1?'':'s') + '.'
+      + (tbpInterviewIsMine(INTERVIEW_KIND) ? '' : ' <span style="opacity:.75">(the Think Beyond default until you write your own)</span>');
+  }
+  var lb = document.getElementById('interview-load'); if(lb) lb.disabled = !txt;
+}
+// Load = put it in its own section. Append-only against itself: loading twice must never duplicate
+// the interview or wipe answers already typed into it.
+function tbpInterviewLoad(){
+  var msg = document.getElementById('interview-msg');
+  var txt = tbpInterviewText(INTERVIEW_KIND);
+  if(!txt){ if(msg) msg.innerHTML = '<span style="color:var(--amber)">There is no interview to load yet.</span>'; return false; }
+  try {
+    if(typeof wnSections === 'undefined' || !wnSections) wnSections = { checklist:'', guide:'', note:'' };
+    if(typeof wnMode === 'undefined' || wnMode !== 'sections'){
+      var raw0 = document.getElementById('raw');
+      var plain = raw0 ? (raw0.value || '').trim() : '';
+      if(plain) wnSections.note = (wnSections.note && wnSections.note.trim() ? wnSections.note.replace(/\s+$/,'') + '\n\n' : '') + plain;
+      wnMode = 'sections';
+    }
+    if((wnSections.interview || '').trim()){
+      if(msg) msg.innerHTML = '<span style="color:var(--green)">Already loaded. Nothing was changed &mdash; your answers are safe.</span>';
+      return true;
+    }
+    wnSections.interview = txt;
+    wnSections.interviewName = INTERVIEW_LABEL;
+    var raw = document.getElementById('raw');
+    if(raw) raw.value = serializeSections();
+    var fo = document.getElementById('focus-overlay');
+    if(fo && fo.classList.contains('open') && typeof openFocus === 'function') openFocus('raw');
+    else renderMode();
+    try { if(window.tbpSaveDraft) window.tbpSaveDraft(); } catch(e){}
+    if(msg) msg.innerHTML = '<span style="color:var(--green)">Loaded into the working note as its own section.</span>';
+    return true;
+  } catch(e){
+    if(msg) msg.innerHTML = '<span style="color:var(--red)">Could not load it. Copy it from Edit instead.</span>';
+    return false;
+  }
+}
+// Save = the same careful load-modify-save persistTemplate uses. The server replaces the whole data
+// object, so a write built on a read we could not confirm would clobber templates and settings.
+async function tbpInterviewSave(text){
+  var msg = document.getElementById('interview-save-msg');
+  try {
+    var lv = JSON.parse(localStorage.getItem('tbp_vault')||'{}');
+    lv[INTERVIEW_KIND] = text;
+    localStorage.setItem('tbp_vault', JSON.stringify(lv));
+  } catch(e){}
+  vaultInterviews[INTERVIEW_KIND] = text;
+  tbpRenderInterviewBlock();
+  var current = {}, loadedOk = false;
+  try {
+    var r = await fetch('/.netlify/functions/user-tool-data', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
+      body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'load' })
+    });
+    if(r.ok){ var d = await r.json(); loadedOk = true; if(d && d.found && d.data) current = d.data; }
+  } catch(e){}
+  if(!loadedOk){
+    if(msg) msg.innerHTML = '<span style="color:var(--amber)">Saved on this device. The server could not be reached, so it is not synced yet.</span>';
+    return false;
+  }
+  current[INTERVIEW_KIND] = text;
+  try {
+    var r2 = await fetch('/.netlify/functions/user-tool-data', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
+      body: JSON.stringify({ token: authToken, email: userEmail, toolId:'vault_profile', action:'save', data: current })
+    });
+    if(!r2.ok) throw new Error('save failed');
+    if(msg) msg.innerHTML = '<span style="color:var(--green)">Saved to your Vault.</span>';
+    return true;
+  } catch(e){
+    if(msg) msg.innerHTML = '<span style="color:var(--amber)">Saved on this device, but syncing failed. Try again.</span>';
+    return false;
+  }
+}
+document.addEventListener('DOMContentLoaded', function(){
+  var lb = document.getElementById('interview-load');
+  if(lb) lb.addEventListener('click', function(){ if(!tbpDemoBlock()) tbpInterviewLoad(); });
+  var eb = document.getElementById('interview-edit');
+  if(eb) eb.addEventListener('click', function(){
+    var ed = document.getElementById('interview-editor'); if(!ed) return;
+    var open = ed.style.display !== 'none';
+    ed.style.display = open ? 'none' : '';
+    if(!open){
+      // Editing with nothing of their own starts from the house interview, so "make it mine" is an
+      // edit rather than a blank page.
+      var ta = document.getElementById('interview-text');
+      if(ta && !ta.value.trim()) ta.value = tbpInterviewText(INTERVIEW_KIND);
+      if(ta) ta.focus();
+    }
+  });
+  var cb = document.getElementById('interview-cancel');
+  if(cb) cb.addEventListener('click', function(){ var ed = document.getElementById('interview-editor'); if(ed) ed.style.display = 'none'; });
+  var sb = document.getElementById('interview-save');
+  if(sb) sb.addEventListener('click', function(){
+    if(tbpDemoBlock()) return;
+    var ta = document.getElementById('interview-text'); if(!ta) return;
+    sb.disabled = true;
+    Promise.resolve(tbpInterviewSave(ta.value.trim())).then(function(){ sb.disabled = false; });
+  });
+  try { tbpRenderInterviewBlock(); } catch(e){}
+});
+
 // Shared: merge one template field into vault_profile (load-modify-save), mirror to
 // localStorage, and update in-memory so the next draft uses it immediately.
 async function persistTemplate(text, visitKey){
@@ -7104,7 +7276,12 @@ function loadHouseTemplates(){
     })
     .then(function(r){ return r.ok ? r.json() : null; })
     .then(function(d){
-      if(d){ houseTemplates.new_eval = d.new_eval || ''; houseTemplates.follow_up = d.follow_up || ''; try{ renderTemplateStatus(); }catch(e){} }
+      if(d){
+        houseTemplates.new_eval = d.new_eval || ''; houseTemplates.follow_up = d.follow_up || '';
+        houseInterviews.interview_adhd = d.interview_adhd || '';
+        try{ renderTemplateStatus(); }catch(e){}
+        try{ tbpRenderInterviewBlock(); }catch(e){}
+      }
     })
     .catch(function(){});
   } catch(e){}
@@ -7115,6 +7292,7 @@ function loadVaultTemplates(){
   // instant localStorage mirror first
   try {
     var lv = JSON.parse(localStorage.getItem('tbp_vault')||'{}');
+    vaultInterviews.interview_adhd = lv.interview_adhd || '';
     vaultTemplates.new_eval = lv.hpiTemplateEval || '';
     vaultTemplates.follow_up = lv.hpiTemplateFollowup || '';
     vaultScaffolds.new_eval = lv.hpiScaffoldEval || '';
@@ -7147,6 +7325,8 @@ function loadVaultTemplates(){
     onboardChecked = true; // the server response, not the shared browser cache, decides
     if(d && d.found && d.data){
       // Authoritative per-account profile (overrides the shared localStorage mirror).
+      vaultInterviews.interview_adhd = d.data.interview_adhd || '';
+      try{ tbpRenderInterviewBlock(); }catch(e){}
       vaultTemplates.new_eval = d.data.hpiTemplateEval || '';
       vaultTemplates.follow_up = d.data.hpiTemplateFollowup || '';
       vaultScaffolds.new_eval = d.data.hpiScaffoldEval || '';
@@ -8734,7 +8914,7 @@ var TBP_TOUR = (function(){
     if(demoOpen) return;
     saved = {
       snap: (typeof prepSnapshot !== 'undefined') ? prepSnapshot : '',
-      sections: (typeof wnSections !== 'undefined' && wnSections) ? { checklist: wnSections.checklist, guide: wnSections.guide, note: wnSections.note } : null,
+      sections: (typeof wnSections !== 'undefined' && wnSections) ? { checklist: wnSections.checklist, guide: wnSections.guide, note: wnSections.note, interview: wnSections.interview, interviewName: wnSections.interviewName } : null,
       mode: (typeof wnMode !== 'undefined') ? wnMode : 'plain',
       src: (typeof focusSourceId !== 'undefined') ? focusSourceId : null,
       raw: (function(){ var r = el('raw'); return r ? r.value : ''; })(),
