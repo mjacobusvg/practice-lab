@@ -370,6 +370,99 @@ const RELICS = [
 ];
 const relicDef = k => RELICS.find(r => r.key === k);
 
+
+/* ============================================================================
+   ITEMS  --  Talisman's object deck, which is the part of that game people
+   actually remember. Two kinds:
+     GEAR   is equipped to one hero, in a weapon / armour / trinket slot, and
+            stays for the run. `mod` changes that hero; `glob` changes the
+            whole party, because a charm in someone's pack still helps everyone.
+     USE    is a one-shot consumable carried in a shared bag of three.
+   ========================================================================== */
+const BAG_MAX = 3;
+const ITEMS = [
+  /* ---- weapons: they sharpen the faces a hero already rolls -------------- */
+  {key:'rustblade', name:'Rusted Blade',      ic:'🗡️', slot:'weapon', tier:1, price:55,  mod:{dmg:1},            desc:'+1 to this hero\u2019s Strike and Cleave faces.'},
+  {key:'handaxe',   name:"Woodsman's Axe",    ic:'🪓', slot:'weapon', tier:1, price:70,  mod:{dmg:2, maxHp:-2},  desc:'+2 Strike and Cleave. Costs 2 max HP to swing.'},
+  {key:'quarter',   name:'Quarterstaff',      ic:'🥢', slot:'weapon', tier:1, price:60,  mod:{dmg:1, shield:1},  desc:'+1 Strike and Cleave, +1 Shield and Aegis.'},
+  {key:'silversw',  name:'Silver Sword',      ic:'⚔️', slot:'weapon', tier:2, price:130, mod:{dmg:2},            desc:'+2 to this hero\u2019s Strike and Cleave faces.'},
+  {key:'warhammer', name:'Warhammer',         ic:'🔨', slot:'weapon', tier:2, price:145, mod:{dmg:3, shield:-1}, desc:'+3 Strike and Cleave, but 1 less Shield.'},
+  {key:'serpfang',  name:'Serpent Fang',      ic:'🐍', slot:'weapon', tier:2, price:135, mod:{poison:2},         desc:'+2 to this hero\u2019s Venom faces.'},
+  {key:'firebrand', name:'Firebrand',         ic:'🔥', slot:'weapon', tier:2, price:140, mod:{burn:2},           desc:'+2 to this hero\u2019s Ignite faces.'},
+  {key:'runespear', name:'Runed Spear',       ic:'🔱', slot:'weapon', tier:2, price:150, mod:{dmg:1, cleave:2},  desc:'+1 Strike, and a further +2 on Cleave.'},
+  {key:'mindrazor', name:'Mind Razor',        ic:'🧠', slot:'weapon', tier:3, price:230, mod:{daze:1, dmg:1},    desc:'+1 Mindlock and +1 Strike.'},
+  {key:'dragontooth',name:'Dragon Tooth',     ic:'🐉', slot:'weapon', tier:3, price:250, mod:{dmg:3, cleave:2},  desc:'+3 Strike, and a further +2 on Cleave.'},
+  {key:'execaxe',   name:"Executioner's Axe", ic:'🪦', slot:'weapon', tier:3, price:240, mod:{dmg:4, maxHp:-5},  desc:'+4 Strike and Cleave. Costs 5 max HP.'},
+  {key:'soulcut',   name:'Soulcutter',        ic:'👻', slot:'weapon', tier:3, price:260, mod:{dmg:2}, glob:{lifesteal:1}, desc:'+2 Strike, and every hero heals 1 whenever they land a Strike.'},
+
+  /* ---- armour: soaks damage before shields even come into it ------------- */
+  {key:'jerkin',    name:'Leather Jerkin',    ic:'🦺', slot:'armour', tier:1, price:55,  mod:{armour:1},          desc:'Every hit on this hero lands for 1 less.'},
+  {key:'buckler',   name:'Buckler',           ic:'🛡️', slot:'armour', tier:1, price:60,  mod:{shield:1},          desc:'+1 to this hero\u2019s Shield and Aegis faces.'},
+  {key:'chainmail', name:'Chainmail',         ic:'⛓️', slot:'armour', tier:2, price:135, mod:{armour:2, dmg:-1},  desc:'Hits land for 2 less, but 1 less Strike.'},
+  {key:'towerplate',name:'Tower Plate',       ic:'🏰', slot:'armour', tier:2, price:140, mod:{shield:3},          desc:'+3 to this hero\u2019s Shield and Aegis faces.'},
+  {key:'wardcloak', name:'Warding Cloak',     ic:'🧥', slot:'armour', tier:2, price:130, mod:{armour:1, maxHp:6}, desc:'Hits land for 1 less, and +6 max HP.'},
+  {key:'mirrormail',name:'Mirror Mail',       ic:'🪞', slot:'armour', tier:3, price:235, mod:{armour:2}, glob:{thorns:3}, desc:'Hits land for 2 less, and attackers take 3 back.'},
+  {key:'dragonscale',name:'Dragonscale',      ic:'🐲', slot:'armour', tier:3, price:255, mod:{armour:3, dmg:-1},  desc:'Hits land for 3 less, but 1 less Strike.'},
+  {key:'fateshroud',name:'Shroud of Fate',    ic:'🌙', slot:'armour', tier:3, price:245, mod:{shield:2}, glob:{fate:1}, desc:'+2 Shield, and one more Fate to spend.'},
+
+  /* ---- trinkets: mostly party-wide, the way a Talisman charm would be ---- */
+  {key:'luckycoin', name:'Lucky Coin',        ic:'🪙', slot:'trinket', tier:1, price:60,  glob:{gold:0.2},        desc:'All gold found is worth 20% more.'},
+  {key:'healkit',   name:"Healer's Kit",      ic:'🧰', slot:'trinket', tier:1, price:65,  mod:{heal:2},           desc:'+2 to this hero\u2019s Mend faces.'},
+  {key:'manaring',  name:'Mana Ring',         ic:'💍', slot:'trinket', tier:1, price:70,  glob:{manaCombat:2},    desc:'Start every combat with 2 extra mana.'},
+  {key:'focusamul', name:'Amulet of Focus',   ic:'🔮', slot:'trinket', tier:2, price:150, glob:{manaTurn:1},      desc:'Gain 1 extra mana at the start of every turn.'},
+  {key:'renewring', name:'Ring of Renewal',   ic:'♻️', slot:'trinket', tier:2, price:140, glob:{postHeal:4},      desc:'Every hero heals 4 after each combat.'},
+  {key:'hastecharm',name:'Charm of Haste',    ic:'🌀', slot:'trinket', tier:2, price:160, glob:{rerolls:1},       desc:'One more reroll every turn.'},
+  {key:'owlfeather',name:'Owl Feather',       ic:'🪶', slot:'trinket', tier:2, price:145, glob:{fate:2},          desc:'Two more Fate to spend.'},
+  {key:'beasttotem',name:'Beast Totem',       ic:'🗿', slot:'trinket', tier:3, price:225, glob:{thrallTurns:2, thrallHp:5}, desc:'Thralls last 2 turns longer and carry 5 more HP.'},
+  {key:'hourglass', name:'Sand Hourglass',    ic:'⏳', slot:'trinket', tier:3, price:230, glob:{manaCombat:4},    desc:'Start every combat with 4 extra mana.'},
+  {key:'crownfrag', name:'Crown Fragment',    ic:'👑', slot:'trinket', tier:3, price:300, glob:{allFaces:1},      desc:'Every numbered face on every hero is worth +1.'},
+
+  /* ---- consumables: the good-or-bad draw pays out here ------------------- */
+  {key:'draught',   name:'Healing Draught',   ic:'🧪', slot:'use', tier:1, price:45, use:'healOne',   desc:'Heal one hero 14.'},
+  {key:'elixir',    name:'Elixir of Life',    ic:'🍷', slot:'use', tier:2, price:80, use:'healAll',   desc:'Heal every hero 9.'},
+  {key:'fireflask', name:'Flask of Fire',     ic:'🧨', slot:'use', tier:2, price:75, use:'burnAll',   desc:'Deal 8 to every enemy and set them burning for 2.'},
+  {key:'lightning', name:'Bottled Lightning', ic:'⚡', slot:'use', tier:2, price:80, use:'boltOne',   desc:'Deal 16 to one enemy.'},
+  {key:'smokebomb', name:'Smoke Bomb',        ic:'💨', slot:'use', tier:1, price:50, use:'shieldAll', desc:'Give every hero 9 shield.'},
+  {key:'philtre',   name:'Philtre of Might',  ic:'🍶', slot:'use', tier:2, price:70, use:'powerOne',  desc:'Give one hero +3 power for the fight.'},
+  {key:'fatedraught',name:'Draught of Fate',  ic:'✨', slot:'use', tier:2, price:85, use:'gainFate',  desc:'Gain 2 Fate.'},
+  {key:'toadstone', name:'Toad Stone',        ic:'🐸', slot:'use', tier:3, price:95, use:'stunAll',   desc:'Stun every enemy for a turn.'},
+  {key:'venomvial', name:'Vial of Venom',     ic:'🧫', slot:'use', tier:1, price:55, use:'poisonOne', desc:'Apply 7 poison to one enemy.'},
+  {key:'wakingdust',name:'Dust of Waking',    ic:'🕯️', slot:'use', tier:3, price:90, use:'revive',    desc:'Bring a downed hero back at half HP.'},
+  {key:'talisman',  name:'The Talisman',      ic:'🔯', slot:'quest', tier:3, price:400, desc:'The act three boss will not face anyone who does not carry it.'}
+];
+const itemDef = k => ITEMS.find(i => i.key === k);
+const GEAR_SLOTS = ['weapon','armour','trinket'];
+
+/* every piece of gear currently worn by anybody */
+function wornItems(){
+  const out = [];
+  S.party.forEach(h => GEAR_SLOTS.forEach(sl => { if(h.gear && h.gear[sl]) out.push(itemDef(h.gear[sl])); }));
+  return out.filter(Boolean);
+}
+/* a party-wide bonus, summed across everything worn */
+function glob(key){
+  return wornItems().reduce((t, it) => t + ((it.glob && it.glob[key]) || 0), 0);
+}
+/* a personal bonus from what this one hero is wearing */
+function gearMod(hero, key){
+  if(!hero || !hero.gear) return 0;
+  return GEAR_SLOTS.reduce((t, sl) => {
+    const it = hero.gear[sl] ? itemDef(hero.gear[sl]) : null;
+    return t + ((it && it.mod && it.mod[key]) || 0);
+  }, 0);
+}
+function itemPool(tier){
+  const pool = ITEMS.filter(i => i.slot !== 'quest' && (tier ? i.tier === tier : true));
+  return pool.length ? pool : ITEMS.filter(i => i.slot !== 'quest');
+}
+function rollItem(act){
+  const r = Math.random();
+  const tier = act >= 3 ? (r < 0.45 ? 3 : r < 0.85 ? 2 : 1)
+             : act === 2 ? (r < 0.18 ? 3 : r < 0.68 ? 2 : 1)
+             : (r < 0.05 ? 3 : r < 0.3 ? 2 : 1);
+  return pick(itemPool(tier)).key;
+}
+
 /* ------------------------------------------------------------------- spells */
 const SPELLS = [
   {key:'firebolt', name:'Firebolt',       cost:2, target:'enemy',     desc:'Deal 7 damage to one enemy.'},
@@ -438,7 +531,8 @@ function newRun(heroKeys){
     party: heroKeys.map(k => {
       const h = HEROES.find(x => x.key === k);
       return { uid:uid(), key:h.key, name:h.name, av:h.av, maxHp:h.hp, hp:h.hp,
-               faces:h.faces.map(f => ({...f})), shield:0, power:0, poison:0, downed:false };
+               faces:h.faces.map(f => ({...f})), shield:0, power:0, poison:0, downed:false,
+               gear:{weapon:null, armour:null, trinket:null} };
     }),
     gold: 60,
     relics: [],
@@ -449,6 +543,9 @@ function newRun(heroKeys){
     visited: [],
     screen: 'map',
     removals: 0,
+    bag: [],
+    fate: 3,
+    talisman: false,
     kills: 0,
     elitesKilled: 0,
     turnsPlayed: 0,
@@ -506,7 +603,8 @@ function buildMap(){
     if(n.floor === MID_REST)     { n.type = 'rest';   continue; }
     const r = Math.random();
     if(n.floor >= 3 && r < 0.14)      n.type = 'elite';
-    else if(r < 0.32)                 n.type = 'event';
+    else if(r < 0.26)                 n.type = 'adventure';
+    else if(r < 0.36)                 n.type = 'event';
     else if(r < 0.38)                 n.type = 'rest';
     else if(r < 0.43)                 n.type = 'shop';
     else if(r < 0.46)                 n.type = 'treasure';
@@ -521,6 +619,7 @@ const NODE_ART = {
   combat:  {ic:'⚔️', label:'Combat'},
   elite:   {ic:'👹', label:'Elite'},
   event:   {ic:'❓',       label:'Unknown'},
+  adventure:{ic:'🃏',      label:'Adventure'},
   shop:    {ic:'🏪', label:'Merchant'},
   rest:    {ic:'🔥', label:'Camp fire'},
   treasure:{ic:'📦', label:'Treasure'},
@@ -577,11 +676,19 @@ function randomRelic(tier){
 /* --------------------------------------------------------- face value maths */
 function faceValue(hero, f){
   let v = f.v;
-  if(f.k === 'dmg' || f.k === 'dmgAll'){ v += hero.power || 0; if(has('whetstone')) v += 1; }
-  if(f.k === 'shield' || f.k === 'shieldAll'){ if(has('towershield')) v += 1; }
-  if(f.k === 'heal'   && has('verdant'))  v += 1;
-  if(f.k === 'poison' && has('venomsac')) v += 1;
-  if(f.k === 'burn'   && has('emberbrand')) v += 1;
+  if(f.k === 'dmg' || f.k === 'dmgAll'){
+    v += hero.power || 0;
+    if(has('whetstone')) v += 1;
+    v += gearMod(hero, 'dmg');
+    if(f.k === 'dmgAll') v += gearMod(hero, 'cleave');
+  }
+  if(f.k === 'shield' || f.k === 'shieldAll'){ if(has('towershield')) v += 1; v += gearMod(hero, 'shield'); }
+  if(f.k === 'heal'){   if(has('verdant'))   v += 1; v += gearMod(hero, 'heal'); }
+  if(f.k === 'poison'){ if(has('venomsac'))  v += 1; v += gearMod(hero, 'poison'); }
+  if(f.k === 'burn'){   if(has('emberbrand'))v += 1; v += gearMod(hero, 'burn'); }
+  if(f.k === 'daze')  v += gearMod(hero, 'daze');
+  if(f.k === 'charm') v += gearMod(hero, 'charm');
+  if(f.k !== 'blank') v += glob('allFaces');
   return Math.max(0, v);
 }
 const livingHeroes  = () => S.party.filter(h => !h.downed);
@@ -635,8 +742,8 @@ function buildEncounter(type){
 }
 
 function makeThrall(v){
-  const hp = 5 + 3 * v;
-  return { uid:uid(), name:'Thrall', av:'🌀', isSummon:true, turns:2 + v,
+  const hp = 5 + 3 * v + glob('thrallHp');
+  return { uid:uid(), name:'Thrall', av:'🌀', isSummon:true, turns:2 + v + glob('thrallTurns'),
            maxHp:hp, hp, shield:0, power:0, poison:0, downed:false,
            faces:[F('dmg',2+v),F('dmg',1+v),F('dmg',2+v),F('shield',1+v),F('blank'),F('blank')] };
 }
@@ -647,7 +754,7 @@ function startCombat(type){
     enemies: buildEncounter(type),
     dice: [],
     turn: 0,
-    mana: has('clover') ? 2 : 0,
+    mana: (has('clover') ? 2 : 0) + glob('manaCombat'),
     summons: [],
     rerolls: 0,
     rerollMode: false,
@@ -668,14 +775,14 @@ function startCombat(type){
 
 function logc(t){ if(!C) return; C.log.push(t); if(C.log.length > 60) C.log.shift(); }
 
-function maxRerolls(){ return 2 + (has('loadeddice') ? 1 : 0); }
+function maxRerolls(){ return 2 + (has('loadeddice') ? 1 : 0) + glob('rerolls'); }
 
 function beginPlayerTurn(){
   C.turn++;
   S.turnsPlayed++;
   /* shields fade between turns */
   allies().forEach(h => { h.shield = has('bulwark') ? Math.floor(h.shield / 2) : 0; });
-  if(has('wellspring')) C.mana += 1;
+  C.mana += (has('wellspring') ? 1 : 0) + glob('manaTurn');
   if(has('sundial') && C.turn % 3 === 0){
     livingAllies().forEach(h => h.shield += 4);
     logc('The Sundial turns. Every hero gains 4 shield.');
@@ -768,12 +875,17 @@ function hurtHero(h, n, opts){
   opts = opts || {};
   if(h.downed || n <= 0) return;
   let left = n;
+  if(!opts.ignoreArmour){
+    const armour = gearMod(h, 'armour');
+    if(armour > 0) left = Math.max(0, left - armour);   /* worn plate soaks before shields */
+  }
   if(!opts.ignoreShield && h.shield > 0){
     const a = Math.min(h.shield, left);
     h.shield -= a; left -= a;
   }
+  const dealt = left;
   h.hp = Math.max(0, h.hp - left);
-  floatOn(h.uid, '-' + n, 'var(--red)');
+  if(dealt > 0 || n > 0) floatOn(h.uid, '-' + Math.max(dealt, 0), 'var(--red)');
   if(h.hp === 0){
     if(h.isSummon){
       logc(`${h.name} unravels.`);
@@ -819,6 +931,7 @@ function clickTarget(kind, uidv){
 function pendingTargetType(){
   if(!C.pending) return null;
   if(C.pending.type === 'die'){ const d = C.dice[C.pending.i]; return d ? KIND[d.k].target : null; }
+  if(C.pending.type === 'item'){ const it = itemDef(S.bag[C.pending.i]); return it ? USE_TARGET[it.use] : null; }
   return spellDef(C.pending.key).target;
 }
 
@@ -827,6 +940,7 @@ function resolvePending(target){
   if(!p) return;
   C.pending = null;
   if(p.type === 'die') applyDie(p.i, target);
+  else if(p.type === 'item') applyItem(p.i, target);
   else applySpell(p.key, target);
   afterAction();
 }
@@ -841,6 +955,8 @@ function applyDie(i, target){
     case 'dmg': {
       const e = enemyByUid(target.uid); if(!e) break;
       heroDamageToEnemy(e, v);
+      const ls = glob('lifesteal');
+      if(ls > 0 && !h.isSummon) healHero(h, ls);
       logc(`${h.name} strikes ${e.name} for ${v}.`);
       break;
     }
@@ -1008,14 +1124,16 @@ function enemyPhase(){
           const dmg = it.v + (e.power || 0);
           hurtHero(tgt, dmg);
           logc(`${e.name} hits ${tgt.name} for ${dmg}.`);
-          if(has('thorned')) hurtEnemy(e, 3);
+          const back = (has('thorned') ? 3 : 0) + glob('thorns');
+          if(back > 0) hurtEnemy(e, back);
         }
         break;
       case 'attackAll': {
         const dmg = it.v + (e.power || 0);
         livingAllies().slice().forEach(h => hurtHero(h, dmg));
         logc(`${e.name} sweeps the party for ${dmg}.`);
-        if(has('thorned')) hurtEnemy(e, 3);
+        const backAll = (has('thorned') ? 3 : 0) + glob('thorns');
+        if(backAll > 0) hurtEnemy(e, backAll);
         break;
       }
       case 'block':
@@ -1119,6 +1237,7 @@ function endCombat(won){
     });
     S.party.forEach(h => healHero(h, Math.round(h.maxHp * 0.15)));
     if(has('bloodstone')) S.party.forEach(h => healHero(h, 3));
+    if(glob('postHeal')) S.party.forEach(h => healHero(h, glob('postHeal')));
     C = null;
     postCombatRewards(type);
   }, 650);
@@ -1129,6 +1248,10 @@ function endCombat(won){
    ========================================================================== */
 function enterNode(n){
   if(!n) return;
+  if(n.type === 'boss' && S.act >= 3 && !S.talisman && availableNodes().some(x => x !== n)){
+    UI.modal = { type:'result', text:'The doors will not open. Whatever waits at the top of this spire does not face anyone who is not carrying the Talisman, and you are not. There is still another road.' };
+    render(); return;
+  }
   S.pos = { floor:n.floor, slot:n.slot };
   n.done = true;
   S.visited.push(n.floor + ',' + n.slot);
@@ -1140,11 +1263,12 @@ function enterNode(n){
     case 'rest':     openCamp(); break;
     case 'treasure': openTreasure(); break;
     case 'event':    openEvent(); break;
+    case 'adventure':openAdventure(); break;
   }
 }
 
 function goldGain(base){
-  const g = Math.round(base * (has('coinpurse') ? 1.3 : 1));
+  const g = Math.round(base * (has('coinpurse') ? 1.3 : 1) * (1 + glob('gold')));
   S.gold += g;
   return g;
 }
@@ -1156,6 +1280,8 @@ function postCombatRewards(type){
   const relic = (type === 'elite' || type === 'boss')
     ? randomRelic(type === 'boss' ? 'boss' : 'rare')
     : null;
+  /* something to carry falls out of most fights, and always off the big ones */
+  if(type === 'elite' || type === 'boss' || Math.random() < (bonus ? 0.6 : 0.3)) UI.pendingItem = rollItem(act);
   if(relic) grantRelic(relic);
   if(type === 'boss'){
     S.party.forEach(h => healHero(h, Math.round(h.maxHp * 0.3)));
@@ -1174,6 +1300,7 @@ function postCombatRewards(type){
 
 function finishReward(){
   UI.modal = null;
+  if(UI.pendingItem){ const k = UI.pendingItem; UI.pendingItem = null; grantItem(k, finishReward); return; }
   if(UI.pendingAncestral){ UI.pendingAncestral = false; UI.modal = { type:'ancestral', after: finishReward }; render(); return; }
   const wasBoss = S.pos && nodeAt(S.pos.floor, S.pos.slot) && nodeAt(S.pos.floor, S.pos.slot).type === 'boss';
   if(wasBoss){
@@ -1202,6 +1329,81 @@ function doInstall(heroUid, faceIdx){
   save();
   if(after) after(); else render();
 }
+
+/* ------------------------------------------------------------ item handling */
+const USE_TARGET = {healOne:'ally', healAll:'allAllies', burnAll:'allEnemies', boltOne:'enemy',
+                    shieldAll:'allAllies', powerOne:'ally', gainFate:'self', stunAll:'allEnemies',
+                    poisonOne:'enemy', revive:'self'};
+function grantItem(key, after){
+  const it = itemDef(key);
+  const done = () => { save(); if(after) after(); else { S.screen = 'map'; render(); } };
+  if(!it){ done(); return; }
+  if(it.slot === 'quest'){ S.talisman = true; done(); return; }
+  if(it.slot === 'use'){
+    if(S.bag.length < BAG_MAX){ S.bag.push(key); done(); return; }
+    UI.modal = { type:'bagfull', key, after }; render(); return;
+  }
+  UI.modal = { type:'equip', key, after }; render();
+}
+function equipItem(heroUid, key){
+  const m = UI.modal;
+  const h = heroByUid(heroUid), it = itemDef(key);
+  if(!h || !it || !h.gear) return;
+  const old = h.gear[it.slot] ? itemDef(h.gear[it.slot]) : null;
+  if(old && old.mod && old.mod.maxHp) h.maxHp -= old.mod.maxHp;      /* give back what the old piece lent */
+  h.gear[it.slot] = key;
+  if(it.mod && it.mod.maxHp){ h.maxHp += it.mod.maxHp; if(it.mod.maxHp > 0) h.hp += it.mod.maxHp; }
+  h.maxHp = Math.max(5, h.maxHp);
+  h.hp = Math.max(1, Math.min(h.hp, h.maxHp));
+  const after = m && m.after; UI.modal = null; save();
+  if(after) after(); else { S.screen = 'map'; render(); }
+}
+function declineItem(){
+  const after = UI.modal && UI.modal.after; UI.modal = null;
+  if(after) after(); else { S.screen = 'map'; render(); }
+}
+function swapBag(i){
+  const m = UI.modal; if(!m || m.type !== 'bagfull') return;
+  S.bag[i] = m.key;
+  const after = m.after; UI.modal = null; save();
+  if(after) after(); else { S.screen = 'map'; render(); }
+}
+
+/* consumables, used from the shared bag during a fight */
+function clickItem(i){
+  if(!C || C.over) return;
+  const it = itemDef(S.bag[i]); if(!it) return;
+  if(it.use === 'revive' && !S.party.some(h => h.downed)) return;
+  if(C.pending && C.pending.type === 'item' && C.pending.i === i){ C.pending = null; render(); return; }
+  C.pending = { type:'item', i };
+  const t = USE_TARGET[it.use];
+  if(t === 'self' || t === 'allEnemies' || t === 'allAllies') resolvePending(null);
+  else render();
+}
+function applyItem(i, target){
+  const key = S.bag[i], it = itemDef(key);
+  if(!it) return;
+  S.bag.splice(i, 1);
+  switch(it.use){
+    case 'healOne':  { const a = unitByUid(target.uid); if(a) healHero(a, 14); logc(`${it.name}: 14 healed.`); break; }
+    case 'healAll':  { livingAllies().forEach(a => healHero(a, 9)); logc(`${it.name}: the party recovers.`); break; }
+    case 'burnAll':  { livingEnemies().forEach(e => { heroDamageToEnemy(e, 8); if(e.hp > 0) e.burn += 2; }); logc(`${it.name} bursts.`); break; }
+    case 'boltOne':  { const e = enemyByUid(target.uid); if(e) heroDamageToEnemy(e, 16); logc(`${it.name}: 16 damage.`); break; }
+    case 'shieldAll':{ livingAllies().forEach(a => { a.shield += 9; floatOn(a.uid, '+9', 'var(--blue)'); }); logc(`${it.name}: cover for everyone.`); break; }
+    case 'powerOne': { const a = unitByUid(target.uid); if(a){ a.power += 3; floatOn(a.uid, '+3 POW', 'var(--pink)'); } logc(`${it.name} takes hold.`); break; }
+    case 'gainFate': { S.fate = Math.min(fateMax(), S.fate + 2); logc(`${it.name}: fate gathers.`); break; }
+    case 'stunAll':  { livingEnemies().forEach(e => { e.stun += 1; floatOn(e.uid, 'STUN', 'var(--gold)'); }); logc(`${it.name}: everything freezes.`); break; }
+    case 'poisonOne':{ const e = enemyByUid(target.uid); if(e){ e.poison += 7; floatOn(e.uid, '☠7', 'var(--lime)'); } logc(`${it.name} splashes.`); break; }
+    case 'revive':   {
+      const d = S.party.find(x => x.downed);
+      if(d){ d.downed = false; d.hp = Math.max(1, Math.round(d.maxHp * 0.5)); floatOn(d.uid, 'UP', 'var(--green)'); logc(`${d.name} is back on their feet.`); }
+      break;
+    }
+  }
+}
+
+/* --------------------------------------------------------------------- fate */
+const fateMax = () => 3 + glob('fate');
 
 /* ----------------------------------------------------------------- scouring */
 const canScour   = () => S.party.some(h => h.faces.length > MIN_FACES);
@@ -1240,8 +1442,15 @@ function openShop(){
   const rk = randomRelic(Math.random() < 0.3 ? 'rare' : 'uncommon');
   const unowned = SPELLS.filter(s => !S.spells.includes(s.key));
   const stock = sample(unowned, 2).map(sp => ({ key:sp.key, price: Math.round((60 + sp.cost * 22) * priceMod()) }));
+  const wares = [];
+  for(let i = 0; i < 2; i++){
+    const k = rollItem(S.act);
+    if(!wares.some(w => w.key === k)) wares.push({ key:k, price: Math.round(itemDef(k).price * priceMod()) });
+  }
+  if(S.act >= 3 && !S.talisman) wares.push({ key:'talisman', price: Math.round(itemDef('talisman').price * priceMod()) });
   UI.modal = {
     type:'shop',
+    wares,
     faces,
     relic: rk ? { key:rk, price: Math.round((rk && relicDef(rk).tier === 'rare' ? 210 : 150) * priceMod()) } : null,
     spells: stock,
@@ -1277,6 +1486,14 @@ function buySpell(i){
   S.spells.push(it.key);
   save(); render();
 }
+function buyItem(i){
+  const m = shopModal(); if(!m) return;
+  const it = m.wares[i];
+  if(!it || m.sold['w' + i] || S.gold < it.price) return;
+  S.gold -= it.price; m.sold['w' + i] = true;
+  const back = m;
+  grantItem(it.key, () => { UI.modal = back; render(); });
+}
 function buyScour(){
   const m = shopModal(); if(!m) return;
   if(!canScour() || S.gold < scourPrice()) return;
@@ -1296,6 +1513,7 @@ function openCamp(){ UI.modal = { type:'camp' }; S.screen = 'map'; render(); }
 function campRest(){
   const pct = has('chirurgeon') ? 0.6 : 0.3;
   S.party.forEach(h => healHero(h, Math.round(h.maxHp * pct)));
+  S.fate = Math.min(fateMax(), S.fate + 1);
   UI.modal = null; save(); render();
 }
 function campForge(){ UI.modal = { type:'forge' }; render(); }
@@ -1317,7 +1535,10 @@ function openTreasure(){
   const k = randomRelic();
   if(k) grantRelic(k);
   const g = goldGain(25 + rnd(30));
-  UI.modal = { type:'treasure', relic:k, gold:g };
+  /* the act-three hoard is where the Talisman is, so no run can be locked out */
+  const item = (S.act >= 3 && !S.talisman) ? 'talisman' : rollItem(S.act);
+  UI.pendingItem = item;
+  UI.modal = { type:'treasure', relic:k, gold:g, item };
   S.screen = 'map'; save(); render();
 }
 
@@ -1411,6 +1632,123 @@ const EVENTS = [
 function hurtHeroOutOfCombat(h, n){
   h.hp = Math.max(1, h.hp - n);
 }
+/* ============================================================================
+   THE ADVENTURE DECK
+   Talisman's real engine: you land, you turn a card, and it is as likely to
+   rob you as to arm you. Every entry declares its own flavour so the reveal
+   can tell you what KIND of luck you just had before it tells you the result.
+   ========================================================================== */
+const ADVENTURE = [
+  /* ---- objects: the good draws ------------------------------------------ */
+  {w:14, kind:'Object', ic:'🎁', good:true, name:'Buried Cache',
+   text:'A flat stone, and beneath it something wrapped in oilcloth.',
+   go:()=>{ const k = rollItem(S.act); advResult('You unwrap it.', k); }},
+  {w:8,  kind:'Object', ic:'⚰️', good:true, name:'Barrow Goods',
+   text:'The dead here were buried with their equipment. They are not using it.',
+   go:()=>{ const k = rollItem(Math.min(3, S.act + 1)); advResult('You take it and apologise.', k); }},
+  {w:7,  kind:'Object', ic:'🏺', good:true, name:'Sealed Amphora',
+   text:'Still corked, still sloshing.',
+   go:()=>{ const k = pick(ITEMS.filter(i => i.slot === 'use')).key; advResult('It is still good.', k); }},
+
+  /* ---- strangers: an offer, usually with teeth --------------------------- */
+  {w:10, kind:'Stranger', ic:'🧙', good:null, name:'The Hedge Wizard',
+   text:'He will trade knowledge for blood, as they always do.',
+   choices:[
+     {t:'Take his bargain', s:'Learn a spell. Every hero loses 5 max HP.', go:()=>{
+        const un = SPELLS.filter(x => !S.spells.includes(x.key));
+        if(un.length) S.spells.push(pick(un).key);
+        S.party.forEach(h => { h.maxHp = Math.max(5, h.maxHp - 5); h.hp = Math.min(h.hp, h.maxHp); });
+        advResult(un.length ? 'The words stick, painfully.' : 'He has nothing left to teach you.'); }},
+     {t:'Refuse', s:'Nothing happens.', go:closeEvent}]},
+  {w:9, kind:'Stranger', ic:'🛒', good:null, name:'The Pedlar',
+   text:'He has one thing in his pack and will not say what until you pay.',
+   choices:[
+     {t:'Pay 60 gold, sight unseen', s:'It could be anything.', req:()=>S.gold>=60,
+      go:()=>{ S.gold -= 60; advResult('He hands it over and is gone.', rollItem(S.act)); }},
+     {t:'Send him on', s:'Nothing happens.', go:closeEvent}]},
+  {w:8, kind:'Stranger', ic:'⚖️', good:null, name:'The Tax Collector',
+   text:'He has a ledger with your name already in it.',
+   choices:[
+     {t:'Pay what he asks', s:'Lose a third of your gold. Gain 2 Fate.',
+      go:()=>{ S.gold = Math.round(S.gold * 0.67); S.fate = Math.min(fateMax(), S.fate + 2); advResult('He stamps the ledger. Something owed is settled.'); }},
+     {t:'Refuse him', s:'Every hero loses 8% of max HP as he leaves.',
+      go:()=>{ S.party.forEach(h => hurtHeroOutOfCombat(h, Math.max(1, Math.round(h.maxHp * 0.08)))); advResult('He does not argue. Something else does.'); }}]},
+
+  /* ---- places: a lasting mark, for better or worse ----------------------- */
+  {w:9, kind:'Place', ic:'⛲', good:true, name:'The Clear Spring',
+   text:'Cold enough to hurt. Clean enough to matter.',
+   go:()=>{ S.party.forEach(h => { h.maxHp += 4; h.hp = h.maxHp; }); advResult('Everyone drinks. +4 max HP each, fully healed.'); }},
+  {w:8, kind:'Place', ic:'🕍', good:true, name:'Abandoned Chapel',
+   text:'Nobody has knelt here in a long while. The floor remembers how.',
+   go:()=>{ S.fate = Math.min(fateMax(), S.fate + 3); advResult('You leave lighter. +3 Fate.'); }},
+  {w:8, kind:'Place', ic:'🕳️', good:false, name:'The Sinkhole',
+   text:'The floor was always going to give way. It waited for the middle of the party.',
+   go:()=>{ S.party.forEach(h => hurtHeroOutOfCombat(h, Math.round(h.maxHp * 0.18))); advResult('You haul each other out. Everyone is worse for it.'); }},
+  {w:7, kind:'Place', ic:'🌫️', good:false, name:'The Grey Fog',
+   text:'You walk into it certain of the way, and out of it certain of nothing.',
+   go:()=>{ const lost = Math.min(S.fate, 2); S.fate -= lost; S.gold = Math.round(S.gold * 0.8);
+            advResult(lost ? `You come out poorer and ${lost} Fate short.` : 'You come out poorer.'); }},
+
+  /* ---- enemies: the bad draws, with something worth having behind them --- */
+  {w:12, kind:'Enemy', ic:'👹', good:false, name:'Ambush',
+   text:'Something has been following the party since the last room.',
+   go:()=>{ UI.modal = null; UI.bonusReward = true; S.screen = 'combat'; startCombat('combat'); render(); }},
+  {w:6, kind:'Enemy', ic:'💀', good:false, name:'The Waiting Thing',
+   text:'It is bigger than anything else on this floor and it has been patient.',
+   go:()=>{ UI.modal = null; UI.bonusReward = true; S.screen = 'combat'; startCombat('elite'); render(); }},
+
+  /* ---- fortune: pure swing ---------------------------------------------- */
+  {w:9, kind:'Fortune', ic:'🎰', good:null, name:'A Turn of Luck',
+   text:'Something is about to happen. It is not clear what.',
+   go:()=>{
+     const r = Math.random();
+     if(r < 0.35){ const g = goldGain(70 + rnd(60)); advResult(`A windfall. +${g} gold.`); }
+     else if(r < 0.6){ advResult('Something useful, at least.', rollItem(S.act)); }
+     else if(r < 0.8){ S.party.forEach(h => healHero(h, Math.round(h.maxHp * 0.35))); advResult('A good night, for once. The party recovers.'); }
+     else { S.party.forEach(h => hurtHeroOutOfCombat(h, Math.round(h.maxHp * 0.2))); advResult('It goes badly. It was always going to go badly.'); }
+   }},
+  {w:7, kind:'Fortune', ic:'🐸', good:false, name:'The Toad',
+   text:'A voice from somewhere says a word you do not catch, and one of you is much smaller.',
+   go:()=>{
+     const h = pick(S.party);
+     const i = h.faces.findIndex(f => f.k !== 'blank');
+     if(i >= 0) h.faces[i] = F('blank');
+     advResult(`${h.name} is briefly a toad. One face of their die is now blank.`);
+   }}
+];
+function drawAdventure(){
+  const total = ADVENTURE.reduce((t, a) => t + a.w, 0);
+  let r = rnd(total);
+  for(const a of ADVENTURE){ r -= a.w; if(r < 0) return a; }
+  return ADVENTURE[0];
+}
+function openAdventure(){
+  UI.modal = { type:'adventure', card: drawAdventure() };
+  S.screen = 'map'; render();
+}
+function advChoose(i){
+  const c = UI.modal.card.choices[i];
+  if(c.req && !c.req()) return;
+  UI.modal = null; c.go();
+}
+function advTake(){
+  const card = UI.modal.card;
+  UI.modal = null;
+  if(card.choices) return;
+  card.go();
+}
+/* a result screen that can also hand over the thing you just found */
+function advResult(text, itemKey){
+  if(itemKey) UI.pendingItem = itemKey;
+  UI.modal = { type:'advresult', text, item:itemKey || null };
+  save(); render();
+}
+function advDone(){
+  UI.modal = null;
+  if(UI.pendingItem){ const k = UI.pendingItem; UI.pendingItem = null; grantItem(k, advDone); return; }
+  closeEvent();
+}
+
 function openEvent(){
   const ev = pick(EVENTS);
   UI.modal = { type:'event', ev };
@@ -1461,6 +1799,9 @@ function renderTopbar(){
     <div class="stat" data-tip="Act|Three acts, each ending in a boss.">🗺️ Act <b>${S.act}</b></div>
     <div class="stat" data-tip="Gold|Spent at merchants.">💰 <b>${S.gold}</b></div>
     ${S.spells.length ? `<div class="stat" data-tip="Spells|Cast in combat with mana from Focus faces.">📜 <b>${S.spells.length}</b></div>` : ''}
+    <div class="stat" data-tip="Fate|A reserve of rerolls that lasts the whole run, spent when your per-turn rerolls are gone. Camp fires restore one.">✨ <b>${S.fate}</b>/${fateMax()}</div>
+    <div class="stat" data-tip="Bag|Consumables, used during a fight. Holds ${BAG_MAX}.">🎒 <b>${S.bag.length}</b>/${BAG_MAX}</div>
+    ${S.talisman ? `<div class="stat" data-tip="The Talisman|The act three boss will not face anyone who does not carry it.">🔯</div>` : ''}
     <div class="relic-bar">${relics}<button class="btn sm ghost" onclick="abandonRun()">Abandon</button></div>`;
 }
 function abandonRun(){
@@ -1594,10 +1935,13 @@ function nodeTip(n){
     case 'combat':   return 'A normal fight. Gold and a new die face.';
     case 'elite':    return 'A hard fight. Gold, a face, and a relic.';
     case 'event':    return 'Something happens. It is usually a choice.';
+    case 'adventure':return 'Turn a card from the adventure deck. It may arm you or rob you.';
     case 'shop':     return 'Buy faces, a relic, a spell, or a meal.';
     case 'rest':     return 'Heal, sharpen a face, or drill for max HP.';
     case 'treasure': return 'A free relic.';
-    case 'boss':     return 'The act boss. Beating it ends the act.';
+    case 'boss':     return S.act >= 3 && !S.talisman
+      ? 'The act boss. It will not face you without the Talisman.'
+      : 'The act boss. Beating it ends the act.';
   }
   return '';
 }
@@ -1626,6 +1970,7 @@ function viewParty(){
           <div class="spread"><b style="font-size:13.5px">${h.name}</b><span class="tiny muted">${h.hp}/${h.maxHp}</span></div>
           <div class="hpbar" style="margin-top:4px"><i style="width:${pct}%;background:linear-gradient(90deg,#28a06c,#3ddc97)"></i></div>
           <div class="faces" style="margin-top:6px;gap:3px">${h.faces.map(f => faceHTML(f)).join('')}</div>
+          <div class="badges" style="justify-content:flex-start;margin-top:4px;min-height:0">${gearStrip(h)}</div>
         </div>
       </div>`;
     }).join('')}
@@ -1672,6 +2017,7 @@ function viewCombat(){
       <div class="hpbar"><i style="width:${pct}%;background:linear-gradient(90deg,#28a06c,#3ddc97)"></i></div>
       <div class="hptext">${h.hp} / ${h.maxHp}</div>
       <div class="badges">${badges.join('')}</div>
+      ${h.isSummon ? '' : `<div class="badges" style="margin-top:2px">${gearStrip(h)}</div>`}
     </div>`;
   }).join('');
 
@@ -1697,6 +2043,13 @@ function viewCombat(){
       ${esc(sp.name)} <span class="c">◆${sp.cost}</span><span class="d">${esc(sp.desc)}</span></button>`;
   }).join('');
 
+  const bagRow = S.bag.map((k, i) => {
+    const it = itemDef(k);
+    const dead = it.use === 'revive' && !S.party.some(h => h.downed);
+    const sel = C.pending && C.pending.type === 'item' && C.pending.i === i;
+    return `<button class="spell ${sel ? 'sel' : ''}" ${C.over || dead ? 'disabled' : ''} onclick="clickItem(${i})"
+      data-tip="${esc(it.name)}|${esc(it.desc)}">${it.ic} ${esc(it.name)}<span class="d">${esc(it.desc)}</span></button>`;
+  }).join('');
   const unspent = C.dice.filter(d => !d.used).length;
   const hint = C.over === 'win' ? 'Victory.'
     : C.over === 'lose' ? 'The party falls.'
@@ -1724,11 +2077,14 @@ function viewCombat(){
         <div class="row wrap-r">
           <button class="btn sm ${C.rerollMode ? 'primary' : ''}" ${C.rerolls <= 0 || C.over || !C.dice.length ? 'disabled' : ''} onclick="toggleReroll()">
             ↻ Reroll ×${C.rerolls}</button>
+          ${C.rerolls <= 0 && S.fate > 0 && !C.over && C.dice.length ? `<button class="btn sm" onclick="spendFate()"
+            data-tip="Spend Fate|Buys one more reroll this turn out of your run-long reserve.">✨ Spend Fate (${S.fate})</button>` : ''}
           ${C.rerollMode ? `<button class="btn sm primary" ${C.dice.some(d => d.mark && !d.used) ? '' : 'disabled'} onclick="rerollMarked()">Reroll ${C.dice.filter(d => d.mark && !d.used).length} selected</button>` : ''}
         </div>
         <button class="btn primary" ${C.over ? 'disabled' : ''} onclick="endTurn()">End turn →</button>
       </div>
       ${spells ? `<div class="sep"></div><div class="spell-row">${spells}</div>` : ''}
+      ${bagRow ? `<div class="sep"></div><div class="spell-row">${bagRow}</div>` : ''}
     </div>
     <div class="row" style="align-items:stretch;gap:12px;flex-wrap:wrap">
       <div style="flex:1;min-width:280px"><div class="log" id="log">${C.log.slice(-40).map((l, i, a) => `<div class="${i === a.length - 1 ? 'hl' : ''}">${esc(l)}</div>`).join('')}</div></div>
@@ -1757,6 +2113,13 @@ function intentHTML(e){
   };
   return `<div class="intent" style="color:${map.col}" data-tip="Intent|${esc(tips[it.k] || '')}">
     ${map.ic} ${map.v}${label ? `<span class="tgt">→ ${esc(label)}</span>` : ''}</div>`;
+}
+function spendFate(){
+  if(!C || C.over || S.fate <= 0) return;
+  S.fate--; C.rerolls++;
+  C.rerollMode = true; C.pending = null;
+  logc('You spend a point of Fate.');
+  save(); render();
 }
 function toggleReroll(){ C.rerollMode = !C.rerollMode; C.pending = null; if(!C.rerollMode) C.dice.forEach(d => d.mark = false); render(); }
 function cancelPending(){ C.pending = null; render(); }
@@ -1800,10 +2163,14 @@ function renderModal(){
     case 'camp':     html = mCamp(); break;
     case 'forge':    html = mForge(); break;
     case 'scour':    html = mScour(m); break;
+    case 'equip':    html = mEquip(m); break;
+    case 'bagfull':  html = mBagFull(m); break;
     case 'drill':    html = mDrill(); break;
     case 'treasure': html = mTreasure(m); break;
     case 'event':    html = mEvent(m); break;
     case 'result':   html = mResult(m); break;
+    case 'adventure':html = mAdventure(m); break;
+    case 'advresult':html = mAdvResult(m); break;
     case 'act':      html = mAct(m); break;
   }
   const v = document.createElement('div');
@@ -1925,6 +2292,10 @@ function mShop(m){
         <div><b>Hot meal</b><div class="tiny muted">Heal every hero 30% of max HP.</div></div></div>
       <button class="btn sm ${S.gold >= m.rations.price && !m.rations.used ? 'primary' : ''}" ${m.rations.used || S.gold < m.rations.price ? 'disabled' : ''} onclick="buyRations()">
         ${m.rations.used ? 'Eaten' : m.rations.price + 'g'}</button></div>`);
+  const wareRows = (m.wares || []).map((it, i) => row(`<div class="spread">
+      ${itemCard(itemDef(it.key))}
+      <button class="btn sm ${S.gold >= it.price && !m.sold['w' + i] ? 'primary' : ''}" ${m.sold['w' + i] || S.gold < it.price ? 'disabled' : ''} onclick="buyItem(${i})">
+        ${m.sold['w' + i] ? 'Sold' : it.price + 'g'}</button></div>`)).join('');
   const scourRow = row(`<div class="spread">
       <div class="row"><div style="font-size:26px">🪓</div>
         <div><b>Grindstone</b><div class="tiny muted">${canScour()
@@ -1934,7 +2305,7 @@ function mShop(m){
         ${canScour() ? scourPrice() + 'g' : '—'}</button></div>`);
   return `<div class="spread"><h2>🏪 Merchant</h2><div class="stat">💰 <b>${S.gold}</b></div></div>
     <p class="muted tiny" style="margin-bottom:12px">${has('token') ? 'The Merchant’s Token has already knocked the prices down.' : 'He does not haggle.'}</p>
-    ${faceRows}${relicRow}${spellRow}${scourRow}${rationRow}
+    ${wareRows}${faceRows}${relicRow}${spellRow}${scourRow}${rationRow}
     <div class="row" style="justify-content:flex-end"><button class="btn" onclick="closeEvent()">Leave →</button></div>`;
 }
 
@@ -1943,7 +2314,7 @@ function mCamp(){
   return `<h2>🔥 Camp fire</h2>
     <p class="muted tiny" style="margin-bottom:12px">One thing only.</p>
     <div class="col">
-      <button class="opt" onclick="campRest()"><div class="t">Rest</div><div class="s">Heal every hero ${pct}% of their max HP.</div></button>
+      <button class="opt" onclick="campRest()"><div class="t">Rest</div><div class="s">Heal every hero ${pct}% of their max HP, and recover a point of Fate.</div></button>
       <button class="opt" onclick="campForge()"><div class="t">Sharpen</div><div class="s">Permanently improve one die face.</div></button>
       <button class="opt" onclick="campDrill()"><div class="t">Drill</div><div class="s">+4 max HP to every hero, healed immediately.</div></button>
       <button class="opt" ${canScour() ? '' : 'disabled'} onclick="campScour()"><div class="t">Grind down</div><div class="s">${canScour()
@@ -1963,6 +2334,51 @@ function mForge(){
     </div>
     <div class="sep"></div>
     <div class="row" style="justify-content:flex-end"><button class="btn ghost" onclick="closeEvent()">Never mind</button></div>`;
+}
+function itemCard(it, extra){
+  const tierCol = it.tier === 3 ? 'var(--gold)' : it.tier === 2 ? 'var(--violet)' : 'var(--ink-dim)';
+  return `<div class="row" style="gap:11px">
+    <div style="font-size:26px">${it.ic}</div>
+    <div><b style="color:${tierCol}">${esc(it.name)}</b>
+      <span class="tiny faint"> ${'★'.repeat(it.tier)}</span>
+      <div class="tiny muted">${esc(it.desc)}</div>${extra || ''}</div></div>`;
+}
+function gearStrip(h){
+  return GEAR_SLOTS.map(sl => {
+    const it = h.gear && h.gear[sl] ? itemDef(h.gear[sl]) : null;
+    return it ? `<span class="badge" data-tip="${esc(it.name)}|${esc(it.desc)}">${it.ic}</span>`
+              : `<span class="badge faint" data-tip="Empty ${sl}|Nothing worn in this slot yet.">·</span>`;
+  }).join('');
+}
+function mEquip(m){
+  const it = itemDef(m.key);
+  return `<h2>${it.ic} ${esc(it.name)}</h2>
+    <p class="muted tiny" style="margin:6px 0 12px">${esc(it.desc)} — goes in the <b>${it.slot}</b> slot.
+      Whatever is already there is thrown away.</p>
+    <div class="col">
+      ${S.party.map(h => {
+        const cur = h.gear && h.gear[it.slot] ? itemDef(h.gear[it.slot]) : null;
+        return `<button class="opt" onclick="equipItem(${h.uid},'${it.key}')">
+          <div class="t">${h.av} ${esc(h.name)}</div>
+          <div class="s">${cur ? `replaces ${cur.ic} ${esc(cur.name)}` : `${it.slot} slot is empty`}${
+            it.mod && it.mod.maxHp ? ` — max HP ${it.mod.maxHp > 0 ? '+' : ''}${it.mod.maxHp}` : ''}</div></button>`;
+      }).join('')}
+    </div>
+    <div class="sep"></div>
+    <div class="row" style="justify-content:flex-end"><button class="btn ghost" onclick="declineItem()">Leave it behind</button></div>`;
+}
+function mBagFull(m){
+  const it = itemDef(m.key);
+  return `<h2>Your bag is full</h2>
+    <div class="panel" style="background:var(--card);padding:12px;margin:10px 0">${itemCard(it)}</div>
+    <p class="muted tiny" style="margin-bottom:10px">Choose what to throw out for it, or walk on.</p>
+    <div class="col">
+      ${S.bag.map((k, i) => { const b = itemDef(k);
+        return `<button class="opt" onclick="swapBag(${i})"><div class="t">${b.ic} ${esc(b.name)}</div>
+          <div class="s">${esc(b.desc)}</div></button>`; }).join('')}
+    </div>
+    <div class="sep"></div>
+    <div class="row" style="justify-content:flex-end"><button class="btn ghost" onclick="declineItem()">Keep what I have</button></div>`;
 }
 function mScour(m){
   return `<h2>Grind down a die</h2>
@@ -2002,12 +2418,14 @@ function mTreasure(m){
       <div style="font-size:28px">${relicDef(m.relic).ic}</div>
       <div><b>${esc(relicDef(m.relic).name)}</b><div class="tiny muted">${esc(relicDef(m.relic).desc)}</div></div></div>`
       : '<p class="muted">The chest has already been emptied.</p>'}
+    ${m.item ? `<div class="panel" style="margin:12px 0;background:var(--card)">${itemCard(itemDef(m.item))}</div>` : ''}
     <p class="muted">And <b style="color:var(--gold)">${m.gold} gold</b> in loose coin.</p>
     <div class="sep"></div>
     <div class="row" style="justify-content:flex-end"><button class="btn primary" onclick="afterTreasure()">Continue →</button></div>`;
 }
 function afterTreasure(){
   UI.modal = null;
+  if(UI.pendingItem){ const k = UI.pendingItem; UI.pendingItem = null; grantItem(k, afterTreasure); return; }
   if(UI.pendingAncestral){ UI.pendingAncestral = false; UI.modal = { type:'ancestral', after: afterTreasure }; render(); return; }
   S.screen = 'map'; save(); render();
 }
@@ -2028,6 +2446,29 @@ function eventChoice(i){
   if(c.req && !c.req()) return;
   UI.modal = null;
   c.go();
+}
+function mAdventure(m){
+  const c = m.card;
+  const tone = c.good === true ? 'var(--green)' : c.good === false ? 'var(--red)' : 'var(--gold)';
+  return `<div class="row" style="gap:12px;align-items:flex-start">
+      <div style="font-size:38px">${c.ic}</div>
+      <div><span class="pill" style="border-color:${tone};color:${tone}">${esc(c.kind)}</span>
+        <h2 style="margin-top:6px">${esc(c.name)}</h2></div>
+    </div>
+    <p class="muted" style="margin:10px 0 14px">${esc(c.text)}</p>
+    ${c.choices
+      ? `<div class="col">${c.choices.map((ch, i) => {
+          const ok = !ch.req || ch.req();
+          return `<button class="opt" ${ok ? '' : 'disabled'} onclick="advChoose(${i})">
+            <div class="t">${esc(ch.t)}</div><div class="s">${esc(ch.s)}${ok ? '' : ' — you cannot afford this'}</div></button>`;
+        }).join('')}</div>`
+      : `<div class="row" style="justify-content:flex-end"><button class="btn primary" onclick="advTake()">See what it is →</button></div>`}`;
+}
+function mAdvResult(m){
+  return `<h2>${m.item ? 'You found something' : 'And so'}</h2>
+    <p class="muted" style="margin:10px 0 12px">${esc(m.text)}</p>
+    ${m.item ? `<div class="panel" style="background:var(--card);margin-bottom:12px">${itemCard(itemDef(m.item))}</div>` : ''}
+    <div class="row" style="justify-content:flex-end"><button class="btn primary" onclick="advDone()">Continue →</button></div>`;
 }
 function mResult(m){
   return `<h2>Well then</h2><p class="muted" style="margin:10px 0 14px">${esc(m.text)}</p>
