@@ -63,12 +63,12 @@ was wrong — is the reason `phi-drift-check.js` now exists.
 
 | Column checked | Live PHI (2026-09-16) | Note |
 |---|---|---|
-| `letter_schedules.patient_email` | **3** of 3 rows | not in the 09-09 inventory; code fixed, rows pending the heal sweep |
-| `letter_schedules.patient_label` | **3** of 3 rows | same |
-| `letter_schedules.patient_message` | **1** of 3 rows | same |
-| `letter_schedules.first_message` | **1** of 3 rows | same |
-| `letter_schedules.patient_s3_key` | **0** of 3 rows | nothing migrated yet — the sweep has not run |
-| `letter_charges.patient_email` | **1** of 1 row | same gap; webhook clears it on send, this row predates that |
+| `letter_schedules.patient_email` | **0** (was 3 of 3) | migrated to S3 2026-09-18 |
+| `letter_schedules.patient_label` | **0** (was 3 of 3) | migrated to S3 2026-09-18 |
+| `letter_schedules.patient_message` | **0** (was 1 of 3) | migrated to S3 2026-09-18 |
+| `letter_schedules.first_message` | **0** (was 1 of 3) | migrated to S3 2026-09-18 |
+| `letter_schedules.patient_s3_key` | **3 of 3 rows** | all three now point at S3 under the AWS BAA |
+| `letter_charges.patient_email` | **1** of 1 row | the last one; it is `paid`, so the next 08:00 purge heals then releases it (end state: empty) |
 | `letter_schedules.last_error` | 0 of 3 rows | watched: an SES failure string can echo a patient address |
 | `letter_charges.pdf_base64` | 0 | holds as of 09-09 |
 | `letter_send_log.pdf_base64` | 0 | holds |
@@ -228,6 +228,27 @@ PHI are in S3 under the AWS BAA; a small number of legacy schedule rows are bein
     to record the key. Orphaned objects exist under the schedule/charge prefixes; they are
     inside the AWS BAA and covered by the bucket lifecycle, but they are unreferenced and
     should be reconciled.
+
+- **2026-09-18:** the letters migration **finally ran**, two days after it was recorded as done.
+  All three `letter_schedules` rows now hold a `patient_s3_key` under
+  `letters/schedule/2026-09-18/` with every inline column null — **migrated, not deleted**, which
+  was the failure mode worth fearing (a cleared column with no key would have meant the PHI was
+  dropped on the floor). The drift check's rules, run by hand, went from 5 failing to 1.
+  - It was triggered by a human opening the **schedule modal**, not by the purge. Worth recording
+    because the read-path self-heal is narrower than it looks: `loadSchedules()` is the only
+    caller of `healSchedule` on that path, and it runs solely from `openScheduleModal()` — behind
+    a button that is `display:none` unless the generated letter is `medicaid_private_pay`.
+    `letter-autosend-cron` also heals, but only schedules it is DUE to process (the active one is
+    not due until 2026-10-11). Opening the Letter Generator does nothing. If a row ever needs
+    healing again, the purge is the only path that does not depend on someone clicking the right
+    thing.
+  - **Remaining:** the one `letter_charges` row. It is `paid`, so the next 08:00 purge heals it
+    to S3 and then immediately releases it (deletes the object, nulls both columns) — the correct
+    end state is empty, since the pay link was emailed on 2026-09-09. Minor inefficiency worth
+    tidying eventually: healing a paid charge writes to S3 only to delete it moments later.
+  - **Still outstanding:** the orphaned S3 objects from the 09-17 failed heals. Those were written
+    under the `2026-09-17` date prefix and are unreferenced; today's good objects are under
+    `2026-09-18`, so the two are cleanly separable by prefix when reconciling.
 
 ## Also holds member/business data (PII, not PHI — no BAA needed)
 
