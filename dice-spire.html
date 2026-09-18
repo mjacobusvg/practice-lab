@@ -452,9 +452,13 @@ function newRun(heroKeys){
    floor to the top, each drifting at most one slot per step. The union of the
    paths is the map, which guarantees every node is reachable and every node
    leads somewhere.                                                          */
-const FLOORS = 9;          /* index 0..8; floor 8 is always the act boss      */
+const FLOORS = 17;         /* index 0..16; the top floor is always the boss   */
 const SLOTS  = 5;
 const PATHS  = 4;
+/* landmarks, placed proportionally so they stay sensible if FLOORS changes */
+const TREASURE_FLOOR = Math.round((FLOORS - 1) * 0.30);
+const MID_REST       = Math.round((FLOORS - 1) * 0.50);
+const SHOP_FLOOR     = Math.round((FLOORS - 1) * 0.70);
 
 function buildMap(){
   const nodes = {};                       /* "floor,slot" -> node            */
@@ -485,13 +489,15 @@ function buildMap(){
     if(n.type) continue;
     if(n.floor === 0)            { n.type = 'combat'; continue; }
     if(n.floor === FLOORS - 2)   { n.type = 'rest';   continue; }
-    if(n.floor === 4)            { n.type = rnd(2) ? 'treasure' : 'shop'; continue; }
+    if(n.floor === TREASURE_FLOOR){ n.type = 'treasure'; continue; }
+    if(n.floor === SHOP_FLOOR)   { n.type = 'shop';   continue; }
+    if(n.floor === MID_REST)     { n.type = 'rest';   continue; }
     const r = Math.random();
-    if(n.floor >= 2 && r < 0.14)      n.type = 'elite';
+    if(n.floor >= 3 && r < 0.14)      n.type = 'elite';
     else if(r < 0.32)                 n.type = 'event';
-    else if(r < 0.41)                 n.type = 'rest';
-    else if(r < 0.48)                 n.type = 'shop';
-    else if(r < 0.53)                 n.type = 'treasure';
+    else if(r < 0.38)                 n.type = 'rest';
+    else if(r < 0.43)                 n.type = 'shop';
+    else if(r < 0.46)                 n.type = 'treasure';
     else                              n.type = 'combat';
   }
   S.map = { nodes, edges:[...edges] };
@@ -572,28 +578,34 @@ const livingEnemies = () => C ? C.enemies.filter(e => e.hp > 0) : [];
 /* ============================================================================
    COMBAT
    ========================================================================== */
-function scaleMoves(def, act){
-  const dm = ACT_DMG[act] * (def.dmgW || 1);
+function scaleMoves(def, act, depth){
+  const d = depth === undefined ? 1 : depth;
+  const dm = ACT_DMG[act] * (def.dmgW || 1) * d;
   return def.moves.map(m => {
     let v;
-    if(m.k === 'block' || m.k === 'heal') v = m.v * ACT_HP[act];   /* defence tracks the HP curve */
+    if(m.k === 'block' || m.k === 'heal') v = m.v * ACT_HP[act] * d; /* defence tracks the HP curve */
     else if(m.k === 'buff' || m.k === 'poison') v = m.v;           /* stacking effects never scale */
     else v = m.v * dm;
     return { k:m.k, v:Math.max(1, Math.round(v)) };
   });
 }
-function makeEnemy(def, act){
-  const hp = Math.max(4, Math.round(def.hp * ACT_HP[act]));
+function depthMul(){
+  if(!S.pos) return 1;
+  return 1 + 0.35 * (S.pos.floor / (FLOORS - 2));
+}
+function makeEnemy(def, act, depth){
+  const d = depth === undefined ? depthMul() : depth;
+  const hp = Math.max(4, Math.round(def.hp * ACT_HP[act] * d));
   return {
     uid: uid(), key:def.key, name:def.name, av:def.av,
     maxHp:hp, hp, shield:0, poison:0, burn:0, stun:0, power:0,
-    moves: scaleMoves(def, act), mi: 0, intent:null,
+    moves: scaleMoves(def, act, d), mi: 0, intent:null,
     elite: !!def.elite, boss: !!def.boss
   };
 }
 function buildEncounter(type){
   const act = S.act;
-  if(type === 'boss')  return [ makeEnemy(BOSSES[clamp(act,1,3) - 1], act) ];
+  if(type === 'boss')  return [ makeEnemy(BOSSES[clamp(act,1,3) - 1], act, 1) ];
   if(type === 'elite') return [ makeEnemy(pick(ELITES), act) ];
   let pool = BESTIARY.filter(b => b.acts.includes(act));
   /* the opening room of each act is a soft landing: weakest archetypes only */
@@ -1390,7 +1402,7 @@ function faceHTML(f, cls, click){
 
 /* --------------------------------------------------------------------- map */
 function viewMap(){
-  const H = 86, top = 40;
+  const H = 74, top = 40;
   const height = FLOORS * H + top;
   const nodes = Object.values(S.map.nodes);
   const xFor = s => 10 + s * 20;
