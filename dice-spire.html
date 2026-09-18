@@ -427,6 +427,7 @@ const facePrice = f => {
    RUN STATE
    ========================================================================== */
 const SAVE_KEY = 'dicespire.run.v1';
+const MIN_FACES = 4;        /* a die may never be ground below four sides     */
 let S = null;   /* run state  */
 let C = null;   /* combat state, null outside combat */
 let UI = { modal:null, anim:true };
@@ -447,6 +448,7 @@ function newRun(heroKeys){
     pos: null,          /* {floor, slot} of the node we are standing on */
     visited: [],
     screen: 'map',
+    removals: 0,
     kills: 0,
     elitesKilled: 0,
     turnsPlayed: 0,
@@ -1201,6 +1203,36 @@ function doInstall(heroUid, faceIdx){
   if(after) after(); else render();
 }
 
+/* ----------------------------------------------------------------- scouring */
+const canScour   = () => S.party.some(h => h.faces.length > MIN_FACES);
+const scourPrice = () => Math.round((80 + (S.removals || 0) * 45) * priceMod());
+function openScour(cost, after){
+  UI.modal = { type:'scour', cost: cost || 0, after: after || null };
+  render();
+}
+function doScour(heroUid, idx){
+  const m = UI.modal;
+  if(!m || m.type !== 'scour') return;
+  const h = heroByUid(heroUid);
+  if(!h || h.faces.length <= MIN_FACES) return;
+  if(m.cost && S.gold < m.cost) return;
+  const gone = h.faces[idx];
+  if(!gone) return;
+  h.faces.splice(idx, 1);
+  S.removals = (S.removals || 0) + 1;
+  if(m.cost) S.gold -= m.cost;          /* charged on completion, not on open */
+  const after = m.after;
+  UI.modal = null;
+  save();
+  if(after) after(); else { S.screen = 'map'; render(); }
+}
+function cancelScour(){
+  if(!UI.modal || UI.modal.type !== 'scour') return;
+  const after = UI.modal.after;         /* nothing was charged, so nothing to refund */
+  UI.modal = null;
+  if(after) after(); else { S.screen = 'map'; render(); }
+}
+
 /* -------------------------------------------------------------------- shop */
 const priceMod = () => has('token') ? 0.7 : 1;
 function openShop(){
@@ -1245,6 +1277,12 @@ function buySpell(i){
   S.spells.push(it.key);
   save(); render();
 }
+function buyScour(){
+  const m = shopModal(); if(!m) return;
+  if(!canScour() || S.gold < scourPrice()) return;
+  const back = m;
+  openScour(scourPrice(), () => { UI.modal = back; render(); });
+}
 function buyRations(){
   const m = shopModal(); if(!m) return;
   if(m.rations.used || S.gold < m.rations.price) return;
@@ -1268,6 +1306,7 @@ function forgeFace(heroUid, idx){
   f.v += (['stun','charm','daze','summon','dmgAll','shieldAll','power','mana','burn'].includes(f.k) ? 1 : 2);
   UI.modal = null; save(); render();
 }
+function campScour(){ openScour(0, null); }
 function campDrill(){
   S.party.forEach(h => { h.maxHp += 4; h.hp += 4; });
   UI.modal = null; save(); render();
@@ -1473,6 +1512,7 @@ function viewTitle(){
       <b style="color:var(--ink)">Shields</b> fade at the start of your next turn. <b style="color:var(--ink)">Poison</b> ignores shields and ticks at the end of the round, then fades.<br>
       <b style="color:var(--ink)">Fire</b> also ignores shields, but it never fades: each round it burns, then grows by 1, then spreads to an enemy that is not yet alight.<br>
       <b style="color:var(--ink)">Rewards are faces.</b> A die has six sides, so taking a new face means replacing one you have.<br>
+      <b style="color:var(--ink)">Grinding a die down</b> at a merchant or a camp fire removes a side for good, down to ${MIN_FACES}. Fewer sides means the rest come up more often.<br>
       <b style="color:var(--ink)">Dominated</b> enemies fight for you and attack their own side, so it is a crowd tool: a lone boss has nobody to turn on.<br>
       <b style="color:var(--ink)">Thralls</b> are summoned allies. They roll their own die, can be shielded and healed, and soak hits, but they fade after a few turns and losing one does not end a run.<br>
       <b style="color:var(--ink)">A downed hero</b> returns after the fight. Losing all three ends the run.<br>
@@ -1759,6 +1799,7 @@ function renderModal(){
     case 'shop':     html = mShop(m); break;
     case 'camp':     html = mCamp(); break;
     case 'forge':    html = mForge(); break;
+    case 'scour':    html = mScour(m); break;
     case 'drill':    html = mDrill(); break;
     case 'treasure': html = mTreasure(m); break;
     case 'event':    html = mEvent(m); break;
@@ -1884,9 +1925,16 @@ function mShop(m){
         <div><b>Hot meal</b><div class="tiny muted">Heal every hero 30% of max HP.</div></div></div>
       <button class="btn sm ${S.gold >= m.rations.price && !m.rations.used ? 'primary' : ''}" ${m.rations.used || S.gold < m.rations.price ? 'disabled' : ''} onclick="buyRations()">
         ${m.rations.used ? 'Eaten' : m.rations.price + 'g'}</button></div>`);
+  const scourRow = row(`<div class="spread">
+      <div class="row"><div style="font-size:26px">🪓</div>
+        <div><b>Grindstone</b><div class="tiny muted">${canScour()
+          ? 'Remove a side from one die for good. Fewer sides means the rest come up more often.'
+          : 'Every die is already ground down to ' + MIN_FACES + ' sides.'}</div></div></div>
+      <button class="btn sm ${S.gold >= scourPrice() && canScour() ? 'primary' : ''}" ${!canScour() || S.gold < scourPrice() ? 'disabled' : ''} onclick="buyScour()">
+        ${canScour() ? scourPrice() + 'g' : '—'}</button></div>`);
   return `<div class="spread"><h2>🏪 Merchant</h2><div class="stat">💰 <b>${S.gold}</b></div></div>
     <p class="muted tiny" style="margin-bottom:12px">${has('token') ? 'The Merchant’s Token has already knocked the prices down.' : 'He does not haggle.'}</p>
-    ${faceRows}${relicRow}${spellRow}${rationRow}
+    ${faceRows}${relicRow}${spellRow}${scourRow}${rationRow}
     <div class="row" style="justify-content:flex-end"><button class="btn" onclick="closeEvent()">Leave →</button></div>`;
 }
 
@@ -1898,6 +1946,9 @@ function mCamp(){
       <button class="opt" onclick="campRest()"><div class="t">Rest</div><div class="s">Heal every hero ${pct}% of their max HP.</div></button>
       <button class="opt" onclick="campForge()"><div class="t">Sharpen</div><div class="s">Permanently improve one die face.</div></button>
       <button class="opt" onclick="campDrill()"><div class="t">Drill</div><div class="s">+4 max HP to every hero, healed immediately.</div></button>
+      <button class="opt" ${canScour() ? '' : 'disabled'} onclick="campScour()"><div class="t">Grind down</div><div class="s">${canScour()
+        ? 'Remove a side from one die for good. Costs no gold, but it costs you the rest.'
+        : 'Every die is already down to ' + MIN_FACES + ' sides.'}</div></button>
     </div>`;
 }
 function mForge(){
@@ -1912,6 +1963,27 @@ function mForge(){
     </div>
     <div class="sep"></div>
     <div class="row" style="justify-content:flex-end"><button class="btn ghost" onclick="closeEvent()">Never mind</button></div>`;
+}
+function mScour(m){
+  return `<h2>Grind down a die</h2>
+    <p class="muted tiny" style="margin-bottom:10px">
+      Click the side to remove. It is gone for the rest of the run, and every side left on that die comes up more often.
+      No die may go below ${MIN_FACES} sides.${m.cost ? ` This costs <b style="color:var(--gold)">${m.cost} gold</b>, charged only if you go through with it.` : ''}</p>
+    <div class="col">
+      ${S.party.map(h => {
+        const locked = h.faces.length <= MIN_FACES;
+        return `<div class="panel" style="background:var(--card);padding:12px;${locked ? 'opacity:.45' : ''}">
+          <div class="spread" style="margin-bottom:8px">
+            <b>${h.av} ${esc(h.name)}</b>
+            <span class="tiny ${locked ? '' : 'muted'}">${h.faces.length} sides${locked ? ' — cannot go lower' : ''}</span>
+          </div>
+          <div class="faces">${h.faces.map((f, i) =>
+            faceHTML(f, 'big ' + (locked ? '' : 'pickable'), locked ? '' : `doScour(${h.uid},${i})`)).join('')}</div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="sep"></div>
+    <div class="row" style="justify-content:flex-end"><button class="btn ghost" onclick="cancelScour()">Leave the dice alone</button></div>`;
 }
 function mDrill(){
   return `<h2>Take the lesson</h2>
