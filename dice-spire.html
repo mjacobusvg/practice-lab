@@ -746,14 +746,14 @@ function makeEnemy(def, act, depth, opts){
   if(opts.champion){
     e.champion = true;
     e.name = pick(['Scarred','Hulking','Ancient','Dread','Gilded']) + ' ' + e.name;
-    e.maxHp = Math.round(e.maxHp * 1.45); e.hp = e.maxHp;
+    e.maxHp = Math.round(e.maxHp * 1.3); e.hp = e.maxHp;
     e.moves = e.moves.map(m => (m.k === 'attack' || m.k === 'attackAll')
-      ? { k:m.k, v: Math.max(1, Math.round(m.v * 1.2)) } : m);
+      ? { k:m.k, v: Math.max(1, Math.round(m.v * 1.12)) } : m);
   }
   const wants = opts.item !== undefined ? opts.item
-              : (e.boss || e.elite || e.champion) ? true : Math.random() < 0.12;
+              : (e.boss || e.elite || e.champion) ? true : Math.random() < 0.08;
   if(wants){
-    const tier = e.boss ? 3 : (e.elite || e.champion) ? (Math.random() < 0.5 ? 3 : 2) : (Math.random() < 0.3 ? 2 : 1);
+    const tier = e.boss ? 3 : (e.elite || e.champion) ? (Math.random() < 0.25 ? 3 : 2) : 1;
     const pool = ENEMY_GEAR.filter(k => itemDef(k).tier === tier);
     e.item = pick(pool.length ? pool : ENEMY_GEAR);
     const bonusHp = enemyItemMod(e, 'maxHp');
@@ -775,7 +775,7 @@ function buildEncounter(type){
   const n = opening ? pick([1,2]) : pick({1:[1,2,2], 2:[2,2,3], 3:[2,2,3]}[act] || [2,2,3]);
   const out = [];
   /* deeper in an act, one of them is likely to be something that grew */
-  const champChance = opening ? 0 : 0.1 + 0.25 * ((S.pos ? S.pos.floor : 0) / (FLOORS - 2));
+  const champChance = opening ? 0 : 0.06 + 0.15 * ((S.pos ? S.pos.floor : 0) / (FLOORS - 2));
   for(let i = 0; i < n; i++) out.push(makeEnemy(pick(pool), act, undefined, { champion: Math.random() < champChance }));
   /* a lone normal enemy would be a pushover: give it a boost */
   if(n === 1 && !opening){ out[0].maxHp = Math.round(out[0].maxHp * 1.45); out[0].hp = out[0].maxHp; }
@@ -920,8 +920,9 @@ function heroDamageToEnemy(e, n){
 function hurtEnemy(e, n, ignoreShield){
   if(e.hp <= 0 || n <= 0) return 0;
   let left = n;
-  const armour = enemyItemMod(e, 'armour');
-  if(armour > 0 && !ignoreShield) left = Math.max(0, left - armour);   /* worn plate, same as ours */
+  /* capped at 2: a monster in full Dragonscale was eating most of a turn */
+  const armour = Math.min(2, enemyItemMod(e, 'armour'));
+  if(armour > 0 && !ignoreShield) left = Math.max(0, left - armour);
   if(!ignoreShield && e.shield > 0){
     const a = Math.min(e.shield, left);
     e.shield -= a; left -= a;
@@ -1472,6 +1473,7 @@ function unequipRandom(){
     h.hp = Math.max(1, Math.min(h.hp, h.maxHp));
   }
   h.gear[sl] = null;
+  clampFate();
   return { hero:h, item:it };
 }
 /* blank a face, taking the FIRST non-blank -- which on most dice is the best */
@@ -1503,6 +1505,7 @@ function equipItem(heroUid, key){
   if(it.mod && it.mod.maxHp){ h.maxHp += it.mod.maxHp; if(it.mod.maxHp > 0) h.hp += it.mod.maxHp; }
   h.maxHp = Math.max(5, h.maxHp);
   h.hp = Math.max(1, Math.min(h.hp, h.maxHp));
+  clampFate();
   const after = m && m.after; UI.modal = null; save();
   if(after) after(); else { S.screen = 'map'; render(); }
 }
@@ -1552,6 +1555,9 @@ function applyItem(i, target){
 
 /* --------------------------------------------------------------------- fate */
 const fateMax = () => 3 + glob('fate');
+/* Owl Feather and the Shroud raise the cap, so losing one -- sold, swapped,
+   or corroded off by Rust and Ruin -- can leave Fate stranded above it. */
+function clampFate(){ if(S) S.fate = Math.max(0, Math.min(S.fate, fateMax())); }
 
 /* ----------------------------------------------------------------- scouring */
 const canScour   = () => S.party.some(h => h.faces.length > MIN_FACES);
