@@ -377,7 +377,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-114-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-115-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -714,7 +714,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-114-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-115-sub</span></div>
 </div>
 </div>
 
@@ -1664,13 +1664,21 @@ function renderSectionsToggles(){
     + tog('sec-ros', rosOn, 'Review of Systems')
     + tog('sec-mse', mseOn, 'Mental Status Exam')
     + tog('sec-plan', planOn, 'Plan')
-    + lenRow();
+    + lenRow()
+    + '<div class="hint" style="margin-top:14px;margin-bottom:6px">Starting point for a new visit <span style="color:var(--cream-dim)">&mdash; what the Start with box is set to when you open a visit. Changing it there affects only that visit.</span></div>'
+    + tog('def-prep', prepOn, 'Default new visits to my template');
   var r = document.getElementById('sec-ros');
   if(r) r.addEventListener('change', function(){ rosOn = this.checked; persistVaultField('hpiRos', rosOn?'on':'off'); });
   var m = document.getElementById('sec-mse');
   if(m) m.addEventListener('change', function(){ mseOn = this.checked; persistVaultField('hpiMse', mseOn?'on':'off'); });
   var p = document.getElementById('sec-plan');
   if(p) p.addEventListener('change', function(){ planOn = this.checked; persistVaultField('hpiPlanOn', planOn?'on':'off'); });
+  var dp = document.getElementById('def-prep');
+  if(dp) dp.addEventListener('change', function(){
+    prepOn = this.checked;
+    persistVaultField('hpiPrep', prepOn ? 'on' : 'off');   // the DEFAULT — this one does persist
+    try { renderMode(); tbpVlAssemble(); tbpVlSync(); } catch(e){}
+  });
   var le = document.getElementById('len-eval');
   if(le) le.addEventListener('change', function(){ assessLenEval = this.value; persistVaultField('hpiAssessLenEval', this.value); });
   var lf = document.getElementById('len-fu');
@@ -6854,8 +6862,8 @@ function tbpVlHasSources(){
 // the upload button, the paste box, the source list and the option checkboxes keeps working.
 function tbpVlAssemble(){
   var host = document.getElementById('vl-inputs'); if(!host) return;
-  ['ep-add-row','ep-paste-wrap','ep-src-list','ep-opts'].forEach(function(id){
-    var el = document.getElementById(id); if(el && el.parentNode !== host) host.appendChild(el);
+  ['ep-add-row','ep-paste-wrap','ep-src-list','vl-interview-row','vl-interview-editor-host','ep-opts'].forEach(function(id){
+    var el = document.getElementById(id); if(el) host.appendChild(el);   // appendChild also REORDERS
   });
   var lbl = document.getElementById('ep-opts-label'); if(lbl) lbl.style.display = 'none';
   var ivEd = document.getElementById('interview-editor');
@@ -6866,7 +6874,11 @@ function tbpVlAssemble(){
    'style-bar',            // the big cyan "Start from my intake template" card — START WITH is now it
    'eval-prep-head',       // "Prep this evaluation from what you already have" + its explainer
    'neweval-intro',        // "Start from your intake template." above the old button
-   'prep-controls-intro'   // the follow-up "Pre-visit prep / Set me up" explainer
+   'prep-controls-intro',  // the follow-up "Pre-visit prep / Set me up" explainer
+   'ep-q-hint',            // "Questions are off by default ... you run your own interview" —
+                           // written when Suggest questions WAS the distinction; now that a real
+                           // ADHD interview option exists, "you run your own interview" misleads
+   'tmpl-status'           // the green "Using your template" line duplicates the Start with checkbox
   ].forEach(function(id){
     var el = document.getElementById(id); if(el) el.style.display = 'none';
   });
@@ -6890,9 +6902,10 @@ function tbpVlSync(){
   var lab = document.getElementById('vl-template-label');
   var sub = document.getElementById('vl-template-sub');
   if(lab) lab.textContent = isEval ? 'My intake template' : 'Prep from last visit';
-  if(sub) sub.innerHTML = isEval
+  if(sub) sub.innerHTML = (isEval
     ? 'Your new-patient scaffold, opened full screen to fill live. Uncheck to start from a blank note.'
-    : 'Carries last visit forward and builds today\u2019s checklist from it. Uncheck to start from a blank note.';
+    : 'Carries last visit forward and builds today\u2019s checklist from it. Uncheck to start from a blank note.')
+    + ' <span style="opacity:.75">For this visit only \u2014 your default is in Settings.</span>';
   var ivRow = document.getElementById('vl-interview-row');
   if(ivRow) ivRow.style.display = tbpInterviewText(INTERVIEW_KIND) ? '' : 'none';
   var ivLab = document.getElementById('vl-interview-label');
@@ -7157,8 +7170,9 @@ document.addEventListener('DOMContentLoaded', function(){
   if(vs) vs.addEventListener('click', tbpVisitStart);
   var vt = document.getElementById('vl-template');
   if(vt) vt.addEventListener('change', function(){
+    // THIS VISIT ONLY — deliberately no persistVaultField here. The saved default is changed in
+    // Settings ("Default new visits to my template"), never as a side effect of this checkbox.
     prepOn = this.checked;
-    try { persistVaultField('hpiPrep', prepOn ? 'on' : 'off'); } catch(e){}
     try { renderMode(); } catch(e){}          // renderMode re-shows the blocks the launcher hides,
     try { tbpVlAssemble(); tbpVlSync(); } catch(e){}   // so re-apply straight after it.
   });
