@@ -1426,6 +1426,7 @@ function tryMove(q, r){
     else flash('No travel die matches that ground.');
     return;
   }
+  if(!V.combat) MUS.set('travel');
   if(mv.force){
     let n = 0;
     for(const d of S.dice){ if(!d.spent && n < 2){ d.spent = true; n++; } }
@@ -1807,7 +1808,7 @@ function exploreHere(){
   const fresh = !m.explored;
   if(fresh){ m.explored = true; S.explored++; gainXp(1); }
   const F = m.feat && FEATS[m.feat];
-  if(F && F.kind === 'town'){ openTown(m); return; }
+  if(F && F.kind === 'town'){ MUS.set('town'); openTown(m); return; }
   if(F && F.kind === 'lair'){ lairPrompt(m); return; }
   if(F && F.kind === 'gate'){ gatePrompt(m); return; }
   if(F && F.kind === 'site' && !m.used){ siteEvent(m); return; }
@@ -2155,6 +2156,7 @@ function startCombat(foe, opts){
   };
   V.combat = C;
   V.lastBoss = null;
+  MUS.set(opts.boss ? 'boss' : 'combat', true);
   log(`${foe.ic} ${foe.nm} blocks the way.`, 'r');
   newCombatRound(true);
 }
@@ -2302,6 +2304,7 @@ function exhausted(){
   const dmg = Math.max(2, (C.foe.tier || 1) * 2);
   cLog('Your hand is empty. You break off and run for it.', 'r');
   V.combat = null;
+  MUS.set('travel');
   closeModal();
   recoverDiscards();
   S.dice.forEach(d => d.spent = true);
@@ -2480,6 +2483,7 @@ function tryFlee(){
   const finish = ok => {
     if(ok){
       V.combat = null; closeModal();
+      MUS.set('travel');
       recoverDiscards();
       log('You break contact and go.', 'y');
       S.dice.forEach(x => x.spent = true);
@@ -2515,6 +2519,7 @@ function winCombat(C){
   const boss = C.opts.boss;
   const spent = S.hero.discard.length + S.hero.lost.length;
   V.combat = null;
+  MUS.set('travel');
   recoverDiscards();
   if(boss === 'crown'){ victory(); return; }
   if(boss === 'lair'){
@@ -3190,6 +3195,10 @@ const SFX = (() => {
   }
   return {
     play, init, resume,
+    ensure: init,
+    get ctx(){ return ctx; },
+    get master(){ return master; },
+    get noise(){ return noiseBuf; },
     get on(){ return on; },
     set on(v){ on = !!v; persist(); if(on){ init(); resume(); } },
     get vol(){ return vol; },
@@ -3201,7 +3210,11 @@ const sfx = (n, gap) => { try{ SFX.play(n, gap); }catch(e){} };
 
 /* browsers will not start audio until the person touches the page */
 (function armAudio(){
-  const go = () => { SFX.init(); SFX.resume(); window.removeEventListener('pointerdown', go); window.removeEventListener('keydown', go); };
+  const go = () => {
+    SFX.init(); SFX.resume();
+    if(S && V.screen === 'game') MUS.start();
+    window.removeEventListener('pointerdown', go); window.removeEventListener('keydown', go);
+  };
   window.addEventListener('pointerdown', go, {once:false});
   window.addEventListener('keydown', go, {once:false});
 })();
@@ -3210,6 +3223,179 @@ document.addEventListener('click', e => {
   const b = e.target && e.target.closest && e.target.closest('button');
   if(b && !b.disabled) sfx('click', 30);
 }, true);
+
+
+/* =========================================================================
+   MUSIC
+   A generative score on the same audio graph as the sound effects. Nothing
+   is recorded; it is scheduled a few notes ahead on a 16th-note grid and
+   changes shape with what is happening — riding out, in a fight, or with
+   the Crown's dread heavy on the region.
+   ========================================================================= */
+const MUS = (() => {
+  let bus = null, timer = null, nextT = 0, step = 0;
+  let mood = 'travel', pending = null;
+  let on = true, vol = 0.45, started = false;
+  try{
+    const raw = localStorage.getItem('hexbound.music');
+    if(raw){ const o = JSON.parse(raw); on = o.on !== false; if(typeof o.vol === 'number') vol = o.vol; }
+  }catch(e){}
+  function persist(){ try{ localStorage.setItem('hexbound.music', JSON.stringify({on, vol})); }catch(e){} }
+
+  const BPM   = {travel:62, town:70, combat:96, boss:112};
+  const ROOT  = {travel:45, town:48, combat:43, boss:41};        // A2 / C3 / G2 / F2
+  const PENTA = [0, 3, 5, 7, 10];
+  const AEOL  = [0, 2, 3, 5, 7, 8, 10];
+  const mtof  = m => 440 * Math.pow(2, (m - 69) / 12);
+  const R = () => Math.random();
+  const dark = () => (S && S.dreadMax) ? Math.min(1, S.dread / S.dreadMax) : 0;
+
+  function ensure(){
+    if(bus) return true;
+    if(!SFX.ensure()) return false;
+    const ctx = SFX.ctx;
+    bus = ctx.createGain();
+    bus.gain.value = 0;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 5200;
+    bus.connect(lp); lp.connect(SFX.master);
+    return true;
+  }
+
+  /* one voice */
+  function note(m, t, o){
+    o = o || {};
+    const ctx = SFX.ctx;
+    const osc = ctx.createOscillator();
+    osc.type = o.type || 'triangle';
+    osc.frequency.setValueAtTime(mtof(m), t);
+    if(o.detune) osc.detune.value = o.detune;
+    let node = osc;
+    if(o.lp){
+      const f = ctx.createBiquadFilter();
+      f.type = 'lowpass'; f.frequency.setValueAtTime(o.lp, t);
+      if(o.lpTo) f.frequency.exponentialRampToValueAtTime(o.lpTo, t + (o.dur || 0.4));
+      osc.connect(f); node = f;
+    }
+    const g = ctx.createGain();
+    const a = o.a != null ? o.a : 0.02, dur = o.dur || 0.4, peak = o.g != null ? o.g : 0.12;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(peak, t + a);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + a + dur);
+    node.connect(g); g.connect(bus);
+    osc.start(t); osc.stop(t + a + dur + 0.05);
+  }
+  function tick(t, g){                       // a soft noise pulse for the beat
+    const ctx = SFX.ctx;
+    const src = ctx.createBufferSource();
+    src.buffer = SFX.noise;
+    src.playbackRate.value = 1.6;
+    const f = ctx.createBiquadFilter();
+    f.type = 'highpass'; f.frequency.value = 5200;
+    const gn = ctx.createGain();
+    gn.gain.setValueAtTime(0.0001, t);
+    gn.gain.exponentialRampToValueAtTime(g, t + 0.004);
+    gn.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+    src.connect(f); f.connect(gn); gn.connect(bus);
+    src.start(t); src.stop(t + 0.08);
+  }
+
+  /* what plays on a given 16th of a four-bar phrase */
+  function emit(s, t){
+    const root = ROOT[mood] || 45;
+    const d = dark();
+    const bar = Math.floor(s / 16);
+
+    if(mood === 'travel' || mood === 'town'){
+      if(s % 16 === 0){
+        note(root, t, {type:'sine', dur:2.6, g:0.30, a:0.35, lp:560});
+        note(root + 12, t, {type:'triangle', dur:2.4, g:0.12, a:0.5, lp:900, detune:4});
+      }
+      if(s % 16 === 8){
+        const third = d > 0.55 ? 3 : (bar % 2 ? 7 : 3);
+        note(root + third, t, {type:'sine', dur:2.0, g:0.16, a:0.4, lp:700});
+      }
+      if(d > 0.35 && s % 32 === 24){        // the Crown leaning on the key
+        note(root + 1, t, {type:'sine', dur:2.6, g:0.08 + d*0.12, a:0.8, lp:420});
+      }
+      if(s % 4 === 0 && R() < (mood === 'town' ? 0.4 : 0.3)){
+        const oct = R() < 0.35 ? 24 : 12;
+        note(root + oct + PENTA[Math.floor(R()*PENTA.length)], t,
+             {type:'triangle', dur:0.9 + R()*0.7, g:0.10, a:0.03, lp:3400});
+      }
+    }
+    else {                                   // combat and boss
+      const drive = mood === 'boss';
+      if(s % 4 === 0){
+        const alt = (s / 4) % 4;
+        const bn = alt === 2 ? root + 7 : (alt === 3 ? root + 5 : root);
+        note(bn, t, {type:'sawtooth', dur:0.24, g:0.26, a:0.008, lp:700, lpTo:260});
+      }
+      if(s % 8 === 4) tick(t, 0.045);
+      if(s % 4 === 2 && R() < 0.5) tick(t, 0.020);
+      if(s % 2 === 0){
+        const i = Math.floor(s / 2) % 8;
+        const seq = drive ? [0, 3, 0, 5, 0, 3, 7, 3] : [0, 3, 5, 3, 0, 7, 5, 3];
+        note(root + 12 + seq[i], t, {type:'triangle', dur:0.2, g:0.13, a:0.006, lp:2600});
+      }
+      if(s % 16 === 0){
+        note(root - 12, t, {type:'sine', dur:2.0, g:0.28, a:0.05, lp:300});
+        if(drive) note(root - 12 + 6, t, {type:'sine', dur:1.8, g:0.13, a:0.18, lp:260});
+      }
+      if(drive && s % 16 === 12) note(root + 24 + PENTA[Math.floor(R()*3)], t,
+             {type:'square', dur:0.5, g:0.06, a:0.01, lp:2400});
+    }
+  }
+
+  function pump(){
+    if(!bus || !on) return;
+    const ctx = SFX.ctx;
+    if(document.hidden){ bus.gain.setTargetAtTime(0, ctx.currentTime, 0.2); return; }
+    const spb = 60 / (BPM[mood] || 62) / 4;
+    while(nextT < ctx.currentTime + 0.25){
+      if(nextT < ctx.currentTime) nextT = ctx.currentTime + 0.05;
+      emit(step, nextT);
+      nextT += spb;
+      step = (step + 1) % 64;
+      if(step % 16 === 0 && pending){ mood = pending; pending = null; }   // change on the bar
+    }
+    bus.gain.setTargetAtTime(vol * 1.15, ctx.currentTime, 0.6);
+  }
+
+  return {
+    start(){
+      if(!on || started) return;
+      if(!ensure()) return;
+      SFX.resume();
+      started = true;
+      nextT = SFX.ctx.currentTime + 0.1;
+      step = 0;
+      timer = setInterval(pump, 25);
+    },
+    stop(fade){
+      if(!started) return;
+      started = false;
+      clearInterval(timer); timer = null;
+      if(bus && SFX.ctx) bus.gain.setTargetAtTime(0, SFX.ctx.currentTime, fade === false ? 0.01 : 0.4);
+    },
+    /* switching waits for the end of the phrase, so it never sounds cut off */
+    set(m, now){
+      if(m === mood && !pending) return;
+      if(now){ mood = m; pending = null; step = 0; }
+      else pending = m;
+    },
+    get mood(){ return mood; },
+    get on(){ return on; },
+    set on(v){
+      on = !!v; persist();
+      if(on){ if(S && V.screen === 'game') this.start(); }
+      else this.stop();
+    },
+    get vol(){ return vol; },
+    set vol(v){ vol = Math.max(0, Math.min(1, v)); persist(); },
+    toggle(){ this.on = !on; return on; },
+  };
+})();
 
 /* =========================================================================
    MODAL + SMALL FX
@@ -4054,6 +4240,7 @@ function renderCombat(){
    ========================================================================= */
 function victory(){
   const h = S.hero;
+  MUS.stop();
   sfx('victory');
   modal({ic:'👑', h:'The Crown Falls', wide:true, noClose:true,
     b:`<p>It comes apart the way a held note stops: all at once, and the quiet afterwards is enormous.</p>
@@ -4076,6 +4263,7 @@ function victory(){
   clearSave();
 }
 function gameOver(msg){
+  MUS.stop();
   sfx('defeat');
   modal({ic:'💀', h:'The Region Keeps You', wide:true, noClose:true,
     b:`<p>${esc(msg)}</p>
@@ -4118,6 +4306,7 @@ function render(){
         <div class="side" id="side"></div>
       </div>`;
     cv = $('#map'); ctx = cv.getContext('2d');
+    MUS.start();
     wireCanvas();
     sizeCanvas(); centreOnHero();
     if(!V.raf) mapTick();
@@ -4144,12 +4333,17 @@ function renderTop(){
     ${h.pts || h.drafts || h.cardDrafts ? `<button class="btn sm primary" id="tbLvl">⬆️ ${h.pts + h.drafts + (h.cardDrafts||0)} reward${(h.pts+h.drafts+(h.cardDrafts||0))>1?'s':''}</button>` : ''}
     <button class="btn sm" id="tbCard">${h.ic} Card</button>
     <button class="btn sm" id="tbBag">🎒 Gear</button>
-    <button class="btn sm ghost" id="tbSound" title="${SFX.on ? 'Sound on' : 'Sound off'}">${SFX.on ? '🔊' : '🔇'}</button>
+    <button class="btn sm ghost" id="tbSound" title="${(SFX.on || MUS.on) ? 'Audio on' : 'Audio off'}">${(SFX.on || MUS.on) ? '🔊' : '🔇'}</button>
     <button class="btn sm ghost" id="tbMenu">☰</button>`;
   $('#tbCard').onclick = openCard;
   $('#tbBag').onclick = openInventory;
   $('#tbMenu').onclick = openMenu;
-  $('#tbSound').onclick = () => { SFX.toggle(); if(SFX.on) sfx('open'); renderTop(); };
+  $('#tbSound').onclick = () => {
+    const anyOn = SFX.on || MUS.on;
+    SFX.on = !anyOn; MUS.on = !anyOn;
+    if(!anyOn) sfx('open');
+    renderTop();
+  };
   if($('#tbLvl')) $('#tbLvl').onclick = spendRewards;
 }
 function renderSide(){
@@ -4257,13 +4451,20 @@ function openMenu(){
      <div class="kv"><span>Hexes explored</span><b>${S.explored} of ${Object.keys(S.map).length}</b></div>
      <div class="kv"><span>Kills</span><b>${S.kills}</b></div></div>
      <div class="card" style="margin-top:10px">
-       <div class="spread"><b class="tiny">Sound</b>
+       <div class="spread"><b class="tiny">Sound effects</b>
          <button class="btn sm" id="mSound">${SFX.on ? '🔊 On' : '🔇 Off'}</button></div>
        <div class="row" style="margin-top:8px">
-         <span class="tiny muted">Volume</span>
+         <span class="tiny muted" style="min-width:52px">Volume</span>
          <input type="range" id="mVol" min="0" max="100" value="${Math.round(SFX.vol*100)}" style="flex:1">
        </div>
-       <div class="mini faint" style="margin-top:5px">Every sound is generated in the page. Nothing is downloaded.</div>
+       <div class="sep" style="margin:11px 0"></div>
+       <div class="spread"><b class="tiny">Music</b>
+         <button class="btn sm" id="mMusic">${MUS.on ? '🎵 On' : '🔇 Off'}</button></div>
+       <div class="row" style="margin-top:8px">
+         <span class="tiny muted" style="min-width:52px">Volume</span>
+         <input type="range" id="mMVol" min="0" max="100" value="${Math.round(MUS.vol*100)}" style="flex:1">
+       </div>
+       <div class="mini faint" style="margin-top:7px">All of it is generated in the page — no audio files, nothing downloaded. The score follows what you are doing: riding out, in a fight, or standing in front of something much worse.</div>
      </div>
      <p class="tiny faint" style="margin-top:10px">The run saves itself after every action. Closing the tab is safe.</p>`,
     f:[{lb:'Abandon run', cls:'danger', fn:()=>{
@@ -4276,6 +4477,10 @@ function openMenu(){
   if(sb) sb.onclick = () => { SFX.toggle(); if(SFX.on) sfx('open'); closeModal(); openMenu(); renderTop(); };
   const sv = $('#mVol');
   if(sv){ sv.oninput = () => { SFX.vol = sv.value / 100; }; sv.onchange = () => sfx('surge', 0); }
+  const mb = $('#mMusic');
+  if(mb) mb.onclick = () => { MUS.toggle(); closeModal(); openMenu(); renderTop(); };
+  const mv = $('#mVol2') || $('#mMVol');
+  if(mv) mv.oninput = () => { MUS.vol = mv.value / 100; };
 }
 function openCodex(){
   modal({ic:'📖', h:'How Hexbound Works', wide:true, b:`
@@ -4311,6 +4516,7 @@ function openCodex(){
    TITLE SCREEN
    ========================================================================= */
 function renderTitle(){
+  MUS.stop();
   $('#topbar').classList.add('hidden');
   const app = $('#app');
   const sel = V.pickHero || HEROES[0].id;
