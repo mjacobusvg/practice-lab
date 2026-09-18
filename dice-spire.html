@@ -266,7 +266,7 @@ const KIND = {
   power:    {name:'Empower', ic:'💢', col:'var(--pink)',   target:'ally',       desc:v=>`Give an ally +${v} power for this fight.`},
   charm:    {name:'Dominate',ic:'🧠', col:'var(--violet)', target:'enemy',      desc:v=>`Seize an enemy's mind for ${v} turn${v>1?'s':''}. It turns on its own side.`},
   daze:     {name:'Mindlock',ic:'💫', col:'var(--gold)',   target:'enemy',      desc:v=>`Stun for ${v} turn${v>1?'s':''} and strip every point of the enemy's power.`},
-  summon:   {name:'Summon',  ic:'🌀', col:'var(--cyan)',   target:'self',       desc:v=>`Call up a Thrall with ${5+3*v} HP that rolls its own die. Two at a time.`},
+  summon:   {name:'Summon',  ic:'🌀', col:'var(--cyan)',   target:'self',       desc:v=>`Call up a Thrall with ${5+3*v} HP that rolls its own die for ${2+v} turns. Two at a time.`},
   blank:    {name:'Blank',   ic:'·',       col:'var(--ink-faint)', target:'none',    desc:()=>`Nothing happens.`}
 };
 const F = (k, v = 0) => ({ k, v });
@@ -634,7 +634,7 @@ function buildEncounter(type){
 
 function makeThrall(v){
   const hp = 5 + 3 * v;
-  return { uid:uid(), name:'Thrall', av:'🌀', isSummon:true,
+  return { uid:uid(), name:'Thrall', av:'🌀', isSummon:true, turns:2 + v,
            maxHp:hp, hp, shield:0, power:0, poison:0, downed:false,
            faces:[F('dmg',2+v),F('dmg',1+v),F('dmg',2+v),F('shield',1+v),F('blank'),F('blank')] };
 }
@@ -677,6 +677,12 @@ function beginPlayerTurn(){
   if(has('sundial') && C.turn % 3 === 0){
     livingAllies().forEach(h => h.shield += 4);
     logc('The Sundial turns. Every hero gains 4 shield.');
+  }
+  if(C.summons.length){
+    C.summons.forEach(t => { t.turns--; });
+    const spent = C.summons.filter(t => t.turns <= 0);
+    spent.forEach(t => logc(`${t.name} fades.`));
+    C.summons = C.summons.filter(t => t.turns > 0);
   }
   C.rerolls = maxRerolls();
   C.rerollMode = false;
@@ -894,8 +900,8 @@ function applyDie(i, target){
     }
     case 'summon': {
       if(C.summons.length >= 2){
-        C.summons.forEach(t => healHero(t, t.maxHp));
-        logc(`${h.name} has no room for another Thrall, and mends the ones already here.`);
+        C.summons.forEach(t => { healHero(t, t.maxHp); t.turns = Math.max(t.turns, 2 + v); });
+        logc(`${h.name} has no room for another Thrall, and renews the ones already here.`);
         break;
       }
       const t = makeThrall(v);
@@ -954,7 +960,7 @@ function applySpell(key, target){
     }
     case 'legion': {
       while(C.summons.length < 2) C.summons.push(makeThrall(1));
-      C.summons.forEach(t => healHero(t, t.maxHp));
+      C.summons.forEach(t => { healHero(t, t.maxHp); t.turns = Math.max(t.turns, 3); });
       logc('Two Thralls answer the call.');
       break;
     }
@@ -1468,7 +1474,7 @@ function viewTitle(){
       <b style="color:var(--ink)">Fire</b> also ignores shields, but it never fades: each round it burns, then grows by 1, then spreads to an enemy that is not yet alight.<br>
       <b style="color:var(--ink)">Rewards are faces.</b> A die has six sides, so taking a new face means replacing one you have.<br>
       <b style="color:var(--ink)">Dominated</b> enemies fight for you and attack their own side, so it is a crowd tool: a lone boss has nobody to turn on.<br>
-      <b style="color:var(--ink)">Thralls</b> are summoned allies. They roll their own die, can be shielded and healed, and soak hits, but losing one does not end a run.<br>
+      <b style="color:var(--ink)">Thralls</b> are summoned allies. They roll their own die, can be shielded and healed, and soak hits, but they fade after a few turns and losing one does not end a run.<br>
       <b style="color:var(--ink)">A downed hero</b> returns after the fight. Losing all three ends the run.<br>
       <b style="color:var(--ink)">Winning a fight</b> restores 15% of every hero’s max HP. The rest you heal at camp fires.
     </div>
@@ -1618,6 +1624,7 @@ function viewCombat(){
     if(h.shield) badges.push(`<span class="badge" style="color:var(--blue)" data-tip="Shield|Absorbs damage. Fades at the start of your next turn.">🛡️ ${h.shield}</span>`);
     if(h.poison) badges.push(`<span class="badge" style="color:var(--lime)" data-tip="Poison|Loses this much HP at the end of the round, ignoring shield.">☠️ ${h.poison}</span>`);
     if(h.power)  badges.push(`<span class="badge" style="color:var(--pink)" data-tip="Power|Added to every Strike and Cleave this hero rolls.">💢 ${h.power}</span>`);
+    if(h.isSummon) badges.push(`<span class="badge" style="color:var(--cyan)" data-tip="Fading|This Thrall unravels after this many more turns. Summon again to renew it.">🌀 ${h.turns}</span>`);
     return `<div class="unit ally ${h.downed ? 'dead' : ''} ${allyTargetable && !h.downed ? 'targetable' : ''}" data-uid="${h.uid}"
         ${allyTargetable && !h.downed ? `onclick="clickTarget('ally',${h.uid})"` : ''}>
       <div class="av">${h.av}</div>
