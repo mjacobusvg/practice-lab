@@ -285,9 +285,10 @@ PHI are in S3 under the AWS BAA; a small number of legacy schedule rows are bein
   that is not object-level, which is exactly why every heal, read and delete has always worked and
   this surfaced only on the sweep's first live run.
 
-  Fix: a SECOND statement (it cannot be merged — the resources genuinely differ), scoped by
-  prefix so the key can list under `letters/` and nowhere else, i.e. not the `assessments/`
-  prefix in the same bucket:
+  **Fix APPLIED 18 Sept 2026** — a SECOND statement (it cannot be merged, the resources
+  genuinely differ), scoped by prefix so the key can list under `letters/` and nowhere else,
+  i.e. not the `assessments/` prefix in the same bucket. IAM takes effect immediately, so
+  nothing was deployed and no key was rotated; the next 08:00 run picks it up:
 
   ```json
   { "Sid": "TbpLettersListForOrphanSweep", "Effect": "Allow",
@@ -295,6 +296,9 @@ PHI are in S3 under the AWS BAA; a small number of legacy schedule rows are bein
     "Resource": "arn:aws:s3:::tbp-letters",
     "Condition": { "StringLike": { "s3:prefix": "letters/*" } } }
   ```
+
+  The `*` in `letters/*` is load-bearing: `StringLike` on `"letters/"` alone would not match the
+  request prefix `letters/schedule/`, and the sweep would be denied again for a subtler reason.
 
   **The policy is recorded here because it was not recorded anywhere.** When the sweep failed,
   neither the log nor the policy was reachable from a repo session, so a one-line permission bug
