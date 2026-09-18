@@ -45,30 +45,40 @@ exports.handler = async function (event) {
       tier = (accts && accts[0]) ? accts[0].tier : 'free';
     }
 
-    const tplRes = await fetch(URL + '/rest/v1/template_library?id=eq.' + encodeURIComponent(templateId) + '&select=file_url,storage_path,min_tier,is_paid,member_price_cents', { headers: sbHeaders });
+    const tplRes = await fetch(URL + '/rest/v1/template_library?id=eq.' + encodeURIComponent(templateId) + '&select=file_url,storage_path,min_tier,is_paid,member_price_cents,bundle_id', { headers: sbHeaders });
     const tpls = await tplRes.json();
     if (!tpls || !tpls.length) return { statusCode: 404, headers, body: JSON.stringify({ ok: false, error: 'Template not found' }) };
     const tpl = tpls[0];
 
-    // Did the signed-in member individually purchase this template? Resolve this
+    // Did the signed-in member individually purchase a given template row? Resolve this
     // FIRST: an owner always gets what they bought, even a comp/trial account whose
     // templates are otherwise blocked (e.g. a marketplace bundle buyer).
-    const ownsTemplate = async function () {
+    let accountId = null;
+    const ownsTemplateId = async function (tid) {
+      if (!tid) return false;
       try {
-        const meRes = await fetch(URL + '/rest/v1/accounts?email=eq.' + encodeURIComponent(email) + '&select=id&limit=1', { headers: sbHeaders });
-        const me = await meRes.json();
-        if (!me || !me[0]) return false;
-        const purRes = await fetch(URL + '/rest/v1/template_purchases?account_id=eq.' + me[0].id + '&template_id=eq.' + encodeURIComponent(templateId) + '&select=id&limit=1', { headers: sbHeaders });
+        if (accountId === null) {
+          const meRes = await fetch(URL + '/rest/v1/accounts?email=eq.' + encodeURIComponent(email) + '&select=id&limit=1', { headers: sbHeaders });
+          const me = await meRes.json();
+          accountId = (me && me[0]) ? me[0].id : false;
+        }
+        if (!accountId) return false;
+        const purRes = await fetch(URL + '/rest/v1/template_purchases?account_id=eq.' + accountId + '&template_id=eq.' + encodeURIComponent(tid) + '&select=id&limit=1', { headers: sbHeaders });
         const pur = await purRes.json();
         return !!(pur && pur.length);
       } catch (e) { return false; }
     };
-    const owns = await ownsTemplate();
+    // Owns this row outright, OR owns the parent bundle this row belongs to. Buying the
+    // $249 Foundations Pack must entitle the buyer to every component card whose bundle_id
+    // points at that Pack, without a separate purchase record per child card.
+    const owns = await ownsTemplateId(templateId);
+    const ownsBundle = (!owns && tpl.bundle_id) ? await ownsTemplateId(tpl.bundle_id) : false;
+    const ownsAny = owns || ownsBundle;
 
     // Limited-time comp/trial accounts get full access to the tools but NOT to
     // template downloads (templates are permanent paid products) — UNLESS they own
     // this specific one. Admins exempt.
-    if (!owns && ADMIN_EMAILS.indexOf(email) === -1) {
+    if (!ownsAny && ADMIN_EMAILS.indexOf(email) === -1) {
       try {
         const accRes = await fetch(URL + '/rest/v1/accounts?email=eq.' + encodeURIComponent(email) + '&select=templates_blocked&limit=1', { headers: sbHeaders });
         const accRows = await accRes.json();
@@ -92,7 +102,7 @@ exports.handler = async function (event) {
     const minRank = (TIER_RANK[tpl.min_tier] != null) ? TIER_RANK[tpl.min_tier] : TIER_RANK.full;
     let allowed = false;
     if (ADMIN_EMAILS.indexOf(email) !== -1) allowed = true;
-    else if (owns) allowed = true;
+    else if (ownsAny) allowed = true;         // owns this row OR the parent bundle it belongs to
     else if (memberPriced) allowed = false;   // premium item, not owned -> must purchase
     else if (rank >= minRank) allowed = true; // tier meets min_tier -> included
     else allowed = false;                     // tier too low -> purchase / upgrade
