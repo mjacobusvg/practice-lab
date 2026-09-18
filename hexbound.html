@@ -823,6 +823,7 @@ function newRun(heroId, seedStr){
   S.hero.hand = S.hero.deck.slice();
   S.hero.hp = D().maxHp;
   S.hero.en = D().maxEn;
+  V.layerSig = null; V.sel = null; V.hover = null;
   reveal(S.pos, 1 + D().scout);
   S.map[key(0,0)].explored = true;
   log('You ride out of Kestrel Hold at first light. Seed ' + S.seed + '.', 'y');
@@ -890,128 +891,413 @@ function centreOnHero(){
   V.cam.x = p.x; V.cam.y = p.y;
 }
 
-function drawMap(){
-  if(!cv || !S) return;
-  const W = cv.width / DPR, H = cv.height / DPR;
-  ctx.clearRect(0,0,W,H);
-  const g = ctx.createLinearGradient(0,0,0,H);
-  g.addColorStop(0,'#070c14'); g.addColorStop(1,'#050810');
-  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+/* =========================================================================
+   TERRAIN SPRITES
+   Each terrain gets a handful of pre-rendered variants, drawn once into an
+   offscreen canvas and blitted from then on. Nothing procedural runs per
+   frame, and none of it touches the run's RNG.
+   ========================================================================= */
+const TILE = {};
+function prng(seed){
+  let t = seed >>> 0;
+  return () => { t = (t + 0x6D2B79F5) >>> 0; let x = t;
+    x = Math.imul(x ^ (x >>> 15), x | 1); x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+    return ((x ^ (x >>> 14)) >>> 0) / 4294967296; };
+}
+function strHash(s){ let h = 2166136261 >>> 0; for(let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h >>> 0; }
+function hexOn(x, cx, cy, s){
+  x.beginPath();
+  for(let i=0;i<6;i++){
+    const a = Math.PI/180 * (60*i - 30);
+    const px = cx + s*Math.cos(a), py = cy + s*Math.sin(a);
+    i ? x.lineTo(px,py) : x.moveTo(px,py);
+  }
+  x.closePath();
+}
+function tileFor(terr, variant, s){
+  const px = Math.max(1, Math.round(s * DPR));
+  const k = terr + '|' + variant + '|' + px;
+  if(TILE[k]) return TILE[k];
+  const size = px * 2 + 6;
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  drawTile(c.getContext('2d'), size/2, size/2, px, terr, variant);
+  TILE[k] = c;
+  return c;
+}
+function drawTile(x, cx, cy, s, terr, v){
+  const T = TERRA[terr];
+  const R = prng(strHash(terr) ^ Math.imul(v + 1, 2654435761));
+  x.save();
+  hexOn(x, cx, cy, s * 0.995);
+  x.clip();
+
+  // base slope: lit from the north-west like a physical tile
+  const g = x.createLinearGradient(cx - s*0.5, cy - s, cx + s*0.4, cy + s);
+  g.addColorStop(0, shade(T.col, 0.13));
+  g.addColorStop(0.55, shade(T.col, 0.01));
+  g.addColorStop(1, shade(T.col2, -0.07));
+  x.fillStyle = g;
+  x.fillRect(cx - s, cy - s, s*2, s*2);
+
+  // ground grain
+  for(let i=0;i<90;i++){
+    const a = R()*Math.PI*2, r = Math.sqrt(R())*s;
+    const px2 = cx + Math.cos(a)*r, py = cy + Math.sin(a)*r;
+    x.fillStyle = R() > 0.5 ? 'rgba(255,255,255,.035)' : 'rgba(0,0,0,.05)';
+    x.fillRect(px2, py, Math.max(1, s*0.035), Math.max(1, s*0.035));
+  }
+
+  const shadow = (px2, py, w, h) => {
+    x.fillStyle = 'rgba(0,0,0,.22)';
+    x.beginPath(); x.ellipse(px2, py, w, h, 0, 0, 7); x.fill();
+  };
+
+  if(terr === 'plains'){
+    for(let i=0;i<4;i++){
+      const a = R()*Math.PI*2, r = R()*s*0.6;
+      x.fillStyle = R() > .5 ? 'rgba(255,255,255,.055)' : 'rgba(0,0,0,.05)';
+      x.beginPath(); x.ellipse(cx+Math.cos(a)*r, cy+Math.sin(a)*r, s*(0.3+R()*0.3), s*(0.16+R()*0.14), R()*2, 0, 7); x.fill();
+    }
+    x.lineWidth = Math.max(1, s*0.045); x.lineCap = 'round';
+    for(let i=0;i<14;i++){
+      const a = R()*Math.PI*2, r = Math.sqrt(R())*s*0.78;
+      const bx = cx + Math.cos(a)*r, by = cy + Math.sin(a)*r;
+      x.strokeStyle = `rgba(${R()>.5?'210,214,150':'120,132,78'},.5)`;
+      x.beginPath();
+      x.moveTo(bx, by); x.quadraticCurveTo(bx - s*0.05, by - s*0.1, bx - s*0.09, by - s*0.17);
+      x.moveTo(bx, by); x.quadraticCurveTo(bx + s*0.05, by - s*0.1, bx + s*0.08, by - s*0.18);
+      x.stroke();
+    }
+  }
+  else if(terr === 'forest'){
+    const trees = [];
+    for(let i=0;i<9;i++){
+      const a = R()*Math.PI*2, r = Math.sqrt(R())*s*0.74;
+      trees.push({x: cx+Math.cos(a)*r, y: cy+Math.sin(a)*r, h: s*(0.36+R()*0.22), w: s*(0.16+R()*0.07)});
+    }
+    trees.sort((a,b) => a.y - b.y);
+    for(const t of trees){
+      shadow(t.x + t.w*0.35, t.y + t.h*0.06, t.w*1.05, t.w*0.38);
+      x.fillStyle = 'rgba(58,42,26,.85)';
+      x.fillRect(t.x - t.w*0.07, t.y - t.h*0.05, t.w*0.14, t.h*0.22);
+      for(let tier=0; tier<3; tier++){
+        const ty = t.y - t.h*(0.02 + tier*0.26);
+        const tw = t.w * (1 - tier*0.24);
+        x.beginPath();
+        x.moveTo(t.x, ty - t.h*0.42);
+        x.lineTo(t.x + tw, ty);
+        x.lineTo(t.x - tw, ty);
+        x.closePath();
+        const tg = x.createLinearGradient(t.x - tw, ty, t.x + tw, ty);
+        tg.addColorStop(0, '#4f8f62'); tg.addColorStop(0.5, '#2f6a45'); tg.addColorStop(1, '#1e4a30');
+        x.fillStyle = tg; x.fill();
+        x.strokeStyle = 'rgba(12,30,20,.5)'; x.lineWidth = Math.max(0.6, s*0.015); x.stroke();
+      }
+    }
+  }
+  else if(terr === 'hills'){
+    const humps = [];
+    for(let i=0;i<4;i++){
+      const a = R()*Math.PI*2, r = Math.sqrt(R())*s*0.6;
+      humps.push({x: cx+Math.cos(a)*r, y: cy+Math.sin(a)*r*0.7, w: s*(0.34+R()*0.2)});
+    }
+    humps.sort((a,b) => a.y - b.y);
+    for(const hm of humps){
+      x.beginPath();
+      x.moveTo(hm.x - hm.w, hm.y);
+      x.quadraticCurveTo(hm.x - hm.w*0.45, hm.y - hm.w*0.92, hm.x, hm.y - hm.w*0.62);
+      x.quadraticCurveTo(hm.x + hm.w*0.5, hm.y - hm.w*0.34, hm.x + hm.w, hm.y);
+      x.closePath();
+      const hg = x.createLinearGradient(hm.x, hm.y - hm.w, hm.x, hm.y);
+      hg.addColorStop(0, shade(T.col, 0.16)); hg.addColorStop(1, shade(T.col2, -0.02));
+      x.fillStyle = hg; x.fill();
+      x.strokeStyle = 'rgba(0,0,0,.24)'; x.lineWidth = Math.max(0.7, s*0.018); x.stroke();
+    }
+  }
+  else if(terr === 'mountain'){
+    const peaks = [];
+    for(let i=0;i<3;i++){
+      peaks.push({x: cx + (R()-0.5)*s*1.05, y: cy + s*(0.16 + R()*0.3), h: s*(0.72+R()*0.34), w: s*(0.36+R()*0.16)});
+    }
+    peaks.sort((a,b) => a.y - b.y);
+    for(const pk of peaks){
+      shadow(pk.x, pk.y + s*0.03, pk.w*1.1, pk.w*0.24);
+      x.beginPath(); x.moveTo(pk.x, pk.y - pk.h); x.lineTo(pk.x + pk.w, pk.y); x.lineTo(pk.x - pk.w, pk.y); x.closePath();
+      const mg = x.createLinearGradient(pk.x - pk.w, pk.y, pk.x + pk.w, pk.y);
+      mg.addColorStop(0, '#9aa3b0'); mg.addColorStop(0.46, '#77808e'); mg.addColorStop(0.54, '#59616e'); mg.addColorStop(1, '#434a56');
+      x.fillStyle = mg; x.fill();
+      // snow cap
+      const capY = pk.y - pk.h*0.62, capW = pk.w*0.38;
+      x.beginPath();
+      x.moveTo(pk.x, pk.y - pk.h);
+      x.lineTo(pk.x + capW, capY);
+      x.lineTo(pk.x + capW*0.42, capY - pk.h*0.06);
+      x.lineTo(pk.x + capW*0.1, capY + pk.h*0.05);
+      x.lineTo(pk.x - capW*0.34, capY - pk.h*0.04);
+      x.lineTo(pk.x - capW, capY);
+      x.closePath();
+      x.fillStyle = 'rgba(240,246,255,.92)'; x.fill();
+      x.strokeStyle = 'rgba(20,26,36,.45)'; x.lineWidth = Math.max(0.7, s*0.016);
+      x.beginPath(); x.moveTo(pk.x, pk.y - pk.h); x.lineTo(pk.x + pk.w, pk.y); x.lineTo(pk.x - pk.w, pk.y); x.closePath(); x.stroke();
+    }
+  }
+  else if(terr === 'marsh'){
+    for(let i=0;i<5;i++){
+      const a = R()*Math.PI*2, r = Math.sqrt(R())*s*0.62;
+      x.fillStyle = `rgba(36,58,54,${0.34 + R()*0.24})`;
+      x.beginPath(); x.ellipse(cx+Math.cos(a)*r, cy+Math.sin(a)*r, s*(0.2+R()*0.22), s*(0.1+R()*0.1), R()*2, 0, 7); x.fill();
+      x.strokeStyle = 'rgba(150,190,180,.16)'; x.lineWidth = Math.max(0.6, s*0.02); x.stroke();
+    }
+    x.lineCap = 'round'; x.lineWidth = Math.max(1, s*0.035);
+    for(let i=0;i<16;i++){
+      const a = R()*Math.PI*2, r = Math.sqrt(R())*s*0.8;
+      const bx = cx + Math.cos(a)*r, by = cy + Math.sin(a)*r;
+      const lean = (R()-0.5)*s*0.16;
+      x.strokeStyle = R() > .45 ? 'rgba(126,142,92,.75)' : 'rgba(84,98,64,.8)';
+      x.beginPath(); x.moveTo(bx, by);
+      x.quadraticCurveTo(bx + lean*0.5, by - s*0.14, bx + lean, by - s*(0.22 + R()*0.12));
+      x.stroke();
+    }
+  }
+  else if(terr === 'water'){
+    const wg = x.createLinearGradient(cx, cy - s, cx, cy + s);
+    wg.addColorStop(0, '#356a97'); wg.addColorStop(1, '#173855');
+    x.fillStyle = wg; x.fillRect(cx-s, cy-s, s*2, s*2);
+    x.lineCap = 'round';
+    for(let i=0;i<7;i++){
+      const wy = cy - s*0.72 + (i/6)*s*1.44 + (R()-0.5)*s*0.08;
+      const wx = cx - s*0.7 + (R()-0.5)*s*0.3;
+      const len = s*(0.5 + R()*0.7);
+      x.strokeStyle = `rgba(190,224,245,${0.1 + R()*0.2})`;
+      x.lineWidth = Math.max(1, s*0.045);
+      x.beginPath();
+      x.moveTo(wx, wy);
+      x.quadraticCurveTo(wx + len*0.5, wy - s*0.07, wx + len, wy);
+      x.stroke();
+    }
+  }
+
+  // inner bevel: light along the top-left edges, shadow along the bottom-right
+  x.lineWidth = Math.max(1.2, s*0.075);
+  x.strokeStyle = 'rgba(255,255,255,.10)';
+  x.beginPath();
+  for(let i=3;i<=6;i++){
+    const a = Math.PI/180 * (60*i - 30);
+    const px2 = cx + s*0.99*Math.cos(a), py = cy + s*0.99*Math.sin(a);
+    i === 3 ? x.moveTo(px2,py) : x.lineTo(px2,py);
+  }
+  x.stroke();
+  x.strokeStyle = 'rgba(0,0,0,.26)';
+  x.beginPath();
+  for(let i=0;i<=3;i++){
+    const a = Math.PI/180 * (60*i - 30);
+    const px2 = cx + s*0.99*Math.cos(a), py = cy + s*0.99*Math.sin(a);
+    i === 0 ? x.moveTo(px2,py) : x.lineTo(px2,py);
+  }
+  x.stroke();
+  x.restore();
+}
+
+/* =========================================================================
+   MAP
+   The static half of the map (ground, roads, places, fog, vignette) is
+   composited into an offscreen layer and only rebuilt when something on it
+   actually changed. Each frame just blits that and draws the moving parts.
+   ========================================================================= */
+function mapSignature(W, H){
+  let rev = 0, exp = 0, thr = 0, cl = 0, ft = 0;
+  for(const k in S.map){
+    const m = S.map[k];
+    if(m.revealed) rev++; if(m.explored) exp++; if(m.threat) thr++; if(m.cleared) cl++; if(m.feat) ft++;
+  }
+  return [Math.round(V.cam.x), Math.round(V.cam.y), V.zoom.toFixed(3), W, H, DPR,
+          rev, exp, thr, cl, ft, S.seals, S.hero.id].join('|');
+}
+function buildLayer(W, H){
+  if(!V.layer) V.layer = document.createElement('canvas');
+  const c = V.layer;
+  if(c.width !== Math.round(W*DPR) || c.height !== Math.round(H*DPR)){
+    c.width = Math.round(W*DPR); c.height = Math.round(H*DPR);
+  }
+  const x = c.getContext('2d');
+  x.setTransform(DPR, 0, 0, DPR, 0, 0);
+  x.clearRect(0, 0, W, H);
+
+  const bg = x.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#060a12'); bg.addColorStop(1, '#04070d');
+  x.fillStyle = bg; x.fillRect(0, 0, W, H);
 
   const ox = W/2 - V.cam.x, oy = H/2 - V.cam.y;
   const s = HX * V.zoom;
-  const moves = legalMoves();
-  const moveKeys = {}; moves.forEach(m => moveKeys[m.k] = m);
-
-  // pass 1: tiles
+  const vis = [];
   for(const k in S.map){
     const m = S.map[k];
     const p = hexPx(m.q, m.r);
     const cx = p.x + ox, cy = p.y + oy;
     if(cx < -s*2 || cx > W + s*2 || cy < -s*2 || cy > H + s*2) continue;
+    vis.push({m, cx, cy});
+  }
 
-    hexPath(cx, cy, s * 0.97);
-    if(!m.revealed){
-      ctx.fillStyle = '#0a111b'; ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,.05)'; ctx.lineWidth = 1; ctx.stroke();
-      continue;
-    }
-    const T = TERRA[m.t];
-    const n = hash2(m.q, m.r);
-    const gg = ctx.createLinearGradient(cx, cy - s, cx, cy + s);
-    gg.addColorStop(0, shade(T.col, 0.06 + n*0.12));
-    gg.addColorStop(1, shade(T.col2, -0.04 + n*0.06));
-    ctx.fillStyle = gg; ctx.fill();
-    if(m.explored){ ctx.fillStyle = 'rgba(0,0,0,.26)'; ctx.fill(); }
-    ctx.strokeStyle = 'rgba(0,0,0,.4)'; ctx.lineWidth = 1.4; ctx.stroke();
+  // unknown country
+  for(const {m, cx, cy} of vis){
+    if(m.revealed) continue;
+    hexOn(x, cx, cy, s*0.97);
+    const fg = x.createRadialGradient(cx, cy - s*0.3, s*0.1, cx, cy, s);
+    fg.addColorStop(0, '#0d1420'); fg.addColorStop(1, '#070c14');
+    x.fillStyle = fg; x.fill();
+    x.strokeStyle = 'rgba(255,255,255,.045)'; x.lineWidth = 1; x.stroke();
+  }
 
-    // road
-    if(m.road){
-      ctx.strokeStyle = 'rgba(226,205,160,.34)'; ctx.lineWidth = Math.max(2, s*0.13);
-      ctx.lineCap = 'round';
+  // ground
+  const tsize = s*2 + 6/DPR;
+  for(const {m, cx, cy} of vis){
+    if(!m.revealed) continue;
+    const v = Math.floor(hash2(m.q, m.r) * 4);
+    x.drawImage(tileFor(m.t, v, s), cx - tsize/2, cy - tsize/2, tsize, tsize);
+    if(m.explored){ hexOn(x, cx, cy, s*0.99); x.fillStyle = 'rgba(4,8,14,.30)'; x.fill(); }
+  }
+
+  // roads: dark casing, then a lighter core
+  x.lineCap = 'round'; x.lineJoin = 'round';
+  for(const pass of [0, 1]){
+    x.strokeStyle = pass ? 'rgba(232,214,176,.42)' : 'rgba(30,22,12,.45)';
+    x.lineWidth = Math.max(1.5, s * (pass ? 0.1 : 0.17));
+    for(const {m, cx, cy} of vis){
+      if(!m.road || !m.revealed) continue;
       let drew = false;
-      for(const nb of neighbors(m.q,m.r)){
-        const nm = S.map[key(nb.q,nb.r)];
+      for(const nb of neighbors(m.q, m.r)){
+        const nm = S.map[key(nb.q, nb.r)];
         if(!nm || !nm.road || !nm.revealed) continue;
         const np = hexPx(nb.q, nb.r);
-        ctx.beginPath(); ctx.moveTo(cx, cy);
-        ctx.lineTo((cx + np.x + ox)/2, (cy + np.y + oy)/2); ctx.stroke();
+        x.beginPath(); x.moveTo(cx, cy);
+        x.lineTo((cx + np.x + ox)/2, (cy + np.y + oy)/2); x.stroke();
         drew = true;
       }
-      if(!drew){ ctx.beginPath(); ctx.arc(cx,cy,s*0.1,0,7); ctx.fillStyle='rgba(226,205,160,.3)'; ctx.fill(); }
+      if(!drew){ x.beginPath(); x.arc(cx, cy, s*0.09, 0, 7); x.stroke(); }
     }
+  }
 
-    // terrain glyph (faint) or feature glyph
+  // places and markers
+  for(const {m, cx, cy} of vis){
+    if(!m.revealed) continue;
     const F = m.feat && FEATS[m.feat];
     if(F){
-      if(F.kind === 'lair' && !m.cleared){
-        ctx.save();
-        ctx.shadowColor = 'rgba(167,139,250,.9)'; ctx.shadowBlur = 16 * V.zoom;
-        ctx.fillStyle = 'rgba(167,139,250,.14)'; hexPath(cx,cy,s*0.9); ctx.fill();
-        ctx.restore();
+      const glow = (F.kind === 'lair' && !m.cleared) ? 'rgba(167,139,250,'
+                 : (F.kind === 'gate' && S.seals >= 3) ? 'rgba(239,83,80,' : null;
+      if(glow){
+        x.save();
+        x.shadowColor = glow + '.8)'; x.shadowBlur = 18 * V.zoom;
+        hexOn(x, cx, cy, s*0.9); x.fillStyle = glow + '.15)'; x.fill();
+        x.restore();
       }
-      if(F.kind === 'gate' && S.seals >= 3){
-        ctx.save();
-        ctx.shadowColor = 'rgba(239,83,80,.9)'; ctx.shadowBlur = 20 * V.zoom;
-        ctx.fillStyle = 'rgba(239,83,80,.16)'; hexPath(cx,cy,s*0.9); ctx.fill();
-        ctx.restore();
-      }
-      ctx.font = `${Math.round(s*0.86)}px system-ui, sans-serif`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(m.cleared && F.kind === 'lair' ? '✅' : F.ic, cx, cy + s*0.04);
-    } else {
-      ctx.globalAlpha = 0.62;
-      ctx.font = `${Math.round(s*0.52)}px system-ui, sans-serif`;
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(TERRA[m.t].ic, cx, cy + s*0.05);
-      ctx.globalAlpha = 1;
+      x.beginPath(); x.arc(cx, cy, s*0.46, 0, 7);
+      x.fillStyle = 'rgba(6,10,18,.62)'; x.fill();
+      x.strokeStyle = 'rgba(255,255,255,.14)'; x.lineWidth = 1; x.stroke();
+      x.font = `${Math.round(s*0.64)}px system-ui, sans-serif`;
+      x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.fillText(m.cleared && F.kind === 'lair' ? '✅' : F.ic, cx, cy + s*0.03);
     }
-
-    // unexplored marker
     if(!m.explored && m.t !== 'water'){
-      ctx.beginPath(); ctx.arc(cx + s*0.52, cy - s*0.5, s*0.13, 0, 7);
-      ctx.fillStyle = 'rgba(232,180,74,.85)'; ctx.fill();
+      x.beginPath(); x.arc(cx + s*0.5, cy - s*0.52, s*0.135, 0, 7);
+      x.fillStyle = 'rgba(232,180,74,.92)'; x.fill();
+      x.strokeStyle = 'rgba(0,0,0,.4)'; x.lineWidth = 1; x.stroke();
     }
-    // wandering threat
     if(m.threat){
-      ctx.font = `${Math.round(s*0.42)}px system-ui, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.fillText('⚔️', cx - s*0.5, cy + s*0.6);
+      x.save();
+      x.shadowColor = 'rgba(239,83,80,.9)'; x.shadowBlur = 9;
+      x.font = `${Math.round(s*0.4)}px system-ui, sans-serif`;
+      x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.fillText('⚔️', cx - s*0.48, cy + s*0.55);
+      x.restore();
     }
   }
 
-  // pass 2: legal-move rings
+  // vignette
+  const vg = x.createRadialGradient(W/2, H/2, Math.min(W,H)*0.34, W/2, H/2, Math.max(W,H)*0.78);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,.5)');
+  x.fillStyle = vg; x.fillRect(0, 0, W, H);
+}
+
+function drawMap(){
+  if(!cv || !S) return;
+  const W = cv.width / DPR, H = cv.height / DPR;
+  const sig = mapSignature(W, H);
+  if(sig !== V.layerSig){ buildLayer(W, H); V.layerSig = sig; }
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.drawImage(V.layer, 0, 0, W, H);
+
+  const ox = W/2 - V.cam.x, oy = H/2 - V.cam.y;
+  const s = HX * V.zoom;
+  const t = Date.now();
+
+  // a slow pulse around anything that wants you to come and look at it
+  for(const k of S.lairKeys.concat([S.gateKey])){
+    const m = S.map[k];
+    if(!m || !m.revealed || m.cleared) continue;
+    if(m.feat === 'gate' && S.seals < 3) continue;
+    const p = hexPx(m.q, m.r);
+    const cx = p.x + ox, cy = p.y + oy;
+    if(cx < -s*2 || cx > W + s*2 || cy < -s*2 || cy > H + s*2) continue;
+    const pulse = 0.5 + 0.5*Math.sin(t/620);
+    hexPath(cx, cy, s * (0.86 + pulse*0.07));
+    ctx.strokeStyle = (m.feat === 'gate' ? 'rgba(239,83,80,' : 'rgba(167,139,250,') + (0.25 + pulse*0.45) + ')';
+    ctx.lineWidth = 2 + pulse*1.4;
+    ctx.setLineDash([]); ctx.stroke();
+  }
+
+  // where you can go, with the dashes marching
+  const moveKeys = {};
+  legalMoves().forEach(m => moveKeys[m.k] = m);
+  const march = (t/70) % 9;
   for(const k in moveKeys){
     const m = S.map[k]; if(!m) continue;
-    const p = hexPx(m.q, m.r); const cx = p.x + ox, cy = p.y + oy;
+    const p = hexPx(m.q, m.r);
     ctx.save();
-    hexPath(cx, cy, s*0.9);
-    ctx.strokeStyle = 'rgba(232,180,74,.9)'; ctx.lineWidth = 2.4;
-    ctx.setLineDash([5,4]); ctx.stroke(); ctx.restore();
+    hexPath(p.x + ox, p.y + oy, s*0.9);
+    ctx.strokeStyle = 'rgba(232,180,74,.95)'; ctx.lineWidth = 2.4;
+    ctx.setLineDash([5,4]); ctx.lineDashOffset = -march;
+    ctx.stroke(); ctx.restore();
   }
 
-  // pass 3: hover + selection
-  for(const [hx, col, wid] of [[V.hover,'rgba(255,255,255,.55)',2],[V.sel,'#e8b44a',2.6]]){
+  for(const [hx, col, wid] of [[V.hover,'rgba(255,255,255,.6)',2],[V.sel,'#e8b44a',2.6]]){
     if(!hx) continue;
     const m = S.map[key(hx.q,hx.r)]; if(!m) continue;
-    const p = hexPx(m.q,m.r);
+    const p = hexPx(m.q, m.r);
     hexPath(p.x+ox, p.y+oy, s*0.95);
     ctx.strokeStyle = col; ctx.lineWidth = wid; ctx.setLineDash([]); ctx.stroke();
   }
 
-  // pass 4: hero
+  // you
   const hp = hexPx(S.pos.q, S.pos.r);
-  const hx = hp.x + ox, hy = hp.y + oy;
+  const hx2 = hp.x + ox, hy = hp.y + oy;
+  const bob = Math.sin(t/520) * s*0.035;
+  ctx.setLineDash([]);
+  ctx.beginPath(); ctx.ellipse(hx2, hy + s*0.42, s*0.3, s*0.1, 0, 0, 7);
+  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fill();
   ctx.save();
-  ctx.shadowColor = 'rgba(232,180,74,.85)'; ctx.shadowBlur = 18;
-  ctx.beginPath(); ctx.arc(hx, hy, s*0.42, 0, 7);
-  ctx.fillStyle = '#121a28'; ctx.fill();
+  ctx.shadowColor = 'rgba(232,180,74,.9)'; ctx.shadowBlur = 16 + 5*Math.sin(t/520);
+  ctx.beginPath(); ctx.arc(hx2, hy + bob, s*0.42, 0, 7);
+  const pg = ctx.createLinearGradient(hx2, hy - s*0.4 + bob, hx2, hy + s*0.4 + bob);
+  pg.addColorStop(0, '#1d2740'); pg.addColorStop(1, '#0d1420');
+  ctx.fillStyle = pg; ctx.fill();
   ctx.lineWidth = 2.4; ctx.strokeStyle = '#e8b44a'; ctx.stroke();
   ctx.restore();
   ctx.font = `${Math.round(s*0.46)}px system-ui, sans-serif`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(S.hero.ic, hx, hy + s*0.03);
+  ctx.fillText(S.hero.ic, hx2, hy + bob + s*0.03);
 }
+
+/* one throttled loop for the pulse, the marching dashes and the hero bobbing */
+function mapTick(ts){
+  V.raf = requestAnimationFrame(mapTick);
+  if(V.screen !== 'game' || !S || !cv || document.hidden) return;
+  if(ts && V.lastFrame && ts - V.lastFrame < 33) return;   // ~30fps is plenty
+  V.lastFrame = ts || 0;
+  drawMap();
+}
+
 function shade(hex, amt){
   const n = parseInt(hex.slice(1), 16);
   let r = (n>>16)&255, g = (n>>8)&255, b = n&255;
@@ -3428,6 +3714,7 @@ function render(){
     cv = $('#map'); ctx = cv.getContext('2d');
     wireCanvas();
     sizeCanvas(); centreOnHero();
+    if(!V.raf) mapTick();
   }
   renderSide();
   drawMap();
