@@ -544,6 +544,7 @@ function newRun(heroKeys){
     screen: 'map',
     removals: 0,
     bag: [],
+    nextFight: null,
     fate: 3,
     talisman: false,
     kills: 0,
@@ -770,6 +771,11 @@ function startCombat(type){
     h.downed = h.hp <= 0;
   });
   logc(type === 'boss' ? 'A boss blocks the stair.' : type === 'elite' ? 'Something big is waiting.' : 'Enemies close in.');
+  if(S.nextFight && S.nextFight.poison){
+    S.party.forEach(h => { h.poison += S.nextFight.poison; });
+    logc(`Whatever you picked up back there is still in your blood. ${S.nextFight.poison} poison on everyone.`);
+    S.nextFight = null;
+  }
   beginPlayerTurn();
 }
 
@@ -1334,6 +1340,29 @@ function doInstall(heroUid, faceIdx){
 const USE_TARGET = {healOne:'ally', healAll:'allAllies', burnAll:'allEnemies', boltOne:'enemy',
                     shieldAll:'allAllies', powerOne:'ally', gainFate:'self', stunAll:'allEnemies',
                     poisonOne:'enemy', revive:'self'};
+/* strip a worn piece off somebody, unwinding whatever max HP it lent */
+function unequipRandom(){
+  const worn = [];
+  S.party.forEach(h => GEAR_SLOTS.forEach(sl => { if(h.gear && h.gear[sl]) worn.push({h, sl}); }));
+  if(!worn.length) return null;
+  const { h, sl } = pick(worn);
+  const it = itemDef(h.gear[sl]);
+  if(it && it.mod && it.mod.maxHp){
+    h.maxHp -= it.mod.maxHp;
+    h.maxHp = Math.max(5, h.maxHp);
+    h.hp = Math.max(1, Math.min(h.hp, h.maxHp));
+  }
+  h.gear[sl] = null;
+  return { hero:h, item:it };
+}
+/* blank a face, taking the FIRST non-blank -- which on most dice is the best */
+function blankBestFace(h){
+  const i = h.faces.findIndex(f => f.k !== 'blank');
+  if(i < 0) return null;
+  const lost = h.faces[i];
+  h.faces[i] = F('blank');
+  return lost;
+}
 function grantItem(key, after){
   const it = itemDef(key);
   const done = () => { save(); if(after) after(); else { S.screen = 'map'; render(); } };
@@ -1639,28 +1668,46 @@ function hurtHeroOutOfCombat(h, n){
    can tell you what KIND of luck you just had before it tells you the result.
    ========================================================================== */
 const ADVENTURE = [
-  /* ---- objects: the good draws ------------------------------------------ */
-  {w:14, kind:'Object', ic:'🎁', good:true, name:'Buried Cache',
+  /* ---- objects: the good draws, and the one that is not ----------------- */
+  {w:11, kind:'Object', ic:'🎁', good:true, name:'Buried Cache',
    text:'A flat stone, and beneath it something wrapped in oilcloth.',
    go:()=>{ const k = rollItem(S.act); advResult('You unwrap it.', k); }},
-  {w:8,  kind:'Object', ic:'⚰️', good:true, name:'Barrow Goods',
-   text:'The dead here were buried with their equipment. They are not using it.',
-   go:()=>{ const k = rollItem(Math.min(3, S.act + 1)); advResult('You take it and apologise.', k); }},
-  {w:7,  kind:'Object', ic:'🏺', good:true, name:'Sealed Amphora',
+  {w:8, kind:'Object', ic:'🏺', good:true, name:'Sealed Amphora',
    text:'Still corked, still sloshing.',
    go:()=>{ const k = pick(ITEMS.filter(i => i.slot === 'use')).key; advResult('It is still good.', k); }},
+  {w:9, kind:'Object', ic:'⚰️', good:true, name:'Barrow Goods',
+   text:'The dead here were buried with their equipment. They are not using it. They may have opinions.',
+   choices:[
+     {t:'Take the grave goods', s:'A good item, but whatever is buried here wakes up.', go:()=>{
+        UI.pendingItem = rollItem(Math.min(3, S.act + 1));
+        UI.bonusReward = true; UI.modal = null;
+        S.screen = 'combat'; startCombat('combat'); logc('Something sits up behind you.'); render(); }},
+     {t:'Leave them their kit', s:'Nothing happens.', go:closeEvent}]},
+  /* the mimic. It presents as a gift, on purpose. */
+  {w:9, kind:'Object', ic:'🎁', good:true, name:'A Second Cache',
+   text:'Another one, barely buried. Today is turning out well.',
+   go:()=>{ UI.bonusReward = true; UI.modal = null; S.screen = 'combat';
+            startCombat('elite'); logc('The chest has teeth.'); render(); }},
+  {w:7, kind:'Object', ic:'📿', good:null, name:'The Cursed Reliquary',
+   text:'Something very good is inside, and something has clearly gone very wrong for whoever put it there.',
+   choices:[
+     {t:'Take it anyway', s:'A fine item. One hero loses 7 max HP for good.', go:()=>{
+        const h = pick(S.party);
+        h.maxHp = Math.max(5, h.maxHp - 7); h.hp = Math.min(h.hp, h.maxHp);
+        advResult(`${h.name} will not be quite the same.`, rollItem(Math.min(3, S.act + 1))); }},
+     {t:'Shut the lid', s:'Nothing happens.', go:closeEvent}]},
 
-  /* ---- strangers: an offer, usually with teeth --------------------------- */
-  {w:10, kind:'Stranger', ic:'🧙', good:null, name:'The Hedge Wizard',
+  /* ---- strangers: offers with teeth ------------------------------------- */
+  {w:9, kind:'Stranger', ic:'🧙', good:null, name:'The Hedge Wizard',
    text:'He will trade knowledge for blood, as they always do.',
    choices:[
-     {t:'Take his bargain', s:'Learn a spell. Every hero loses 5 max HP.', go:()=>{
+     {t:'Take his bargain', s:'Learn a spell. Every hero loses 6 max HP.', go:()=>{
         const un = SPELLS.filter(x => !S.spells.includes(x.key));
         if(un.length) S.spells.push(pick(un).key);
-        S.party.forEach(h => { h.maxHp = Math.max(5, h.maxHp - 5); h.hp = Math.min(h.hp, h.maxHp); });
+        S.party.forEach(h => { h.maxHp = Math.max(5, h.maxHp - 6); h.hp = Math.min(h.hp, h.maxHp); });
         advResult(un.length ? 'The words stick, painfully.' : 'He has nothing left to teach you.'); }},
      {t:'Refuse', s:'Nothing happens.', go:closeEvent}]},
-  {w:9, kind:'Stranger', ic:'🛒', good:null, name:'The Pedlar',
+  {w:8, kind:'Stranger', ic:'🛒', good:null, name:'The Pedlar',
    text:'He has one thing in his pack and will not say what until you pay.',
    choices:[
      {t:'Pay 60 gold, sight unseen', s:'It could be anything.', req:()=>S.gold>=60,
@@ -1671,29 +1718,53 @@ const ADVENTURE = [
    choices:[
      {t:'Pay what he asks', s:'Lose a third of your gold. Gain 2 Fate.',
       go:()=>{ S.gold = Math.round(S.gold * 0.67); S.fate = Math.min(fateMax(), S.fate + 2); advResult('He stamps the ledger. Something owed is settled.'); }},
-     {t:'Refuse him', s:'Every hero loses 8% of max HP as he leaves.',
-      go:()=>{ S.party.forEach(h => hurtHeroOutOfCombat(h, Math.max(1, Math.round(h.maxHp * 0.08)))); advResult('He does not argue. Something else does.'); }}]},
+     {t:'Refuse him', s:'Every hero loses 12% of max HP as he leaves.',
+      go:()=>{ S.party.forEach(h => hurtHeroOutOfCombat(h, Math.max(1, Math.round(h.maxHp * 0.12)))); advResult('He does not argue. Something else does.'); }}]},
+  {w:10, kind:'Stranger', ic:'🥷', good:false, name:'The Cutpurse',
+   text:'You notice the weight change before you notice the hand.',
+   go:()=>{
+     if(S.bag.length){ const i = rnd(S.bag.length); const lost = itemDef(S.bag[i]); S.bag.splice(i, 1);
+       advResult(`Your ${lost.name} is gone, and so is he.`); }
+     else { const g = Math.round(S.gold * 0.3); S.gold -= g; advResult(`He takes ${g} gold and a good deal of your dignity.`); }
+   }},
+  {w:8, kind:'Stranger', ic:'🌉', good:false, name:'The Toll Bridge',
+   text:'The thing under the bridge sets its own rate and does not itemise.',
+   choices:[
+     {t:'Pay the toll', s:'Lose 140 gold.', req:()=>S.gold>=140,
+      go:()=>{ S.gold -= 140; advResult('It waves you through without looking up.'); }},
+     {t:'Cross anyway', s:'Fight what lives under it. The rewards are better.',
+      go:()=>{ UI.bonusReward = true; UI.modal = null; S.screen = 'combat'; startCombat('elite'); render(); }}]},
 
   /* ---- places: a lasting mark, for better or worse ----------------------- */
-  {w:9, kind:'Place', ic:'⛲', good:true, name:'The Clear Spring',
+  {w:8, kind:'Place', ic:'⛲', good:true, name:'The Clear Spring',
    text:'Cold enough to hurt. Clean enough to matter.',
    go:()=>{ S.party.forEach(h => { h.maxHp += 4; h.hp = h.maxHp; }); advResult('Everyone drinks. +4 max HP each, fully healed.'); }},
-  {w:8, kind:'Place', ic:'🕍', good:true, name:'Abandoned Chapel',
+  {w:7, kind:'Place', ic:'🕍', good:true, name:'Abandoned Chapel',
    text:'Nobody has knelt here in a long while. The floor remembers how.',
    go:()=>{ S.fate = Math.min(fateMax(), S.fate + 3); advResult('You leave lighter. +3 Fate.'); }},
-  {w:8, kind:'Place', ic:'🕳️', good:false, name:'The Sinkhole',
+  {w:10, kind:'Place', ic:'🕳️', good:false, name:'The Sinkhole',
    text:'The floor was always going to give way. It waited for the middle of the party.',
-   go:()=>{ S.party.forEach(h => hurtHeroOutOfCombat(h, Math.round(h.maxHp * 0.18))); advResult('You haul each other out. Everyone is worse for it.'); }},
-  {w:7, kind:'Place', ic:'🌫️', good:false, name:'The Grey Fog',
+   go:()=>{ S.party.forEach(h => hurtHeroOutOfCombat(h, Math.round(h.maxHp * 0.25))); advResult('You haul each other out. Everyone is worse for it.'); }},
+  {w:9, kind:'Place', ic:'🌫️', good:false, name:'The Grey Fog',
    text:'You walk into it certain of the way, and out of it certain of nothing.',
-   go:()=>{ const lost = Math.min(S.fate, 2); S.fate -= lost; S.gold = Math.round(S.gold * 0.8);
-            advResult(lost ? `You come out poorer and ${lost} Fate short.` : 'You come out poorer.'); }},
+   go:()=>{ const lost = Math.min(S.fate, 2); S.fate -= lost; S.gold = Math.round(S.gold * 0.6);
+            advResult(lost ? `You come out much poorer and ${lost} Fate short.` : 'You come out much poorer.'); }},
+  {w:9, kind:'Place', ic:'🦠', good:false, name:'The Plague Pit',
+   text:'You are through it before you understand what you have been walking on.',
+   go:()=>{ S.nextFight = { poison: 4 }; advResult('It gets into everyone. The next fight starts with 4 poison on every hero.'); }},
+  {w:9, kind:'Place', ic:'🧂', good:false, name:'Rust and Ruin',
+   text:'The damp in here eats metal, leather and anything else you were relying on.',
+   go:()=>{
+     const lost = unequipRandom();
+     advResult(lost ? `${lost.hero.name}'s ${lost.item.name} corrodes to nothing.`
+                    : 'Nothing you carry is worth ruining. Small mercies.');
+   }},
 
   /* ---- enemies: the bad draws, with something worth having behind them --- */
   {w:12, kind:'Enemy', ic:'👹', good:false, name:'Ambush',
    text:'Something has been following the party since the last room.',
    go:()=>{ UI.modal = null; UI.bonusReward = true; S.screen = 'combat'; startCombat('combat'); render(); }},
-  {w:6, kind:'Enemy', ic:'💀', good:false, name:'The Waiting Thing',
+  {w:8, kind:'Enemy', ic:'💀', good:false, name:'The Waiting Thing',
    text:'It is bigger than anything else on this floor and it has been patient.',
    go:()=>{ UI.modal = null; UI.bonusReward = true; S.screen = 'combat'; startCombat('elite'); render(); }},
 
@@ -1702,18 +1773,21 @@ const ADVENTURE = [
    text:'Something is about to happen. It is not clear what.',
    go:()=>{
      const r = Math.random();
-     if(r < 0.35){ const g = goldGain(70 + rnd(60)); advResult(`A windfall. +${g} gold.`); }
-     else if(r < 0.6){ advResult('Something useful, at least.', rollItem(S.act)); }
-     else if(r < 0.8){ S.party.forEach(h => healHero(h, Math.round(h.maxHp * 0.35))); advResult('A good night, for once. The party recovers.'); }
-     else { S.party.forEach(h => hurtHeroOutOfCombat(h, Math.round(h.maxHp * 0.2))); advResult('It goes badly. It was always going to go badly.'); }
+     if(r < 0.25){ const g = goldGain(70 + rnd(60)); advResult(`A windfall. +${g} gold.`); }
+     else if(r < 0.45){ advResult('Something useful, at least.', rollItem(S.act)); }
+     else if(r < 0.6){ S.party.forEach(h => healHero(h, Math.round(h.maxHp * 0.35))); advResult('A good night, for once. The party recovers.'); }
+     else if(r < 0.8){ S.party.forEach(h => hurtHeroOutOfCombat(h, Math.round(h.maxHp * 0.22))); advResult('It goes badly. It was always going to go badly.'); }
+     else { const lost = unequipRandom();
+            advResult(lost ? `It goes badly, and ${lost.hero.name} loses their ${lost.item.name} in the confusion.`
+                           : 'It goes badly, though you had little enough to lose.'); }
    }},
-  {w:7, kind:'Fortune', ic:'🐸', good:false, name:'The Toad',
+  {w:9, kind:'Fortune', ic:'🐸', good:false, name:'The Toad',
    text:'A voice from somewhere says a word you do not catch, and one of you is much smaller.',
    go:()=>{
      const h = pick(S.party);
-     const i = h.faces.findIndex(f => f.k !== 'blank');
-     if(i >= 0) h.faces[i] = F('blank');
-     advResult(`${h.name} is briefly a toad. One face of their die is now blank.`);
+     const lost = blankBestFace(h);
+     advResult(lost ? `${h.name} is briefly a toad, and comes back without their ${faceLabel(lost)} face.`
+                    : `${h.name} is briefly a toad. There was nothing left to lose.`);
    }}
 ];
 function drawAdventure(){
