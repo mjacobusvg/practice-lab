@@ -293,6 +293,65 @@ open cases.
 
 ---
 
+## 7. Supabase views were readable by `anon` (found 18 Sept 2026, fixed same day)
+
+A third security pass enumerated `public` **views** for the first time. The two prior passes
+(16 and 17 Sept) enumerated tables and their RLS policies and never looked at views. That gap
+is why this survived them.
+
+**Why a view bypasses RLS:** a Postgres view runs as its OWNER unless `security_invoker` is
+set (PG15+; this project is PG17). So a view over an RLS-protected table returns the owner's
+rows to whoever can `SELECT` the view. RLS on the base table is not consulted. Three views in
+`public` carried a `SELECT` grant to `anon`, i.e. to anyone holding the publishable key that
+`platform.html` ships to the browser. Verified live with that key before the fix:
+
+| View | Status then | What it returned |
+|---|---|---|
+| `baa_signatures_summary` | **206, 45 rows** | `member_name`, `member_email`, `entity_name`, `signer_title`, **`ip_address`** |
+| `member_ai_cost` | **206, 19 rows** | `account_email`, `name`, `tier`, `comped`, `comp_reason`, `calls_30d`, token counts |
+| `member_directory` | 206, 418 rows | `id`, `name`, `avatar_url` only — intended, see below |
+
+`baa_signatures_summary` is the one that matters: the BAA PDFs were locked at the S3 bucket in
+the earlier H3 work, but the **signer registry** — who signed, for what entity, from what IP —
+stayed world-readable through this view. Locking the documents did not lock the list of who
+signed them. `member_ai_cost` exposed the member list with tier, comp status and comp reason.
+
+Neither view is referenced anywhere in the codebase (checked), so revoking them broke nothing.
+Applied:
+
+```sql
+revoke all on public.baa_signatures_summary from anon, authenticated;
+revoke all on public.member_ai_cost        from anon, authenticated;
+alter view public.baa_signatures_summary set (security_invoker = on);
+alter view public.member_ai_cost        set (security_invoker = on);
+```
+
+The `revoke` is the fix; `security_invoker = on` is the belt-and-braces so a future re-grant
+still can't read past the base tables' RLS. Verified after, by assuming the role in-database
+(`set local role anon`), which is the same role PostgREST uses for an unauthenticated request:
+
+```
+baa_signatures_summary  DENIED: permission denied for view baa_signatures_summary
+member_ai_cost          DENIED: permission denied for view member_ai_cost
+member_directory        READABLE rows=418
+```
+
+`service_role` still reads all three, so the Netlify functions are unaffected.
+
+**`member_directory` is deliberately left readable.** Mention search in `platform.html`
+(:4754, :4854) queries it as `anon`, and it exposes only `id`/`name`/`avatar_url`. Do NOT set
+`security_invoker = on` on it — the base table's RLS would then return zero rows to `anon` and
+mention autocomplete would silently stop finding anyone.
+
+`membership_truth` was already closed to `anon` and `authenticated`; no change.
+
+**Standing rule this adds:** a new view in `public` is public unless you say otherwise. When
+you create one, decide its grants in the same migration, and treat `security_invoker` as the
+default rather than the exception. Re-run `get_advisors(security)` after any view change — it
+flags these as `security_definer_view`.
+
+---
+
 ## Note
 
 The AWS deploy itself requires access to the AWS account and cannot be done from a repo-only
