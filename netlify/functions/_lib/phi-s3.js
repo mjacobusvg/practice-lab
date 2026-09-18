@@ -8,7 +8,7 @@
 // putJson throws on failure so callers can refuse to proceed (never fall back to writing
 // PHI into Supabase). getJson returns {} if the object is gone (already purged).
 
-var { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+var { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
 var crypto = require('crypto');
 
 var BUCKET = process.env.LETTERS_S3_BUCKET || 'tbp-letters';
@@ -56,4 +56,31 @@ async function deleteObject(key) {
   try { await s3().send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key })); } catch (e) { /* lifecycle backstops */ }
 }
 
-module.exports = { putJson: putJson, getJson: getJson, deleteObject: deleteObject, PHI_BUCKET: BUCKET };
+// List every key under a prefix, following continuation tokens to the end.
+//
+// THROWS on failure, unlike deleteObject. Its only caller reconciles this listing against
+// the keys recorded in Postgres and deletes what is not referenced — so a SHORT list is
+// not a harmless degradation, it is a list of live PHI that looks abandoned. A partial
+// answer must be an error, never a result.
+//
+// Returns [{ key, lastModified }]. `cap` bounds the walk; hitting it is reported via
+// `truncated` so the caller can refuse to act on an incomplete picture.
+async function listKeys(prefix, cap) {
+  var limit = cap || 5000;
+  var out = [];
+  var token = undefined;
+  var client = s3();
+  do {
+    var page = await client.send(new ListObjectsV2Command({
+      Bucket: BUCKET, Prefix: prefix, ContinuationToken: token, MaxKeys: 1000
+    }));
+    (page.Contents || []).forEach(function (o) {
+      out.push({ key: o.Key, lastModified: o.LastModified ? new Date(o.LastModified).getTime() : 0 });
+    });
+    token = page.IsTruncated ? page.NextContinuationToken : undefined;
+    if (out.length >= limit) return { keys: out, truncated: true };
+  } while (token);
+  return { keys: out, truncated: false };
+}
+
+module.exports = { putJson: putJson, getJson: getJson, deleteObject: deleteObject, listKeys: listKeys, PHI_BUCKET: BUCKET };

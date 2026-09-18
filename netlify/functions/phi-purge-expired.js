@@ -30,6 +30,17 @@ const SCHEDULE_CLOSED_TTL_DAYS = 30;
 // A fax delivery webhook never arrives months late; after this the mapping is dead weight.
 const FAX_JOB_TTL_DAYS = 90;
 
+// An S3 object must be this old before it can be judged an orphan. A heal writes the
+// object FIRST and records the key second, so anything newer than this may simply be
+// mid-flight — and on 2026-09-17 a whole run sat in exactly that gap, object written,
+// key never recorded, because of a NOT NULL constraint. Without this window the
+// reconciliation would race the very bug that created the orphans.
+const ORPHAN_MIN_AGE_HOURS = 24;
+
+// A logic error here deletes live patient data, so the number of objects one run may
+// remove is bounded. Hitting the cap is reported and the rest waits for tomorrow.
+const ORPHAN_DELETE_CAP = 200;
+
 function sbHeaders() {
   const KEY = process.env.SUPABASE_SERVICE_KEY;
   return { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };
@@ -124,6 +135,7 @@ exports.handler = async function (event) {
   }
   const result = { letters_send_log: 0, letter_charges: 0, schedules_healed: 0, charges_healed: 0,
                    schedules_closed: 0, charges_released: 0, fax_jobs_purged: 0, failures: 0,
+                   orphans_deleted: 0, orphans_skipped_recent: 0, orphan_sweep: 'not_run',
                    assessments_completed: 0, assessments_abandoned: 0 };
   try {
     // ── Letters: delete at the clinician-chosen window ──
@@ -213,6 +225,62 @@ exports.handler = async function (event) {
         await sbDelete(URL + '/rest/v1/fax_jobs?fax_id=eq.' + encodeURIComponent(f.fax_id));
         result.fax_jobs_purged++;
       });
+    }
+
+    // ── Orphaned letter PHI in S3: written, never referenced ──────────────────────
+    // healRow does putJson BEFORE recording the key, so a heal that wrote the object and
+    // then failed to save the key leaves PHI in S3 that nothing points at. That happened
+    // for real on 2026-09-17 (patient_email was NOT NULL, so every key-recording PATCH was
+    // rejected while every S3 write had already succeeded). Those objects are inside the
+    // AWS BAA and the bucket lifecycle would eventually reap them, but "eventually" is not
+    // a retention policy and unreferenced PHI is exactly what this job exists to remove.
+    //
+    // This deletes on a NEGATIVE — "no row mentions this key" — which is the dangerous
+    // shape, so it refuses to act on anything less than a complete picture:
+    //   * the S3 listing must not be truncated,
+    //   * the referenced-key reads must all succeed,
+    //   * and if rows exist but not one key came back, that reads as a failed query rather
+    //     than a genuinely empty set, so it aborts.
+    // Any of those and the sweep is skipped entirely with a reason, deleting nothing.
+    try {
+      const scheduleList = await phiS3.listKeys('letters/schedule/');
+      const chargeList = await phiS3.listKeys('letters/charge/');
+      if (scheduleList.truncated || chargeList.truncated) {
+        result.orphan_sweep = 'skipped_listing_truncated';
+      } else {
+        const refSched = await sbGet(URL + '/rest/v1/letter_schedules?patient_s3_key=not.is.null&select=patient_s3_key&limit=10000');
+        const refCharge = await sbGet(URL + '/rest/v1/letter_charges?patient_s3_key=not.is.null&select=patient_s3_key&limit=10000');
+        const rowCount = await sbGet(URL + '/rest/v1/letter_schedules?select=id&limit=1');
+
+        const referenced = new Set();
+        refSched.forEach(r => r.patient_s3_key && referenced.add(r.patient_s3_key));
+        refCharge.forEach(r => r.patient_s3_key && referenced.add(r.patient_s3_key));
+
+        const objects = scheduleList.keys.concat(chargeList.keys);
+        if (!referenced.size && rowCount.length && objects.length) {
+          // Rows exist and objects exist, yet nothing is referenced: far more likely a
+          // failed read than a bucket of pure orphans. Refuse.
+          result.orphan_sweep = 'skipped_no_references_returned';
+        } else {
+          const cutoff = Date.now() - ORPHAN_MIN_AGE_HOURS * 3600 * 1000;
+          let deleted = 0;
+          for (const o of objects) {
+            if (referenced.has(o.key)) continue;
+            if (o.lastModified > cutoff) { result.orphans_skipped_recent++; continue; }
+            if (deleted >= ORPHAN_DELETE_CAP) { result.orphan_sweep = 'capped'; break; }
+            const ok = await attempt('delete orphan ' + o.key, async () => {
+              await phiS3.deleteObject(o.key);
+            });
+            if (ok) { deleted++; result.orphans_deleted++; }
+          }
+          if (result.orphan_sweep === 'not_run') result.orphan_sweep = 'ok';
+        }
+      }
+    } catch (e) {
+      // A listing failure must never be read as "no orphans". Nothing was deleted.
+      result.orphan_sweep = 'error';
+      result.failures++;
+      console.error('[phi-purge-expired] orphan sweep failed: ' + (e && e.message));
     }
 
     // ── Assessments: raw PHI deleted 30 days after completion; de-id metadata kept ──
