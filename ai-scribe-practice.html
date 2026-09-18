@@ -369,7 +369,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-111-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-112-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -676,7 +676,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-111-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-112-sub</span></div>
 </div>
 </div>
 
@@ -1486,7 +1486,15 @@ function tbpVisitKey(){
 bindOpts('visit-opts','data-visit', function(v){
   // Switching visit type starts a fresh context; drop any structured-note state so a stale
   // sections card can't linger. Only on an actual change, so re-clicking the same type is a no-op.
-  if(v !== visitType){ wnMode='plain'; wnSections={checklist:'',guide:'',note:''}; }
+  if(v !== visitType){
+    // The interview is the clinician's own structure, loaded on purpose — it is not stale state
+    // belonging to the previous visit type, so it survives the reset. (clearVisit still wipes it:
+    // once it holds answers it holds PHI, and a new patient must never inherit it.)
+    var _ivKeep = (typeof wnSections === 'object' && wnSections) ? (wnSections.interview || '') : '';
+    var _ivName = (typeof wnSections === 'object' && wnSections) ? (wnSections.interviewName || '') : '';
+    wnMode='plain'; wnSections={checklist:'',guide:'',note:'',interview:_ivKeep,interviewName:_ivName};
+    if(_ivKeep) wnMode='sections';
+  }
   visitType=v; try{ localStorage.setItem(tbpVisitKey(), v); }catch(e){}
   renderTemplateStatus(); revealWorkArea();
   // If Record was pressed before a visit type was chosen, we parked the intent — now that one is
@@ -5582,6 +5590,7 @@ function wnLabelKey(label){
   if(L.indexOf('PSYCHOTHERAPY GUIDE') !== -1) return 'guide';
   if(L.indexOf('THERAPY COACH') !== -1) return 'coach';
   if(L.indexOf('SCREENERS') !== -1) return 'screeners';
+  if(L.indexOf('INTERVIEW') !== -1) return 'interview';
   if(L.indexOf('YOUR NOTE') !== -1) return 'note';
   return null;
 }
@@ -5596,7 +5605,13 @@ function wnParseSerialized(text){
       var j = i + 2; while(j < n && !isRule(lines[j])) j++;   // skip sub line(s) to the closing rule
       var body = [], m = j + 1; while(m < n && !isRule(lines[m])) { body.push(lines[m]); m++; }
       var key = wnLabelKey(label);
-      if(key){ out[key] = body.join('\n').replace(/^\n+/,'').replace(/\s+$/,''); found++; }
+      if(key){
+        out[key] = body.join('\n').replace(/^\n+/,'').replace(/\s+$/,''); found++;
+        // Keep the interview's own name; the serialized label line is the only place it survives.
+        // Verbatim, deliberately: lower-casing the tail turns "ADHD INTERVIEW" into "Adhd interview",
+        // and any casing rule clever enough to spare acronyms is a rule that will mangle something else.
+        if(key === 'interview' && label) out.interviewName = label.replace(/\s+/g,' ').trim();
+      }
       i = m;   // resume at the next opening rule
     } else { i++; }
   }
@@ -5813,7 +5828,7 @@ function openFocus(sourceId){
   if(!useSections && sourceId === 'raw'){
     var rawEl = document.getElementById('raw');
     var recovered = wnParseSerialized(rawEl ? rawEl.value : '');
-    if(recovered && (recovered.checklist || recovered.guide || recovered.transcript || recovered.coach || recovered.screeners || (recovered.note && recovered.note.trim()))){
+    if(recovered && (recovered.checklist || recovered.guide || recovered.transcript || recovered.coach || recovered.screeners || recovered.interview || (recovered.note && recovered.note.trim()))){
       wnSections = { checklist:'', guide:'', note:'' };
       for(var rk in recovered){ if(recovered.hasOwnProperty(rk)) wnSections[rk] = recovered[rk]; }
       wnMode = 'sections';
