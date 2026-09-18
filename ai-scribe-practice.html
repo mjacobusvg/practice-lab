@@ -369,7 +369,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-110-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-111-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -676,7 +676,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-110-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-111-sub</span></div>
 </div>
 </div>
 
@@ -1846,8 +1846,56 @@ function verifySystem(){
 }
 
 // ── Gather input ──
+// THE SOURCE BOUNDARY. Do not rely on a model to tell scaffold from evidence when the code can
+// decide it deterministically first.
+//
+// The draft and audit prompts both carry a rule that an interview is a plan, not a record. That rule
+// stays, as defence in depth — but it should never have been the thing standing between sixty
+// unanswered prompts and the chart. A question the patient was never asked is not evidence, so it
+// does not belong in the model's input at all, and "How is your sleep?" / "Any trauma symptoms?" /
+// "Any sensory sensitivities?" sitting unanswered in the source is pure fabrication pressure on a
+// note that then has to be trusted and signed.
+//
+// So the interview block is rewritten HERE, at the one place both callers pass through, down to the
+// question-and-answer pairs the clinician actually captured. If nothing was answered the block is
+// removed entirely. The transcript remains the other record of what was really said in the room.
+// Deterministic, cheaper, and it makes the provenance model honest: a planned question is not an
+// observed finding.
+function tbpStripUnansweredInterview(text){
+  if(!text || text.indexOf(WN_RULE) === -1) return text;
+  var lines = String(text).split('\n');
+  function isRule(l){ return (l || '').replace(/\s+$/,'') === WN_RULE; }
+  var out = [], i = 0;
+  while(i < lines.length){
+    if(!isRule(lines[i])){ out.push(lines[i]); i++; continue; }
+    // A header is RULE, one label line, optional sub-lines, RULE.
+    var j = i + 1, head = [];
+    while(j < lines.length && !isRule(lines[j])){ head.push(lines[j]); j++; }
+    if(j >= lines.length){ out.push(lines[i]); i++; continue; }   // unterminated: leave it alone
+    var label = (head[0] || '').trim();
+    var bodyStart = j + 1, k = bodyStart;
+    while(k < lines.length && !isRule(lines[k])) k++;
+    var body = lines.slice(bodyStart, k).join('\n');
+    if(/INTERVIEW/i.test(label)){
+      var kept = tbpInterviewAnswered(body);
+      if(kept){
+        out.push(lines[i]);
+        out.push(label);
+        out.push('Only the items the patient actually answered are included. Every other question in this interview was NOT asked or NOT answered and establishes nothing.');
+        out.push(lines[j]);
+        out.push('', kept, '');
+      }
+      // nothing answered -> the whole block, header included, is dropped
+    } else {
+      for(var m = i; m < k; m++) out.push(lines[m]);
+    }
+    i = k;
+  }
+  return out.join('\n').replace(/\n{4,}/g, '\n\n\n').trim();
+}
 function gatherSource(rawText){
   var raw = (typeof rawText === 'string' ? rawText : document.getElementById('raw').value).trim();
+  raw = tbpStripUnansweredInterview(raw);
   var context = document.getElementById('context').value.trim();
   var s = "RAW VISIT NOTES (as the clinician typed them):\n\n" + raw;
   if(context) s += "\n\n---\n\nPRIOR HPI / ASSESSMENT (continuity context only; not today's documented content):\n\n" + context;
