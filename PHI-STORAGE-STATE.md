@@ -68,7 +68,7 @@ was wrong — is the reason `phi-drift-check.js` now exists.
 | `letter_schedules.patient_message` | **0** (was 1 of 3) | migrated to S3 2026-09-18 |
 | `letter_schedules.first_message` | **0** (was 1 of 3) | migrated to S3 2026-09-18 |
 | `letter_schedules.patient_s3_key` | **3 of 3 rows** | all three now point at S3 under the AWS BAA |
-| `letter_charges.patient_email` | **1** of 1 row | the last one; it is `paid`, so the next 08:00 purge heals then releases it (end state: empty) |
+| `letter_charges.patient_email` | **0** (was 1 of 1) | healed and released by the 08:00 purge on 2026-09-18; both columns now null |
 | `letter_schedules.last_error` | 0 of 3 rows | watched: an SES failure string can echo a patient address |
 | `letter_charges.pdf_base64` | 0 | holds as of 09-09 |
 | `letter_send_log.pdf_base64` | 0 | holds |
@@ -249,6 +249,32 @@ PHI are in S3 under the AWS BAA; a small number of legacy schedule rows are bein
   - **Still outstanding:** the orphaned S3 objects from the 09-17 failed heals. Those were written
     under the `2026-09-17` date prefix and are unreferenced; today's good objects are under
     `2026-09-18`, so the two are cleanly separable by prefix when reconciling.
+
+- **2026-09-18, 08:00 purge — inline PHI closed, orphan sweep refused.** The scheduled run
+  healed the last `letter_charges` row to S3 and immediately released it: `charges_healed: 1`,
+  `charges_released: 1`, and the row now reads `patient_email` null AND `patient_s3_key` null,
+  which is the correct end state for a charge whose pay link was sent on 09-09. It also closed
+  one schedule (`schedules_closed: 1`). **Every inline PHI column across letters, assessments and
+  the certified-mail stub now counts zero**, confirmed by the 08:30 drift check: all 20 PHI
+  counts are 0, `failing_ids` holds no PHI check. The letters migration is closed end to end.
+
+  The **orphan sweep's first live run did not run**: `orphan_sweep: "error"`, `orphans_deleted: 0`,
+  `orphans_skipped_recent: 0`, `failures: 1`. That is the designed refusal — the sweep deletes on
+  a negative ("no row mentions this key"), so any incomplete picture aborts it and deletes
+  nothing. Confirmed nothing was lost: 2 of 3 `letter_schedules` still hold their key (the third
+  was the one closed on purpose), and no referenced object was touched.
+
+  **The cause was not recoverable from here.** The message went only to `console.error`, i.e. to
+  the Netlify function log, which a repo session cannot read. That is now fixed: the run record
+  carries `orphan_sweep_error` and up to five `failure_details`, so the next run names its own
+  cause. Leading hypothesis to confirm against that: `listKeys()` calls `ListObjectsV2`, which
+  needs **`s3:ListBucket` on the bucket ARN** — a different resource from the
+  `GetObject`/`PutObject`/`DeleteObject` grants on `bucket/*` that every other call in this job
+  uses. A policy written for get/put/delete very commonly omits it, and this is the first code
+  path that ever needed it.
+
+  So the 09-17 orphans are still there, still unreferenced, still inside the AWS BAA and still
+  covered by the bucket lifecycle. Nothing is leaking; the cleanup is deferred one more day.
 
 ## Also holds member/business data (PII, not PHI — no BAA needed)
 

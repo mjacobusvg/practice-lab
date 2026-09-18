@@ -125,17 +125,31 @@ exports.handler = async function (event) {
   // row must not stop the rest: this job deletes PHI, and aborting halfway would leave
   // later rules unrun. So each row is attempted independently, failures are counted, and
   // the run is marked NOT ok if any occurred — loud, complete, and honest at once.
+  // Why the message is recorded and not just logged: on 2026-09-18 the orphan sweep's first
+  // live run came back `orphan_sweep: 'error'`, and the reason existed only in the Netlify
+  // function log, which is not readable from a repo session. A failure whose cause is
+  // unreadable costs a day per diagnosis. The run record now carries the message.
+  // Capped and truncated: this is an operational summary, not a place to accumulate text.
+  const FAILURE_DETAIL_MAX = 5;
+  const FAILURE_DETAIL_CHARS = 240;
+
   async function attempt(label, fn) {
     try { await fn(); return true; }
     catch (e) {
       result.failures++;
-      console.error('[phi-purge-expired] ' + label + ' failed: ' + (e && e.message));
+      const detail = label + ': ' + (e && e.message);
+      console.error('[phi-purge-expired] ' + detail);
+      if (result.failure_details.length < FAILURE_DETAIL_MAX) {
+        result.failure_details.push(detail.slice(0, FAILURE_DETAIL_CHARS));
+      }
       return false;
     }
   }
   const result = { letters_send_log: 0, letter_charges: 0, schedules_healed: 0, charges_healed: 0,
                    schedules_closed: 0, charges_released: 0, fax_jobs_purged: 0, failures: 0,
+                   failure_details: [],
                    orphans_deleted: 0, orphans_skipped_recent: 0, orphan_sweep: 'not_run',
+                   orphan_sweep_error: null,
                    assessments_completed: 0, assessments_abandoned: 0 };
   try {
     // ── Letters: delete at the clinician-chosen window ──
@@ -279,6 +293,7 @@ exports.handler = async function (event) {
     } catch (e) {
       // A listing failure must never be read as "no orphans". Nothing was deleted.
       result.orphan_sweep = 'error';
+      result.orphan_sweep_error = String((e && e.message) || e).slice(0, FAILURE_DETAIL_CHARS);
       result.failures++;
       console.error('[phi-purge-expired] orphan sweep failed: ' + (e && e.message));
     }
