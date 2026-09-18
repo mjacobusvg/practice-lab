@@ -264,14 +264,43 @@ PHI are in S3 under the AWS BAA; a small number of legacy schedule rows are bein
   nothing. Confirmed nothing was lost: 2 of 3 `letter_schedules` still hold their key (the third
   was the one closed on purpose), and no referenced object was touched.
 
-  **The cause was not recoverable from here.** The message went only to `console.error`, i.e. to
-  the Netlify function log, which a repo session cannot read. That is now fixed: the run record
-  carries `orphan_sweep_error` and up to five `failure_details`, so the next run names its own
-  cause. Leading hypothesis to confirm against that: `listKeys()` calls `ListObjectsV2`, which
-  needs **`s3:ListBucket` on the bucket ARN** — a different resource from the
-  `GetObject`/`PutObject`/`DeleteObject` grants on `bucket/*` that every other call in this job
-  uses. A policy written for get/put/delete very commonly omits it, and this is the first code
-  path that ever needed it.
+  **The cause was not recoverable from here**, and the reason is worth keeping: the message went
+  only to `console.error`, i.e. the Netlify function log, which a repo session cannot read (no
+  log tool in the Netlify MCP surface, no CLI, no token). That is now fixed — the run record
+  carries `orphan_sweep_error` and up to five `failure_details`, so a future run names its own
+  cause instead of pointing at a log nobody in this loop can open.
+
+  **ROOT CAUSE CONFIRMED (18 Sept, from the IAM console).** The `ses-send-pm` inline policy
+  `tbp-letters-rw` read, in full:
+
+  ```json
+  { "Sid": "TbpLettersRW", "Effect": "Allow",
+    "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+    "Resource": "arn:aws:s3:::tbp-letters/*" }
+  ```
+
+  Three object-level actions on an object-level resource, and no `s3:ListBucket`. `ListObjectsV2`
+  is authorized against the **bucket** ARN (`arn:aws:s3:::tbp-letters`, no `/*`), which appears
+  nowhere in that policy, so `listKeys()` is denied. It is the only call in the entire purge job
+  that is not object-level, which is exactly why every heal, read and delete has always worked and
+  this surfaced only on the sweep's first live run.
+
+  Fix: a SECOND statement (it cannot be merged — the resources genuinely differ), scoped by
+  prefix so the key can list under `letters/` and nowhere else, i.e. not the `assessments/`
+  prefix in the same bucket:
+
+  ```json
+  { "Sid": "TbpLettersListForOrphanSweep", "Effect": "Allow",
+    "Action": "s3:ListBucket",
+    "Resource": "arn:aws:s3:::tbp-letters",
+    "Condition": { "StringLike": { "s3:prefix": "letters/*" } } }
+  ```
+
+  **The policy is recorded here because it was not recorded anywhere.** When the sweep failed,
+  neither the log nor the policy was reachable from a repo session, so a one-line permission bug
+  could not be confirmed without Michael opening two consoles. An IAM policy that the code depends
+  on belongs in the docs next to the code. If the `letters/` prefix condition ever needs widening,
+  or a new prefix is swept, that is the line to change.
 
   So the 09-17 orphans are still there, still unreferenced, still inside the AWS BAA and still
   covered by the bucket lifecycle. Nothing is leaking; the cleanup is deferred one more day.
