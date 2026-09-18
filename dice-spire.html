@@ -1992,7 +1992,7 @@ function renderTopbar(){
   bar.classList.remove('hidden');
   const relics = S.relics.map(k => {
     const r = relicDef(k);
-    return `<div class="relic" data-tip="${esc(r.name)}|${esc(r.desc)}">${r.ic}</div>`;
+    return `<div class="relic" onclick="openInventory()" style="cursor:pointer" data-tip="${esc(r.name)}|${esc(r.desc)}">${r.ic}</div>`;
   }).join('');
   el('topbar-inner').innerHTML = `
     <div class="brand">Dice<span class="d">Spire</span></div>
@@ -2000,7 +2000,8 @@ function renderTopbar(){
     <div class="stat" data-tip="Gold|Spent at merchants.">💰 <b>${S.gold}</b></div>
     ${S.spells.length ? `<div class="stat" data-tip="Spells|Cast in combat with mana from Focus faces.">📜 <b>${S.spells.length}</b></div>` : ''}
     <div class="stat" data-tip="Fate|A reserve of rerolls that lasts the whole run, spent when your per-turn rerolls are gone. Camp fires restore one.">✨ <b>${S.fate}</b>/${fateMax()}</div>
-    <div class="stat" data-tip="Bag|Consumables, used during a fight. Holds ${BAG_MAX}.">🎒 <b>${S.bag.length}</b>/${BAG_MAX}</div>
+    <button class="stat" onclick="openInventory()" style="cursor:pointer;border:1px solid var(--line-hi);border-radius:8px;padding:3px 9px"
+      data-tip="Carrying|Tap to read every item, relic and spell you hold.">🎒 <b>${S.bag.length}</b>/${BAG_MAX} <span class="faint">items</span></button>
     ${S.talisman ? `<div class="stat" data-tip="The Talisman|The act three boss will not face anyone who does not carry it.">🔯</div>` : ''}
     <div class="relic-bar">${relics}<button class="btn sm ghost" onclick="abandonRun()">Abandon</button></div>`;
 }
@@ -2376,6 +2377,7 @@ function renderModal(){
     case 'forge':    html = mForge(); break;
     case 'scour':    html = mScour(m); break;
     case 'equip':    html = mEquip(m); break;
+    case 'inventory':html = mInventory(); break;
     case 'bagfull':  html = mBagFull(m); break;
     case 'drill':    html = mDrill(); break;
     case 'treasure': html = mTreasure(m); break;
@@ -2547,6 +2549,47 @@ function mForge(){
     <div class="sep"></div>
     <div class="row" style="justify-content:flex-end"><button class="btn ghost" onclick="closeEvent()">Never mind</button></div>`;
 }
+/* Tooltips are mousemove-driven, so on a touch screen they never fire at all.
+   Anything a player needs in order to choose has to be on the page itself. */
+const MOD_LABEL = {
+  dmg:'Strike & Cleave', cleave:'Cleave', shield:'Shield & Aegis', heal:'Mend',
+  poison:'Venom', burn:'Ignite', daze:'Mindlock', charm:'Dominate',
+  armour:'Damage soaked', maxHp:'Max HP'
+};
+const GLOB_LABEL = {
+  gold:'Gold found', manaCombat:'Mana at combat start', manaTurn:'Mana each turn',
+  rerolls:'Rerolls each turn', fate:'Fate cap', postHeal:'Heal after combat',
+  thorns:'Damage returned', lifesteal:'Heal per Strike',
+  thrallTurns:'Thrall turns', thrallHp:'Thrall HP', allFaces:'Every numbered face'
+};
+function fmtDelta(v){
+  if(Math.abs(v) < 1 && v !== 0) return (v > 0 ? '+' : '') + Math.round(v * 100) + '%';
+  return (v > 0 ? '+' : '') + v;
+}
+/* every stat an item touches, as [label, amount] */
+function itemStats(it){
+  if(!it) return [];
+  return Object.entries(it.mod || {}).map(([k, v]) => [MOD_LABEL[k] || k, v])
+    .concat(Object.entries(it.glob || {}).map(([k, v]) => [GLOB_LABEL[k] || k, v]));
+}
+/* what actually changes if newIt goes in where oldIt is */
+function statDelta(oldIt, newIt){
+  const map = {};
+  const add = (it, sign) => itemStats(it).forEach(([L, v]) => { map[L] = (map[L] || 0) + v * sign; });
+  add(newIt, 1); add(oldIt, -1);
+  return Object.entries(map).filter(([, v]) => v !== 0);
+}
+function deltaHTML(oldIt, newIt){
+  const d = statDelta(oldIt, newIt);
+  if(!d.length) return '<span class="faint">no change to any stat</span>';
+  return d.map(([L, v]) =>
+    `<span style="color:${v > 0 ? 'var(--green)' : 'var(--red)'}">${esc(L)} ${fmtDelta(v)}</span>`).join(' &nbsp;·&nbsp; ');
+}
+function statLine(it){
+  const st = itemStats(it);
+  if(!st.length) return '';
+  return st.map(([L, v]) => `${esc(L)} ${fmtDelta(v)}`).join(' · ');
+}
 function itemCard(it, extra){
   const tierCol = it.tier === 3 ? 'var(--gold)' : it.tier === 2 ? 'var(--violet)' : 'var(--ink-dim)';
   return `<div class="row" style="gap:11px">
@@ -2558,22 +2601,80 @@ function itemCard(it, extra){
 function gearStrip(h){
   return GEAR_SLOTS.map(sl => {
     const it = h.gear && h.gear[sl] ? itemDef(h.gear[sl]) : null;
-    return it ? `<span class="badge" data-tip="${esc(it.name)}|${esc(it.desc)}">${it.ic}</span>`
-              : `<span class="badge faint" data-tip="Empty ${sl}|Nothing worn in this slot yet.">·</span>`;
+    return it ? `<span class="badge" onclick="openInventory()" style="cursor:pointer" data-tip="${esc(it.name)}|${esc(it.desc)}">${it.ic}</span>`
+              : `<span class="badge faint" onclick="openInventory()" style="cursor:pointer" data-tip="Empty ${sl}|Nothing worn here yet.">·</span>`;
   }).join('');
+}
+function openInventory(){ UI.modal = { type:'inventory' }; render(); }
+function closeInventory(){ UI.modal = null; render(); }
+function mInventory(){
+  const slotRow = (h, sl) => {
+    const it = h.gear && h.gear[sl] ? itemDef(h.gear[sl]) : null;
+    return `<div style="padding:7px 0;border-top:1px solid var(--line)">
+      <div class="spread" style="align-items:flex-start">
+        <div><span class="tiny faint" style="text-transform:uppercase;letter-spacing:.6px">${sl}</span>
+          <div style="font-weight:700;font-size:13.5px">${it ? it.ic + ' ' + esc(it.name) : '<span class="faint">empty</span>'}</div></div>
+        ${it ? `<span class="tiny" style="color:var(--gold)">${'★'.repeat(it.tier)}</span>` : ''}
+      </div>
+      ${it ? `<div class="tiny muted" style="margin-top:2px">${esc(it.desc)}</div>
+              <div class="tiny" style="margin-top:2px;color:var(--cyan)">${statLine(it)}</div>` : ''}
+    </div>`;
+  };
+  return `<div class="spread"><h2>🎒 What you are carrying</h2>
+      <div class="row tiny muted">✨ ${S.fate}/${fateMax()}${S.talisman ? ' &nbsp;🔯 Talisman' : ''}</div></div>
+    <p class="muted tiny" style="margin:4px 0 12px">Everything the party has on it, and exactly what each piece does.</p>
+    <div class="col">
+      ${S.party.map(h => `<div class="panel" style="background:var(--card);padding:12px">
+        <div class="spread"><b>${h.av} ${esc(h.name)}</b>
+          <span class="tiny muted">${h.hp}/${h.maxHp} HP · ${h.faces.length} sides</span></div>
+        ${GEAR_SLOTS.map(sl => slotRow(h, sl)).join('')}
+      </div>`).join('')}
+
+      <div class="panel" style="background:var(--card);padding:12px">
+        <b>🧳 Bag <span class="tiny muted">${S.bag.length}/${BAG_MAX}</span></b>
+        ${S.bag.length
+          ? S.bag.map(k => { const it = itemDef(k); return `<div style="padding:7px 0;border-top:1px solid var(--line)">
+              <div style="font-weight:700;font-size:13.5px">${it.ic} ${esc(it.name)}</div>
+              <div class="tiny muted">${esc(it.desc)}</div></div>`; }).join('')
+          : '<div class="tiny faint" style="padding-top:7px">Nothing. Consumables are used during a fight.</div>'}
+      </div>
+
+      <div class="panel" style="background:var(--card);padding:12px">
+        <b>🏆 Relics <span class="tiny muted">${S.relics.length}</span></b>
+        ${S.relics.length
+          ? S.relics.map(k => { const r = relicDef(k); return `<div style="padding:7px 0;border-top:1px solid var(--line)">
+              <div style="font-weight:700;font-size:13.5px">${r.ic} ${esc(r.name)}</div>
+              <div class="tiny muted">${esc(r.desc)}</div></div>`; }).join('')
+          : '<div class="tiny faint" style="padding-top:7px">None yet.</div>'}
+      </div>
+
+      ${S.spells.length ? `<div class="panel" style="background:var(--card);padding:12px">
+        <b>📜 Spells <span class="tiny muted">${S.spells.length}</span></b>
+        ${S.spells.map(k => { const sp = spellDef(k); return `<div style="padding:7px 0;border-top:1px solid var(--line)">
+          <div style="font-weight:700;font-size:13.5px">${esc(sp.name)} <span style="color:var(--violet)">◆${sp.cost}</span></div>
+          <div class="tiny muted">${esc(sp.desc)}</div></div>`; }).join('')}
+      </div>` : ''}
+    </div>
+    <div class="sep"></div>
+    <div class="row" style="justify-content:flex-end"><button class="btn primary" onclick="closeInventory()">Close</button></div>`;
 }
 function mEquip(m){
   const it = itemDef(m.key);
   return `<h2>${it.ic} ${esc(it.name)}</h2>
-    <p class="muted tiny" style="margin:6px 0 12px">${esc(it.desc)} — goes in the <b>${it.slot}</b> slot.
-      Whatever is already there is thrown away.</p>
+    <p class="muted tiny" style="margin:6px 0 4px">${esc(it.desc)}</p>
+    <p class="tiny" style="margin-bottom:12px;color:var(--ink-dim)">
+      Goes in the <b style="color:var(--ink)">${it.slot}</b> slot. Whatever is there now is thrown away.</p>
     <div class="col">
       ${S.party.map(h => {
         const cur = h.gear && h.gear[it.slot] ? itemDef(h.gear[it.slot]) : null;
         return `<button class="opt" onclick="equipItem(${h.uid},'${it.key}')">
           <div class="t">${h.av} ${esc(h.name)}</div>
-          <div class="s">${cur ? `replaces ${cur.ic} ${esc(cur.name)}` : `${it.slot} slot is empty`}${
-            it.mod && it.mod.maxHp ? ` — max HP ${it.mod.maxHp > 0 ? '+' : ''}${it.mod.maxHp}` : ''}</div></button>`;
+          ${cur
+            ? `<div class="s" style="margin-top:4px">Replaces ${cur.ic} <b style="color:var(--ink)">${esc(cur.name)}</b><br>
+                 <span class="faint">${esc(cur.desc)}</span></div>`
+            : `<div class="s" style="margin-top:4px">Their ${it.slot} slot is empty.</div>`}
+          <div class="tiny" style="margin-top:7px;line-height:1.7">${deltaHTML(cur, it)}</div>
+        </button>`;
       }).join('')}
     </div>
     <div class="sep"></div>
