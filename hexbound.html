@@ -202,9 +202,14 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 @media(max-width:560px){.grid2{grid-template-columns:1fr}}
 .ghexbg{position:absolute;inset:0;pointer-events:none;opacity:.5}
-#tip{position:fixed;z-index:300;max-width:250px;pointer-events:none;opacity:0;background:#0b1220;border:1px solid var(--line-hi);border-radius:10px;padding:8px 11px;font-size:12.5px;line-height:1.4;box-shadow:0 12px 34px rgba(0,0,0,.6);transition:opacity .1s}
+#tip{position:fixed;z-index:300;max-width:288px;pointer-events:none;opacity:0;background:#0b1220;border:1px solid var(--line-hi);border-radius:10px;padding:8px 11px;font-size:12.5px;line-height:1.4;box-shadow:0 12px 34px rgba(0,0,0,.6);transition:opacity .1s}
 #tip.on{opacity:1}
-#tip b{display:block;margin-bottom:3px;font-size:13px;color:var(--gold)}
+#tip{color:var(--ink)}
+#tip b.tt{display:block;margin-bottom:3px;font-size:13px;color:var(--gold)}
+#tip b{display:inline;color:var(--gold);font-weight:700}
+.gl{border-bottom:1px dotted rgba(232,180,74,.55);cursor:help;text-underline-offset:3px}
+.gl:hover{border-bottom-color:var(--gold);color:var(--gold)}
+button .gl{cursor:inherit}
 
 /* ---------- ability cards ---------- */
 .hand{display:flex;flex-wrap:wrap;gap:8px;padding:11px 0 4px}
@@ -2384,8 +2389,8 @@ function draftCard(){
        <div class="hand draftgrid">${pool.map(c => `
          <div class="acard pick" data-newcard="${c.id}">
            <div class="ahd"><span class="initb">${c.init}</span><span class="aic">${c.ic}</span><span class="anm">${esc(c.nm)}</span></div>
-           <div class="ahalf top"><span class="lbl">Top</span><span class="atx">${esc(c.top.tx)}</span></div>
-           <div class="ahalf bot"><span class="lbl">Bottom</span><span class="atx">${esc(c.bot.tx)}</span></div>
+           <div class="ahalf top"><span class="lbl">Top</span><span class="atx">${gtx(c.top.tx)}</span></div>
+           <div class="ahalf bot"><span class="lbl">Bottom</span><span class="atx">${gtx(c.bot.tx)}</span></div>
          </div>`).join('')}</div>`,
     f:[],
   });
@@ -2400,12 +2405,226 @@ function draftCard(){
   });
 }
 
+
+/* =========================================================================
+   GLOSSARY
+   Every term the game uses, explained once, and hover-linked wherever it
+   appears. `gtx(s)` escapes a string and marks up any term inside it.
+   ========================================================================= */
+const GLOSSARY = {
+  /* --- the round --- */
+  initiative:{nm:'Initiative', ic:'⏱', grp:'The round',
+    tx:'The number in the corner of every ability card. Yours comes from the card you took the <b>top</b> half of. Lower goes first — and if you kill it before it acts, it never acts at all.',
+    alias:['initiative','swings first','acts first']},
+  intent:   {nm:'Intent', ic:'👁', grp:'The round',
+    tx:'The card the enemy reveals <b>before</b> you choose yours. It shows exactly what it will do and when. Play around it.',
+    alias:['intent']},
+  top:      {nm:'Top half', ic:'⬆️', grp:'The round',
+    tx:'Each round you take the <b>top</b> of one card and the <b>bottom</b> of another. You never get both halves of the same card, so every card is two choices you cannot both have.',
+    alias:['top half','a top and a bottom']},
+  bottom:   {nm:'Bottom half', ic:'⬇️', grp:'The round',
+    tx:'The defensive or supporting half — shields, healing, energy, rerolls. Taken from a different card than your top.',
+    alias:['bottom half']},
+
+  /* --- combat numbers --- */
+  attack:   {nm:'Attack', ic:'⚔', grp:'Numbers',
+    tx:'What you are swinging for: your card\'s printed attack + every ⚔ on your dice + your gear bonus. <b>Damage dealt = attack − their shields − their armor.</b>',
+    alias:['attack']},
+  shields:  {nm:'Shields', ic:'🛡', grp:'Numbers',
+    tx:'Subtracted from the attack coming at you <b>this round only</b>. They come from card bottoms, 🛡 faces on your dice, and Guard dice. They reset every round.',
+    alias:['shields','shield']},
+  armor:    {nm:'Armor', ic:'🪖', grp:'Numbers',
+    tx:'Flat damage reduction from your gear that applies <b>every</b> round. It is never rolled and never runs out. Pierce ignores shields, but never armor.',
+    alias:['armor']},
+  surge:    {nm:'Surge (✦)', ic:'✦', grp:'Numbers',
+    tx:'A die face that buys an <b>effect</b> instead of a number. Spend surges after rolling and before you strike. Weapons and some cards add more things you can spend them on.',
+    alias:['surge','surges']},
+  reroll:   {nm:'Reroll', ic:'🎲', grp:'Numbers',
+    tx:'Click your own dice to mark them, then press Reroll. You get Wits-many rerolls per round, plus anything gear, cards and talents add.',
+    alias:['reroll','rerolls']},
+
+  /* --- effects --- */
+  pierce:   {nm:'Pierce', ic:'🗡', grp:'Effects',
+    tx:'Ignore the enemy\'s <b>shields</b> for this attack. Its armor still applies. The answer to anything that hides behind a big guard.',
+    alias:['pierce','piercing']},
+  stagger:  {nm:'Stagger', ic:'💫', grp:'Effects',
+    tx:'The enemy loses its <b>whole next attack</b>. It still reveals an intent and still shields, but it swings for nothing. One of the strongest things you can buy.',
+    alias:['stagger it','stagger','staggered']},
+  knockdown:{nm:'Knockdown', ic:'🥊', grp:'Effects',
+    tx:'The same thing done to you: <b>you</b> lose your next attack. You still shield and you still play cards, but your swing that round does nothing.',
+    alias:['knockdown','knocked off your feet']},
+  burn:     {nm:'Burning', ic:'🔥', grp:'Effects',
+    tx:'<b>3 damage at the start of each round</b>, for the number of rounds shown. It ignores shields and armor completely.',
+    alias:['burning','set it burning','catches light','burn']},
+  venom:    {nm:'Venom', ic:'🧪', grp:'Effects',
+    tx:'<b>2 damage at the start of each round</b>, for the number of rounds shown. Ignores shields and armor.',
+    alias:['venom','poison it','poisoned','poison']},
+  prevent:  {nm:'Prevent', ic:'🧿', grp:'Effects',
+    tx:'Damage shaved off <b>after</b> shields and armor, every single round. The Warden\'s Unbroken, the Stubborn talent and warding gear all work this way.',
+    alias:['prevent 1 more','prevent 2 more','prevent 3 more','prevent 4 more','prevent','prevented']},
+  retaliate:{nm:'Retaliate', ic:'🔁', grp:'Effects',
+    tx:'Whenever the enemy actually lands a hit on you this round, it takes this much straight back. Pairs well with a heavy shield round.',
+    alias:['it takes 2 when it hits you','it takes 3 when it hits you','retaliate']},
+  leech:    {nm:'Lifesteal', ic:'🩸', grp:'Effects',
+    tx:'You heal for <b>half the damage you actually deal</b>, rounded up. Worth pairing with your biggest attack of the fight.',
+    alias:['heal for half you deal','feeds','lifesteal']},
+  sap:      {nm:'Sapped', ic:'🩶', grp:'Effects',
+    tx:'Next round, whoever is sapped swings for that much less. Use it on the round its intent shows a big number.',
+    alias:['it hits 2 softer next round','it hits 3 softer next round','hits softer','saps you','softer next round']},
+  stone:    {nm:'Stoneskin', ic:'🪨', grp:'Effects',
+    tx:'Prevents 3 damage every round for the rest of the fight. From the Elixir of Stone.',
+    alias:['stoneskin']},
+  hexed:    {nm:'Hexed', ic:'🔯', grp:'Effects',
+    tx:'You lose a reroll and 2 attack while it lasts. Cast by warlocks and things that have been listening to them.',
+    alias:['hexed','hex']},
+
+  /* --- the hand --- */
+  hand:     {nm:'Hand', ic:'🖐', grp:'Your hand',
+    tx:'The cards you can still play. It is effectively a second health bar: every round costs you two of them.',
+    alias:['hand']},
+  discard:  {nm:'Discard', ic:'📥', grp:'Your hand',
+    tx:'Cards spent this fight. They <b>all come back</b> the moment the fight ends, or when you catch your breath.',
+    alias:['discard']},
+  lost:     {nm:'LOST', ic:'💀', grp:'Your hand',
+    tx:'Playing this half burns the card for the rest of the <b>day</b>, not just the fight. Camping, an inn, or ending the day brings it back. That is the price of the big effects.',
+    alias:['lost']},
+  breath:   {nm:'Catch your breath', ic:'😮‍💨', grp:'Your hand',
+    tx:'Forfeit the round — no attack, no card shields — to pull your <b>whole discard</b> back into your hand, burning one random card of it for good. When you run dry you will be made to do it.',
+    alias:['catch your breath','catch your breath.']},
+  exhaust:  {nm:'Breaking off', ic:'🏃', grp:'Your hand',
+    tx:'With fewer than two cards in hand and nothing left to recover, you break off and run, taking a parting blow and losing the rest of the day.',
+    alias:['break off','breaking off']},
+
+  /* --- dice --- */
+  grit:     {nm:'Grit die (⚪)', ic:'⚪', grp:'Dice',
+    tx:'Your baseline die. Mostly small attack, one shield face, one surge. You get one per point of Might above the first.',
+    alias:['grit die','grit']},
+  steel:    {nm:'Steel die (🔵)', ic:'🔵', grp:'Dice',
+    tx:'The weapon die: high attack, no blanks. Comes from swords, spears and the like.',
+    alias:['steel die','steel dice','steel']},
+  guard:    {nm:'Guard die (🟢)', ic:'🟢', grp:'Dice',
+    tx:'Shield faces, almost no attack. Comes from shields, mail and the Shieldwall talent.',
+    alias:['guard die','guard dice']},
+  arcane:   {nm:'Arcane die (🟣)', ic:'🟣', grp:'Dice',
+    tx:'Swingy: a blank-ish low end, a 3-attack face, and the best surge faces in the game.',
+    alias:['arcane die','arcane dice','arcane']},
+  hunt:     {nm:'Hunt die (🟡)', ic:'🟡', grp:'Dice',
+    tx:'The gambler\'s die. Mostly modest, but one face in six is a 4.',
+    alias:['hunt die','hunt dice','hunt']},
+
+  /* --- travel --- */
+  traveldie:{nm:'Travel die', ic:'🎲', grp:'Travel',
+    tx:'Rolled fresh each dawn. Spend one whose face matches the ground you are moving onto. Unspent dice are simply lost at the end of the day.',
+    alias:['travel die','travel dice']},
+  wild:     {nm:'Wild face (✦)', ic:'✦', grp:'Travel',
+    tx:'Goes onto any ground at all. The Bent Compass makes one of your dice wild every dawn.',
+    alias:['wild face','wild']},
+  road:     {nm:'Road', ic:'🛤️', grp:'Travel',
+    tx:'Moving between two road hexes takes <b>any</b> face, whatever the terrain. Roads link Kestrel Hold to every settlement.',
+    alias:['roads','road']},
+  forcepath:{nm:'Force a path', ic:'✦', grp:'Travel',
+    tx:'Burn two travel dice of any faces to move onto any land hex. Expensive, but it gets you off a bad roll.',
+    alias:['force a path']},
+
+  /* --- world --- */
+  dread:    {nm:'Dread', ic:'🌑', grp:'The world',
+    tx:'The clock. It rises 1 every day. At <b>12</b> and <b>24</b> the whole region hardens — tougher monsters, more of them roaming. At <b>36</b> the Sable Crown stops waiting and comes to you. Breaking a lair pushes it back 4.',
+    alias:['dread']},
+  seal:     {nm:'Seal', ic:'🔱', grp:'The world',
+    tx:'Taken from a broken lair. Three of them open the Obsidian Gate and leave the Crown badly diminished when you finally reach it.',
+    alias:['seal','seals']},
+  tier:     {nm:'Tier', ic:'📶', grp:'The world',
+    tx:'How dangerous a hex or a monster is, 1 to 4. Tier rises with distance from Kestrel Hold and falls on roads. Dread pushes every tier upward.',
+    alias:['tier']},
+  energy:   {nm:'Energy', ic:'⚡', grp:'The world',
+    tx:'Spent to push a skill test, +1 per point, up to 3. You regain 2 each dawn and all of it at an inn.',
+    alias:['energy']},
+};
+let GLOSS_PAIRS = null, GLOSS_RE = null;
+function buildGloss(){
+  GLOSS_PAIRS = [];
+  for(const k in GLOSSARY) for(const a of GLOSSARY[k].alias) GLOSS_PAIRS.push([a.toLowerCase(), k]);
+  GLOSS_PAIRS.sort((x,y) => y[0].length - x[0].length);
+  const esc_ = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  GLOSS_RE = new RegExp('(?<![\\w&])(' + GLOSS_PAIRS.map(p => esc_(p[0])).join('|') + ')(?![\\w])', 'gi');
+}
+function glossKey(word){
+  const w = word.toLowerCase();
+  for(const [a, k] of GLOSS_PAIRS) if(a === w) return k;
+  return null;
+}
+/* escape, then mark up every glossary term inside */
+function gtx(str){
+  if(!GLOSS_RE) buildGloss();
+  return esc(str).replace(GLOSS_RE, m => {
+    const k = glossKey(m);
+    return k ? `<span class="gl" data-g="${k}">${m}</span>` : m;
+  });
+}
+const gword = (k, label) => `<span class="gl" data-g="${k}">${esc(label || GLOSSARY[k].nm)}</span>`;
+
+/* ---------- the shared tooltip ---------- */
+function showTip(el, title, body, owner){
+  const t = $('#tip');
+  t.innerHTML = `<b class="tt">${title}</b>${body}`;
+  t.classList.add('on');
+  V.tipOwner = owner || 'x';
+  const r = el.getBoundingClientRect();
+  const w = t.offsetWidth || 280;
+  let left = r.left + r.width/2 - w/2;
+  left = Math.min(innerWidth - w - 8, Math.max(8, left));
+  let top = r.bottom + 8;
+  if(top + t.offsetHeight > innerHeight - 8) top = Math.max(8, r.top - t.offsetHeight - 8);
+  t.style.left = left + 'px';
+  t.style.top = top + 'px';
+}
+function hideTip(owner){
+  if(owner && V.tipOwner !== owner) return;
+  $('#tip').classList.remove('on');
+  V.tipOwner = null;
+}
+function wireGlossary(){
+  const find = e => e.target && e.target.closest && e.target.closest('.gl[data-g]');
+  document.addEventListener('mouseover', e => {
+    const el = find(e); if(!el) return;
+    const g = GLOSSARY[el.dataset.g]; if(!g) return;
+    showTip(el, g.ic + ' ' + g.nm, g.tx, 'gloss');
+  });
+  document.addEventListener('mouseout', e => { if(find(e)) hideTip('gloss'); });
+  // touch: a tap explains the term, unless it sits inside a button that does something else
+  document.addEventListener('click', e => {
+    const el = find(e); if(!el) return;
+    if(el.closest('button')) return;
+    const g = GLOSSARY[el.dataset.g]; if(!g) return;
+    e.stopPropagation();
+    showTip(el, g.ic + ' ' + g.nm, g.tx, 'gloss');
+    clearTimeout(V.tipTimer);
+    V.tipTimer = setTimeout(() => hideTip('gloss'), 5000);
+  });
+}
+function openGlossary(back){
+  const groups = {};
+  for(const k in GLOSSARY){ const g = GLOSSARY[k]; (groups[g.grp] = groups[g.grp] || []).push(g); }
+  modal({
+    ic:'📖', h:'What Everything Means', wide:true,
+    sub:'Hover any underlined word anywhere in the game to get this without opening a menu',
+    b: Object.keys(groups).map(grp => `
+      <h3 style="margin:14px 0 7px">${esc(grp)}</h3>
+      ${groups[grp].map(g => `<div class="item" style="align-items:flex-start">
+        <div class="ic">${g.ic}</div>
+        <div><div class="nm">${esc(g.nm)}</div><div class="tx">${g.tx}</div></div>
+      </div>`).join('')}`).join(''),
+    f:[{lb:'Back', cls:'primary', fn:()=>{ closeModal(); if(back) back(); else if(S) render(); else renderTitle(); }}],
+    onClose: back,
+  });
+}
+
 /* =========================================================================
    MODAL + SMALL FX
    ========================================================================= */
 function modal(o){
   const sc = $('#scrim');
-  $('#tip').classList.remove('on');
+  hideTip();
   V.hover = null;
   sc.classList.remove('hidden');
   sc.innerHTML = `<div class="modal ${o.wide?'wide':''}">
@@ -2438,15 +2657,8 @@ function floatText(t, col, anchorSel){
   setTimeout(() => el.remove(), 1000);
 }
 function tipOn(el, title, body){
-  el.addEventListener('mouseenter', e => {
-    const t = $('#tip');
-    t.innerHTML = `<b>${title}</b>${body}`;
-    t.classList.add('on');
-    const r = el.getBoundingClientRect();
-    t.style.left = Math.min(innerWidth - 262, Math.max(8, r.left)) + 'px';
-    t.style.top = (r.bottom + 8) + 'px';
-  });
-  el.addEventListener('mouseleave', () => $('#tip').classList.remove('on'));
+  el.addEventListener('mouseenter', () => showTip(el, title, body, 'x'));
+  el.addEventListener('mouseleave', () => hideTip('x'));
 }
 
 /* =========================================================================
@@ -2511,8 +2723,8 @@ function openCard(){
             return `<div class="acard" style="width:auto">
               <div class="ahd"><span class="initb">${c.init}</span><span class="aic">${c.ic}</span><span class="anm">${esc(c.nm)}</span>
                 <span class="mini faint">${where}</span></div>
-              <div class="ahalf top"><span class="lbl">Top</span><span class="atx">${esc(c.top.tx)}</span></div>
-              <div class="ahalf bot"><span class="lbl">Bottom</span><span class="atx">${esc(c.bot.tx)}</span></div>
+              <div class="ahalf top"><span class="lbl">Top</span><span class="atx">${gtx(c.top.tx)}</span></div>
+              <div class="ahalf bot"><span class="lbl">Bottom</span><span class="atx">${gtx(c.bot.tx)}</span></div>
             </div>`; }).join('')}</div>
         </div>
         <div class="card" style="margin-top:10px">
@@ -2562,7 +2774,7 @@ function itemCard(it, right){
     <div class="ic">${it.ic}</div>
     <div style="flex:1;min-width:0">
       <div class="nm" style="color:${RANKCOL[it.rank||1]}">${esc(it.nm)}</div>
-      <div class="tx">${esc(it.tx)}</div>
+      <div class="tx">${gtx(it.tx)}</div>
       <div class="mini faint">${RANKNM[it.rank||1]} · ${SLOTNM[it.slot]}${it.cost?` · worth ${Math.round(it.cost*0.45)}g`:''}</div>
     </div>
     ${right||''}
@@ -2883,29 +3095,30 @@ function dieFaceHtml(die, cls, idx){
 }
 function statusChips(o){
   const out = [];
-  if(o.burn) out.push(`<span class="status" style="color:#fb923c">🔥 burning ${o.burn}</span>`);
-  if(o.poison || o.psn) out.push(`<span class="status" style="color:#a3e635">🧪 venom ${o.poison||o.psn}</span>`);
-  if(o.stun) out.push(`<span class="status" style="color:#e8b44a">💫 staggered</span>`);
-  if(o.hexed) out.push(`<span class="status" style="color:#a78bfa">🔯 hexed</span>`);
-  if(o.stone) out.push(`<span class="status" style="color:#38bdf8">🪨 stoneskin</span>`);
-  if(o.curseNow) out.push(`<span class="status" style="color:#f472b6">🩶 hitting ${o.curseNow} softer</span>`);
+  if(o.burn) out.push(`<span class="status gl" data-g="burn" style="color:#fb923c">🔥 burning ${o.burn}</span>`);
+  if(o.poison || o.psn) out.push(`<span class="status gl" data-g="venom" style="color:#a3e635">🧪 venom ${o.poison||o.psn}</span>`);
+  if(o.stun) out.push(`<span class="status gl" data-g="stagger" style="color:#e8b44a">💫 staggered</span>`);
+  if(o.hexed) out.push(`<span class="status gl" data-g="hexed" style="color:#a78bfa">🔯 hexed</span>`);
+  if(o.stone) out.push(`<span class="status gl" data-g="stone" style="color:#38bdf8">🪨 stoneskin</span>`);
+  if(o.curseNow) out.push(`<span class="status gl" data-g="sap" style="color:#f472b6">🩶 hitting ${o.curseNow} softer</span>`);
   return out.join('');
 }
 function intentHtml(){
   const C = V.combat, it = C.intent;
   if(!it) return '';
   const bits = [];
-  if(it.atk) bits.push(`<b style="color:#ff9b99">⚔ +${it.atk}</b>`);
-  if(it.sh) bits.push(`<b style="color:#7fe6b6">🛡 +${it.sh}</b>`);
-  if(it.heal) bits.push(`<b style="color:#7fe6b6">✚ ${it.heal}</b>`);
-  if(it.pierce) bits.push('<span style="color:var(--gold)">pierce</span>');
-  if(it.stun) bits.push('<span style="color:var(--gold)">knockdown</span>');
-  if(it.leech) bits.push('<span style="color:var(--gold)">feeds</span>');
-  if(it.psn) bits.push('<span style="color:var(--lime)">venom</span>');
-  if(it.burn) bits.push('<span style="color:var(--orange)">burn</span>');
-  if(it.curse) bits.push('<span style="color:var(--pink)">saps you</span>');
+  if(it.atk) bits.push(`<b class="gl" data-g="attack" style="color:#ff9b99">⚔ +${it.atk}</b>`);
+  if(it.sh) bits.push(`<b class="gl" data-g="shields" style="color:#7fe6b6">🛡 +${it.sh}</b>`);
+  if(it.heal) bits.push(`<b style="color:#7fe6b6">✚ heals ${it.heal}</b>`);
+  if(it.pierce) bits.push(`<span class="gl" data-g="pierce" style="color:var(--gold)">pierce</span>`);
+  if(it.stun) bits.push(`<span class="gl" data-g="knockdown" style="color:var(--gold)">knockdown</span>`);
+  if(it.leech) bits.push(`<span class="gl" data-g="leech" style="color:var(--gold)">feeds</span>`);
+  if(it.psn) bits.push(`<span class="gl" data-g="venom" style="color:var(--lime)">venom</span>`);
+  if(it.burn) bits.push(`<span class="gl" data-g="burn" style="color:var(--orange)">burn</span>`);
+  if(it.curse) bits.push(`<span class="gl" data-g="sap" style="color:var(--pink)">saps you</span>`);
   return `<div class="intent">
-    <div class="spread"><div class="tiny muted">Its intent this round</div><span class="initb">${it.init}</span></div>
+    <div class="spread"><div class="tiny muted"><span class="gl" data-g="intent">Its intent this round</span></div>
+      <span class="initb gl" data-g="initiative">${it.init}</span></div>
     <div class="inm">${esc(it.nm)}</div>
     <div class="row wr tiny" style="gap:9px;margin-top:3px">${bits.join('')}</div>
   </div>`;
@@ -2918,9 +3131,9 @@ function acardHtml(id){
   return `<div class="acard ${topOn||botOn?'on':''}">
     <div class="ahd"><span class="initb">${c.init}</span><span class="aic">${c.ic}</span><span class="anm">${esc(c.nm)}</span></div>
     <button class="ahalf top ${topOn?'sel':''}" data-card="${id}" data-half="top" ${topTaken?'disabled':''}>
-      <span class="lbl">Top</span><span class="atx">${esc(c.top.tx)}</span></button>
+      <span class="lbl">Top</span><span class="atx">${gtx(c.top.tx)}</span></button>
     <button class="ahalf bot ${botOn?'sel':''}" data-card="${id}" data-half="bot" ${botTaken?'disabled':''}>
-      <span class="lbl">Bottom</span><span class="atx">${esc(c.bot.tx)}</span></button>
+      <span class="lbl">Bottom</span><span class="atx">${gtx(c.bot.tx)}</span></button>
   </div>`;
 }
 function renderCombat(){
@@ -2951,12 +3164,12 @@ function renderCombat(){
         <div class="spread tiny"><span class="muted">${Math.max(0,h.hp)} / ${d.maxHp} HP</span><span class="muted">⚡ ${h.en}/${d.maxEn}</span></div>
         <div>${statusChips(C.me)}</div>
         ${cards ? `<div class="tiny muted" style="margin-top:9px">
-            Hand <b style="color:var(--ink)">${h.hand.length}</b> · discard ${h.discard.length} · lost ${h.lost.length}</div>`
+            <span class="gl" data-g="hand">Hand <b style="color:var(--ink)">${h.hand.length}</b></span> · <span class="gl" data-g="discard">discard ${h.discard.length}</span> · <span class="gl" data-g="lost">lost ${h.lost.length}</span></div>`
           : `<div class="tray" style="margin-top:9px">${C.myDice.length ? C.myDice.map((x,i)=>dieFaceHtml(x,'',i)).join('') : '<span class="tiny faint">No dice — you spent the round recovering.</span>'}</div>
             <div class="tot">
-              <span>⚔ Attack <b>${mine}</b></span>
-              <span>🛡 Shields <b>${msh + d.arm + myWard()}</b></span>
-              <span style="color:var(--gold)">✦ Surges <b>${surges}</b></span>
+              <span class="gl" data-g="attack">⚔ Attack <b>${mine}</b></span>
+              <span class="gl" data-g="shields">🛡 Shields <b>${msh + d.arm + myWard()}</b></span>
+              <span class="gl" data-g="surge" style="color:var(--gold)">✦ Surges <b>${surges}</b></span>
               <span class="${meFirst?'':'faint'}" style="color:${meFirst?'var(--green)':''}">${meFirst ? '⚡ you swing first' : '⏱ it swings first'}</span>
             </div>`}
       </div>
@@ -2968,8 +3181,8 @@ function renderCombat(){
         ${intentHtml()}
         ${cards ? '' : `<div class="tray" style="margin-top:9px">${C.foeDice.map(x=>dieFaceHtml(x)).join('')}</div>
           <div class="tot">
-            <span>⚔ Attack <b>${fatk}</b></span>
-            <span>🛡 Shields <b>${foeShields() + C.foe.arm}</b></span>
+            <span class="gl" data-g="attack">⚔ Attack <b>${fatk}</b></span>
+            <span class="gl" data-g="shields">🛡 Shields <b>${foeShields() + C.foe.arm}</b></span>
           </div>`}
       </div>
     </div>
@@ -2978,14 +3191,14 @@ function renderCombat(){
       <div class="card" style="margin-top:11px${C.mustRest ? ';border-color:rgba(232,180,74,.55)' : ''}">
         <div class="spread">
           <div class="tiny">${C.mustRest
-            ? '<b style="color:var(--gold)">You are out of cards.</b> <span class="muted">Catch your breath to pull your discard back, or break off.</span>'
-            : '<b>Play a top and a bottom.</b> <span class="muted">The card you take the top from sets your initiative — lower swings first.</span>'}</div>
+            ? `<b style="color:var(--gold)">You are out of cards.</b> <span class="muted">${gtx('Catch your breath to pull your discard back, or break off.')}</span>`
+            : `<b>${gtx('Play a top and a bottom.')}</b> <span class="muted">${gtx('The card you take the top from sets your initiative — lower swings first.')}</span>`}</div>
           <button class="btn sm ${C.mustRest ? 'primary' : 'ghost'}" id="cBreath" ${h.discard.length >= 2 ? '' : 'disabled'}>😮‍💨 Catch your breath</button>
         </div>
         <div class="row wr tiny" style="margin-top:6px">
           <span class="sb">Top: <b>${C.pickTop ? esc(CARD(C.pickTop).nm) : '—'}</b></span>
           <span class="sb">Bottom: <b>${C.pickBot ? esc(CARD(C.pickBot).nm) : '—'}</b></span>
-          <span class="sb">Initiative: <b>${C.pickTop ? CARD(C.pickTop).init : '—'}</b> vs <b>${it.init}</b></span>
+          <span class="sb gl" data-g="initiative">Initiative: <b>${C.pickTop ? CARD(C.pickTop).init : '—'}</b> vs <b>${it.init}</b></span>
         </div>
       </div>
       <div class="hand" ${C.mustRest ? 'style="opacity:.45;pointer-events:none"' : ''}>${h.hand.map(acardHtml).join('')}</div>
@@ -3003,7 +3216,7 @@ function renderCombat(){
             <button class="btn sm ${C.myDice.some(x=>x.mark) ? 'primary' : ''}" id="cRR" ${C.rrLeft <= 0 || !C.myDice.some(x=>x.mark) ? 'disabled' : ''}>🎲 Reroll ${C.myDice.filter(x=>x.mark).length || 'marked'}</button>
           </div>
         </div>
-        <div class="mini faint" style="margin-top:4px">${C.resting ? 'You spent the round recovering. Take the hit.' : 'Click your own dice to mark them (dashed outline), then hit Reroll. Spend surges, then strike.'}</div>
+        <div class="mini faint" style="margin-top:4px">${C.resting ? 'You spent the round recovering. Take the hit.' : gtx('Click your own dice to mark them (dashed outline), then hit Reroll. Spend surges, then strike.')}</div>
       </div>
 
       ${surges > 0 ? `<div style="margin-top:10px">
@@ -3012,7 +3225,7 @@ function renderCombat(){
           const so = SURGES[s];
           const can = surges >= so.cost;
           return `<div class="surge-opt ${can?'can':''}" ${can?`data-surge="${s}"`:''} style="${can?'cursor:pointer':'opacity:.4'}">
-            <div><b>${esc(so.nm)}</b> <span class="muted">${esc(so.tx)}</span></div>
+            <div><b>${gtx(so.nm)}</b> <span class="muted">${gtx(so.tx)}</span></div>
             <div style="color:var(--gold);font-weight:700">${'✦'.repeat(so.cost)}</div></div>`;
         }).join('')}
       </div>` : ''}
@@ -3030,14 +3243,16 @@ function renderCombat(){
 
   modal({
     ic: C.foe.ic, h: C.foe.nm, wide:true, noClose:true,
-    sub:`Round ${C.round}${C.opts.boss ? ' · no retreat' : ''}${MSPEC[C.foe.spec] ? ' · ' + MSPEC[C.foe.spec].nm + ': ' + MSPEC[C.foe.spec].tx : ''}`,
+    sub:`Round ${C.round}${C.opts.boss ? ' · no retreat' : ''}${MSPEC[C.foe.spec] ? ' · ' + gtx(MSPEC[C.foe.spec].nm + ': ' + MSPEC[C.foe.spec].tx) : ''}`,
     b: body,
     f: cards
-      ? [ ...(C.opts.boss ? [] : [{lb:'🏃 Break away', cls:'ghost', fn:tryFlee}]),
+      ? [ {lb:'📖 Terms', cls:'ghost', fn:()=>openGlossary(renderCombat)},
+          ...(C.opts.boss ? [] : [{lb:'🏃 Break away', cls:'ghost', fn:tryFlee}]),
           C.mustRest
             ? {lb:'😮‍💨 Catch your breath', cls:'primary', fn:catchBreath, dis: h.discard.length < 2}
             : {lb:'▶️ Commit', cls:'primary', fn:commitCards, dis: !(C.pickTop && C.pickBot)} ]
-      : [ ...(C.opts.boss ? [] : [{lb:'🏃 Break away', cls:'ghost', fn:tryFlee}]),
+      : [ {lb:'📖 Terms', cls:'ghost', fn:()=>openGlossary(renderCombat)},
+          ...(C.opts.boss ? [] : [{lb:'🏃 Break away', cls:'ghost', fn:tryFlee}]),
           {lb:'⚔️ Strike', cls:'primary', fn:strike, dis: C.phase !== 'dice' || C.done} ],
   });
 
@@ -3190,7 +3405,7 @@ function renderSide(){
         <div class="mdie ${x.spent?'spent':''} ${x.f==='wild'?'wild':''} ${V.rolled?'roll':''}" data-mdie="${i}">
           <div>${MFACE[x.f].ic}</div><div class="lb">${MFACE[x.f].lb}</div>
         </div>`).join('')}</div>
-      <div class="mini faint" style="margin-top:7px">Click a neighbouring hex to move. You spend a die matching its ground; a ✦ wild face goes anywhere; roads take any face; mountains cost two dice; water needs a boat.</div>
+      <div class="mini faint" style="margin-top:7px">${gtx('Click a neighbouring hex to move. You spend a travel die matching its ground; a wild face goes anywhere; roads take any face; mountains cost two dice; water needs a boat.')}</div>
       <button class="btn sm wide ${V.forceMove?'primary':''}" id="aForce" style="margin-top:8px" ${free<2?'disabled':''}>
         ${V.forceMove ? '✦ Pick a hex (or cancel)' : '✦ Force a path — spend 2 dice, go anywhere'}</button>
     </div>
@@ -3201,6 +3416,7 @@ function renderSide(){
     <div class="log" id="log"></div>
     <div class="row wr">
       <button class="btn sm ghost" id="aCodex">📖 Rules</button>
+      <button class="btn sm ghost" id="aTerms">🔤 Terms</button>
       <button class="btn sm ghost" id="aSeals">🔱 Objectives</button>
       <span class="tiny faint" style="margin-left:auto">seed ${esc(S.seed)}</span>
     </div>`;
@@ -3210,6 +3426,7 @@ function renderSide(){
   $('#aDay').onclick = () => { log('You let the light go and sleep where you are.'); endDay(); };
   $('#aForce').onclick = () => { V.forceMove = !V.forceMove; render(); };
   $('#aCodex').onclick = openCodex;
+  $('#aTerms').onclick = () => openGlossary();
   $('#aSeals').onclick = openObjectives;
   $('#legend').innerHTML = `<span class="lg">${S.hero.ic} you</span><span class="lg">🕳️ lair</span><span class="lg">🌑 gate</span><span class="lg">⚔️ roaming</span><span class="lg" style="color:var(--gold)">● unexplored</span>`;
   V.rolled = false;
@@ -3286,7 +3503,8 @@ function openCodex(){
           Three lairs. Break each one for a seal, and dread falls by 4. With all three, the Obsidian Gate opens and you can finish the Sable Crown on your terms. Let dread hit ${(S&&S.dreadMax)||30} and it finishes you on its.</div></div>
       </div>
     </div>`,
-    f:[{lb:'Back', cls:'primary', fn:()=>{closeModal(); if(S) render(); else renderTitle();}}]});
+    f:[{lb:'🔤 Every term explained', fn:()=>{ closeModal(); openGlossary(); }},
+       {lb:'Back', cls:'primary', fn:()=>{closeModal(); if(S) render(); else renderTitle();}}]});
 }
 
 /* =========================================================================
@@ -3377,11 +3595,11 @@ function wireCanvas(){
       V.cam.x = down.cx - dx; V.cam.y = down.cy - dy;
       drawMap();
     } else if(!e.touches){
-      if(modalOpen()){ if(V.hover){ V.hover = null; drawMap(); } $('#tip').classList.remove('on'); return; }
+      if(modalOpen()){ if(V.hover){ V.hover = null; drawMap(); } hideTip('map'); return; }
       const h = canvasHex(e);
       const k = key(h.q,h.r);
       if(S.map[k]){ if(!V.hover || V.hover.q !== h.q || V.hover.r !== h.r){ V.hover = h; drawMap(); showHexTip(e, S.map[k]); } }
-      else if(V.hover){ V.hover = null; drawMap(); $('#tip').classList.remove('on'); }
+      else if(V.hover){ V.hover = null; drawMap(); hideTip('map'); }
     }
   };
   const end = e => {
@@ -3396,7 +3614,7 @@ function wireCanvas(){
   cv.addEventListener('mousedown', start);
   window.addEventListener('mousemove', move);
   window.addEventListener('mouseup', end);
-  cv.addEventListener('mouseleave', () => { V.hover = null; $('#tip').classList.remove('on'); drawMap(); });
+  cv.addEventListener('mouseleave', () => { V.hover = null; hideTip('map'); drawMap(); });
   cv.addEventListener('touchstart', start, {passive:true});
   cv.addEventListener('touchmove', move, {passive:true});
   cv.addEventListener('touchend', end);
@@ -3421,12 +3639,13 @@ function showHexTip(e, m){
   const F = m.feat && FEATS[m.feat];
   const di = diceForMove(m);
   const adj = hexDist(m, S.pos) === 1;
-  t.innerHTML = `<b>${F ? F.ic + ' ' + (m.feat==='city'?'Kestrel Hold':F.nm) : TERRA[m.t].ic + ' ' + TERRA[m.t].nm}</b>
+  t.innerHTML = `<b class="tt">${F ? F.ic + ' ' + (m.feat==='city'?'Kestrel Hold':F.nm) : TERRA[m.t].ic + ' ' + TERRA[m.t].nm}</b>
     <div class="tiny">Tier ${m.tier}${m.road ? ' · road' : ''}${m.explored ? ' · explored' : ''}</div>
     ${adj ? `<div class="tiny" style="color:${di ? 'var(--green)' : 'var(--red)'};margin-top:3px">
       ${di ? (di.length ? `Costs ${plural(di.length,'die')}` : 'Free along the road') : (m.t === 'water' ? 'Water — needs a boat' : 'No matching travel die')}</div>` : ''}`;
   t.classList.add('on');
-  t.style.left = Math.min(innerWidth - 262, e.clientX + 14) + 'px';
+  V.tipOwner = 'map';
+  t.style.left = Math.min(innerWidth - 296, e.clientX + 14) + 'px';
   t.style.top = (e.clientY + 16) + 'px';
 }
 
@@ -3444,6 +3663,8 @@ document.addEventListener('keydown', e => {
   if(k === 'n') endDay();
   if(k === '?') openCodex();
 });
+buildGloss();
+wireGlossary();
 V.pickHero = HEROES[0].id;
 renderTitle();
 </script>
