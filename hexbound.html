@@ -222,6 +222,7 @@ const SAVE_KEY = 'hexbound.run.v1';
 
 /* ---------- tiny helpers ---------- */
 const $  = s => document.querySelector(s);
+const modalOpen = () => { const sc = document.getElementById('scrim'); return sc && !sc.classList.contains('hidden'); };
 const $$ = s => Array.from(document.querySelectorAll(s));
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const clamp = (n,a,b) => Math.max(a, Math.min(b, n));
@@ -1980,6 +1981,8 @@ function draftTalent(){
    ========================================================================= */
 function modal(o){
   const sc = $('#scrim');
+  $('#tip').classList.remove('on');
+  V.hover = null;
   sc.classList.remove('hidden');
   sc.innerHTML = `<div class="modal ${o.wide?'wide':''}">
     <div class="mh"><div class="ic">${o.ic||'📜'}</div><div style="flex:1"><h2>${o.h||''}</h2>${o.sub?`<div class="tiny muted">${o.sub}</div>`:''}</div>
@@ -2499,10 +2502,10 @@ function renderCombat(){
         <div class="tiny"><b style="color:var(--green)">You deal ${Math.max(0, toFoe - C.foe.arm)}</b> · <b style="color:#ff9b99">you take ${toMe}</b></div>
         <div class="row">
           <span class="tiny muted">Rerolls ${C.rrLeft}</span>
-          <button class="btn sm" id="cRR" ${C.rrLeft <= 0 || !C.myDice.some(x=>x.mark) ? 'disabled' : ''}>🎲 Reroll marked</button>
+          <button class="btn sm ${C.myDice.some(x=>x.mark) ? 'primary' : ''}" id="cRR" ${C.rrLeft <= 0 || !C.myDice.some(x=>x.mark) ? 'disabled' : ''}>🎲 Reroll ${C.myDice.filter(x=>x.mark).length || 'marked'}</button>
         </div>
       </div>
-      <div class="mini faint" style="margin-top:4px">Click your dice to mark them, then reroll. Spend surges before you strike.</div>
+      <div class="mini faint" style="margin-top:4px">Click your own dice to mark them (dashed outline), then hit <b>Reroll</b>. Spend surges, then strike.</div>
     </div>
 
     ${surges > 0 ? `<div style="margin-top:10px">
@@ -2537,6 +2540,8 @@ function renderCombat(){
     C.myDice[i].mark = !C.myDice[i].mark;
     renderCombat();
   });
+  const rrBtn = $('#cRR');
+  if(rrBtn) rrBtn.onclick = doReroll;
   $$('#scrim [data-surge]').forEach(el => el.onclick = () => spendSurge(el.dataset.surge));
   $$('#scrim [data-uitem]').forEach(el => el.onclick = () => useItem(el.dataset.uitem, true));
   C.myDice.forEach(x => x.fresh = false);
@@ -2850,7 +2855,7 @@ function renderTitle(){
 function wireCanvas(){
   let down = null, moved = false;
   const pos = e => ({x: (e.touches ? e.touches[0].clientX : e.clientX), y: (e.touches ? e.touches[0].clientY : e.clientY)});
-  const start = e => { const p = pos(e); down = {x:p.x, y:p.y, cx:V.cam.x, cy:V.cam.y}; moved = false; cv.classList.add('drag'); };
+  const start = e => { if(modalOpen()) return; const p = pos(e); down = {x:p.x, y:p.y, cx:V.cam.x, cy:V.cam.y}; moved = false; cv.classList.add('drag'); };
   const move = e => {
     const p = pos(e);
     if(down){
@@ -2859,6 +2864,7 @@ function wireCanvas(){
       V.cam.x = down.cx - dx; V.cam.y = down.cy - dy;
       drawMap();
     } else if(!e.touches){
+      if(modalOpen()){ if(V.hover){ V.hover = null; drawMap(); } $('#tip').classList.remove('on'); return; }
       const h = canvasHex(e);
       const k = key(h.q,h.r);
       if(S.map[k]){ if(!V.hover || V.hover.q !== h.q || V.hover.r !== h.r){ V.hover = h; drawMap(); showHexTip(e, S.map[k]); } }
@@ -2897,7 +2903,7 @@ function onHexClick(h){
   flash(m.revealed ? `${TERRA[m.t].nm}${m.feat ? ' · ' + FEATS[m.feat].nm : ''} — ${plural(hexDist(h,S.pos),'hex')} off` : 'Unmapped country');
 }
 function showHexTip(e, m){
-  if(!m.revealed) return;
+  if(!m.revealed || modalOpen()) return;
   const t = $('#tip');
   const F = m.feat && FEATS[m.feat];
   const di = diceForMove(m);
