@@ -352,6 +352,78 @@ flags these as `security_definer_view`.
 
 ---
 
+## 8. pg_net — grants to PUBLIC that no role here can revoke (18 Sept 2026)
+
+The `extension_in_public` advisor flags `pg_net`. The advisor's own remedy ("move it to
+another schema") is impossible and would not help. What is actually wrong is the grants.
+
+**What pg_net is here for.** Two `pg_cron` jobs use it to POST to Netlify on the hour:
+
+| job | schedule | target |
+|---|---|---|
+| `assessment-autosend-hourly` | `0 * * * *` | `/.netlify/functions/assessment-autosend-run` |
+| `letter-autosend-hourly` | `15 * * * *` | `/.netlify/functions/letter-autosend-cron` |
+
+Both send `X-Autosend-Secret`, read from `vault.decrypted_secrets`. Both run as `postgres`.
+Nothing else in the project touches `net.*`.
+
+**The finding.** pg_net's install script grants to **PUBLIC**, not to `anon` and
+`authenticated` individually:
+
+```
+schema net             =U/supabase_admin                 -- USAGE to PUBLIC
+net.http_request_queue =arwdDxtm/supabase_admin          -- ALL to PUBLIC
+net._http_response     =arwdDxtm/supabase_admin          -- ALL to PUBLIC
+net.http_get/http_post/http_delete/worker_restart/...  =X/supabase_admin
+```
+
+So it is not just read. PUBLIC can INSERT, UPDATE, DELETE and TRUNCATE both tables, call
+`net.http_post` (outbound HTTP issued by the database: SSRF and an exfil channel), and call
+`net.worker_restart`. And `net.http_request_queue` stores the request **headers** in
+cleartext, so a row sitting in that queue carries `X-Autosend-Secret` in the clear for as
+long as it takes the worker to drain it.
+
+**It cannot be revoked from here.** The grantor is `supabase_admin`; `current_user` is
+`postgres`, and `pg_has_role('postgres','supabase_admin','MEMBER')` is **false**. A REVOKE
+only removes grants made by the current role, so `revoke ... from public` (and from `anon`,
+`authenticated`) runs without error and changes nothing — the ACL was re-read afterwards and
+had not moved. `pg_net` is also `extrelocatable = false` and owned by `supabase_admin`, so
+`ALTER EXTENSION pg_net SET SCHEMA` fails; it would also be the wrong move, because it would
+drag `net.http_request_queue` out from under the background worker. `pg_net.ttl` (how long
+response bodies are retained, default 6 hours) is a postmaster-level GUC: `ALTER DATABASE
+... SET pg_net.ttl` is rejected with `55P02 parameter "pg_net.ttl" cannot be changed now`.
+
+**What is actually holding the line.** PostgREST only serves schemas on its exposed list.
+Probed live, as `anon`, against the deployed API:
+
+```
+GET /rest/v1/http_request_queue?select=id&limit=0   Accept-Profile: net
+  -> 406  {"code":"PGRST106","message":"Invalid schema: net",
+           "hint":"Only the following schemas are exposed: public, graphql_public"}
+```
+
+So `net` is unreachable over the API today. That is the whole control, and it is a dashboard
+setting (Settings -> API -> Exposed schemas) recorded in no file in this repo. Adding `net`
+to that list — for any reason, by anyone — turns the grants above into an unauthenticated
+SSRF plus a read of the autosend secret. The SECURITY DEFINER functions cannot be used as a
+side door: all nine have `search_path` pinned to `public` (or `public, pg_temp`), which does
+not include `net`.
+
+**What was done instead.** `phi-drift-check.js` now runs that exact probe daily and fails
+the check `api.net_schema_exposed` if the API ever answers anything but 406. It is the only
+enforcement available to us: we cannot remove the privilege, so we watch the one setting
+that makes the privilege reachable.
+
+**Standing rule:** never add `net` (or any schema other than `public` and `graphql_public`)
+to the exposed-schema list. If a future need seems to require it, the fix is a SECURITY
+DEFINER function in `public` with a pinned `search_path`, not an exposed schema.
+
+Left alone deliberately: the `vector` extension is also in `public` and is benign (operator
+and type support functions, no I/O). `vault.decrypted_secrets` was checked at the same time
+and is correctly closed to `anon` — no schema USAGE, no table SELECT.
+
+---
+
 ## Note
 
 The AWS deploy itself requires access to the AWS account and cannot be done from a repo-only

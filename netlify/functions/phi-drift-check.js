@@ -14,6 +14,10 @@
 // This looks, every day, and says so. It is a smoke alarm, not a fix: it never deletes,
 // never edits, never touches S3. phi-purge-expired.js does the cleaning.
 //
+// IT ALSO WATCHES ONE THING THAT IS NOT A COLUMN
+// The API's exposed-schema list. See EXPOSED_SCHEMA_CHECK below: a Supabase setting that
+// lives in no file in this repo is the only thing keeping pg_net off the public internet.
+//
 // WHAT IT NEVER DOES
 // It never reads a PHI VALUE into the alert. Every check is a COUNT, or a boolean over a
 // value that stays inside the function. The email carries labels and numbers, because an
@@ -98,6 +102,27 @@ var SHAPE_CHECKS = [
 
 var SHAPE_SCAN_LIMIT = 1000;
 
+// ── One check that is about the API surface, not about a column ───────────────────────
+// pg_net's objects — net.http_get / http_post / http_delete / worker_restart, and the
+// net.http_request_queue and net._http_response tables — are granted to PUBLIC by
+// `supabase_admin`, with ALL privileges on both tables. `postgres` is not a member of
+// supabase_admin, so a REVOKE from here is a silent no-op; verified 2026-09-18, the ACL
+// does not move. pg_net is also extrelocatable = false and owned by supabase_admin, so it
+// cannot be moved out of the way either.
+//
+// The only thing keeping that off the internet is that PostgREST exposes `public,
+// graphql_public` and nothing else, which is a dashboard setting recorded in no file here.
+// If `net` ever joins that list, an unauthenticated caller gets outbound HTTP requests
+// issued by the database (SSRF, and an exfil channel), the ability to read
+// net._http_response, and the ability to read net.http_request_queue — which carries the
+// X-Autosend-Secret header in cleartext for as long as a cron POST sits in the queue.
+//
+// So: check it daily, from outside, the same way an attacker would.
+var EXPOSED_SCHEMA_CHECK = {
+  id: 'api.net_schema_exposed',
+  label: 'PostgREST is exposing the `net` schema (pg_net reachable over the API)'
+};
+
 function sbHeaders() {
   var KEY = process.env.SUPABASE_SERVICE_KEY;
   return { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' };
@@ -127,6 +152,17 @@ async function countBadShapes(base, check) {
     if (v != null && !check.ok(String(v))) bad++;
   }
   return { bad: bad, scanned: rows.length, truncated: rows.length >= SHAPE_SCAN_LIMIT };
+}
+
+// Asks PostgREST for a pg_net table under the `net` profile. A correctly configured API
+// answers 406 / PGRST106 "Invalid schema: net" before it ever looks at privileges. A 200
+// means the schema is exposed. Any other status is unknown, not clear, so it throws.
+async function netSchemaExposed(base) {
+  var res = await fetch(base + '/rest/v1/http_request_queue?select=id&limit=0',
+    { headers: Object.assign({ 'Accept-Profile': 'net' }, sbHeaders()) });
+  if (res.status === 406) return 0;
+  if (res.ok) return 1;
+  throw new Error('exposed-schema probe returned ' + res.status);
 }
 
 // The previous run's failing set, so an unchanged alert can stay quiet.
@@ -210,6 +246,15 @@ exports.handler = async function (event) {
     }
   }
 
+  try {
+    var exposed = await netSchemaExposed(base);
+    counts[EXPOSED_SCHEMA_CHECK.id] = exposed;
+    if (exposed > 0) failing.push({ id: EXPOSED_SCHEMA_CHECK.id, label: EXPOSED_SCHEMA_CHECK.label, count: exposed });
+  } catch (e4) {
+    counts[EXPOSED_SCHEMA_CHECK.id] = null;
+    errors.push(EXPOSED_SCHEMA_CHECK.id + ': ' + (e4 && e4.message));
+  }
+
   var failingIds = failing.map(function (f) { return f.id; });
   var priorIds = (prior && prior.failing_ids) || [];
   var lastAlertAt = (prior && prior.last_alert_at) ? Date.parse(prior.last_alert_at) : 0;
@@ -226,12 +271,13 @@ exports.handler = async function (event) {
     var subject, lines;
     if (reason === 'resolved') {
       subject = 'PHI drift check: clear';
-      lines = ['Every PHI-capable column in Supabase is back to zero.', '',
+      lines = ['Every check is back to clear.', '',
                'Previously flagged: ' + priorIds.join(', ')];
     } else {
       subject = 'PHI drift check: ' + failing.length + ' finding' + (failing.length === 1 ? '' : 's') +
                 (reason === 'still_open' ? ' (still open)' : '');
-      lines = ['Supabase is holding data in columns that should be empty, or in a shape that is not safe.',
+      lines = ['Supabase is holding data in a column that should be empty, holding it in an unsafe shape,',
+               'or exposing something over the API that should not be reachable.',
                'Counts only — this alert never carries a value.', ''];
       failing.forEach(function (f) { lines.push('  ' + f.count + '  ' + f.label + '  [' + f.id + ']'); });
     }
