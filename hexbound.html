@@ -287,6 +287,11 @@ button.ahalf:disabled{opacity:.3;cursor:not-allowed}
 @media (prefers-reduced-motion: reduce){
   .gash,.redflash,.flycard,.intent.reveal{animation-duration:.01ms !important}
 }
+
+/* ---------- the face chart inside a tooltip ---------- */
+.facegrid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+.tipdie{width:100%;height:36px;padding:2px;border-radius:8px;cursor:default}
+#tip{max-width:210px}
 </style>
 </head>
 <body>
@@ -363,7 +368,7 @@ const MFACE = {
 const DICE = {
   base:  {nm:'Grit',   cls:'base',   ic:'⚪', faces:[{},{a:1},{a:1},{a:2},{d:1},{a:1,s:1}]},
   steel: {nm:'Steel',  cls:'steel',  ic:'🔵', faces:[{a:1},{a:2},{a:2},{a:3},{a:1,s:1},{a:2,s:1}]},
-  guard: {nm:'Guard',  cls:'guard',  ic:'🟢', faces:[{d:1},{d:1},{d:2},{a:1,d:1},{d:1,s:1},{d:2}]},
+  guard: {nm:'Guard',  cls:'guard',  ic:'🟢', faces:[{d:1},{d:2},{d:2},{a:1,d:1},{d:1,s:1},{d:3}]},
   arcane:{nm:'Arcane', cls:'arcane', ic:'🟣', faces:[{a:1},{a:2},{s:1},{a:1,s:1},{a:3},{s:2}]},
   hunt:  {nm:'Hunt',   cls:'hunt',   ic:'🟡', faces:[{a:1},{a:2},{a:2},{d:1},{a:1,s:1},{a:4}]},
   foe:   {nm:'Foe',    cls:'foe',    ic:'🔴', faces:[{a:1},{a:1},{a:2},{d:1},{a:2,s:1},{a:3}]},
@@ -497,6 +502,13 @@ const ITEMS = [
 {id:'phoenix', nm:'Phoenix Feather',    slot:'trinket', ic:'🪶', tier:4, rank:4, cost:220, bon:{hp:10,regen:5,mend:1}, tx:'+10 HP, heal 5 each dawn, surges may Mend.', relic:true},
 
 /* ---------------- CONSUMABLES ---------------- */
+{id:'whetcore', nm:'Whetted Core',      slot:'trinket', ic:'⚙️', tier:2, rank:2, cost:58, upgrade:[{from:'base',to:'steel',n:1}], tx:'One of your Grit dice becomes a Steel die.'},
+{id:'notch',    nm:"Hunter's Notch",    slot:'trinket', ic:'🪝', tier:2, rank:2, cost:56, upgrade:[{from:'base',to:'hunt',n:1}], tx:'One of your Grit dice becomes a Hunt die.'},
+{id:'oathinsert',nm:'Oathplate Insert', slot:'offhand', ic:'🧩', tier:2, rank:2, cost:54, upgrade:[{from:'base',to:'guard',n:1}], bon:{arm:1}, tx:'One Grit die becomes a Guard die. Armor 1.'},
+{id:'runegrip', nm:'Runed Grip',        slot:'trinket', ic:'🖐️', tier:3, rank:3, cost:104, upgrade:[{from:'base',to:'arcane',n:1}], bon:{wit:1}, tx:'One Grit die becomes an Arcane die. +1 Wits.'},
+{id:'balanced', nm:'Balanced Set',      slot:'trinket', ic:'⚖️', tier:3, rank:3, cost:110, bon:{noBlank:1}, tx:'Blank faces on your dice count as 1 attack instead of nothing.'},
+{id:'sharpstone',nm:'Keening Stone',    slot:'offhand', ic:'💎', tier:3, rank:3, cost:102, upgrade:[{from:'guard',to:'steel',n:1}], bon:{atk:1}, tx:'One Guard die becomes a Steel die. +1 attack.'},
+{id:'twinforge',nm:'The Twin Forge',    slot:'trinket', ic:'🏭', tier:4, rank:4, cost:205, upgrade:[{from:'base',to:'steel',n:2}], bon:{atk:1}, tx:'Two Grit dice become Steel dice. +1 attack.', relic:true},
 {id:'bandage', nm:'Field Bandage',      slot:'use', ic:'🩹', tier:1, rank:1, cost:14, use:'heal8',   tx:'Heal 8 HP. In or out of combat.'},
 {id:'poultice',nm:'Moss Poultice',      slot:'use', ic:'🌿', tier:1, rank:1, cost:22, use:'heal16',  tx:'Heal 16 HP.'},
 {id:'tonic',   nm:"Traveller's Tonic",  slot:'use', ic:'🧪', tier:1, rank:1, cost:16, use:'energy3', tx:'Restore 3 energy.'},
@@ -652,8 +664,8 @@ function D(){
   const out = {
     mig:h.stats.mig, agi:h.stats.agi, wit:h.stats.wit, spi:h.stats.spi,
     atk:0, arm:0, hp:0, move:h.move, scout:1, rr:0, dice:h.dice.slice(),
-    gold:0, haggle:0, test:0, ward:0, regen:0, zeal:0, en:0, mend:0, roadfree:0, wild:0,
-    surge:['dmg','guard'],
+    gold:0, haggle:0, test:0, ward:0, regen:0, zeal:0, en:0, mend:0, roadfree:0, wild:0, noBlank:0,
+    surge:['dmg','guard'], upgrade:[],
   };
   const add = o => {
     if(!o) return;
@@ -668,9 +680,10 @@ function D(){
     if(it.dice) out.dice.push(...it.dice);
     add(it.bon);
     if(it.surge) out.surge.push(...it.surge);
+    if(it.upgrade) out.upgrade.push(...it.upgrade);
   }
-  for(const t of h.talents) add(TAL(t) && TAL(t).bon);
-  for(const p of (h.perks||[])){ if(p.dice) out.dice.push(...p.dice); add(p.bon); if(p.surge) out.surge.push(...p.surge); }
+  for(const t of h.talents){ const T = TAL(t); if(!T) continue; add(T.bon); if(T.upgrade) out.upgrade.push(...T.upgrade); }
+  for(const p of (h.perks||[])){ if(p.dice) out.dice.push(...p.dice); add(p.bon); if(p.surge) out.surge.push(...p.surge); if(p.upgrade) out.upgrade.push(...p.upgrade); }
   if(h.id === 'priest') out.mend = 1;
   if(h.id === 'runecarver'){ out.rr += 2; out.test += 0; }
   if(h.id === 'warden') out.ward += 2;
@@ -683,6 +696,12 @@ function D(){
   out.maxEn = 3 + out.spi + out.en;
   out.rrTotal = out.wit + out.rr;
   out.pool = out.dice.concat(Array(Math.max(0, out.mig - 1)).fill('base'));
+  for(const u of out.upgrade){          // gear that reforges a die into a better one
+    let n = u.n || 1;
+    for(let i = 0; i < out.pool.length && n > 0; i++){
+      if(out.pool[i] === u.from){ out.pool[i] = u.to; n--; }
+    }
+  }
   return out;
 }
 function goldMult(){ return 1 + D().gold / 100; }
@@ -2161,6 +2180,10 @@ function startCombat(foe, opts){
   newCombatRound(true);
 }
 function cPool(){ return D().pool; }
+function applyNoBlank(dice){
+  if(!D().noBlank) return;
+  dice.forEach(x => { if(!x.a && !x.d && !x.s) x.a = 1; });
+}
 function cLog(t, cls){ const C = V.combat; if(C){ C.hist.push((cls?'§'+cls+'§':'')+t); if(C.hist.length>40) C.hist.shift(); } log(t, cls); }
 
 /* ---------- hand ---------- */
@@ -2275,6 +2298,7 @@ function commitCards(){
   }
 
   C.myDice = cPool().concat(play.dice).map(k => Object.assign(rollDie(k), {mark:false, fresh:true}));
+  applyNoBlank(C.myDice);
   C.foeDice = C.foe.pool.map(k => rollDie(k));
   C.rrLeft = Math.max(0, D().rrTotal + play.rr - (C.me.hexed ? 1 : 0));
   C.pend = {dmg:0, pierce:!!play.pierce, guard:0};
@@ -2377,6 +2401,7 @@ function doReroll(){
     die.a = nd.a; die.d = nd.d; die.s = nd.s; die.mark = false; die.fresh = true;
     used++;
   }
+  applyNoBlank(C.myDice);
   C.rrLeft -= used;
   C.myDice.forEach(d => d.mark = false);
   sfx('dice', 80);
@@ -3027,16 +3052,39 @@ function hideTip(owner){
   $('#tip').classList.remove('on');
   V.tipOwner = null;
 }
+/* what a die can actually roll — the whole point of deciding to reroll one */
+function dieTipHtml(k){
+  const Dk = DICE[k];
+  const gk = k === 'base' ? 'grit' : k;
+  const blurb = GLOSSARY[gk] ? GLOSSARY[gk].tx : '';
+  const faces = Dk.faces.map(f => `<div class="cdie ${Dk.cls} tipdie">${dieSvg({a:f.a||0, d:f.d||0, s:f.s||0})}</div>`).join('');
+  return `<div class="tiny muted" style="margin-bottom:4px">Its six faces</div>
+    <div class="facegrid">${faces}</div>
+    <div class="tiny" style="margin-top:6px">${blurb}</div>`;
+}
 function wireGlossary(){
+  const findDie = e => e.target && e.target.closest && e.target.closest('[data-dk]');
   const find = e => e.target && e.target.closest && e.target.closest('.gl[data-g]');
   document.addEventListener('mouseover', e => {
+    const dk = findDie(e);
+    if(dk && DICE[dk.dataset.dk]){
+      showTip(dk, DICE[dk.dataset.dk].ic + ' ' + DICE[dk.dataset.dk].nm + ' die', dieTipHtml(dk.dataset.dk), 'gloss');
+      return;
+    }
     const el = find(e); if(!el) return;
     const g = GLOSSARY[el.dataset.g]; if(!g) return;
     showTip(el, g.ic + ' ' + g.nm, g.tx, 'gloss');
   });
-  document.addEventListener('mouseout', e => { if(find(e)) hideTip('gloss'); });
+  document.addEventListener('mouseout', e => { if(find(e) || findDie(e)) hideTip('gloss'); });
   // touch: a tap explains the term, unless it sits inside a button that does something else
   document.addEventListener('click', e => {
+    const dk = findDie(e);
+    if(dk && DICE[dk.dataset.dk] && !dk.hasAttribute('data-die')){
+      showTip(dk, DICE[dk.dataset.dk].ic + ' ' + DICE[dk.dataset.dk].nm + ' die', dieTipHtml(dk.dataset.dk), 'gloss');
+      clearTimeout(V.tipTimer);
+      V.tipTimer = setTimeout(() => hideTip('gloss'), 6000);
+      return;
+    }
     const el = find(e); if(!el) return;
     if(el.closest('button')) return;
     const g = GLOSSARY[el.dataset.g]; if(!g) return;
@@ -3470,7 +3518,7 @@ function openCard(){
           <div class="kv"><span class="gl" data-g="reroll">Rerolls each round</span><b>${d.rrTotal}</b></div>
           <div class="sep" style="margin:8px 0"></div>
           <div class="tiny muted" style="margin-bottom:5px">Combat pool</div>
-          <div class="row wr">${Object.keys(poolCount).map(k => `<span class="sb gl" data-g="${k === 'base' ? 'grit' : k}">${DICE[k].ic} ${DICE[k].nm} ×${poolCount[k]}</span>`).join('')}</div>
+          <div class="row wr">${Object.keys(poolCount).map(k => `<span class="sb gl" data-dk="${k}">${DICE[k].ic} ${DICE[k].nm} ×${poolCount[k]}</span>`).join('')}</div>
           <div class="tiny muted" style="margin:9px 0 5px">Surge options</div>
           <div class="row wr">${d.surge.map(s => `<span class="sb">${gtx(SURGES[s].nm)} <span class="gl" data-g="surge">${'✦'.repeat(SURGES[s].cost)}</span></span>`).join('')}</div>
         </div>
@@ -4049,7 +4097,7 @@ function dieFaceHtml(die, cls, idx){
   const title = [die.a ? `${die.a} attack` : '', die.d ? `${die.d} shield${die.d>1?'s':''}` : '',
                  die.s ? `${die.s} surge${die.s>1?'s':''}` : ''].filter(Boolean).join(', ') || 'blank face';
   return `<div class="cdie ${DICE[die.k].cls} ${die.mark?'rr':''} ${blank?'blank':''} ${die.fresh?'roll':''}"
-    ${idx!=null?`data-die="${idx}"`:''} title="${DICE[die.k].nm} die — ${title}">${dieSvg(die)}</div>`;
+    ${idx!=null?`data-die="${idx}"`:''} data-dk="${die.k}" title="${DICE[die.k].nm} die — ${title}">${dieSvg(die)}</div>`;
 }
 function statusChips(o){
   const out = [];
@@ -4381,7 +4429,7 @@ function renderSide(){
       <div class="spread"><h3>Travel</h3><span class="tiny muted">${free} of ${S.dice.length} left</span></div>
       <div class="tray" style="margin-top:7px">${S.dice.map((x,i) => `
         <div class="mdie ${x.spent?'spent':''} ${x.f==='wild'?'wild':''} ${V.rolled?'roll':''}" data-mdie="${i}"
-             title="${x.f === 'wild' ? 'Wild — goes onto any ground' : MFACE[x.f].lb}">
+             title="A travel die rolls one of six faces: plains, forest, hills, mountain, marsh, or wild. This one shows ${x.f === 'wild' ? 'wild, which goes onto any ground' : MFACE[x.f].lb}.">
           <canvas class="tface" data-tface="${x.f}" width="30" height="30"></canvas>
           <div class="lb">${MFACE[x.f].lb}</div>
         </div>`).join('')}</div>
