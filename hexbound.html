@@ -258,6 +258,35 @@ button.ahalf:disabled{opacity:.3;cursor:not-allowed}
 .acard > *:not(.cwm){position:relative;z-index:1}
 .acard .ahd{border-left:3px solid var(--accent, var(--line-hi))}
 .acard{background-image:repeating-linear-gradient(135deg, rgba(255,255,255,.014) 0 3px, transparent 3px 6px)}
+
+/* ---------- enemy motifs and combat flourishes ---------- */
+.fighter{position:relative;overflow:hidden}
+.fwm{position:absolute;right:-18px;bottom:-22px;width:112px;height:112px;opacity:.07;pointer-events:none;z-index:0}
+.fighter > *:not(.fwm):not(.gash):not(.redflash){position:relative;z-index:1}
+.fighter.foe{border-color:color-mix(in srgb, var(--foe, #ef5350) 32%, transparent)}
+.intent{position:relative;overflow:hidden;border-color:color-mix(in srgb, var(--foe, #ef5350) 48%, transparent) !important;
+  background:color-mix(in srgb, var(--foe, #ef5350) 8%, transparent) !important}
+.iwm{position:absolute;right:-12px;top:-14px;width:78px;height:78px;opacity:.13;pointer-events:none;z-index:0}
+.intent > *:not(.iwm){position:relative;z-index:1}
+@keyframes flipin{from{transform:rotateX(-85deg);opacity:0}60%{opacity:1}to{transform:none;opacity:1}}
+.intent.reveal{animation:flipin .42s cubic-bezier(.2,.9,.3,1.15) both;transform-origin:top center}
+@keyframes swipe{
+  0%{transform:translate(-115%,-30%) rotate(-22deg) scaleX(.35);opacity:0}
+  30%{opacity:1}
+  100%{transform:translate(115%,30%) rotate(-22deg) scaleX(1.25);opacity:0}}
+.gash{position:absolute;left:0;top:34%;width:100%;height:14px;pointer-events:none;z-index:6;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.85) 35%,rgba(255,140,140,.95) 55%,transparent);
+  filter:blur(1.2px);animation:swipe .55s ease-out forwards}
+@keyframes redflash{0%{opacity:0}18%{opacity:1}100%{opacity:0}}
+.redflash{position:absolute;inset:0;pointer-events:none;z-index:5;
+  background:radial-gradient(circle at 50% 50%, rgba(239,83,80,0) 38%, rgba(239,83,80,.45) 100%);
+  animation:redflash .6s ease-out forwards}
+@keyframes flyaway{to{transform:translate(var(--dx),var(--dy)) scale(.34) rotate(var(--rot));opacity:0}}
+.flycard{position:fixed;z-index:400;pointer-events:none;margin:0;
+  animation:flyaway .56s cubic-bezier(.45,0,.6,1) forwards}
+@media (prefers-reduced-motion: reduce){
+  .gash,.redflash,.flycard,.intent.reveal{animation-duration:.01ms !important}
+}
 </style>
 </head>
 <body>
@@ -2147,6 +2176,7 @@ function drawIntent(){
   const C = V.combat;
   if(!C.order.length) C.order = shuffle(C.intentDeck.map((x,i) => i));
   C.intent = C.intentDeck[C.order.shift()];
+  C.intentFresh = true;
 }
 
 function newCombatRound(first){
@@ -2198,6 +2228,7 @@ function commitCards(){
   if(!C || C.phase !== 'cards' || !C.pickTop || !C.pickBot) return;
   const topCard = CARD(C.pickTop), botCard = CARD(C.pickBot);
   const A = topCard.top, B = botCard.bot;
+  if(!V.fast) flyCards([C.pickTop, C.pickBot]);
   const play = {atk:0, sh:0, heal:0, ward:0, rr:0, en:0, pierce:0, stun:0, dbl:0, leech:0,
                 refresh:0, burn:0, psn:0, curse:0, retal:0, gold:0, cure:0, dice:[], surge:[]};
   for(const a of [A, B]){
@@ -2299,6 +2330,8 @@ function dealToFoe(n, src, quiet){
   C.foe.hp -= n;
   if(!quiet) cLog(`You hit for ${n}.`, 'g'); else cLog(`${C.foe.nm} takes ${n} from ${src}.`, 'g');
   floatText('-' + n, '#3ddc97', '#foeCard');
+  fx('#foeCard', 'gash', 620);
+  const fc = $('#foeCard'); if(fc){ fc.classList.add('hit'); setTimeout(()=>fc.classList.remove('hit'), 320); }
   if(C.foe.hp <= 0 && !C.done){ C.done = true; setTimeout(() => winCombat(C), T(420)); }
 }
 function dealToMe(n, src, quiet){
@@ -2309,6 +2342,7 @@ function dealToMe(n, src, quiet){
   S.hero.hp -= dmg;
   cLog(`${cap(src)} costs you ${dmg}.`, 'r');
   floatText('-' + dmg, '#ef5350', '#meCard');
+  fx('#meCard', 'redflash', 640);
   const el = $('#meCard'); if(el){ el.classList.add('hit'); setTimeout(()=>el.classList.remove('hit'), 320); }
   if(S.hero.hp <= 0 && !C.done){ C.done = true; V.lastBoss = C.opts.boss || null; V.combat = null; setTimeout(heroFalls, T(400)); }
   return dmg;
@@ -3564,6 +3598,92 @@ function cardWatermark(){
   return `<svg class="cwm" viewBox="0 0 100 100" aria-hidden="true" style="color:${a.col}">${a.svg}</svg>`;
 }
 
+
+/* =========================================================================
+   ENEMY EMBLEMS
+   One motif per intent deck, so a fight looks like the kind of fight it is
+   before you have read the monster's name.
+   ========================================================================= */
+const FOEART = {
+  skulk: {col:'#a3e635', nm:'Skulk',
+    svg:'<g stroke="currentColor" stroke-width="8" stroke-linecap="round" fill="none"><path d="M20 12 C36 34 44 58 42 88"/><path d="M48 8 C64 32 72 58 70 90"/><path d="M76 16 C90 38 94 60 92 84"/></g>'},
+  brute: {col:'#fb923c', nm:'Brute',
+    svg:'<path d="M50 10 L86 36 L76 86 L24 86 L14 36 Z" fill="none" stroke="currentColor" stroke-width="8" stroke-linejoin="round"/><rect x="32" y="44" width="13" height="13" fill="currentColor"/><rect x="55" y="44" width="13" height="13" fill="currentColor"/><path d="M34 72 H66" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>'},
+  guard: {col:'#9ec9ff', nm:'Guard',
+    svg:'<path d="M50 8 L84 22 V50 C84 72 68 86 50 92 C32 86 16 72 16 50 V22 Z" fill="none" stroke="currentColor" stroke-width="8"/><path d="M50 26 V74 M30 44 H70" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>'},
+  caster:{col:'#a78bfa', nm:'Caster',
+    svg:'<ellipse cx="50" cy="50" rx="42" ry="25" fill="none" stroke="currentColor" stroke-width="8"/><circle cx="50" cy="50" r="13" fill="currentColor"/><path d="M50 6 V18 M50 82 V94" stroke="currentColor" stroke-width="7" stroke-linecap="round"/>'},
+  rot:   {col:'#94a3b8', nm:'Rot',
+    svg:'<path d="M50 10 C73 10 88 28 88 48 C88 62 81 70 75 74 V88 H25 V74 C19 70 12 62 12 48 C12 28 27 10 50 10 Z" fill="none" stroke="currentColor" stroke-width="8" stroke-linejoin="round"/><circle cx="36" cy="46" r="9" fill="currentColor"/><circle cx="64" cy="46" r="9" fill="currentColor"/>'},
+  lair1: {col:'#a78bfa', nm:'The Gravewright',
+    svg:'<path d="M28 94 V38 C28 21 38 8 50 8 C62 8 72 21 72 38 V94 Z" fill="none" stroke="currentColor" stroke-width="8"/><path d="M50 32 V72 M34 48 H66" stroke="currentColor" stroke-width="8" stroke-linecap="round"/>'},
+  lair2: {col:'#3ddc97', nm:'Maw of the Mire',
+    svg:'<g stroke="currentColor" stroke-width="8" stroke-linecap="round" fill="none"><path d="M18 90 C18 56 33 34 50 34 C67 34 82 56 82 90"/><path d="M34 90 C34 64 42 52 50 52 C58 52 66 64 66 90"/><path d="M50 34 V6"/></g>'},
+  lair3: {col:'#fb923c', nm:'The Kiln Warden',
+    svg:'<path d="M50 6 C58 30 76 34 76 56 C76 76 64 92 50 92 C36 92 24 76 24 56 C24 34 42 30 50 6 Z" fill="none" stroke="currentColor" stroke-width="8"/><path d="M50 44 C55 57 62 61 62 70 C62 81 57 87 50 87 C43 87 38 81 38 70 C38 61 45 57 50 44 Z" fill="currentColor"/>'},
+  crown: {col:'#ef5350', nm:'The Sable Crown',
+    svg:'<path d="M12 72 L22 24 L38 46 L50 14 L62 46 L78 24 L88 72 Z" fill="none" stroke="currentColor" stroke-width="8" stroke-linejoin="round"/><path d="M14 84 H86" stroke="currentColor" stroke-width="9" stroke-linecap="round"/>'},
+};
+function foeArtKey(foe){
+  if(!foe) return 'skulk';
+  return MDECK[foe.id] || (foe.tier >= 4 ? 'brute' : 'skulk');
+}
+const foeArt = () => FOEART[foeArtKey(V.combat && V.combat.foe)] || FOEART.skulk;
+function foeWatermark(){
+  const a = foeArt();
+  return `<svg class="fwm" viewBox="0 0 100 100" aria-hidden="true" style="color:${a.col}">${a.svg}</svg>`;
+}
+function intentWatermark(){
+  const a = foeArt();
+  return `<svg class="iwm" viewBox="0 0 100 100" aria-hidden="true" style="color:${a.col}">${a.svg}</svg>`;
+}
+
+/* =========================================================================
+   COMBAT FLOURISHES
+   ========================================================================= */
+/* Effects are queued rather than appended on the spot: strike() re-renders the
+   whole combat modal after it resolves, which would wipe anything already in
+   the DOM. renderCombat flushes the queue onto the fresh markup. */
+function fx(sel, cls, ms){
+  (V.fxq = V.fxq || []).push({sel, cls, ms});
+  clearTimeout(V.fxTimer);
+  V.fxTimer = setTimeout(flushFx, 0);
+}
+function flushFx(){
+  const q = V.fxq || [];
+  V.fxq = [];
+  for(const {sel, cls, ms} of q){
+    const el = $(sel);
+    if(!el) continue;
+    const d = document.createElement('div');
+    d.className = cls;
+    el.appendChild(d);
+    setTimeout(() => d.remove(), ms);
+  }
+}
+/* the two cards you just committed peel off the hand and fly to the discard */
+function flyCards(ids){
+  const target = $('#meCard');
+  const tr = target ? target.getBoundingClientRect()
+                    : {left: 40, top: innerHeight - 90, width: 120, height: 50};
+  ids.forEach((id, i) => {
+    const half = document.querySelector(`.acard [data-card="${id}"]`);
+    const card = half && half.closest('.acard');
+    if(!card) return;
+    const r = card.getBoundingClientRect();
+    const c = card.cloneNode(true);
+    c.classList.add('flycard');
+    c.style.left = r.left + 'px'; c.style.top = r.top + 'px';
+    c.style.width = r.width + 'px'; c.style.height = r.height + 'px';
+    c.style.setProperty('--dx', Math.round(tr.left + tr.width*0.18 - r.left) + 'px');
+    c.style.setProperty('--dy', Math.round(tr.top + tr.height*0.62 - r.top) + 'px');
+    c.style.setProperty('--rot', (i ? 16 : -13) + 'deg');
+    c.style.animationDelay = (i * 60) + 'ms';
+    document.body.appendChild(c);
+    setTimeout(() => c.remove(), 620 + i*60);
+  });
+}
+
 /* =========================================================================
    COMBAT UI
    ========================================================================= */
@@ -3597,7 +3717,9 @@ function intentHtml(){
   if(it.psn) bits.push(`<span class="gl" data-g="venom" style="color:var(--lime)">venom</span>`);
   if(it.burn) bits.push(`<span class="gl" data-g="burn" style="color:var(--orange)">burn</span>`);
   if(it.curse) bits.push(`<span class="gl" data-g="sap" style="color:var(--pink)">saps you</span>`);
-  return `<div class="intent">
+  const a = foeArt();
+  return `<div class="intent ${V.combat.intentFresh ? 'reveal' : ''}" style="--foe:${a.col}">
+    ${intentWatermark()}
     <div class="spread"><div class="tiny muted"><span class="gl" data-g="intent">Its intent this round</span></div>
       <span class="initb gl" data-g="initiative">${it.init}</span></div>
     <div class="inm">${esc(it.nm)}</div>
@@ -3655,7 +3777,8 @@ function renderCombat(){
               <span class="${meFirst?'':'faint'}" style="color:${meFirst?'var(--green)':''}">${meFirst ? '⚡ you swing first' : '⏱ it swings first'}</span>
             </div>`}
       </div>
-      <div class="fighter foe" id="foeCard">
+      <div class="fighter foe" id="foeCard" style="--foe:${foeArt().col}">
+        ${foeWatermark()}
         <div class="nm">${C.foe.ic} ${esc(C.foe.nm)} <span class="pill t${clamp(C.foe.tier,1,4)}" style="margin-left:auto">T${C.foe.tier}</span></div>
         <div class="hpbar"><i style="width:${clamp(C.foe.hp/C.foe.maxHp*100,0,100)}%"></i></div>
         <div class="spread tiny"><span class="muted">${Math.max(0,C.foe.hp)} / ${C.foe.maxHp} HP</span><span class="muted">Armor ${C.foe.arm}</span></div>
@@ -3751,6 +3874,8 @@ function renderCombat(){
   $$('#scrim [data-surge]').forEach(el => el.onclick = () => spendSurge(el.dataset.surge));
   $$('#scrim [data-uitem]').forEach(el => el.onclick = () => useItem(el.dataset.uitem, true));
   C.myDice.forEach(x => x.fresh = false);
+  C.intentFresh = false;
+  flushFx();
 }
 
 /* =========================================================================
