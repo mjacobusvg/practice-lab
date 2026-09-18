@@ -267,6 +267,8 @@ const KIND = {
   power:    {name:'Empower', ic:'💢', col:'var(--pink)',   target:'ally',       desc:v=>`Give an ally +${v} power for this fight.`},
   charm:    {name:'Dominate',ic:'🧠', col:'var(--violet)', target:'enemy',      desc:v=>`Seize an enemy's mind for ${v} turn${v>1?'s':''}. It turns on its own side.`},
   daze:     {name:'Mindlock',ic:'💫', col:'var(--gold)',   target:'enemy',      desc:v=>`Strip every point of the enemy's power, and its attacks land for half for ${v} turn${v>1?'s':''}.`},
+  leech:    {name:'Leech',   ic:'🩸', col:'var(--red)',    target:'enemy',      desc:v=>`Deal ${v} damage and heal whoever rolled it for ${Math.ceil(v/2)}.`},
+  echo:     {name:'Momentum',ic:'⏩', col:'var(--cyan)',   target:'self',       desc:v=>`Gain ${v} more reroll${v>1?'s':''} this turn.`},
   guard:    {name:'Guard',   ic:'🪖', col:'var(--blue)',   target:'self',       desc:v=>`Take every attack aimed at the rest of the party this round, and gain ${v} shield.`},
   regen:    {name:'Regrowth',ic:'🌱', col:'var(--green)',  target:'ally',       desc:v=>`An ally mends ${v} at the end of the round, then ${v-1}, and so on.`},
   summon:   {name:'Summon',  ic:'🌀', col:'var(--cyan)',   target:'self',       desc:v=>`Call up a Thrall with ${5+3*v} HP that rolls its own die for ${2+v} turns. Two at a time.`},
@@ -280,11 +282,15 @@ const F = (k, v = 0) => ({ k, v });
    entirely, which is how this game was beaten. */
 const SIGNATURE = { stun:'duelist', charm:'sorcerer', daze:'sorcerer', summon:'sorcerer',
                     burn:'pyromancer', poison:'venomist', power:'herald',
-                    guard:'vanguard', regen:'warden' };
+                    guard:'vanguard', regen:'warden',
+                    /* Focus is the casters' alone: with every hero making mana, a party
+                       banked enough to fire its best spell almost every turn. */
+                    mana:['warden','pyromancer','sorcerer'] };
 const CONTROL = ['stun','charm'];
 const isControl = k => CONTROL.includes(k);
 const signatureOwner = k => SIGNATURE[k] || null;
-const canTakeFace = (hero, k) => !SIGNATURE[k] || SIGNATURE[k] === hero.key;
+const ownersOf = k => { const o = SIGNATURE[k]; return o ? (Array.isArray(o) ? o : [o]) : null; };
+const canTakeFace = (hero, k) => { const o = ownersOf(k); return !o || o.includes(hero.key); };
 const controlFaces = hero => hero.faces.filter(f => isControl(f.k)).length;
 /* a hero may take this face, replacing the face at idx */
 function mayInstall(hero, k, idx){
@@ -294,9 +300,10 @@ function mayInstall(hero, k, idx){
   return idx !== undefined && isControl(hero.faces[idx].k);   /* swap one for the other */
 }
 const ownerName = k => {
-  const key = signatureOwner(k);
-  const h = key && HEROES.find(x => x.key === key);
-  return h ? h.name : null;
+  const o = ownersOf(k);
+  if(!o) return null;
+  const names = o.map(key => (HEROES.find(x => x.key === key) || {}).name).filter(Boolean);
+  return names.length > 1 ? names.slice(0, -1).join(', ') + ' or ' + names[names.length - 1] : names[0];
 };
 const faceLabel = f => f.k === 'blank' ? 'Blank' : `${KIND[f.k].name}${f.v ? ' ' + f.v : ''}`;
 
@@ -304,10 +311,10 @@ const faceLabel = f => f.k === 'blank' ? 'Blank' : `${KIND[f.k].name}${f.v ? ' '
 const HEROES = [
   { key:'vanguard', name:'Vanguard', av:'🛡️', hp:24,
     blurb:'A wall with a sword arm. The only one who can Guard, pulling the whole enemy turn onto himself.',
-    faces:[F('shield',3),F('shield',2),F('guard',4),F('dmg',3),F('mana',1),F('blank')], spell:'bulwark' },
+    faces:[F('shield',3),F('shield',2),F('guard',4),F('dmg',3),F('dmg',2),F('blank')], spell:'bulwark' },
   { key:'duelist', name:'Duelist', av:'🗡️', hp:15,
     blurb:'Enormous damage, no defence at all. The only one who can Stun.',
-    faces:[F('dmg',5),F('dmg',4),F('dmg',3),F('mana',1),F('stun',1),F('blank')], spell:'finisher' },
+    faces:[F('dmg',5),F('dmg',4),F('dmg',3),F('dmg',2),F('stun',1),F('blank')], spell:'finisher' },
   { key:'warden', name:'Warden', av:'🌿', hp:18,
     blurb:'Keeps the party upright. The only one with Regrowth, which mends a little every round.',
     faces:[F('heal',3),F('heal',2),F('regen',4),F('dmg',2),F('mana',1),F('blank')], spell:'mend' },
@@ -316,10 +323,10 @@ const HEROES = [
     faces:[F('dmgAll',2),F('burn',2),F('dmg',3),F('mana',2),F('mana',1),F('blank')], spell:'conflag' },
   { key:'venomist', name:'Venomist', av:'⚗️', hp:16,
     blurb:'Patient. The only one who can apply Venom, which ignores shields entirely.',
-    faces:[F('poison',3),F('poison',2),F('dmg',3),F('mana',1),F('dmg',2),F('blank')], spell:'miasma' },
+    faces:[F('poison',3),F('poison',2),F('dmg',3),F('shield',2),F('dmg',2),F('blank')], spell:'miasma' },
   { key:'herald', name:'Herald', av:'📯', hp:17,
     blurb:'Makes everyone else better. The only one who can Empower.',
-    faces:[F('power',1),F('power',1),F('shield',3),F('heal',2),F('mana',1),F('blank')], spell:'rally' },
+    faces:[F('power',1),F('power',1),F('shield',3),F('heal',2),F('dmg',2),F('blank')], spell:'rally' },
   { key:'sorcerer', name:'Sorcerer', av:'🧠', hp:15,
     blurb:'Rearranges who is standing in the room. The only one who can Dominate, Mindlock or Summon.',
     faces:[F('charm',1),F('daze',1),F('summon',1),F('dmg',3),F('mana',2),F('blank')], spell:'dominate' }
@@ -510,20 +517,40 @@ function rollItem(act){
 const SPELLS = [
   {key:'firebolt', name:'Firebolt',       cost:2, target:'enemy',     desc:'Deal 7 damage to one enemy.'},
   {key:'mend',     name:'Greater Mend',   cost:2, target:'ally',      desc:'Heal an ally for 8.'},
-  {key:'bulwark',  name:'Bulwark',        cost:2, target:'ally',      desc:'Give an ally 9 shield.'},
+  {key:'bulwark',  name:'Bulwark',        cost:0, target:'ally',      charge:{owner:'vanguard', need:3, on:['shield','shieldAll','guard'], verb:'Shield'},
+   desc:'Give an ally 9 shield.'},
   {key:'chain',    name:'Chain Lightning',cost:3, target:'allEnemies',desc:'Deal 5 damage to every enemy.'},
   {key:'frost',    name:'Frost Nail',     cost:3, target:'enemy',     desc:'Stun an enemy for 1 turn.'},
   {key:'siphon',   name:'Siphon',         cost:3, target:'enemy',     desc:'Deal 5 damage and heal your most wounded hero 5.'},
   {key:'quicken',  name:'Quicken',        cost:1, target:'self',      desc:'Gain 1 reroll this turn.'},
   {key:'wildfire', name:'Wildfire',       cost:5, target:'allEnemies',desc:'Deal 10 damage to every enemy.'},
-  {key:'finisher', name:'Finisher',       cost:3, target:'enemy',     desc:'Deal 6 damage, or 14 if the target is at or below half HP.'},
+  {key:'finisher', name:'Finisher',       cost:0, target:'enemy',     charge:{owner:'duelist', need:4, on:['dmg','dmgAll'], verb:'Strike'},
+   desc:'Deal 6 damage, or 14 if the target is at or below half HP.'},
   {key:'conflag',  name:'Conflagration',  cost:3, target:'allEnemies',desc:'Set every enemy burning for 3.'},
-  {key:'miasma',   name:'Miasma',         cost:2, target:'allEnemies',desc:'Apply 4 poison to every enemy.'},
-  {key:'rally',    name:'Rally',          cost:2, target:'allAllies', desc:'Give every hero +1 power for this fight.'},
+  {key:'miasma',   name:'Miasma',         cost:0, target:'allEnemies',charge:{owner:'venomist', need:3, on:['poison'], verb:'Venom'},
+   desc:'Apply 4 poison to every enemy.'},
+  {key:'rally',    name:'Rally',          cost:0, target:'allAllies', charge:{owner:'herald', need:3, on:['power'], verb:'Empower'},
+   desc:'Give every hero +1 power for this fight.'},
   {key:'dominate', name:'Dominate',       cost:4, target:'enemy',     desc:'Seize an enemy for 2 turns. It turns on its own side.'},
   {key:'legion',   name:'Legion',         cost:4, target:'self',      desc:'Call up two Thralls at once.'}
 ];
 const spellDef = k => SPELLS.find(s => s.key === k);
+/* A charged spell runs on its own hero rather than the shared mana pool: the
+   Duelist's Finisher is paid for in Strikes, the Vanguard's Bulwark in blocks.
+   It is earned inside a fight and resets when the next one starts. */
+const chargeHero = sp => (sp && sp.charge && S) ? S.party.find(h => h.key === sp.charge.owner) : null;
+function chargeSpellOf(hero){
+  if(!hero || !hero.key || !S) return null;
+  return S.spells.map(spellDef).find(sp => sp && sp.charge && sp.charge.owner === hero.key) || null;
+}
+function spellReady(sp){
+  if(!sp) return false;
+  if(sp.charge){
+    const h = chargeHero(sp);
+    return !!h && !h.downed && h.hp > 0 && (h.charge || 0) >= sp.charge.need;
+  }
+  return C && C.mana >= sp.cost;
+}
 
 /* ------------------------------------------------ face rewards (the "cards") */
 const FACE_POOL = [
@@ -538,23 +565,45 @@ const FACE_POOL = [
   {f:F('summon',2),   w:2},
   {f:F('stun',2),     w:2},  {f:F('mana',2),     w:6},  {f:F('mana',3),     w:3},
   {f:F('power',1),    w:5},  {f:F('power',2),    w:2},
-  {f:F('guard',4),    w:5},  {f:F('guard',6),    w:2},  {f:F('regen',4),    w:5},  {f:F('regen',6),    w:2}
+  {f:F('guard',4),    w:5},  {f:F('guard',6),    w:2},  {f:F('regen',4),    w:5},  {f:F('regen',6),    w:2},
+  {f:F('leech',4),    w:6, minAct:2},  {f:F('leech',6),    w:3, minAct:2},
+  {f:F('echo',1),     w:5, minAct:2},  {f:F('echo',2),     w:2, minAct:3}
 ];
+/* A reward pool with fixed numbers goes dead: by act three a forged die beats
+   everything on offer and every reward screen is a "Take none". What is
+   offered now grows with how far up the spire it is found. Flat effects --
+   Stun, Dominate, Summon, Empower, Focus -- never scale, because a turn is a
+   turn however deep you are. */
+const FULL_SCALE = ['dmg','shield','heal','guard','regen','leech'];
+const HALF_SCALE = ['dmgAll','shieldAll','poison','burn'];
+function rewardStep(){
+  const tier = (S ? S.act : 1) - 1;
+  const deep = (S && S.pos) ? S.pos.floor / (FLOORS - 2) : 0;
+  return Math.round(tier * 2 + deep * 2);
+}
+function scaleFace(f){
+  const st = rewardStep();
+  if(!st) return f;
+  if(FULL_SCALE.includes(f.k)) return { k:f.k, v:f.v + st };
+  if(HALF_SCALE.includes(f.k)) return { k:f.k, v:f.v + Math.ceil(st / 2) };
+  return f;
+}
 function rollFaceReward(){
   /* a Dominate face is worthless to a party with no Sorcerer, so it is never
      offered to one; likewise a second control face for a hero already holding
      one has nowhere to go */
   const pool = FACE_POOL.filter(o => {
-    const owner = signatureOwner(o.f.k);
-    if(owner && S && !S.party.some(h => h.key === owner)) return false;
+    const owners = ownersOf(o.f.k);
+    if(owners && S && !S.party.some(h => owners.includes(h.key))) return false;
     if(isControl(o.f.k) && S && !S.party.some(h => canTakeFace(h, o.f.k) && controlFaces(h) === 0)) return false;
+    if(o.minAct && S && S.act < o.minAct) return false;
     return true;
   });
   const use = pool.length ? pool : FACE_POOL.filter(o => !signatureOwner(o.f.k));
   const total = use.reduce((s,o)=>s+o.w,0);
   let n = rnd(total);
-  for(const o of use){ n -= o.w; if(n < 0) return {k:o.f.k, v:o.f.v}; }
-  return F('dmg',4);
+  for(const o of use){ n -= o.w; if(n < 0) return scaleFace(o.f); }
+  return scaleFace(F('dmg',4));
 }
 function faceRewards(n){
   const out = [];
@@ -566,7 +615,7 @@ function faceRewards(n){
   return out;
 }
 const facePrice = f => {
-  const base = {dmg:11, dmgAll:17, burn:22, shield:10, shieldAll:18, heal:11, poison:13, stun:34, charm:44, daze:30, summon:38, guard:20, regen:14, mana:16, power:26, blank:0}[f.k];
+  const base = {dmg:11, dmgAll:17, burn:22, shield:10, shieldAll:18, heal:11, poison:13, stun:34, charm:44, daze:30, summon:38, guard:20, regen:14, leech:16, echo:40, mana:16, power:26, blank:0}[f.k];
   return Math.round(20 + base * Math.max(1, f.v) * 0.9);
 };
 
@@ -585,7 +634,7 @@ function newRun(heroKeys){
     party: heroKeys.map(k => {
       const h = HEROES.find(x => x.key === k);
       return { uid:uid(), key:h.key, name:h.name, av:h.av, maxHp:h.hp, hp:h.hp,
-               faces:h.faces.map(f => ({...f})), shield:0, power:0, poison:0, burn:0, regen:0, charmed:0, steeled:0, guarding:false, downed:false,
+               faces:h.faces.map(f => ({...f})), shield:0, power:0, poison:0, burn:0, regen:0, charmed:0, steeled:0, guarding:false, charge:0, downed:false,
                gear:{weapon:null, armour:null, trinket:null} };
     }),
     gold: 60,
@@ -846,6 +895,7 @@ function startCombat(type){
   };
   S.party.forEach(h => {
     h.shield = 0; h.poison = 0; h.burn = 0; h.charmed = 0; h.regen = 0; h.steeled = 0; h.guarding = false;
+    h.charge = 0;                      /* momentum is built inside a fight, not hoarded between them */
     h.power = has('warhorn') ? 1 : 0;
     if(h.hp <= 0){ h.hp = 1; }
     h.downed = h.hp <= 0;
@@ -1040,7 +1090,7 @@ function clickDie(i){
 function clickSpell(key){
   if(C.over) return;
   const sp = spellDef(key);
-  if(!sp || C.mana < sp.cost) return;
+  if(!sp || !spellReady(sp)) return;
   if(C.pending && C.pending.type === 'spell' && C.pending.key === key){ C.pending = null; render(); return; }
   C.pending = { type:'spell', key };
   if(sp.target === 'self' || sp.target === 'allEnemies' || sp.target === 'allAllies') resolvePending(null);
@@ -1161,6 +1211,19 @@ function applyDie(i, target){
       logc(`${h.name} sets ${a.name} mending.`);
       break;
     }
+    case 'leech': {
+      const e = enemyByUid(target.uid); if(!e) break;
+      heroDamageToEnemy(e, v);
+      const back = Math.ceil(v / 2);
+      healHero(h, back);
+      logc(`${h.name} draws ${v} out of ${e.name} and keeps ${back}.`);
+      break;
+    }
+    case 'echo': {
+      C.rerolls += v;
+      logc(`${h.name} sees another angle. +${v} reroll${v > 1 ? 's' : ''}.`);
+      break;
+    }
     case 'mana': {
       C.mana += v;
       logc(`${h.name} focuses. +${v} mana.`);
@@ -1174,12 +1237,21 @@ function applyDie(i, target){
     }
     default: logc(`${h.name} rolls a blank.`);
   }
+  const cs = chargeSpellOf(h);
+  if(cs && cs.charge.on.includes(d.k) && (h.charge || 0) < cs.charge.need){
+    h.charge = (h.charge || 0) + 1;
+    if(h.charge === cs.charge.need){
+      floatOn(h.uid, cs.name.toUpperCase(), 'var(--gold)');
+      logc(`${h.name} is ready to use ${cs.name}.`);
+    }
+  }
 }
 
 function applySpell(key, target){
   const sp = spellDef(key);
-  if(C.mana < sp.cost) return;
-  C.mana -= sp.cost;
+  if(!spellReady(sp)) return;
+  if(sp.charge){ const h = chargeHero(sp); if(h) h.charge = Math.max(0, (h.charge || 0) - sp.charge.need); }
+  else C.mana -= sp.cost;
   switch(key){
     case 'firebolt': { const e = enemyByUid(target.uid); if(e) heroDamageToEnemy(e, 7); logc(`Firebolt hits ${e ? e.name : 'nothing'} for 7.`); break; }
     case 'mend':     { const a = unitByUid(target.uid); if(a){ healHero(a, 8); a.poison = Math.max(0, a.poison - 2); a.burn = Math.max(0, a.burn - 2); } logc('Greater Mend restores 8.'); break; }
@@ -1682,7 +1754,11 @@ const priceMod = () => has('token') ? 0.7 : 1;
 function openShop(){
   const faces = faceRewards(3).map(f => ({ face:f, price: Math.round(facePrice(f) * priceMod()) }));
   const rk = randomRelic(Math.random() < 0.3 ? 'rare' : 'uncommon');
-  const unowned = SPELLS.filter(s => !S.spells.includes(s.key));
+  /* a charged spell belongs to its hero and is never for sale; a mana spell is
+     useless to a party with no way to make mana, so it is not offered either */
+  const canMana = S.party.some(h => h.faces.some(f => f.k === 'mana'))
+    || glob('manaTurn') > 0 || glob('manaCombat') > 0 || has('wellspring') || has('clover');
+  const unowned = SPELLS.filter(s => !S.spells.includes(s.key) && !s.charge && canMana);
   const stock = sample(unowned, 2).map(sp => ({ key:sp.key, price: Math.round((60 + sp.cost * 22) * priceMod()) }));
   const wares = [];
   for(let i = 0; i < 2; i++){
@@ -1763,7 +1839,7 @@ function forgeFace(heroUid, idx){
   const h = heroByUid(heroUid);
   const f = h.faces[idx];
   if(!f || f.k === 'blank') return;
-  f.v += (['stun','charm','daze','summon','guard','dmgAll','shieldAll','power','mana','burn'].includes(f.k) ? 1 : 2);
+  f.v += (['stun','charm','daze','summon','guard','echo','dmgAll','shieldAll','power','mana','burn'].includes(f.k) ? 1 : 2);
   UI.modal = null; save(); render();
 }
 function campScour(){ openScour(0, null); }
@@ -1820,7 +1896,7 @@ const EVENTS = [
     text:'Something at the bottom is reciting words in the right order. You could learn them.',
     choices:[
       {t:'Listen for an hour', s:'Learn a spell. Every hero loses 4 max HP.', go:()=>{
-        const un=SPELLS.filter(s=>!S.spells.includes(s.key));
+        const un=SPELLS.filter(s=>!S.spells.includes(s.key) && !s.charge);
         if(un.length) S.spells.push(pick(un).key);
         S.party.forEach(h=>{h.maxHp=Math.max(5,h.maxHp-4); h.hp=Math.min(h.hp,h.maxHp);});
         eventResult(un.length?'The words settle behind your teeth.':'You already know everything it has to say.');
@@ -1915,7 +1991,7 @@ const ADVENTURE = [
    text:'He will trade knowledge for blood, as they always do.',
    choices:[
      {t:'Take his bargain', s:'Learn a spell. Every hero loses 6 max HP.', go:()=>{
-        const un = SPELLS.filter(x => !S.spells.includes(x.key));
+        const un = SPELLS.filter(x => !S.spells.includes(x.key) && !x.charge);
         if(un.length) S.spells.push(pick(un).key);
         S.party.forEach(h => { h.maxHp = Math.max(5, h.maxHp - 6); h.hp = Math.min(h.hp, h.maxHp); });
         advResult(un.length ? 'The words stick, painfully.' : 'He has nothing left to teach you.'); }},
@@ -2111,7 +2187,9 @@ function viewTitle(){
       <div class="desc">${esc(h.blurb)}</div>
       <div class="faces">${h.faces.map(f => faceHTML(f)).join('')}</div>
       <div class="tiny" style="margin-top:9px;color:var(--violet)" data-tip="${esc(spellDef(h.spell).name)}|${esc(spellDef(h.spell).desc)}">
-        📜 ${esc(spellDef(h.spell).name)} <span class="faint">◆${spellDef(h.spell).cost}</span> — joins the run with this hero</div>
+        📜 ${esc(spellDef(h.spell).name)} ${spellDef(h.spell).charge
+          ? `<span class="faint">⚡${spellDef(h.spell).charge.need} ${esc(spellDef(h.spell).charge.verb)}s</span>`
+          : `<span class="faint">◆${spellDef(h.spell).cost} mana</span>`} — joins the run with this hero</div>
     </div>`;
   }).join('');
   return `
@@ -2140,6 +2218,7 @@ function viewTitle(){
       <b style="color:var(--ink)">Rerolls</b> let you re-roll any dice you have not spent yet, twice per turn.<br>
       <b style="color:var(--ink)">Shields</b> fade at the start of your next turn. <b style="color:var(--ink)">Poison</b> ignores shields and ticks at the end of the round, then fades.<br>
       <b style="color:var(--ink)">Fire</b> also ignores shields, but it never fades: each round it burns, then grows by 1, then spreads to an enemy that is not yet alight.<br>
+      <b style="color:var(--ink)">Mana</b> comes only from the Warden, Pyromancer and Sorcerer. Everyone else pays for their signature spell in their own work: the Duelist charges Finisher with Strikes, the Vanguard charges Bulwark by blocking.<br>
       <b style="color:var(--ink)">Rewards are faces.</b> A die has six sides, so taking a new face means replacing one you have.<br>
       <b style="color:var(--ink)">Grinding a die down</b> at a merchant or a camp fire removes a side for good, down to ${MIN_FACES}. Fewer sides means the rest come up more often.<br>
       <b style="color:var(--ink)">Dominated</b> enemies fight for you and attack their own side, so it is a crowd tool: a lone boss has nobody to turn on.<br>
@@ -2305,6 +2384,9 @@ function viewCombat(){
     if(h.steeled) badges.push(`<span class="badge" style="color:var(--ink-dim)" data-tip="Braced|Cannot be taken again while this lasts, so no enemy can hold them turn after turn.">⛓️ ${h.steeled}</span>`);
     if(h.guarding) badges.push(`<span class="badge" style="color:var(--blue)" data-tip="Guarding|Every single-target attack this round lands on them instead of whoever it was aimed at.">🪖 guard</span>`);
     if(h.regen)  badges.push(`<span class="badge" style="color:var(--green)" data-tip="Regrowth|Mends this much at the end of the round, then one less each round after.">🌱 ${h.regen}</span>`);
+    const csp = chargeSpellOf(h);
+    if(csp) badges.push(`<span class="badge" style="color:${(h.charge || 0) >= csp.charge.need ? 'var(--gold)' : 'var(--ink-faint)'}"
+      data-tip="${esc(csp.name)}|${esc(csp.desc)} Builds one charge per ${esc(csp.charge.verb)} face ${esc(h.name)} spends, and resets each fight.">⚡ ${h.charge || 0}/${csp.charge.need}</span>`);
     if(h.charmed) badges.push(`<span class="badge" style="color:var(--violet)" data-tip="Taken|Not yours for this many turns. They will not roll for you, and at the end of the enemy turn they swing at the party.">🧠 ${h.charmed}</span>`);
     if(h.isSummon) badges.push(`<span class="badge" style="color:var(--cyan)" data-tip="Fading|This Thrall unravels after this many more turns. Summon again to renew it.">🌀 ${h.turns}</span>`);
     return `<div class="unit ally ${h.downed ? 'dead' : ''} ${allyTargetable && !h.downed ? 'targetable' : ''}" data-uid="${h.uid}"
@@ -2336,8 +2418,19 @@ function viewCombat(){
   const spells = S.spells.map(k => {
     const sp = spellDef(k);
     const sel = C.pending && C.pending.type === 'spell' && C.pending.key === k;
-    return `<button class="spell ${sel ? 'sel' : ''}" ${C.mana < sp.cost || C.over ? 'disabled' : ''} onclick="clickSpell('${k}')">
-      ${esc(sp.name)} <span class="c">◆${sp.cost}</span><span class="d">${esc(sp.desc)}</span></button>`;
+    const ready = spellReady(sp);
+    let meter, tip;
+    if(sp.charge){
+      const owner = chargeHero(sp);
+      const have = owner ? (owner.charge || 0) : 0;
+      meter = `<span class="c" style="color:${ready ? 'var(--gold)' : 'var(--ink-faint)'}">${ready ? 'READY' : have + '/' + sp.charge.need}</span>`;
+      tip = `${sp.name}|${sp.desc} Paid for by the ${(owner || {}).name || sp.charge.owner}: one charge for every ${sp.charge.verb} face they spend, and it resets each fight.`;
+    } else {
+      meter = `<span class="c">◆${sp.cost}</span>`;
+      tip = `${sp.name}|${sp.desc} Costs ${sp.cost} mana, which only the casters make.`;
+    }
+    return `<button class="spell ${sel ? 'sel' : ''}" ${!ready || C.over ? 'disabled' : ''} onclick="clickSpell('${k}')"
+      data-tip="${esc(tip)}">${esc(sp.name)} ${meter}<span class="d">${esc(sp.desc)}</span></button>`;
   }).join('');
 
   const bagRow = S.bag.map((k, i) => {
@@ -2752,7 +2845,9 @@ function mInventory(){
       ${S.spells.length ? `<div class="panel" style="background:var(--card);padding:12px">
         <b>📜 Spells <span class="tiny muted">${S.spells.length}</span></b>
         ${S.spells.map(k => { const sp = spellDef(k); return `<div style="padding:7px 0;border-top:1px solid var(--line)">
-          <div style="font-weight:700;font-size:13.5px">${esc(sp.name)} <span style="color:var(--violet)">◆${sp.cost}</span></div>
+          <div style="font-weight:700;font-size:13.5px">${esc(sp.name)} ${sp.charge
+            ? `<span style="color:var(--gold)">⚡${sp.charge.need} ${esc(sp.charge.verb)}s</span>`
+            : `<span style="color:var(--violet)">◆${sp.cost} mana</span>`}</div>
           <div class="tiny muted">${esc(sp.desc)}</div></div>`; }).join('')}
       </div>` : ''}
     </div>
