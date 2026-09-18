@@ -1591,6 +1591,44 @@ before anything else is pointed at it.
 
 ---
 
+## 37. Interview, Framework, Check: three jobs, not one feature
+
+**Settled Sept 2026.** Write this down because the question keeps reopening: *wasn't this supposed
+to be the ADHD interview?*
+
+The ADHD Framework started as an intended DIVA-style interview guide and became something else.
+That is a **discovery, not a drift**. Anyone can ship a forty-question ADHD instrument — DIVA is
+free and a PDF does the job. What nobody ships is the thing that reads four prior notes and says
+*the screener this diagnosis rests on is absent from the record, and the ASD differential was
+opened by the same clinician and then abandoned.* That is not a question list. It is a reasoning
+layer, and it is the harder and more distinctive problem.
+
+So stop asking the Framework to be both. Three named pieces:
+
+| | What it is | Whose job |
+|---|---|---|
+| **ADHD Interview** | The clinician's questioning structure. Customizable, with a Think Beyond default for anyone who has not made one. | The clinician's |
+| **ADHD Framework** | The evidence-state engine. Reads records plus encounter material; tracks what is established, what was merely assumed, where the record is weak, what would move the evaluation. | The AI's |
+| **Framework Check** | The lightweight mid- or post-visit delta from that engine: given what was just learned, what matters now. | The bridge |
+
+They interact without being the same thing. A clinician can be halfway through their own interview,
+hit Check, and get back:
+
+> You have established current impairment and childhood classroom difficulty. Still unclear:
+> impairment outside school before age 12. Ask about home or extracurricular settings.
+
+Then they go on interviewing the way they always have. The Framework never takes over the
+questioning; it watches what the questioning establishes.
+
+**What this rules out:** turning the Framework into a forty-question instrument, and shipping a
+second rigid interview form as a new module. The Interview is a template kind (see ROADMAP lane
+7b), reusing the Vault pattern that already exists.
+
+**What this rules in:** the Framework getting steadily better at the evidence problem, which is
+where its actual advantage is.
+
+---
+
 ## 33. This document is intentionally incomplete
 
 This is a starting point.

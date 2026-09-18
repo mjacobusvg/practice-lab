@@ -198,6 +198,25 @@ Watch:
 This turns the roadmap from "things Michael wants to build" into a company learning what
 actually drives adoption.
 
+### What this telemetry can and cannot decide (Sept 2026)
+
+Workflow telemetry went live in `ambient-93`/`ambient-102`: every model call self-labels its
+`mode`, non-model workflow events land in the same `public.tool_usage` table, and both carry a
+`session_id` so one query reconstructs a whole visit. It answers real questions — ambient vs typed
+vs pasted, who preps and who pastes a cold HPI, which controls are ignored, where people stop.
+
+**It cannot evaluate a capability that is not live.** No amount of baseline data will tell you
+whether clinicians would use a built-in or custom ADHD interview, a mid-visit evidence check, an
+encounter-assist card, a monitoring prompt or a safety prompt, because none of those exist in
+production to be used. "Wait for the data" is the right instinct aimed at the wrong question
+there, and it becomes an excuse for not testing a new product concept.
+
+The rule: **collect baseline telemetry on the product that exists, and in parallel build the
+smallest version of a new behavior that would generate the telemetry you actually need.** That is
+what `/practice` is for. Ship it narrow, get it live, then measure whether anyone invokes it.
+What this does forbid is reorganizing the whole interface on intuition — that is a question
+current telemetry CAN inform, so it should wait for it.
+
 ---
 
 ## Short-term roadmap — what to actually work on
@@ -384,6 +403,36 @@ not optional — the Scribe takes temporary access to the clinician's own file r
 a second copy of it, and an outside record's claims stay attributed to the record instead of
 becoming present-tense patient history (the Lane B item "clearer separation of historical fact
 vs 'reported today'"). Full design in `CLINICAL-OS-STRATEGY.md` §32.
+
+#### Lane 7b — Bring your own interview (added Sept 2026)
+
+**Planned, sequence TBD. Not speculative, which is why it is here and not in
+`FUTURE-OPPORTUNITIES.md`.**
+
+The settled distinction between the three ADHD pieces is in `CLINICAL-OS-STRATEGY.md` §37; read it
+before building any of them. In short: the **Interview** is the clinician's questioning structure,
+the **Framework** is the evidence-state engine behind it, and the **Check** is the lightweight
+delta between them. They are three jobs, not one feature, and the Framework was quietly being
+asked to be all three.
+
+What to build: an ADHD interview is another **template kind**, not another module. The
+`vaultTemplates` / `houseTemplates` pattern already does exactly this — the clinician's own
+structure with a house fallback when they have not set one up — and it already has a settings UI,
+a loader and a fallback path. This is a second slot in a subsystem that exists, not a new one.
+
+**No mode picker.** The clinician does not choose "my template / TBP guide / blank" up front; they
+have an interview, and it is theirs unless they never made one, in which case it is ours. A picker
+is a decision handed to someone before they have done anything, and another piece of architecture
+to understand. Same shape as note templates today.
+
+Why it matters beyond convenience: an experienced prescriber has a sequence they have used for ten
+years, and asking them to abandon it is asking them to be worse at their job for a week to try the
+product. That is the most common reason a good clinical tool does not survive first contact.
+*Keep your interview; we will make it smarter* has no switching cost.
+
+Side effect worth naming: this takes the pressure off the Framework to be both a comprehensive
+interview instrument and an intelligent evidence engine. It gets to be very good at the
+interesting half.
 
 #### Lane 8 — One intelligent "Relevant next steps" area
 
