@@ -1,4 +1,9 @@
-<!DOCTYPE html>
+  const spellRow = (m.spells || []).map((it, i) => row(`<div class="spread">
+      <div class="row"><div style="font-size:26px">📜</div>
+        <div><b>${esc(spellDef(it.key).name)} <span style="color:var(--violet)">◆${spellDef(it.key).cost}</span></b>
+        <div class="tiny muted">${esc(spellDef(it.key).desc)}</div></div></div>
+      <button class="btn sm ${S.gold >= it.price && !m.sold['s' + i] ? 'primary' : ''}" ${m.sold['s' + i] || S.gold < it.price ? 'disabled' : ''} onclick="buySpell(${i})">
+        ${m.sold['s' + i] ? 'Sold' : it.price + 'g'}</button></div>`)).join('');<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -255,7 +260,8 @@ let _uid = 0; const uid = () => ++_uid;
 /* target: enemy | allEnemies | ally | allAllies | self | none                */
 const KIND = {
   dmg:      {name:'Strike',  ic:'⚔️', col:'var(--red)',    target:'enemy',      desc:v=>`Deal ${v} damage.`},
-  dmgAll:   {name:'Cleave',  ic:'🔥', col:'var(--orange)', target:'allEnemies', desc:v=>`Deal ${v} damage to every enemy.`},
+  dmgAll:   {name:'Cleave',  ic:'🔥', col:'var(--orange)', target:'allEnemies', desc:v=>`Deal ${v} damage to every enemy and set them all burning for 1.`},
+  burn:     {name:'Ignite',  ic:'🕯️', col:'var(--orange)', target:'enemy',      desc:v=>`Set an enemy burning for ${v}. Fire grows by 1 each round and spreads.`},
   shield:   {name:'Shield',  ic:'🛡️', col:'var(--blue)', target:'ally',   desc:v=>`Give an ally ${v} shield.`},
   shieldAll:{name:'Aegis',   ic:'✨',       col:'var(--cyan)',   target:'allAllies',  desc:v=>`Give every hero ${v} shield.`},
   heal:     {name:'Mend',    ic:'❤️', col:'var(--green)',  target:'ally',       desc:v=>`Heal an ally for ${v} and clear 1 poison.`},
@@ -272,22 +278,22 @@ const faceLabel = f => f.k === 'blank' ? 'Blank' : `${KIND[f.k].name}${f.v ? ' '
 const HEROES = [
   { key:'vanguard', name:'Vanguard', av:'🛡️', hp:24,
     blurb:'A wall with a sword arm. Soaks the hits nobody else survives.',
-    faces:[F('shield',3),F('shield',2),F('shieldAll',1),F('dmg',3),F('dmg',2),F('blank')] },
+    faces:[F('shield',3),F('shield',2),F('shieldAll',1),F('dmg',3),F('mana',1),F('blank')], spell:'bulwark' },
   { key:'duelist', name:'Duelist', av:'🗡️', hp:15,
     blurb:'Enormous damage, zero defence, and two sides of pure regret.',
-    faces:[F('dmg',5),F('dmg',4),F('dmg',3),F('dmg',2),F('blank'),F('blank')] },
+    faces:[F('dmg',5),F('dmg',4),F('dmg',3),F('mana',1),F('blank'),F('blank')], spell:'finisher' },
   { key:'warden', name:'Warden', av:'🌿', hp:18,
     blurb:'Keeps the party upright long enough for the maths to work.',
-    faces:[F('heal',3),F('heal',2),F('shield',2),F('dmg',2),F('mana',1),F('blank')] },
+    faces:[F('heal',3),F('heal',2),F('shield',2),F('dmg',2),F('mana',1),F('blank')], spell:'mend' },
   { key:'pyromancer', name:'Pyromancer', av:'🔥', hp:14,
-    blurb:'Answers crowds. Needs someone standing in front of her.',
-    faces:[F('dmgAll',2),F('dmgAll',1),F('dmg',3),F('mana',2),F('mana',1),F('blank')] },
+    blurb:'Answers crowds. Her fire does little on impact and a great deal afterwards.',
+    faces:[F('dmgAll',2),F('burn',2),F('dmg',3),F('mana',2),F('mana',1),F('blank')], spell:'conflag' },
   { key:'venomist', name:'Venomist', av:'⚗️', hp:16,
     blurb:'Patient. Poison ignores shields and does not care how big you are.',
-    faces:[F('poison',3),F('poison',2),F('dmg',3),F('dmg',2),F('stun',1),F('blank')] },
+    faces:[F('poison',3),F('poison',2),F('dmg',3),F('mana',1),F('stun',1),F('blank')], spell:'miasma' },
   { key:'herald', name:'Herald', av:'📯', hp:17,
     blurb:'Makes everyone else better. Terrifying once the fight runs long.',
-    faces:[F('power',1),F('power',1),F('shield',3),F('heal',2),F('dmg',2),F('blank')] }
+    faces:[F('power',1),F('power',1),F('shield',3),F('heal',2),F('mana',1),F('blank')], spell:'rally' }
 ];
 
 /* ------------------------------------------------------------------ enemies */
@@ -345,6 +351,7 @@ const RELICS = [
   {key:'towershield',name:'Tower Shield',    ic:'🛡️', tier:'common', desc:'Every Shield and Aegis face gives +1.'},
   {key:'verdant',   name:'Verdant Charm',    ic:'🌼', tier:'common', desc:'Every Mend face heals +1.'},
   {key:'venomsac',  name:'Venom Sac',        ic:'🦂', tier:'common', desc:'Every Venom face applies +1 poison.'},
+  {key:'emberbrand', name:'Ember Brand',      ic:'🕯️', tier:'common', desc:'Every Ignite face sets +1 burn.'},
   {key:'coinpurse', name:'Coin Purse',       ic:'💰', tier:'common', desc:'Gain 30% more gold.'},
   {key:'bloodstone',name:'Bloodstone',       ic:'🔴', tier:'common', desc:'Heal every hero 3 HP after each combat.'},
   {key:'clover',    name:'Lucky Clover',     ic:'🍀', tier:'common', desc:'Start each combat with 2 mana.'},
@@ -371,7 +378,11 @@ const SPELLS = [
   {key:'frost',    name:'Frost Nail',     cost:3, target:'enemy',     desc:'Stun an enemy for 1 turn.'},
   {key:'siphon',   name:'Siphon',         cost:3, target:'enemy',     desc:'Deal 5 damage and heal your most wounded hero 5.'},
   {key:'quicken',  name:'Quicken',        cost:1, target:'self',      desc:'Gain 1 reroll this turn.'},
-  {key:'wildfire', name:'Wildfire',       cost:5, target:'allEnemies',desc:'Deal 10 damage to every enemy.'}
+  {key:'wildfire', name:'Wildfire',       cost:5, target:'allEnemies',desc:'Deal 10 damage to every enemy.'},
+  {key:'finisher', name:'Finisher',       cost:3, target:'enemy',     desc:'Deal 6 damage, or 14 if the target is at or below half HP.'},
+  {key:'conflag',  name:'Conflagration',  cost:3, target:'allEnemies',desc:'Set every enemy burning for 3.'},
+  {key:'miasma',   name:'Miasma',         cost:2, target:'allEnemies',desc:'Apply 4 poison to every enemy.'},
+  {key:'rally',    name:'Rally',          cost:2, target:'allAllies', desc:'Give every hero +1 power for this fight.'}
 ];
 const spellDef = k => SPELLS.find(s => s.key === k);
 
@@ -381,7 +392,8 @@ const FACE_POOL = [
   {f:F('dmg',7),      w:2},  {f:F('dmgAll',2),   w:7},  {f:F('dmgAll',3),   w:4},
   {f:F('dmgAll',4),   w:2},  {f:F('shield',4),   w:8},  {f:F('shield',5),   w:5},
   {f:F('shield',7),   w:2},  {f:F('shieldAll',2),w:5},  {f:F('shieldAll',3),w:2},
-  {f:F('heal',4),     w:7},  {f:F('heal',6),     w:4},  {f:F('poison',3),   w:7},
+  {f:F('heal',4),     w:7},  {f:F('heal',6),     w:4},  {f:F('burn',1),     w:7},  {f:F('burn',2),     w:5},  {f:F('burn',3),     w:2},
+  {f:F('poison',3),   w:7},
   {f:F('poison',4),   w:4},  {f:F('poison',6),   w:2},  {f:F('stun',1),     w:5},
   {f:F('stun',2),     w:2},  {f:F('mana',2),     w:6},  {f:F('mana',3),     w:3},
   {f:F('power',1),    w:5},  {f:F('power',2),    w:2}
@@ -402,7 +414,7 @@ function faceRewards(n){
   return out;
 }
 const facePrice = f => {
-  const base = {dmg:11, dmgAll:17, shield:10, shieldAll:18, heal:11, poison:13, stun:34, mana:16, power:26, blank:0}[f.k];
+  const base = {dmg:11, dmgAll:17, burn:22, shield:10, shieldAll:18, heal:11, poison:13, stun:34, mana:16, power:26, blank:0}[f.k];
   return Math.round(20 + base * Math.max(1, f.v) * 0.9);
 };
 
@@ -424,7 +436,8 @@ function newRun(heroKeys){
     }),
     gold: 60,
     relics: [],
-    spells: [],
+    /* each hero brings their signature spell, so a run opens with three */
+    spells: [...new Set(heroKeys.map(k => HEROES.find(h => h.key === k).spell))],
     map: null,
     pos: null,          /* {floor, slot} of the node we are standing on */
     visited: [],
@@ -555,6 +568,7 @@ function faceValue(hero, f){
   if(f.k === 'shield' || f.k === 'shieldAll'){ if(has('towershield')) v += 1; }
   if(f.k === 'heal'   && has('verdant'))  v += 1;
   if(f.k === 'poison' && has('venomsac')) v += 1;
+  if(f.k === 'burn'   && has('emberbrand')) v += 1;
   return Math.max(0, v);
 }
 const livingHeroes  = () => S.party.filter(h => !h.downed);
@@ -577,7 +591,7 @@ function makeEnemy(def, act){
   const hp = Math.max(4, Math.round(def.hp * ACT_HP[act]));
   return {
     uid: uid(), key:def.key, name:def.name, av:def.av,
-    maxHp:hp, hp, shield:0, poison:0, stun:0, power:0,
+    maxHp:hp, hp, shield:0, poison:0, burn:0, stun:0, power:0,
     moves: scaleMoves(def, act), mi: 0, intent:null,
     elite: !!def.elite, boss: !!def.boss
   };
@@ -739,7 +753,7 @@ function clickSpell(key){
   if(!sp || C.mana < sp.cost) return;
   if(C.pending && C.pending.type === 'spell' && C.pending.key === key){ C.pending = null; render(); return; }
   C.pending = { type:'spell', key };
-  if(sp.target === 'self' || sp.target === 'allEnemies') resolvePending(null);
+  if(sp.target === 'self' || sp.target === 'allEnemies' || sp.target === 'allAllies') resolvePending(null);
   else render();
 }
 function clickTarget(kind, uidv){
@@ -775,8 +789,14 @@ function applyDie(i, target){
       break;
     }
     case 'dmgAll': {
-      livingEnemies().forEach(e => heroDamageToEnemy(e, v));
-      logc(`${h.name} cleaves everything for ${v}.`);
+      livingEnemies().forEach(e => { heroDamageToEnemy(e, v); if(e.hp > 0) e.burn += 1; });
+      logc(`${h.name} cleaves everything for ${v}, and the room catches fire.`);
+      break;
+    }
+    case 'burn': {
+      const e = enemyByUid(target.uid); if(!e) break;
+      e.burn += v; floatOn(e.uid, '🔥' + v, 'var(--orange)');
+      logc(`${h.name} sets ${e.name} alight.`);
       break;
     }
     case 'shield': {
@@ -842,6 +862,16 @@ function applySpell(key, target){
     }
     case 'quicken':  { C.rerolls += 1; logc('Quicken grants a reroll.'); break; }
     case 'wildfire': { livingEnemies().forEach(e => heroDamageToEnemy(e, 10)); logc('Wildfire scours the room for 10.'); break; }
+    case 'finisher': {
+      const e = enemyByUid(target.uid); if(!e) break;
+      const big = e.hp <= e.maxHp / 2;
+      heroDamageToEnemy(e, big ? 14 : 6);
+      logc(big ? 'Finisher lands clean for 14.' : 'Finisher glances off for 6.');
+      break;
+    }
+    case 'conflag':  { livingEnemies().forEach(e => { e.burn += 3; floatOn(e.uid, '🔥' + '3', 'var(--orange)'); }); logc('Conflagration sets the room alight.'); break; }
+    case 'miasma':   { livingEnemies().forEach(e => { e.poison += 4; floatOn(e.uid, '☠4', 'var(--lime)'); }); logc('Miasma settles over everything.'); break; }
+    case 'rally':    { livingHeroes().forEach(h => { h.power += 1; floatOn(h.uid, '+1 POW', 'var(--pink)'); }); logc('Rally lifts the whole party.'); break; }
   }
 }
 
@@ -927,6 +957,24 @@ function enemyPhase(){
 }
 
 function endOfRound(){
+  /* Fire resolves first: it burns, then grows, then jumps to something new.
+     Unlike poison it does not decay, so an early Ignite compounds over a long
+     fight -- and in a crowd it turns one lit enemy into a spreading problem. */
+  const burning = livingEnemies().filter(e => e.burn > 0);
+  burning.forEach(e => {
+    hurtEnemy(e, e.burn, true);
+    logc(`${e.name} burns for ${e.burn}.`);
+  });
+  const stillBurning = burning.filter(e => e.hp > 0);
+  stillBurning.forEach(e => { e.burn += 1; });
+  const unlit = livingEnemies().filter(e => e.burn === 0);
+  stillBurning.slice(0, unlit.length).forEach((src, i) => {
+    unlit[i].burn = 1;
+    floatOn(unlit[i].uid, '🔥', 'var(--orange)');
+    logc(`The fire spreads from ${src.name} to ${unlit[i].name}.`);
+  });
+  if(!livingEnemies().length){ endCombat(true); return; }
+
   /* poison ticks after everyone has acted */
   livingEnemies().forEach(e => {
     if(e.poison > 0){
@@ -1053,12 +1101,12 @@ function openShop(){
   const faces = faceRewards(3).map(f => ({ face:f, price: Math.round(facePrice(f) * priceMod()) }));
   const rk = randomRelic(Math.random() < 0.3 ? 'rare' : 'uncommon');
   const unowned = SPELLS.filter(s => !S.spells.includes(s.key));
-  const sk = unowned.length ? pick(unowned).key : null;
+  const stock = sample(unowned, 2).map(sp => ({ key:sp.key, price: Math.round((60 + sp.cost * 22) * priceMod()) }));
   UI.modal = {
     type:'shop',
     faces,
     relic: rk ? { key:rk, price: Math.round((rk && relicDef(rk).tier === 'rare' ? 210 : 150) * priceMod()) } : null,
-    spell: sk ? { key:sk, price: Math.round((60 + spellDef(sk).cost * 22) * priceMod()) } : null,
+    spells: stock,
     rations: { price: Math.round(50 * priceMod()), used:false },
     sold: {}
   };
@@ -1083,11 +1131,12 @@ function buyRelic(){
   if(UI.pendingAncestral){ UI.pendingAncestral = false; const back = m; UI.modal = { type:'ancestral', after: () => { UI.modal = back; render(); } }; render(); return; }
   save(); render();
 }
-function buySpell(){
+function buySpell(i){
   const m = shopModal(); if(!m) return;
-  if(!m.spell || m.sold.spell || S.gold < m.spell.price) return;
-  S.gold -= m.spell.price; m.sold.spell = true;
-  S.spells.push(m.spell.key);
+  const it = m.spells[i];
+  if(!it || m.sold['s' + i] || S.gold < it.price) return;
+  S.gold -= it.price; m.sold['s' + i] = true;
+  S.spells.push(it.key);
   save(); render();
 }
 function buyRations(){
@@ -1110,7 +1159,7 @@ function forgeFace(heroUid, idx){
   const h = heroByUid(heroUid);
   const f = h.faces[idx];
   if(!f || f.k === 'blank') return;
-  f.v += (f.k === 'stun' ? 1 : f.k === 'dmgAll' || f.k === 'shieldAll' || f.k === 'power' || f.k === 'mana' ? 1 : 2);
+  f.v += (f.k === 'stun' ? 1 : f.k === 'dmgAll' || f.k === 'shieldAll' || f.k === 'power' || f.k === 'mana' || f.k === 'burn' ? 1 : 2);
   UI.modal = null; save(); render();
 }
 function campDrill(){
@@ -1287,6 +1336,8 @@ function viewTitle(){
       </div>
       <div class="desc">${esc(h.blurb)}</div>
       <div class="faces">${h.faces.map(f => faceHTML(f)).join('')}</div>
+      <div class="tiny" style="margin-top:9px;color:var(--violet)" data-tip="${esc(spellDef(h.spell).name)}|${esc(spellDef(h.spell).desc)}">
+        📜 ${esc(spellDef(h.spell).name)} <span class="faint">◆${spellDef(h.spell).cost}</span> — joins the run with this hero</div>
     </div>`;
   }).join('');
   return `
@@ -1313,7 +1364,8 @@ function viewTitle(){
       <b style="color:var(--ink)">Each turn</b> every standing hero rolls their die. Click a rolled face, then click a target.
       Unused faces are wasted, so the puzzle is spending all three well.<br>
       <b style="color:var(--ink)">Rerolls</b> let you re-roll any dice you have not spent yet, twice per turn.<br>
-      <b style="color:var(--ink)">Shields</b> fade at the start of your next turn. <b style="color:var(--ink)">Poison</b> ignores shields and ticks at the end of the round.<br>
+      <b style="color:var(--ink)">Shields</b> fade at the start of your next turn. <b style="color:var(--ink)">Poison</b> ignores shields and ticks at the end of the round, then fades.<br>
+      <b style="color:var(--ink)">Fire</b> also ignores shields, but it never fades: each round it burns, then grows by 1, then spreads to an enemy that is not yet alight.<br>
       <b style="color:var(--ink)">Rewards are faces.</b> A die has six sides, so taking a new face means replacing one you have.<br>
       <b style="color:var(--ink)">A downed hero</b> returns after the fight. Losing all three ends the run.<br>
       <b style="color:var(--ink)">Winning a fight</b> restores 15% of every hero’s max HP. The rest you heal at camp fires.
@@ -1443,6 +1495,7 @@ function viewCombat(){
     const badges = [];
     if(e.shield) badges.push(`<span class="badge" style="color:var(--blue)" data-tip="Shield|Absorbs damage. Clears when this enemy next acts.">🛡️ ${e.shield}</span>`);
     if(e.poison) badges.push(`<span class="badge" style="color:var(--lime)" data-tip="Poison|Loses this much HP at the end of the round, ignoring shield, then the stack drops by 1.">☠️ ${e.poison}</span>`);
+    if(e.burn)   badges.push(`<span class="badge" style="color:var(--orange)" data-tip="Burning|Loses this much HP at the end of the round, ignoring shield. Then the fire GROWS by 1, and spreads to an enemy that is not yet alight.">🔥 ${e.burn}</span>`);
     if(e.stun)   badges.push(`<span class="badge" style="color:var(--gold)" data-tip="Stunned|Loses its next turn.">⚡ ${e.stun}</span>`);
     if(e.power)  badges.push(`<span class="badge" style="color:var(--pink)" data-tip="Power|Added to every attack.">💢 ${e.power}</span>`);
     return `<div class="unit ${e.hp <= 0 ? 'dead' : ''} ${enemyTargetable && e.hp > 0 ? 'targetable' : ''}" data-uid="${e.uid}"
