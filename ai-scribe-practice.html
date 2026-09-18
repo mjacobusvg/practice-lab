@@ -369,7 +369,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-109-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-110-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -676,7 +676,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-109-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-110-sub</span></div>
 </div>
 </div>
 
@@ -3515,21 +3515,65 @@ function adhdBuildSystem(){
 // framework already distilled them, and tbpCaseContext() bundles up to 14k characters of each
 // outside record, which is why asking "what did today establish?" was costing a full case
 // analysis and one to two minutes to report that one thing had changed.
+// An interview reduced to what the patient ACTUALLY ANSWERED. Keeps each heading that still has
+// something under it, keeps a question only when the clinician wrote beneath it, and drops the rest.
+function tbpInterviewAnswered(text){
+  var lines = String(text || '').split('\n');
+  var out = [], pendingHead = null, wroteUnderHead = false;
+  function isQ(l){ return /^\s*[\u2022\-*]/.test(l); }
+  function isHead(l){
+    var t = l.trim();
+    return !!t && !isQ(l) && !/^\s/.test(l) && t.length <= 64 && !/[.?!]$/.test(t)
+      && t.replace(/[^A-Za-z]/g,'') && t.replace(/[^A-Za-z]/g,'') === t.replace(/[^A-Za-z]/g,'').toUpperCase();
+  }
+  for(var i = 0; i < lines.length; i++){
+    var l = lines[i];
+    if(isHead(l)){ pendingHead = l.trim(); wroteUnderHead = false; continue; }
+    if(!isQ(l)) continue;                       // a stray answer line with no question above it
+    var ans = [];
+    for(var j = i + 1; j < lines.length && !isQ(lines[j]) && !isHead(lines[j]); j++){
+      if(lines[j].trim()) ans.push(lines[j].trim());
+    }
+    if(!ans.length) continue;                    // UNANSWERED: it establishes nothing, so it is not sent
+    if(pendingHead && !wroteUnderHead){ out.push('', pendingHead); wroteUnderHead = true; }
+    out.push(l.trim(), '  ' + ans.join(' '));
+  }
+  return out.join('\n').trim();
+}
 function tbpAdhdVisitMaterial(){
   var parts = [];
   try {
     var note = '';
+    var interview = '';
     var fo = document.getElementById('focus-overlay');
     var fn = document.getElementById('focus-note');
     if(fo && fo.classList.contains('open') && fn && fn.style.display !== 'none' && (fn.value || '').trim()){
       note = fn.value.trim();
     } else {
       var secs = [];
-      document.querySelectorAll('#focus-sections .wn-ta').forEach(function(t){ if((t.value||'').trim()) secs.push(t.value.trim()); });
+      // THE INTERVIEW IS HELD OUT OF THE WORKING NOTE HERE, and this is not an optimisation.
+      // Its sub-textareas carry .wn-ta, so once interviews existed this swept sixty unanswered
+      // questions into "what the clinician has captured in the room" on EVERY check: it inflated a
+      // call deliberately kept small, and worse, it invited the model to read a question the patient
+      // was never asked as visit material and to hand back the clinician's own unasked questions as
+      // its ASK NEXT. Only what was answered is evidence, so only that is sent.
+      document.querySelectorAll('#focus-sections .wn-ta').forEach(function(t){
+        var v = (t.value || '').trim(); if(!v) return;
+        if(t.classList.contains('wn-iv-ta') || t.getAttribute('data-key') === 'interview') return;
+        secs.push(v);
+      });
       var raw = document.getElementById('raw');
       note = secs.length ? secs.join('\n\n') : (raw ? (raw.value || '').trim() : '');
+      try {
+        if(typeof wnSections === 'object' && wnSections && (wnSections.interview || '').trim()){
+          interview = tbpInterviewAnswered(wnSections.interview);
+          // The note fell back to the raw serialization, which still has the whole interview in it.
+          if(!secs.length && raw) note = '';
+        }
+      } catch(e){}
     }
     if(note) parts.push("TODAY'S WORKING NOTE (what the clinician has captured in the room):\n" + note);
+    if(interview) parts.push("ANSWERS THE PATIENT GAVE IN THE CLINICIAN'S INTERVIEW TODAY (only answered items are shown; every other interview question was NOT asked or NOT answered and establishes nothing):\n" + interview);
     var d = [];
     ['hpi-out','assess-out','plan-out'].forEach(function(id){
       var e = document.getElementById(id); if(e && (e.value||'').trim()) d.push(e.value.trim());
@@ -3551,6 +3595,7 @@ function adhdDeltaSystem(){
   s += "If a previous check in this visit is included, do NOT report its findings again. Only what is new since it.\n";
   s += "Weakening is as reportable as strengthening. A retraction, a contradiction, or a gap that turned out bigger is exactly what this is for. This is not a progress bar.\n";
   s += "A question that was asked but not answered established NOTHING. Do not convert an unanswered prompt into a finding.\n";
+  s += "The clinician may be working from their own interview. You are shown ONLY the items the patient actually answered; the rest of that interview is deliberately withheld because it establishes nothing. Never infer what else was asked, never treat a topic as covered because an interview would normally cover it, and never hand back a question the clinician's own interview already contains as if it were your idea.\n";
   s += "If today established nothing, say so in one line and leave the rest thin. That is a real and common result.\n\n";
 
   s += "=== YOUR OUTPUT ===\n";

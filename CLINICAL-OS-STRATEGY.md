@@ -1685,6 +1685,12 @@ The loop: upload records -> Framework interprets evidence -> Interview compresse
 still missing -> clinician conducts the visit -> Framework Check updates the gaps -> Interview
 adapts again.
 
+**The completion counter is a placeholder.** The folded heading currently reads `3 of 8 answered`,
+which is a form's framing: it implies eight questions were meant to be answered. They were not —
+some are irrelevant to this patient, some are already established, some were deliberately skipped.
+Once evidence state exists the counter becomes the honest version, `3 answered · 4 covered by
+records · 1 still open`, and completion stops being the measure.
+
 **Why this is the leap.** It lets the default interview be comprehensive WITHOUT FEELING
 comprehensive. Forty or fifty questions can sit underneath it because the clinician should rarely
 see forty or fifty; they are the question bank, and the encounter view is the subset this patient
