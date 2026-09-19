@@ -3019,7 +3019,7 @@ function buildSidebar() {
   if (isAdmin()) h += '<div class="sb-item" data-key="contacts" onclick="showContacts()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128203;</span> Contacts</div>';
   if (isAdmin()) h += '<div class="sb-item" data-key="broadcast" onclick="showBroadcast()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128227;</span> Broadcast</div>';
   h += '<div class="sb-item" data-key="library" onclick="showLibrary()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128196;</span> Template Library</div>';
-  if (isAdmin()) h += '<div class="sb-item" data-key="policy-library" onclick="showPolicyLibrary()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128218;</span> Practice Policy Library</div>';
+  if (isAdmin() || (typeof POLICY_LIBRARY_LIVE !== 'undefined' && POLICY_LIBRARY_LIVE && tierRank() >= 1)) h += '<div class="sb-item" data-key="policy-library" onclick="showPolicyLibrary()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128218;</span> Practice Policy Library</div>';
   h += '<div class="sb-item" onclick="window.location.href=\'/vault\'" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128272;</span> The Vault</div>';
   h += '<div class="sb-item" data-key="learn" onclick="showLearn()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#129513;</span> Mentorship &amp; Courses</div>';
   h += '<div class="sb-item" data-key="directory" onclick="showDirectory()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128101;</span> Member Directory</div>';
@@ -6346,6 +6346,13 @@ async function downloadTemplate(id) {
 // Guidance layer that sits ABOVE the Template Library: canonical answers to
 // "what should my practice policy be about X", with the editable templates attached
 // as resources. Templates link to their Template Library card by title.
+//
+// Entitlement: full guidance is a Forum+Full benefit (a paid reason to be here).
+// Free/nonmembers get topic/entry teasers + a conversion CTA, never the guidance body.
+// Admins always see it. POLICY_LIBRARY_LIVE stays false during the admin-only dark
+// launch; flipping it to true at launch shows the nav to Forum/Full (not free).
+var POLICY_LIBRARY_LIVE = false;
+function policyGuidanceUnlocked() { return isAdmin() || tierRank() >= 1; }  // Forum, Full, or admin
 var POLICY_LIBRARY = [
   { topic: 'Payments & Attendance', entries: [
     { q: 'When is payment due, what do we accept, and how do we handle balances?',
@@ -6433,19 +6440,32 @@ function renderPolicyLibrary() {
   h += '<p class="space-tagline">Answers to “what should my practice policy be about this?”, with the editable templates attached.</p>';
   if (isAdmin()) h += '<div style="margin-top:6px"><span class="tpl-tag" style="background:#b91c1c;color:#fff">Admin preview - not member-visible yet</span></div>';
   h += '</div>';
+  var unlocked = policyGuidanceUnlocked();  // Forum, Full, or admin see full guidance
+  if (!unlocked) {
+    h += '<div class="tpl-gate" style="margin-bottom:16px"><div class="tpl-gate-title">&#128274; Full guidance is a member benefit</div>'
+      + '<p class="tpl-gate-sub">Forum and Full members get the complete Practice Policy Library: the practical guidance, the state/payer/legal caveats, and the editable templates. Below is what it covers.</p>'
+      + '<div class="tpl-detail-actions"><button class="btn-primary" onclick="startCheckout(\'forum_monthly_50\')">Join Forum &mdash; $50/mo</button>'
+      + '<button class="btn-ghost" onclick="startCheckout(\'full_monthly_119\')">Join Full &mdash; $119/mo</button></div></div>';
+  }
   POLICY_LIBRARY.forEach(function(topic){
     h += '<h2 style="font-family:var(--font-heading);font-size:1.4rem;margin:22px 0 10px;padding-top:12px;border-top:1px solid var(--border)">' + esc(topic.topic) + '</h2>';
     topic.entries.forEach(function(en){
       h += '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;margin-bottom:12px">';
       h += '<div style="font-weight:700;margin-bottom:6px">' + esc(en.q) + '</div>';
-      h += '<div style="color:var(--text-secondary);font-size:0.9rem;line-height:1.6">' + esc(en.g) + '</div>';
-      if (en.t && en.t.length) {
-        h += '<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px">';
-        en.t.forEach(function(title){
-          if (byTitle[title]) h += '<button class="btn-ghost" style="font-size:0.82rem;padding:5px 12px" onclick="viewTemplate(\'' + byTitle[title] + '\')">&#128196; ' + esc(title) + '</button>';
-          else h += '<span class="tpl-tag">' + esc(title) + '</span>';
-        });
-        h += '</div>';
+      if (unlocked) {
+        // Full guidance body + attached-template resources (Forum/Full/admin).
+        h += '<div style="color:var(--text-secondary);font-size:0.9rem;line-height:1.6">' + esc(en.g) + '</div>';
+        if (en.t && en.t.length) {
+          h += '<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px">';
+          en.t.forEach(function(title){
+            if (byTitle[title]) h += '<button class="btn-ghost" style="font-size:0.82rem;padding:5px 12px" onclick="viewTemplate(\'' + byTitle[title] + '\')">&#128196; ' + esc(title) + '</button>';
+            else h += '<span class="tpl-tag">' + esc(title) + '</span>';
+          });
+          h += '</div>';
+        }
+      } else {
+        // Free/nonmember: teaser only. No guidance body, no template links.
+        h += '<div style="color:var(--text-secondary);font-size:0.85rem;font-style:italic">Full guidance and the editable template are included with Forum and Full membership.</div>';
       }
       h += '</div>';
     });
