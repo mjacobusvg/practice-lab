@@ -309,6 +309,13 @@ button.ahalf:disabled{opacity:.3;cursor:not-allowed}
 .diffcard{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px;cursor:pointer;transition:.13s}
 .diffcard:hover{border-color:var(--line-hi);background:var(--card-hi)}
 .diffcard.on{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 6px 20px rgba(232,180,74,.12)}
+
+/* ---------- the enemy's trait ---------- */
+.traitbar{margin-top:9px;padding:8px 10px;border-radius:10px;
+  border:1px solid color-mix(in srgb, var(--tc, #a78bfa) 55%, transparent);
+  background:color-mix(in srgb, var(--tc, #a78bfa) 11%, transparent)}
+.traitbar b{color:var(--tc, #a78bfa)}
+.traitbar .pill{border-color:color-mix(in srgb, var(--tc,#a78bfa) 50%, transparent);color:var(--tc,#a78bfa)}
 </style>
 </head>
 <body>
@@ -526,6 +533,16 @@ const ITEMS = [
 {id:'balanced', nm:'Balanced Set',      slot:'trinket', ic:'⚖️', tier:3, rank:3, cost:110, bon:{noBlank:1}, tx:'Blank faces on your dice count as 1 attack instead of nothing.'},
 {id:'sharpstone',nm:'Keening Stone',    slot:'offhand', ic:'💎', tier:3, rank:3, cost:102, upgrade:[{from:'guard',to:'steel',n:1}], bon:{atk:1}, tx:'One Guard die becomes a Steel die. +1 attack.'},
 {id:'twinforge',nm:'The Twin Forge',    slot:'trinket', ic:'🏭', tier:4, rank:4, cost:205, upgrade:[{from:'base',to:'steel',n:2}], bon:{atk:1}, tx:'Two Grit dice become Steel dice. +1 attack.', relic:true},
+{id:'emberoil',  nm:'Ember Phial',       slot:'trinket', ic:'🔥', tier:2, rank:2, cost:62, bon:{kindle:1}, tx:'Your first hit each fight sets the enemy burning.'},
+{id:'pyremark',  nm:'Pyre Mark',         slot:'trinket', ic:'🜂', tier:3, rank:3, cost:106, bon:{pyre:2}, tx:'Anything burning takes 2 more from every hit you land.'},
+{id:'breaker',   nm:'Plate Breaker',     slot:'weapon',  ic:'🔨', tier:3, rank:3, cost:112, dice:['steel'], surge:['stagger'], bon:{sunder:2}, tx:'+1 Steel die. Surge: Stagger. Every stagger you land strips 2 armor for the fight.'},
+{id:'tempo',     nm:'Duellist\'s Watch', slot:'trinket', ic:'⏱️', tier:2, rank:2, cost:60, bon:{firstatk:4}, tx:'+4 attack on any round you swing first.'},
+{id:'scatter',   nm:'Scattershot Rig',   slot:'offhand', ic:'🎇', tier:2, rank:2, cost:58, bon:{minatk:1}, tx:'Every blank die of yours counts as 1 attack, which a Swarm feels as a whole extra cut.'},
+{id:'surgeon2',  nm:'Surge Capacitor',   slot:'trinket', ic:'🔋', tier:3, rank:3, cost:108, bon:{spill:1}, tx:'Surges you leave unspent become 1 damage each instead of nothing.'},
+{id:'wardbreak', nm:'Wardbreaker Nail',  slot:'offhand', ic:'📌', tier:3, rank:3, cost:104, bon:{wardcut:1}, surge:['pierce'], tx:'Surge: Pierce. Your card attack counts double against anything Warded.'},
+{id:'prism',     nm:'Phase Prism',       slot:'trinket', ic:'🔷', tier:3, rank:3, cost:110, upgrade:[{from:'base',to:'arcane',n:1}], bon:{phasecut:1}, tx:'One Grit die becomes Arcane. Your Arcane dice hit Phasing things twice as hard.'},
+{id:'gambit',    nm:'Gambit Coin',       slot:'trinket', ic:'🪙', tier:2, rank:3, cost:66, bon:{gambit:1}, tx:'Each round, your single worst die rerolls itself for free.'},
+{id:'mercy',     nm:'No Mercy',          slot:'trinket', ic:'🗡', tier:4, rank:4, cost:200, bon:{execute:1}, relic:true, tx:'Any enemy below a quarter of its health takes double from you.', },
 {id:'bandage', nm:'Field Bandage',      slot:'use', ic:'🩹', tier:1, rank:1, cost:14, use:'heal8',   tx:'Heal 8 HP. In or out of combat.'},
 {id:'poultice',nm:'Moss Poultice',      slot:'use', ic:'🌿', tier:1, rank:1, cost:22, use:'heal16',  tx:'Heal 16 HP.'},
 {id:'tonic',   nm:"Traveller's Tonic",  slot:'use', ic:'🧪', tier:1, rank:1, cost:16, use:'energy3', tx:'Restore 3 energy.'},
@@ -587,33 +604,89 @@ const TAL = id => TALENTS.find(t => t.id === id);
    ========================================================================= */
 const MONSTERS = [
   // tier 1
-  {id:'wolf',    nm:'Moor Wolf',        ic:'🐺', tier:1, hp:12, arm:0, pool:['foe','foe'],          atk:0, xp:3,  gold:[6,12],  tx:'Fast, and rarely alone.'},
+  {id:'wolf',    nm:'Moor Wolf',        ic:'🐺', tier:1, hp:12, arm:0, pool:['foe','foe'],          atk:0, xp:3,  gold:[6,12],  trait:'brittle',  tx:'Fast, and rarely alone.'},
   {id:'bandit',  nm:'Roadside Bandit',  ic:'🗡️', tier:1, hp:14, arm:1, pool:['foe','wisp'],         atk:1, xp:3,  gold:[10,18], tx:'Wants your purse more than your life.'},
-  {id:'ghoul',   nm:'Bog Ghoul',        ic:'🧟', tier:1, hp:16, arm:0, pool:['foe','foe'],          atk:0, xp:4,  gold:[4,10],  spec:'poison', tx:'Its bite festers.'},
-  {id:'spider',  nm:'Thicket Spider',   ic:'🕷️', tier:1, hp:11, arm:1, pool:['wisp','foe'],         atk:1, xp:3,  gold:[5,14],  spec:'poison', tx:'Patient. Venomous.'},
+  {id:'ghoul',   nm:'Bog Ghoul',        ic:'🧟', tier:1, hp:16, arm:0, pool:['foe','foe'],          atk:0, xp:4,  gold:[4,10],  trait:'regrowth',  spec:'poison', tx:'Its bite festers.'},
+  {id:'spider',  nm:'Thicket Spider',   ic:'🕷️', tier:1, hp:11, arm:1, pool:['wisp','foe'],         atk:1, xp:3,  gold:[5,14],  trait:'swarm',  spec:'poison', tx:'Patient. Venomous.'},
   // tier 2
-  {id:'ogre',    nm:'Hill Ogre',        ic:'👹', tier:2, hp:28, arm:1, pool:['brute','foe'],        atk:1, xp:7,  gold:[18,30], spec:'crush', tx:'Hits like a falling gate.'},
-  {id:'wight',   nm:'Barrow Wight',     ic:'💀', tier:2, hp:24, arm:2, pool:['foe','wisp','wisp'],  atk:1, xp:8,  gold:[20,34], spec:'drain', tx:'Drinks warmth out of the air.'},
+  {id:'ogre',    nm:'Hill Ogre',        ic:'👹', tier:2, hp:28, arm:1, pool:['brute','foe'],        atk:1, xp:7,  gold:[18,30], trait:'brittle', spec:'crush', tx:'Hits like a falling gate.'},
+  {id:'wight',   nm:'Barrow Wight',     ic:'💀', tier:2, hp:24, arm:2, pool:['foe','wisp','wisp'],  atk:1, xp:8,  gold:[20,34], trait:'phasing', spec:'drain', tx:'Drinks warmth out of the air.'},
   {id:'brigand', nm:'Brigand Captain',  ic:'🏴', tier:2, hp:26, arm:2, pool:['foe','foe','wisp'],   atk:2, xp:7,  gold:[26,44], tx:'Organised, which is the problem.'},
   {id:'hound',   nm:'Cinder Hound',     ic:'🔥', tier:2, hp:22, arm:1, pool:['foe','foe'],          atk:2, xp:7,  gold:[14,26], spec:'burn', tx:'Leaves the grass smoking.'},
-  {id:'troll',   nm:'Fen Troll',        ic:'🧌', tier:2, hp:32, arm:1, pool:['brute','wisp'],       atk:1, xp:9,  gold:[22,38], spec:'regen', tx:'Knits itself back together.'},
+  {id:'troll',   nm:'Fen Troll',        ic:'🧌', tier:2, hp:32, arm:1, pool:['brute','wisp'],       atk:1, xp:9,  gold:[22,38], trait:'regrowth', spec:'regen', tx:'Knits itself back together.'},
   // tier 3
-  {id:'knight',  nm:'Hollow Knight',    ic:'⚜️', tier:3, hp:42, arm:3, pool:['foe','foe','guard'],  atk:3, xp:14, gold:[40,62], spec:'parry', tx:'The armour is the whole of it.'},
-  {id:'wyvern',  nm:'Ridge Wyvern',     ic:'🐉', tier:3, hp:46, arm:2, pool:['brute','foe','foe'],  atk:2, xp:16, gold:[46,72], spec:'poison', tx:'Owns the sky over the range.'},
-  {id:'warlock', nm:'Sable Warlock',    ic:'🧙', tier:3, hp:36, arm:2, pool:['arcane','foe','wisp'],atk:3, xp:15, gold:[50,80], spec:'hex', tx:'Speaks the Crown\'s smaller words.'},
-  {id:'golem',   nm:'Cairn Golem',      ic:'🗿', tier:3, hp:52, arm:4, pool:['brute','guard'],      atk:2, xp:16, gold:[38,60], spec:'crush', tx:'Old stone, older instructions.'},
+  {id:'knight',  nm:'Hollow Knight',    ic:'⚜️', tier:3, hp:42, arm:3, pool:['foe','foe','guard'],  atk:3, xp:14, gold:[40,62], trait:'entrench', spec:'parry', tx:'The armour is the whole of it.'},
+  {id:'wyvern',  nm:'Ridge Wyvern',     ic:'🐉', tier:3, hp:46, arm:2, pool:['brute','foe','foe'],  atk:2, xp:16, gold:[46,72], trait:'mirror', spec:'poison', tx:'Owns the sky over the range.'},
+  {id:'warlock', nm:'Sable Warlock',    ic:'🧙', tier:3, hp:36, arm:2, pool:['arcane','foe','wisp'],atk:3, xp:15, gold:[50,80], trait:'feeder', spec:'hex', tx:'Speaks the Crown\'s smaller words.'},
+  {id:'golem',   nm:'Cairn Golem',      ic:'🗿', tier:3, hp:52, arm:4, pool:['brute','guard'],      atk:2, xp:16, gold:[38,60], trait:'warded', spec:'crush', tx:'Old stone, older instructions.'},
   // tier 4
-  {id:'revenant',nm:'Crowned Revenant', ic:'☠️', tier:4, hp:62, arm:4, pool:['brute','foe','foe','wisp'], atk:4, xp:24, gold:[70,110], spec:'drain', tx:'Wears a circlet it did not earn.'},
-  {id:'drake',   nm:'Ashfall Drake',    ic:'🐲', tier:4, hp:70, arm:3, pool:['brute','brute','foe'], atk:3, xp:26, gold:[80,130], spec:'burn', tx:'The reason the north road is closed.'},
+  {id:'revenant',nm:'Crowned Revenant', ic:'☠️', tier:4, hp:62, arm:4, pool:['brute','foe','foe','wisp'], atk:4, xp:24, gold:[70,110], trait:'phasing', spec:'drain', tx:'Wears a circlet it did not earn.'},
+  {id:'drake',   nm:'Ashfall Drake',    ic:'🐲', tier:4, hp:70, arm:3, pool:['brute','brute','foe'], atk:3, xp:26, gold:[80,130], trait:'mirror', spec:'burn', tx:'The reason the north road is closed.'},
 ];
 const LAIR_BOSSES = [
-  {id:'lair1', nm:'The Gravewright',  ic:'⚰️', tier:3, hp:56, arm:3, pool:['foe','foe','wisp','guard'], atk:3, xp:22, gold:[60,90],  spec:'drain', tx:'It has been filling this barrow for a century.'},
-  {id:'lair2', nm:'Maw of the Mire',  ic:'🦑', tier:3, hp:64, arm:2, pool:['brute','foe','foe'],        atk:3, xp:22, gold:[60,90],  spec:'poison',tx:'The marsh is its body. You are standing on it.'},
-  {id:'lair3', nm:'The Kiln Warden',  ic:'🌋', tier:4, hp:60, arm:4, pool:['brute','foe','arcane'],     atk:4, xp:24, gold:[70,100], spec:'burn',  tx:'Keeps the forge that arms the Crown.'},
+  {id:'lair1', nm:'The Gravewright',  ic:'⚰️', tier:3, hp:56, arm:3, pool:['foe','foe','wisp','guard'], atk:3, xp:22, gold:[60,90], trait:'regrowth',  spec:'drain', tx:'It has been filling this barrow for a century.'},
+  {id:'lair2', nm:'Maw of the Mire',  ic:'🦑', tier:3, hp:64, arm:2, pool:['brute','foe','foe'],        atk:3, xp:22, gold:[60,90], trait:'swarm',  spec:'poison',tx:'The marsh is its body. You are standing on it.'},
+  {id:'lair3', nm:'The Kiln Warden',  ic:'🌋', tier:4, hp:60, arm:4, pool:['brute','foe','arcane'],     atk:4, xp:24, gold:[70,100], trait:'entrench', spec:'burn',  tx:'Keeps the forge that arms the Crown.'},
 ];
-const CROWN = {id:'crown', nm:'The Sable Crown', ic:'👁️‍🗨️', tier:5, hp:110, arm:5,
+const CROWN = {id:'crown', nm:'The Sable Crown', ic:'👁️‍🗨️', tier:5, hp:110, arm:5, trait:'feeder',
   pool:['brute','brute','foe','arcane','wisp'], atk:5, xp:60, gold:[0,0], spec:'crown',
   tx:'It does not speak. It simply decides what the region will be.'};
+
+/* =========================================================================
+   ENEMY TRAITS
+   The old fights were all one question — can you out-number it? These pose
+   questions a bigger attack does not answer, which is what makes burning,
+   staggering, spending surges, going first and carrying odd dice matter at
+   all. Each one has a tool that beats it.
+   ========================================================================= */
+const TRAITS = {
+  warded:  {nm:'Warded', ic:'🔮', col:'#a78bfa',
+    tx:'Your <b>dice cannot touch it</b>. Only the attack printed on your card gets through, plus your gear bonus.',
+    hint:'Lead with your biggest printed attack. A wide dice pool is worth nothing here.'},
+  regrowth:{nm:'Regrowth', ic:'🌱', col:'#3ddc97',
+    tx:'Heals <b>8 at the start of every round</b> unless it is burning.',
+    hint:'Set it on fire and keep it there, or you will never get ahead of it.'},
+  phasing: {nm:'Phasing', ic:'👻', col:'#38bdf8',
+    tx:'On odd rounds it is barely there: <b>only Arcane dice and surge damage</b> reach it.',
+    hint:'Bank your surges for the odd rounds, or bring Arcane dice.'},
+  swarm:   {nm:'Swarm', ic:'🐝', col:'#a3e635',
+    tx:'No single blow matters. It takes <b>3 damage per die of yours showing any attack</b>, and shields and armor do nothing.',
+    hint:'Many small dice beat one huge hit. Your Grit dice are suddenly your best ones.'},
+  mirror:  {nm:'Mirrored', ic:'🪞', col:'#f472b6',
+    tx:'A hit of <b>more than 12 sends a third of it back</b> at you, ignoring your shields.',
+    hint:'Hit it steadily rather than enormously, or be ready to wear the return.'},
+  entrench:{nm:'Entrenched', ic:'🧱', col:'#94a3b8',
+    tx:'Armor 8, and <b>every time you stagger it the armor drops by 3</b> for the rest of the fight.',
+    hint:'Stagger is not a tempo play here, it is the only way in.'},
+  feeder:  {nm:'Feeder', ic:'🍽️', col:'#fb923c',
+    tx:'Every surge you <b>leave unspent</b> feeds it 3 health.',
+    hint:'Spend everything, every round, even on something small.'},
+  brittle: {nm:'Brittle', ic:'💎', col:'#e8b44a',
+    tx:'Slow to react. Any round you <b>swing first</b>, it takes double damage.',
+    hint:'Initiative is the whole fight. Lead with your lowest numbers.'},
+};
+
+/* how much of your attack actually reaches a given enemy this round */
+function damageToFoe(C, raw, parts){
+  const t = C.foe.trait;
+  if(!t) return {dmg: raw, note:''};
+  const d = D();
+  if(t === 'warded'){
+    const through = Math.max(0, parts.card * (1 + (d.wardcut ? 1 : 0)) + parts.gear + parts.surge);
+    return {dmg: through, note: through < raw ? 'Its ward drinks everything your dice threw.' : ''};
+  }
+  if(t === 'swarm'){
+    const hits = parts.attackingDice * 3;
+    return {dmg: hits, note: `You cut through ${plural(parts.attackingDice,'part')} of it.`};
+  }
+  if(t === 'phasing' && C.round % 2 === 1){
+    const through = Math.max(0, parts.arcane * (1 + (d.phasecut ? 1 : 0)) + parts.surge);
+    return {dmg: through, note: through < raw ? 'It is half here. Steel passes through nothing.' : ''};
+  }
+  if(t === 'brittle' && parts.meFirst) return {dmg: raw * 2, note:'You caught it flat. The blow lands twice over.'};
+  return {dmg: raw, note:''};
+}
+
 const MSPEC = {
   poison:{nm:'Venom',   tx:'its surges leave you taking 2 a round'},
   burn:  {nm:'Cinders', tx:'its surges set you burning for 3 a round'},
@@ -682,6 +755,7 @@ function D(){
     mig:h.stats.mig, agi:h.stats.agi, wit:h.stats.wit, spi:h.stats.spi,
     atk:0, arm:0, hp:0, move:h.move, scout:1, rr:0, dice:h.dice.slice(),
     gold:0, haggle:0, test:0, ward:0, regen:0, zeal:0, en:0, mend:0, roadfree:0, wild:0, noBlank:0,
+    kindle:0, pyre:0, sunder:0, firstatk:0, minatk:0, spill:0, wardcut:0, phasecut:0, gambit:0, execute:0,
     surge:['dmg','guard'], upgrade:[],
   };
   const add = o => {
@@ -2222,7 +2296,8 @@ function startCombat(foe, opts){
   opts = opts || {};
   const deck = intentDeck(foe);
   const C = {
-    foe: Object.assign({}, foe, {maxHp: foe.hp, burn:0, psn:0, stun:0, shieldBonus:0, rage:0, curse:0}),
+    foe: Object.assign({}, foe, {maxHp: foe.hp, burn:0, psn:0, stun:0, shieldBonus:0, rage:0, curse:0,
+                                 arm: foe.trait === 'entrench' ? Math.max(foe.arm||0, 8) : foe.arm}),
     opts, round:1, phase:'cards',
     intentDeck: deck, order: shuffle(deck.map((x,i) => i)), intent: null,
     myDice:[], foeDice:[], rrLeft:0, spentSurge:0, sharp:0,
@@ -2238,9 +2313,25 @@ function startCombat(foe, opts){
   newCombatRound(true);
 }
 function cPool(){ return D().pool; }
+function sunderIfEntrenched(C){
+  const extra = D().sunder;                       // the Plate Breaker strips anything, not just the entrenched
+  if(C.foe.trait === 'entrench' && C.foe.arm){
+    C.foe.arm = Math.max(0, C.foe.arm - 3);
+    cLog(`Plates shear off it. Armor down to ${C.foe.arm}.`, 'g');
+  } else if(extra && C.foe.arm){
+    C.foe.arm = Math.max(0, C.foe.arm - extra);
+    cLog(`You break its guard open. Armor down to ${C.foe.arm}.`, 'g');
+  }
+}
 function applyNoBlank(dice){
-  if(!D().noBlank) return;
-  dice.forEach(x => { if(!x.a && !x.d && !x.s) x.a = 1; });
+  const d = D();
+  if(d.noBlank || d.minatk) dice.forEach(x => { if(!x.a && !x.d && !x.s) x.a = 1; });
+  if(d.gambit && dice.length){          // the Gambit Coin rerolls your worst die for free
+    let worst = 0, low = Infinity;
+    dice.forEach((x,i) => { const v = x.a*2 + x.d + x.s*2; if(v < low){ low = v; worst = i; } });
+    const nd = rollDie(dice[worst].k);
+    dice[worst].a = nd.a; dice[worst].d = nd.d; dice[worst].s = nd.s; dice[worst].fresh = true;
+  }
 }
 function cLog(t, cls){ const C = V.combat; if(C){ C.hist.push((cls?'§'+cls+'§':'')+t); if(C.hist.length>40) C.hist.shift(); } log(t, cls); }
 
@@ -2281,6 +2372,10 @@ function newCombatRound(first){
     if(C.foe.burn > 0){ C.foe.burn--; dealToFoe(2, 'cinders', true); }
     if(C.foe.psn > 0){ C.foe.psn--; dealToFoe(2, 'venom', true); }
     if(C.foe.spec === 'regen' && C.foe.hp > 0){ C.foe.hp = Math.min(C.foe.maxHp, C.foe.hp + 3); cLog(`${C.foe.nm} knits itself back together (+3).`); }
+    if(C.foe.trait === 'regrowth' && C.foe.hp > 0){
+      if(C.foe.burn > 0) cLog(`${C.foe.nm} tries to close its wounds, but the fire will not let it.`, 'g');
+      else { C.foe.hp = Math.min(C.foe.maxHp, C.foe.hp + 8); cLog(`${C.foe.nm} grows back what you took. +8.`, 'r'); }
+    }
     if(C.foe.spec === 'crown'){ C.foe.rage++; cLog('The Crown grows heavier. +1 attack.'); }
     if(C.foe.spec === 'crown' && !C.foe.phase2 && C.foe.hp <= C.foe.maxHp * 0.5){
       C.foe.phase2 = true;
@@ -2353,7 +2448,7 @@ function commitCards(){
   if(play.cure){ C.me.burn = 0; C.me.poison = 0; cLog('You are clean of it.', 'g'); }
   if(play.burn){ C.foe.burn = play.burn; cLog(`${C.foe.nm} catches light.`, 'y'); }
   if(play.psn){ C.foe.psn = play.psn; cLog(`${C.foe.nm} is poisoned.`, 'y'); }
-  if(play.stun){ C.foe.stun = 2; cLog(`${C.foe.nm} is staggered.`, 'y'); }
+  if(play.stun){ C.foe.stun = 2; cLog(`${C.foe.nm} is staggered.`, 'y'); sunderIfEntrenched(C); }
   if(play.curse){ C.foe.curse = play.curse; cLog(`${C.foe.nm} will hit ${play.curse} softer next round.`, 'y'); }
   if(play.gold) gainGold(play.gold);
   if(play.refresh){
@@ -2414,6 +2509,7 @@ function myAttack(){
   if(p.dbl) diceAtk *= 2;
   let a = diceAtk + d.atk + (p.atk||0) + C.pend.dmg + C.me.fury + (C.sharp||0);
   if(S.hero.id === 'blade' && C.round === 1) a += 3;
+  if(d.firstatk && C.myInit != null && C.intent && C.myInit <= (C.intent.init || 99)) a += d.firstatk;
   if(d.zeal && S.hero.hp <= d.maxHp/2) a += d.zeal;
   if(C.me.curseNow) a -= C.me.curseNow;
   if(C.me.hexed) a -= 2;
@@ -2484,7 +2580,7 @@ function spendSurge(id){
   if(id === 'dmg') C.pend.dmg += 2;
   if(id === 'pierce') C.pend.pierce = true;
   if(id === 'guard') C.pend.guard += 2;
-  if(id === 'stagger'){ C.foe.stun = 2; cLog(`${C.foe.nm} is staggered.`, 'y'); }
+  if(id === 'stagger'){ C.foe.stun = 2; cLog(`${C.foe.nm} is staggered.`, 'y'); sunderIfEntrenched(C); }
   if(id === 'scorch'){ C.foe.burn = 3; cLog(`${C.foe.nm} catches light.`, 'y'); }
   if(id === 'mend') healHero(D().mend >= 2 ? 4 : 2, 'a small rite');
   renderCombat();
@@ -2524,14 +2620,35 @@ function strike(){
 
   const swingMine = () => {
     if(C.done) return;
+    if(C.me.stun > 0){ cLog('You are still shaking off the blow.', 'y'); return; }
     const mine = myAttack();
     const fsh = C.pend.pierce ? 0 : foeShields();
-    const toFoe = Math.max(0, mine - fsh - (C.foe.arm || 0));
-    if(C.me.stun > 0){ cLog('You are still shaking off the blow.', 'y'); return; }
+    let toFoe = C.foe.trait === 'swarm' ? 0 : Math.max(0, mine - fsh - (C.foe.arm || 0));
+    // what the blow is made of, so a trait can strip out the parts it ignores
+    const parts = {
+      card: p.atk || 0,
+      gear: d.atk,
+      surge: C.pend.dmg,
+      arcane: C.myDice.reduce((n,x) => n + (x.k === 'arcane' ? x.a : 0), 0),
+      attackingDice: C.myDice.filter(x => x.a > 0).length,
+      meFirst,
+    };
+    const out = damageToFoe(C, toFoe, parts);
+    toFoe = Math.max(0, Math.round(out.dmg));
+    if(toFoe > 0 && d.pyre && C.foe.burn > 0) toFoe += d.pyre;
+    if(toFoe > 0 && d.execute && C.foe.hp <= C.foe.maxHp * 0.25){ toFoe *= 2; cLog('It is already failing. You finish the motion.', 'g'); }
+    if(d.spill && mySurges() > 0) toFoe += mySurges();
+    if(out.note) cLog(out.note, toFoe > 0 ? 'g' : 'y');
     if(toFoe > 0){
       dealToFoe(toFoe);
       if(p.leech){ const h = Math.ceil(toFoe / 2); healHero(h, 'the wound you opened'); }
-    } else if(C.resting){ /* resting: no swing */ }
+      if(d.kindle && !C.me.kindled){ C.me.kindled = true; C.foe.burn = Math.max(C.foe.burn, 3); cLog('It catches light on the first cut.', 'y'); }
+      if(C.foe.trait === 'mirror' && toFoe > 12){
+        const back = Math.floor(toFoe / 3);
+        cLog('The blow comes back off it.', 'r');
+        dealToMe(back, 'your own strike, returned', true);
+      }
+    } else if(C.resting){ /* spent the round recovering */ }
     else { cLog('Your blow finds nothing but shield and plate.', 'y'); sfx('block'); }
   };
   const swingTheirs = () => {
@@ -2556,6 +2673,14 @@ function strike(){
   if(meFirst){ swingMine(); swingTheirs(); }
   else { swingTheirs(); swingMine(); }
 
+  if(C.foe.trait === 'feeder' && !C.done){
+    const left = mySurges();
+    if(left > 0){
+      const fed = left * 3;
+      C.foe.hp = Math.min(C.foe.maxHp, C.foe.hp + fed);
+      cLog(`It swallows ${plural(left,'surge')} you never spent. +${fed}.`, 'r');
+    }
+  }
   if(C.me.hexed) C.me.hexed--;
   C.me.fury = 0;
   C.foe.shieldBonus = 0;
@@ -3076,6 +3201,12 @@ Object.assign(GLOSSARY, {
     alias:['bounty','bounties']},
 });
 
+for(const k in TRAITS){
+  const T = TRAITS[k];
+  GLOSSARY['trait_' + k] = {nm:T.nm, ic:T.ic, grp:'Enemy traits',
+    tx:T.tx + ' <i style="color:var(--ink-dim)">' + T.hint + '</i>',
+    alias:[T.nm.toLowerCase()]};
+}
 let GLOSS_PAIRS = null, GLOSS_RE = null;
 function buildGloss(){
   GLOSS_PAIRS = [];
@@ -4319,7 +4450,12 @@ function cardProjHtml(id){
 
   const t = c.top, bt = c.bot;
   const myAtkV = mine.a * (t.dbl ? 2 : 1) + d.atk + (t.atk||0);
-  const dealt  = Math.max(0, Math.round(myAtkV - (t.pierce ? 0 : foeSh) - (C.foe.arm||0)));
+  let dealt = Math.max(0, Math.round(myAtkV - (t.pierce ? 0 : foeSh) - (C.foe.arm||0)));
+  const tr = C.foe.trait;
+  if(tr === 'warded') dealt = Math.max(0, d.atk + (t.atk||0));
+  else if(tr === 'swarm') dealt = d.pool.length * 3 * 0.72 | 0;
+  else if(tr === 'phasing' && C.round % 2 === 1) dealt = Math.max(0, Math.round(d.pool.filter(k=>k==='arcane').length * dieAvg('arcane').a));
+  else if(tr === 'brittle' && c.init <= (it.init||99)) dealt *= 2;
   const myShV  = mine.d + (bt.sh||0) + d.arm + d.ward + (bt.ward||0);
   const pierced = C.foe.crush || it.pierce;
   const taken  = Math.max(0, Math.round(foeAtk - (pierced ? d.arm + d.ward : myShV)));
@@ -4442,6 +4578,13 @@ function renderCombat(){
         <div class="hpbar"><i style="width:${clamp(C.foe.hp/C.foe.maxHp*100,0,100)}%"></i></div>
         <div class="spread tiny"><span class="muted">${Math.max(0,C.foe.hp)} / ${C.foe.maxHp} HP</span><span class="muted">Armor ${C.foe.arm}</span></div>
         <div>${statusChips(C.foe)}</div>
+        ${C.foe.trait && TRAITS[C.foe.trait] ? `<div class="traitbar" style="--tc:${TRAITS[C.foe.trait].col}">
+          <div class="row" style="gap:6px"><span>${TRAITS[C.foe.trait].ic}</span>
+            <b>${esc(TRAITS[C.foe.trait].nm)}</b>
+            ${C.foe.trait === 'phasing' ? `<span class="pill" style="margin-left:auto">${C.round % 2 === 1 ? 'phased now' : 'solid this round'}</span>` : ''}</div>
+          <div class="tiny" style="margin-top:3px">${TRAITS[C.foe.trait].tx}</div>
+          <div class="mini" style="margin-top:4px;color:var(--tc)">${esc(TRAITS[C.foe.trait].hint)}</div>
+        </div>` : ''}
         ${intentHtml()}
         ${cards ? '' : `<div class="tray" style="margin-top:9px">${C.foeDice.map(x=>dieFaceHtml(x)).join('')}</div>
           <div class="tot">
@@ -4507,7 +4650,7 @@ function renderCombat(){
 
   modal({
     ic: C.foe.ic, h: C.foe.nm, wide:true, noClose:true,
-    sub:`Round ${C.round}${C.opts.boss ? ' · no retreat' : ''}${MSPEC[C.foe.spec] ? ' · ' + gtx(MSPEC[C.foe.spec].nm + ': ' + MSPEC[C.foe.spec].tx) : ''}`,
+    sub:`Round ${C.round}${C.opts.boss ? ' · no retreat' : ''}${C.foe.trait && TRAITS[C.foe.trait] ? ' · ' + TRAITS[C.foe.trait].ic + ' ' + esc(TRAITS[C.foe.trait].nm) : ''}${MSPEC[C.foe.spec] ? ' · ' + gtx(MSPEC[C.foe.spec].nm + ': ' + MSPEC[C.foe.spec].tx) : ''}`,
     b: body,
     f: cards
       ? [ {lb:'📖 Terms', cls:'ghost', fn:()=>openGlossary(renderCombat)},
@@ -4802,6 +4945,9 @@ function openCodex(){
           Every round the enemy <b style="color:var(--ink)">reveals its intent first</b>. Then you play two ability cards from your hand: the <b style="color:var(--ink)">top half of one</b> and the <b style="color:var(--ink)">bottom half of the other</b>. The card you take the top from sets your initiative, and the lower number swings first — kill it before it acts and it never acts.
           <br><br>Then both sides roll dice as the <b style="color:var(--ink)">modifier</b> on top of those card numbers. Faces show ⚔ attack, 🛡 shields, ✦ surges. Mark dice and reroll them (Wits-many a round, plus gear), spend surges, then strike.
           <br><br>Damage dealt = card + dice + gear − their shields − their armor.</div></div>
+        <div class="card" style="margin-top:10px"><h3>Not every fight is a damage race</h3><div class="tiny muted">
+          Many things out here carry a <b style="color:var(--ink)">trait</b>, stated on its card when you meet it, and a bigger attack will not answer it. Something Warded ignores your dice entirely and only feels the attack printed on your card. A Swarm does not care about totals at all, only how many of your dice showed anything. Regrowth heals 8 a round unless it is burning. An Entrenched thing sits behind Armor 8 until you stagger it open. A Feeder eats the surges you did not spend. Brittle things take double whenever you swing first.
+          <br><br>Which is the point of burning, staggering, spending surges, going first and carrying odd dice at all. Read the trait before you plan the round.</div></div>
         <div class="card" style="margin-top:10px"><h3>Your hand is a second health bar</h3><div class="tiny muted">
           Cards you play go to your <b style="color:var(--ink)">discard</b> and come back when the fight ends. Cards marked LOST are gone until you sleep. If you are ever down to fewer than two cards you break off and run, taking a parting blow.
           <br><br><b style="color:var(--ink)">Catch your breath</b> mid-fight to pull your whole discard back, at the cost of the round and one random card burned for good. You will be made to do it when you run dry, so a long fight is really a question of how many breaths you can afford. Camping, an inn, or simply ending the day returns everything.</div></div>
