@@ -377,7 +377,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-120-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-121-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -714,7 +714,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-120-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-121-sub</span></div>
 </div>
 </div>
 
@@ -946,23 +946,38 @@ function onSafetyInsert(sel){
 var TBP_RB_DEFAULT = 'Risks, benefits, alternatives, and potential adverse effects of treatment have been discussed, and the patient has had the opportunity to ask questions.';
 var vaultRbAttestation = '';
 function tbpRbText(){ return (vaultRbAttestation || '').trim() || TBP_RB_DEFAULT; }
-function insertRbAttestation(){
-  if(window.TBP_DEMO){ if(typeof tbpShowJoin === 'function') tbpShowJoin(); return; }
-  var ta = document.getElementById('assess-plan'); if(!ta) return;
-  // Same reveal as the PMP button: the plan box is hidden when the visit already documented its
-  // plan, and an attestation dropped into a display:none box never reaches the note.
-  if(ta.style.display === 'none') ta.style.display = '';
-  var pl = document.querySelector('label[for="assess-plan"]'); if(pl && pl.style.display === 'none') pl.style.display = '';
+var vaultRbAuto = true;    // on by default: this is documentation the clinician already does
+function tbpRbAutoOn(){ return vaultRbAuto !== false; }
+function tbpRbToggle(on){
+  vaultRbAuto = !!on;
+  try { var lv = JSON.parse(localStorage.getItem('tbp_vault')||'{}'); lv.rbAuto = on ? 'on' : 'off'; localStorage.setItem('tbp_vault', JSON.stringify(lv)); } catch(e){}
+  try { persistVaultField('rbAuto', on ? 'on' : 'off'); } catch(e){}
+  try { var box = document.getElementById('assess-results'); if(box) { /* repaint the hint in place */ } } catch(e){}
+  try { tbpRbRepaintHint(); } catch(e){}
+}
+function tbpRbRepaintHint(){
+  var h = document.getElementById('rb-auto-hint'); if(!h) return;
+  h.innerHTML = tbpRbAutoOn()
+    ? 'Your risk/benefit attestation is added automatically to every note. <a href="#" onclick="editRbAttestation();return false;" style="color:var(--cream-dim);text-decoration:underline">edit wording</a> \u00b7 <a href="#" onclick="tbpRbToggle(false);return false;" style="color:var(--cream-dim);text-decoration:underline">turn off</a>'
+    : 'Risk/benefit attestation is off. <a href="#" onclick="tbpRbToggle(true);return false;" style="color:var(--cream-dim);text-decoration:underline">add it to every note automatically</a>';
+}
+// Appended to the plan the assessment receives, deterministically, in code -- NOT asked of the
+// model. The model is never told to produce this sentence; it is handed it, already written, as the
+// clinician's own text. That is the whole difference between an attestation and a fabrication.
+//
+// DEDUPE: the PMP attestation the clinician may also have added ends with "risk/benefit discussed",
+// so without this the note gets both the full standing sentence AND the stamped shorthand. If any
+// risk/benefit statement is already in the plan, the default stands down.
+function tbpApplyRbDefault(planText){
+  planText = planText || '';
+  if(!tbpRbAutoOn()) return planText;
   var line = tbpRbText();
-  var cur = ta.value || '';
-  if(cur.indexOf(line) !== -1){   // already attested; tapping twice must not duplicate it
-    ta.focus(); return;
-  }
-  ta.value = cur + (cur && !/\n$/.test(cur) ? '\n' : '') + line;
-  ta.focus();
-  try { ta.dispatchEvent(new Event('input', { bubbles:true })); } catch(e){}
-  var b = document.getElementById('rb-attest-btn');
-  if(b){ b.innerHTML = '\u2713 Risks/benefits discussed'; b.style.background = 'rgba(201,162,39,0.16)'; }
+  if(!line) return planText;
+  // Any way a clinician might already have said it: "risk/benefit", "risks and benefits",
+  // "risks, benefits", "risk & benefit". The first pattern missed "risks AND benefits", which is
+  // the most natural way to type it.
+  if(/risks?\s*(?:,|\/|and|&|\+)?\s*benefits?/i.test(planText)) return planText;
+  return planText + (planText.trim() ? '\n' : '') + line;
 }
 // Own the phrase once instead of rewriting it forever -- the same bargain as the MSE default.
 async function editRbAttestation(){
@@ -6274,10 +6289,11 @@ function renderPreflightCards(inp, scope, questions, planDetected){
     + '<div class="hint" style="margin:0 0 7px;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:#e8cf7a">Your attestations <span style="text-transform:none;letter-spacing:0;color:var(--cream-dim)">&mdash; one tap each, in your words. Never added for you.</span></div>'
     + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
     + '<button class="btn-ghost" type="button" id="pmp-attest-btn" onclick="insertPmpAttestation()" style="margin-top:0;border-color:#c9a227;color:#e8cf7a">&#43; PMP reviewed</button>'
-    + '<button class="btn-ghost" type="button" id="rb-attest-btn" onclick="insertRbAttestation()" style="margin-top:0;border-color:#c9a227;color:#e8cf7a">&#43; Risks/benefits discussed</button>'
-    + '<a href="#" onclick="editRbAttestation();return false;" class="hint" style="color:var(--cream-dim);text-decoration:underline;font-size:.79rem">edit wording</a>'
     + '</div>'
-    + '<div class="hint" style="margin-top:6px;line-height:1.45">One tap adds your attestation to the plan, word for word &mdash; never expanded into specifics you did not document. Written longitudinally (&ldquo;<em>have been</em> discussed&rdquo;), so once it is in the record it <strong style="color:var(--cream)">carries forward on later follow-ups</strong> when you paste last visit&rsquo;s note. Attest once, not every visit.</div>'
+    + '<div class="hint" id="rb-auto-hint" style="margin-top:6px;line-height:1.45">' + (tbpRbAutoOn()
+        ? 'Your risk/benefit attestation is added automatically to every note. <a href="#" onclick="editRbAttestation();return false;" style="color:var(--cream-dim);text-decoration:underline">edit wording</a> &middot; <a href="#" onclick="tbpRbToggle(false);return false;" style="color:var(--cream-dim);text-decoration:underline">turn off</a>'
+        : 'Risk/benefit attestation is off. <a href="#" onclick="tbpRbToggle(true);return false;" style="color:var(--cream-dim);text-decoration:underline">add it to every note automatically</a>')
+      + '</div>'
     + '</div>'
     + '</div>';
   var genLbl = 'Generate my note (HPI + Assessment' + (scope==='both' ? ' + Psychotherapy' : '') + (planOn ? ' + Plan' : '') + ')';
@@ -6362,6 +6378,8 @@ function renderPreflightCards(inp, scope, questions, planDetected){
     // Re-read the plan box at generate time. inp.plan was captured before preflight (empty in the
     // ambient auto-flow), so without this a plan typed AFTER the questions appear would be ignored.
     try { var pe2=document.getElementById('assess-plan'); if(pe2 && pe2.style.display!=='none'){ inp.plan = pe2.value.trim(); } } catch(e){}
+    // The clinician's standing attestation, applied here rather than asked of the model. No click.
+    try { inp.plan = tbpApplyRbDefault(inp.plan || ''); } catch(e){}
     // Length is no longer asked in preflight; let generateNote apply the clinician's per-visit-type
     // default (or heuristic). Pass a length only if one was somehow collected.
     var _lenOpt = lengthChoice ? { lengthBlock: window.NoteEngine.buildLengthBlock(lengthChoice), lengthChoice: lengthChoice } : {};
@@ -7890,6 +7908,7 @@ function loadVaultTemplates(){
     vaultScaffolds.follow_up = lv.hpiScaffoldFollowup || '';
     if(lv.hpiWorkflow) workflow = migrateWf(lv.hpiWorkflow);
     if(lv.rbAttestation) vaultRbAttestation = lv.rbAttestation;
+    if(lv.rbAuto !== undefined) vaultRbAuto = (lv.rbAuto === true || lv.rbAuto === 'on');
     if(lv.hpiPrep!==undefined) prepOn = (lv.hpiPrep===true || lv.hpiPrep==='on');
     else if(lv.hpiWorkflow==='prep') prepOn = true; // legacy 'prep' implied prep-on
     if(lv.hpiTherapyGuide!==undefined) therapyGuide = (lv.hpiTherapyGuide===true || lv.hpiTherapyGuide==='on');
@@ -7952,6 +7971,7 @@ function loadVaultTemplates(){
       } catch(e){}
       workflow = migrateWf(d.data.hpiWorkflow);
       if(d.data.rbAttestation) vaultRbAttestation = d.data.rbAttestation;
+      if(d.data.rbAuto !== undefined) vaultRbAuto = (d.data.rbAuto === true || d.data.rbAuto === 'on');
       if(d.data.hpiPrep!==undefined) prepOn = (d.data.hpiPrep===true || d.data.hpiPrep==='on');
       else prepOn = (d.data.hpiWorkflow==='prep');
       if(d.data.hpiTherapyGuide!==undefined){ therapyGuide = (d.data.hpiTherapyGuide===true || d.data.hpiTherapyGuide==='on'); }

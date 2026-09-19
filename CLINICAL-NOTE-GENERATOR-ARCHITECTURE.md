@@ -324,6 +324,36 @@ every other carry-forward in the product works.
 Revisit ONLY if the product acquires per-patient persistence for some other reason that has already
 cleared retention and BAA review. Do not let this feature be the reason that boundary moves.
 
+### A configured default must be AUTOMATIC, not a button (Sept 2026)
+
+The first attempt at type 3 shipped `+ Risks/benefits discussed` as a one-tap control. Real use
+killed it in a day, and the reason generalises.
+
+The longitudinal wording worked: the attestation carried forward correctly from the prior note on a
+follow-up, with no second tap. But the button was still sitting there **unselected**, which teaches
+the opposite of what the system does. A clinician reading that screen concludes the click is
+required every visit, and a product that manufactures a ritual click has recreated the burden it
+exists to remove. Worse, the note emitted the standing attestation AND the "risk/benefit discussed"
+shorthand inside the PMP line, so the one visible reward for clicking was a duplicated sentence.
+
+**The rule: routine clinician-owned defaults should be AUTOMATIC. Exceptions and specifics require
+evidence.** If the clinician has configured the wording, the product already has everything it needs;
+asking them to confirm it each time is asking permission for something they already granted. The
+same test applies to any future type 3 surface. If you find yourself designing states for a button
+(never established / established / discussed again today), the button is the bug.
+
+**How it is applied matters as much as whether.** The attestation is appended to the plan **in code**,
+deterministically, before the assessment call. The model is never asked to produce it; it is handed
+the clinician's own sentence already written. That keeps the authorship line from §0.3.2 intact: the
+model still may not invent an attestation, it simply receives one. The same principle as the
+interview filter, where the code decides scaffold from evidence rather than asking the model to.
+
+**Dedupe is part of the feature, not a detail.** A clinician who already said it their own way, or
+whose PMP line ends in "risk/benefit discussed", must not also get the standing sentence. The check
+is deterministic and matches every natural phrasing (`risk/benefit`, `risks and benefits`, `risks,
+benefits`, `risk & benefit`), and the assessment prompt carries a matching rule so the model does not
+add a second one of its own.
+
 **The general form, which is why this sits in the architecture doc:** AI must not fabricate
 facts, and it absolutely may carry forward clinician-owned defaults, conventions and
 attestations the clinician has explicitly chosen. That is how it saves work. Any new surface
