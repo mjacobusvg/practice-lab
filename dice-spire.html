@@ -400,6 +400,31 @@ const KIND = {
   summon:   {name:'Summon',  ic:'🌀', col:'var(--cyan)',   target:'self',       desc:v=>`Call up a Thrall with ${5+3*v} HP that rolls its own die for ${2+v} turns. Two at a time.`},
   blank:    {name:'Blank',   ic:'·',       col:'var(--ink-faint)', target:'none',    desc:()=>`Nothing happens.`}
 };
+/* ------------------------------------------------------------------ sigils */
+/* A Sigil pays nothing on the turn you spend it. It lays down a rule that
+   holds for the rest of the fight: a terrible trade in a short one, and the
+   whole fight in a long one. Spend the same Sigil again and the rule deepens. */
+const SIGILS = {
+  sigFury:   {name:'Rite of Fury',     ic:'\u{1F47A}', col:'var(--pink)',   price:170, line:n=>`Every hero gains ${n} power at the end of each round.`},
+  sigAegis:  {name:'Rite of Aegis',    ic:'\u{1F3F0}', col:'var(--blue)',   price:150, line:n=>`Every hero gains ${2*n} shield at the start of your turn.`},
+  sigWell:   {name:'Rite of the Well', ic:'\u26F2',    col:'var(--violet)', price:190, line:n=>`Gain ${n} mana at the start of your turn.`},
+  sigTempo:  {name:'Rite of Tempo',    ic:'\u231B',    col:'var(--cyan)',   price:200, line:n=>`${n} more reroll${n>1?'s':''} every turn.`},
+  sigKindle: {name:'Rite of Kindling', ic:'\u{1F506}', col:'var(--orange)', price:160, line:n=>`Anything already burning takes ${n} more fire each round.`},
+  sigGrowth: {name:'Rite of Growth',   ic:'\u{1F33E}', col:'var(--green)',  price:150, line:n=>`Every hero mends ${2*n} at the end of each round.`},
+  sigSpite:  {name:'Rite of Spite',    ic:'\u{1FA9E}', col:'var(--red)',    price:160, line:n=>`Anything that strikes a hero takes ${3*n} back.`},
+  sigEcho:   {name:'Rite of Echo',     ic:'\u267E\uFE0F', col:'var(--cyan)', price:230, line:n=>`The first ${n===1?'face':n+' faces'} you spend each turn resolve${n===1?'s':''} twice.`}
+};
+const isSigil = k => !!SIGILS[k];
+const sigilShort = k => SIGILS[k].name.replace('Rite of the ', '').replace('Rite of ', '');
+/* a Sigil is a face like any other, so it renders, installs, scours, prices
+   and drops through every path the ordinary kinds already use */
+Object.keys(SIGILS).forEach(k => {
+  const sg = SIGILS[k];
+  KIND[k] = { name:sg.name, ic:sg.ic, col:sg.col, target:'none',
+              desc:()=>`${sg.line(1)} It holds for the rest of the fight, and spending it again deepens it.` };
+});
+/* how deep a rite is running right now */
+const sigil = k => (C && C.sigils && C.sigils[k]) || 0;
 const F = (k, v = 0) => ({ k, v });
 /* Every hero owns one kind of face outright. Nobody else can be given it, so a
    party is defined by who is in it rather than by whatever the rewards offered.
@@ -768,7 +793,14 @@ const FACE_POOL = [
   {f:F('power',1),    w:5},  {f:F('power',2),    w:2},
   {f:F('guard',4),    w:5},  {f:F('guard',6),    w:2},  {f:F('regen',4),    w:5},  {f:F('regen',6),    w:2},
   {f:F('leech',4),    w:6, minAct:2},  {f:F('leech',6),    w:3, minAct:2},
-  {f:F('echo',1),     w:5, minAct:2},  {f:F('echo',2),     w:2, minAct:3}
+  {f:F('echo',1),     w:5, minAct:2},  {f:F('echo',2),     w:2, minAct:3},
+  /* Rites cost you a whole face and give nothing back on the turn you spend
+     them, so they only start appearing once fights run long enough to pay. */
+  {f:F('sigAegis'),  w:3, minAct:2},  {f:F('sigGrowth'), w:3, minAct:2},
+  {f:F('sigSpite'),  w:3, minAct:2},  {f:F('sigFury'),   w:3, minAct:2},
+  {f:F('sigKindle'), w:3, minAct:2, need:()=>S.party.some(h => h.key === 'pyromancer')},
+  {f:F('sigWell'),   w:3, minAct:2, need:()=>S.party.some(h => ownersOf('mana').includes(h.key))},
+  {f:F('sigTempo'),  w:2, minAct:3},  {f:F('sigEcho'),   w:2, minAct:3}
 ];
 /* A reward pool with fixed numbers goes dead: by act three a forged die beats
    everything on offer and every reward screen is a "Take none". What is
@@ -798,6 +830,7 @@ function rollFaceReward(){
     if(owners && S && !S.party.some(h => owners.includes(h.key))) return false;
     if(isControl(o.f.k) && S && !S.party.some(h => canTakeFace(h, o.f.k) && controlFaces(h) === 0)) return false;
     if(o.minAct && S && S.act < o.minAct) return false;
+    if(o.need && S && !o.need()) return false;    /* a rite nobody can use is not a reward */
     return true;
   });
   const use = pool.length ? pool : FACE_POOL.filter(o => !signatureOwner(o.f.k));
@@ -816,6 +849,7 @@ function faceRewards(n){
   return out;
 }
 const facePrice = f => {
+  if(isSigil(f.k)) return SIGILS[f.k].price;
   const base = {dmg:11, dmgAll:17, burn:22, shield:10, shieldAll:18, heal:11, poison:13, stun:34, charm:44, daze:30, summon:38, guard:20, regen:14, leech:16, echo:40, mana:16, power:26, blank:0}[f.k];
   return Math.round(20 + base * Math.max(1, f.v) * 0.9);
 };
@@ -1004,7 +1038,7 @@ function faceValue(hero, f){
   if(f.k === 'power' && hasPerk(hero, 'h2')) v += 1;         /* Fanfare     */
   if(f.k === 'daze')  v += gearMod(hero, 'daze');
   if(f.k === 'charm') v += gearMod(hero, 'charm');
-  if(f.k !== 'blank') v += glob('allFaces');
+  if(f.k !== 'blank' && !isSigil(f.k)) v += glob('allFaces');
   return Math.max(0, v);
 }
 const livingHeroes  = () => S.party.filter(h => !h.downed);
@@ -1119,6 +1153,8 @@ function startCombat(type){
     rerollMode: false,
     pending: null,
     spellsUsed: [],
+    sigils: {},                        /* rites laid down in THIS fight only */
+    echoUsed: 0,
     drops: [],
     phaseBanner: null,
     log: [],
@@ -1145,7 +1181,7 @@ function startCombat(type){
 
 function logc(t){ if(!C) return; C.log.push(t); if(C.log.length > 60) C.log.shift(); }
 
-function maxRerolls(){ return 2 + (has('loadeddice') ? 1 : 0) + glob('rerolls'); }
+function maxRerolls(){ return 2 + (has('loadeddice') ? 1 : 0) + glob('rerolls') + sigil('sigTempo'); }
 
 function beginPlayerTurn(){
   C.turn++;
@@ -1156,7 +1192,13 @@ function beginPlayerTurn(){
     h.shield = keepHalf ? Math.floor(h.shield / 2) : 0;
     h.guarding = false;
   });
-  C.mana += (has('wellspring') ? 1 : 0) + glob('manaTurn') + (partyPerk('p4') ? 1 : 0) + (setActive('mind') ? 1 : 0);
+  C.mana += (has('wellspring') ? 1 : 0) + glob('manaTurn') + (partyPerk('p4') ? 1 : 0) + (setActive('mind') ? 1 : 0)
+          + sigil('sigWell');
+  const aegisRite = sigil('sigAegis');
+  if(aegisRite){
+    livingAllies().forEach(h => { h.shield += 2 * aegisRite; });
+    logc(`The Rite of Aegis holds. Every hero gains ${2 * aegisRite} shield.`);
+  }
   if(has('sundial') && C.turn % 3 === 0){
     livingAllies().forEach(h => h.shield += 4);
     logc('The Sundial turns. Every hero gains 4 shield.');
@@ -1169,6 +1211,7 @@ function beginPlayerTurn(){
   }
   C.phaseBanner = null;
   C.rerolls = maxRerolls();
+  C.echoUsed = 0;
   C.rerollMode = false;
   C.pending = null;
   rollAll();
@@ -1390,8 +1433,23 @@ function applyDie(i, target){
   if(!d || d.used) return;
   const h = unitByUid(d.ownerUid);
   if(!h){ d.used = true; return; }      /* owner left the field: the die just fizzles */
-  const v = faceValue(h, d);
   d.used = true;
+  resolveFace(h, d, target);
+  /* The Rite of Echo runs the face a second time. A rite itself never echoes,
+     or laying one down would deepen it for free. */
+  const echoRite = sigil('sigEcho');
+  if(echoRite && (C.echoUsed || 0) < echoRite && d.k !== 'blank' && !isSigil(d.k) && !C.over){
+    C.echoUsed = (C.echoUsed || 0) + 1;
+    logc('The Rite of Echo says it again.');
+    resolveFace(h, d, target);
+  }
+  chargeFor(h, d);
+}
+
+/* one face resolving once -- separate from applyDie so the Rite of Echo can
+   ask for it twice */
+function resolveFace(h, d, target){
+  const v = faceValue(h, d);
   switch(d.k){
     case 'dmg': {
       const e = enemyByUid(target.uid); if(!e) break;
@@ -1511,8 +1569,21 @@ function applyDie(i, target){
       logc(`${h.name} empowers ${a.name}.`);
       break;
     }
-    default: logc(`${h.name} rolls a blank.`);
+    default: {
+      if(isSigil(d.k)){
+        if(!C.sigils) C.sigils = {};
+        C.sigils[d.k] = (C.sigils[d.k] || 0) + 1;
+        const sg = SIGILS[d.k];
+        floatOn(h.uid, sigilShort(d.k).toUpperCase(), sg.col);
+        logc(`${h.name} lays down the ${sg.name}. ${sg.line(C.sigils[d.k])}`);
+        break;
+      }
+      logc(`${h.name} rolls a blank.`);
+    }
   }
+}
+
+function chargeFor(h, d){
   const cs = chargeSpellOf(h);
   const needOf = sp => sp.charge.need - (((sp.key === 'finisher' && hasPerk(h, 'd1')) ||
                                            (sp.key === 'miasma'   && hasPerk(h, 'n4')) ||
@@ -1613,7 +1684,8 @@ function enemyPhase(){
           const dmg = enemyAtk(e, it.v + (e.power || 0) + enemyItemMod(e, 'dmg'));
           hurtHero(tgt, dmg);
           logc(`${e.name} hits ${tgt.name} for ${dmg}.`);
-          const back = (has('thorned') ? 3 : 0) + glob('thorns') + (tgt && tgt.guarding && hasPerk(tgt, 'v3') ? 4 : 0);
+          const back = (has('thorned') ? 3 : 0) + glob('thorns') + sigil('sigSpite') * 3
+                     + (tgt && tgt.guarding && hasPerk(tgt, 'v3') ? 4 : 0);
           if(back > 0) hurtEnemy(e, back);
         }
         break;
@@ -1621,7 +1693,7 @@ function enemyPhase(){
         const dmg = enemyAtk(e, it.v + (e.power || 0) + enemyItemMod(e, 'dmg') + enemyItemMod(e, 'cleave'));
         livingAllies().slice().forEach(h => hurtHero(h, dmg));
         logc(`${e.name} sweeps the party for ${dmg}.`);
-        const backAll = (has('thorned') ? 3 : 0) + glob('thorns');
+        const backAll = (has('thorned') ? 3 : 0) + glob('thorns') + sigil('sigSpite') * 3;
         if(backAll > 0) hurtEnemy(e, backAll);
         break;
       }
@@ -1763,10 +1835,11 @@ function endOfRound(){
   /* Fire resolves first: it burns, then grows, then jumps to something new.
      Unlike poison it does not decay, so an early Ignite compounds over a long
      fight -- and in a crowd it turns one lit enemy into a spreading problem. */
+  const kindleRite = sigil('sigKindle');
   const burning = livingEnemies().filter(e => e.burn > 0);
   burning.forEach(e => {
-    hurtEnemy(e, e.burn, true);
-    logc(`${e.name} burns for ${e.burn}.`);
+    hurtEnemy(e, e.burn + kindleRite, true);
+    logc(`${e.name} burns for ${e.burn + kindleRite}.`);
   });
   const stillBurning = burning.filter(e => e.hp > 0);
   stillBurning.forEach(e => { e.burn += 1; });
@@ -1823,6 +1896,11 @@ function endOfRound(){
       logc(`The Hungering Blade takes its due from ${h.name}.`);
     }
   });
+  const furyRite = sigil('sigFury'), growthRite = sigil('sigGrowth');
+  if(furyRite) livingAllies().forEach(h => { h.power += furyRite; floatOn(h.uid, '+' + furyRite + ' POW', 'var(--pink)'); });
+  if(growthRite) livingAllies().forEach(h => healHero(h, 2 * growthRite));
+  if(furyRite || growthRite)
+    logc(`The rites hold.${furyRite ? ' The party grows angrier.' : ''}${growthRite ? ' The party knits itself back together.' : ''}`);
   if(!livingEnemies().length){ endCombat(true); return; }
   if(!livingHeroes().length){ endCombat(false); return; }
   beginPlayerTurn();
@@ -2287,7 +2365,7 @@ function temperItem(heroUid, slot){
 function forgeFace(heroUid, idx){
   const h = heroByUid(heroUid);
   const f = h.faces[idx];
-  if(!f || f.k === 'blank') return;
+  if(!f || f.k === 'blank' || isSigil(f.k)) return;    /* a rite has no number to sharpen */
   f.v += (['stun','charm','daze','summon','guard','echo','dmgAll','shieldAll','power','mana','burn'].includes(f.k) ? 1 : 2);
   UI.modal = null; save(); render();
 }
@@ -2698,7 +2776,7 @@ function faceHTML(f, cls, click){
   const K = KIND[f.k];
   return `<div class="face ${f.k === 'blank' ? 'blank' : ''} ${cls || ''}" ${click ? `onclick="${click}"` : ''}
     data-tip="${esc(faceLabel(f))}|${esc(K.desc(f.v))}" style="border-color:${f.k === 'blank' ? '' : 'rgba(255,255,255,.18)'}">
-    <span class="ic">${K.ic}</span>${f.k === 'blank' ? '' : `<span class="v" style="color:${K.col}">${f.v}</span>`}</div>`;
+    <span class="ic">${K.ic}</span>${f.k === 'blank' || isSigil(f.k) ? '' : `<span class="v" style="color:${K.col}">${f.v}</span>`}</div>`;
 }
 
 /* --------------------------------------------------------------------- map */
@@ -2868,8 +2946,10 @@ function viewCombat(){
         onclick="clickDie(${i})" data-tip="${esc(K.name)}|${esc(K.desc(v))}">
       <div class="who">${h ? h.name : ''}</div>
       <div class="glyph">${K.ic}</div>
-      ${d.k === 'blank' ? '<div class="val" style="color:var(--ink-faint)">—</div>' : `<div class="val" style="color:${K.col}">${v}</div>`}
-      <div class="lab">${K.name}</div>
+      ${d.k === 'blank' ? '<div class="val" style="color:var(--ink-faint)">—</div>'
+        : isSigil(d.k) ? `<div class="val" style="color:${K.col};font-size:19px">\u25C8</div>`
+        : `<div class="val" style="color:${K.col}">${v}</div>`}
+      <div class="lab">${isSigil(d.k) ? esc(sigilShort(d.k)) : K.name}</div>
     </div>`;
   }).join('');
   C.dice.forEach(d => d.fresh = false);
@@ -2919,6 +2999,7 @@ function viewCombat(){
     </div>
     ${C.phaseBanner ? `<div class="panel" style="padding:10px 14px;border-color:var(--gold);background:linear-gradient(90deg,rgba(240,180,41,.14),transparent)">
       <b style="color:var(--gold)">${esc(C.phaseBanner)}</b></div>` : ''}
+    ${riteBar()}
     <div class="enemy-row">${enemies}</div>
     <div class="row" style="justify-content:center;gap:12px;flex-wrap:wrap">${heroes}</div>
     <div class="tray">
@@ -2941,6 +3022,16 @@ function viewCombat(){
       <div style="flex:1;min-width:280px"><div class="log" id="log">${C.log.slice(-40).map((l, i, a) => `<div class="${i === a.length - 1 ? 'hl' : ''}">${esc(l)}</div>`).join('')}</div></div>
     </div>
   </div>`;
+}
+/* the rules currently standing over this fight */
+function riteBar(){
+  const on = Object.keys(C.sigils || {}).filter(k => C.sigils[k] > 0 && SIGILS[k]);
+  if(!on.length) return '';
+  return `<div class="row wrap-r" style="gap:6px;justify-content:center">` + on.map(k => {
+    const sg = SIGILS[k], n = C.sigils[k];
+    return `<span class="badge" style="color:${sg.col};border-color:${sg.col}"
+      data-tip="${esc(sg.name)}|${esc(sg.line(n))} It holds until this fight ends.">${sg.ic} ${esc(sigilShort(k))}${n > 1 ? ' \u00D7' + n : ''}</span>`;
+  }).join('') + `</div>`;
 }
 function intentHTML(e){
   const it = e.intent;
@@ -3045,6 +3136,13 @@ function renderModal(){
    in EFFECTIVE values, not printed ones: a Strike 5 offered to a Duelist in a
    Silver Sword really lands as 7, and his current best is boosted too. */
 function faceVerdict(f){
+  /* a rite is not a number, so there is nothing to compare it against */
+  if(isSigil(f.k)){
+    const who = S.party.find(h => h.faces.some(x => x.k === f.k));
+    return who
+      ? `<span style="color:var(--gold)">${esc(who.name)} already carries it</span> <span class="faint">(a second copy deepens the rite)</span>`
+      : `<span style="color:var(--cyan)">A standing rule, not a number</span> <span class="faint">(nothing in a short fight, everything in a long one)</span>`;
+  }
   const eligible = S.party.filter(h => canTakeFace(h, f.k));
   if(!eligible.length)
     return `<span style="color:var(--ink-faint)">Nobody here can carry it</span>`;
@@ -3247,7 +3345,8 @@ function mForge(){
       ${S.party.map(h => `<div class="panel" style="background:var(--card);padding:12px">
         <b>${h.av} ${esc(h.name)}</b>
         <div class="faces" style="margin-top:8px">${h.faces.map((f, i) =>
-          faceHTML(f, 'big ' + (f.k === 'blank' ? '' : 'pickable'), f.k === 'blank' ? '' : `forgeFace(${h.uid},${i})`)).join('')}</div>
+          faceHTML(f, 'big ' + (f.k === 'blank' || isSigil(f.k) ? '' : 'pickable'),
+                   f.k === 'blank' || isSigil(f.k) ? '' : `forgeFace(${h.uid},${i})`)).join('')}</div>
       </div>`).join('')}
     </div>
     <div class="sep"></div>
@@ -3315,7 +3414,7 @@ function itemFaceBonus(it){
   add('shield', m.shield); add('shieldAll', m.shield);
   add('heal', m.heal);    add('poison', m.poison); add('burn', m.burn);
   add('daze', m.daze);    add('charm', m.charm);
-  if(g.allFaces) Object.keys(KIND).forEach(k => { if(k !== 'blank') add(k, g.allFaces); });
+  if(g.allFaces) Object.keys(KIND).forEach(k => { if(k !== 'blank' && !isSigil(k)) add(k, g.allFaces); });
   return out;
 }
 /* A hero's die, with an incoming item's effect shown against each face. */
@@ -3324,6 +3423,8 @@ function faceChips(h, oldIt, newIt){
   return `<div class="row wrap-r" style="gap:4px;margin-top:6px">` + h.faces.map(f => {
     const K = KIND[f.k];
     if(f.k === 'blank') return `<span class="badge faint">${K.ic}</span>`;
+    if(isSigil(f.k)) return `<span class="badge" style="border-color:${K.col};color:${K.col}"
+      data-tip="${esc(K.name)}|${esc(K.desc(0))}">${K.ic} rite</span>`;
     const d = (after[f.k] || 0) - (before[f.k] || 0);
     const now = faceValue(h, f);
     return `<span class="badge" style="border-color:${d ? (d > 0 ? 'var(--green)' : 'var(--red)') : 'var(--line)'}">
