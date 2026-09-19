@@ -107,6 +107,70 @@
     } catch(e) {}
   }
 
+  // ── Session refresh (audit H7, 2026-09-19) ──────────────────────────────────
+  // The signed token is short-lived now (24h, was 30 days), so it has to renew
+  // itself or people get signed out while working. This renews IN PLACE via
+  // session-refresh, which re-reads tier from the database and honours the
+  // revocation epoch. A tool page has no Supabase client, so the alternative was
+  // a full-page bounce through platform.html — in the Scribe, mid-encounter, that
+  // would discard whatever is on screen. Hence a fetch, and nothing visible.
+  //
+  // Renewal starts at half-life, which leaves ~12h of runway: a laptop that sleeps
+  // through the afternoon still wakes with a live token, and a failed attempt has
+  // many more chances before anything expires.
+  var refreshInFlight = false;
+
+  function pastHalfLife(claims) {
+    if (!claims || !claims.exp || !claims.iat) return false;
+    return Date.now() > claims.iat + (claims.exp - claims.iat) / 2;
+  }
+
+  function maybeRefreshSession() {
+    if (refreshInFlight) return;
+    var tok;
+    try { tok = localStorage.getItem(SESSION_KEY); } catch (e) { return; }
+    if (!tok) return;
+    var claims = parseToken(tok);
+    if (!claims || !pastHalfLife(claims)) return;
+
+    refreshInFlight = true;
+    fetch('/.netlify/functions/session-refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: tok })
+    })
+    .then(function (r) { return r.json().then(function (b) { return { status: r.status, body: b }; }); })
+    .then(function (res) {
+      if (res.status === 200 && res.body && res.body.refreshed && res.body.token) {
+        try {
+          localStorage.setItem(SESSION_KEY, res.body.token);
+          localStorage.removeItem(SESSION_EXPIRY_KEY);   // the token carries its own exp
+          if (res.body.tier) localStorage.setItem('tbp_tier', res.body.tier);
+        } catch (e) {}
+        return;
+      }
+      // 401 is a real verdict — revoked, account gone, or the chain hit its cap.
+      // Drop the token so the next gate check sends them to log in properly.
+      // 503 is Supabase being unreachable, which is NOT a verdict: keep the token
+      // (it is still valid and signed) and try again on the next tick. Signing
+      // people out during someone else's outage is its own outage.
+      if (res.status === 401) clearSession();
+    })
+    .catch(function () { /* offline or blocked: keep the existing valid token */ })
+    .then(function () { refreshInFlight = false; });
+  }
+
+  // On load, when a backgrounded tab comes back, and every 30 minutes for a tab
+  // that simply stays open all day. All three are the same cheap no-op until the
+  // token is actually past half-life.
+  try {
+    maybeRefreshSession();
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) maybeRefreshSession();
+    });
+    setInterval(maybeRefreshSession, 30 * 60 * 1000);
+  } catch (e) {}
+
   // No local session → single Supabase login path via the platform. We preserve
   // a returnTo so platform.html can send the member back to THIS tool once it has
   // minted the signed token (see handleReturnTo in platform.html).

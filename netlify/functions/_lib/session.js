@@ -16,9 +16,31 @@ const crypto = require('crypto');
 
 const SECRET = process.env.SESSION_SIGNING_SECRET || '';
 
-// How long a session is valid. 30 days = "trusted device": the user verifies
-// once, then the signed token rides for 30 days before re-verification.
-const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+// How long a session is valid.
+//
+// This was 30 days, and 30 days was the whole of finding H7. The token is a
+// stateless bearer: `tier` and `scope` are frozen into it at mint time and nothing
+// re-reads them, so for thirty days after a downgrade, a cancellation, an expired
+// comp or a theft, the old token kept working and there was no way to stop it.
+// Sign-out cleared localStorage on ONE device; the token string itself stayed valid
+// everywhere it had been copied.
+//
+// 24 hours instead, with in-place refresh (session-refresh.js) at half-life, so:
+//   * a tier change is picked up within a day rather than a month,
+//   * a stolen token is worth a day rather than a month,
+//   * and nobody is logged out mid-use, because the refresh happens in the page
+//     rather than by bouncing them through platform.html.
+// 8 hours is the eventual target; 24 is the first step, deliberately, because a
+// bug in the refresh path on a clinical tool means a clinician loses a session
+// mid-encounter. Cut it once refresh has proven itself in production.
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+
+// The absolute ceiling on a refresh CHAIN. platform-auth mints against a live,
+// server-verified Supabase session — strong proof, so it starts a new chain.
+// session-refresh mints against nothing but a previous token of ours, so without a
+// ceiling a single stolen token could refresh itself forever and the 24-hour TTL
+// would mean nothing. Past this age the holder has to prove a Supabase session again.
+const REFRESH_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 function b64url(buf) {
   return Buffer.from(buf).toString('base64')
@@ -37,8 +59,12 @@ function sign(payloadJson) {
 
 /**
  * Mint a signed session token.
- * @param {object} claims - { email, scope, tier, communityMemberId? }
+ * @param {object} claims - { email, scope, tier, communityMemberId?, chainStartedAt? }
  *   scope: 'member' (full platform) | 'hub' (standalone Credentialing Hub only)
+ *   chainStartedAt: when the ORIGINAL login happened. Omitted by platform-auth (a
+ *     fresh Supabase-verified login starts a new chain); carried forward unchanged
+ *     by session-refresh so the chain cannot outlive REFRESH_MAX_AGE_MS. `sid` is
+ *     what revocation compares against, so a refresh must never reset it.
  * @returns {string} signed token
  */
 function mintToken(claims) {
@@ -50,10 +76,18 @@ function mintToken(claims) {
     tier: claims.tier || null,
     cmid: claims.communityMemberId || null,
     iat: now,
+    // Session start. Older tokens have no `sid`; readers fall back to `iat`, which
+    // for a pre-refresh token is the same thing.
+    sid: claims.chainStartedAt || now,
     exp: now + SESSION_TTL_MS
   };
   const payloadJson = JSON.stringify(payload);
   return b64url(payloadJson) + '.' + sign(payloadJson);
+}
+
+/** When the session behind this token began. Pre-`sid` tokens fall back to `iat`. */
+function sessionStartedAt(claims) {
+  return (claims && (claims.sid || claims.iat)) || 0;
 }
 
 /**
@@ -112,4 +146,4 @@ function scopeAllowsTool(scope, toolId) {
   return (ALLOW[scope] || []).indexOf(toolId) !== -1;
 }
 
-module.exports = { mintToken, verifyToken, scopeAllowsTool, SESSION_TTL_MS };
+module.exports = { mintToken, verifyToken, scopeAllowsTool, sessionStartedAt, SESSION_TTL_MS, REFRESH_MAX_AGE_MS };

@@ -117,6 +117,55 @@ Pro-only; not required.
   my other account" redirect (a stale session for account A shadowing a fresh login as B), and
   clears the prior account's tool-session keys on a switch.
 
+### 5a. Session lifetime and revocation (audit H7, fixed 2026-09-19)
+
+The signed session token (`_lib/session.js`) used to last **30 days**, and its `tier` and `scope`
+were frozen into it at mint time. Nothing re-read them. That meant a cancellation, a downgrade, an
+expired comp or a stolen token all kept full access for up to a month, and there was **no way to
+stop one**: signing out clears `localStorage` on ONE device, which does nothing to a token string
+that has already been copied somewhere else.
+
+Three pieces now:
+
+| | |
+|---|---|
+| `SESSION_TTL_MS` | **24 hours** (was 30 days). 8h is the eventual target — cut it once refresh has a production track record, not before. |
+| `session-refresh.js` | Renews a live token in place, re-reading `tier` from `accounts` each time. Fires at **half-life** (~12h of runway). |
+| `accounts.sessions_valid_from` | The revocation epoch. |
+
+**To kill every live session for one member, on every device:**
+
+```sql
+update public.accounts set sessions_valid_from = now() where email = 'them@example.com';
+```
+
+They are locked out within one TTL at the outside: the next refresh is refused, so their token
+simply expires and cannot be renewed. It does **not** block them logging in again — a fresh login
+mints a session starting after the epoch, which is the correct behaviour for "sign out everywhere"
+and for a compromised device. To lock someone out for good, change their tier or remove the
+account; the epoch is for sessions, not for people.
+
+Three things about the refresh path are deliberate and should not be "simplified":
+
+- **An expired token is never refreshable, at any grace period.** A grace window would make the
+  TTL a suggestion. Expired means the normal `platform.html` re-mint, which requires a live
+  Supabase session.
+- **The chain is capped** (`REFRESH_MAX_AGE_MS`, 30 days) from the original login, carried in the
+  `sid` claim. `session-refresh` mints from nothing but a previous token of ours, so without a
+  ceiling one stolen token could renew itself forever and the 24-hour TTL would mean nothing.
+  `sid` is also what revocation compares against, so **a refresh must never reset it**.
+- **A Supabase read failure answers 503, not 401**, and the client keeps its existing valid token.
+  Signing every member out during a Supabase blip would turn someone else's outage into ours.
+
+Tool pages renew via `auth-gate.js` (on load, on tab focus, and every 30 minutes — all no-ops until
+past half-life). It has to be a `fetch`, not a redirect: bouncing a clinician through
+`platform.html` mid-encounter in the Scribe would discard what is on screen. `platform.html` itself
+does not use that endpoint — it holds the Supabase client, so it re-mints the strong way.
+
+Tokens minted before this change carry no `sid` and are handled: readers fall back to `iat`, and
+existing 30-day tokens stay valid until their original expiry, then converge to 24h on their next
+refresh. Nobody is signed out by the deploy.
+
 ---
 
 ## 6. Compliance: auth is not a PHI path

@@ -2697,6 +2697,41 @@ async function writeToolSession(email) {
   S.authToken = '';
 }
 
+// Keep a long-open platform tab's token alive (audit H7, 2026-09-19). The signed
+// token is 24h now, not 30 days, so a tab left open overnight would otherwise wake
+// up holding an expired one and start getting 401s.
+//
+// Tool pages renew via /session-refresh, which mints from the old token alone.
+// This page does not need that: it has the Supabase client, so it re-mints the
+// proper way — a fresh, server-verified login that starts a new refresh chain and
+// re-reads tier. Same call as the initial mint, just repeated.
+//
+// Only fires past half-life, so it is a cheap no-op almost every time.
+function tokenPastHalfLife() {
+  try {
+    var tok = localStorage.getItem('tbp_auth_token');
+    if (!tok) return false;
+    var b64 = tok.split('.')[0].replace(/-/g, '+').replace(/_/g, '/');
+    while (b64.length % 4) b64 += '=';
+    var c = JSON.parse(decodeURIComponent(escape(atob(b64))));
+    if (!c || !c.exp || !c.iat) return false;
+    return Date.now() > c.iat + (c.exp - c.iat) / 2;
+  } catch (e) { return false; }
+}
+
+async function keepToolSessionFresh() {
+  if (!S.user || !S.user.email) return;
+  if (!tokenPastHalfLife()) return;
+  await writeToolSession(S.user.email);
+}
+
+try {
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden) keepToolSessionFresh();
+  });
+  setInterval(keepToolSessionFresh, 30 * 60 * 1000);
+} catch (e) {}
+
 // Resolve the signed-in identity from the database (tier, admin, profile).
 async function loadIdentity() {
   var { data: sessionData } = await SB.auth.getSession();
