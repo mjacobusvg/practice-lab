@@ -2578,6 +2578,46 @@ function renderModal(){
   document.body.appendChild(v);
 }
 
+/* Judging an offered face means knowing what the party already rolls. Compare
+   in EFFECTIVE values, not printed ones: a Strike 5 offered to a Duelist in a
+   Silver Sword really lands as 7, and his current best is boosted too. */
+function faceVerdict(f){
+  const eligible = S.party.filter(h => canTakeFace(h, f.k));
+  if(!eligible.length)
+    return `<span style="color:var(--ink-faint)">Nobody here can carry it</span>`;
+  /* The useful question is not "who gains most" -- that is always whoever
+     rolls the kind worst, and you would never put your best Strike on the
+     Warden. It is whether this beats what the party already rolls. */
+  let curBest = null, curWho = null;
+  eligible.forEach(h => h.faces.forEach(x => {
+    if(x.k !== f.k) return;
+    const v = faceValue(h, x);
+    if(curBest === null || v > curBest){ curBest = v; curWho = h; }
+  }));
+  let offBest = -Infinity, offWho = null, offAff = -1;
+  eligible.forEach(h => {
+    const v = faceValue(h, f);
+    /* when several would roll it the same, name the one who actually trades in
+       this kind rather than whoever happens to be first in the party */
+    const affinity = h.faces.filter(x => x.k === f.k).length;
+    if(v > offBest || (v === offBest && affinity > offAff)){ offBest = v; offWho = h; offAff = affinity; }
+  });
+  if(curBest === null)
+    return `<span style="color:var(--cyan)">New to your party</span> \u00B7 <span class="faint">${esc(offWho.name)} would roll ${offBest}</span>`;
+  if(offBest > curBest)
+    return `<span style="color:var(--green)">Beats your best: ${esc(offWho.name)} would roll ${offBest}</span> <span class="faint">(best now ${curBest})</span>`;
+  return `<span style="color:var(--gold)">You already roll ${curBest}</span> <span class="faint">(${esc(curWho.name)})</span>`;
+}
+/* the party's dice, so the offer can be judged against them */
+function partyDiceBlock(){
+  return `<div class="panel" style="background:var(--card);padding:11px;margin-bottom:12px">
+    <div class="tiny faint" style="margin-bottom:5px">What your party rolls right now</div>
+    ${S.party.map(h => `<div style="margin-top:6px">
+      <div class="tiny" style="font-weight:700">${h.av} ${esc(h.name)}</div>
+      ${faceChips(h, null, null)}
+    </div>`).join('')}
+  </div>`;
+}
 function mReward(m){
   const title = m.kind === 'boss' ? 'The act is yours' : m.kind === 'elite' ? 'The elite falls' : 'Victory';
   return `
@@ -2589,14 +2629,16 @@ function mReward(m){
     <div class="sep"></div>
     <h3 style="font-size:17px;margin-bottom:4px">Take a face</h3>
     <p class="tiny muted" style="margin-bottom:10px">A die has six sides. Taking one of these means giving one up.</p>
+    ${partyDiceBlock()}
     <div class="reward-grid">
       ${m.faces.map((f, i) => `<div class="reward" onclick="takeRewardFace(${i})">
         <div style="font-size:26px">${KIND[f.k].ic}</div>
         <div class="nm" style="color:${KIND[f.k].col}">${esc(faceLabel(f))}</div>
-        <div class="ds">${esc(KIND[f.k].desc(f.v))}</div></div>`).join('')}
+        <div class="ds">${esc(KIND[f.k].desc(f.v))}</div>
+        <div class="tiny" style="margin-top:6px;line-height:1.5">${faceVerdict(f)}</div></div>`).join('')}
     </div>
     <div class="sep"></div>
-    <div class="row" style="justify-content:flex-end"><button class="btn ghost" onclick="finishReward()">Take none →</button></div>`;
+    <div class="spread">${invButton()}<button class="btn ghost" onclick="finishReward()">Take none →</button></div>`;
 }
 function takeRewardFace(i){
   const f = UI.modal.faces[i];
@@ -2645,11 +2687,13 @@ function mPickFace(m){
   return `<h2>Reach through</h2>
     <p class="muted tiny">Choose one, then choose what it replaces.</p>
     <div class="sep"></div>
+    ${partyDiceBlock()}
     <div class="reward-grid">
       ${m.faces.map((f, i) => `<div class="reward" onclick="pickFaceChoice(${i})">
         <div style="font-size:26px">${KIND[f.k].ic}</div>
         <div class="nm" style="color:${KIND[f.k].col}">${esc(faceLabel(f))}</div>
-        <div class="ds">${esc(KIND[f.k].desc(f.v))}</div></div>`).join('')}
+        <div class="ds">${esc(KIND[f.k].desc(f.v))}</div>
+        <div class="tiny" style="margin-top:6px;line-height:1.5">${faceVerdict(f)}</div></div>`).join('')}
     </div>
     <div class="sep"></div>
     <div class="row" style="justify-content:flex-end"><button class="btn ghost" onclick="closeEvent()">Step back</button></div>`;
@@ -2681,7 +2725,8 @@ function mShop(m){
   const faceRows = m.faces.map((it, i) => row(`<div class="spread">
       <div class="row">${faceHTML(it.face, 'big')}
         <div><b style="color:${KIND[it.face.k].col}">${esc(faceLabel(it.face))}</b>
-        <div class="tiny muted">${esc(KIND[it.face.k].desc(it.face.v))}</div></div></div>
+        <div class="tiny muted">${esc(KIND[it.face.k].desc(it.face.v))}</div>
+        <div class="tiny" style="margin-top:3px">${faceVerdict(it.face)}</div></div></div>
       <button class="btn sm ${S.gold >= it.price && !m.sold['f' + i] ? 'primary' : ''}" ${m.sold['f' + i] || S.gold < it.price ? 'disabled' : ''} onclick="buyFace(${i})">
         ${m.sold['f' + i] ? 'Sold' : it.price + 'g'}</button></div>`)).join('');
   const relicRow = m.relic ? row(`<div class="spread">
