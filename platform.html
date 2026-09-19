@@ -3019,6 +3019,7 @@ function buildSidebar() {
   if (isAdmin()) h += '<div class="sb-item" data-key="contacts" onclick="showContacts()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128203;</span> Contacts</div>';
   if (isAdmin()) h += '<div class="sb-item" data-key="broadcast" onclick="showBroadcast()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128227;</span> Broadcast</div>';
   h += '<div class="sb-item" data-key="library" onclick="showLibrary()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128196;</span> Template Library</div>';
+  if (isAdmin()) h += '<div class="sb-item" data-key="policy-library" onclick="showPolicyLibrary()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128218;</span> Practice Policy Library</div>';
   h += '<div class="sb-item" onclick="window.location.href=\'/vault\'" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128272;</span> The Vault</div>';
   h += '<div class="sb-item" data-key="learn" onclick="showLearn()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#129513;</span> Mentorship &amp; Courses</div>';
   h += '<div class="sb-item" data-key="directory" onclick="showDirectory()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128101;</span> Member Directory</div>';
@@ -5891,16 +5892,30 @@ async function showLibrary() {
   var center = document.getElementById('center');
   center.innerHTML = '<div class="skel skel-h"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
   if (libData === null) {
-    try {
-      var { data, error } = await SB
-        .from('template_library')
-        .select('id, title, description, category, min_tier, is_paid, price_cents, member_price_cents, grant_membership_days, preview, source_post_id, file_url, storage_path, bundle_id, forum_posts:source_post_id(id,title)')
-        .eq('visible', true)
-        .order('sort_order', { ascending: true })
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      libData = data || [];
-    } catch(e) { console.error('library:', e); libData = []; }
+    // Admins load every row (including visible=false preview cards) via a service-role,
+    // admin-gated function, since RLS only exposes visible=true rows to the anon key.
+    // Everyone else uses the normal anon query and never sees hidden rows.
+    if (isAdmin()) {
+      try {
+        var ares = await fetch('/.netlify/functions/admin-list-templates', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: getAuthToken() })
+        });
+        var adata = await ares.json();
+        libData = (adata && adata.ok && adata.rows) ? adata.rows : [];
+      } catch(e) { console.error('admin library:', e); libData = []; }
+    } else {
+      try {
+        var { data, error } = await SB
+          .from('template_library')
+          .select('id, title, description, category, min_tier, is_paid, price_cents, member_price_cents, grant_membership_days, preview, source_post_id, file_url, storage_path, bundle_id, forum_posts:source_post_id(id,title)')
+          .eq('visible', true)
+          .order('sort_order', { ascending: true })
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        libData = data || [];
+      } catch(e) { console.error('library:', e); libData = []; }
+    }
   }
   await loadOwnedTemplates();
   renderLibrary();
@@ -5936,6 +5951,7 @@ function renderLibrary() {
     h += '<div class="post-title">' + esc(t.title);
     h += templateBadge(t);
     h += templateGrantTag(t);
+    if (t.visible === false) h += '<span class="tpl-tag" style="background:#b91c1c;color:#fff">Hidden (preview)</span>';
     h += '</div>';
     if (t.description) h += '<div class="post-meta tpl-desc-clamp">' + esc(t.description) + '</div>';
     h += '</div>';
@@ -6008,7 +6024,7 @@ function templateBadge(t) {
     // Not included at this tier: standalone price, flagged with the tier that includes it.
     return pill(price) + (t.min_tier === 'full' ? '<span class="tpl-tag">Full</span>' : (t.min_tier === 'forum' ? '<span class="tpl-tag">Member</span>' : ''));
   }
-  if (t.min_tier === 'full') return '<span class="tpl-tag">Full</span>';
+  if (t.min_tier === 'full') return '<span class="tpl-tag">Full</span>' + (t.bundle_id ? '<span class="tpl-tag">In Foundations Pack</span>' : '');
   if (t.min_tier === 'forum') return '<span class="tpl-tag">Member</span>';
   return '';
 }
@@ -6095,6 +6111,9 @@ function viewTemplate(id) {
     // subscription). Full members already have every template, so no button.
     if (isForumMember()) h += '<button class="' + (buyable ? 'btn-ghost' : 'btn-primary') + '" onclick="upgradeMembership()">Upgrade to Full &mdash; get every template</button>';
     else if (!isPaidMember()) h += '<button class="' + (buyable ? 'btn-ghost' : 'btn-primary') + '" onclick="showJoin(\'\')">Join to unlock all templates</button>';
+    // Bundle-linked component (e.g. a Foundations card): also offer the standalone pack.
+    // Everyone who reaches this gate is non-Full (Full members have access), so always show it.
+    if (t.bundle_id) h += '<button class="btn-ghost" onclick="buyTemplate(\'' + t.bundle_id + '\')">Get the Private Practice Foundations Pack &mdash; $249</button>';
     h += '</div></div>';
   }
   h += '</div>';
@@ -6319,6 +6338,119 @@ async function downloadTemplate(id) {
     if (data.ok && data.url) { window.open(data.url, '_blank'); }
     else { alert(data.error || 'Unable to download'); }
   } catch(e) { alert('Download failed'); }
+}
+
+// ════════════════════════════════════════
+// PRACTICE POLICY LIBRARY  (admin-only preview; member-visible on launch)
+// ════════════════════════════════════════
+// Guidance layer that sits ABOVE the Template Library: canonical answers to
+// "what should my practice policy be about X", with the editable templates attached
+// as resources. Templates link to their Template Library card by title.
+var POLICY_LIBRARY = [
+  { topic: 'Payments & Attendance', entries: [
+    { q: 'When is payment due, what do we accept, and how do we handle balances?',
+      g: 'Set expectations before money is owed: when payment is due (typically at the time of service), accepted methods, how insurance is handled, and what happens to unpaid balances. Keep nonpayment consequences proportional and lawful, tied to future non-urgent scheduling and, where appropriate, termination in accordance with applicable law, payer requirements, and continuity of care. Sliding-scale and hardship options belong here, offered only where law and payer contracts permit.',
+      t: ['Payment Policy', 'Billing & Discount Policy'] },
+    { q: 'When can I keep a card on file, and when can I actually charge it?',
+      g: 'A recurring card-on-file authorization suits ongoing patients; a one-time authorization is for a single charge. A known copay is generally collected at check-in; a deductible or coinsurance is an estimated patient responsibility you can collect as an estimate and reconcile after the claim adjudicates; self-pay is disclosed (with a Good Faith Estimate where it applies) and collected at check-in.',
+      t: ['Credit Card Authorization: Which Form?', 'Recurring Card-on-File Authorization', 'One-Time Credit Card Authorization'] },
+    { q: 'Who gets a Good Faith Estimate, when, and what has to be in it?',
+      g: 'Uninsured or self-pay patients get a GFE. For scheduled care, when the service is scheduled at least 3 business days out (within the applicable 1- or 3-business-day window); on request, within 3 business days. It must carry the patient identifiers, your NPI/TIN and location, expected codes and charges, and the required disclaimers, including the patient-provider dispute-resolution right when billed at least $400 over the estimate. The current PPDR fee is $25.',
+      t: ['Good Faith Estimate'] },
+    { q: 'What notice do I require, and can I charge for missed visits?',
+      g: 'State the notice window and fee structure, and make clear the fee applies only where permitted by law, payer contract, and program requirements, and is not billed to insurance. Build in an emergency exception. There is no universal rule that a first visit can never be charged, but some programs (including many Medicaid programs) prohibit missed-appointment fees, so check the plan.',
+      t: ['No-Show & Late-Cancellation Policy'] }
+  ]},
+  { topic: 'Controlled Substances', entries: [
+    { q: 'What should my benzodiazepine policy actually say?',
+      g: 'State your initiation philosophy, and make continuation non-automatic: do not assume ongoing prescribing just because another clinician prescribed it. Document the FDA risk discussion (abuse, misuse, addiction; physical dependence, which is not the same as addiction; serious withdrawal), use particular caution with opioids and other CNS depressants, set refill and monitoring expectations, and handle discontinuation with an individualized taper rather than an abrupt stop for policy reasons alone.',
+      t: ['Benzodiazepine Policy'] },
+    { q: 'What are my practice-wide rules for controlled-substance prescribing?',
+      g: 'A general controlled-substance policy ties together PDMP checks, visit-frequency and refill rules, single-pharmacy expectations, drug screening where appropriate, a treatment agreement, and how misuse or diversion is handled. Telehealth prescribing follows current federal and state law. (No template yet - tell us if you want one built next.)',
+      t: [] }
+  ]},
+  { topic: 'Medication Management & Prescribing Boundaries', entries: [
+    { q: 'How are refills requested and handled between visits?',
+      g: 'Refills are managed during scheduled appointments. Set a realistic processing window, ask patients to monitor supply, and describe what to do if they run out (pharmacy first; a short emergency supply may be possible depending on the drug and circumstances). Be explicit about what you will not do. Any admin fee applies only where law and payer rules permit and is disclosed in your financial policy. Controlled substances follow the Controlled Substance Policy.',
+      t: ['Medication Refill Policy'] }
+  ]},
+  { topic: 'Intake / Eligibility / Continuity', entries: [
+    { q: 'Who do I take on, and how do I handle continuity and transitions?',
+      g: 'Cover new-patient eligibility, what establishing care means, coverage during absences, and how care is transferred or terminated with appropriate notice and continuity-of-care obligations. Connects to your payment, no-show, and controlled-substance policies. (No template yet - tell us what would help.)',
+      t: [] }
+  ]},
+  { topic: 'Communication & Administrative Requests', entries: [
+    { q: 'How do patients reach me, and how are forms and admin requests handled?',
+      g: 'Set expectations for message response times, after-hours and crisis routing, and how you handle time-intensive administrative work such as disability paperwork and letters (including any disclosed, lawful fees). Records requests go through a signed authorization; see Release of Information. (No template yet - tell us what would help.)',
+      t: [] }
+  ]},
+  { topic: 'Legal / Telehealth / Practice Compliance', entries: [
+    { q: 'What does my Notice of Privacy Practices need to say, and what changed in 2026?',
+      g: 'Your NPP is a HIPAA covered-entity obligation covering uses and disclosures, the disclosures needing written authorization, and patient rights. If you create or receive substance use disorder records, it must include the 42 CFR Part 2 content required as of February 16, 2026. Acknowledgment is a good-faith effort; the patient need not sign. Customize for stricter state law.',
+      t: ['Notice of Privacy Practices'] },
+    { q: 'When do I need a BAA, and what has to be in it?',
+      g: 'You need a BAA with any vendor that creates, receives, maintains, or transmits PHI on your behalf. It must address Security Rule safeguards for ePHI, breach and security-incident reporting, subcontractor flow-down, access, amendment, accounting, availability of records to HHS, and return or destruction at termination. Have counsel review.',
+      t: ['Business Associate Agreement'] },
+    { q: 'How do I authorize releasing a patient’s records?',
+      g: 'A valid HIPAA authorization identifies who discloses and who receives, what and why, an expiration date or event, the right to revoke in writing (except where already acted on in reliance), and a representative’s authority when someone signs for the patient. Part 2 records may need additional consent elements. The patient receives a copy.',
+      t: ['Release of Information'] },
+    { q: 'What belongs in my telehealth consent?',
+      g: 'Cover the risks and limits of telehealth, platform security (described as configured and used consistent with applicable privacy and security rules, not a categorical claim), rights and responsibilities, location and licensure at the time of service, and that telehealth is voluntary with alternatives where offered. Write in the rules of the jurisdiction where the patient is located.',
+      t: ['Telepsychiatry Consent'] },
+    { q: 'Do I need a collaborative or supervisory agreement, and what goes in it?',
+      g: 'NP authority varies by state (full, reduced, restricted), and whether a written agreement is required depends on your board. Authority to practice and prescribe comes from state and federal law, licensure, and registration, not the agreement. Make consultation, chart review, prescriptive limits, coverage, renewal, and termination match your state, and do not commit a collaborating clinician to coverage they have not agreed to.',
+      t: ['Collaborative Practice Agreement'] }
+  ]}
+];
+
+async function showPolicyLibrary() {
+  if (typeof closeSidebar === 'function') closeSidebar();
+  S.view = 'policy-library';
+  clearActive();
+  var side = document.querySelector('.sb-item[data-key="policy-library"]');
+  if (side) side.classList.add('active');
+  var center = document.getElementById('center');
+  center.innerHTML = '<div class="skel skel-h"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
+  if (libData === null && isAdmin()) {
+    try {
+      var ares = await fetch('/.netlify/functions/admin-list-templates', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: getAuthToken() })
+      });
+      var adata = await ares.json();
+      libData = (adata && adata.ok && adata.rows) ? adata.rows : [];
+    } catch(e) { libData = libData || []; }
+  }
+  renderPolicyLibrary();
+}
+
+function renderPolicyLibrary() {
+  var center = document.getElementById('center');
+  var byTitle = {};
+  (libData || []).forEach(function(t){ byTitle[t.title] = t.id; });
+  var h = '<div class="space-head"><div class="space-accent" style="background:var(--teal)"></div>';
+  h += '<h1>Practice Policy Library</h1>';
+  h += '<p class="space-tagline">Answers to “what should my practice policy be about this?”, with the editable templates attached.</p>';
+  if (isAdmin()) h += '<div style="margin-top:6px"><span class="tpl-tag" style="background:#b91c1c;color:#fff">Admin preview - not member-visible yet</span></div>';
+  h += '</div>';
+  POLICY_LIBRARY.forEach(function(topic){
+    h += '<h2 style="font-family:var(--font-heading);font-size:1.4rem;margin:22px 0 10px;padding-top:12px;border-top:1px solid var(--border)">' + esc(topic.topic) + '</h2>';
+    topic.entries.forEach(function(en){
+      h += '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;margin-bottom:12px">';
+      h += '<div style="font-weight:700;margin-bottom:6px">' + esc(en.q) + '</div>';
+      h += '<div style="color:var(--text-secondary);font-size:0.9rem;line-height:1.6">' + esc(en.g) + '</div>';
+      if (en.t && en.t.length) {
+        h += '<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px">';
+        en.t.forEach(function(title){
+          if (byTitle[title]) h += '<button class="btn-ghost" style="font-size:0.82rem;padding:5px 12px" onclick="viewTemplate(\'' + byTitle[title] + '\')">&#128196; ' + esc(title) + '</button>';
+          else h += '<span class="tpl-tag">' + esc(title) + '</span>';
+        });
+        h += '</div>';
+      }
+      h += '</div>';
+    });
+  });
+  center.innerHTML = h; window.scrollTo(0,0);
 }
 
 function openTemplateAdd() {
