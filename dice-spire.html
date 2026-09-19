@@ -397,6 +397,31 @@ const ELITES = [
   { key:'puppeteer',name:'The Puppeteer',av:'🎎', hp:30, elite:true, dmgW:1.1,
     moves:[{k:'charm',v:1},{k:'attack',v:9},{k:'summon',v:1},{k:'drain',v:7}] }
 ];
+/* A boss that cycles a move list is just a long enemy. Each one now turns at
+   a health threshold: a new move set, a trait it did not have, and a line so
+   the turn is legible rather than a number quietly changing. */
+const BOSS_PHASES = {
+  maw: [{ at:0.55, name:'The Maw splits open',
+          line:'Its jaw unhinges past where a jaw should stop.',
+          trait:{k:'regrowing', v:6},
+          moves:[{k:'attackAll',v:7},{k:'drain',v:9},{k:'attack',v:10},{k:'heal',v:5}] }],
+  choir:[{ at:0.6,  name:'The Choir finds its key',
+          line:'The voices stop arguing with each other and agree.',
+          trait:{k:'ethereal', v:0},
+          moves:[{k:'charm',v:1},{k:'attackAll',v:8},{k:'summon',v:1},{k:'attack',v:11}] },
+        { at:0.25, name:'The Choir screams',
+          line:'Whatever it was keeping back, it is no longer keeping back.',
+          trait:null,
+          moves:[{k:'attackAll',v:11},{k:'attack',v:15}] }],
+  crown:[{ at:0.5,  name:'The Crown sets itself',
+          line:'The metal closes. Something underneath it stops pretending.',
+          trait:{k:'armoured', v:3},
+          moves:[{k:'attack',v:15},{k:'block',v:16},{k:'attackAll',v:9},{k:'charm',v:1}] },
+        { at:0.2,  name:'The Crown comes apart',
+          line:'It sheds the armour because it no longer intends to last.',
+          trait:{k:'volatile', v:14},
+          moves:[{k:'attack',v:19},{k:'attackAll',v:12}] }]
+};
 const BOSSES = [
   { key:'maw',   name:'The Gluttonous Maw', av:'👾', hp:40, boss:true, dmgW:1.2,
     moves:[{k:'attackAll',v:5},{k:'attack',v:9},{k:'heal',v:4},{k:'buff',v:1},{k:'attack',v:8}] },
@@ -849,7 +874,7 @@ function makeEnemy(def, act, depth, opts){
     uid: uid(), key:def.key, name:def.name, av:def.av,
     maxHp:hp, hp, shield:0, poison:0, burn:0, stun:0, charm:0, steeled:0, weak:0, power:0, trait:null,
     moves: scaleMoves(def, act, d), mi: 0, intent:null,
-    elite: !!def.elite, boss: !!def.boss, item:null, champion:false
+    elite: !!def.elite, boss: !!def.boss, item:null, champion:false, phase:0
   };
   /* a champion is an ordinary monster that got lucky: bigger, meaner, armed */
   if(opts.champion){
@@ -932,6 +957,7 @@ function startCombat(type){
     pending: null,
     spellsUsed: [],
     drops: [],
+    phaseBanner: null,
     log: [],
     over: null
   };
@@ -971,6 +997,7 @@ function beginPlayerTurn(){
     spent.forEach(t => logc(`${t.name} fades.`));
     C.summons = C.summons.filter(t => t.turns > 0);
   }
+  C.phaseBanner = null;
   C.rerolls = maxRerolls();
   C.rerollMode = false;
   C.pending = null;
@@ -1098,6 +1125,7 @@ function hurtEnemy(e, n, ignoreShield){
   }
   e.hp = Math.max(0, e.hp - left);
   floatOn(e.uid, '-' + n, 'var(--red)');
+  if(e.boss && e.hp > 0) checkBossPhase(e);
   if(e.hp === 0){
     logc(`${e.name} falls.`); S.kills++; if(e.elite) S.elitesKilled++;
     if(e.item){ C.drops.push(e.item); logc(`It drops its ${itemDef(e.item).name}.`); e.item = null; }
@@ -1516,6 +1544,32 @@ function charmedAllies(){
       logc(`${h.name} swings at nothing.`);
     }
   });
+}
+
+/* A boss turns when it drops past a threshold: new moves, sometimes a trait,
+   and its intent is re-read at once so the change is visible the same turn. */
+function checkBossPhase(e){
+  const phases = BOSS_PHASES[e.key];
+  if(!phases) return;
+  const frac = e.hp / e.maxHp;
+  while(e.phase < phases.length && frac <= phases[e.phase].at){
+    const ph = phases[e.phase];
+    e.phase++;
+    e.moves = scaleMoves({ moves:ph.moves, dmgW:1 }, S.act, 1);
+    e.mi = 0;
+    e.trait = ph.trait ? { ...ph.trait } : null;
+    e.shield = 0; e.stun = 0; e.charm = 0;      /* it shrugs off whatever was holding it */
+    C.phaseBanner = ph.name;
+    floatOn(e.uid, ph.name.toUpperCase(), 'var(--gold)');
+    logc(`${ph.name}. ${ph.line}`);
+    const m = e.moves[e.mi % e.moves.length]; e.mi++;
+    let tgt = null;
+    if(['attack','poison','burn','drain','charm'].includes(m.k)){
+      const opts = livingAllies();
+      tgt = opts.length ? pick(opts).uid : null;
+    }
+    e.intent = { k:m.k, v:m.v, tgt };
+  }
 }
 
 function endOfRound(){
@@ -2536,6 +2590,8 @@ function viewCombat(){
         ${C.pending ? `<button class="btn sm ghost" onclick="cancelPending()">Cancel</button>` : ''}
       </div>
     </div>
+    ${C.phaseBanner ? `<div class="panel" style="padding:10px 14px;border-color:var(--gold);background:linear-gradient(90deg,rgba(240,180,41,.14),transparent)">
+      <b style="color:var(--gold)">${esc(C.phaseBanner)}</b></div>` : ''}
     <div class="enemy-row">${enemies}</div>
     <div class="row" style="justify-content:center;gap:12px;flex-wrap:wrap">${heroes}</div>
     <div class="tray">
