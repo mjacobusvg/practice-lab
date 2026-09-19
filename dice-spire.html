@@ -382,7 +382,7 @@ const TRAITS = {
   volatile:  {ic:'💣', name:'Volatile',     v:[6,9,12],
               desc:v=>`When it dies it bursts for ${v} on every hero. Choose when it dies.`},
   linked:    {ic:'🔗', name:'Linked',       v:[0],
-              desc:()=>`Takes no damage while another Linked enemy still stands. Break the other one first.`}
+              desc:()=>`Takes no damage at all while the thing it is bound to still stands. Kill its anchor first.`}
 };
 const traitDef = t => t ? TRAITS[t.k] : null;
 const hasTrait = (e, k) => !!(e && e.trait && e.trait.k === k);
@@ -966,8 +966,7 @@ function buildEncounter(type){
     { champion: Math.random() < champChance, trait: opening ? false : undefined }));
   /* Linked only means anything in a pair, so it is placed rather than rolled */
   if(!opening && out.length >= 2 && !out.some(e => e.trait) && Math.random() < (act === 1 ? 0.06 : 0.14)){
-    out[0].trait = { k:'linked', v:0 };
-    out[1].trait = { k:'linked', v:0 };
+    out[0].trait = { k:'linked', v:0, anchor: out[1].uid };   /* only the protected one */
   }
   /* a lone normal enemy would be a pushover: give it a boost */
   if(n === 1 && !opening){ out[0].maxHp = Math.round(out[0].maxHp * 1.45); out[0].hp = out[0].maxHp; }
@@ -1150,10 +1149,13 @@ function heroDamageToEnemy(e, n){
 }
 function hurtEnemy(e, n, ignoreShield){
   if(e.hp <= 0 || n <= 0) return 0;
-  if(hasTrait(e, 'linked') && livingEnemies().some(x => x !== e && hasTrait(x, 'linked'))){
-    floatOn(e.uid, 'LINKED', 'var(--violet)');
-    logc(`The link holds. ${e.name} takes nothing.`);
-    return 0;
+  if(hasTrait(e, 'linked')){
+    const anchor = C.enemies.find(x => x.uid === e.trait.anchor);
+    if(anchor && anchor.hp > 0){
+      floatOn(e.uid, 'LINKED', 'var(--violet)');
+      logc(`The link holds while ${anchor.name} stands. ${e.name} takes nothing.`);
+      return 0;
+    }
   }
   let left = n;
   /* capped at 2: a monster in full Dragonscale was eating most of a turn */
