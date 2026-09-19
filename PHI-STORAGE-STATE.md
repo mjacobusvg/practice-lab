@@ -309,6 +309,36 @@ PHI are in S3 under the AWS BAA; a small number of legacy schedule rows are bein
   So the 09-17 orphans are still there, still unreferenced, still inside the AWS BAA and still
   covered by the bucket lifecycle. Nothing is leaking; the cleanup is deferred one more day.
 
+- **2026-09-19, 08:00 purge — the orphan sweep ran, and the letters work is CLOSED.** First
+  clean run after the `s3:ListBucket` statement was added:
+
+  ```
+  orphan_sweep: "ok"   orphans_deleted: 4   orphans_skipped_recent: 0
+  failures: 0          orphan_sweep_error: null          ok: true
+  ```
+
+  Four unreferenced objects deleted — the 09-17 heals that wrote to S3 and then had their
+  key-recording PATCH rejected by the `patient_email` NOT NULL constraint. `orphans_skipped_recent`
+  is 0 because they are now well past the 24-hour age floor.
+
+  **Nothing referenced was destroyed.** The two live keys are both under
+  `letters/schedule/2026-09-18/` (`eeeae7…`, `3b323f…`), while every orphan was under the
+  `2026-09-17/` prefix — the two sets never overlapped, which is the separation the 09-18 entry
+  predicted. `letter_schedules` still reads 3 rows / 2 keys / 0 inline emails, unchanged across
+  the sweep, and `letter_charges` is 1 row with neither key nor email.
+
+  The 08:30 drift check the same morning returned `alert_reason: "resolved"` with
+  `failing_ids: []` and **all 23 checks at zero** — the 20 PHI counts, `api.net_schema_exposed`,
+  and both auth checks now that the password policy is set. That is the first genuinely
+  all-clear run since the inventory was created, and an all-clear email went out.
+
+  **What it took to get one permission right:** the object-level IAM policy worked for every
+  call in the job except the one that needed the bucket ARN; the failure was silent in the run
+  record and visible only in a log this loop cannot read; and the policy itself was written down
+  nowhere. Three separate reasons a one-line bug survived. All three are now closed —
+  `orphan_sweep_error` in the run record, the policy in this file, and the sweep proven end to
+  end on live data.
+
 ## Also holds member/business data (PII, not PHI — no BAA needed)
 
 `accounts`, `contacts`, `subscriptions`, `baa_signatures`, consent records — clinician/customer
