@@ -377,7 +377,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-118-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-119-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -714,7 +714,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-118-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-119-sub</span></div>
 </div>
 </div>
 
@@ -934,6 +934,48 @@ function onSafetyInsert(sel){
 // PMP one-tap: appends a dated, generic controlled-substance attestation to the
 // "What are you doing this visit?" field (the assessment/plan input). Provider still
 // checks their own state portal — this just documents it (a Coder gap-filler).
+// ── CLINICIAN ATTESTATIONS (architecture 0.3.2, source type 3) ───────────────────────────────
+// The AI reasons; the CLINICIAN attests. The assessment now states only the reasoning behind a
+// medication decision and will never claim a counseling conversation happened -- correct, but it
+// left the clinician typing an attestation they make on every medication change. This is the other
+// half: one tap, their own wording, owned by them.
+//
+// It is never automatic, and that is the whole point. A medication change must not become this
+// sentence because the model inferred it; boilerplate the clinician selects cannot be wrong about a
+// particular conversation, and a sentence the model chose to add can.
+var TBP_RB_DEFAULT = 'Risks, benefits, alternatives, and potential adverse effects were discussed.';
+var vaultRbAttestation = '';
+function tbpRbText(){ return (vaultRbAttestation || '').trim() || TBP_RB_DEFAULT; }
+function insertRbAttestation(){
+  if(window.TBP_DEMO){ if(typeof tbpShowJoin === 'function') tbpShowJoin(); return; }
+  var ta = document.getElementById('assess-plan'); if(!ta) return;
+  // Same reveal as the PMP button: the plan box is hidden when the visit already documented its
+  // plan, and an attestation dropped into a display:none box never reaches the note.
+  if(ta.style.display === 'none') ta.style.display = '';
+  var pl = document.querySelector('label[for="assess-plan"]'); if(pl && pl.style.display === 'none') pl.style.display = '';
+  var line = tbpRbText();
+  var cur = ta.value || '';
+  if(cur.indexOf(line) !== -1){   // already attested; tapping twice must not duplicate it
+    ta.focus(); return;
+  }
+  ta.value = cur + (cur && !/\n$/.test(cur) ? '\n' : '') + line;
+  ta.focus();
+  try { ta.dispatchEvent(new Event('input', { bubbles:true })); } catch(e){}
+  var b = document.getElementById('rb-attest-btn');
+  if(b){ b.innerHTML = '\u2713 Risks/benefits discussed'; b.style.background = 'rgba(201,162,39,0.16)'; }
+}
+// Own the phrase once instead of rewriting it forever -- the same bargain as the MSE default.
+async function editRbAttestation(){
+  if(window.TBP_DEMO){ if(typeof tbpShowJoin === 'function') tbpShowJoin(); return; }
+  var cur = tbpRbText();
+  var next = window.prompt('Your risks/benefits attestation \u2014 the exact sentence one tap adds to the plan. It is reproduced word for word in the note and never expanded with specifics you did not document.', cur);
+  if(next === null) return;
+  next = next.trim();
+  if(!next) return;
+  vaultRbAttestation = next;
+  try { var lv = JSON.parse(localStorage.getItem('tbp_vault')||'{}'); lv.rbAttestation = next; localStorage.setItem('tbp_vault', JSON.stringify(lv)); } catch(e){}
+  try { persistVaultField('rbAttestation', next); } catch(e){}
+}
 function insertPmpAttestation(){
   if(window.TBP_DEMO){ if(typeof tbpShowJoin === 'function') tbpShowJoin(); return; }
   var ta = document.getElementById('assess-plan'); if(!ta) return;
@@ -6228,7 +6270,15 @@ function renderPreflightCards(inp, scope, questions, planDetected){
   html += '<div style="margin-bottom:16px;border-top:1px solid var(--rule);padding-top:14px">'
     + '<label for="assess-plan" style="display:'+(planDetected?'none':'block')+';margin-bottom:8px;color:var(--cream)">What are you doing this visit? <span style="font-weight:400;text-transform:none;color:var(--cream-dim)">(only if it wasn&rsquo;t already said in the visit &mdash; the med change, a continuation, labs, a referral, or no changes)</span></label>'
     + '<textarea id="assess-plan" style="min-height:70px;width:100%;'+(planDetected?'display:none;':'')+'background:var(--navy);border:1px solid var(--rule);border-radius:8px;color:var(--white);padding:10px 12px;font-size:.9rem" placeholder="What you did today and why. Add as little or as much as you want; the assessment and plan build the reasoning around it."></textarea>'
-    + '<div style="margin-top:10px"><button class="btn-ghost" type="button" id="pmp-attest-btn" onclick="insertPmpAttestation()" style="border-color:#c9a227;color:#e8cf7a">&#43; PMP reviewed</button> <span class="hint" style="margin-left:6px">Controlled substance? One tap adds a dated PMP-reviewed attestation.</span></div>'
+    + '<div style="margin-top:12px;border-top:1px solid var(--rule);padding-top:11px">'
+    + '<div class="hint" style="margin:0 0 7px;font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;color:#e8cf7a">Your attestations <span style="text-transform:none;letter-spacing:0;color:var(--cream-dim)">&mdash; one tap each, in your words. Never added for you.</span></div>'
+    + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'
+    + '<button class="btn-ghost" type="button" id="pmp-attest-btn" onclick="insertPmpAttestation()" style="margin-top:0;border-color:#c9a227;color:#e8cf7a">&#43; PMP reviewed</button>'
+    + '<button class="btn-ghost" type="button" id="rb-attest-btn" onclick="insertRbAttestation()" style="margin-top:0;border-color:#c9a227;color:#e8cf7a">&#43; Risks/benefits discussed</button>'
+    + '<a href="#" onclick="editRbAttestation();return false;" class="hint" style="color:var(--cream-dim);text-decoration:underline;font-size:.79rem">edit wording</a>'
+    + '</div>'
+    + '<div class="hint" style="margin-top:6px;line-height:1.45">Starting, stopping or changing a medication? One tap adds your attestation to the plan. It goes into the note word for word &mdash; it is never expanded into specifics you did not document.</div>'
+    + '</div>'
     + '</div>';
   var genLbl = 'Generate my note (HPI + Assessment' + (scope==='both' ? ' + Psychotherapy' : '') + (planOn ? ' + Plan' : '') + ')';
   html += '<button class="btn" id="pf-generate">' + genLbl + ' &rarr;</button></div>';
@@ -7839,6 +7889,7 @@ function loadVaultTemplates(){
     vaultScaffolds.new_eval = lv.hpiScaffoldEval || '';
     vaultScaffolds.follow_up = lv.hpiScaffoldFollowup || '';
     if(lv.hpiWorkflow) workflow = migrateWf(lv.hpiWorkflow);
+    if(lv.rbAttestation) vaultRbAttestation = lv.rbAttestation;
     if(lv.hpiPrep!==undefined) prepOn = (lv.hpiPrep===true || lv.hpiPrep==='on');
     else if(lv.hpiWorkflow==='prep') prepOn = true; // legacy 'prep' implied prep-on
     if(lv.hpiTherapyGuide!==undefined) therapyGuide = (lv.hpiTherapyGuide===true || lv.hpiTherapyGuide==='on');
@@ -7900,6 +7951,7 @@ function loadVaultTemplates(){
         }
       } catch(e){}
       workflow = migrateWf(d.data.hpiWorkflow);
+      if(d.data.rbAttestation) vaultRbAttestation = d.data.rbAttestation;
       if(d.data.hpiPrep!==undefined) prepOn = (d.data.hpiPrep===true || d.data.hpiPrep==='on');
       else prepOn = (d.data.hpiWorkflow==='prep');
       if(d.data.hpiTherapyGuide!==undefined){ therapyGuide = (d.data.hpiTherapyGuide===true || d.data.hpiTherapyGuide==='on'); }
