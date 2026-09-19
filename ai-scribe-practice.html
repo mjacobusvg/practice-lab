@@ -377,7 +377,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-121-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-122-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -714,7 +714,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-121-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-122-sub</span></div>
 </div>
 </div>
 
@@ -2015,6 +2015,30 @@ function gatherSource(rawText){
   return s;
 }
 
+// ── Empty-section tracing (diagnostic; remove once the carry-forward question is settled) ──
+// A labelled section with nothing under it: "Appetite:" followed by a blank line or another label.
+function tbpEmptySections(text){
+  var lines = String(text || '').split('\n');
+  var empties = [];
+  for(var i = 0; i < lines.length; i++){
+    var m = lines[i].match(/^\s*([A-Z][A-Za-z\/ '&()-]{2,48}):\s*$/);
+    if(!m) continue;
+    // Look ahead: the section is empty if the next non-blank line is another label or the end.
+    var j = i + 1;
+    while(j < lines.length && !lines[j].trim()) j++;
+    if(j >= lines.length || /^\s*[A-Z][A-Za-z\/ '&()-]{2,48}:\s*$/.test(lines[j]) || /^\s*[A-Z][A-Za-z\/ '&()-]{2,48}:\s+\S/.test(lines[j])){
+      empties.push(m[1]);
+    }
+  }
+  return empties;
+}
+function tbpTraceSections(stage, text){
+  try {
+    var e = tbpEmptySections(text);
+    tbpTrace(stage + ' HPI len=' + String(text||'').length + ' emptySections=' + e.length + (e.length ? ' [' + e.join(', ') + ']' : ''));
+  } catch(err){}
+}
+
 // ── Render the HPI result (Slices 1 + 2) ──
 // Show the draft the instant it lands, while the review finalizes in the background.
 function renderResultPreview(hpi){
@@ -2192,6 +2216,7 @@ async function runDraft(sourceText, btn, errEl, silent){
     // Substance Use and SI/HI). The clinical note must never be cut off by the token ceiling.
     var hpi = await callAPI(draftSystem(), [{role:'user', content: gatherSource(sourceText)}], 8000, silent ? undefined : function(partial){ if(streamEl) streamEl.textContent = partial; });
     if(!hpi){ throw new Error('No HPI came back. Try again.'); }
+    try { tbpTraceSections('A after draftSystem', hpi); window.__tbpHpiDraft = hpi; } catch(e){}
     // Belt and suspenders: if the model still hit the ceiling on an exceptionally long note, say so
     // LOUDLY rather than let a truncated note look complete (see _lastCallTruncated in callAPI).
     var _hpiTruncated = (typeof _lastCallTruncated !== 'undefined' && _lastCallTruncated);
@@ -2201,6 +2226,16 @@ async function runDraft(sourceText, btn, errEl, silent){
     if(silent && _ambientFlow) tbpAmbientProgress('review');   // advance the ambient banner
     var res = await verifyHpi(hpi);
     var finalHpi = res.hpi;
+    try {
+      tbpTraceSections('B after verifySystem', finalHpi);
+      window.__tbpHpiVerified = finalHpi;
+      var a = tbpEmptySections(hpi), b = tbpEmptySections(finalHpi);
+      var added = b.filter(function(x){ return a.indexOf(x) === -1; });
+      tbpTrace('C VERDICT ' + (added.length
+        ? 'VERIFIER emptied ' + added.length + ' section(s): [' + added.join(', ') + ']'
+        : (b.length ? 'DRAFT produced the empty section(s); the verifier did not add any'
+                    : 'no empty sections at either stage')));
+    } catch(e){}
     // Telehealth attestation: on a telehealth visit only, drop the clinician's saved statement
     // in right after the opening paragraph. Never on in-person. Only if they've saved one.
     var capNow = 'inperson'; try{ capNow = localStorage.getItem('tbp_hpi_capture') || 'inperson'; }catch(e){}
