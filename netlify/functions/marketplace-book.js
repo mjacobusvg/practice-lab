@@ -7,8 +7,22 @@
 // keeps their money, and TBP only collects a fee (no payout to the seller).
 //
 // Member vs public pricing is resolved SERVER-SIDE from a live accounts read
-// (never the token's tier claim, which can be 30 days stale). A promo-trial-only
+// (never the token's tier claim, which can be stale). A promo-trial-only
 // "member" is priced as public (see _lib/marketplace.resolveBuyer).
+//
+// AND the identity behind that read must be PROVEN — audit finding H8, fixed
+// 2026-09-19. The live-accounts-read comment above used to be the whole story, and
+// it was reassuring about the wrong half: the lookup was correct, but the EMAIL it
+// looked up came straight from the request body. Anyone could post a member's
+// address and be charged member rates, and member addresses were publicly
+// enumerable at the time, so nothing had to be guessed. The same hole let an
+// unauthenticated caller create orders and bookings in a member's name.
+//
+// So there are two buyer paths now, and only one of them can reach member pricing:
+//   * SIGNED IN (valid session token) -> identity is proven, accounts read decides.
+//   * GUEST (typed email, no token)   -> public pricing, always. And if an account
+//     already exists for that address, the booking is refused with `sign_in_required`
+//     rather than created in that person's name.
 //
 // The free-month trial is NOT here — a nonmember buyer is sent to
 // marketplace-activate-trial.js from the success page (Step 2).
@@ -43,13 +57,19 @@ exports.handler = async function (event) {
   if (!slotId || !offeringId) return j(400, { error: 'offering_id and slot_id required' });
   if (!body.success_url || !body.cancel_url) return j(400, { error: 'success_url and cancel_url required' });
 
-  // Buyer identity: prefer the signed token's email; fall back to the typed email.
+  // Buyer identity. `emailVerified` is the thing that matters: it records whether
+  // this address was PROVEN by a signed session or merely typed into a form. A typed
+  // address is a claim, not an identity, and must never unlock member pricing.
   let email = '';
+  let emailVerified = false;
   const authHeader = event.headers.authorization || event.headers.Authorization || '';
   const token = (body.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
   if (token) {
     const s = verifyToken(token);
-    if (s.valid && s.claims && s.claims.email) email = String(s.claims.email).toLowerCase().trim();
+    if (s.valid && s.claims && s.claims.email) {
+      email = String(s.claims.email).toLowerCase().trim();
+      emailVerified = true;
+    }
   }
   if (!email) email = String(body.buyer_email || '').toLowerCase().trim();
   if (!email || email.indexOf('@') === -1) return j(400, { error: 'A valid email is required.' });
@@ -73,9 +93,25 @@ exports.handler = async function (event) {
     const connectedAccount = sacc && sacc[0] && sacc[0][acctCol];
     if (!connectedAccount) return j(409, { error: 'seller_not_ready', message: 'This mentor has not finished connecting payments yet.' });
 
-    // ---- Price it (server-side member check) ----
+    // ---- Price it (server-side member check, on a PROVEN identity) ----
     const buyer = await resolveBuyer(email);
-    const priced = priceOffering(offering, kind, buyer.isMember);
+
+    // A guest who typed an address that already belongs to an account is either
+    // that person signed out, or someone else using their address. Both are fixed
+    // by signing in, and we cannot tell them apart, so ask. This is what stops an
+    // order and a marketplace_bookings row being created in a member's name.
+    if (!emailVerified && buyer.account) {
+      return j(409, {
+        error: 'sign_in_required',
+        message: 'An account already exists for this email. Please sign in to continue, so we can apply the right price to your booking.'
+      });
+    }
+
+    // Member pricing requires a proven identity. A guest is priced as public even
+    // if the address happens to match a paying member — which it cannot here, given
+    // the refusal above, but this does not depend on that check staying in place.
+    const isMember = emailVerified && buyer.isMember;
+    const priced = priceOffering(offering, kind, isMember);
 
     // ---- Atomically HOLD the slot (open, or a held slot whose hold expired) ----
     const holdUntil = new Date(Date.now() + HOLD_MINUTES * 60 * 1000).toISOString();
@@ -184,8 +220,11 @@ exports.handler = async function (event) {
       ok: true,
       url: checkout.url,
       order_id: order.id,
-      is_member: buyer.isMember,
-      needs_trial: !buyer.isMember,   // nonmember -> success page runs Step 2
+      // The SAME resolved value the price was built from. Reading buyer.isMember
+      // here instead would reintroduce the split between "who they say they are"
+      // and "who they proved they are" that H8 was.
+      is_member: isMember,
+      needs_trial: !isMember,   // nonmember -> success page runs Step 2
       amount_total_cents: priced.amountTotalCents,
       test_mode: !isLive()
     });

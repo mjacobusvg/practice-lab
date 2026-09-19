@@ -144,6 +144,22 @@
   var mpOrder = params.get('mp_order') || '';
   var token = null;
   try { token = localStorage.getItem('tbp_auth_token'); } catch(e){}
+  // An EXPIRED token is the same as no token. This page is public and carries no
+  // auth gate, so nothing else here renews or clears one — and since the session
+  // TTL came down to 24h (audit H7), a member who last used the platform yesterday
+  // would otherwise send a stale token, have the server reject it, and land on
+  // "A valid email is required" at checkout, because the email field is only
+  // enforced when there is no token. Drop it, and they are asked for their email
+  // like any other visitor.
+  (function(){
+    if (!token) return;
+    try {
+      var b64 = token.split('.')[0].replace(/-/g,'+').replace(/_/g,'/');
+      while (b64.length % 4) b64 += '=';
+      var c = JSON.parse(decodeURIComponent(escape(atob(b64))));
+      if (!c || !c.exp || Date.now() >= c.exp) token = null;
+    } catch(e) { token = null; }
+  })();
   // Paid member? Decode the signed token's payload for scope/tier (display only; the
   // server re-checks at checkout). Free-tier signed-in users are treated as non-members.
   function isPaidMember(){

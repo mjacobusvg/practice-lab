@@ -116,6 +116,44 @@ Step 2 trial. Member → no Step 2.
 Slot holds released on expired/canceled Checkout. Webhooks are the source of truth (never grant on
 success-URL alone). All fulfillment idempotent (match on our order/booking id; flip only pending rows).
 
+### Who gets member pricing (audit H8, fixed 2026-09-19)
+
+"Server prices from live tier" above was true and still missed the hole. The `accounts` read was
+always server-side and correct — but the EMAIL it looked up came from the request body. So
+`marketplace-book.js` would take any typed address, find that person's account, and charge member
+rates to whoever sent the request. Member email addresses were publicly enumerable at the time
+(a separate finding), so nothing had to be guessed, and the same gap let an unauthenticated caller
+create `marketplace_orders` and `marketplace_bookings` rows in a member's name.
+
+**A typed email is a claim, not an identity.** There are now two buyer paths, and only one reaches
+member pricing:
+
+| path | identity | pricing |
+|---|---|---|
+| Signed in (valid session token) | proven | live `accounts` read decides (`resolveBuyer`) |
+| Guest (typed email, no valid token) | unproven | **always public** |
+
+Plus: a guest whose typed address **already belongs to an account** is refused with
+`409 sign_in_required` rather than booked. Signed out, or somebody else using their address — we
+cannot tell which, and both are fixed by signing in. `mentor.html` already shows both prices and
+says the amount is confirmed at checkout, so nothing in the UI promises a price this can contradict.
+
+Two things to keep true if this code is touched:
+
+- The response's `is_member` / `needs_trial` must come from the **same resolved value the price was
+  built from**, not from a second `resolveBuyer` read. Splitting "who they say they are" from "who
+  they proved they are" is exactly what the finding was.
+- An expired token counts as **no token**, and `mentor.html` enforces that client-side too. It is a
+  public page with no auth gate, so nothing there renews or clears a stale token; without that
+  check a member arriving a day after their last visit hits "A valid email is required" at
+  checkout, because the email field is only enforced when there is no token.
+
+Related, not fixed, and lower severity: `marketplace-activate-trial.js` takes an `order_id` with no
+auth. It does require the order to be `paid` and enforces one promo month per email for life, so the
+worst case is burning a stranger's one-time promo by completing a $0 trial checkout with your own
+card. Genuine buyers have no account yet at that point in the funnel, so gating it on a session
+would break the flow it exists for.
+
 ## Additive schema (all new `marketplace_*` tables; nothing existing altered)
 
 - `marketplace_sellers` — id, account_id→accounts, display_name, bio, expertise, avatar_url,
