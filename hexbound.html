@@ -303,6 +303,12 @@ button.ahalf:disabled{opacity:.3;cursor:not-allowed}
 .cmprow b{white-space:nowrap}
 .item.cmpable{cursor:help}
 .item.cmpable:hover{border-color:var(--line-hi);background:var(--card-hi)}
+
+/* ---------- difficulty picker ---------- */
+.diffgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px}
+.diffcard{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px;cursor:pointer;transition:.13s}
+.diffcard:hover{border-color:var(--line-hi);background:var(--card-hi)}
+.diffcard.on{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 6px 20px rgba(232,180,74,.12)}
 </style>
 </head>
 <body>
@@ -715,7 +721,7 @@ function D(){
   }
   return out;
 }
-function goldMult(){ return 1 + D().gold / 100; }
+function goldMult(){ return (1 + D().gold / 100) * diff().gold; }
 
 /* ---------- log ---------- */
 function log(msg, cls){
@@ -876,7 +882,7 @@ function newRun(heroId, seedStr){
   const {map, lairKeys, gateKey} = genMap();
   S = {
     v:1, seed: seedStr.toUpperCase(), rngState: RSTATE,
-    day:1, dread:0, dreadMax:36, phase:'travel',
+    day:1, dread:0, diff: V.pickDiff || 'ride', dreadMax:36, phase:'travel',
     pos:{q:0,r:0}, map, lairKeys, gateKey, seals:0, crownAwake:false,
     dice:[], wildBank:0, movedThisDay:0,
     log:[], flags:{}, shops:{}, bounty:null,
@@ -890,6 +896,7 @@ function newRun(heroId, seedStr){
       deck:[], hand:[], discard:[], lost:[], cardDrafts:0,
     },
   };
+  S.dreadMax = (DIFFS.find(d => d.id === S.diff) || DIFFS[1]).dread;
   S.hero.deck = (CARDS[H.id] || []).filter(c => c.start).map(c => c.id);
   S.hero.hand = S.hero.deck.slice();
   S.hero.hp = D().maxHp;
@@ -1490,8 +1497,8 @@ function endDay(opt){
   opt = opt || {};
   // dusk
   S.dread = Math.min(S.dreadMax + 4, S.dread + 1 + (opt.extraDread || 0));
-  if(S.dread >= 12 && !S.flags.h1){ S.flags.h1 = true; sfx('dread'); log('A second darkness settles under the first. Everything out here is stronger now.', 'v'); }
-  if(S.dread >= 24 && !S.flags.h2){ S.flags.h2 = true; sfx('dread'); log('The Crown stirs in earnest. The roads are no longer safe anywhere.', 'r'); }
+  if(S.dread >= dreadMark(1) && !S.flags.h1){ S.flags.h1 = true; sfx('dread'); log('A second darkness settles under the first. Everything out here is stronger now.', 'v'); }
+  if(S.dread >= dreadMark(2) && !S.flags.h2){ S.flags.h2 = true; sfx('dread'); log('The Crown stirs in earnest. The roads are no longer safe anywhere.', 'r'); }
   wanderThreats();
   // dawn
   S.day++;
@@ -1514,7 +1521,7 @@ function wanderThreats(){
   // clear old, then seed a few new roaming threats on explored ground
   const keys = Object.keys(S.map);
   for(const k of keys) if(S.map[k].threat && chance(0.4)) S.map[k].threat = null;
-  const n = S.dread >= 24 ? 3 : S.dread >= 12 ? 2 : 1;
+  const n = S.dread >= dreadMark(2) ? 3 : S.dread >= dreadMark(1) ? 2 : 1;
   for(let i=0;i<n;i++){
     const k = pick(keys);
     const m = S.map[k];
@@ -1539,11 +1546,12 @@ function crownMarches(){
 function crownStats(){
   const c = JSON.parse(JSON.stringify(CROWN));
   const short = 3 - S.seals;            // every seal you skipped is a Crown that much less diminished
-  c.hp += short * 30; c.arm += short; c.atk += short;
-  if(S.seals >= 3){ c.hp -= 14; c.arm -= 1; }
-  return c;
+  c.hp += short * 30; c.arm += short; c.pwr = (c.pwr||0) + short;
+  if(S.seals >= 3) c.arm -= 1;
+  return scaleFoe(c, {crown:true});
 }
-function dreadTier(){ return S.dread >= 24 ? 2 : S.dread >= 12 ? 1 : 0; }
+const dreadMark = n => Math.round(((S && S.dreadMax) || 34) * (n === 1 ? 0.35 : 0.7));
+function dreadTier(){ return S.dread >= dreadMark(2) ? 2 : S.dread >= dreadMark(1) ? 1 : 0; }
 function scaledTier(base){ return clamp(base + (chance(0.5) ? dreadTier() : Math.min(1,dreadTier())), 1, 4); }
 
 /* =========================================================================
@@ -1797,6 +1805,47 @@ const EVENTS = [
    ]},
 ];
 
+
+/* =========================================================================
+   DIFFICULTY
+   The region used to scale with dread alone, so out-levelling it simply
+   worked: a level 10 hero met the same monsters a level 4 hero did. Now it
+   levels with you, at a rate the difficulty sets.
+   ========================================================================= */
+const DIFFS = [
+  {id:'road', nm:"Ranger's Road", ic:'🌤️',
+   tx:'A forgiving region. Softer enemies, easier coin, and the Crown is content to wait.',
+   hp:0.85, pwr:-1, lvlHp:0.05, lvlPwr:4, dread:40, gold:1.25, crownHp:0.78},
+  {id:'ride', nm:'The Long Ride', ic:'⚔️',
+   tx:'The region as it is meant to be. Every level you take, it takes one too.',
+   hp:1.0, pwr:0, lvlHp:0.09, lvlPwr:3, dread:34, gold:1.0, crownHp:1.05},
+  {id:'regard', nm:"The Crown's Regard", ic:'👁️',
+   tx:'It has noticed you. Everything hits harder, coin is scarce, and the clock is short.',
+   hp:1.34, pwr:2, lvlHp:0.13, lvlPwr:2, dread:28, gold:0.78, crownHp:1.42},
+];
+const diff = () => DIFFS.find(d => d.id === (S && S.diff)) || DIFFS[1];
+
+/* every enemy is scaled at the moment it is drawn, by difficulty, by your
+   level, and by how far the dread track has run */
+function scaleFoe(m, opts){
+  opts = opts || {};
+  const F = diff();
+  const lvl = Math.max(0, (S.hero.lvl || 1) - 1);
+  const dt = dreadTier();
+  // Wandering monsters take the level scaling in full — that is the point, so
+  // out-levelling the region stops working. Set-piece bosses are already tuned
+  // by hand and only take a quarter of it, or they double before you arrive.
+  const boss = opts.boss || opts.crown;
+  const lvlMul = 1 + lvl * F.lvlHp * (boss ? 0.25 : 1);
+  const dtMul  = 1 + dt * (boss ? 0.06 : 0.12);
+  const hpMul  = (opts.crown ? F.crownHp : F.hp) * lvlMul * dtMul;
+  m.hp = Math.max(6, Math.round(m.hp * hpMul));
+  m.maxHp = m.hp;
+  m.pwr = Math.max(0, (m.pwr || 0) + F.pwr + Math.floor(lvl / F.lvlPwr / (boss ? 2 : 1)) + dt);
+  if(dt >= 2 && !boss) m.arm = (m.arm || 0) + 1;
+  return m;
+}
+
 function markNearestLair(){
   let best = null, bd = 99;
   for(const k of S.lairKeys){
@@ -1825,9 +1874,7 @@ function rollMonster(tier){
   let pool = MONSTERS.filter(m => m.tier === t);
   if(!pool.length) pool = MONSTERS.filter(m => m.tier === clamp(t,1,4));
   const base = pick(pool);
-  const m = JSON.parse(JSON.stringify(base));
-  if(dreadTier() >= 2){ m.hp = Math.round(m.hp * 1.2); m.atk += 1; }
-  return m;
+  return scaleFoe(JSON.parse(JSON.stringify(base)));
 }
 
 /* =========================================================================
@@ -2235,6 +2282,15 @@ function newCombatRound(first){
     if(C.foe.psn > 0){ C.foe.psn--; dealToFoe(2, 'venom', true); }
     if(C.foe.spec === 'regen' && C.foe.hp > 0){ C.foe.hp = Math.min(C.foe.maxHp, C.foe.hp + 3); cLog(`${C.foe.nm} knits itself back together (+3).`); }
     if(C.foe.spec === 'crown'){ C.foe.rage++; cLog('The Crown grows heavier. +1 attack.'); }
+    if(C.foe.spec === 'crown' && !C.foe.phase2 && C.foe.hp <= C.foe.maxHp * 0.5){
+      C.foe.phase2 = true;
+      C.foe.pwr = (C.foe.pwr || 0) + 2;
+      C.foe.arm = (C.foe.arm || 0) + 1;
+      C.me.burn = 2;
+      cLog('The Crown sheds its first shape. It comes back harder, and the air catches light.', 'r');
+      sfx('lair');
+      fx('#foeCard', 'gash', 620);
+    }
   }
   if(C.done) return;
   if(C.me.stun > 0) C.me.stun--;
@@ -2370,7 +2426,7 @@ function foeAttackVal(){
   if(C.foe.stun > 0) return 0;
   const it = C.intent || {};
   // the revealed intent replaces the monster's old flat attack bonus rather than stacking on it
-  return Math.max(0, C.foeDice.reduce((s,x)=>s+x.a,0) + (it.atk||0) + (C.foe.rage||0) - (C.foe.curseNow||0));
+  return Math.max(0, C.foeDice.reduce((s,x)=>s+x.a,0) + (it.atk||0) + (C.foe.pwr||0) + (C.foe.rage||0) - (C.foe.curseNow||0));
 }
 function foeShields(){ const C = V.combat; return C.foeDice.reduce((s,x)=>s+x.d,0) + (C.foe.shieldBonus||0) + ((C.intent && C.intent.sh)||0); }
 
@@ -2778,7 +2834,7 @@ function draftCard(){
     ic:'🃏', h:'A New Ability', wide:true, noClose:true,
     b:`<p class="muted">Something you have been working towards. Take one into your deck — it joins your hand now.</p><div class="sep"></div>
        <div class="hand draftgrid">${pool.map(c => `
-         <div class="acard pick" data-newcard="${c.id}" style="--accent:${heroArt().col}">
+         <div class="acard pick" data-newcard="${c.id}" data-cmpcard="${c.id}" style="--accent:${heroArt().col}">
            ${cardWatermark()}
            <div class="ahd"><span class="initb">${c.init}</span><span class="aic">${c.ic}</span><span class="anm">${esc(c.nm)}</span></div>
            <div class="ahalf top"><span class="lbl">Top</span><span class="atx">${gtx(c.top.tx)}</span></div>
@@ -3077,6 +3133,14 @@ function dieTipHtml(k){
 function wireGlossary(){
   const findDie = e => e.target && e.target.closest && e.target.closest('[data-dk]');
   const findCmp = e => e.target && e.target.closest && e.target.closest('[data-cmp]');
+  const findCard = e => e.target && e.target.closest && e.target.closest('[data-cmpcard]');
+  const showCard = el => {
+    const c = CARD(el.dataset.cmpcard);
+    const html = cardProjHtml(el.dataset.cmpcard);
+    if(!c || !html) return false;
+    showTip(el, c.ic + ' ' + c.nm, html, 'gloss', true);
+    return true;
+  };
   const find = e => e.target && e.target.closest && e.target.closest('.gl[data-g]');
   const showCmp = el => {
     const it = ITEM(el.dataset.cmp);
@@ -3086,6 +3150,8 @@ function wireGlossary(){
     return true;
   };
   document.addEventListener('mouseover', e => {
+    const cc = findCard(e);
+    if(cc && !find(e)){ if(showCard(cc)) return; }
     const c = findCmp(e);
     if(c && !find(e) && !findDie(e)){ if(showCmp(c)) return; }
     const dk = findDie(e);
@@ -3097,9 +3163,17 @@ function wireGlossary(){
     const g = GLOSSARY[el.dataset.g]; if(!g) return;
     showTip(el, g.ic + ' ' + g.nm, g.tx, 'gloss');
   });
-  document.addEventListener('mouseout', e => { if(find(e) || findDie(e) || findCmp(e)) hideTip('gloss'); });
+  document.addEventListener('mouseout', e => { if(find(e) || findDie(e) || findCmp(e) || findCard(e)) hideTip('gloss'); });
   // touch: a tap explains the term, unless it sits inside a button that does something else
   document.addEventListener('click', e => {
+    const cc = findCard(e);
+    if(cc && !e.target.closest('button') && !find(e)){
+      if(showCard(cc)){
+        clearTimeout(V.tipTimer);
+        V.tipTimer = setTimeout(() => hideTip('gloss'), 6000);
+        return;
+      }
+    }
     const c = findCmp(e);
     if(c && !e.target.closest('button') && !find(e) && !findDie(e)){
       if(showCmp(c)){
@@ -3576,7 +3650,7 @@ function openCard(){
           <div class="mini faint" style="margin-bottom:8px">${h.deck.length} of ${(CARDS[h.id]||[]).length} known · hand ${h.hand.length}, discard ${h.discard.length}, lost ${h.lost.length}</div>
           <div class="deckgrid">${h.deck.map(id => { const c = CARD(id); if(!c) return '';
             const where = h.lost.includes(id) ? 'lost' : h.discard.includes(id) ? 'spent' : 'in hand';
-            return `<div class="acard" style="width:auto;--accent:${heroArt().col}">
+            return `<div class="acard" data-cmpcard="${id}" style="width:auto;--accent:${heroArt().col}">
               ${cardWatermark()}
               <div class="ahd"><span class="initb">${c.init}</span><span class="aic">${c.ic}</span><span class="anm">${esc(c.nm)}</span>
                 <span class="mini faint">${where}</span></div>
@@ -3987,8 +4061,7 @@ function openBounty(m){
 function lairPrompt(m){
   if(m.cleared){ flash('Broken already. Nothing left but a hole.'); return; }
   const idx = S.lairKeys.indexOf(key(m.q,m.r));
-  const boss = JSON.parse(JSON.stringify(LAIR_BOSSES[clamp(idx,0,2)]));
-  if(dreadTier() >= 1){ boss.hp = Math.round(boss.hp * (1 + dreadTier()*0.15)); boss.atk += dreadTier(); }
+  const boss = scaleFoe(JSON.parse(JSON.stringify(LAIR_BOSSES[clamp(idx,0,2)])), {boss:true});
   const d = D();
   modal({ic:'🕳️', h:'A Lair of the Crown', wide:true, noClose:true,
     b:`<p>The ground here hums like a struck bell. Something at the bottom of it is feeding the Sable Crown, and it knows you are standing on its roof.</p>
@@ -4206,6 +4279,70 @@ function flyCards(ids){
   });
 }
 
+
+/* =========================================================================
+   CARD PROJECTION
+   Dice are not rolled until you commit, so an exact preview is impossible.
+   An expected one is not: average every die in your pool and the enemy's,
+   add the card and the revealed intent, and show roughly what the round
+   looks like if you lead with this card.
+   ========================================================================= */
+const DIEAVG = {};
+function dieAvg(k){
+  if(DIEAVG[k]) return DIEAVG[k];
+  const f = DICE[k].faces;
+  return DIEAVG[k] = {
+    a: f.reduce((s,x) => s + (x.a||0), 0) / 6,
+    d: f.reduce((s,x) => s + (x.d||0), 0) / 6,
+    s: f.reduce((s,x) => s + (x.s||0), 0) / 6,
+  };
+}
+function poolAvg(pool){
+  return pool.reduce((m, k) => { const v = dieAvg(k); m.a += v.a; m.d += v.d; m.s += v.s; return m; },
+                     {a:0, d:0, s:0});
+}
+function cardProjHtml(id){
+  const C = V.combat;
+  const c = CARD(id);
+  if(!c) return null;
+  if(!C || C.phase !== 'cards'){          // outside a fight, just lay the halves out
+    return `<div class="cmpgrid">
+      <div class="cmprow"><span>Initiative</span><b>${c.init}</b></div>
+      <div class="cmprow" style="display:block"><span>Top</span><div style="color:var(--ink)">${gtx(c.top.tx)}</div></div>
+      <div class="cmprow" style="display:block"><span>Bottom</span><div style="color:var(--ink)">${gtx(c.bot.tx)}</div></div>
+    </div>`;
+  }
+  const d = D(), it = C.intent || {};
+  const mine = poolAvg(d.pool), foe = poolAvg(C.foe.pool);
+  const foeAtk = Math.max(0, foe.a + (it.atk||0) + (C.foe.pwr||0) + (C.foe.rage||0) - (C.foe.curseNow||0));
+  const foeSh  = foe.d + (it.sh||0);
+
+  const t = c.top, bt = c.bot;
+  const myAtkV = mine.a * (t.dbl ? 2 : 1) + d.atk + (t.atk||0);
+  const dealt  = Math.max(0, Math.round(myAtkV - (t.pierce ? 0 : foeSh) - (C.foe.arm||0)));
+  const myShV  = mine.d + (bt.sh||0) + d.arm + d.ward + (bt.ward||0);
+  const pierced = C.foe.crush || it.pierce;
+  const taken  = Math.max(0, Math.round(foeAtk - (pierced ? d.arm + d.ward : myShV)));
+
+  const meFirst = c.init <= (it.init || 99);
+  const kills   = dealt >= C.foe.hp;
+  const rows = [];
+  rows.push(`<div class="cmprow"><span>⚔ As your top</span><b style="color:var(--green)">~${dealt} damage</b></div>`);
+  if(t.stun)   rows.push(`<div class="cmprow"><span>💫 Also</span><b style="color:var(--gold)">it loses its next attack</b></div>`);
+  if(t.pierce) rows.push(`<div class="cmprow"><span>🗡 Also</span><b style="color:var(--gold)">ignores its ${Math.round(foeSh)} shields</b></div>`);
+  if(t.leech)  rows.push(`<div class="cmprow"><span>🩸 Also</span><b style="color:var(--green)">heals you ~${Math.ceil(dealt/2)}</b></div>`);
+  rows.push(`<div class="cmprow"><span>🛡 As your bottom</span><b style="color:${taken ? '#ff9b99' : 'var(--green)'}">you take ~${taken}</b></div>`);
+  if(bt.heal) rows.push(`<div class="cmprow"><span>✚ Also</span><b style="color:var(--green)">heals ${bt.heal}</b></div>`);
+  rows.push(`<div class="cmprow"><span>⏱ Initiative ${c.init} vs ${it.init}</span><b style="color:${meFirst ? 'var(--green)' : 'var(--ink-dim)'}">${meFirst ? 'you swing first' : 'it swings first'}</b></div>`);
+  if(kills && meFirst) rows.push(`<div class="cmprow"><span>☠️ On average</span><b style="color:var(--gold)">this kills it before it acts</b></div>`);
+  else if(kills) rows.push(`<div class="cmprow"><span>☠️ On average</span><b style="color:var(--gold)">this kills it</b></div>`);
+  if(t.lost || bt.lost) rows.push(`<div class="cmprow"><span>💀 Costs</span><b style="color:var(--red)">the card, until you sleep</b></div>`);
+
+  return `<div class="cmphead">Against <b>${esc(C.foe.nm)}</b>, playing ${it.nm ? 'into ' + esc(it.nm) : 'this round'}</div>
+    <div class="cmpgrid">${rows.join('')}</div>
+    <div class="mini faint" style="margin-top:6px">Averages across your dice, not a promise. Rerolls and surges move it.</div>`;
+}
+
 /* =========================================================================
    COMBAT UI
    ========================================================================= */
@@ -4253,7 +4390,7 @@ function acardHtml(id){
   if(!c) return '';
   const topOn = C.pickTop === id, botOn = C.pickBot === id;
   const topTaken = C.pickTop && !topOn, botTaken = C.pickBot && !botOn;
-  return `<div class="acard ${topOn||botOn?'on':''}" style="--accent:${heroArt().col}">
+  return `<div class="acard ${topOn||botOn?'on':''}" data-cmpcard="${id}" style="--accent:${heroArt().col}">
     ${cardWatermark()}
     <div class="ahd"><span class="initb">${c.init}</span><span class="aic">${c.ic}</span><span class="anm">${esc(c.nm)}</span></div>
     <button class="ahalf top ${topOn?'sel':''}" data-card="${id}" data-half="top" ${topTaken?'disabled':''}>
@@ -4563,7 +4700,7 @@ function renderSide(){
       <button class="btn sm ghost" id="aCodex">📖 Rules</button>
       <button class="btn sm ghost" id="aTerms">🔤 Terms</button>
       <button class="btn sm ghost" id="aSeals">🔱 Objectives</button>
-      <span class="tiny faint" style="margin-left:auto">seed ${esc(S.seed)}</span>
+      <span class="tiny faint" style="margin-left:auto">${diff().ic} ${esc(diff().nm)} · seed ${esc(S.seed)}</span>
     </div>`;
 
   $('#aExplore').onclick = exploreHere;
@@ -4605,13 +4742,14 @@ function openObjectives(){
        <div class="kv"><span class="gl" data-g="dread">Dread</span><b>${S.dread} / ${S.dreadMax}</b></div>
        <div class="kv"><span>Rises</span><b>1 each day</b></div>
        <div class="kv"><span>Falls</span><b>4 per lair broken</b></div>
-       <div class="kv"><span>World hardens at</span><b>12 and 24</b></div>
+       <div class="kv"><span>World hardens at</span><b>${dreadMark(1)} and ${dreadMark(2)}</b></div>
      </div>`,
     f:[{lb:'Back', cls:'primary', fn:()=>{closeModal();render();}}]});
 }
 function openMenu(){
   modal({ic:'☰', h:'Menu', b:
-    `<div class="card"><div class="kv"><span>Seed</span><b>${esc(S.seed)}</b></div>
+    `<div class="card"><div class="kv"><span>Difficulty</span><b>${diff().ic} ${esc(diff().nm)}</b></div>
+     <div class="kv"><span>Seed</span><b>${esc(S.seed)}</b></div>
      <div class="kv"><span>Day</span><b>${S.day}</b></div>
      <div class="kv"><span>Hexes explored</span><b>${S.explored} of ${Object.keys(S.map).length}</b></div>
      <div class="kv"><span>Kills</span><b>${S.kills}</b></div></div>
@@ -4714,6 +4852,23 @@ function renderTitle(){
           </div>`).join('')}
       </div>
       <div class="sep"></div>
+      <div class="spread" style="margin-bottom:9px"><h2>Choose how hard</h2>
+        <span class="tiny muted">The region levels with you; this sets how fast</span></div>
+      <div class="diffgrid">
+        ${DIFFS.map(dd => `
+          <div class="diffcard ${dd.id === (V.pickDiff||'ride') ? 'on' : ''}" data-diff="${dd.id}">
+            <div class="row" style="gap:8px"><span style="font-size:19px">${dd.ic}</span>
+              <b>${esc(dd.nm)}</b></div>
+            <div class="tiny muted" style="margin:6px 0 7px">${esc(dd.tx)}</div>
+            <div class="row wr">
+              <span class="sb">enemies ${Math.round(dd.hp*100)}% HP</span>
+              <span class="sb">+1 power / ${dd.lvlPwr} levels</span>
+              <span class="sb">dread ${dd.dread}</span>
+              <span class="sb">gold ${Math.round(dd.gold*100)}%</span>
+            </div>
+          </div>`).join('')}
+      </div>
+      <div class="sep"></div>
       <div class="row wr">
         <div style="flex:1;min-width:200px">
           <div class="tiny muted" style="margin-bottom:4px">Seed (optional — same seed, same region)</div>
@@ -4737,6 +4892,7 @@ function renderTitle(){
       </div>
     </div>`;
   $$('#heroGrid [data-h]').forEach(el => el.onclick = () => { V.pickHero = el.dataset.h; renderTitle(); });
+  $$('[data-diff]').forEach(el => el.onclick = () => { V.pickDiff = el.dataset.diff; renderTitle(); });
   $('#btnStart').onclick = () => {
     newRun(V.pickHero || HEROES[0].id, $('#seedIn').value);
     V.screen = 'game';
