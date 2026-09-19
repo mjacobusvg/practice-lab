@@ -593,7 +593,10 @@ function spellReady(sp){
   if(!sp) return false;
   if(sp.charge){
     const h = chargeHero(sp);
-    return !!h && !h.downed && h.hp > 0 && (h.charge || 0) >= sp.charge.need;
+    const cut = (((sp.key === 'finisher' && hasPerk(h, 'd1')) ||
+                  (sp.key === 'miasma'   && hasPerk(h, 'n4')) ||
+                  (sp.key === 'rally'    && hasPerk(h, 'h4'))) ? 1 : 0);
+    return !!h && !h.downed && h.hp > 0 && (h.charge || 0) >= sp.charge.need - cut;
   }
   return C && C.mana >= sp.cost;
 }
@@ -681,6 +684,7 @@ function newRun(heroKeys){
       const h = HEROES.find(x => x.key === k);
       return { uid:uid(), key:h.key, name:h.name, av:h.av, maxHp:h.hp, hp:h.hp,
                faces:h.faces.map(f => ({...f})), shield:0, power:0, poison:0, burn:0, regen:0, charmed:0, steeled:0, guarding:false, charge:0, downed:false,
+               level:1, xp:0, perks:[],
                gear:{weapon:null, armour:null, trinket:null} };
     }),
     gold: 60,
@@ -839,6 +843,12 @@ function faceValue(hero, f){
   if(f.k === 'heal'){   if(has('verdant'))   v += 1; v += gearMod(hero, 'heal'); }
   if(f.k === 'poison'){ if(has('venomsac'))  v += 1; v += gearMod(hero, 'poison'); }
   if(f.k === 'burn'){   if(has('emberbrand'))v += 1; v += gearMod(hero, 'burn'); }
+  if(f.k === 'dmg'  && hasPerk(hero, 'd3')) v += 1;          /* Footwork    */
+  if(f.k === 'heal' && hasPerk(hero, 'w3')) v += 2;          /* Greenwood   */
+  if(f.k === 'burn' && hasPerk(hero, 'p3')) v += 1;          /* Ashes       */
+  if(f.k === 'poison' && hasPerk(hero, 'n1')) v += 2;        /* Potent      */
+  if(f.k === 'mana' && hasPerk(hero, 's3')) v += 1;          /* Deep Well   */
+  if(f.k === 'power' && hasPerk(hero, 'h2')) v += 1;         /* Fanfare     */
   if(f.k === 'daze')  v += gearMod(hero, 'daze');
   if(f.k === 'charm') v += gearMod(hero, 'charm');
   if(f.k !== 'blank') v += glob('allFaces');
@@ -938,8 +948,9 @@ function buildEncounter(type){
 }
 
 function makeThrall(v){
-  const hp = 5 + 3 * v + glob('thrallHp');
-  return { uid:uid(), name:'Thrall', av:'🌀', isSummon:true, turns:2 + v + glob('thrallTurns'),
+  const bond = partyPerk('s2') ? 1 : 0;
+  const hp = 5 + 3 * v + glob('thrallHp') + bond * 5;
+  return { uid:uid(), name:'Thrall', av:'🌀', isSummon:true, turns:2 + v + glob('thrallTurns') + bond * 2,
            maxHp:hp, hp, shield:0, power:0, poison:0, downed:false,
            faces:[F('dmg',2+v),F('dmg',1+v),F('dmg',2+v),F('shield',1+v),F('blank'),F('blank')] };
 }
@@ -964,7 +975,10 @@ function startCombat(type){
   S.party.forEach(h => {
     h.shield = 0; h.poison = 0; h.burn = 0; h.charmed = 0; h.regen = 0; h.steeled = 0; h.guarding = false;
     h.charge = 0;                      /* momentum is built inside a fight, not hoarded between them */
-    h.power = has('warhorn') ? 1 : 0;
+    h.struck = false;                  /* for Opening, the Duelist's first blow */
+    if(hasPerk(h, 'h3') || partyPerk('h3')) h.shield = Math.max(h.shield, 3);
+    /* Standing Order keeps what the Herald built; everyone else starts clean */
+    h.power = (partyPerk('h1') ? (h.power || 0) : 0) + (has('warhorn') ? 1 : 0);
     if(h.hp <= 0){ h.hp = 1; }
     h.downed = h.hp <= 0;
   });
@@ -985,8 +999,12 @@ function beginPlayerTurn(){
   C.turn++;
   S.turnsPlayed++;
   /* shields fade between turns */
-  allies().forEach(h => { h.shield = has('bulwark') ? Math.floor(h.shield / 2) : 0; h.guarding = false; });
-  C.mana += (has('wellspring') ? 1 : 0) + glob('manaTurn');
+  allies().forEach(h => {
+    const keepHalf = has('bulwark') || hasPerk(h, 'v4');       /* Second Shield */
+    h.shield = keepHalf ? Math.floor(h.shield / 2) : 0;
+    h.guarding = false;
+  });
+  C.mana += (has('wellspring') ? 1 : 0) + glob('manaTurn') + (partyPerk('p4') ? 1 : 0);
   if(has('sundial') && C.turn % 3 === 0){
     livingAllies().forEach(h => h.shield += 4);
     logc('The Sundial turns. Every hero gains 4 shield.');
@@ -1222,13 +1240,14 @@ function applyDie(i, target){
     case 'dmg': {
       const e = enemyByUid(target.uid); if(!e) break;
       heroDamageToEnemy(e, v);
+      if(hasPerk(h, 'd4') && !h.struck){ h.struck = true; heroDamageToEnemy(e, v); }  /* Opening */
       const ls = glob('lifesteal');
       if(ls > 0 && !h.isSummon) healHero(h, ls);
       logc(`${h.name} strikes ${e.name} for ${v}.`);
       break;
     }
     case 'dmgAll': {
-      livingEnemies().forEach(e => { heroDamageToEnemy(e, v); if(e.hp > 0) e.burn += 1; });
+      livingEnemies().forEach(e => { heroDamageToEnemy(e, v); if(e.hp > 0) e.burn += hasPerk(h, 'p2') ? 2 : 1; });
       logc(`${h.name} cleaves everything for ${v}, and the room catches fire.`);
       break;
     }
@@ -1254,31 +1273,37 @@ function applyDie(i, target){
       healHero(a, v);
       if(a.poison > 0) a.poison--;
       if(a.burn > 0) a.burn--;
+      if(hasPerk(h, 'w2')) livingAllies().forEach(x => {        /* Field Surgeon */
+        if(x.poison > 0) x.poison--; if(x.burn > 0) x.burn--; });
       logc(`${h.name} mends ${a.name} for ${v}.`);
       break;
     }
     case 'poison': {
       const e = enemyByUid(target.uid); if(!e) break;
       e.poison += v; floatOn(e.uid, '☠' + v, 'var(--lime)');
+      if(hasPerk(h, 'n3') && e.trait && e.trait.k === 'armoured')  /* Corrosive */
+        e.trait.v = Math.max(0, e.trait.v - 2);
       logc(`${h.name} poisons ${e.name} for ${v}.`);
       break;
     }
     case 'stun': {
       const e = enemyByUid(target.uid); if(!e) break;
       tryControl(e, 'stun', v, h.name);
+      if(hasPerk(h, 'd2')) heroDamageToEnemy(e, 4);           /* Off Hand */
       break;
     }
     case 'daze': {
       const e = enemyByUid(target.uid); if(!e) break;
       const lost = e.power;
-      e.power = 0; e.weak += v;            /* no longer a stun, so no lock to build */
+      e.power = 0; e.weak += v;
+      if(hasPerk(h, 's4')) e.shield = Math.max(0, e.shield - 6);   /* Unravel */            /* no longer a stun, so no lock to build */
       floatOn(e.uid, 'REELING', 'var(--gold)');
       logc(lost ? `${e.name} reels, and forgets ${lost} power.` : `${e.name} reels.`);
       break;
     }
     case 'charm': {
       const e = enemyByUid(target.uid); if(!e) break;
-      tryControl(e, 'charm', v, h.name);
+      tryControl(e, 'charm', v + (hasPerk(h, 's1') ? 1 : 0), h.name);
       break;
     }
     case 'summon': {
@@ -1294,13 +1319,14 @@ function applyDie(i, target){
     }
     case 'guard': {
       h.guarding = true; h.shield += v;
+      if(hasPerk(h, 'v1')) livingAllies().forEach(a => { if(a !== h) a.shield += 3; });
       floatOn(h.uid, 'GUARD', 'var(--blue)');
       logc(`${h.name} steps in front of the party.`);
       break;
     }
     case 'regen': {
       const a = unitByUid(target.uid); if(!a) break;
-      a.regen = (a.regen || 0) + v;
+      a.regen = (a.regen || 0) + v + (hasPerk(h, 'w1') ? 1 : 0);   /* Deep Roots */
       floatOn(a.uid, '🌱' + v, 'var(--green)');
       logc(`${h.name} sets ${a.name} mending.`);
       break;
@@ -1332,9 +1358,12 @@ function applyDie(i, target){
     default: logc(`${h.name} rolls a blank.`);
   }
   const cs = chargeSpellOf(h);
-  if(cs && cs.charge.on.includes(d.k) && (h.charge || 0) < cs.charge.need){
+  const needOf = sp => sp.charge.need - (((sp.key === 'finisher' && hasPerk(h, 'd1')) ||
+                                           (sp.key === 'miasma'   && hasPerk(h, 'n4')) ||
+                                           (sp.key === 'rally'    && hasPerk(h, 'h4'))) ? 1 : 0);
+  if(cs && cs.charge.on.includes(d.k) && (h.charge || 0) < needOf(cs)){
     h.charge = (h.charge || 0) + 1;
-    if(h.charge === cs.charge.need){
+    if(h.charge >= needOf(cs)){
       floatOn(h.uid, cs.name.toUpperCase(), 'var(--gold)');
       logc(`${h.name} is ready to use ${cs.name}.`);
     }
@@ -1428,7 +1457,7 @@ function enemyPhase(){
           const dmg = enemyAtk(e, it.v + (e.power || 0) + enemyItemMod(e, 'dmg'));
           hurtHero(tgt, dmg);
           logc(`${e.name} hits ${tgt.name} for ${dmg}.`);
-          const back = (has('thorned') ? 3 : 0) + glob('thorns');
+          const back = (has('thorned') ? 3 : 0) + glob('thorns') + (tgt && tgt.guarding && hasPerk(tgt, 'v3') ? 4 : 0);
           if(back > 0) hurtEnemy(e, back);
         }
         break;
@@ -1608,7 +1637,8 @@ function endOfRound(){
     if(e.poison > 0){
       hurtEnemy(e, e.poison, true);
       logc(`${e.name} takes ${e.poison} poison.`);
-      e.poison--;
+      /* Lingering: the stack only thins every other round */
+      if(!partyPerk('n2') || C.turn % 2 === 0) e.poison--;
     }
   });
   livingAllies().slice().forEach(h => {
@@ -1621,6 +1651,10 @@ function endOfRound(){
       hurtHero(h, h.burn, {ignoreShield:true, ignoreArmour:true});
       logc(`${h.name} burns for ${h.burn}.`);
       h.burn--;                        /* you beat it out; it does not compound */
+    }
+    if(hasPerk(h, 'w4')){                                      /* Vigil */
+      const hurt = livingAllies().slice().sort((a,b) => (a.hp/a.maxHp) - (b.hp/b.maxHp))[0];
+      if(hurt) healHero(hurt, 3);
     }
     if(h.regen > 0){
       healHero(h, h.regen);
@@ -1700,6 +1734,7 @@ function postCombatRewards(type){
   if(type === 'boss'){
     S.party.forEach(h => healHero(h, Math.round(h.maxHp * 0.3)));
   }
+  const gained = awardXp(type === 'boss' || type === 'elite' ? 2 : 1);
   UI.modal = {
     type: 'reward',
     kind: type,
@@ -1709,6 +1744,12 @@ function postCombatRewards(type){
     taken: false
   };
   S.screen = 'map';
+  if(gained.length){
+    const rewardModal = UI.modal;
+    UI.afterLevels = () => { UI.modal = rewardModal; render(); };
+    openLevelUp(gained);
+    return;
+  }
   save(); render();
 }
 
@@ -1743,6 +1784,99 @@ function doInstall(heroUid, faceIdx){
   UI.modal = null;
   save();
   if(after) after(); else render();
+}
+
+/* ============================================================================
+   LEVELS
+   Dice and gear made the party stronger; nothing made a hero better at being
+   THEMSELVES. A level is a choice out of two, drawn from that hero's own list,
+   so a Duelist ends a run built rather than merely equipped.
+   ========================================================================== */
+const XP_PER_LEVEL = 3;        /* fights won, elites and bosses count double  */
+const PERKS = {
+  vanguard: [
+    {key:'v1', name:'Bulwark Stance', desc:'Guard also gives 3 shield to every other hero.'},
+    {key:'v2', name:'Immovable',      desc:'+8 max HP, healed at once.'},
+    {key:'v3', name:'Riposte',        desc:'Attackers take 4 back while you are Guarding.'},
+    {key:'v4', name:'Second Shield',  desc:'Keep half your shield between turns.'}
+  ],
+  duelist: [
+    {key:'d1', name:'Killing Blow',   desc:'Finisher charges in 3 Strikes instead of 4.'},
+    {key:'d2', name:'Off Hand',       desc:'Stun also deals 4 damage.'},
+    {key:'d3', name:'Footwork',       desc:'+1 to every Strike face you roll.'},
+    {key:'d4', name:'Opening',        desc:'Your first Strike each fight lands for double.'}
+  ],
+  warden: [
+    {key:'w1', name:'Deep Roots',     desc:'Regrowth lasts a round longer.'},
+    {key:'w2', name:'Field Surgeon',  desc:'Mend also clears a point of burning and poison from everyone.'},
+    {key:'w3', name:'Greenwood',      desc:'+2 to every Mend face you roll.'},
+    {key:'w4', name:'Vigil',          desc:'Heal the most wounded hero 3 at the end of each round.'}
+  ],
+  pyromancer: [
+    {key:'p1', name:'Backdraft',      desc:'Your fire grows by 2 each round instead of 1.'},
+    {key:'p2', name:'Wildfire',       desc:'Cleave sets 2 burning instead of 1.'},
+    {key:'p3', name:'Ashes',          desc:'+1 to every Ignite face you roll.'},
+    {key:'p4', name:'Inner Furnace',  desc:'Gain 1 mana at the start of every turn.'}
+  ],
+  venomist: [
+    {key:'n1', name:'Potent',         desc:'+2 to every Venom face you roll.'},
+    {key:'n2', name:'Lingering',      desc:'Poison loses 1 stack every other round instead of every round.'},
+    {key:'n3', name:'Corrosive',      desc:'Your poison strips 2 armour from what it eats.'},
+    {key:'n4', name:'Distiller',      desc:'Miasma charges in 2 Venoms instead of 3.'}
+  ],
+  herald: [
+    {key:'h1', name:'Standing Order', desc:'Power you grant lasts through the whole fight and stacks past 3.'},
+    {key:'h2', name:'Fanfare',        desc:'Empower gives 1 more.'},
+    {key:'h3', name:'Quartermaster',  desc:'The whole party starts each fight with 3 shield.'},
+    {key:'h4', name:'Drillmaster',    desc:'Rally charges in 2 Empowers instead of 3.'}
+  ],
+  sorcerer: [
+    {key:'s1', name:'Lasting Hold',   desc:'Dominate lasts a turn longer.'},
+    {key:'s2', name:'Bound Servant',  desc:'Thralls last 2 turns longer and carry 5 more HP.'},
+    {key:'s3', name:'Deep Well',      desc:'+1 to every Focus face you roll.'},
+    {key:'s4', name:'Unravel',        desc:'Mindlock also strips 6 shield.'}
+  ]
+};
+const hasPerk = (h, k) => !!(h && h.perks && h.perks.includes(k));
+const partyPerk = k => S && S.party.some(h => hasPerk(h, k));
+function awardXp(amount){
+  let levelled = [];
+  S.party.forEach(h => {
+    h.xp = (h.xp || 0) + amount;
+    while(h.xp >= XP_PER_LEVEL){
+      h.xp -= XP_PER_LEVEL;
+      h.level = (h.level || 1) + 1;
+      levelled.push(h);
+    }
+  });
+  return levelled;
+}
+/* two picks from what this hero has not taken yet */
+function perkChoices(h){
+  const pool = (PERKS[h.key] || []).filter(pk => !hasPerk(h, pk.key));
+  return sample(pool, 2);
+}
+function openLevelUp(queue){
+  const h = queue[0];
+  const choices = perkChoices(h);
+  if(!choices.length){ queue.shift(); return queue.length ? openLevelUp(queue) : finishLevels(); }
+  UI.modal = { type:'levelup', hero:h, choices, queue };
+  render();
+}
+function takePerk(key){
+  const m = UI.modal;
+  const h = m.hero;
+  h.perks = h.perks || [];
+  h.perks.push(key);
+  if(key === 'v2'){ h.maxHp += 8; h.hp += 8; }
+  const queue = m.queue; queue.shift();
+  UI.modal = null; save();
+  if(queue.length) openLevelUp(queue); else finishLevels();
+}
+function finishLevels(){
+  UI.modal = null;
+  if(UI.afterLevels){ const f = UI.afterLevels; UI.afterLevels = null; f(); return; }
+  S.screen = 'map'; save(); render();
 }
 
 /* ------------------------------------------------------------ item handling */
@@ -2347,6 +2481,7 @@ function viewTitle(){
       <b style="color:var(--ink)">Rerolls</b> let you re-roll any dice you have not spent yet, twice per turn.<br>
       <b style="color:var(--ink)">Shields</b> fade at the start of your next turn. <b style="color:var(--ink)">Poison</b> ignores shields and ticks at the end of the round, then fades.<br>
       <b style="color:var(--ink)">Fire</b> also ignores shields, but it never fades: each round it burns, then grows by 1, then spreads to an enemy that is not yet alight.<br>
+      <b style="color:var(--ink)">Heroes level up</b> as you win fights, and each level is a choice of two from that hero's own list. Elites and bosses count double.<br>
       <b style="color:var(--ink)">Mana</b> comes only from the Warden, Pyromancer and Sorcerer. Everyone else pays for their signature spell in their own work: the Duelist charges Finisher with Strikes, the Vanguard charges Bulwark by blocking.<br>
       <b style="color:var(--ink)">Rewards are faces.</b> A die has six sides, so taking a new face means replacing one you have.<br>
       <b style="color:var(--ink)">Grinding a die down</b> at a merchant or a camp fire removes a side for good, down to ${MIN_FACES}. Fewer sides means the rest come up more often.<br>
@@ -2463,7 +2598,7 @@ function viewParty(){
       return `<div class="row" style="gap:9px;min-width:190px;flex:1">
         <div class="av" style="width:38px;height:38px;border-radius:10px;display:grid;place-items:center;font-size:20px;background:#0f1729;border:1px solid var(--line-hi)">${h.av}</div>
         <div style="flex:1">
-          <div class="spread"><b style="font-size:13.5px">${h.name}</b><span class="tiny muted">${h.hp}/${h.maxHp}</span></div>
+          <div class="spread"><b style="font-size:13.5px">${h.name} <span class="tiny" style="color:var(--gold)">Lv ${h.level || 1}</span></b><span class="tiny muted">${h.hp}/${h.maxHp}</span></div>
           <div class="hpbar" style="margin-top:4px"><i style="width:${pct}%;background:linear-gradient(90deg,#28a06c,#3ddc97)"></i></div>
           <div class="faces" style="margin-top:6px;gap:3px">${h.faces.map(f => faceHTML(f)).join('')}</div>
           <div class="badges" style="justify-content:flex-start;margin-top:4px;min-height:0">${gearStrip(h)}</div>
@@ -2697,6 +2832,7 @@ function renderModal(){
     case 'scour':    html = mScour(m); break;
     case 'equip':    html = mEquip(m); break;
     case 'inventory':html = mInventory(); break;
+    case 'levelup':  html = mLevelUp(m); break;
     case 'bagfull':  html = mBagFull(m); break;
     case 'drill':    html = mDrill(); break;
     case 'treasure': html = mTreasure(m); break;
@@ -3007,6 +3143,27 @@ function gearStrip(h){
 }
 /* keepBack remembers whichever screen sent us here, so checking your gear
    mid-decision returns you to the decision instead of dumping you on the map */
+function mLevelUp(m){
+  const h = m.hero;
+  return `<div class="row" style="gap:12px;align-items:center">
+      <div style="font-size:38px">${h.av}</div>
+      <div><span class="pill" style="border-color:var(--gold);color:var(--gold)">Level ${h.level}</span>
+        <h2 style="margin-top:6px">${esc(h.name)} has learned something</h2></div>
+    </div>
+    <p class="muted tiny" style="margin:8px 0 12px">Pick one. It lasts the rest of the run.${
+      m.queue.length > 1 ? ` ${m.queue.length - 1} other hero also levelled.` : ''}</p>
+    <div class="col">
+      ${m.choices.map(pk => `<button class="opt" onclick="takePerk('${pk.key}')">
+        <div class="t">${esc(pk.name)}</div><div class="s">${esc(pk.desc)}</div></button>`).join('')}
+    </div>
+    <div class="sep"></div>
+    ${faceChips(h, null, null)}`;
+}
+function perkLine(h){
+  if(!h.perks || !h.perks.length) return '';
+  const all = PERKS[h.key] || [];
+  return h.perks.map(k => (all.find(x => x.key === k) || {}).name).filter(Boolean).join(' · ');
+}
 function openInventory(keepBack){
   UI.modal = { type:'inventory', back: keepBack ? UI.modal : null };
   render();
@@ -3036,8 +3193,9 @@ function mInventory(){
     <p class="muted tiny" style="margin:4px 0 12px">Everything the party has on it, and exactly what each piece does.</p>
     <div class="col">
       ${S.party.map(h => `<div class="panel" style="background:var(--card);padding:12px">
-        <div class="spread"><b>${h.av} ${esc(h.name)}</b>
-          <span class="tiny muted">${h.hp}/${h.maxHp} HP · ${h.faces.length} sides</span></div>
+        <div class="spread"><b>${h.av} ${esc(h.name)} <span class="tiny" style="color:var(--gold)">Lv ${h.level || 1}</span></b>
+          <span class="tiny muted">${h.hp}/${h.maxHp} HP · ${h.faces.length} sides · ${(h.xp || 0)}/${XP_PER_LEVEL} xp</span></div>
+        ${perkLine(h) ? `<div class="tiny" style="color:var(--pink);margin-top:3px">${esc(perkLine(h))}</div>` : ''}
         ${faceChips(h, null, null)}
         <div class="tiny faint" style="margin-top:3px">Values shown are what this hero actually rolls, gear and relics included.</div>
         ${GEAR_SLOTS.map(sl => slotRow(h, sl)).join('')}
