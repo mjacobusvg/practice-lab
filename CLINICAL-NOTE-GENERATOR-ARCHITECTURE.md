@@ -283,6 +283,38 @@ assessment states the REASONING only, which is correct but leaves the clinician 
 attestation by hand. That gap is the argument for building it, not for letting the model
 infer it back.
 
+### Event vs longitudinal attestations (Sept 2026)
+
+Type 3 splits again, and the distinction decides whether the product saves work or just moves it
+onto a button:
+
+- **Event attestation** — *"Risks and benefits were discussed today."* Claims something happened in
+  THIS encounter. Must be re-attested every visit, because each visit is a fresh claim.
+- **Longitudinal attestation** — *"Risks, benefits, alternatives and potential adverse effects of
+  treatment have been discussed, and the patient has had the opportunity to ask questions."* States
+  that this counseling exists in the course of care. It does not pretend the whole conversation
+  repeated today.
+
+**The standing default should be longitudinal.** An event attestation recreates the exact burden
+§0.2 exists to remove: one more control to remember on every medication visit. A longitudinal one is
+attested once and then carries forward like any other standing content, which is the same bargain as
+the MSE normals — establish the framework once, document the exceptions.
+
+**This already works, with no new storage.** A follow-up's pasted prior note reaches the assessment
+as `dxprior`. If it carries the attestation, that IS the record that counseling was established, and
+carrying it forward is carrying documented content — not inventing it. The prompt rule is therefore
+two-sided: never ADD such a line because a medication changed, and never UPGRADE a standing "have
+been discussed" into "were discussed today"; but do carry a standing one forward in its standing
+tense.
+
+**What does NOT work yet, and why it is a product decision rather than a task.** Remembering that
+counseling was established *for a specific medication*, across visits, without the clinician pasting
+the prior note, requires per-patient persistence. The Scribe deliberately has none: *"No patient data
+is retained on our servers: notes are processed transiently."* Per-medication counseling state would
+be PHI held between encounters. That is a BAA-and-retention decision (see `BAA-AND-PHI-ROUTING.md`),
+not a feature to slip in. Until it is made, the prior note IS the memory, which is consistent with
+how every other carry-forward in the product works.
+
 **The general form, which is why this sits in the architecture doc:** AI must not fabricate
 facts, and it absolutely may carry forward clinician-owned defaults, conventions and
 attestations the clinician has explicitly chosen. That is how it saves work. Any new surface
