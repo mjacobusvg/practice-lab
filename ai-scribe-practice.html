@@ -377,7 +377,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-124-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-125-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -714,7 +714,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-124-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-125-sub</span></div>
 </div>
 </div>
 
@@ -2034,6 +2034,40 @@ function tbpEmptySections(text){
   }
   return empties;
 }
+// ── An empty labelled section never reaches the chart (deterministic, not left to the prompt) ──
+// PRESERVE INFORMATION, NOT EMPTY STRUCTURE. The working scaffold may keep every heading; the
+// signed note may not. The draft prompt now says so, but a prompt is a request, and two rounds of
+// rules did not stop the model printing "Appetite:" with nothing under it. This is the guarantee.
+// It is the repo's own rule applied to a second scaffold/evidence boundary: do not rely on a model
+// to decide something the code can decide deterministically first.
+//
+// SAFETY PROPERTY: this function can only DELETE WHOLE LINES that belong to a section with no
+// content. It never rewrites, reorders, shortens or merges anything. A section is dropped only when
+// it has no body at all, or its entire body is a status placeholder. Anything a human could read as
+// clinical content keeps its heading, however brief.
+var TBP_LABEL_RE = /^[ \t]*([A-Z][A-Za-z\/'&()\- ]{2,48}):[ \t]*(.*)$/;
+var TBP_PLACEHOLDER_RE = /^(?:not\s+(?:assessed|addressed|discussed|reassessed|documented|evaluated|reviewed|updated)(?:\s+(?:today|this\s+visit|at\s+this\s+visit|at\s+(?:the\s+)?prior\s+visit|at\s+last\s+visit))?|not\s+previously\s+(?:assessed|documented|reported)|no\s+(?:content|information|data)(?:\s+documented)?|needs?\s+review|pending(?:\s+review)?|deferred|none\s+documented|not\s+applicable|n\/?a|tbd|unknown|[-–—.•\s]+)[.;]?$/i;
+function tbpDropEmptySections(text){
+  var lines = String(text || '').split('\n');
+  var out = [], i = 0, dropped = [];
+  while(i < lines.length){
+    var m = lines[i].match(TBP_LABEL_RE);
+    if(!m){ out.push(lines[i]); i++; continue; }
+    // This section runs to the next label line or the end of the note.
+    var body = [], j = i + 1;
+    if(m[2] && m[2].trim()) body.push(m[2].trim());
+    while(j < lines.length && !TBP_LABEL_RE.test(lines[j])){
+      if(lines[j].trim()) body.push(lines[j].trim());
+      j++;
+    }
+    var meaningful = body.filter(function(b){ return !TBP_PLACEHOLDER_RE.test(b); });
+    if(meaningful.length){ for(var k = i; k < j; k++) out.push(lines[k]); }
+    else { dropped.push(m[1]); }
+    i = j;
+  }
+  try { window.__tbpDroppedSections = dropped; } catch(e){}
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
 // A banner that cannot be clobbered by a later re-render of #results.
 function tbpShowVerdict(html){
   try {
@@ -2062,7 +2096,7 @@ function tbpTraceSections(stage, text){
 // ── Render the HPI result (Slices 1 + 2) ──
 // Show the draft the instant it lands, while the review finalizes in the background.
 function renderResultPreview(hpi){
-  var clean = finalizeHpi(hpi);
+  var clean = tbpDropEmptySections(finalizeHpi(hpi));
   var html = '<div class="out"><h3>History of Present Illness</h3>'
     + '<div class="out-body" id="hpi-preview">'+esc(clean)+'</div>'
     + '<div class="hint" style="margin-top:10px"><span class="spinner"></span> Double-checking against your notes&hellip;</div></div>';
@@ -2070,7 +2104,7 @@ function renderResultPreview(hpi){
 }
 
 function renderResult(hpi, flags, verified, opts){
-  hpi = finalizeHpi(hpi);
+  hpi = tbpDropEmptySections(finalizeHpi(hpi));
   lastHpi = hpi;
   // The HPI (draft + flags + review note) lives in its own panel so the silent ambient flow can
   // hold it hidden while the clinician answers preflight, then reveal the whole note at once.
@@ -2190,7 +2224,7 @@ async function applyFlagFixes(flags){
       + fixes.map(function(x){ return "- Flag: " + x.flag + "\n  Do: " + x.instruction; }).join("\n");
     var revised = await callAPI(reviseHpiSystem(), [{role:'user', content: msg}], 3400);
     if(!revised || !revised.trim()){ throw new Error('Nothing came back. Try again.'); }
-    hpiEl.value = finalizeHpi(revised);
+    hpiEl.value = tbpDropEmptySections(finalizeHpi(revised));
     lastHpi = hpiEl.value;
     document.querySelectorAll('.flag-fix').forEach(function(inp){ if(inp.value.trim()) inp.value = ''; });
     hint.innerHTML = '<span style="color:var(--teal)">Applied. Review the HPI above.</span>';
@@ -2256,10 +2290,17 @@ async function runDraft(sourceText, btn, errEl, silent){
         : (b.length ? 'DRAFT produced the empty section(s). The verifier did not add any.'
                     : 'No empty sections at either stage.');
       tbpTrace('C VERDICT ' + verdict);
+      var c = tbpEmptySections(tbpDropEmptySections(finalHpi));
+      var buildTag = 'unknown';
+      try { var sc = document.querySelector('script[src*="note-engine-practice.js"]');
+            var bm = sc && sc.getAttribute('src').match(/v=([\w.-]+)/); if(bm) buildTag = bm[1]; } catch(e){}
       tbpShowVerdict(
-        'After DRAFT   : ' + a.length + ' empty' + (a.length ? '  (' + a.join(', ') + ')' : '') + '\n'
-      + 'After VERIFY  : ' + b.length + ' empty' + (b.length ? '  (' + b.join(', ') + ')' : '') + '\n\n'
-      + '<span style="color:#ffd479;font-weight:700">' + verdict + '</span>');
+        'BUILD RUNNING : ' + buildTag + '\n'
+      + 'After DRAFT   : ' + a.length + ' empty' + (a.length ? '  (' + a.join(', ') + ')' : '') + '\n'
+      + 'After VERIFY  : ' + b.length + ' empty' + (b.length ? '  (' + b.join(', ') + ')' : '') + '\n'
+      + 'After STRIP   : ' + c.length + ' empty' + (c.length ? '  (' + c.join(', ') + ')' : '') + '\n\n'
+      + '<span style="color:#ffd479;font-weight:700">' + verdict + '</span>\n'
+      + '<span style="color:#9ae6b4">Dropped by the stripper: ' + ((window.__tbpDroppedSections||[]).join(', ') || 'none') + '</span>');
     } catch(e){}
     // Telehealth attestation: on a telehealth visit only, drop the clinician's saved statement
     // in right after the opening paragraph. Never on in-person. Only if they've saved one.
@@ -7697,7 +7738,7 @@ async function draftSampleHpi(visitKey){
       src += "\n\n---\n\nPRIOR HPI / ASSESSMENT (continuity context only; not today's documented content):\n\n" + s.prior;
     }
     var hpi = await callAPI(draftSystem(), [{role:'user', content: src}], 8000);   // 8000: never truncate the note (see runDraft)
-    return finalizeHpi(hpi || '');
+    return tbpDropEmptySections(finalizeHpi(hpi || ''));
   } finally { visitType = prev; }
 }
 
