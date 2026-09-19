@@ -236,6 +236,58 @@ took; the rule stands on the don't-duplicate-the-HPI principle, not on that soft
 
 ---
 
+### 0.3.2 The three source types: who AUTHORED this sentence? (Sept 2026)
+
+§0.3 asks whether a behavior is universal or per-clinician. This asks a different question
+about every sentence in the note, and it is the one that decides fabrication: **where did
+this content come from, and who is accountable for it?** It applies far beyond medications.
+
+| | Source type | May it appear without being typed today? | Where it comes from |
+|---|---|---|---|
+| **1** | **Patient-derived facts** — symptoms, denials, history, timeframes, quotes, risk | **NO. Ever.** | Transcript, typed answers, records |
+| **2** | **Clinician-observed defaults** — MSE normals, standard exam language | **Yes** | A clinician-configured default, overridden when abnormal |
+| **3** | **Clinician attestations / routine actions** — "risks and benefits discussed", "patient agrees with plan", PMP reviewed | **Yes** | An explicit clinician default or one-tap control — NEVER model inference |
+
+**Type 2 is not fabrication, and treating it as such would gut the product.** A clinician's
+normal MSE is them saying *these are my default observed findings unless I document
+otherwise*. `MSE_SYS` already works this way: it takes "the clinician's STANDARD MSE (their
+attestation of a typical exam)" and updates only what the visit supports. Making them retype
+a normal exam every visit is exactly the burden §0.2 exists to remove.
+
+**Type 3 is the one that was wrong, and the fix was nearly wrong too.** The assessment
+prompt said "capture risk/benefit for medication decisions"; the model rendered reasoning as
+an event and wrote *"risks and benefits were discussed, including cardiovascular
+considerations, appetite suppression and insomnia"* — four specifics it chose. The first
+instinct was to forbid the sentence. That is also wrong: a clinician who does discuss
+risk/benefit on every medication change is not served by a note that omits it, and forcing
+them to type the specifics every time is more work, not less. `"Risks and benefits were
+discussed"` saves real time; `"I told them it was activating"` does not.
+
+**So the rule is NOT "never state it unless typed."** It is:
+
+> **The model may never INVENT the specific content of an attestation. A generic
+> attestation the clinician configured or selected is theirs to make, and the product
+> should make selecting it one tap.**
+
+The difference is accountability. Generic boilerplate the clinician owns cannot be wrong
+about a particular conversation. Model-chosen specifics can: if the real discussion was her
+cardiac history and the chart says appetite and insomnia, the note misreports it.
+
+**Implemented today:** type 1 is guarded across the draft, audit and interview paths; type 2
+is the Vault MSE template; type 3 has exactly one working example, the `+ PMP reviewed`
+button — one tap, dated, clinician-initiated.
+
+**Not built:** the same one-tap treatment for medication counseling (`+ Risk/benefit
+discussed`, backed by a Vault attestation the clinician writes once). Until it exists the
+assessment states the REASONING only, which is correct but leaves the clinician typing the
+attestation by hand. That gap is the argument for building it, not for letting the model
+infer it back.
+
+**The general form, which is why this sits in the architecture doc:** AI must not fabricate
+facts, and it absolutely may carry forward clinician-owned defaults, conventions and
+attestations the clinician has explicitly chosen. That is how it saves work. Any new surface
+should say which of the three types it is emitting before it ships.
+
 ## 0.4 LOCKED STRUCTURE (decided 2026-07) — two tools, one note pipeline
 
 **The decision.** We had been treating the scribe as *three* tools (HPI Generator, Note
