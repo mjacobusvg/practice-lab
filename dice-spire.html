@@ -144,6 +144,11 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 /* ---------- combat ---------- */
 .field{display:flex;flex-direction:column;gap:14px}
 .enemy-row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;min-height:150px;align-items:flex-end}
+.enemy-row.rear{min-height:0;transform:scale(.88);transform-origin:bottom center;margin-bottom:-10px}
+.rank-label{text-align:center;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);margin:2px 0 -2px}
+.unit.blocked{opacity:.72}
+.unit.blocked::before{content:'';position:absolute;inset:0;border-radius:var(--r-lg);
+  border:1px dashed rgba(255,255,255,.18);pointer-events:none}
 .unit{
   width:150px;background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);
   padding:10px;position:relative;transition:.14s;
@@ -425,6 +430,13 @@ Object.keys(SIGILS).forEach(k => {
 });
 /* how deep a rite is running right now */
 const sigil = k => (C && C.sigils && C.sigils[k]) || 0;
+/* ------------------------------------------------------------------- ranks */
+/* Enemies stand in two ranks. Anything you have to swing to land -- Strike,
+   Leech, Stun -- can only reach the front, while the things you throw or cast
+   go over it. That is what finally makes a Pyromancer different from a bigger
+   Duelist, and it gives the healers and summoners somewhere to work from. */
+const REACH = ['burn','poison','charm','daze','dmgAll','shieldAll'];
+const reaches = k => !KIND[k] || KIND[k].target !== 'enemy' || REACH.includes(k);
 const F = (k, v = 0) => ({ k, v });
 /* Every hero owns one kind of face outright. Nobody else can be given it, so a
    party is defined by who is in it rather than by whatever the rewards offered.
@@ -494,7 +506,7 @@ const BESTIARY = [
     moves:[{k:'attack',v:4},{k:'poison',v:2},{k:'attack',v:4}] },
   { key:'bandit',  name:'Cutpurse',     av:'🗡️', hp:10, acts:[1,2], dmgW:1.1,
     moves:[{k:'attack',v:5},{k:'block',v:4},{k:'attack',v:4}] },
-  { key:'cultist', name:'Cultist',      av:'🕯️', hp:9,  acts:[1,2], dmgW:1,
+  { key:'cultist', name:'Cultist',      av:'🕯️', hp:9,  acts:[1,2], dmgW:1, back:true,
     moves:[{k:'buff',v:2},{k:'attack',v:4},{k:'attack',v:4}] },
   { key:'shieldman',name:'Shieldbearer',av:'🪖', hp:12, acts:[1,2],   dmgW:0.95,
     moves:[{k:'block',v:5},{k:'attack',v:5},{k:'attack',v:4}] },
@@ -504,13 +516,13 @@ const BESTIARY = [
     moves:[{k:'poison',v:3},{k:'attackAll',v:3},{k:'attack',v:6}] },
   { key:'golem',   name:'Rubble Golem', av:'🗿', hp:24, acts:[2,3],   dmgW:1,
     moves:[{k:'block',v:8},{k:'attack',v:9},{k:'attack',v:6}] },
-  { key:'priest',  name:'Bone Priest',  av:'💀', hp:18, acts:[2,3],   dmgW:1,
+  { key:'priest',  name:'Bone Priest',  av:'💀', hp:18, acts:[2,3],   dmgW:1, back:true,
     moves:[{k:'heal',v:7},{k:'attack',v:7},{k:'buff',v:2}] },
   { key:'knight',  name:'Ashen Knight', av:'⚔️', hp:22, acts:[3],     dmgW:1.25,
     moves:[{k:'attack',v:10},{k:'block',v:9},{k:'attack',v:8}] },
-  { key:'mesmer',  name:'Mesmerist',    av:'🪬', hp:16, acts:[2,3],   dmgW:1,
+  { key:'mesmer',  name:'Mesmerist',    av:'🪬', hp:16, acts:[2,3],   dmgW:1, back:true,
     moves:[{k:'charm',v:1},{k:'drain',v:6},{k:'attack',v:7}] },
-  { key:'necro',   name:'Bone Caller',  av:'🕯️', hp:18, acts:[2,3],   dmgW:0.9,
+  { key:'necro',   name:'Bone Caller',  av:'🕯️', hp:18, acts:[2,3],   dmgW:0.9, back:true,
     moves:[{k:'summon',v:1},{k:'attack',v:6},{k:'block',v:7},{k:'summon',v:1}] },
   { key:'cinder',  name:'Cinder Fiend', av:'🔥', hp:13, acts:[2,3],   dmgW:0.9,
     moves:[{k:'burn',v:3},{k:'attack',v:5},{k:'attackAll',v:3}] },
@@ -747,8 +759,9 @@ const SPELLS = [
   {key:'siphon',   name:'Siphon',         cost:3, target:'enemy',     desc:'Deal 5 damage and heal your most wounded hero 5.'},
   {key:'quicken',  name:'Quicken',        cost:1, target:'self',      desc:'Gain 1 reroll this turn.'},
   {key:'wildfire', name:'Wildfire',       cost:5, target:'allEnemies',desc:'Deal 10 damage to every enemy.'},
-  {key:'finisher', name:'Finisher',       cost:0, target:'enemy',     charge:{owner:'duelist', need:4, on:['dmg','dmgAll'], verb:'Strike'},
-   desc:'Deal 6 damage, or 14 if the target is at or below half HP.'},
+  {key:'finisher', name:'Finisher',       cost:0, target:'enemy',     reach:false,
+   charge:{owner:'duelist', need:4, on:['dmg','dmgAll'], verb:'Strike'},
+   desc:'Deal 6 damage, or 14 if the target is at or below half HP. It has to be swung, so it only reaches the front rank.'},
   {key:'conflag',  name:'Conflagration',  cost:3, target:'allEnemies',desc:'Set every enemy burning for 3.'},
   {key:'miasma',   name:'Miasma',         cost:0, target:'allEnemies',charge:{owner:'venomist', need:3, on:['poison'], verb:'Venom'},
    desc:'Apply 4 poison to every enemy.'},
@@ -1041,6 +1054,17 @@ function faceValue(hero, f){
   if(f.k !== 'blank' && !isSigil(f.k)) v += glob('allFaces');
   return Math.max(0, v);
 }
+const frontRank = () => livingEnemies().filter(e => !e.rank);
+/* with the front rank gone there is nothing left to hide behind */
+const inReach = (e, k) => !e.rank || reaches(k) || !frontRank().length;
+function advanceRanks(){
+  if(!C || frontRank().length) return;
+  const rear = livingEnemies().filter(e => e.rank);
+  if(!rear.length) return;
+  rear.forEach(e => { e.rank = 0; floatOn(e.uid, 'FORWARD', 'var(--gold)'); });
+  logc(rear.length === 1 ? `${rear[0].name} steps up into the gap.`
+                         : 'What was hiding behind the line steps up into the gap.');
+}
 const livingHeroes  = () => S.party.filter(h => !h.downed);
 const livingEnemies = () => C ? C.enemies.filter(e => e.hp > 0) : [];
 
@@ -1071,7 +1095,8 @@ function makeEnemy(def, act, depth, opts){
     uid: uid(), key:def.key, name:def.name, av:def.av,
     maxHp:hp, hp, shield:0, poison:0, burn:0, stun:0, charm:0, steeled:0, weak:0, power:0, trait:null,
     moves: scaleMoves(def, act, d), mi: 0, intent:null,
-    elite: !!def.elite, boss: !!def.boss, item:null, champion:false, phase:0
+    elite: !!def.elite, boss: !!def.boss, item:null, champion:false, phase:0,
+    rank: 0, back: !!def.back
   };
   /* a champion is an ordinary monster that got lucky: bigger, meaner, armed */
   if(opts.champion){
@@ -1130,7 +1155,22 @@ function buildEncounter(type){
   }
   /* a lone normal enemy would be a pushover: give it a boost */
   if(n === 1 && !opening){ out[0].maxHp = Math.round(out[0].maxHp * 1.45); out[0].hp = out[0].maxHp; }
+  layOutRanks(out);
+  /* A Linked anchor standing in the back rank would be unreachable to a party
+     with nothing but Strikes, and the thing it protects takes nothing while it
+     lives: that is an unwinnable fight. The anchor always holds the line. */
+  const prot = out.find(e => e.trait && e.trait.k === 'linked');
+  if(prot){ const anchor = out.find(e => e.uid === prot.trait.anchor); if(anchor) anchor.rank = 0; }
   return out;
+}
+/* Supports fall back behind whatever can hold a line. Somebody always holds
+   the line, so a party that can only reach the front is never left with
+   nothing to hit. */
+function layOutRanks(list){
+  if(list.length < 2){ list.forEach(e => e.rank = 0); return list; }
+  const holders = list.filter(e => !e.back);
+  list.forEach(e => { e.rank = (e.back && holders.length) ? 1 : 0; });
+  return list;
 }
 
 function makeThrall(v){
@@ -1210,6 +1250,7 @@ function beginPlayerTurn(){
     C.summons = C.summons.filter(t => t.turns > 0);
   }
   C.phaseBanner = null;
+  advanceRanks();
   C.rerolls = maxRerolls();
   C.echoUsed = 0;
   C.rerollMode = false;
@@ -1344,6 +1385,7 @@ function hurtEnemy(e, n, ignoreShield){
   if(e.boss && e.hp > 0) checkBossPhase(e);
   if(e.hp === 0){
     logc(`${e.name} falls.`); S.kills++; if(e.elite) S.elitesKilled++;
+    advanceRanks();
     if(e.item){ C.drops.push(e.item); logc(`It drops its ${itemDef(e.item).name}.`); e.item = null; }
     if(hasTrait(e, 'volatile')){
       const blast = e.trait.v;
@@ -1409,8 +1451,21 @@ function clickSpell(key){
 }
 function clickTarget(kind, uidv){
   if(!C.pending) return;
+  if(kind === 'enemy'){
+    const e = enemyByUid(uidv);
+    if(!e || !canTargetEnemy(e)) return;      /* the front rank is in the way */
+  }
   resolvePending({ kind, uid:uidv });
 }
+/* can whatever is waiting on a target reach past the front rank? */
+function pendingReaches(){
+  const p = C.pending;
+  if(!p) return true;
+  if(p.type === 'die'){ const d = C.dice[p.i]; return d ? reaches(d.k) : true; }
+  if(p.type === 'spell'){ const sp = spellDef(p.key); return sp.reach !== false; }
+  return true;                       /* anything you throw goes over the line */
+}
+const canTargetEnemy = e => e.hp > 0 && (!e.rank || pendingReaches() || !frontRank().length);
 function pendingTargetType(){
   if(!C.pending) return null;
   if(C.pending.type === 'die'){ const d = C.dice[C.pending.i]; return d ? KIND[d.k].target : null; }
@@ -1450,6 +1505,10 @@ function applyDie(i, target){
    ask for it twice */
 function resolveFace(h, d, target){
   const v = faceValue(h, d);
+  if(KIND[d.k] && KIND[d.k].target === 'enemy' && target && !reaches(d.k)){
+    const e = enemyByUid(target.uid);
+    if(e && e.rank && frontRank().length) return;     /* it cannot be reached */
+  }
   switch(d.k){
     case 'dmg': {
       const e = enemyByUid(target.uid); if(!e) break;
@@ -2880,7 +2939,8 @@ function viewCombat(){
   const enemyTargetable = tt === 'enemy';
   const allyTargetable  = tt === 'ally';
 
-  const enemies = C.enemies.map(e => {
+  const blockedNow = !!frontRank().length && !pendingReaches();
+  const drawEnemy = e => {
     const pct = Math.max(0, Math.round(e.hp / e.maxHp * 100));
     const badges = [];
     if(e.shield) badges.push(`<span class="badge" style="color:var(--blue)" data-tip="Shield|Absorbs damage. Clears when this enemy next acts.">🛡️ ${e.shield}</span>`);
@@ -2898,8 +2958,12 @@ function viewCombat(){
       badges.push(`<span class="badge" style="color:var(--gold)" data-tip="Carrying ${esc(gi.name)}|${esc(gi.desc)} It is using this against you, and you take it when it falls.">${gi.ic}</span>`); }
     const aura = [e.burn && 's-burn', e.poison && 's-poison', e.stun && 's-stun',
                   e.charm && 's-charm', e.steeled && 's-braced'].filter(Boolean).join(' ');
-    return `<div class="unit ${e.hp <= 0 ? 'dead' : ''} ${aura} ${enemyTargetable && e.hp > 0 ? 'targetable' : ''}" data-uid="${e.uid}"
-        ${enemyTargetable && e.hp > 0 ? `onclick="clickTarget('enemy',${e.uid})"` : ''}>
+    const reachable = canTargetEnemy(e);
+    const hidden = e.rank && e.hp > 0 && !!frontRank().length;
+    if(hidden) badges.push(`<span class="badge" style="color:var(--ink-dim)"
+      data-tip="Behind the line|Nothing you have to swing can reach it. Fire, venom and anything cast goes over the front rank; Strikes, Leech and Stun do not.">back rank</span>`);
+    return `<div class="unit ${e.hp <= 0 ? 'dead' : ''} ${aura} ${hidden && blockedNow ? 'blocked' : ''} ${enemyTargetable && reachable ? 'targetable' : ''}" data-uid="${e.uid}"
+        ${enemyTargetable && reachable ? `onclick="clickTarget('enemy',${e.uid})"` : ''}>
       ${e.hp > 0 ? intentHTML(e) : '<div class="intent" style="opacity:.3">—</div>'}
       <div class="av">${e.av}</div>
       <div class="nm">${e.name}${e.elite ? ' ★' : ''}${e.boss ? ' 👑' : ''}</div>
@@ -2907,7 +2971,11 @@ function viewCombat(){
       <div class="hptext">${e.hp} / ${e.maxHp}</div>
       <div class="badges">${badges.join('')}</div>
     </div>`;
-  }).join('');
+  };
+  const rear  = C.enemies.filter(e => e.rank && e.hp > 0);
+  const front = C.enemies.filter(e => !(e.rank && e.hp > 0));
+  const enemies = `${rear.length ? `<div class="rank-label">behind the line</div><div class="enemy-row rear">${rear.map(drawEnemy).join('')}</div>` : ''}
+    <div class="enemy-row">${front.map(drawEnemy).join('')}</div>`;
 
   const heroes = allies().map(h => {
     const pct = Math.max(0, Math.round(h.hp / h.maxHp * 100));
@@ -2982,7 +3050,7 @@ function viewCombat(){
   const unspent = C.dice.filter(d => !d.used).length;
   const hint = C.over === 'win' ? 'Victory.'
     : C.over === 'lose' ? 'The party falls.'
-    : C.pending ? 'Choose a target.'
+    : C.pending ? (blockedNow ? 'Choose a target. This one has to be swung, so only the front rank can be hit.' : 'Choose a target.')
     : C.rerollMode ? 'Pick the dice to reroll, then confirm.'
     : unspent ? `${unspent} ${unspent === 1 ? 'die' : 'dice'} still unspent.`
     : 'Everything is spent. End the turn.';
@@ -3000,7 +3068,7 @@ function viewCombat(){
     ${C.phaseBanner ? `<div class="panel" style="padding:10px 14px;border-color:var(--gold);background:linear-gradient(90deg,rgba(240,180,41,.14),transparent)">
       <b style="color:var(--gold)">${esc(C.phaseBanner)}</b></div>` : ''}
     ${riteBar()}
-    <div class="enemy-row">${enemies}</div>
+    ${enemies}
     <div class="row" style="justify-content:center;gap:12px;flex-wrap:wrap">${heroes}</div>
     <div class="tray">
       <div class="dice-row">${dice || '<div class="muted tiny" style="padding:12px 4px">The enemy is acting…</div>'}</div>
