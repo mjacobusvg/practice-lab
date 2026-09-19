@@ -517,8 +517,34 @@ const ITEMS = [
   {key:'toadstone', name:'Toad Stone',        ic:'🐸', slot:'use', tier:3, price:95, use:'stunAll',   desc:'Stun every enemy for a turn.'},
   {key:'venomvial', name:'Vial of Venom',     ic:'🧫', slot:'use', tier:1, price:55, use:'poisonOne', desc:'Apply 7 poison to one enemy.'},
   {key:'wakingdust',name:'Dust of Waking',    ic:'🕯️', slot:'use', tier:3, price:90, use:'revive',    desc:'Bring a downed hero back at half HP.'},
+  /* ---- cursed: plainly stronger than their tier, at a price ------------- */
+  {key:'hungerblade',name:'Hungering Blade', ic:'🗡️', slot:'weapon', tier:3, price:190, cursed:true,
+   mod:{dmg:5}, glob:{hungerbite:1}, desc:'+5 Strike and Cleave. Its bearer loses 2 HP at the end of every round.'},
+  {key:'gravecloak', name:'Grave Cloak',     ic:'🕸️', slot:'armour', tier:3, price:185, cursed:true,
+   mod:{armour:3, maxHp:-8}, desc:'Hits land for 3 less, and its bearer keeps 8 less max HP.'},
+  {key:'greedring',  name:'Ring of Greed',   ic:'💍', slot:'trinket', tier:3, price:170, cursed:true,
+   glob:{gold:0.6, greedfrail:1}, desc:'Gold found is worth 60% more. Every hero heals 40% less from every source.'},
   {key:'talisman',  name:'The Talisman',      ic:'🔯', slot:'quest', tier:3, price:400, desc:'The act three boss will not face anyone who does not carry it.'}
 ];
+/* Three things the item layer was missing: a reason to collect a MATCHED
+   pair, gear worth taking despite a real cost, and somewhere to improve what
+   you already carry rather than only replacing it. */
+const SETS = {
+  drake:  {name:'Drake Regalia', parts:['dragontooth','dragonscale'],
+           desc:'Dragon Tooth and Dragonscale together: +2 more Strike, and Ethereal enemies no longer halve your blows.'},
+  venom:  {name:"Alchemist's Pair", parts:['serpfang','venomvial'],
+           desc:'Serpent Fang while a Vial of Venom is in the bag: your poison thins a round slower.'},
+  mind:   {name:'Quiet Mind', parts:['mindrazor','focusamul'],
+           desc:'Mind Razor and Amulet of Focus together: +1 mana at the start of every turn.'},
+  warden: {name:'Old Guard', parts:['towerplate','buckler'],
+           desc:'Tower Plate and a Buckler on the same party: every hero soaks 1.'}
+};
+function setActive(key){
+  const st = SETS[key]; if(!st || !S) return false;
+  const worn = new Set(wornItems().map(i => i.key));
+  S.bag.forEach(k => worn.add(k));
+  return st.parts.every(k => worn.has(k));
+}
 const itemDef = k => ITEMS.find(i => i.key === k);
 const GEAR_SLOTS = ['weapon','armour','trinket'];
 /* Gear an enemy can actually use. A bandit with a Silver Sword hits harder
@@ -838,6 +864,7 @@ function faceValue(hero, f){
     if(has('whetstone')) v += 1;
     v += gearMod(hero, 'dmg');
     if(f.k === 'dmgAll') v += gearMod(hero, 'cleave');
+    if(setActive('drake') && GEAR_SLOTS.some(sl => hero.gear && hero.gear[sl] === 'dragontooth')) v += 2;
   }
   if(f.k === 'shield' || f.k === 'shieldAll'){ if(has('towershield')) v += 1; v += gearMod(hero, 'shield'); }
   if(f.k === 'heal'){   if(has('verdant'))   v += 1; v += gearMod(hero, 'heal'); }
@@ -1004,7 +1031,7 @@ function beginPlayerTurn(){
     h.shield = keepHalf ? Math.floor(h.shield / 2) : 0;
     h.guarding = false;
   });
-  C.mana += (has('wellspring') ? 1 : 0) + glob('manaTurn') + (partyPerk('p4') ? 1 : 0);
+  C.mana += (has('wellspring') ? 1 : 0) + glob('manaTurn') + (partyPerk('p4') ? 1 : 0) + (setActive('mind') ? 1 : 0);
   if(has('sundial') && C.turn % 3 === 0){
     livingAllies().forEach(h => h.shield += 4);
     logc('The Sundial turns. Every hero gains 4 shield.');
@@ -1113,7 +1140,7 @@ const enemyAtk = (e, base) => e.weak > 0 ? Math.max(1, Math.ceil(base / 2)) : ba
    by Ethereal, which is what makes a status build the answer to those two. */
 function heroDamageToEnemy(e, n){
   if(has('seal') && e.hp <= e.maxHp * 0.3) n += 4;
-  if(hasTrait(e, 'ethereal')) n = Math.ceil(n / 2);
+  if(hasTrait(e, 'ethereal') && !setActive('drake')) n = Math.ceil(n / 2);
   if(hasTrait(e, 'armoured')) n = Math.max(0, n - e.trait.v);
   if(n <= 0){
     floatOn(e.uid, 'NO', 'var(--ink-dim)');
@@ -1160,7 +1187,7 @@ function hurtHero(h, n, opts){
   if(h.downed || n <= 0) return;
   let left = n;
   if(!opts.ignoreArmour){
-    const armour = gearMod(h, 'armour');
+    const armour = gearMod(h, 'armour') + (setActive('warden') ? 1 : 0);
     if(armour > 0) left = Math.max(0, left - armour);   /* worn plate soaks before shields */
   }
   if(!opts.ignoreShield && h.shield > 0){
@@ -1182,6 +1209,7 @@ function hurtHero(h, n, opts){
   }
 }
 function healHero(h, n){
+  if(glob('greedfrail')) n = Math.floor(n * 0.6);      /* Ring of Greed */
   if(h.downed || n <= 0) return;
   const before = h.hp;
   h.hp = Math.min(h.maxHp, h.hp + n);
@@ -1638,7 +1666,7 @@ function endOfRound(){
       hurtEnemy(e, e.poison, true);
       logc(`${e.name} takes ${e.poison} poison.`);
       /* Lingering: the stack only thins every other round */
-      if(!partyPerk('n2') || C.turn % 2 === 0) e.poison--;
+      if((!partyPerk('n2') && !setActive('venom')) || C.turn % 2 === 0) e.poison--;
     }
   });
   livingAllies().slice().forEach(h => {
@@ -1662,6 +1690,10 @@ function endOfRound(){
       h.regen--;
     }
     if(h.steeled > 0) h.steeled--;
+    if(glob('hungerbite') && !h.isSummon && GEAR_SLOTS.some(sl => h.gear && h.gear[sl] === 'hungerblade')){
+      hurtHero(h, 2, {ignoreShield:true, ignoreArmour:true});
+      logc(`The Hungering Blade takes its due from ${h.name}.`);
+    }
   });
   if(!livingEnemies().length){ endCombat(true); return; }
   if(!livingHeroes().length){ endCombat(false); return; }
@@ -2098,6 +2130,32 @@ function campRest(){
   UI.modal = null; save(); render();
 }
 function campForge(){ UI.modal = { type:'forge' }; render(); }
+function campTemper(){ UI.modal = { type:'temper' }; render(); }
+/* one worn piece gets a permanent +1 on every number it carries */
+function temperItem(heroUid, slot){
+  const h = heroByUid(heroUid);
+  if(!h || !h.gear || !h.gear[slot]) return;
+  const base = itemDef(h.gear[slot]);
+  if(!base || base.tempered) return;
+  const key = base.key + '+';
+  if(!itemDef(key)){
+    const up = JSON.parse(JSON.stringify(base));
+    up.key = key; up.name = base.name + ' +1'; up.tempered = true;
+    ['mod','glob'].forEach(g => { if(up[g]) Object.keys(up[g]).forEach(k => {
+      if(k === 'maxHp' && up[g][k] < 0) return;                 /* do not deepen a curse */
+      up[g][k] = up[g][k] > 0 ? up[g][k] + (k === 'gold' ? 0.1 : 1) : up[g][k];
+    }); });
+    up.desc = base.desc + ' (tempered)';
+    ITEMS.push(up);
+  }
+  if(base.mod && base.mod.maxHp) h.maxHp -= base.mod.maxHp;
+  h.gear[slot] = key;
+  const up = itemDef(key);
+  if(up.mod && up.mod.maxHp){ h.maxHp += up.mod.maxHp; if(up.mod.maxHp > 0) h.hp += up.mod.maxHp; }
+  h.maxHp = Math.max(5, h.maxHp); h.hp = Math.max(1, Math.min(h.hp, h.maxHp));
+  clampFate();
+  UI.modal = null; save(); render();
+}
 function forgeFace(heroUid, idx){
   const h = heroByUid(heroUid);
   const f = h.faces[idx];
@@ -2829,6 +2887,7 @@ function renderModal(){
     case 'shop':     html = mShop(m); break;
     case 'camp':     html = mCamp(); break;
     case 'forge':    html = mForge(); break;
+    case 'temper':   html = mTemper(); break;
     case 'scour':    html = mScour(m); break;
     case 'equip':    html = mEquip(m); break;
     case 'inventory':html = mInventory(); break;
@@ -3040,6 +3099,8 @@ function mCamp(){
       <button class="opt" onclick="campRest()"><div class="t">Rest</div><div class="s">Heal every hero ${pct}% of their max HP, and recover a point of Fate.</div></button>
       <button class="opt" onclick="campForge()"><div class="t">Sharpen</div><div class="s">Permanently improve one die face.</div></button>
       <button class="opt" onclick="campDrill()"><div class="t">Drill</div><div class="s">+4 max HP to every hero, healed immediately.</div></button>
+      <button class="opt" ${wornItems().length ? '' : 'disabled'} onclick="campTemper()"><div class="t">Temper</div><div class="s">${
+        wornItems().length ? 'Give one worn item a permanent +1 on everything it does.' : 'Nobody is wearing anything to temper.'}</div></button>
       <button class="opt" ${canScour() ? '' : 'disabled'} onclick="campScour()"><div class="t">Grind down</div><div class="s">${canScour()
         ? 'Remove a side from one die for good. Costs no gold, but it costs you the rest.'
         : 'Every die is already down to ' + MIN_FACES + ' sides.'}</div></button>
@@ -3100,10 +3161,11 @@ function statLine(it){
   return st.map(([L, v]) => `${esc(L)} ${fmtDelta(v)}`).join(' · ');
 }
 function itemCard(it, extra){
+  /* a curse is named on the card, never discovered afterwards */
   const tierCol = it.tier === 3 ? 'var(--gold)' : it.tier === 2 ? 'var(--violet)' : 'var(--ink-dim)';
   return `<div class="row" style="gap:11px">
     <div style="font-size:26px">${it.ic}</div>
-    <div><b style="color:${tierCol}">${esc(it.name)}</b>
+    <div><b style="color:${it.cursed ? 'var(--red)' : tierCol}">${esc(it.name)}</b>${it.cursed ? ' <span class="tiny" style="color:var(--red)">cursed</span>' : ''}
       <span class="tiny faint"> ${'★'.repeat(it.tier)}</span>
       <div class="tiny muted">${esc(it.desc)}</div>${extra || ''}</div></div>`;
 }
@@ -3201,6 +3263,12 @@ function mInventory(){
         ${GEAR_SLOTS.map(sl => slotRow(h, sl)).join('')}
       </div>`).join('')}
 
+      ${Object.keys(SETS).some(k => setActive(k)) ? `<div class="panel" style="background:var(--card);padding:12px">
+        <b style="color:var(--gold)">⚔️ Matched sets</b>
+        ${Object.entries(SETS).filter(([k]) => setActive(k)).map(([k, st]) => `<div style="padding:7px 0;border-top:1px solid var(--line)">
+          <div style="font-weight:700;font-size:13.5px;color:var(--gold)">${esc(st.name)}</div>
+          <div class="tiny muted">${esc(st.desc)}</div></div>`).join('')}
+      </div>` : ''}
       <div class="panel" style="background:var(--card);padding:12px">
         <b>🧳 Bag <span class="tiny muted">${S.bag.length}/${BAG_MAX}</span></b>
         ${S.bag.length
@@ -3282,6 +3350,21 @@ function mBagFull(m){
     </div>
     <div class="sep"></div>
     <div class="spread">${invButton()}<button class="btn ghost" onclick="declineItem()">Keep what I have</button></div>`;
+}
+function mTemper(){
+  return `<h2>Temper a piece</h2>
+    <p class="muted tiny" style="margin-bottom:10px">One worn item gains a permanent +1 on every number it carries. A curse is not deepened.</p>
+    <div class="col">
+      ${S.party.map(h => GEAR_SLOTS.map(sl => {
+        const it = h.gear && h.gear[sl] ? itemDef(h.gear[sl]) : null;
+        if(!it) return '';
+        return `<button class="opt" ${it.tempered ? 'disabled' : ''} onclick="temperItem(${h.uid},'${sl}')">
+          <div class="t">${it.ic} ${esc(it.name)} <span class="faint">· ${h.av} ${esc(h.name)}</span></div>
+          <div class="s">${esc(it.desc)}${it.tempered ? ' — already tempered' : ''}</div></button>`;
+      }).join('')).join('')}
+    </div>
+    <div class="sep"></div>
+    <div class="row" style="justify-content:flex-end"><button class="btn ghost" onclick="closeEvent()">Never mind</button></div>`;
 }
 function mScour(m){
   return `<h2>Grind down a die</h2>
