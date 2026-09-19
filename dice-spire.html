@@ -2792,6 +2792,33 @@ function itemCard(it, extra){
       <span class="tiny faint"> ${'★'.repeat(it.tier)}</span>
       <div class="tiny muted">${esc(it.desc)}</div>${extra || ''}</div></div>`;
 }
+/* Which FACE KINDS a piece of gear actually touches. "+3 Shield and Aegis"
+   is worth nothing to a hero with no Shield faces, and that is the whole
+   decision, so the faces have to be on the screen where it is made. */
+function itemFaceBonus(it){
+  const out = {};
+  if(!it) return out;
+  const m = it.mod || {}, g = it.glob || {};
+  const add = (k, v) => { if(v) out[k] = (out[k] || 0) + v; };
+  add('dmg', m.dmg);      add('dmgAll', m.dmg);   add('dmgAll', m.cleave);
+  add('shield', m.shield); add('shieldAll', m.shield);
+  add('heal', m.heal);    add('poison', m.poison); add('burn', m.burn);
+  add('daze', m.daze);    add('charm', m.charm);
+  if(g.allFaces) Object.keys(KIND).forEach(k => { if(k !== 'blank') add(k, g.allFaces); });
+  return out;
+}
+/* A hero's die, with an incoming item's effect shown against each face. */
+function faceChips(h, oldIt, newIt){
+  const before = itemFaceBonus(oldIt), after = itemFaceBonus(newIt);
+  return `<div class="row wrap-r" style="gap:4px;margin-top:6px">` + h.faces.map(f => {
+    const K = KIND[f.k];
+    if(f.k === 'blank') return `<span class="badge faint">${K.ic}</span>`;
+    const d = (after[f.k] || 0) - (before[f.k] || 0);
+    const now = faceValue(h, f);
+    return `<span class="badge" style="border-color:${d ? (d > 0 ? 'var(--green)' : 'var(--red)') : 'var(--line)'}">
+      ${K.ic} <b style="color:${K.col}">${now}</b>${d ? `<span style="color:${d > 0 ? 'var(--green)' : 'var(--red)'}">→${Math.max(0, now + d)}</span>` : ''}</span>`;
+  }).join('') + `</div>`;
+}
 function gearStrip(h){
   return GEAR_SLOTS.map(sl => {
     const it = h.gear && h.gear[sl] ? itemDef(h.gear[sl]) : null;
@@ -2832,6 +2859,8 @@ function mInventory(){
       ${S.party.map(h => `<div class="panel" style="background:var(--card);padding:12px">
         <div class="spread"><b>${h.av} ${esc(h.name)}</b>
           <span class="tiny muted">${h.hp}/${h.maxHp} HP · ${h.faces.length} sides</span></div>
+        ${faceChips(h, null, null)}
+        <div class="tiny faint" style="margin-top:3px">Values shown are what this hero actually rolls, gear and relics included.</div>
         ${GEAR_SLOTS.map(sl => slotRow(h, sl)).join('')}
       </div>`).join('')}
 
@@ -2871,7 +2900,8 @@ function mEquip(m){
   return `<h2>${it.ic} ${esc(it.name)}</h2>
     <p class="muted tiny" style="margin:6px 0 4px">${esc(it.desc)}</p>
     <p class="tiny" style="margin-bottom:12px;color:var(--ink-dim)">
-      Goes in the <b style="color:var(--ink)">${it.slot}</b> slot. Whatever is there now is thrown away.</p>
+      Goes in the <b style="color:var(--ink)">${it.slot}</b> slot. Whatever is there now is thrown away.
+      Each hero's die is shown below with the change marked on the faces it touches.</p>
     <div class="col">
       ${S.party.map(h => {
         const cur = h.gear && h.gear[it.slot] ? itemDef(h.gear[it.slot]) : null;
@@ -2882,6 +2912,14 @@ function mEquip(m){
                  <span class="faint">${esc(cur.desc)}</span></div>`
             : `<div class="s" style="margin-top:4px">Their ${it.slot} slot is empty.</div>`}
           <div class="tiny" style="margin-top:7px;line-height:1.7">${deltaHTML(cur, it)}</div>
+          ${faceChips(h, cur, it)}
+          ${(() => {
+            const bon = itemFaceBonus(it);
+            const uses = h.faces.some(f => bon[f.k]);
+            const offDie = (it.mod && (it.mod.armour || it.mod.maxHp)) || it.glob;
+            if(uses || offDie) return '';
+            return `<div class="tiny" style="margin-top:5px;color:var(--gold)">⚠️ Nothing on this die uses it.</div>`;
+          })()}
           ${(() => {
             const worn = GEAR_SLOTS.filter(sl => sl !== it.slot)
               .map(sl => h.gear && h.gear[sl] ? itemDef(h.gear[sl]) : null).filter(Boolean);
