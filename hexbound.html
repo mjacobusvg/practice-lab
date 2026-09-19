@@ -292,6 +292,17 @@ button.ahalf:disabled{opacity:.3;cursor:not-allowed}
 .facegrid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
 .tipdie{width:100%;height:36px;padding:2px;border-radius:8px;cursor:default}
 #tip{max-width:210px}
+
+/* ---------- gear comparison ---------- */
+#tip.wide{max-width:320px}
+.cmphead{font-size:12px;color:var(--ink-dim);margin-bottom:6px}
+.cmphead b{color:var(--ink);font-weight:700}
+.cmpgrid{display:flex;flex-direction:column;gap:2px}
+.cmprow{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;line-height:1.45}
+.cmprow span{color:var(--ink-dim)}
+.cmprow b{white-space:nowrap}
+.item.cmpable{cursor:help}
+.item.cmpable:hover{border-color:var(--line-hi);background:var(--card-hi)}
 </style>
 </head>
 <body>
@@ -3033,9 +3044,10 @@ function gtx(str){
 const gword = (k, label) => `<span class="gl" data-g="${k}">${esc(label || GLOSSARY[k].nm)}</span>`;
 
 /* ---------- the shared tooltip ---------- */
-function showTip(el, title, body, owner){
+function showTip(el, title, body, owner, wide){
   const t = $('#tip');
   t.innerHTML = `<b class="tt">${title}</b>${body}`;
+  t.classList.toggle('wide', !!wide);
   t.classList.add('on');
   V.tipOwner = owner || 'x';
   const r = el.getBoundingClientRect();
@@ -3064,8 +3076,18 @@ function dieTipHtml(k){
 }
 function wireGlossary(){
   const findDie = e => e.target && e.target.closest && e.target.closest('[data-dk]');
+  const findCmp = e => e.target && e.target.closest && e.target.closest('[data-cmp]');
   const find = e => e.target && e.target.closest && e.target.closest('.gl[data-g]');
+  const showCmp = el => {
+    const it = ITEM(el.dataset.cmp);
+    const html = cmpHtml(el.dataset.cmp);
+    if(!html) return false;
+    showTip(el, it.ic + ' ' + it.nm, html, 'gloss', true);
+    return true;
+  };
   document.addEventListener('mouseover', e => {
+    const c = findCmp(e);
+    if(c && !find(e) && !findDie(e)){ if(showCmp(c)) return; }
     const dk = findDie(e);
     if(dk && DICE[dk.dataset.dk]){
       showTip(dk, DICE[dk.dataset.dk].ic + ' ' + DICE[dk.dataset.dk].nm + ' die', dieTipHtml(dk.dataset.dk), 'gloss');
@@ -3075,9 +3097,17 @@ function wireGlossary(){
     const g = GLOSSARY[el.dataset.g]; if(!g) return;
     showTip(el, g.ic + ' ' + g.nm, g.tx, 'gloss');
   });
-  document.addEventListener('mouseout', e => { if(find(e) || findDie(e)) hideTip('gloss'); });
+  document.addEventListener('mouseout', e => { if(find(e) || findDie(e) || findCmp(e)) hideTip('gloss'); });
   // touch: a tap explains the term, unless it sits inside a button that does something else
   document.addEventListener('click', e => {
+    const c = findCmp(e);
+    if(c && !e.target.closest('button') && !find(e) && !findDie(e)){
+      if(showCmp(c)){
+        clearTimeout(V.tipTimer);
+        V.tipTimer = setTimeout(() => hideTip('gloss'), 6000);
+        return;
+      }
+    }
     const dk = findDie(e);
     if(dk && DICE[dk.dataset.dk] && !dk.hasAttribute('data-die')){
       showTip(dk, DICE[dk.dataset.dk].ic + ' ' + DICE[dk.dataset.dk].nm + ' die', dieTipHtml(dk.dataset.dk), 'gloss');
@@ -3596,8 +3626,95 @@ function unequip(slot){
   S.hero.hp = Math.min(S.hero.hp, D().maxHp);
   openInventory(); save(); render();
 }
-function itemCard(it, right){
-  return `<div class="item">
+
+/* =========================================================================
+   GEAR COMPARISON
+   Hovering a piece of gear works out what your character sheet would
+   actually look like wearing it. It runs the real derived-stat function
+   with the item swapped in, so dice, reforges and surges are all counted —
+   not a hand-written guess at what each item does.
+   ========================================================================= */
+const CMPROWS = [
+  ['atk',    '⚔ Attack'],        ['arm',    '🛡 Armor'],
+  ['ward',   '🧿 Prevented/round'],['maxHp',  '❤️ Max health'],
+  ['rrTotal','🎲 Rerolls/round'], ['maxEn',  '⚡ Max energy'],
+  ['mig',    '💪 Might'],         ['agi',    '🌀 Agility'],
+  ['wit',    '📖 Wits'],          ['spi',    '✨ Spirit'],
+  ['move',   '🧭 Travel dice'],   ['scout',  '🔭 Reveal rings'],
+  ['test',   '📜 Skill tests'],   ['regen',  '⚕️ Healing at dawn'],
+  ['gold',   '🪙 Gold found'],    ['haggle', '🏷️ Shop discount'],
+  ['zeal',   '🔥 Attack when hurt'],
+];
+const PCT = {gold:1, haggle:1};
+
+function defaultSlotFor(it){
+  const g = S.hero.gear;
+  if(it.slot !== 'trinket') return it.slot;
+  if(!g.trinket1) return 'trinket1';
+  if(!g.trinket2) return 'trinket2';
+  return 'trinket1';
+}
+/* derived stats as they would be with `id` worn in `slot` */
+function statsWearing(id, slot){
+  const h = S.hero;
+  const saved = Object.assign({}, h.gear);
+  h.gear[slot] = id;
+  let after;
+  try{ after = D(); }
+  finally{ h.gear = saved; }
+  return after;
+}
+function poolDiff(before, after){
+  const count = pool => pool.reduce((m, k) => (m[k] = (m[k]||0)+1, m), {});
+  const a = count(before.pool), b = count(after.pool);
+  const out = [];
+  for(const k of new Set(Object.keys(a).concat(Object.keys(b)))){
+    const d = (b[k]||0) - (a[k]||0);
+    if(d) out.push(`<span style="color:${d>0?'var(--green)':'var(--red)'}">${d>0?'+':''}${d} ${DICE[k].nm}</span>`);
+  }
+  return out;
+}
+function cmpHtml(id){
+  const it = ITEM(id);
+  if(!it || it.slot === 'use') return null;
+  const slot = defaultSlotFor(it);
+  const replaced = S.hero.gear[slot] && ITEM(S.hero.gear[slot]);
+  if(replaced && replaced.id === it.id) return null;      // already wearing this one
+  const before = D(), after = statsWearing(id, slot);
+
+  const rows = [];
+  for(const [k, label] of CMPROWS){
+    const d = (after[k] || 0) - (before[k] || 0);
+    if(!d) continue;
+    const good = d > 0;
+    rows.push(`<div class="cmprow"><span>${label}</span>
+      <b style="color:${good ? 'var(--green)' : 'var(--red)'}">${good ? '+' : ''}${d}${PCT[k] ? '%' : ''}</b></div>`);
+  }
+  const dice = poolDiff(before, after);
+  if(dice.length) rows.push(`<div class="cmprow"><span>🎲 Dice pool</span><b>${dice.join(', ')}</b></div>`);
+
+  const gained = after.surge.filter(x => !before.surge.includes(x));
+  const lost   = before.surge.filter(x => !after.surge.includes(x));
+  if(gained.length || lost.length){
+    const bits = gained.map(x => `<span style="color:var(--green)">+${SURGES[x].nm}</span>`)
+      .concat(lost.map(x => `<span style="color:var(--red)">−${SURGES[x].nm}</span>`));
+    rows.push(`<div class="cmprow"><span>✦ Surge options</span><b>${bits.join(', ')}</b></div>`);
+  }
+
+  const slotLabel = slot === 'trinket1' ? 'Trinket I' : slot === 'trinket2' ? 'Trinket II' : SLOTNM[slot];
+  const head = replaced
+    ? `<div class="cmphead">Replaces <b>${replaced.ic} ${esc(replaced.nm)}</b> in ${slotLabel}</div>`
+    : `<div class="cmphead">Goes into your empty ${slotLabel}</div>`;
+  const both = it.slot === 'trinket' && S.hero.gear.trinket1 && S.hero.gear.trinket2;
+  const alt = both ? `<div class="mini faint" style="margin-top:6px">You will be asked which trinket to swap — this compares against ${esc(ITEM(S.hero.gear.trinket1).nm)}.</div>` : '';
+
+  return head + (rows.length
+      ? `<div class="cmpgrid">${rows.join('')}</div>`
+      : `<div class="tiny muted" style="margin-top:4px">No change to any of your numbers.</div>`) + alt;
+}
+
+function itemCard(it, right, cmp){
+  return `<div class="item${cmp && it.slot !== 'use' ? ' cmpable' : ''}"${cmp && it.slot !== 'use' ? ` data-cmp="${it.id}"` : ''}>
     <div class="ic">${it.ic}</div>
     <div style="flex:1;min-width:0">
       <div class="nm" style="color:${RANKCOL[it.rank||1]}">${esc(it.nm)}</div>
@@ -3619,7 +3736,7 @@ function openInventory(){
   const bag = h.bag.map(id => ITEM(id)).filter(Boolean);
   const wear = bag.map((it,i) => it.slot !== 'use' ? itemCard(it, `<div class="col" style="gap:4px">
       <button class="btn sm" data-eq="${i}">Equip</button>
-      <button class="btn sm ghost" data-sell="${i}">Sell</button></div>`) : '').join('');
+      <button class="btn sm ghost" data-sell="${i}">Sell</button></div>`, true) : '').join('');
   const use = bag.map((it,i) => it.slot === 'use' ? itemCard(it, `<div class="col" style="gap:4px">
       <button class="btn sm good" data-use="${i}">Use</button>
       <button class="btn sm ghost" data-sell="${i}">Sell</button></div>`) : '').join('');
@@ -3798,7 +3915,7 @@ function openShop(o){
     const p = Math.round(priceOf(it) * (o.mark || 1));
     return itemCard(it, `<div class="col" style="gap:4px;align-items:flex-end">
       <div class="tiny" style="color:var(--gold);font-weight:700">${p}g</div>
-      <button class="btn sm ${S.hero.gold >= p ? 'primary' : ''}" data-buy="${i}" ${S.hero.gold < p ? 'disabled' : ''}>Buy</button></div>`);
+      <button class="btn sm ${S.hero.gold >= p ? 'primary' : ''}" data-buy="${i}" ${S.hero.gold < p ? 'disabled' : ''}>Buy</button></div>`, true);
   }).join('') : '<div class="tiny faint">Sold out.</div>';
   modal({
     ic:'🏪', h:o.nm || 'Market', wide:true, sub:`${S.hero.gold} gold`,
@@ -3823,7 +3940,7 @@ function openSell(back){
     ic:'💰', h:'Sell', wide:true, sub:`${S.hero.gold} gold`,
     b: bag.length ? bag.map((it,i) => itemCard(it, `<div class="col" style="gap:4px;align-items:flex-end">
         <div class="tiny" style="color:var(--gold);font-weight:700">${Math.round(it.cost*0.45)}g</div>
-        <button class="btn sm" data-s="${i}">Sell</button></div>`)).join('') : '<div class="tiny faint">Your pack is empty.</div>',
+        <button class="btn sm" data-s="${i}">Sell</button></div>`, true)).join('') : '<div class="tiny faint">Your pack is empty.</div>',
     f:[{lb:'Done', cls:'primary', fn:()=>{ closeModal(); if(back) back(); else { save(); render(); } }}],
   });
   $$('#scrim [data-s]').forEach(b => b.onclick = () => {
