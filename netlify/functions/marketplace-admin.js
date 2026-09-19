@@ -18,11 +18,15 @@ const CORS = {
 };
 const j = (s, o) => ({ statusCode: s, headers: CORS, body: JSON.stringify(o) });
 
+const { authorizeAdmin } = require('./_lib/admin-auth');
+
 exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return j(200, {});
   if (event.httpMethod !== 'POST') return j(405, { error: 'POST only' });
   let b; try { b = JSON.parse(event.body || '{}'); } catch (e) { return j(400, { error: 'Bad JSON' }); }
-  if (!process.env.BACKFILL_SECRET || b.secret !== process.env.BACKFILL_SECRET) return j(401, { error: 'Unauthorized' });
+  // H9: an admin session OR the shared secret, constant-time, rate limited, logged.
+  const auth = await authorizeAdmin(event, { name: 'marketplace-admin' });
+  if (!auth.ok) return j(auth.status, { error: auth.error });
 
   try {
     const sellers = await sb('marketplace_sellers?select=id,slug,display_name,status&order=created_at.asc');

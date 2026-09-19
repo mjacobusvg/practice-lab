@@ -25,6 +25,8 @@ const TIME_BUDGET_MS = 820 * 1000; // stop before the 900s background limit
 // Platform space slugs NOT synced from Circle (sims, paid toolkit, nav, tool).
 const EXCLUDE_SLUGS = ['billing-sim', 'practice-sim', 'therapy-sim', 'toolkit', 'your-platform'];
 
+const { authorizeAdmin } = require('./_lib/admin-auth');
+
 exports.handler = async function (event) {
   const start = Date.now();
   const CORS = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type', 'Content-Type': 'application/json' };
@@ -35,8 +37,10 @@ exports.handler = async function (event) {
     try { opts = JSON.parse(event.body || '{}'); } catch (e) {
       return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Invalid JSON' }) };
     }
-    if (opts.secret !== process.env.BACKFILL_SECRET) {
-      return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Unauthorized' }) };
+    // H9: admin session OR shared secret, constant-time, rate limited, logged.
+    const admin = await authorizeAdmin(event, { name: 'sync-forum-background' });
+    if (!admin.ok) {
+      return { statusCode: admin.status, headers: CORS, body: JSON.stringify({ error: admin.error }) };
     }
   }
 

@@ -43,6 +43,8 @@ function sb(path, init) {
   });
 }
 
+const { authorizeAdmin } = require('./_lib/admin-auth');
+
 exports.handler = async function (event) {
   // Netlify invokes scheduled functions as an internal POST carrying a body with
   // `next_run` (not a `secret`). So we must NOT demand a secret for a bare POST,
@@ -53,8 +55,13 @@ exports.handler = async function (event) {
   {
     let body = {};
     try { body = JSON.parse((event && event.body) || '{}'); } catch (e) {}
-    if (body.secret && body.secret !== process.env.BACKFILL_SECRET) {
-      return { statusCode: 403, body: JSON.stringify({ error: 'Invalid secret' }) };
+    // H9: only a PRESENTED secret is checked here, as before — a scheduled run
+    // sends none. Now constant-time, rate limited and logged.
+    if (body.secret) {
+      const admin = await authorizeAdmin(event, { name: 'migrate-batch-scheduled' });
+      if (!admin.ok) {
+        return { statusCode: admin.status, body: JSON.stringify({ error: admin.error }) };
+      }
     }
   }
 

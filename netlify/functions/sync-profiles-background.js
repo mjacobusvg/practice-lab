@@ -15,6 +15,8 @@
 const TIME_BUDGET_MS = 800 * 1000;
 const CIRCLE_FIELDS = ['headline', 'bio', 'location', 'website', 'linkedin_url'];
 
+const { authorizeAdmin } = require('./_lib/admin-auth');
+
 exports.handler = async function (event) {
   const started = Date.now();
   if (event.httpMethod !== 'POST') return { statusCode: 405, body: 'Method not allowed' };
@@ -22,8 +24,10 @@ exports.handler = async function (event) {
   let body;
   try { body = JSON.parse(event.body || '{}'); }
   catch (e) { return { statusCode: 400, body: 'Invalid JSON' }; }
-  if (!process.env.BACKFILL_SECRET || body.secret !== process.env.BACKFILL_SECRET) {
-    return { statusCode: 403, body: 'Forbidden' };
+  // H9: admin session OR shared secret, constant-time, rate limited, logged.
+  const admin = await authorizeAdmin(event, { name: 'sync-profiles-background' });
+  if (!admin.ok) {
+    return { statusCode: admin.status, body: 'Forbidden' };
   }
 
   const SUPABASE_URL = process.env.SUPABASE_URL;

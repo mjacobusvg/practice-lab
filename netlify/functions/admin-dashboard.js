@@ -2,6 +2,8 @@
 // Serves aggregated data for the Think Beyond admin dashboard
 // Also handles referral attribution fetch and update actions
 
+const { authorizeAdmin } = require('./_lib/admin-auth');
+
 exports.handler = async function(event, context) {
   const CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -18,8 +20,10 @@ exports.handler = async function(event, context) {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Invalid JSON' }) };
   }
 
-  if (body.secret !== process.env.BACKFILL_SECRET) {
-    return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'Invalid secret' }) };
+  // H9: an admin session OR the shared secret, constant-time, rate limited, logged.
+  const auth = await authorizeAdmin(event, { name: 'admin-dashboard' });
+  if (!auth.ok) {
+    return { statusCode: auth.status, headers: CORS, body: JSON.stringify({ error: auth.error }) };
   }
 
   const supabaseUrl = process.env.SUPABASE_URL;

@@ -166,6 +166,56 @@ Tokens minted before this change carry no `sid` and are handled: readers fall ba
 existing 30-day tokens stay valid until their original expiry, then converge to 24h on their next
 refresh. Nobody is signed out by the deploy.
 
+### 5b. Admin endpoints (audit H9, fixed 2026-09-19)
+
+One static string, `BACKFILL_SECRET`, gated roughly twenty capabilities: the full member roster
+with Stripe customer IDs, broadcasting to the entire list, subscription migration, embedding
+backfills, the marketplace funnel. One secret for all of it, no way to grant one without granting
+every one. It was compared with `!==` in **23 separate handlers**, each with its own idea of what a
+refusal looks like. No rate limit, no lockout, and no record of a failed attempt anywhere — while
+every one of those endpoints answers `Access-Control-Allow-Origin: *`, so it could be ground down
+from any browser tab and nobody would ever know it had been tried.
+
+All 23 now go through **`_lib/admin-auth.js`**, which accepts two things, strongest first:
+
+1. **An admin session** — a signed session token plus a **live `accounts.is_admin` read** with the
+   service key. `is_admin` is not in the token and must never be put there; it would go stale
+   exactly like `tier` did in H8.
+2. **A shared secret**, compared in constant time, for machine-to-machine calls and the
+   hand-triggered maintenance pages.
+
+Behaviour worth knowing:
+
+- A **valid session that is not an admin** is refused `403` and does **not** fall through to try the
+  secret. Someone signed in as an ordinary member poking an admin endpoint gets recorded.
+- Failures are written to **`admin_auth_failures`** (never the attempted secret — only the endpoint,
+  the IP and the reason). Past **8 failures from one IP in 15 minutes**, the secret path returns
+  `429` *even for the correct secret*. An admin session is unaffected, so grinding cannot lock the
+  owner out of his own tooling.
+- A caller with **no usable IP is not exempt** from that limit; unknown callers share one bucket.
+  Exempting them would hand anyone an opt-out by stripping a header.
+- `timingSafeCompare` hashes both sides to 32 bytes before comparing, because
+  `crypto.timingSafeEqual` **throws** on a length mismatch — which would be both an oracle and a
+  500 on every wrong secret.
+
+**This does not solve "one key opens everything."** Every caller that gets through is still fully
+privileged. Splitting those capabilities into separate grants is a decision about who should hold
+what, not something to invent inside an auth helper. What H9 bought is: the secret is no longer the
+only key, it is compared safely, it is rate limited, and failures are visible.
+
+It also killed a quieter problem. **Five files carried their own hardcoded `ADMIN_EMAILS` list and
+they disagreed** — `template-download.js` had three addresses, the rest had one — while
+`accounts.is_admin` was the real source of truth all along (exactly one row: `michael@thinkbeyondpsych.com`).
+`broadcast-send.js` and `extract-templates-background.js` now read the database instead, and their
+dead copies of the list are gone. **The three that remain** (`template-download.js`,
+`schedule-post.js`, `template-admin.js`, `post-members-extra.js`) were left alone deliberately:
+moving them to `is_admin` would silently *remove* access that `template-download.js` currently
+grants to `michael.vangelder@gmail.com`, and changing who is an admin is not a refactor.
+
+The `trigger-*.html` maintenance pages are unchanged and still work — they post `{ secret }`, which
+is still accepted. They could now use an admin session instead, which would let the shared secret be
+retired for human use entirely; that is the natural next step and is not done yet.
+
 ---
 
 ## 6. Compliance: auth is not a PHI path

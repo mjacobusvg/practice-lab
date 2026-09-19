@@ -205,6 +205,8 @@ async function sendWelcomeNow(account) {
 exports.sendWelcomeNow = sendWelcomeNow;
 exports.STEPS = STEPS;
 
+const { authorizeAdmin } = require('./_lib/admin-auth');
+
 exports.handler = async function (event) {
   const headers = { 'Content-Type': 'application/json' };
   const URL = process.env.SUPABASE_URL, KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -212,8 +214,12 @@ exports.handler = async function (event) {
 
   let p; try { p = JSON.parse(event.body || '{}'); } catch (e) { p = {}; }
   const scheduled = !!(p && p.next_run);
-  const secretOk = process.env.BACKFILL_SECRET && p.secret === process.env.BACKFILL_SECRET;
-  if (!scheduled && !secretOk) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Not authorized' }) };
+  // H9: a manual run now needs an admin session or a constant-time secret check,
+  // rate limited and logged. The scheduled path is unchanged.
+  if (!scheduled) {
+    const admin = await authorizeAdmin(event, { name: 'onboarding-drip' });
+    if (!admin.ok) return { statusCode: admin.status, headers, body: JSON.stringify({ ok: false, error: admin.error }) };
+  }
 
   const { sb, ses } = makeClients();
   if (!sb) return { statusCode: 500, headers, body: JSON.stringify({ ok: false, error: 'Missing env' }) };

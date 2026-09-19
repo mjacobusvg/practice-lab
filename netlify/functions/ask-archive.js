@@ -36,6 +36,8 @@ async function sendNotification(subject, html) {
   }
 }
 
+const { authorizeAdmin } = require('./_lib/admin-auth');
+
 exports.handler = async function(event, context) {
   const CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -57,8 +59,10 @@ exports.handler = async function(event, context) {
 
   // Handle unanswered questions dashboard request
   if (body.action === 'get_unanswered') {
-    if (body.secret !== process.env.BACKFILL_SECRET) {
-      return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'Invalid secret' }) };
+    // H9: admin session OR shared secret, constant-time, rate limited, logged.
+    const admin = await authorizeAdmin(event, { name: 'ask-archive' });
+    if (!admin.ok) {
+      return { statusCode: admin.status, headers: CORS, body: JSON.stringify({ error: admin.error }) };
     }
     try {
       const res = await fetch(`${supabaseUrl}/rest/v1/unanswered_questions?select=question,member_requested,created_at&order=created_at.desc&limit=500`, {
@@ -73,8 +77,10 @@ exports.handler = async function(event, context) {
 
   // Handle template list
   if (body.action === 'list_templates') {
-    if (body.secret !== process.env.BACKFILL_SECRET) {
-      return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'Invalid secret' }) };
+    // H9: admin session OR shared secret, constant-time, rate limited, logged.
+    const admin = await authorizeAdmin(event, { name: 'ask-archive' });
+    if (!admin.ok) {
+      return { statusCode: admin.status, headers: CORS, body: JSON.stringify({ error: admin.error }) };
     }
     try {
       const res = await fetch(`${supabaseUrl}/rest/v1/templates?select=*&order=approved.desc,type.asc,title.asc&limit=500`, {
@@ -89,8 +95,10 @@ exports.handler = async function(event, context) {
 
   // Handle template file upload
   if (body.action === 'upload_template_file') {
-    if (body.secret !== process.env.BACKFILL_SECRET) {
-      return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'Invalid secret' }) };
+    // H9: admin session OR shared secret, constant-time, rate limited, logged.
+    const admin = await authorizeAdmin(event, { name: 'ask-archive' });
+    if (!admin.ok) {
+      return { statusCode: admin.status, headers: CORS, body: JSON.stringify({ error: admin.error }) };
     }
     try {
       const { id, filename, contentType, data } = body;
@@ -138,8 +146,10 @@ exports.handler = async function(event, context) {
 
   // Handle template update
   if (body.action === 'update_template') {
-    if (body.secret !== process.env.BACKFILL_SECRET) {
-      return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'Invalid secret' }) };
+    // H9: admin session OR shared secret, constant-time, rate limited, logged.
+    const admin = await authorizeAdmin(event, { name: 'ask-archive' });
+    if (!admin.ok) {
+      return { statusCode: admin.status, headers: CORS, body: JSON.stringify({ error: admin.error }) };
     }
     try {
       await fetch(`${supabaseUrl}/rest/v1/templates?id=eq.${body.id}`, {
@@ -160,8 +170,10 @@ exports.handler = async function(event, context) {
 
   // Handle delete single unanswered question
   if (body.action === 'delete_unanswered') {
-    if (body.secret !== process.env.BACKFILL_SECRET) {
-      return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'Invalid secret' }) };
+    // H9: admin session OR shared secret, constant-time, rate limited, logged.
+    const admin = await authorizeAdmin(event, { name: 'ask-archive' });
+    if (!admin.ok) {
+      return { statusCode: admin.status, headers: CORS, body: JSON.stringify({ error: admin.error }) };
     }
     try {
       await fetch(`${supabaseUrl}/rest/v1/unanswered_questions?question=eq.${encodeURIComponent(body.question)}`, {
@@ -176,8 +188,10 @@ exports.handler = async function(event, context) {
 
   // Handle bulk delete unanswered questions
   if (body.action === 'delete_unanswered_bulk') {
-    if (body.secret !== process.env.BACKFILL_SECRET) {
-      return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'Invalid secret' }) };
+    // H9: admin session OR shared secret, constant-time, rate limited, logged.
+    const admin = await authorizeAdmin(event, { name: 'ask-archive' });
+    if (!admin.ok) {
+      return { statusCode: admin.status, headers: CORS, body: JSON.stringify({ error: admin.error }) };
     }
     try {
       const questions = body.questions || [];
@@ -207,8 +221,10 @@ exports.handler = async function(event, context) {
 
   // Handle rechunk trigger — fires Inngest event to rechunk all long posts
   if (body.action === 'rechunk') {
-    if (body.secret !== process.env.BACKFILL_SECRET) {
-      return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'Invalid secret' }) };
+    // H9: admin session OR shared secret, constant-time, rate limited, logged.
+    const admin = await authorizeAdmin(event, { name: 'ask-archive' });
+    if (!admin.ok) {
+      return { statusCode: admin.status, headers: CORS, body: JSON.stringify({ error: admin.error }) };
     }
     try {
       const { Inngest } = await import('inngest');

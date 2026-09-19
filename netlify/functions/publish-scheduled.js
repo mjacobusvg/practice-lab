@@ -12,6 +12,8 @@ const { notifyNewPost, notifyAuthorPostPublished } = require('./_lib/notify');
 
 const MICHAEL_ACCOUNT_ID = '00000000-0000-0000-0000-000000000001';
 
+const { authorizeAdmin } = require('./_lib/admin-auth');
+
 exports.handler = async function (event) {
   const headers = { 'Content-Type': 'application/json' };
   const URL = process.env.SUPABASE_URL, KEY = process.env.SUPABASE_SERVICE_KEY;
@@ -29,10 +31,19 @@ exports.handler = async function (event) {
   // Allow the Netlify scheduler (body carries next_run) or a manual secret.
   let p; try { p = JSON.parse(event.body || '{}'); } catch (e) { p = {}; }
   const scheduled = !!(p && p.next_run);
-  const secret = (event.headers['x-publish-secret'] || event.headers['X-Publish-Secret'] || '').trim();
-  const secretOk = (process.env.PUBLISH_SECRET && secret === process.env.PUBLISH_SECRET) ||
-    (process.env.BACKFILL_SECRET && p.secret === process.env.BACKFILL_SECRET);
-  if (!scheduled && !secretOk) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Not authorized' }) };
+  // H9. Same two secrets as before (its own PUBLISH_SECRET, or BACKFILL_SECRET),
+  // now compared in constant time, rate limited and logged. Header first, then body,
+  // which is where each one was already accepted. Scheduled path unchanged.
+  if (!scheduled) {
+    const secret = (event.headers['x-publish-secret'] || event.headers['X-Publish-Secret'] || '').trim()
+      || String(p.secret || '').trim();
+    const admin = await authorizeAdmin(event, {
+      name: 'publish-scheduled',
+      provided: secret,
+      secrets: [process.env.PUBLISH_SECRET, process.env.BACKFILL_SECRET]
+    });
+    if (!admin.ok) return { statusCode: admin.status, headers, body: JSON.stringify({ ok: false, error: admin.error }) };
+  }
 
   try {
     const nowIso = new Date().toISOString();

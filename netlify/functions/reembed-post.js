@@ -2,6 +2,8 @@
 // Re-embeds a single Circle post (and its comments) in Supabase
 // POST with { "secret": "your-backfill-secret", "post_id": 23781508 }
 
+const { authorizeAdmin } = require('./_lib/admin-auth');
+
 exports.handler = async function(event, context) {
   const CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -17,8 +19,10 @@ exports.handler = async function(event, context) {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Invalid JSON' }) };
   }
 
-  if (body.secret !== process.env.BACKFILL_SECRET) {
-    return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Unauthorized' }) };
+  // H9: admin session OR shared secret, constant-time, rate limited, logged.
+  const admin = await authorizeAdmin(event, { name: 'reembed-post' });
+  if (!admin.ok) {
+    return { statusCode: admin.status, headers: CORS, body: JSON.stringify({ error: admin.error }) };
   }
 
   const postId = body.post_id;

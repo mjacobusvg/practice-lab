@@ -2,6 +2,8 @@
 // Scans posts table for template/cheatsheet candidates and upserts into templates table
 // Called from template-admin.html with backfill secret
 
+const { authorizeAdmin } = require('./_lib/admin-auth');
+
 exports.handler = async function(event, context) {
   const CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -18,8 +20,10 @@ exports.handler = async function(event, context) {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Invalid JSON' }) };
   }
 
-  if (body.secret !== process.env.BACKFILL_SECRET) {
-    return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'Invalid secret' }) };
+  // H9: admin session OR shared secret, constant-time, rate limited, logged.
+  const admin = await authorizeAdmin(event, { name: 'sync-templates' });
+  if (!admin.ok) {
+    return { statusCode: admin.status, headers: CORS, body: JSON.stringify({ error: admin.error }) };
   }
 
   const supabaseUrl = process.env.SUPABASE_URL;

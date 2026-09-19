@@ -22,6 +22,8 @@
 
 const { migrateOne } = require('./_lib/migrate-core');
 
+const { authorizeAdmin } = require('./_lib/admin-auth');
+
 exports.handler = async function (event) {
   const CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -36,8 +38,10 @@ exports.handler = async function (event) {
   try { body = JSON.parse(event.body || '{}'); } catch (e) {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Invalid JSON' }) };
   }
-  if (body.secret !== process.env.BACKFILL_SECRET) {
-    return { statusCode: 403, headers: CORS, body: JSON.stringify({ error: 'Invalid secret' }) };
+  // H9: an admin session OR the shared secret, constant-time, rate limited, logged.
+  const auth = await authorizeAdmin(event, { name: 'migrate-subscription' });
+  if (!auth.ok) {
+    return { statusCode: auth.status, headers: CORS, body: JSON.stringify({ error: auth.error }) };
   }
   if (!body.subscription_id) {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'subscription_id required (migrate one at a time)' }) };

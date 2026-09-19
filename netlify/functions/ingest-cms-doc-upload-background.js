@@ -2,6 +2,8 @@
 // Background function (up to 15 minutes) — accepts a single PDF as base64,
 // extracts text via Claude, embeds via OpenAI, upserts to Supabase posts table.
 
+const { authorizeAdmin } = require('./_lib/admin-auth');
+
 exports.handler = async function(event, context) {
   const CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -17,8 +19,10 @@ exports.handler = async function(event, context) {
     return { statusCode: 400, headers: CORS, body: JSON.stringify({ error: 'Invalid JSON' }) };
   }
 
-  if (body.secret !== process.env.BACKFILL_SECRET) {
-    return { statusCode: 401, headers: CORS, body: JSON.stringify({ error: 'Unauthorized' }) };
+  // H9: admin session OR shared secret, constant-time, rate limited, logged.
+  const admin = await authorizeAdmin(event, { name: 'ingest-cms-doc-upload' });
+  if (!admin.ok) {
+    return { statusCode: admin.status, headers: CORS, body: JSON.stringify({ error: admin.error }) };
   }
 
   const { id, title, pdf } = body;

@@ -18,12 +18,11 @@
 //
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, SES_* / AWS_*, SESSION_SIGNING_SECRET
 
-const { verifyToken } = require('./_lib/session');
+const { authorizeAdmin } = require('./_lib/admin-auth');
 const { toRichHtml, esc } = require('./_lib/richtext');
 const { mintPrefsToken } = require('./_lib/prefs-token');
 const { mintSigninToken } = require('./_lib/signin-token');
 
-const ADMIN_EMAILS = ['michael@thinkbeyondpsych.com'];
 const SITE = 'https://thinkbeyondpractice.com';
 
 // Exclude only DELIBERATE test aliases (plus-addressed +test). @slmails.com is a legitimate
@@ -196,16 +195,17 @@ exports.handler = async function (event) {
   const auth = { apikey: KEY, Authorization: 'Bearer ' + KEY };
 
   let p; try { p = JSON.parse(event.body || '{}'); } catch (e) { return { statusCode: 400, headers, body: JSON.stringify({ ok: false, error: 'Bad JSON' }) }; }
-  const authHeader = event.headers.authorization || event.headers.Authorization || '';
-  const token = (p.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
-  const session = verifyToken(token);
-  const adminEmail = String(session.claims && session.claims.email || '').toLowerCase();
-  const isAdmin = session.valid && ADMIN_EMAILS.indexOf(adminEmail) !== -1;
-  // The scheduled-broadcast cron calls this endpoint to send a queued broadcast.
-  const internalOk = p.internal_secret && p.internal_secret === process.env.BACKFILL_SECRET;
-  if (!isAdmin && !internalOk) {
-    return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Admin only' }) };
+  // H9. This endpoint emails the entire member list, so it was the worst thing behind
+  // the shared secret. Two changes: the secret is compared in constant time, rate
+  // limited and logged; and "is this an admin" now comes from a live accounts read
+  // rather than the hardcoded ADMIN_EMAILS list, which had drifted between files.
+  // The scheduled-broadcast cron still calls in with internal_secret.
+  const admin = await authorizeAdmin(event, { name: 'broadcast-send' });
+  if (!admin.ok) {
+    return { statusCode: admin.status, headers, body: JSON.stringify({ ok: false, error: admin.error }) };
   }
+  // Attribution for sent_by. A cron-sent broadcast has no person behind it.
+  const adminEmail = admin.email || '';
 
   // Manage the scheduled-broadcast queue (admin UI).
   if (p.action === 'list_scheduled') {

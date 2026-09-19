@@ -20,11 +20,15 @@
 
 const PLATFORM = 'https://thinkbeyondpractice.com/platform';
 
+const { authorizeAdmin } = require('./_lib/admin-auth');
+
 exports.handler = async function (event) {
   if (event.httpMethod && event.httpMethod !== 'POST') return { statusCode: 405, body: 'POST only' };
   let body;
   try { body = JSON.parse(event.body || '{}'); } catch (e) { return { statusCode: 400, body: 'Invalid JSON' }; }
-  if (!process.env.BACKFILL_SECRET || body.secret !== process.env.BACKFILL_SECRET) return { statusCode: 401, body: 'Unauthorized' };
+  // H9: admin session OR shared secret, constant-time, rate limited, logged.
+  const admin = await authorizeAdmin(event, { name: 'embed-post-background' });
+  if (!admin.ok) return { statusCode: admin.status, body: 'Unauthorized' };
 
   const URL = process.env.SUPABASE_URL, KEY = process.env.SUPABASE_SERVICE_KEY, OA = process.env.OPENAI_API_KEY;
   if (!URL || !KEY || !OA) return { statusCode: 500, body: 'Missing env' };

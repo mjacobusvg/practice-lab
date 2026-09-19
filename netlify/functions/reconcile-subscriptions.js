@@ -52,6 +52,8 @@ function money(cents, interval) {
 }
 function day(iso) { return iso ? String(iso).slice(0, 10) : '—'; }
 
+const { authorizeAdmin } = require('./_lib/admin-auth');
+
 exports.handler = async function (event) {
   const headers = { 'Content-Type': 'application/json' };
 
@@ -65,10 +67,16 @@ exports.handler = async function (event) {
   // Authorize: Netlify scheduler (body has next_run) or the manual secret header.
   let scheduled = false, wantEmail = true;
   try { const b = JSON.parse(event.body || '{}'); if (b && b.next_run) scheduled = true; if (b && b.email === false) wantEmail = false; } catch (e) {}
-  const secret = event.headers && (event.headers['x-reconcile-secret'] || event.headers['X-Reconcile-Secret']);
-  const secretOk = secret && (secret === process.env.RECONCILE_SECRET || secret === process.env.BACKFILL_SECRET);
-  if (!scheduled && !secretOk) {
-    return { statusCode: 403, headers, body: JSON.stringify({ error: 'Forbidden' }) };
+  // H9. Same two secrets on the same header as before, now compared in constant
+  // time, rate limited and logged. Scheduled path unchanged.
+  if (!scheduled) {
+    const secret = (event.headers && (event.headers['x-reconcile-secret'] || event.headers['X-Reconcile-Secret'])) || '';
+    const admin = await authorizeAdmin(event, {
+      name: 'reconcile-subscriptions',
+      provided: String(secret).trim(),
+      secrets: [process.env.RECONCILE_SECRET, process.env.BACKFILL_SECRET]
+    });
+    if (!admin.ok) return { statusCode: admin.status, headers, body: JSON.stringify({ error: admin.error }) };
   }
 
   const stripe = require('stripe')(STRIPE_KEY);

@@ -25,6 +25,8 @@ function extFromContentType(ct) {
   return null;
 }
 
+const { authorizeAdmin } = require('./_lib/admin-auth');
+
 exports.handler = async function (event) {
   const started = Date.now();
 
@@ -36,8 +38,10 @@ exports.handler = async function (event) {
   try { body = JSON.parse(event.body || '{}'); }
   catch (e) { return { statusCode: 400, body: 'Invalid JSON' }; }
 
-  if (!process.env.BACKFILL_SECRET || body.secret !== process.env.BACKFILL_SECRET) {
-    return { statusCode: 403, body: 'Forbidden' };
+  // H9: admin session OR shared secret, constant-time, rate limited, logged.
+  const admin = await authorizeAdmin(event, { name: 'migrate-avatars-background' });
+  if (!admin.ok) {
+    return { statusCode: admin.status, body: 'Forbidden' };
   }
 
   const SUPABASE_URL = process.env.SUPABASE_URL;

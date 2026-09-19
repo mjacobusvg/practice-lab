@@ -19,11 +19,9 @@
 // Env: SUPABASE_URL, SUPABASE_SERVICE_KEY, ANTHROPIC_API_KEY[, EXTRACT_SECRET]
 
 const https = require('https');
-const { verifyToken } = require('./_lib/session');
 const { toRichHtml } = require('./_lib/richtext');
 const { buildTextPdf } = require('./_lib/text-pdf');
 
-const ADMIN_EMAILS = ['michael@thinkbeyondpsych.com'];
 const MODEL = 'claude-sonnet-4-6';
 const BUCKET = 'templates';
 const BATCH_CAP = 80;
@@ -69,6 +67,8 @@ function parseDelimited(text) {
   };
 }
 
+const { authorizeAdmin } = require('./_lib/admin-auth');
+
 exports.handler = async function (event) {
   const headers = { 'Content-Type': 'application/json' };
   const URL = process.env.SUPABASE_URL, KEY = process.env.SUPABASE_SERVICE_KEY, AI = process.env.ANTHROPIC_API_KEY;
@@ -86,14 +86,11 @@ exports.handler = async function (event) {
 
   let p; try { p = JSON.parse(event.body || '{}'); } catch (e) { p = {}; }
 
-  // Authorize: Michael's admin token OR the shared BACKFILL_SECRET (same one the
-  // avatar migration uses), passed in the body from the trigger page.
-  const authHeader = event.headers.authorization || event.headers.Authorization || '';
-  const token = (p.token || authHeader.replace(/^Bearer\s+/i, '')).trim();
-  const session = verifyToken(token);
-  const isAdmin = session.valid && ADMIN_EMAILS.indexOf(String(session.claims.email || '').toLowerCase()) !== -1;
-  const secretOk = process.env.BACKFILL_SECRET && p.secret && p.secret === process.env.BACKFILL_SECRET;
-  if (!isAdmin && !secretOk) return { statusCode: 403, headers, body: JSON.stringify({ ok: false, error: 'Admin only' }) };
+  // H9: an admin session (live accounts.is_admin) OR the shared secret, compared in
+  // constant time, rate limited and logged. This used to check a hardcoded
+  // ADMIN_EMAILS list that had drifted out of step with the other copies of it.
+  const admin = await authorizeAdmin(event, { name: 'extract-templates' });
+  if (!admin.ok) return { statusCode: admin.status, headers, body: JSON.stringify({ ok: false, error: admin.error }) };
 
   const force = !!p.force;
   await log('start (force=' + force + ')');
