@@ -312,8 +312,17 @@ counseling was established *for a specific medication*, across visits, without t
 the prior note, requires per-patient persistence. The Scribe deliberately has none: *"No patient data
 is retained on our servers: notes are processed transiently."* Per-medication counseling state would
 be PHI held between encounters. That is a BAA-and-retention decision (see `BAA-AND-PHI-ROUTING.md`),
-not a feature to slip in. Until it is made, the prior note IS the memory, which is consistent with
-how every other carry-forward in the product works.
+not a feature to slip in.
+
+**DECIDED (Sept 2026): not pursuing it. This is closed, not open.** Per-medication counseling
+memory (*patient X -> bupropion -> counseling established*) is elegant product logic and is not
+worth crossing the no-patient-storage boundary for, because the clinician already pastes the prior
+note on every follow-up and that note carries the standing attestation. The prior note IS the
+longitudinal memory, with no hidden patient database behind it, and that is consistent with how
+every other carry-forward in the product works.
+
+Revisit ONLY if the product acquires per-patient persistence for some other reason that has already
+cleared retention and BAA review. Do not let this feature be the reason that boundary moves.
 
 **The general form, which is why this sits in the architecture doc:** AI must not fabricate
 facts, and it absolutely may carry forward clinician-owned defaults, conventions and
