@@ -216,6 +216,59 @@ The `trigger-*.html` maintenance pages are unchanged and still work — they pos
 is still accepted. They could now use an admin session instead, which would let the shared secret be
 retired for human use entirely; that is the natural next step and is not done yet.
 
+### 5c. One-click sign-in links (audit H10, fixed 2026-09-19)
+
+The CTA in a broadcast used to carry a token that was, in effect, an account-takeover credential
+sitting in marketing email. It was `email + purpose + exp` HMAC'd — **deterministic for a 30-day
+window** (no nonce, so every link minted for one address in that month was the same string),
+**reusable** on every one of those days, and **revocable by nothing**. Presenting it minted a fresh
+Supabase magic link and logged the bearer straight in.
+
+A URL in email does not stay in the email. It ends up in forwarded mail, corporate mail-scanning
+appliances, browser history, and anything that logs query strings.
+
+The old comment in `_lib/signin-token.js` called this "acceptable for free-tier sign-in". That was
+wrong on its own terms: the token is minted per **email**, not per tier, and `_lib/paid-welcome.js`
+sends one to every new **paid** member — whose account holds the Vault (NPI, license numbers) and
+the PHI tools. Minters: `paid-welcome.js`, `onboarding-drip.js`, `scribe-activation-nudge.js`,
+`broadcast-send.js`.
+
+Three changes, which only work together:
+
+| | |
+|---|---|
+| **TTL** | 30 days → **7** |
+| **`jti`** | a random 16 bytes per token, so redemption can be recorded at all |
+| **Confirmation** | a GET renders a page; the sign-in happens on the **POST** from it |
+
+**Why the confirmation step is load-bearing, and not just UX.** Links in email are fetched by
+things that are not the member — Outlook Safe Links, mail scanners, prefetchers. If the GET spent
+the token, every one of those would burn it before the human clicked, and single-use would be
+unshippable. Scanners fetch; they do not submit forms. It also means a forwarded email can no
+longer silently authenticate the wrong person: the page names the account
+(`mic•••@thinkbeyondpsych.com` — enough to recognise your own, not a fresh disclosure).
+
+**Redemption fails closed.** The `jti` goes into `signin_token_uses`; the primary key makes a second
+redemption a 409, which lands on the login gate. If that insert fails for any other reason, the
+sign-in is also refused — a failed write must never quietly become an unlimited-use token.
+
+**Do not prune `signin_token_uses` faster than the token TTL.** Those rows *are* the record of a
+spend; deleting one makes a spent token live again.
+
+**In-flight links still work.** Tokens minted before this have no `jti` and a 30-day `exp`; they are
+still honoured, but `effectiveExp()` recomputes their expiry as 7 days from mint, so a link sent
+yesterday works and one sent three weeks ago does not. They cannot be single-use enforced — there is
+no `jti` to record — which is exactly why they should not get another month.
+
+Not changed, noted deliberately: **`_lib/prefs-token.js` mints an unexpiring token.** It toggles
+`notify_email_*` flags and nothing else, so that is defensible — but it is the same class of thing
+and belongs in the risk register rather than in a comment nobody re-reads.
+
+Still available if you want it stricter: refuse one-click sign-in for `forum`/`full` accounts
+entirely and make them log in normally. That was in the audit's remediation. It is not done, because
+it would break `paid-welcome.js`, whose whole job is landing a new paid member in the Scribe — and
+single-use plus confirmation already removes most of what made this dangerous.
+
 ---
 
 ## 6. Compliance: auth is not a PHI path
