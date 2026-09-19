@@ -595,7 +595,7 @@ const TRAITS = {
   shelled:   {ic:'🐚', name:'Shelled',      v:[0],
               desc:()=>`Takes no health damage at all while it still has shield. Strip the shell first.`},
   regrowing: {ic:'🪴', name:'Regrowing',    v:[4,6,8],
-              desc:v=>`Puts back up to ${v} of whatever you took off it, at the end of every round. Chip damage loses to it; a burst kills it.`},
+              desc:v=>`Puts back half of whatever you took off it, up to ${v}, at the end of every round. Chip damage loses most of its value; a burst overwhelms it.`},
   ethereal:  {ic:'🔮', name:'Ethereal',     v:[0],
               desc:()=>`Strikes and Cleaves land for half. Venom, Ignite and anything that ignores armour land in full.`},
   volatile:  {ic:'💣', name:'Volatile',     v:[6,9,12],
@@ -1089,6 +1089,7 @@ function randomRelic(tier){
 /* --------------------------------------------------------- face value maths */
 function faceValue(hero, f){
   let v = f.v;
+  if(!hero) return Math.max(0, v);      /* its owner has left the field */
   if(f.k === 'dmg' || f.k === 'dmgAll'){
     v += hero.power || 0;
     if(has('whetstone')) v += 1;
@@ -1279,6 +1280,24 @@ function fieldCleared(){
   if(C.waves && C.waves.length) return !sendWave(false);
   return true;
 }
+/* ------------------------------------------------------------- stalemates */
+/* Several honest rules can multiply into a fight that cannot end either way:
+   armour larger than your best single hit takes literally nothing, a shell
+   that keeps being renewed refuses everything, regrowth can match a weak
+   party's damage exactly. Rather than chase each of those, the stair itself
+   gives out. From here the fight resolves within a few rounds whatever is
+   standing, and it does not favour stalling: it takes both sides apart. */
+const STALL_ROUND = 30;
+function stalemateBreaker(){
+  if(C.turn < STALL_ROUND) return;
+  const n = C.turn - STALL_ROUND + 1;
+  if(n === 1) logc('The spire has had enough of this. The stair itself begins to come apart.');
+  livingEnemies().slice().forEach(e =>
+    hurtEnemy(e, Math.max(3, Math.ceil(e.maxHp * 0.1 * n)), true, true));
+  livingAllies().slice().forEach(h =>
+    hurtHero(h, 2 * n, {ignoreShield:true, ignoreArmour:true}));
+}
+
 /* the clock: stalling is not free */
 function tickPress(){
   if(!C.press) return;
@@ -1492,9 +1511,9 @@ function heroDamageToEnemy(e, n, pierce){
   }
   return hurtEnemy(e, n);
 }
-function hurtEnemy(e, n, ignoreShield){
+function hurtEnemy(e, n, ignoreShield, unstoppable){
   if(e.hp <= 0 || n <= 0) return 0;
-  if(hasTrait(e, 'linked')){
+  if(hasTrait(e, 'linked') && !unstoppable){
     const anchor = C.enemies.find(x => x.uid === e.trait.anchor);
     if(anchor && anchor.hp > 0){
       floatOn(e.uid, 'LINKED', 'var(--violet)');
@@ -1506,7 +1525,7 @@ function hurtEnemy(e, n, ignoreShield){
   /* capped at 2: a monster in full Dragonscale was eating most of a turn */
   const armour = Math.min(2, enemyItemMod(e, 'armour'));
   if(armour > 0 && !ignoreShield) left = Math.max(0, left - armour);
-  const shellHeld = hasTrait(e, 'shelled') && e.shield > 0;
+  const shellHeld = hasTrait(e, 'shelled') && e.shield > 0 && !unstoppable;
   if(!ignoreShield && e.shield > 0){
     const a = Math.min(e.shield, left);
     e.shield -= a; left -= a;
@@ -2085,12 +2104,14 @@ function endOfRound(){
   livingEnemies().forEach(e => {
     if(e.steeled > 0) e.steeled--;
     if(e.weak > 0) e.weak--;
-    /* It knits back only what was actually taken off it this round. Without
-       that cap a weak party met a boss that healed faster than it could chip,
-       and the fight simply never ended. Chip damage still loses to it; it can
-       just never put back more than you removed. */
+    /* It knits back HALF of what was taken off it this round, capped. Capping
+       at the full amount was not enough: 3 damage a round against a regrow of
+       6 put back exactly 3, and the fight sat at equilibrium forever. Half
+       guarantees the health bar always moves down, however weak the party --
+       chip damage still loses most of its value, a burst still overwhelms it,
+       but the fight always resolves. */
     if(hasTrait(e, 'regrowing') && e.hp > 0 && e.hp < e.maxHp){
-      const back = Math.min(e.trait.v, e.tookThisRound || 0);
+      const back = Math.min(e.trait.v, Math.floor((e.tookThisRound || 0) / 2));
       if(back > 0){
         const before = e.hp;
         e.hp = Math.min(e.maxHp, e.hp + back);
@@ -2140,6 +2161,7 @@ function endOfRound(){
   if(furyRite || growthRite)
     logc(`The rites hold.${furyRite ? ' The party grows angrier.' : ''}${growthRite ? ' The party knits itself back together.' : ''}`);
   tickPress();
+  stalemateBreaker();
   if(fieldCleared()){ endCombat(true); return; }
   if(!livingHeroes().length){ endCombat(false); return; }
   beginPlayerTurn();
@@ -2584,7 +2606,9 @@ function campRest(){
   S.fate = Math.min(fateMax(), S.fate + 1);
   UI.modal = null; save(); render();
 }
-function campForge(){ UI.modal = { type:'forge' }; render(); }
+const forgeable = f => !!f && f.k !== 'blank' && !isSigil(f.k);
+const canForge = () => !!S && S.party.some(h => h.faces.some(forgeable));
+function campForge(){ if(!canForge()) return; UI.modal = { type:'forge' }; render(); }
 function campTemper(){ UI.modal = { type:'temper' }; render(); }
 /* one worn piece gets a permanent +1 on every number it carries */
 function temperItem(heroUid, slot){
@@ -2614,7 +2638,7 @@ function temperItem(heroUid, slot){
 function forgeFace(heroUid, idx){
   const h = heroByUid(heroUid);
   const f = h.faces[idx];
-  if(!f || f.k === 'blank' || isSigil(f.k)) return;    /* a rite has no number to sharpen */
+  if(!forgeable(f)) return;                           /* a rite has no number to sharpen */
   f.v += (['stun','charm','daze','summon','guard','echo','dmgAll','shieldAll','power','mana','burn'].includes(f.k) ? 1 : 2);
   UI.modal = null; save(); render();
 }
@@ -3247,9 +3271,12 @@ function viewCombat(){
     const v = faceValue(h, d);
     const sel = C.pending && C.pending.type === 'die' && C.pending.i === i;
     const rd = riderDef(d.r);
-    return `<div class="die ${d.used ? 'used' : ''} ${sel ? 'sel' : ''} ${d.mark ? 'marked' : ''} ${d.fresh ? 'roll' : ''}"
-        onclick="clickDie(${i})" data-tip="${esc(faceLabel(d))}|${esc(faceTip({k:d.k, v, r:d.r}))}"
-        ${rd ? `style="border-color:${rd.col}"` : ''}>
+    const orphan = !h;                  /* whoever rolled it is gone */
+    return `<div class="die ${d.used || orphan ? 'used' : ''} ${sel ? 'sel' : ''} ${d.mark ? 'marked' : ''} ${d.fresh ? 'roll' : ''}"
+        onclick="clickDie(${i})" data-tip="${esc(faceLabel(d))}|${orphan
+          ? 'Whoever rolled this is no longer on the field, so it cannot be spent.'
+          : esc(faceTip({k:d.k, v, r:d.r}))}"
+        ${rd && !orphan ? `style="border-color:${rd.col}"` : ''}>
       ${rd ? `<span class="rider" style="color:${rd.col}">${rd.ic}</span>` : ''}
       <div class="who">${h ? h.name : ''}</div>
       <div class="glyph">${K.ic}</div>
@@ -3646,7 +3673,8 @@ function mCamp(){
     <p class="muted tiny" style="margin-bottom:12px">One thing only.</p>
     <div class="col">
       <button class="opt" onclick="campRest()"><div class="t">Rest</div><div class="s">Heal every hero ${pct}% of their max HP, and recover a point of Fate.</div></button>
-      <button class="opt" onclick="campForge()"><div class="t">Sharpen</div><div class="s">Permanently improve one die face.</div></button>
+      <button class="opt" ${canForge() ? '' : 'disabled'} onclick="campForge()"><div class="t">Sharpen</div><div class="s">${
+        canForge() ? 'Permanently improve one die face.' : 'Nothing anyone carries has a number to sharpen.'}</div></button>
       <button class="opt" onclick="campInscribe()"><div class="t">Inscribe</div><div class="s">Write a rider onto one die face: what it does, not what it is worth. Replaces any rider already on it.</div></button>
       <button class="opt" onclick="campDrill()"><div class="t">Drill</div><div class="s">+4 max HP to every hero, healed immediately.</div></button>
       <button class="opt" ${wornItems().length ? '' : 'disabled'} onclick="campTemper()"><div class="t">Temper</div><div class="s">${
@@ -3686,13 +3714,13 @@ function mInscribe(m){
 }
 function mForge(){
   return `<h2>Sharpen a face</h2>
-    <p class="muted tiny" style="margin-bottom:10px">Click the face to improve. Blanks cannot be sharpened.</p>
+    <p class="muted tiny" style="margin-bottom:10px">Click the face to improve. Blanks and rites have no number to sharpen.</p>
     <div class="col">
       ${S.party.map(h => `<div class="panel" style="background:var(--card);padding:12px">
         <b>${h.av} ${esc(h.name)}</b>
         <div class="faces" style="margin-top:8px">${h.faces.map((f, i) =>
-          faceHTML(f, 'big ' + (f.k === 'blank' || isSigil(f.k) ? '' : 'pickable'),
-                   f.k === 'blank' || isSigil(f.k) ? '' : `forgeFace(${h.uid},${i})`)).join('')}</div>
+          faceHTML(f, 'big ' + (forgeable(f) ? 'pickable' : ''),
+                   forgeable(f) ? `forgeFace(${h.uid},${i})` : '')).join('')}</div>
       </div>`).join('')}
     </div>
     <div class="sep"></div>
