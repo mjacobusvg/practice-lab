@@ -3020,6 +3020,7 @@ function buildSidebar() {
   if (isAdmin()) h += '<div class="sb-item" data-key="broadcast" onclick="showBroadcast()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128227;</span> Broadcast</div>';
   h += '<div class="sb-item" data-key="library" onclick="showLibrary()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128196;</span> Template Library</div>';
   if (isAdmin() || (typeof POLICY_LIBRARY_LIVE !== 'undefined' && POLICY_LIBRARY_LIVE && tierRank() >= 1)) h += '<div class="sb-item" data-key="policy-library" onclick="showPolicyLibrary()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128218;</span> Practice Policy Library</div>';
+  if (isAdmin() || (typeof POLICY_LIBRARY_LIVE !== 'undefined' && POLICY_LIBRARY_LIVE && tierRank() >= 1)) h += '<div class="sb-item" data-key="policy-builder" onclick="showPolicyBuilder()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128736;</span> Policy Builder</div>';
   h += '<div class="sb-item" onclick="window.location.href=\'/vault\'" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128272;</span> The Vault</div>';
   h += '<div class="sb-item" data-key="learn" onclick="showLearn()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#129513;</span> Mentorship &amp; Courses</div>';
   h += '<div class="sb-item" data-key="directory" onclick="showDirectory()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128101;</span> Member Directory</div>';
@@ -6440,6 +6441,12 @@ function renderPolicyLibrary() {
   h += '<p class="space-tagline">Answers to “what should my practice policy be about this?”, with the editable templates attached.</p>';
   if (isAdmin()) h += '<div style="margin-top:6px"><span class="tpl-tag" style="background:#b91c1c;color:#fff">Admin preview - not member-visible yet</span></div>';
   h += '</div>';
+  if (policyGuidanceUnlocked()) {
+    h += '<div style="border:1px solid var(--teal);background:rgba(42,171,184,0.07);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:18px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between">'
+      + '<div style="flex:1 1 260px"><div style="font-weight:700;margin-bottom:2px">Ready to decide how your practice handles this?</div>'
+      + '<div style="color:var(--text-secondary);font-size:0.88rem;line-height:1.5">The Policy Builder walks you through the choices and builds your policy language around the ones you make.</div></div>'
+      + '<button class="btn-primary" onclick="showPolicyBuilder()">Build my policies &rarr;</button></div>';
+  }
   var unlocked = policyGuidanceUnlocked();  // Forum, Full, or admin see full guidance
   if (!unlocked) {
     h += '<div class="tpl-gate" style="margin-bottom:16px"><div class="tpl-gate-title">&#128274; Full guidance is a member benefit</div>'
@@ -6471,6 +6478,770 @@ function renderPolicyLibrary() {
     });
   });
   center.innerHTML = h; window.scrollTo(0,0);
+}
+
+
+// ════════════════════════════════════════
+// PRACTICE POLICY BUILDER
+// ════════════════════════════════════════
+// The third layer, and the one that does the work:
+//   Policy Library  -> understand the issue and the approaches people take
+//   Policy Builder  -> decide how THIS practice will operate
+//   Template Library-> the finished editable documents
+// Deliberately three layers, not one muddled library.
+//
+// NO AI AT RUNTIME. Every question, option, tradeoff and clause below is curated.
+// A model improvising policy language for a clinician to adopt is not a feature.
+// Deterministic means it is reviewable, it is the same for everyone, and it cannot
+// hallucinate a rule into someone's practice.
+//
+// THE EDITORIAL RULE THAT MATTERS: where practices legitimately differ, we present
+// the options and their tradeoffs and we do NOT rank them. No "recommended", no
+// checkmark-versus-cross. Michael waits for adjudication before collecting a
+// deductible; plenty of good practices estimate up front. His preference is not
+// allowed to become the product's rule. `caveat` is reserved for the genuinely
+// different thing: a legal, payer or contractual constraint you have to go check.
+//
+// This is a separate structure from POLICY_LIBRARY on purpose. The guidance strings
+// there and the decision logic here have to be able to evolve independently; cramming
+// builder branching into the `g` prose would fuse them permanently.
+//
+// SHAPE:
+//   group: { id, topic, decisions: [...] }
+//   decision: { id, q, why, showIf?, choices: [...] }
+//   choice: { id, label, desc, pros: [], cons: [], caveat?, clause, fields?: [] }
+//   showIf: { id: '<decision id>', in: [...] } | { id, notIn: [...] }
+//   field:  { key, label, prefix?, suffix?, placeholder }  -> {{key}} in the clause
+var POLICY_DECISIONS = [
+{ id: 'payments', topic: 'Payments and patient responsibility', decisions: [
+
+  { id: 'copay_timing',
+    q: 'When do you collect a known copay?',
+    why: 'A copay is a fixed, known amount, so the only real question is when in the visit it gets handled. Practices land in different places, and the tradeoff is mostly between collection reliability and how the start of the encounter feels.',
+    choices: [
+      { id: 'before', label: 'Before the appointment',
+        desc: 'Charged or collected ahead of the visit, typically the day before or the morning of.',
+        pros: ['Nothing to collect while the patient is in front of you', 'Balances rarely age', 'Works well with a card on file and a mostly telehealth schedule'],
+        cons: ['Needs a reliable pre-visit process and someone to run it', 'Late cancellations and reschedules create refunds or credits', 'A patient who has not been charged before may be surprised'],
+        clause: 'Copays are collected before your appointment. We will charge the payment method on file, or send a payment request, in advance of the scheduled visit.' },
+      { id: 'checkin', label: 'At check-in, or the start of the appointment',
+        desc: 'Collected as the visit begins, before the clinical encounter.',
+        pros: ['The patient is present, so collection is reliable', 'Nothing is left outstanding after the visit', 'Familiar to most patients from other medical offices'],
+        cons: ['Opens the encounter with a transaction', 'Needs a workflow that runs before the clinician starts, which is harder in a solo practice with no front desk', 'Awkward when a patient arrives distressed or late'],
+        clause: 'Copays are due at the time of service and are collected at check-in, before your appointment begins.' },
+      { id: 'end', label: 'At the end of the appointment',
+        desc: 'Handled after the clinical work is finished.',
+        pros: ['The beginning of the visit stays clinical', 'Nothing transactional before a session that may be difficult'],
+        cons: ['A patient can leave before payment is handled, especially in telehealth', 'Collection competes with running late and with scheduling the next visit', 'More balances to chase'],
+        clause: 'Copays are due at the time of service and are collected at the end of your appointment.' },
+      { id: 'auto', label: 'Charged automatically to the card on file after the visit',
+        desc: 'No collection step in the visit at all; the authorized card is charged once the visit is complete.',
+        pros: ['Removes money from the encounter entirely', 'Highly reliable when the authorization and the card are current', 'Scales without a front desk'],
+        cons: ['Depends on a valid, current card and a clear written authorization', 'A declined card still has to be worked', 'Patients need to know it is coming so the charge is not a surprise'],
+        caveat: 'Your card-on-file authorization has to actually cover this charge. Charging copays automatically under an authorization written only for missed-visit fees is a mismatch patients and processors both push back on. See the card-on-file decisions below.',
+        clause: 'Copays are charged to the payment method you have authorized to keep on file, after your visit is complete. You will be told the amount charged.' },
+      { id: 'none', label: 'I do not routinely collect copays at the visit',
+        desc: 'Patient responsibility is billed after the claim processes.',
+        pros: ['No collection workflow at the visit at all', 'Nothing to reconcile when the payer pays differently than expected'],
+        cons: ['Slower cash, and more accounts receivable to manage', 'Statements, follow-up and aged balances become their own workflow'],
+        caveat: 'Routinely not collecting or waiving copays is treated differently from a documented, case-by-case hardship decision. Where federal healthcare programs or payer contracts are involved this can raise real compliance exposure, so check your contracts before adopting it as a standing practice.',
+        clause: 'Copays are billed to you after your insurance processes the claim, rather than collected at the time of your visit.' }
+    ] },
+
+  { id: 'deductible',
+    q: 'How do you handle deductible and coinsurance amounts that have not been finally adjudicated?',
+    why: 'This is the one people argue about, because nobody knows the real number at the time of the visit. You are choosing between collecting money you may have to refund and waiting for money you may have to chase.',
+    choices: [
+      { id: 'wait', label: 'Wait for the claim to adjudicate, then collect what the payer determined',
+        desc: 'No estimate is collected at the visit; the patient is billed the adjudicated patient responsibility.',
+        pros: ['The amount is the real one, off the remittance', 'No estimating errors, refunds or credit balances', 'Fewer disputes, because the explanation of benefits backs up the number'],
+        cons: ['Slowest cash collection of the options', 'Creates accounts receivable and needs a working post-remittance collection process', 'The patient is asked for money weeks after the visit, when it feels disconnected from the care'],
+        clause: 'Where your plan applies a deductible or coinsurance, we bill your insurance first and collect the patient responsibility your plan determines once the claim has processed. You will receive a statement after your plan has adjudicated the claim.' },
+      { id: 'estimate', label: 'Estimate the expected responsibility and collect it at the visit, then reconcile',
+        desc: 'An estimated amount is collected up front and trued up after the claim processes.',
+        pros: ['Much stronger point-of-service collection', 'Less accounts receivable and less chasing', 'The conversation happens while the patient is present'],
+        cons: ['Estimates are wrong often enough to matter', 'You must run a real refund and credit process, promptly', 'An over-collection that sits as a credit is a patient-relations and compliance problem'],
+        caveat: 'The final amount owed is set by the payer adjudication and your contract, not by your estimate. Estimated collection is only workable with a reconciliation process that issues refunds promptly, and some payer contracts and state laws constrain what you may collect up front.',
+        clause: 'Where your plan applies a deductible or coinsurance, we collect an estimate of your expected responsibility at the time of service. Once your plan processes the claim, we reconcile the estimate against the amount your plan determines and refund any overpayment or bill any remaining balance.' },
+      { id: 'verify', label: 'Verify the remaining deductible first and estimate from the contracted rate',
+        desc: 'Benefits are checked before the visit and the estimate is built from the expected allowed amount.',
+        pros: ['A materially better estimate than guessing from the billed charge', 'Surfaces coverage problems before the visit rather than after', 'Gives the patient a real number to plan around'],
+        cons: ['Benefit verification takes staff time for every patient', 'Eligibility responses are not always accurate or current', 'Claims that process in an unexpected order can still make the estimate wrong'],
+        caveat: 'A benefits response is an estimate, not a guarantee of payment, and the allowed amount still comes from your contract. Reconciliation is still required.',
+        clause: 'Before your visit we verify your remaining deductible and use your plan’s contracted rate to estimate your expected responsibility. We collect that estimate at the time of service and reconcile it once your plan processes the claim, refunding any overpayment.' },
+      { id: 'selfpay', label: 'Not applicable, my practice does not bill insurance',
+        desc: 'Self-pay practice; there is no deductible or coinsurance to handle.',
+        pros: ['One fee, known in advance, nothing to reconcile'],
+        cons: ['Patients seeking reimbursement will need a superbill and may still ask coverage questions'],
+        caveat: 'Self-pay and uninsured patients generally fall under the Good Faith Estimate requirements. The Policy Library entry on Good Faith Estimates covers who gets one and when.',
+        clause: 'This practice does not bill insurance. Fees are due at the time of service as described in this policy. On request we can provide documentation you may submit to your insurer for any out-of-network benefits you may have.' }
+    ] },
+
+  { id: 'balances',
+    q: 'How are unpaid patient balances handled?',
+    why: 'Whatever you choose above, some balances will go unpaid. What you do then should be written down before it happens, and should stay proportionate.',
+    choices: [
+      { id: 'statement_then_card', label: 'Statement first, then charge the authorized card on file',
+        desc: 'The patient is notified of the balance and given time to respond before the card is charged.',
+        pros: ['Balances resolve without a collections process', 'Notice first means fewer surprise-charge disputes'],
+        cons: ['Requires a current card and an authorization that clearly covers balances', 'A declined card still needs follow-up'],
+        caveat: 'The authorization has to say that outstanding balances may be charged, and the notice period you promise here has to match what you actually do.',
+        clause: 'Unpaid balances are billed to you by statement. If a balance remains unpaid {{days}} days after the statement date, we may charge the payment method you have authorized to keep on file. We will notify you before doing so.',
+        fields: [{ key: 'days', label: 'Days after the statement before the card is charged', placeholder: '14', suffix: 'days' }] },
+      { id: 'statement_plan', label: 'Statements, then a payment plan on request',
+        desc: 'Balances are billed and patients who cannot pay in full can arrange a plan.',
+        pros: ['Keeps patients in care who would otherwise disengage over money', 'Avoids abrupt escalation'],
+        cons: ['Someone has to track and manage the plans', 'Plans that quietly fail turn into aged balances anyway'],
+        clause: 'Unpaid balances are billed to you by statement. If you are unable to pay a balance in full, contact the office and we will make a reasonable effort to arrange a payment plan.' },
+      { id: 'scheduling', label: 'Balances affect future non-urgent scheduling',
+        desc: 'Non-urgent follow-up is held until the balance is resolved or a plan is in place.',
+        pros: ['Balances rarely grow very large', 'Clear and enforceable without a collections vendor'],
+        cons: ['Directly risks continuity of care', 'Needs a clinical override for anyone who should not be held out of care'],
+        caveat: 'This one interacts with your clinical and legal obligations. Abandonment rules, payer contracts and your own risk judgment limit how far it can go, and it should never apply to urgent or crisis care. Build in an explicit clinical exception.',
+        clause: 'Unpaid balances are billed to you by statement. Future non-urgent appointments may be deferred until the balance is paid or a payment arrangement is in place. This does not apply to urgent or crisis care, and exceptions are made at clinical discretion.' }
+    ] }
+]},
+
+{ id: 'cardonfile', topic: 'Card on file', decisions: [
+
+  { id: 'cof_require',
+    q: 'Do you keep a payment method on file?',
+    why: 'Almost every other decision in the payments section depends on this one, because most of them are only enforceable if there is something to charge.',
+    choices: [
+      { id: 'required', label: 'Yes, required for all patients',
+        desc: 'A valid payment method is a condition of scheduling.',
+        pros: ['Every other payment policy becomes enforceable', 'Least administrative follow-up of any option', 'Missed-visit fees stop being theoretical'],
+        cons: ['Some patients refuse, and you have to decide what happens then', 'Cards expire, so someone has to keep them current'],
+        caveat: 'Never store raw card numbers yourself. Use your processor’s tokenized storage; keeping card data in a chart, a spreadsheet or an email is a PCI problem and a security problem at once.',
+        clause: 'A valid payment method on file is required to schedule appointments with this practice. Your card details are held securely by our payment processor and are not stored by the practice.' },
+      { id: 'optional', label: 'Yes, offered but not required',
+        desc: 'Patients may keep a card on file; those who decline pay another way.',
+        pros: ['No patient is turned away over it', 'Most people opt in anyway'],
+        cons: ['Two payment workflows to run instead of one', 'The patients most likely to decline are often the ones with balances'],
+        clause: 'You may authorize us to keep a payment method on file for the charges described in this policy. If you prefer not to, you remain responsible for payment at the time of service by another accepted method.' },
+      { id: 'no', label: 'No card on file',
+        desc: 'Payment is collected per visit without a stored method.',
+        pros: ['Nothing stored, nothing to secure, no authorization to maintain'],
+        cons: ['Missed-visit fees and balance charges are difficult to actually collect', 'More collection work per visit'],
+        clause: 'This practice does not keep payment methods on file. Payment is collected at the time of service.' }
+    ] },
+
+  { id: 'cof_scope',
+    q: 'What does the authorization allow you to charge?',
+    why: 'This is where card-on-file policies most often contradict the financial policy sitting next to them. The authorization has to cover everything you intend to charge, or the charge is not actually authorized.',
+    showIf: { id: 'cof_require', notIn: ['no'] },
+    choices: [
+      { id: 'all', label: 'Copays, patient responsibility after adjudication, and missed-visit fees',
+        desc: 'A broad recurring authorization covering everything this policy describes.',
+        pros: ['One authorization that matches the rest of the policy', 'No charge falls outside what was agreed'],
+        cons: ['A broad authorization deserves a plain-language explanation, or it feels like a blank cheque'],
+        clause: 'By authorizing a payment method on file, you authorize this practice to charge that method for copays, for patient responsibility determined after your insurance processes a claim, and for any late-cancellation or missed-appointment fees described in this policy.' },
+      { id: 'visit_only', label: 'Visit charges only, not missed-visit fees',
+        desc: 'Time-of-service charges are covered; missed-visit fees are billed separately.',
+        pros: ['Narrow and easy for a patient to agree to'],
+        cons: ['Missed-visit fees then have to be collected some other way', 'Creates exactly the gap where a financial policy and a card authorization contradict each other'],
+        clause: 'By authorizing a payment method on file, you authorize this practice to charge that method for copays and for patient responsibility determined after your insurance processes a claim. Late-cancellation and missed-appointment fees are billed to you separately.' },
+      { id: 'missed_only', label: 'Missed-visit fees only',
+        desc: 'The card exists to make the attendance policy enforceable and nothing else.',
+        pros: ['Very limited, and easy to explain', 'Patients who dislike stored cards often accept this one'],
+        cons: ['Does nothing for copays or balances', 'Most of the payments section above will not be enforceable through the card'],
+        clause: 'By authorizing a payment method on file, you authorize this practice to charge that method for late-cancellation and missed-appointment fees as described in this policy. It will not be charged for other amounts without your authorization.' }
+    ] },
+
+  { id: 'cof_notice',
+    q: 'Do you notify the patient before charging the card?',
+    why: 'Notice is the single biggest driver of whether a stored-card charge turns into a dispute.',
+    showIf: { id: 'cof_require', notIn: ['no'] },
+    choices: [
+      { id: 'advance', label: 'Notice before the charge',
+        desc: 'The patient is told the amount and the date before the card is charged.',
+        pros: ['Fewest disputes and chargebacks', 'Errors get caught before the money moves'],
+        cons: ['Adds a step, and someone has to do it', 'Delays collection slightly'],
+        clause: 'We will notify you of the amount and the expected date before charging the payment method on file.' },
+      { id: 'receipt', label: 'Receipt after the charge',
+        desc: 'The card is charged and a receipt follows.',
+        pros: ['No delay in collection', 'Still creates a record the patient receives'],
+        cons: ['The first the patient hears of the amount is after the money is gone, which is where disputes come from'],
+        clause: 'You will receive a receipt each time the payment method on file is charged.' }
+    ] }
+]},
+
+{ id: 'attendance', topic: 'Late cancellation and missed appointments', decisions: [
+
+  { id: 'att_window',
+    q: 'How much notice do you require to cancel or reschedule?',
+    why: 'The window should reflect how realistically you can fill the slot, not just what sounds firm.',
+    choices: [
+      { id: '24', label: '24 hours', desc: 'The most common window in outpatient practice.',
+        pros: ['Familiar to patients, rarely argued with', 'Enough notice to offer the slot to someone else in many practices'],
+        cons: ['A Monday appointment effectively means cancelling on a Sunday', 'Often too short to actually refill the slot'],
+        clause: 'We ask for at least 24 hours’ notice to cancel or reschedule an appointment.' },
+      { id: '48', label: '48 hours', desc: 'Two business days of notice.',
+        pros: ['Realistic chance of filling the slot', 'Weekend-adjacent appointments work better than with a 24-hour rule'],
+        cons: ['More cancellations land inside the window', 'Needs a clear rule for weekends and holidays'],
+        clause: 'We ask for at least 48 hours’ notice to cancel or reschedule an appointment.' },
+      { id: '72', label: '72 hours or more', desc: 'A longer window, common where sessions are long or the waitlist is deep.',
+        pros: ['Genuinely fillable notice', 'Signals that the time is reserved and held'],
+        cons: ['Many ordinary-life cancellations fall inside it', 'Enforced strictly, it generates the most conflict of the three'],
+        clause: 'We ask for at least 72 hours’ notice to cancel or reschedule an appointment.' }
+    ] },
+
+  { id: 'att_fee',
+    q: 'Do you charge for late cancellations and missed appointments?',
+    why: 'Whether to charge, and how much, is a practice decision. Whether you may charge a particular patient is not entirely yours to decide.',
+    choices: [
+      { id: 'both', label: 'Yes, for both late cancellations and no-shows',
+        desc: 'A fee applies inside the notice window and when the patient does not attend.',
+        pros: ['The clearest signal, and the most consistent to administer', 'Recovers some of the cost of unfillable time'],
+        cons: ['Needs a card on file or the fee is mostly aspirational', 'Requires you to be willing to apply it'],
+        caveat: 'Missed-appointment fees are not billable to insurance. Many Medicaid programs prohibit them outright, and payer contracts and state law can limit or bar them. Check the specific plan before applying a fee, and charge uniformly rather than selectively.',
+        clause: 'Appointments cancelled with less than the required notice, and appointments you do not attend, are subject to a fee of {{fee_late}} for a late cancellation and {{fee_noshow}} for a missed appointment. This fee is charged to you directly and is not billed to your insurance.',
+        fields: [{ key: 'fee_late', label: 'Late-cancellation fee', prefix: '$', placeholder: '75' },
+                 { key: 'fee_noshow', label: 'Missed-appointment fee', prefix: '$', placeholder: '150' }] },
+      { id: 'noshow_only', label: 'Yes, for no-shows only',
+        desc: 'Late cancellation is accepted; not attending at all is charged.',
+        pros: ['Rewards the patient who at least tells you', 'Easier conversation than charging someone who did call'],
+        cons: ['A late cancellation leaves the slot just as empty', 'Patients learn that a same-day call avoids the fee'],
+        caveat: 'Missed-appointment fees are not billable to insurance, and many Medicaid programs prohibit them. Check the plan before charging.',
+        clause: 'Appointments you do not attend are subject to a missed-appointment fee of {{fee_noshow}}. This fee is charged to you directly and is not billed to your insurance. There is no fee for a late cancellation, though we ask for as much notice as you can give.',
+        fields: [{ key: 'fee_noshow', label: 'Missed-appointment fee', prefix: '$', placeholder: '150' }] },
+      { id: 'none', label: 'No fee',
+        desc: 'The notice expectation is stated; no charge is applied.',
+        pros: ['No collection problem and no fee conversations at all', 'Nothing to check against payer or program rules'],
+        cons: ['Repeated missed appointments have no consequence attached', 'Unfillable time is absorbed entirely by the practice'],
+        clause: 'We ask for as much notice as you can give if you need to cancel or reschedule. We do not charge a fee for missed or late-cancelled appointments. Repeated missed appointments may be discussed with you as part of your care.' }
+    ] },
+
+  { id: 'att_first',
+    q: 'How is a first occurrence handled?',
+    why: 'Most practices that charge still do something different the first time. Writing it down stops it being an ad-hoc decision made under pressure.',
+    showIf: { id: 'att_fee', notIn: ['none'] },
+    choices: [
+      { id: 'waive', label: 'First occurrence is waived',
+        desc: 'The fee is explained the first time and not charged.',
+        pros: ['Good will, and it keeps new patients engaged', 'Turns the first occurrence into the conversation that prevents the second'],
+        cons: ['Has to be tracked per patient', 'Some patients treat it as an allowance'],
+        clause: 'The first late cancellation or missed appointment is not charged. We will remind you of this policy so that you know what applies going forward.' },
+      { id: 'discretion', label: 'Waived at clinician discretion',
+        desc: 'No automatic waiver; the fee may be waived case by case.',
+        pros: ['Flexible for genuinely difficult circumstances', 'No fixed allowance to be relied on'],
+        cons: ['Inconsistent application is the usual complaint, and it is a fair one', 'Every decision is a judgment call you have to make in the moment'],
+        caveat: 'Discretion should be applied on documented, case-by-case grounds. Waiving selectively without a stated basis is exactly the pattern payers and regulators look at.',
+        clause: 'Fees may be waived at clinical discretion, for example in an emergency or other circumstance beyond your control.' },
+      { id: 'always', label: 'Applied from the first occurrence',
+        desc: 'The policy applies uniformly from the start.',
+        pros: ['Entirely consistent and simple to administer', 'No tracking, no judgment calls'],
+        cons: ['Lands hard on a new patient and on genuine emergencies', 'Needs an emergency exception or it will be applied in a situation you would not defend'],
+        clause: 'The fee applies from the first occurrence.' }
+    ] },
+
+  { id: 'att_exception',
+    q: 'What exceptions apply?',
+    why: 'Every attendance policy needs somewhere for real life to go. Without a stated exception the policy gets broken informally, which is worse than a policy that names its own limits.',
+    showIf: { id: 'att_fee', notIn: ['none'] },
+    choices: [
+      { id: 'emergency', label: 'Emergencies and circumstances beyond the patient’s control',
+        desc: 'A stated exception for medical emergencies, crises and similar events.',
+        pros: ['Covers the situations where charging would be indefensible', 'Patients accept the rest of the policy more readily when this is in it'],
+        cons: ['"Emergency" is interpreted generously by some patients'],
+        clause: 'Fees are not applied for medical emergencies, crisis situations, or other circumstances genuinely beyond your control. Let us know as soon as you are able.' },
+      { id: 'emergency_clinical', label: 'Emergencies, plus clinical discretion',
+        desc: 'The emergency exception, plus room to decide the fee would undermine care.',
+        pros: ['Lets you protect the treatment relationship where a fee would damage it', 'Covers the symptom-driven missed appointment, which is common in psychiatry'],
+        cons: ['Needs documenting so it stays consistent'],
+        clause: 'Fees are not applied for medical emergencies, crisis situations, or other circumstances genuinely beyond your control. Fees may also be waived where charging would not be clinically appropriate.' },
+      { id: 'none_stated', label: 'No stated exceptions',
+        desc: 'The policy is applied as written.',
+        pros: ['Maximum consistency'],
+        cons: ['You will still make exceptions, they just will not be written down, which is the inconsistency you were trying to avoid'],
+        clause: '' }
+    ] }
+]},
+
+{ id: 'benzos', topic: 'Benzodiazepine prescribing', decisions: [
+
+  { id: 'benzo_prescribe',
+    q: 'Does your practice prescribe benzodiazepines?',
+    why: 'This is the branch point. Everything below it only applies if you prescribe, and a practice that does not should be able to say so cleanly and stop.',
+    choices: [
+      { id: 'no', label: 'No, this practice does not prescribe benzodiazepines',
+        desc: 'Neither initiation nor ongoing management.',
+        pros: ['Unambiguous for patients, referrers and staff', 'Nothing further to define'],
+        cons: ['Patients arriving on an existing prescription need a clear referral and transition path, and saying nothing about that is its own problem'],
+        caveat: 'A blanket non-prescribing policy still has to account for patients already established on these medications. An abrupt stop for policy reasons alone is a clinical risk, not just a policy decision.',
+        clause: 'This practice does not initiate or manage ongoing benzodiazepine therapy. If you are currently prescribed a benzodiazepine, we will discuss appropriate options with you, which may include referral to another clinician for that part of your care. We will not stop a benzodiazepine abruptly for policy reasons alone.' },
+      { id: 'short_only', label: 'Yes, short-term and time-limited use only',
+        desc: 'Initiation for defined, limited situations; no ongoing maintenance.',
+        pros: ['A clear boundary that is easy to apply', 'Keeps the option available for the situations where it is most defensible'],
+        cons: ['"Short-term" has to be defined or it drifts', 'Patients transferring in on long-term therapy still need a plan'],
+        clause: 'Where a benzodiazepine is clinically appropriate, this practice prescribes for short-term, time-limited use with a defined plan for review and discontinuation. Ongoing maintenance benzodiazepine therapy is not routinely provided.' },
+      { id: 'selected', label: 'Yes, including ongoing therapy in selected patients',
+        desc: 'Both short-term use and maintenance where clinically justified.',
+        pros: ['Reflects how these medications are actually used in psychiatric practice', 'Does not force a taper that is not clinically indicated'],
+        cons: ['Needs explicit monitoring and refill expectations', 'Requires you to be able to say why a given patient is one of the selected ones'],
+        clause: 'Where a benzodiazepine is clinically appropriate, this practice may prescribe it, including ongoing therapy for selected patients where the benefits outweigh the risks and the treatment is reviewed regularly.' },
+      { id: 'continue_only', label: 'Yes, but continuation only, no new starts',
+        desc: 'Existing prescriptions may be continued; new benzodiazepine therapy is not initiated.',
+        pros: ['Avoids destabilising established patients while limiting new exposure', 'A clear rule that is simple to apply'],
+        cons: ['Continuing another clinician’s prescription still requires your own assessment and your own justification'],
+        caveat: 'Continuation is a clinical decision, not an administrative one. Inheriting a prescription does not transfer the reasoning behind it, and the FDA risk discussion still belongs in your record.',
+        clause: 'This practice does not initiate new benzodiazepine therapy. Where you are already established on a benzodiazepine, we may continue it after our own assessment, with regular review of whether it remains appropriate.' }
+    ] },
+
+  { id: 'benzo_risk',
+    q: 'How is the risk discussion documented?',
+    why: 'The FDA boxed warning covers abuse, misuse and addiction; physical dependence, which is not the same as addiction; and serious withdrawal. How you handle that conversation is a policy choice with real documentation consequences.',
+    showIf: { id: 'benzo_prescribe', notIn: ['no'] },
+    choices: [
+      { id: 'documented', label: 'Documented discussion at initiation and at review',
+        desc: 'The conversation happens and is recorded in the note; no separate signed form.',
+        pros: ['Keeps it a clinical conversation rather than paperwork', 'No form to chase or file'],
+        cons: ['Quality depends on the note being written properly every time'],
+        clause: 'Before starting a benzodiazepine, and at regular review, we will discuss the risks and benefits with you, including the risks of dependence, misuse, and withdrawal, and the particular risks of combining these medications with opioids or other sedating substances. This discussion is documented in your record.' },
+      { id: 'agreement', label: 'Documented discussion plus a signed treatment agreement',
+        desc: 'The conversation is recorded and the patient signs an agreement setting out expectations.',
+        pros: ['Expectations are explicit and mutually acknowledged', 'Useful when refills, monitoring or single-pharmacy rules matter'],
+        cons: ['Can feel adversarial if it is introduced as a condition rather than explained', 'Another document to maintain and update'],
+        clause: 'Before starting or continuing a benzodiazepine, we will discuss the risks and benefits with you, including dependence, misuse, and withdrawal, and the particular risks of combining these medications with opioids or other sedating substances. You will also be asked to review and sign a treatment agreement setting out what you can expect from us and what we ask of you.' }
+    ] },
+
+  { id: 'benzo_opioid',
+    q: 'How do you handle benzodiazepines prescribed alongside opioids or other CNS depressants?',
+    why: 'This combination carries the specific warning, and it is worth deciding your position before you are standing in front of a patient who already has both.',
+    showIf: { id: 'benzo_prescribe', notIn: ['no'] },
+    choices: [
+      { id: 'avoid', label: 'Avoided other than in exceptional, documented circumstances',
+        desc: 'A stated position against concurrent prescribing, with a narrow documented exception.',
+        pros: ['Clear, defensible and easy to apply', 'Addresses the highest-risk combination directly'],
+        cons: ['Patients already on both need a coordinated plan, not a refusal at the counter'],
+        clause: 'We generally avoid prescribing benzodiazepines together with opioids or other sedating medications. Where both are clinically necessary, the reasons are documented, the combination is reviewed regularly, and we coordinate with your other prescribers.' },
+      { id: 'coordinate', label: 'Permitted with coordination and documented justification',
+        desc: 'Concurrent prescribing is possible where prescribers are coordinating and the reasoning is recorded.',
+        pros: ['Realistic for patients with genuine indications for both', 'Keeps you in the conversation instead of the patient managing two prescribers separately'],
+        cons: ['Depends on the other prescriber actually engaging', 'Higher monitoring burden'],
+        caveat: 'The combination carries a specific FDA warning. Where you prescribe both, the risk discussion, the justification and the coordination should all be visible in the record, and overdose-reversal counselling may be appropriate.',
+        clause: 'Where a benzodiazepine and an opioid or other sedating medication are both clinically necessary, we will discuss the combined risks with you, document the reasons, coordinate with your other prescribers, and review the combination regularly.' }
+    ] },
+
+  { id: 'benzo_refill',
+    q: 'How are early refills and lost or stolen medication handled?',
+    why: 'This is the request that arrives on a Friday afternoon. Deciding it in advance is the entire point of having a policy.',
+    showIf: { id: 'benzo_prescribe', notIn: ['no'] },
+    choices: [
+      { id: 'not_replaced', label: 'Not replaced early as a rule, with documented exceptions',
+        desc: 'Lost, stolen or early-finished prescriptions are not routinely replaced.',
+        pros: ['Removes the negotiation and applies consistently', 'The expectation is set before the situation arises'],
+        cons: ['Genuine loss and theft do happen, so an exception route is still needed'],
+        clause: 'Benzodiazepine prescriptions are written to last until your next scheduled appointment and are not routinely replaced early, including for lost or stolen medication. If something has genuinely gone wrong, contact the office and we will discuss it with you; any exception is a clinical decision and is documented.' },
+      { id: 'case_by_case', label: 'Assessed case by case',
+        desc: 'Each request is evaluated on its circumstances.',
+        pros: ['Room for genuine situations', 'No policy you will end up breaking anyway'],
+        cons: ['Every request becomes a conversation', 'Harder to apply consistently across patients'],
+        clause: 'Requests for early replacement of a benzodiazepine prescription, including for lost or stolen medication, are assessed individually. Contact the office rather than the pharmacy, and expect to discuss the circumstances. Any replacement is a clinical decision and is documented.' }
+    ] },
+
+  { id: 'benzo_monitor',
+    q: 'What monitoring applies?',
+    why: 'State requirements differ and some of this is not optional where you practise. What is left over is a practice decision.',
+    showIf: { id: 'benzo_prescribe', notIn: ['no'] },
+    choices: [
+      { id: 'pdmp_visits', label: 'PDMP checks and a defined visit interval',
+        desc: 'Prescription monitoring program checks plus a maximum interval between reviews.',
+        pros: ['Straightforward to administer', 'Covers the monitoring most states expect'],
+        cons: ['Does not address substance use you cannot see in a PDMP'],
+        caveat: 'PDMP checking requirements, including how often, are set by state law and vary. Check your state rather than relying on the interval you write here.',
+        clause: 'While you are prescribed a benzodiazepine, we check the prescription monitoring program as required, and we ask that you are seen at least every {{interval}} so the treatment can be reviewed.',
+        fields: [{ key: 'interval', label: 'Maximum interval between reviews', placeholder: '3 months' }] },
+      { id: 'pdmp_uds', label: 'PDMP checks, defined visit interval, and drug screening where appropriate',
+        desc: 'Adds urine drug screening on a clinical basis.',
+        pros: ['Picks up what a PDMP cannot', 'Useful where there is a co-occurring substance use history'],
+        cons: ['Can feel punitive if introduced without explanation', 'Results need interpreting properly, including false positives and negatives'],
+        caveat: 'PDMP requirements are set by state law. Drug screening should be applied on a stated clinical basis rather than selectively, and both the basis and the result interpretation belong in the record.',
+        clause: 'While you are prescribed a benzodiazepine, we check the prescription monitoring program as required, and we ask that you are seen at least every {{interval}} so the treatment can be reviewed. Drug screening may be requested where clinically appropriate; we will explain the reason if we ask for one.',
+        fields: [{ key: 'interval', label: 'Maximum interval between reviews', placeholder: '3 months' }] },
+      { id: 'pdmp_pharmacy', label: 'PDMP checks, defined visit interval, and a single pharmacy',
+        desc: 'Adds an expectation that controlled-substance prescriptions go to one pharmacy.',
+        pros: ['Makes the prescribing picture visible in one place', 'Simple for the patient to follow'],
+        cons: ['Pharmacy supply problems and insurance changes force exceptions'],
+        caveat: 'PDMP requirements are set by state law. A single-pharmacy expectation needs a practical route for the times a pharmacy cannot fill.',
+        clause: 'While you are prescribed a benzodiazepine, we check the prescription monitoring program as required, and we ask that you are seen at least every {{interval}} so the treatment can be reviewed. We ask that controlled-substance prescriptions are filled at a single pharmacy; tell us if that needs to change.',
+        fields: [{ key: 'interval', label: 'Maximum interval between reviews', placeholder: '3 months' }] }
+    ] },
+
+  { id: 'benzo_taper',
+    q: 'How is discontinuation handled?',
+    why: 'Whatever your prescribing philosophy, how you stop matters more than whether you start, and an abrupt stop for policy reasons is a documented harm.',
+    showIf: { id: 'benzo_prescribe', notIn: ['no'] },
+    choices: [
+      { id: 'individualized', label: 'Individualised taper, never an abrupt stop for policy reasons alone',
+        desc: 'Discontinuation is planned with the patient and paced to them.',
+        pros: ['Clinically sound and defensible', 'Reassures patients who have been stopped abruptly elsewhere, which is common'],
+        cons: ['Slower, and requires ongoing engagement through the taper'],
+        clause: 'If a benzodiazepine is to be stopped, we will plan a taper with you that is paced to your circumstances. We will not stop a benzodiazepine abruptly for policy reasons alone. If you decide to stop treatment with this practice, we will discuss a safe plan for continuing or transferring your care.' }
+    ] }
+]},
+
+{ id: 'refills', topic: 'Medication refills', decisions: [
+
+  { id: 'rx_route',
+    q: 'How should patients request a refill?',
+    why: 'Most refill chaos is a routing problem rather than a clinical one.',
+    choices: [
+      { id: 'pharmacy', label: 'Through the pharmacy',
+        desc: 'The patient asks the pharmacy, which sends the request to you.',
+        pros: ['One route, and it arrives in a consistent format', 'The pharmacy already knows the supply position'],
+        cons: ['Pharmacy requests can be slow or go astray', 'Patients still message you when it does not arrive'],
+        clause: 'Refill requests should be made through your pharmacy, which will send the request to us.' },
+      { id: 'portal', label: 'Through the practice, by portal message or phone',
+        desc: 'The patient contacts you directly.',
+        pros: ['You see the request immediately', 'Easier to catch the request that should really be an appointment'],
+        cons: ['Requests arrive in several formats and places', 'More inbox traffic'],
+        clause: 'Refill requests should be made by contacting the office directly rather than through your pharmacy.' },
+      { id: 'either', label: 'Either route',
+        desc: 'Both are accepted.',
+        pros: ['Nothing falls through because the patient used the wrong channel'],
+        cons: ['Duplicate requests are common, and it is easy to fill twice or not at all'],
+        clause: 'Refill requests may be made either through your pharmacy or by contacting the office directly.' }
+    ] },
+
+  { id: 'rx_window',
+    q: 'What is your processing window?',
+    why: 'A stated window is the difference between a patient planning ahead and a patient calling on the day they run out.',
+    choices: [
+      { id: '2',  label: '2 business days',  desc: 'A short, responsive window.',
+        pros: ['Little room for a patient to run out while waiting'],
+        cons: ['Demanding to sustain around leave, illness and a full clinic'],
+        clause: 'Please allow 2 business days for refill requests to be processed. Request refills before you run out.' },
+      { id: '3',  label: '3 business days',  desc: 'A common middle ground.',
+        pros: ['Realistic in a solo practice', 'Absorbs a busy day or two without breaking the promise'],
+        cons: ['A request made Thursday may not be filled until the following week'],
+        clause: 'Please allow 3 business days for refill requests to be processed. Request refills before you run out.' },
+      { id: '5',  label: '5 business days',  desc: 'A full working week.',
+        pros: ['Robust to leave and to a heavy clinic week'],
+        cons: ['Requires patients to plan genuinely far ahead, and some will not'],
+        clause: 'Please allow 5 business days for refill requests to be processed. Request refills well before you run out.' }
+    ] },
+
+  { id: 'rx_appt',
+    q: 'What is the relationship between refills and appointments?',
+    why: 'This is where a refill policy either supports the treatment or quietly becomes a way of managing medication without review.',
+    choices: [
+      { id: 'at_visit', label: 'Refills are managed at scheduled appointments',
+        desc: 'Enough medication is prescribed at each visit to last until the next one.',
+        pros: ['Between-visit refill traffic largely disappears', 'Medication review happens where it belongs'],
+        cons: ['Depends on appointments actually being scheduled and kept', 'A cancelled appointment turns into a refill request anyway'],
+        clause: 'Refills are managed at your scheduled appointments. At each visit we prescribe enough medication to last until your next appointment, so please keep your follow-up scheduled.' },
+      { id: 'current_required', label: 'Refills require a current appointment interval',
+        desc: 'Refills continue while the patient is seen within a defined interval.',
+        pros: ['Explicit about what keeps a prescription active', 'Easy to explain and apply'],
+        cons: ['Needs a bridging route, or a patient who cannot get an appointment goes without'],
+        clause: 'Refills are provided while you are seen at least every {{interval}}. If you are overdue for an appointment, we may provide a limited supply while you schedule one.',
+        fields: [{ key: 'interval', label: 'Required appointment interval', placeholder: '3 months' }] }
+    ] },
+
+  { id: 'rx_controlled',
+    q: 'Are controlled substances handled differently?',
+    why: 'They almost always are, and the refill policy should say so rather than leaving a patient to discover it.',
+    choices: [
+      { id: 'separate', label: 'Yes, under the controlled-substance policy',
+        desc: 'The general refill rules point to the controlled-substance policy.',
+        pros: ['Keeps one set of rules in one place', 'Avoids two documents drifting apart'],
+        cons: ['Only works if that policy exists and the patient can find it'],
+        clause: 'Controlled-substance prescriptions are not covered by this refill policy. They follow the practice’s controlled-substance policy, including any appointment, monitoring and early-refill requirements.' },
+      { id: 'same', label: 'No, the same process applies',
+        desc: 'One refill process covers everything.',
+        pros: ['One rule for patients to remember'],
+        cons: ['Controlled substances carry legal requirements a general policy will not describe, so the detail has to live somewhere'],
+        caveat: 'Federal and state rules constrain refills for controlled substances, and Schedule II prescriptions cannot be refilled at all. A single process still has to accommodate that.',
+        clause: 'Controlled-substance prescriptions follow the same request process, subject to the additional legal requirements that apply to them, including limits on refills and any required appointment intervals.' }
+    ] }
+]}
+];
+
+// ── Builder state. Deliberately NOT account state for v1. ──
+// The value on day one is making the decisions and getting coherent language out,
+// not persistence engineering. localStorage survives a refresh and a closed tab,
+// costs five lines, and needs no server, no schema and no migration. Wiring it into
+// the Vault is a later decision that this does not foreclose.
+var PB_KEY = 'tbp_policy_builder_v1';
+var PB = { answers: {}, fields: {}, edits: {} };
+try { var _pbSaved = localStorage.getItem(PB_KEY); if (_pbSaved) PB = JSON.parse(_pbSaved) || PB; } catch (e) {}
+function pbSave() { try { localStorage.setItem(PB_KEY, JSON.stringify(PB)); } catch (e) {} }
+
+function pbDecision(id) {
+  for (var i = 0; i < POLICY_DECISIONS.length; i++)
+    for (var j = 0; j < POLICY_DECISIONS[i].decisions.length; j++)
+      if (POLICY_DECISIONS[i].decisions[j].id === id) return POLICY_DECISIONS[i].decisions[j];
+  return null;
+}
+function pbChoice(d, cid) {
+  if (!d) return null;
+  for (var i = 0; i < d.choices.length; i++) if (d.choices[i].id === cid) return d.choices[i];
+  return null;
+}
+// A decision is asked only when its dependency is satisfied. Selecting "I do not
+// prescribe benzodiazepines" must not then ask about chronic benzodiazepine management.
+function pbVisible(d) {
+  if (!d.showIf) return true;
+  var a = PB.answers[d.showIf.id];
+  if (!a) return false;
+  if (d.showIf.in) return d.showIf.in.indexOf(a) !== -1;
+  if (d.showIf.notIn) return d.showIf.notIn.indexOf(a) === -1;
+  return true;
+}
+// A group is only shown, and only counted, for the decisions actually in play.
+function pbVisibleDecisions(g) { return g.decisions.filter(pbVisible); }
+
+// Substitute the clinician's own numbers into the clause. An unfilled field stays a
+// visible blank rather than silently disappearing, so nobody exports "a fee of ."
+function pbFill(text, d, c) {
+  return String(text || '').replace(/\{\{(\w+)\}\}/g, function (m, key) {
+    var v = (PB.fields[d.id] && PB.fields[d.id][key] != null) ? String(PB.fields[d.id][key]).trim() : '';
+    if (!v) return '________';
+    var f = null;
+    (c.fields || []).forEach(function (x) { if (x.key === key) f = x; });
+    if (f && f.prefix && v.charAt(0) !== f.prefix) v = f.prefix + v;
+    if (f && f.suffix && v.toLowerCase().indexOf(f.suffix.toLowerCase()) === -1) v = v + ' ' + f.suffix;
+    return v;
+  });
+}
+// The clause as it will appear: the clinician's edit if they made one, otherwise ours.
+function pbClauseText(d, c) {
+  if (PB.edits[d.id] != null) return PB.edits[d.id];
+  return pbFill(c.clause, d, c);
+}
+
+function pbSelect(did, cid) {
+  var d = pbDecision(did);
+  if (PB.answers[did] !== cid) delete PB.edits[did];   // a new choice means a new clause
+  PB.answers[did] = cid;
+  // Answers to questions that are no longer asked would otherwise sit in the draft
+  // invisibly and reappear if the parent choice changed back.
+  POLICY_DECISIONS.forEach(function (g) {
+    g.decisions.forEach(function (x) {
+      if (!pbVisible(x)) { delete PB.answers[x.id]; delete PB.edits[x.id]; }
+    });
+  });
+  pbSave(); renderPolicyBuilder();
+  var el = document.getElementById('pb-d-' + did); if (el) el.scrollIntoView({ block: 'nearest' });
+}
+function pbSetField(did, key, val) {
+  if (!PB.fields[did]) PB.fields[did] = {};
+  PB.fields[did][key] = val;
+  if (PB.edits[did] != null) delete PB.edits[did];   // regenerate rather than keep a stale number
+  pbSave(); pbRenderDraft();
+}
+function pbEditClause(did, val) { PB.edits[did] = val; pbSave(); pbRenderDraft(); }
+function pbResetClause(did) { delete PB.edits[did]; pbSave(); renderPolicyBuilder(); }
+function pbReset() {
+  if (!confirm('Clear every choice and start the builder over? This cannot be undone.')) return;
+  PB = { answers: {}, fields: {}, edits: {} }; pbSave(); renderPolicyBuilder();
+}
+
+// ── The assembled policy ──
+// Built from the same selections the clinician is looking at, so the draft and the
+// export can never disagree.
+function pbDraftGroups() {
+  var out = [];
+  POLICY_DECISIONS.forEach(function (g) {
+    var clauses = [];
+    pbVisibleDecisions(g).forEach(function (d) {
+      var c = pbChoice(d, PB.answers[d.id]);
+      if (!c) return;
+      var t = pbClauseText(d, c).trim();
+      if (t) clauses.push({ did: d.id, text: t });
+    });
+    if (clauses.length) out.push({ topic: g.topic, clauses: clauses });
+  });
+  return out;
+}
+var PB_DISCLAIMER = 'This policy was assembled from choices made in the Think Beyond Practice Policy Builder. '
+  + 'It is a starting point for your own document, not legal advice. Review it against your state law, your payer '
+  + 'contracts, your licensing board requirements and, where it matters, your own counsel before you put it in front of patients.';
+
+function pbPlainText() {
+  var gs = pbDraftGroups();
+  if (!gs.length) return '';
+  var s = 'PRACTICE POLICIES\n\n';
+  gs.forEach(function (g) {
+    s += g.topic.toUpperCase() + '\n\n';
+    g.clauses.forEach(function (c) { s += c.text + '\n\n'; });
+  });
+  return s + '---\n' + PB_DISCLAIMER + '\n';
+}
+function pbCopy() {
+  var t = pbPlainText();
+  if (!t) { showToast('Make some choices first.'); return; }
+  try { navigator.clipboard.writeText(t); } catch (e) {}
+  showToast('Policy copied.');
+}
+// Word opens an HTML document with a .doc extension natively. That gives a clean,
+// editable document with no new dependency, which is the right trade for v1.
+function pbDownload() {
+  var gs = pbDraftGroups();
+  if (!gs.length) { showToast('Make some choices first.'); return; }
+  var h = '<html xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8">'
+    + '<title>Practice Policies</title></head><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;line-height:1.5">';
+  h += '<h1 style="font-size:18pt">Practice Policies</h1>';
+  gs.forEach(function (g) {
+    h += '<h2 style="font-size:13pt;margin-top:20pt">' + esc(g.topic) + '</h2>';
+    g.clauses.forEach(function (c) { h += '<p>' + esc(c.text) + '</p>'; });
+  });
+  h += '<hr><p style="font-size:9pt;color:#555">' + esc(PB_DISCLAIMER) + '</p></body></html>';
+  var blob = new Blob(['﻿', h], { type: 'application/msword' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'practice-policies.doc';
+  document.body.appendChild(a); a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  showToast('Downloaded.');
+}
+
+async function showPolicyBuilder() {
+  if (typeof closeSidebar === 'function') closeSidebar();
+  S.view = 'policy-builder';
+  clearActive();
+  var side = document.querySelector('.sb-item[data-key="policy-builder"]');
+  if (side) side.classList.add('active');
+  renderPolicyBuilder();
+}
+
+function pbRenderDraft() {
+  var el = document.getElementById('pb-draft');
+  if (!el) return;
+  var gs = pbDraftGroups();
+  var h = '';
+  if (!gs.length) {
+    h += '<div style="color:var(--text-secondary);font-size:0.9rem;line-height:1.6">'
+      + 'Your policy language will build up here as you make choices. Nothing is written for you until you decide something.</div>';
+  } else {
+    gs.forEach(function (g) {
+      h += '<div style="margin-bottom:16px"><div style="font-weight:700;font-size:0.82rem;letter-spacing:.06em;text-transform:uppercase;color:var(--teal);margin-bottom:6px">' + esc(g.topic) + '</div>';
+      g.clauses.forEach(function (c) {
+        h += '<p style="margin:0 0 8px;font-size:0.9rem;line-height:1.6">' + esc(c.text) + '</p>';
+      });
+      h += '</div>';
+    });
+    h += '<div style="border-top:1px solid var(--border);padding-top:10px;margin-top:4px;color:var(--text-secondary);font-size:0.76rem;line-height:1.5">' + esc(PB_DISCLAIMER) + '</div>';
+  }
+  el.innerHTML = h;
+  var cnt = document.getElementById('pb-count');
+  if (cnt) {
+    var total = 0, done = 0;
+    POLICY_DECISIONS.forEach(function (g) {
+      pbVisibleDecisions(g).forEach(function (d) { total++; if (PB.answers[d.id]) done++; });
+    });
+    cnt.textContent = done + ' of ' + total + ' decisions made';
+  }
+}
+
+function renderPolicyBuilder() {
+  var center = document.getElementById('center');
+  var h = '<div class="space-head"><div class="space-accent" style="background:var(--teal)"></div>';
+  h += '<h1>Practice Policy Builder</h1>';
+  h += '<p class="space-tagline">Decide how your practice actually operates, and the policy language is built around your decisions.</p>';
+  if (isAdmin()) h += '<div style="margin-top:6px"><span class="tpl-tag" style="background:#b91c1c;color:#fff">Admin preview - not member-visible yet</span></div>';
+  h += '</div>';
+
+  h += '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:16px;background:var(--bg-subtle)">'
+    + '<div style="font-size:0.9rem;line-height:1.6;color:var(--text-secondary)">'
+    + 'Where practices legitimately differ, this shows you the options and what each one costs you, and it does not tell you which is correct. '
+    + 'Where something is actually constrained by law, a payer contract or a program rule, it is marked <b>Check before you adopt this</b>.'
+    + '</div></div>';
+
+  h += '<div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">';
+  h += '<div style="flex:1 1 420px;min-width:300px">';
+
+  POLICY_DECISIONS.forEach(function (g) {
+    var ds = pbVisibleDecisions(g);
+    if (!ds.length) return;
+    h += '<h2 style="font-family:var(--font-heading);font-size:1.3rem;margin:22px 0 10px;padding-top:12px;border-top:1px solid var(--border)">' + esc(g.topic) + '</h2>';
+    ds.forEach(function (d) {
+      var sel = PB.answers[d.id];
+      h += '<div id="pb-d-' + d.id + '" style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;margin-bottom:12px">';
+      h += '<div style="font-weight:700;margin-bottom:4px">' + esc(d.q) + '</div>';
+      h += '<div style="color:var(--text-secondary);font-size:0.86rem;line-height:1.55;margin-bottom:12px">' + esc(d.why) + '</div>';
+
+      d.choices.forEach(function (c) {
+        var on = sel === c.id;
+        h += '<div onclick="pbSelect(\'' + d.id + '\',\'' + c.id + '\')" style="cursor:pointer;border:1px solid ' + (on ? 'var(--teal)' : 'var(--border)') + ';background:' + (on ? 'rgba(42,171,184,0.07)' : 'transparent') + ';border-radius:var(--radius-md,8px);padding:11px 13px;margin-bottom:8px">';
+        h += '<div style="display:flex;gap:9px;align-items:flex-start">';
+        h += '<span style="flex:0 0 auto;margin-top:2px;width:14px;height:14px;border-radius:50%;border:2px solid ' + (on ? 'var(--teal)' : 'var(--border)') + ';background:' + (on ? 'var(--teal)' : 'transparent') + ';box-shadow:' + (on ? 'inset 0 0 0 2px var(--bg)' : 'none') + '"></span>';
+        h += '<div style="flex:1 1 auto"><div style="font-weight:600;font-size:0.92rem">' + esc(c.label) + '</div>';
+        h += '<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;margin-top:2px">' + esc(c.desc) + '</div>';
+        if (on) {
+          if (c.pros && c.pros.length) {
+            h += '<div style="margin-top:9px;font-size:0.83rem;line-height:1.5"><span style="font-weight:700;color:var(--text-secondary)">What it gives you</span><ul style="margin:3px 0 0;padding-left:18px">';
+            c.pros.forEach(function (p) { h += '<li>' + esc(p) + '</li>'; });
+            h += '</ul></div>';
+          }
+          if (c.cons && c.cons.length) {
+            h += '<div style="margin-top:7px;font-size:0.83rem;line-height:1.5"><span style="font-weight:700;color:var(--text-secondary)">What it costs you</span><ul style="margin:3px 0 0;padding-left:18px">';
+            c.cons.forEach(function (p) { h += '<li>' + esc(p) + '</li>'; });
+            h += '</ul></div>';
+          }
+          if (c.caveat) {
+            h += '<div style="margin-top:9px;border-left:3px solid #d97706;background:rgba(217,119,6,.08);padding:8px 11px;border-radius:0 6px 6px 0;font-size:0.83rem;line-height:1.5">'
+              + '<b>Check before you adopt this.</b> ' + esc(c.caveat) + '</div>';
+          }
+        }
+        h += '</div></div></div>';
+      });
+
+      var c = pbChoice(d, sel);
+      if (c) {
+        if (c.fields && c.fields.length) {
+          h += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin:10px 0 4px">';
+          c.fields.forEach(function (f) {
+            var v = (PB.fields[d.id] && PB.fields[d.id][f.key] != null) ? PB.fields[d.id][f.key] : '';
+            h += '<label style="font-size:0.82rem;color:var(--text-secondary)">' + esc(f.label) + '<br>'
+              + '<span style="display:inline-flex;align-items:center;gap:4px;margin-top:3px">'
+              + (f.prefix ? '<span>' + esc(f.prefix) + '</span>' : '')
+              + '<input type="text" value="' + esc(String(v)) + '" placeholder="' + esc(f.placeholder || '') + '" '
+              + 'oninput="pbSetField(\'' + d.id + '\',\'' + f.key + '\',this.value)" '
+              + 'style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:0.88rem">'
+              + (f.suffix ? '<span>' + esc(f.suffix) + '</span>' : '')
+              + '</span></label>';
+          });
+          h += '</div>';
+        }
+        if (c.clause) {
+          h += '<div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:10px">';
+          h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:5px">'
+            + '<span style="font-weight:700;font-size:0.78rem;letter-spacing:.05em;text-transform:uppercase;color:var(--text-secondary)">The language this adds</span>'
+            + (PB.edits[d.id] != null ? '<button class="btn-ghost" style="font-size:0.76rem;padding:3px 9px" onclick="pbResetClause(\'' + d.id + '\')">Reset wording</button>' : '')
+            + '</div>';
+          h += '<textarea oninput="pbEditClause(\'' + d.id + '\',this.value)" rows="3" '
+            + 'style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:0.88rem;line-height:1.55;resize:vertical">'
+            + esc(pbClauseText(d, c)) + '</textarea>';
+          h += '<div style="color:var(--text-secondary);font-size:0.76rem;margin-top:3px">Edit this to match how you say it. Your wording is what gets exported.</div>';
+          h += '</div>';
+        }
+      }
+      h += '</div>';
+    });
+  });
+
+  h += '</div>';   // end questions column
+
+  // ── Live draft ──
+  h += '<div style="flex:1 1 320px;min-width:280px;position:sticky;top:14px">';
+  h += '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;background:var(--bg-subtle)">';
+  h += '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:4px">'
+    + '<div style="font-family:var(--font-heading);font-size:1.1rem;font-weight:700">Your practice policy draft</div></div>';
+  h += '<div id="pb-count" style="color:var(--text-secondary);font-size:0.78rem;margin-bottom:12px"></div>';
+  h += '<div id="pb-draft" style="max-height:52vh;overflow:auto"></div>';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">'
+    + '<button class="btn-primary" style="font-size:0.85rem;padding:7px 14px" onclick="pbCopy()">Copy policy</button>'
+    + '<button class="btn-ghost" style="font-size:0.85rem;padding:7px 14px" onclick="pbDownload()">Download</button>'
+    + '<button class="btn-ghost" style="font-size:0.85rem;padding:7px 14px" onclick="pbReset()">Start over</button>'
+    + '</div>';
+  h += '</div></div>';
+
+  h += '</div>';   // end flex row
+  center.innerHTML = h;
+  pbRenderDraft();
+  window.scrollTo(0, 0);
 }
 
 function openTemplateAdd() {
