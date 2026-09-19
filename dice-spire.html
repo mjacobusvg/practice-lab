@@ -146,6 +146,10 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .enemy-row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;min-height:150px;align-items:flex-end}
 .enemy-row.rear{min-height:0;transform:scale(.88);transform-origin:bottom center;margin-bottom:-10px}
 .rank-label{text-align:center;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);margin:2px 0 -2px}
+.rider{position:absolute;top:-5px;right:-5px;font-size:10px;line-height:1;padding:2px 3px;border-radius:5px;
+  background:var(--bg);border:1px solid var(--line)}
+.face{position:relative}
+.die{position:relative}
 .unit.blocked{opacity:.72}
 .unit.blocked::before{content:'';position:absolute;inset:0;border-radius:var(--r-lg);
   border:1px dashed rgba(255,255,255,.18);pointer-events:none}
@@ -430,6 +434,54 @@ Object.keys(SIGILS).forEach(k => {
 });
 /* how deep a rite is running right now */
 const sigil = k => (C && C.sigils && C.sigils[k]) || 0;
+/* ----------------------------------------------------------------- banners */
+/* The hero you pick FIRST carries the banner, and the banner is a rule that
+   holds for the whole run. Picking three heroes used to be picking three sets
+   of faces; now the order is a decision too. */
+const BANNERS = {
+  vanguard:  {name:'Banner of the Wall',  ic:'\u{1F6E1}\uFE0F', desc:'Every hero begins each fight with 3 shield.'},
+  duelist:   {name:'Banner of the Edge',  ic:'\u{1F5E1}\uFE0F', desc:'The first Strike each hero lands in a fight deals 4 more.'},
+  warden:    {name:'Banner of the Grove', ic:'\u{1F33F}', desc:'The party mends 5 more at the end of every fight.'},
+  pyromancer:{name:'Banner of the Ember', ic:'\u{1F525}', desc:'Fire grows by 2 each round instead of 1.'},
+  venomist:  {name:'Banner of the Fang',  ic:'\u2620\uFE0F', desc:'Poison on an enemy only thins every other round.'},
+  herald:    {name:'Banner of the Horn',  ic:'\u{1F4A2}', desc:'Every hero begins each fight with 1 power.'},
+  sorcerer:  {name:'Banner of the Eye',   ic:'\u{1F52E}', desc:'Every fight begins with 2 mana.'}
+};
+const bannerDef = () => (S && BANNERS[S.banner]) || null;
+const banner = k => !!S && S.banner === k;
+
+/* ------------------------------------------------------------------ riders */
+/* Sharpening only ever added a number, which is why a reward stopped mattering
+   the moment your own die outgrew it. A rider changes what a face DOES, and a
+   rider on your best Strike is worth something at every point in a run. One
+   face carries one rider; inscribing over an old one replaces it. */
+const RIDERS = {
+  searing:  {name:'Searing',  ic:'\u{1F525}', col:'var(--orange)', on:['dmg','dmgAll','leech','poison'],
+             desc:'Also sets whatever it hits burning for 1.'},
+  tainted:  {name:'Tainted',  ic:'\u2620\uFE0F', col:'var(--lime)', on:['dmg','leech','burn'],
+             desc:'Also applies 2 poison.'},
+  bracing:  {name:'Bracing',  ic:'\u{1F6E1}\uFE0F', col:'var(--blue)',
+             on:['dmg','leech','burn','poison','stun','dmgAll','mana','power','guard','regen'],
+             desc:'Whoever rolled it gains 2 shield.'},
+  quick:    {name:'Quick',    ic:'\u21BB', col:'var(--cyan)',
+             on:['shield','shieldAll','heal','regen','mana','power','guard','dmg','dmgAll','burn','poison','stun','leech'],
+             desc:'Grants a reroll when it is spent.'},
+  rallying: {name:'Rallying', ic:'\u{1F4EF}', col:'var(--pink)', on:['shield','shieldAll','heal','regen','mana','power','guard'],
+             desc:'Whoever rolled it gains 1 power.'},
+  cleansing:{name:'Cleansing',ic:'\u2728', col:'var(--green)', on:['heal','shield','shieldAll','regen'],
+             desc:'Also clears a point of poison and of burning from every hero.'},
+  cruel:    {name:'Cruel',    ic:'\u{1F5E1}\uFE0F', col:'var(--red)', on:['dmg','leech'],
+             desc:'Lands for 5 more against anything at or below half HP.'},
+  arcing:   {name:'Arcing',   ic:'\u26A1', col:'var(--gold)', on:['dmg'],
+             desc:'Also hits every other enemy for 2.'},
+  piercing: {name:'Piercing', ic:'\u27B3', col:'var(--violet)', on:['dmg','leech','stun'],
+             desc:'Ignores the Armoured trait, and reaches the back rank.'}
+};
+const riderDef = r => RIDERS[r] || null;
+const ridersFor = k => Object.keys(RIDERS).filter(r => RIDERS[r].on.includes(k));
+const canInscribe = f => !!f && f.k !== 'blank' && !isSigil(f.k)
+  && ridersFor(f.k).some(r => r !== f.r);
+
 /* ------------------------------------------------------------------- ranks */
 /* Enemies stand in two ranks. Anything you have to swing to land -- Strike,
    Leech, Stun -- can only reach the front, while the things you throw or cast
@@ -437,6 +489,8 @@ const sigil = k => (C && C.sigils && C.sigils[k]) || 0;
    Duelist, and it gives the healers and summoners somewhere to work from. */
 const REACH = ['burn','poison','charm','daze','dmgAll','shieldAll'];
 const reaches = k => !KIND[k] || KIND[k].target !== 'enemy' || REACH.includes(k);
+/* a whole face, rider included -- Piercing puts a Strike through the line */
+const faceReaches = f => !!f && (reaches(f.k) || f.r === 'piercing');
 const F = (k, v = 0) => ({ k, v });
 /* Every hero owns one kind of face outright. Nobody else can be given it, so a
    party is defined by who is in it rather than by whatever the rewards offered.
@@ -468,7 +522,9 @@ const ownerName = k => {
   const names = o.map(key => (HEROES.find(x => x.key === key) || {}).name).filter(Boolean);
   return names.length > 1 ? names.slice(0, -1).join(', ') + ' or ' + names[names.length - 1] : names[0];
 };
-const faceLabel = f => f.k === 'blank' ? 'Blank' : `${KIND[f.k].name}${f.v ? ' ' + f.v : ''}`;
+const faceLabel = f => f.k === 'blank' ? 'Blank'
+  : `${f.r && RIDERS[f.r] ? RIDERS[f.r].name + ' ' : ''}${KIND[f.k].name}${f.v ? ' ' + f.v : ''}`;
+const faceTip = f => `${KIND[f.k].desc(f.v)}${f.r && RIDERS[f.r] ? ' ' + RIDERS[f.r].desc : ''}`;
 
 /* ------------------------------------------------------------------- heroes */
 const HEROES = [
@@ -539,7 +595,7 @@ const TRAITS = {
   shelled:   {ic:'🐚', name:'Shelled',      v:[0],
               desc:()=>`Takes no health damage at all while it still has shield. Strip the shell first.`},
   regrowing: {ic:'🪴', name:'Regrowing',    v:[4,6,8],
-              desc:v=>`Heals ${v} at the end of every round. Chip damage loses to it; a burst kills it.`},
+              desc:v=>`Puts back up to ${v} of whatever you took off it, at the end of every round. Chip damage loses to it; a burst kills it.`},
   ethereal:  {ic:'🔮', name:'Ethereal',     v:[0],
               desc:()=>`Strikes and Cleaves land for half. Venom, Ignite and anything that ignores armour land in full.`},
   volatile:  {ic:'💣', name:'Volatile',     v:[6,9,12],
@@ -879,6 +935,7 @@ let UI = { modal:null, anim:true };
 function newRun(heroKeys){
   S = {
     act: 1,
+    banner: heroKeys[0],        /* the first hero picked carries it */
     party: heroKeys.map(k => {
       const h = HEROES.find(x => x.key === k);
       return { uid:uid(), key:h.key, name:h.name, av:h.av, maxHp:h.hp, hp:h.hp,
@@ -1167,10 +1224,74 @@ function buildEncounter(type){
    the line, so a party that can only reach the front is never left with
    nothing to hit. */
 function layOutRanks(list){
-  if(list.length < 2){ list.forEach(e => e.rank = 0); return list; }
+  /* act one is the act you learn in: no ranks there, the same rule that keeps
+     sieges out of it */
+  if(list.length < 2 || (S && S.act < 2)){ list.forEach(e => e.rank = 0); return list; }
   const holders = list.filter(e => !e.back);
   list.forEach(e => { e.rank = (e.back && holders.length) ? 1 : 0; });
   return list;
+}
+
+/* ------------------------------------------------------------------- waves */
+/* A big fight is a siege, not one exchange. Kill what is in front of you and
+   more comes up the stair; stall, and it comes anyway, on top of what is
+   already there. That is what the clock is for -- a long fight has to be a
+   dangerous fight, or every standing rule you laid down would just be free. */
+const WAVE_CLOCK = 6;
+function buildWaves(type){
+  const act = S.act;
+  /* what comes up the stair is a reinforcement, not a second encounter: it
+     arrives weaker than what you are already fighting */
+  const mk = n => {
+    const pool = BESTIARY.filter(b => b.acts.includes(act));
+    const list = [];
+    for(let i = 0; i < n; i++) list.push(makeEnemy(pick(pool), act, depthMul() * 0.8, { item:false, trait:false }));
+    return list;
+  };
+  /* act one is where the run is still being learned: no sieges there */
+  if(act === 1) return [];
+  if(type === 'boss')  return act === 3 ? [mk(2)] : [];
+  if(type === 'elite') return [mk(act === 3 ? 2 : 1)];
+  return [];
+}
+/* the next wave arrives: behind the line if there is still a line, in front of
+   you if there is not */
+function sendWave(early){
+  if(!C.waves || !C.waves.length) return false;
+  const wave = C.waves.shift();
+  /* while a line is still holding, what arrives queues up behind it */
+  const holding = !!frontRank().length;
+  if(holding) wave.forEach(e => { e.rank = 1; });
+  else layOutRanks(wave);
+  C.enemies = C.enemies.concat(wave);
+  C.press = WAVE_CLOCK;
+  C.waveNo = (C.waveNo || 1) + 1;
+  C.phaseBanner = early ? 'The stair fills' : 'More comes up the stair';
+  logc(early ? `The stair fills behind them. ${wave.length === 1 ? 'Something else' : 'More'} arrives before you are done.`
+             : `${wave.length === 1 ? 'Something else' : 'More'} comes up the stair.`);
+  wave.forEach(e => floatOn(e.uid, 'ARRIVES', 'var(--gold)'));
+  setIntents(wave);
+  return true;
+}
+/* true only when the field is clear AND nothing is left to come */
+function fieldCleared(){
+  if(livingEnemies().length) return false;
+  if(C.waves && C.waves.length) return !sendWave(false);
+  return true;
+}
+/* the clock: stalling is not free */
+function tickPress(){
+  if(!C.press) return;
+  C.press--;
+  if(C.press > 0) return;
+  if(C.waves && C.waves.length){ sendWave(true); return; }
+  /* twice only -- the clock is there to stop you stalling, not to run the
+     fight up until it kills you on its own */
+  if((C.pressed || 0) >= 2){ C.press = 0; return; }
+  C.pressed = (C.pressed || 0) + 1;
+  C.press = WAVE_CLOCK;
+  livingEnemies().forEach(e => { e.power += 2; floatOn(e.uid, '+2 POW', 'var(--pink)'); });
+  logc('The spire presses. Everything still standing grows stronger.');
 }
 
 function makeThrall(v){
@@ -1187,7 +1308,7 @@ function startCombat(type){
     enemies: buildEncounter(type),
     dice: [],
     turn: 0,
-    mana: (has('clover') ? 2 : 0) + glob('manaCombat'),
+    mana: (has('clover') ? 2 : 0) + glob('manaCombat') + (banner('sorcerer') ? 2 : 0),
     summons: [],
     rerolls: 0,
     rerollMode: false,
@@ -1195,6 +1316,10 @@ function startCombat(type){
     spellsUsed: [],
     sigils: {},                        /* rites laid down in THIS fight only */
     echoUsed: 0,
+    waves: [],
+    waveNo: 1,
+    press: 0,
+    pressed: 0,
     drops: [],
     phaseBanner: null,
     log: [],
@@ -1204,13 +1329,16 @@ function startCombat(type){
     h.shield = 0; h.poison = 0; h.burn = 0; h.charmed = 0; h.regen = 0; h.steeled = 0; h.guarding = false;
     h.charge = 0;                      /* momentum is built inside a fight, not hoarded between them */
     h.struck = false;                  /* for Opening, the Duelist's first blow */
-    if(hasPerk(h, 'h3') || partyPerk('h3')) h.shield = Math.max(h.shield, 3);
+    h.bannerHit = false;               /* Banner of the Edge, once per hero per fight */
     /* Standing Order keeps what the Herald built; everyone else starts clean */
-    h.power = (partyPerk('h1') ? (h.power || 0) : 0) + (has('warhorn') ? 1 : 0);
+    h.power = (partyPerk('h1') ? (h.power || 0) : 0) + (has('warhorn') ? 1 : 0) + (banner('herald') ? 1 : 0);
     if(h.hp <= 0){ h.hp = 1; }
     h.downed = h.hp <= 0;
   });
+  C.waves = buildWaves(type);
+  C.press = C.waves.length ? WAVE_CLOCK : 0;
   logc(type === 'boss' ? 'A boss blocks the stair.' : type === 'elite' ? 'Something big is waiting.' : 'Enemies close in.');
+  if(C.waves.length) logc(`This is a siege. ${C.waves.length === 1 ? 'Another wave is' : C.waves.length + ' more waves are'} behind them.`);
   if(S.nextFight && S.nextFight.poison){
     S.party.forEach(h => { h.poison += S.nextFight.poison; });
     logc(`Whatever you picked up back there is still in your blood. ${S.nextFight.poison} poison on everyone.`);
@@ -1231,6 +1359,11 @@ function beginPlayerTurn(){
     const keepHalf = has('bulwark') || hasPerk(h, 'v4');       /* Second Shield */
     h.shield = keepHalf ? Math.floor(h.shield / 2) : 0;
     h.guarding = false;
+    /* Opening shield belongs HERE, not in startCombat: that runs before the
+       first turn begins, and the fade above then wiped it before anyone saw
+       it. Quartermaster had silently done nothing since it was written. */
+    if(C.turn === 1 && (hasPerk(h, 'h3') || partyPerk('h3') || banner('vanguard')))
+      h.shield = Math.max(h.shield, 3);
   });
   C.mana += (has('wellspring') ? 1 : 0) + glob('manaTurn') + (partyPerk('p4') ? 1 : 0) + (setActive('mind') ? 1 : 0)
           + sigil('sigWell');
@@ -1265,7 +1398,7 @@ function beginPlayerTurn(){
 function rollAll(){
   C.dice = rollingAllies().map(h => {
     const f = h.faces[rnd(h.faces.length)];
-    return { id:uid(), ownerUid:h.uid, k:f.k, v:f.v, used:false, mark:false, fresh:true };
+    return { id:uid(), ownerUid:h.uid, k:f.k, v:f.v, r:f.r || null, used:false, mark:false, fresh:true };
   });
 }
 function rerollMarked(){
@@ -1276,7 +1409,7 @@ function rerollMarked(){
     const h = unitByUid(d.ownerUid);
     if(!h) return;
     const f = h.faces[rnd(h.faces.length)];
-    d.k = f.k; d.v = f.v; d.mark = false; d.fresh = true;
+    d.k = f.k; d.v = f.v; d.r = f.r || null; d.mark = false; d.fresh = true;
   });
   logc(`Rerolled ${marked.length} ${marked.length === 1 ? 'die' : 'dice'}.`);
   C.rerollMode = C.rerolls > 0;
@@ -1296,8 +1429,10 @@ const rollingAllies = () => livingAllies().filter(a => !a.charmed);
 const unitByUid   = u => allies().find(a => a.uid === u);
 const enemyByUid = u => C.enemies.find(e => e.uid === u);
 
-function setIntents(){
-  livingEnemies().forEach(e => {
+/* `only` sets intents for a subset -- a wave arriving mid-turn must not
+   re-roll what the enemies already on the field have telegraphed */
+function setIntents(only){
+  (only || livingEnemies()).forEach(e => {
     if(e.charm > 0){
       /* Under control it ignores its own script and swings at its own side,
          using the best attack it knows. Alone in the room there is nothing to
@@ -1347,10 +1482,10 @@ const enemyAtk = (e, base) => e.weak > 0 ? Math.max(1, Math.ceil(base / 2)) : ba
 /* Struck damage: what a Strike, Cleave, spell or thrown flask does. Venom and
    Ignite go straight to hurtEnemy and are deliberately untouched by armour and
    by Ethereal, which is what makes a status build the answer to those two. */
-function heroDamageToEnemy(e, n){
+function heroDamageToEnemy(e, n, pierce){
   if(has('seal') && e.hp <= e.maxHp * 0.3) n += 4;
   if(hasTrait(e, 'ethereal') && !setActive('drake')) n = Math.ceil(n / 2);
-  if(hasTrait(e, 'armoured')) n = Math.max(0, n - e.trait.v);
+  if(hasTrait(e, 'armoured') && !pierce) n = Math.max(0, n - e.trait.v);
   if(n <= 0){
     floatOn(e.uid, 'NO', 'var(--ink-dim)');
     return 0;
@@ -1381,6 +1516,7 @@ function hurtEnemy(e, n, ignoreShield){
     return n;                                /* the shell eats the overflow too */
   }
   e.hp = Math.max(0, e.hp - left);
+  e.tookThisRound = (e.tookThisRound || 0) + left;
   floatOn(e.uid, '-' + n, 'var(--red)');
   if(e.boss && e.hp > 0) checkBossPhase(e);
   if(e.hp === 0){
@@ -1461,7 +1597,7 @@ function clickTarget(kind, uidv){
 function pendingReaches(){
   const p = C.pending;
   if(!p) return true;
-  if(p.type === 'die'){ const d = C.dice[p.i]; return d ? reaches(d.k) : true; }
+  if(p.type === 'die'){ const d = C.dice[p.i]; return d ? faceReaches(d) : true; }
   if(p.type === 'spell'){ const sp = spellDef(p.key); return sp.reach !== false; }
   return true;                       /* anything you throw goes over the line */
 }
@@ -1505,14 +1641,15 @@ function applyDie(i, target){
    ask for it twice */
 function resolveFace(h, d, target){
   const v = faceValue(h, d);
-  if(KIND[d.k] && KIND[d.k].target === 'enemy' && target && !reaches(d.k)){
+  if(KIND[d.k] && KIND[d.k].target === 'enemy' && target && !faceReaches(d)){
     const e = enemyByUid(target.uid);
     if(e && e.rank && frontRank().length) return;     /* it cannot be reached */
   }
   switch(d.k){
     case 'dmg': {
       const e = enemyByUid(target.uid); if(!e) break;
-      heroDamageToEnemy(e, v);
+      heroDamageToEnemy(e, v + (d.r === 'cruel' && e.hp <= e.maxHp / 2 ? 5 : 0), d.r === 'piercing');
+      if(banner('duelist') && !h.bannerHit){ h.bannerHit = true; heroDamageToEnemy(e, 4); }  /* Banner of the Edge */
       if(hasPerk(h, 'd4') && !h.struck){ h.struck = true; heroDamageToEnemy(e, v); }  /* Opening */
       const ls = glob('lifesteal');
       if(ls > 0 && !h.isSummon) healHero(h, ls);
@@ -1606,7 +1743,7 @@ function resolveFace(h, d, target){
     }
     case 'leech': {
       const e = enemyByUid(target.uid); if(!e) break;
-      heroDamageToEnemy(e, v);
+      heroDamageToEnemy(e, v + (d.r === 'cruel' && e.hp <= e.maxHp / 2 ? 5 : 0), d.r === 'piercing');
       const back = Math.ceil(v / 2);
       healHero(h, back);
       logc(`${h.name} draws ${v} out of ${e.name} and keeps ${back}.`);
@@ -1639,6 +1776,40 @@ function resolveFace(h, d, target){
       }
       logc(`${h.name} rolls a blank.`);
     }
+  }
+  if(d.r) resolveRider(h, d, target);
+}
+
+/* the rider fires after the face itself, so it reads as "and also" */
+function resolveRider(h, d, target){
+  const rd = riderDef(d.r);
+  if(!rd) return;
+  const e = target && target.uid !== undefined ? enemyByUid(target.uid) : null;
+  switch(d.r){
+    case 'searing':
+      if(d.k === 'dmgAll') livingEnemies().forEach(x => { x.burn += 1; });
+      else if(e && e.hp > 0){ e.burn += 1; floatOn(e.uid, '\u{1F525}1', 'var(--orange)'); }
+      break;
+    case 'tainted':
+      if(e && e.hp > 0){ e.poison += 2; floatOn(e.uid, '\u26202', 'var(--lime)'); }
+      break;
+    case 'bracing':
+      h.shield += 2; floatOn(h.uid, '+2', 'var(--blue)');
+      break;
+    case 'quick':
+      C.rerolls += 1;
+      break;
+    case 'cleansing':
+      livingAllies().forEach(a => { if(a.poison > 0) a.poison--; if(a.burn > 0) a.burn--; });
+      break;
+    case 'rallying':
+      h.power += 1; floatOn(h.uid, '+1 POW', 'var(--pink)');
+      break;
+    /* cruel and piercing change the blow itself, so they are handled where the
+       damage is worked out rather than after the fact */
+    case 'arcing':
+      livingEnemies().forEach(x => { if(!e || x.uid !== e.uid) heroDamageToEnemy(x, 2); });
+      break;
   }
 }
 
@@ -1700,7 +1871,7 @@ function applySpell(key, target){
 }
 
 function afterAction(){
-  if(!livingEnemies().length){ endCombat(true); return; }
+  if(fieldCleared()){ endCombat(true); return; }
   if(!livingHeroes().length){ endCombat(false); return; }
   save(); render();
 }
@@ -1835,7 +2006,7 @@ function enemyPhase(){
       }
     }
     if(!livingHeroes().length){ endCombat(false); return; }
-    if(!livingEnemies().length){ endCombat(true); return; }
+    if(fieldCleared()){ endCombat(true); return; }
     render();
     setTimeout(step, 240);
   };
@@ -1901,32 +2072,40 @@ function endOfRound(){
     logc(`${e.name} burns for ${e.burn + kindleRite}.`);
   });
   const stillBurning = burning.filter(e => e.hp > 0);
-  stillBurning.forEach(e => { e.burn += 1; });
+  stillBurning.forEach(e => { e.burn += banner('pyromancer') ? 2 : 1; });
   const unlit = livingEnemies().filter(e => e.burn === 0);
   stillBurning.slice(0, unlit.length).forEach((src, i) => {
     unlit[i].burn = 1;
     floatOn(unlit[i].uid, '🔥', 'var(--orange)');
     logc(`The fire spreads from ${src.name} to ${unlit[i].name}.`);
   });
-  if(!livingEnemies().length){ endCombat(true); return; }
+  if(fieldCleared()){ endCombat(true); return; }
 
   /* poison ticks after everyone has acted */
   livingEnemies().forEach(e => {
     if(e.steeled > 0) e.steeled--;
     if(e.weak > 0) e.weak--;
+    /* It knits back only what was actually taken off it this round. Without
+       that cap a weak party met a boss that healed faster than it could chip,
+       and the fight simply never ended. Chip damage still loses to it; it can
+       just never put back more than you removed. */
     if(hasTrait(e, 'regrowing') && e.hp > 0 && e.hp < e.maxHp){
-      const before = e.hp;
-      e.hp = Math.min(e.maxHp, e.hp + e.trait.v);
-      floatOn(e.uid, '+' + (e.hp - before), 'var(--green)');
-      logc(`${e.name} knits itself back together.`);
+      const back = Math.min(e.trait.v, e.tookThisRound || 0);
+      if(back > 0){
+        const before = e.hp;
+        e.hp = Math.min(e.maxHp, e.hp + back);
+        floatOn(e.uid, '+' + (e.hp - before), 'var(--green)');
+        logc(`${e.name} knits itself back together.`);
+      }
     }
+    e.tookThisRound = 0;
   });
   livingEnemies().forEach(e => {
     if(e.poison > 0){
       hurtEnemy(e, e.poison, true);
       logc(`${e.name} takes ${e.poison} poison.`);
       /* Lingering: the stack only thins every other round */
-      if((!partyPerk('n2') && !setActive('venom')) || C.turn % 2 === 0) e.poison--;
+      if((!partyPerk('n2') && !setActive('venom') && !banner('venomist')) || C.turn % 2 === 0) e.poison--;
     }
   });
   livingAllies().slice().forEach(h => {
@@ -1960,7 +2139,8 @@ function endOfRound(){
   if(growthRite) livingAllies().forEach(h => healHero(h, 2 * growthRite));
   if(furyRite || growthRite)
     logc(`The rites hold.${furyRite ? ' The party grows angrier.' : ''}${growthRite ? ' The party knits itself back together.' : ''}`);
-  if(!livingEnemies().length){ endCombat(true); return; }
+  tickPress();
+  if(fieldCleared()){ endCombat(true); return; }
   if(!livingHeroes().length){ endCombat(false); return; }
   beginPlayerTurn();
   render();
@@ -1980,6 +2160,7 @@ function endCombat(won){
       h.shield = 0; h.power = 0; h.poison = 0;
     });
     S.party.forEach(h => healHero(h, Math.round(h.maxHp * 0.15)));
+    if(banner('warden')) S.party.forEach(h => healHero(h, 5));
     if(has('bloodstone')) S.party.forEach(h => healHero(h, 3));
     if(glob('postHeal')) S.party.forEach(h => healHero(h, glob('postHeal')));
     (C.drops || []).forEach(queueItem);          /* what they carried is now yours */
@@ -2378,6 +2559,15 @@ function buyScour(){
   const back = m;
   openScour(scourPrice(), () => { UI.modal = back; render(); });
 }
+const inscribePrice = () => Math.round(110 * priceMod());
+function buyInscribe(){
+  const m = shopModal(); if(!m) return;
+  if(m.inscribed || S.gold < inscribePrice()) return;
+  const back = m;
+  UI.modal = { type:'inscribe', cost:inscribePrice(), shop:back,
+               after:() => { UI.modal = back; render(); } };
+  render();
+}
 function buyRations(){
   const m = shopModal(); if(!m) return;
   if(m.rations.used || S.gold < m.rations.price) return;
@@ -2427,6 +2617,39 @@ function forgeFace(heroUid, idx){
   if(!f || f.k === 'blank' || isSigil(f.k)) return;    /* a rite has no number to sharpen */
   f.v += (['stun','charm','daze','summon','guard','echo','dmgAll','shieldAll','power','mana','burn'].includes(f.k) ? 1 : 2);
   UI.modal = null; save(); render();
+}
+function campInscribe(){ UI.modal = { type:'inscribe' }; render(); }
+/* an inscription bought at the counter goes back to the counter, one taken at
+   a camp fire just ends */
+function reInscribe(){ const m = UI.modal || {}; UI.modal = { type:'inscribe', after:m.after, cost:m.cost, shop:m.shop }; render(); }
+function leaveInscribe(){ const a = UI.modal && UI.modal.after; UI.modal = null; if(a) a(); else closeEvent(); }
+/* pick the face first, then what to write on it -- three of the riders that
+   fit that kind, so an inscription is a choice and not a shopping list */
+function pickInscribe(heroUid, idx){
+  const h = heroByUid(heroUid);
+  const f = h && h.faces[idx];
+  if(!canInscribe(f)) return;
+  const offer = sample(ridersFor(f.k).filter(r => r !== f.r), 3);
+  if(!offer.length){ const pv = UI.modal || {}; UI.modal = { type:'inscribe', after:pv.after, cost:pv.cost, shop:pv.shop }; render(); return; }
+  const prev = UI.modal || {};
+  UI.modal = { type:'inscribe', heroUid, idx, offer, after:prev.after, cost:prev.cost, shop:prev.shop };
+  render();
+}
+function applyRider(r){
+  const m = UI.modal;
+  if(!m || m.type !== 'inscribe' || m.heroUid === undefined) return;
+  const h = heroByUid(m.heroUid);
+  const f = h && h.faces[m.idx];
+  if(!f || !RIDERS[r] || !RIDERS[r].on.includes(f.k)) return;
+  if(m.cost){                       /* the merchant is paid on delivery */
+    if(S.gold < m.cost) return;
+    S.gold -= m.cost;
+    if(m.shop) m.shop.inscribed = true;
+  }
+  f.r = r;
+  const back = m.after;
+  UI.modal = null; save();
+  if(back) back(); else render();
 }
 function campScour(){ openScour(0, null); }
 function campDrill(){
@@ -2753,6 +2976,7 @@ function renderTopbar(){
     <div class="stat" data-tip="Fate|A reserve of rerolls that lasts the whole run, spent when your per-turn rerolls are gone. Camp fires restore one.">✨ <b>${S.fate}</b>/${fateMax()}</div>
     <button class="stat" onclick="openInventory()" style="cursor:pointer;border:1px solid var(--line-hi);border-radius:8px;padding:3px 9px"
       data-tip="Carrying|Tap to read every item, relic and spell you hold.">🎒 <b>${S.bag.length}</b>/${BAG_MAX} <span class="faint">items</span></button>
+    ${bannerDef() ? `<div class="stat" data-tip="${esc(bannerDef().name)}|${esc(bannerDef().desc)} It comes from the hero you picked first, and holds for the whole run.">${bannerDef().ic}</div>` : ''}
     ${S.talisman ? `<div class="stat" data-tip="The Talisman|The act three boss will not face anyone who does not carry it.">🔯</div>` : ''}
     <div class="relic-bar">${relics}<button class="btn sm ghost" onclick="abandonRun()">Abandon</button></div>`;
 }
@@ -2767,11 +2991,15 @@ function viewTitle(){
   const resumable = !!localStorage.getItem(SAVE_KEY);
   const cards = HEROES.map(h => {
     const on = titlePick.includes(h.key);
+    const lead = titlePick[0] === h.key;
+    const bn = BANNERS[h.key];
     return `<div class="hero-card ${on ? 'on' : ''}" onclick="togglePick('${h.key}')">
       <div class="hd">
         <div class="av">${h.av}</div>
-        <div><div class="nm">${h.name}</div><div class="hp">${h.hp} HP</div></div>
+        <div><div class="nm">${h.name}${on ? ` <span class="faint" style="font-weight:400">#${titlePick.indexOf(h.key) + 1}</span>` : ''}</div><div class="hp">${h.hp} HP</div></div>
       </div>
+      ${bn ? `<div class="tiny" style="margin:6px 0 2px;color:${lead ? 'var(--gold)' : 'var(--ink-faint)'}"
+        data-tip="${esc(bn.name)}|${esc(bn.desc)} Only the hero you pick FIRST brings their banner.">${bn.ic} ${esc(bn.name)}${lead ? ' \u2014 flying' : ''}: ${esc(bn.desc)}</div>` : ''}
       <div class="desc">${esc(h.blurb)}</div>
       <div class="faces">${h.faces.map(f => faceHTML(f)).join('')}</div>
       <div class="tiny" style="margin-top:9px;color:var(--violet)" data-tip="${esc(spellDef(h.spell).name)}|${esc(spellDef(h.spell).desc)}">
@@ -2790,7 +3018,9 @@ function viewTitle(){
   <div class="panel">
     <div class="spread" style="margin-bottom:12px">
       <div><h2 style="font-size:22px">Choose three</h2>
-      <div class="muted tiny">Picked ${titlePick.length} of 3</div></div>
+      <div class="muted tiny">Picked ${titlePick.length} of 3. ${titlePick.length
+        ? `The <b style="color:var(--gold)">${esc(HEROES.find(x => x.key === titlePick[0]).name)}</b> carries the banner.`
+        : 'Whoever you pick first carries the banner, and their rule holds all run.'}</div></div>
       <div class="row">
         ${resumable ? `<button class="btn ghost" onclick="resumeRun()">Resume run</button>` : ''}
         <button class="btn primary" ${titlePick.length === 3 ? '' : 'disabled'} onclick="newRun(titlePick)">Descend →</button>
@@ -2808,6 +3038,10 @@ function viewTitle(){
       <b style="color:var(--ink)">Fire</b> also ignores shields, but it never fades: each round it burns, then grows by 1, then spreads to an enemy that is not yet alight.<br>
       <b style="color:var(--ink)">Heroes level up</b> as you win fights, and each level is a choice of two from that hero's own list. Elites and bosses count double.<br>
       <b style="color:var(--ink)">Mana</b> comes only from the Warden, Pyromancer and Sorcerer. Everyone else pays for their signature spell in their own work: the Duelist charges Finisher with Strikes, the Vanguard charges Bulwark by blocking.<br>
+      <b style="color:var(--ink)">The first hero you pick</b> carries their banner, a rule that holds for the whole run. The other two do not.<br>
+      <b style="color:var(--ink)">Riders</b> are written onto a single die face at a camp fire or an engraver, and change what that face does rather than what it is worth.<br>
+      <b style="color:var(--ink)">Enemies stand in two ranks.</b> Strikes, Leech and Stun only reach the front; fire, venom, Cleave and anything cast go over it. Kill the front and the back steps up.<br>
+      <b style="color:var(--ink)">Elites and bosses are sieges.</b> Clear what is in front of you and more comes up the stair, and if you stall the clock brings it early.<br>
       <b style="color:var(--ink)">Rewards are faces.</b> A die has six sides, so taking a new face means replacing one you have.<br>
       <b style="color:var(--ink)">Grinding a die down</b> at a merchant or a camp fire removes a side for good, down to ${MIN_FACES}. Fewer sides means the rest come up more often.<br>
       <b style="color:var(--ink)">Dominated</b> enemies fight for you and attack their own side, so it is a crowd tool: a lone boss has nobody to turn on.<br>
@@ -2833,9 +3067,11 @@ function resumeRun(){
 
 function faceHTML(f, cls, click){
   const K = KIND[f.k];
+  const rd = riderDef(f.r);
   return `<div class="face ${f.k === 'blank' ? 'blank' : ''} ${cls || ''}" ${click ? `onclick="${click}"` : ''}
-    data-tip="${esc(faceLabel(f))}|${esc(K.desc(f.v))}" style="border-color:${f.k === 'blank' ? '' : 'rgba(255,255,255,.18)'}">
-    <span class="ic">${K.ic}</span>${f.k === 'blank' || isSigil(f.k) ? '' : `<span class="v" style="color:${K.col}">${f.v}</span>`}</div>`;
+    data-tip="${esc(faceLabel(f))}|${esc(faceTip(f))}" style="border-color:${f.k === 'blank' ? '' : rd ? rd.col : 'rgba(255,255,255,.18)'}">
+    <span class="ic">${K.ic}</span>${f.k === 'blank' || isSigil(f.k) ? '' : `<span class="v" style="color:${K.col}">${f.v}</span>`}
+    ${rd ? `<span class="rider" style="color:${rd.col}">${rd.ic}</span>` : ''}</div>`;
 }
 
 /* --------------------------------------------------------------------- map */
@@ -3010,8 +3246,11 @@ function viewCombat(){
     const K = KIND[d.k];
     const v = faceValue(h, d);
     const sel = C.pending && C.pending.type === 'die' && C.pending.i === i;
+    const rd = riderDef(d.r);
     return `<div class="die ${d.used ? 'used' : ''} ${sel ? 'sel' : ''} ${d.mark ? 'marked' : ''} ${d.fresh ? 'roll' : ''}"
-        onclick="clickDie(${i})" data-tip="${esc(K.name)}|${esc(K.desc(v))}">
+        onclick="clickDie(${i})" data-tip="${esc(faceLabel(d))}|${esc(faceTip({k:d.k, v, r:d.r}))}"
+        ${rd ? `style="border-color:${rd.col}"` : ''}>
+      ${rd ? `<span class="rider" style="color:${rd.col}">${rd.ic}</span>` : ''}
       <div class="who">${h ? h.name : ''}</div>
       <div class="glyph">${K.ic}</div>
       ${d.k === 'blank' ? '<div class="val" style="color:var(--ink-faint)">—</div>'
@@ -3058,9 +3297,13 @@ function viewCombat(){
   return `
   <div class="field">
     <div class="spread">
-      <div><h2 style="font-size:20px">${C.type === 'boss' ? 'Boss' : C.type === 'elite' ? 'Elite' : 'Combat'} — turn ${C.turn}</h2>
+      <div><h2 style="font-size:20px">${C.type === 'boss' ? 'Boss' : C.type === 'elite' ? 'Elite' : 'Combat'} — turn ${C.turn}${(C.waveNo || 1) > 1 ? ` · wave ${C.waveNo}` : ''}</h2>
         <div class="muted tiny">${esc(hint)}</div></div>
       <div class="row">
+        ${C.press ? `<div class="stat" data-tip="The stair|${C.waves.length
+            ? 'More is on its way up. When this reaches zero it arrives early, on top of whatever is still standing.'
+            : 'Nothing is left to come, but the spire still presses: at zero, everything still standing gains 2 power.'}">⏱️ <b>${C.press}</b></div>` : ''}
+        ${C.waves && C.waves.length ? `<div class="stat" data-tip="Waves|Still to come after what is in front of you.">▲ <b>${C.waves.length}</b></div>` : ''}
         <div class="stat" data-tip="Mana|Gained from Focus faces. Spent on spells.">🔮 <b>${C.mana}</b></div>
         ${C.pending ? `<button class="btn sm ghost" onclick="cancelPending()">Cancel</button>` : ''}
       </div>
@@ -3180,6 +3423,7 @@ function renderModal(){
     case 'shop':     html = mShop(m); break;
     case 'camp':     html = mCamp(); break;
     case 'forge':    html = mForge(); break;
+    case 'inscribe': html = mInscribe(m); break;
     case 'temper':   html = mTemper(); break;
     case 'scour':    html = mScour(m); break;
     case 'equip':    html = mEquip(m); break;
@@ -3378,6 +3622,11 @@ function mShop(m){
       ${itemCard(itemDef(it.key))}
       <button class="btn sm ${S.gold >= it.price && !m.sold['w' + i] ? 'primary' : ''}" ${m.sold['w' + i] || S.gold < it.price ? 'disabled' : ''} onclick="buyItem(${i})">
         ${m.sold['w' + i] ? 'Sold' : it.price + 'g'}</button></div>`)).join('');
+  const inscribeRow = row(`<div class="spread">
+      <div class="row"><div style="font-size:26px">✒️</div>
+        <div><b>Engraver</b><div class="tiny muted">Write a rider onto one die face: what it does, not what it is worth.</div></div></div>
+      <button class="btn sm ${S.gold >= inscribePrice() && !m.inscribed ? 'primary' : ''}" ${m.inscribed || S.gold < inscribePrice() ? 'disabled' : ''} onclick="buyInscribe()">
+        ${m.inscribed ? 'Done' : inscribePrice() + 'g'}</button></div>`);
   const scourRow = row(`<div class="spread">
       <div class="row"><div style="font-size:26px">🪓</div>
         <div><b>Grindstone</b><div class="tiny muted">${canScour()
@@ -3387,7 +3636,7 @@ function mShop(m){
         ${canScour() ? scourPrice() + 'g' : '—'}</button></div>`);
   return `<div class="spread"><h2>🏪 Merchant</h2><div class="stat">💰 <b>${S.gold}</b></div></div>
     <p class="muted tiny" style="margin-bottom:12px">${has('token') ? 'The Merchant’s Token has already knocked the prices down.' : 'He does not haggle.'}</p>
-    ${wareRows}${faceRows}${relicRow}${spellRow}${scourRow}${rationRow}
+    ${wareRows}${faceRows}${relicRow}${spellRow}${inscribeRow}${scourRow}${rationRow}
     <div class="spread">${invButton()}<button class="btn" onclick="closeEvent()">Leave →</button></div>`;
 }
 
@@ -3398,6 +3647,7 @@ function mCamp(){
     <div class="col">
       <button class="opt" onclick="campRest()"><div class="t">Rest</div><div class="s">Heal every hero ${pct}% of their max HP, and recover a point of Fate.</div></button>
       <button class="opt" onclick="campForge()"><div class="t">Sharpen</div><div class="s">Permanently improve one die face.</div></button>
+      <button class="opt" onclick="campInscribe()"><div class="t">Inscribe</div><div class="s">Write a rider onto one die face: what it does, not what it is worth. Replaces any rider already on it.</div></button>
       <button class="opt" onclick="campDrill()"><div class="t">Drill</div><div class="s">+4 max HP to every hero, healed immediately.</div></button>
       <button class="opt" ${wornItems().length ? '' : 'disabled'} onclick="campTemper()"><div class="t">Temper</div><div class="s">${
         wornItems().length ? 'Give one worn item a permanent +1 on everything it does.' : 'Nobody is wearing anything to temper.'}</div></button>
@@ -3405,6 +3655,34 @@ function mCamp(){
         ? 'Remove a side from one die for good. Costs no gold, but it costs you the rest.'
         : 'Every die is already down to ' + MIN_FACES + ' sides.'}</div></button>
     </div>`;
+}
+function mInscribe(m){
+  if(m.heroUid === undefined) return `<h2>Inscribe a face</h2>
+    <p class="muted tiny" style="margin-bottom:10px">Pick the face to write on. Blanks and rites cannot carry a rider.</p>
+    <div class="col">
+      ${S.party.map(h => `<div class="panel" style="background:var(--card);padding:12px">
+        <b>${h.av} ${esc(h.name)}</b>
+        <div class="faces" style="margin-top:8px">${h.faces.map((f, i) =>
+          faceHTML(f, 'big ' + (canInscribe(f) ? 'pickable' : ''), canInscribe(f) ? `pickInscribe(${h.uid},${i})` : '')).join('')}</div>
+      </div>`).join('')}
+    </div>
+    <div class="sep"></div>
+    <div class="row" style="justify-content:flex-end"><button class="btn ghost" onclick="leaveInscribe()">Never mind</button></div>`;
+  const h = heroByUid(m.heroUid), f = h.faces[m.idx];
+  return `<h2>What to write on it</h2>
+    <p class="muted tiny" style="margin-bottom:10px">${esc(h.name)}\u2019s ${esc(faceLabel({k:f.k, v:f.v}))}${
+      f.r ? ` \u00B7 <span style="color:var(--gold)">replaces ${esc(RIDERS[f.r].name)}</span>` : ''}${
+      m.cost ? ` \u00B7 <span style="color:var(--gold)">${m.cost}g, paid only if you write one</span>` : ''}</p>
+    <div class="col">
+      ${m.offer.map(r => { const rd = RIDERS[r];
+        return `<button class="opt" onclick="applyRider('${r}')">
+          <div class="t" style="color:${rd.col}">${rd.ic} ${esc(rd.name)}</div>
+          <div class="s">${esc(rd.desc)}</div></button>`; }).join('')}
+    </div>
+    <div class="sep"></div>
+    <div class="row" style="justify-content:space-between">
+      <button class="btn ghost sm" onclick="reInscribe()">\u2190 Another face</button>
+      <button class="btn ghost" onclick="leaveInscribe()">Never mind</button></div>`;
 }
 function mForge(){
   return `<h2>Sharpen a face</h2>
@@ -3493,10 +3771,12 @@ function faceChips(h, oldIt, newIt){
     if(f.k === 'blank') return `<span class="badge faint">${K.ic}</span>`;
     if(isSigil(f.k)) return `<span class="badge" style="border-color:${K.col};color:${K.col}"
       data-tip="${esc(K.name)}|${esc(K.desc(0))}">${K.ic} rite</span>`;
+    const rdc = riderDef(f.r);
     const d = (after[f.k] || 0) - (before[f.k] || 0);
     const now = faceValue(h, f);
-    return `<span class="badge" style="border-color:${d ? (d > 0 ? 'var(--green)' : 'var(--red)') : 'var(--line)'}">
-      ${K.ic} <b style="color:${K.col}">${now}</b>${d ? `<span style="color:${d > 0 ? 'var(--green)' : 'var(--red)'}">→${Math.max(0, now + d)}</span>` : ''}</span>`;
+    return `<span class="badge" ${rdc ? `data-tip="${esc(faceLabel(f))}|${esc(faceTip(f))}"` : ''}
+      style="border-color:${d ? (d > 0 ? 'var(--green)' : 'var(--red)') : rdc ? rdc.col : 'var(--line)'}">
+      ${K.ic}${rdc ? `<span style="color:${rdc.col}">${rdc.ic}</span>` : ''} <b style="color:${K.col}">${now}</b>${d ? `<span style="color:${d > 0 ? 'var(--green)' : 'var(--red)'}">→${Math.max(0, now + d)}</span>` : ''}</span>`;
   }).join('') + `</div>`;
 }
 function gearStrip(h){
