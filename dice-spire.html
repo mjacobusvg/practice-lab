@@ -2714,7 +2714,7 @@ function mShop(m){
   return `<div class="spread"><h2>🏪 Merchant</h2><div class="stat">💰 <b>${S.gold}</b></div></div>
     <p class="muted tiny" style="margin-bottom:12px">${has('token') ? 'The Merchant’s Token has already knocked the prices down.' : 'He does not haggle.'}</p>
     ${wareRows}${faceRows}${relicRow}${spellRow}${scourRow}${rationRow}
-    <div class="row" style="justify-content:flex-end"><button class="btn" onclick="closeEvent()">Leave →</button></div>`;
+    <div class="spread">${invButton()}<button class="btn" onclick="closeEvent()">Leave →</button></div>`;
 }
 
 function mCamp(){
@@ -2799,8 +2799,19 @@ function gearStrip(h){
               : `<span class="badge faint" onclick="openInventory()" style="cursor:pointer" data-tip="Empty ${sl}|Nothing worn here yet.">·</span>`;
   }).join('');
 }
-function openInventory(){ UI.modal = { type:'inventory' }; render(); }
-function closeInventory(){ UI.modal = null; render(); }
+/* keepBack remembers whichever screen sent us here, so checking your gear
+   mid-decision returns you to the decision instead of dumping you on the map */
+function openInventory(keepBack){
+  UI.modal = { type:'inventory', back: keepBack ? UI.modal : null };
+  render();
+}
+function closeInventory(){
+  const back = UI.modal && UI.modal.back;
+  UI.modal = back || null;
+  render();
+}
+const invButton = () =>
+  `<button class="btn sm ghost" onclick="openInventory(true)" data-tip="Carrying|Every hero's gear, the bag, relics and spells. You come straight back here.">🎒 Check gear</button>`;
 function mInventory(){
   const slotRow = (h, sl) => {
     const it = h.gear && h.gear[sl] ? itemDef(h.gear[sl]) : null;
@@ -2852,7 +2863,8 @@ function mInventory(){
       </div>` : ''}
     </div>
     <div class="sep"></div>
-    <div class="row" style="justify-content:flex-end"><button class="btn primary" onclick="closeInventory()">Close</button></div>`;
+    <div class="row" style="justify-content:flex-end"><button class="btn primary" onclick="closeInventory()">${
+      UI.modal && UI.modal.back ? 'Back' : 'Close'}</button></div>`;
 }
 function mEquip(m){
   const it = itemDef(m.key);
@@ -2870,11 +2882,18 @@ function mEquip(m){
                  <span class="faint">${esc(cur.desc)}</span></div>`
             : `<div class="s" style="margin-top:4px">Their ${it.slot} slot is empty.</div>`}
           <div class="tiny" style="margin-top:7px;line-height:1.7">${deltaHTML(cur, it)}</div>
+          ${(() => {
+            const worn = GEAR_SLOTS.filter(sl => sl !== it.slot)
+              .map(sl => h.gear && h.gear[sl] ? itemDef(h.gear[sl]) : null).filter(Boolean);
+            return `<div class="tiny faint" style="margin-top:5px">${worn.length
+              ? 'Also wearing ' + worn.map(w => `${w.ic} ${esc(w.name)}`).join(' · ')
+              : 'Wearing nothing else'}</div>`;
+          })()}
         </button>`;
       }).join('')}
     </div>
     <div class="sep"></div>
-    <div class="row" style="justify-content:flex-end"><button class="btn ghost" onclick="declineItem()">Leave it behind</button></div>`;
+    <div class="spread">${invButton()}<button class="btn ghost" onclick="declineItem()">Leave it behind</button></div>`;
 }
 function mBagFull(m){
   const it = itemDef(m.key);
@@ -2887,7 +2906,7 @@ function mBagFull(m){
           <div class="s">${esc(b.desc)}</div></button>`; }).join('')}
     </div>
     <div class="sep"></div>
-    <div class="row" style="justify-content:flex-end"><button class="btn ghost" onclick="declineItem()">Keep what I have</button></div>`;
+    <div class="spread">${invButton()}<button class="btn ghost" onclick="declineItem()">Keep what I have</button></div>`;
 }
 function mScour(m){
   return `<h2>Grind down a die</h2>
