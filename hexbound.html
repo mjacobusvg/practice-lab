@@ -316,6 +316,27 @@ button.ahalf:disabled{opacity:.3;cursor:not-allowed}
   background:color-mix(in srgb, var(--tc, #a78bfa) 11%, transparent)}
 .traitbar b{color:var(--tc, #a78bfa)}
 .traitbar .pill{border-color:color-mix(in srgb, var(--tc,#a78bfa) 50%, transparent);color:var(--tc,#a78bfa)}
+
+/* ---------- the party ---------- */
+.proster{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:6px;margin-top:8px}
+.pmem{padding:6px 8px;border:1px solid var(--line);border-radius:9px;background:#0d1521;cursor:pointer;transition:.12s}
+.pmem:hover{border-color:var(--line-hi);background:var(--card-hi)}
+.pmem.viewing{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold)}
+.pmem.lead{background:linear-gradient(180deg,#1d2740,#0d1521)}
+.pmem.down{opacity:.4;filter:grayscale(1)}
+.frontpip{color:var(--gold);font-size:12px;flex:0 0 auto;margin-left:2px}
+.cdie{position:relative}
+.cdie.back{opacity:.86}
+.cdie .downer{position:absolute;top:-4px;left:-4px;font-size:10px;line-height:1;pointer-events:none;
+  background:#0d1521;border:1px solid var(--line);border-radius:50%;padding:2px;z-index:2}
+.pchip{display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border-radius:8px;border:1px solid var(--line);background:#0d1521;cursor:pointer;font-size:12px}
+.pchip.on{border-color:var(--gold)}
+.pchip.down{opacity:.45;filter:grayscale(1)}
+.partybar{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap}
+
+.hero-card{position:relative}
+.pickpip{position:absolute;top:8px;right:8px;width:22px;height:22px;border-radius:50%;background:var(--gold);
+  color:#1a1205;font-weight:800;font-size:12px;display:grid;place-items:center;z-index:2}
 </style>
 </head>
 <body>
@@ -727,6 +748,38 @@ let V = {              // volatile view state
 };
 const HX = 30;         // hex radius in px at zoom 1
 
+/* ---------- the party ----------
+   S.party holds every hero. S.hero is a LIVE REFERENCE into that array (the
+   one you are currently looking at), which keeps the hundred-odd places that
+   already say S.hero working untouched. It is stripped before saving so the
+   two never serialise as separate objects and drift apart. */
+const party = () => (S && S.party) ? S.party : (S && S.hero ? [S.hero] : []);
+const alive = () => party().filter(h => h.hp > 0);
+const isDown = h => h.hp <= 0;
+function selectHero(i){
+  if(!S.party || !S.party[i]) return;
+  S.sel = i;
+  S.hero = S.party[i];
+}
+function leadHero(){
+  const p = party();
+  if(!p.length) return null;
+  const l = p[S.lead];
+  if(l && !isDown(l)) return l;
+  const next = p.findIndex(h => !isDown(h));     // the front rank falls to whoever is still standing
+  if(next >= 0){ S.lead = next; return p[next]; }
+  return p[0];
+}
+/* travel is handled by whoever in the party is best at it */
+function PARTY(){
+  const ds = alive().map(h => D(h));
+  if(!ds.length) return D();
+  const best = k => Math.max(...ds.map(d => d[k]));
+  return {move: best('move'), scout: best('scout'), gold: best('gold'),
+          haggle: best('haggle'), test: best('test'), wild: best('wild'), roadfree: best('roadfree')};
+}
+const bestAt = stat => alive().slice().sort((a,b) => D(b)[stat] - D(a)[stat])[0] || S.hero;
+
 const key = (q,r) => q + ',' + r;
 const unkey = k => { const [q,r] = k.split(',').map(Number); return {q,r}; };
 const DIRS = [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
@@ -749,8 +802,8 @@ function hexesWithin(center, rad){
 }
 
 /* ---------- derived hero numbers ---------- */
-function D(){
-  const h = S.hero;
+function D(h0){
+  const h = h0 || S.hero;
   const out = {
     mig:h.stats.mig, agi:h.stats.agi, wit:h.stats.wit, spi:h.stats.spi,
     atk:0, arm:0, hp:0, move:h.move, scout:1, rr:0, dice:h.dice.slice(),
@@ -795,7 +848,7 @@ function D(){
   }
   return out;
 }
-function goldMult(){ return (1 + D().gold / 100) * diff().gold; }
+function goldMult(){ return (1 + PARTY().gold / 100) * diff().gold; }
 
 /* ---------- log ---------- */
 function log(msg, cls){
@@ -819,13 +872,30 @@ function renderLog(){
 function save(){
   if(!S) return;
   S.rngState = RSTATE;
-  try{ localStorage.setItem(SAVE_KEY, JSON.stringify(S)); }catch(e){}
+  try{
+    const out = {};
+    for(const k in S) if(k !== 'hero') out[k] = S[k];   // hero is an alias into party
+    localStorage.setItem(SAVE_KEY, JSON.stringify(out));
+  }catch(e){}
 }
 function load(){
   try{
     const raw = localStorage.getItem(SAVE_KEY);
     if(!raw) return false;
     S = JSON.parse(raw);
+    if(!S.party){                                      // a run saved before parties existed
+      S.party = [S.hero];
+      if(S.gold == null) S.gold = S.hero.gold || 0;    // gold and the pack used to live on the hero
+      if(!S.bag) S.bag = S.hero.bag || [];
+    }
+    S.party.forEach(h => {                             // fields the party build added
+      if(!h.lost) h.lost = [];
+      if(!h.discard) h.discard = [];
+      if(h.cardDrafts == null) h.cardDrafts = 0;
+    });
+    if(S.sel == null || !S.party[S.sel]) S.sel = 0;
+    if(S.lead == null || !S.party[S.lead]) S.lead = 0;
+    S.hero = S.party[S.sel] || S.party[0];
     RSTATE = S.rngState || 1;
     return true;
   }catch(e){ return false; }
@@ -949,38 +1019,45 @@ function genMap(){
 /* =========================================================================
    NEW RUN
    ========================================================================= */
-function newRun(heroId, seedStr){
-  const H = HEROES.find(h => h.id === heroId);
+function makeHero(H){
+  const h = {
+    id:H.id, nm:H.nm, ic:H.ic, lvl:1, xp:0, xpNext: xpFor(1),
+    stats:{...H.stats}, baseHp:H.hp, hp:H.hp, en:3 + H.stats.spi,
+    dice:H.dice.slice(), move:H.move,
+    gear:{weapon:null, offhand:null, armor:null, trinket1:null, trinket2:null},
+    talents:[], perks:[], fated:true, pts:0, drafts:0,
+    deck:[], hand:[], discard:[], lost:[], cardDrafts:0,
+  };
+  h.deck = (CARDS[H.id] || []).filter(c => c.start).map(c => c.id);
+  h.hand = h.deck.slice();
+  return h;
+}
+function newRun(heroIds, seedStr){
+  const ids = Array.isArray(heroIds) ? heroIds : [heroIds];
   seedStr = (seedStr || '').trim() || Math.random().toString(36).slice(2, 8).toUpperCase();
   RSTATE = seedFrom(seedStr.toUpperCase());
   const {map, lairKeys, gateKey} = genMap();
   S = {
-    v:1, seed: seedStr.toUpperCase(), rngState: RSTATE,
+    v:2, seed: seedStr.toUpperCase(), rngState: RSTATE,
     day:1, dread:0, diff: V.pickDiff || 'ride', dreadMax:36, phase:'travel',
     pos:{q:0,r:0}, map, lairKeys, gateKey, seals:0, crownAwake:false,
     dice:[], wildBank:0, movedThisDay:0,
     log:[], flags:{}, shops:{}, bounty:null,
     kills:0, explored:0, deaths:0,
-    hero:{
-      id:H.id, nm:H.nm, ic:H.ic, lvl:1, xp:0, xpNext:8,
-      stats:{...H.stats}, baseHp:H.hp, hp:H.hp, en:3 + H.stats.spi, gold:40,
-      dice:H.dice.slice(), move:H.move,
-      gear:{weapon:null, offhand:null, armor:null, trinket1:null, trinket2:null},
-      bag:['bandage','bandage','tonic','rations'], talents:[], perks:[], fated:true, pts:0, drafts:0,
-      deck:[], hand:[], discard:[], lost:[], cardDrafts:0,
-    },
+    party: ids.map(id => makeHero(HEROES.find(h => h.id === id))),
+    sel:0, lead:0, gold:60 + 20 * ids.length,
   };
   S.dreadMax = (DIFFS.find(d => d.id === S.diff) || DIFFS[1]).dread;
-  S.hero.deck = (CARDS[H.id] || []).filter(c => c.start).map(c => c.id);
-  S.hero.hand = S.hero.deck.slice();
-  S.hero.hp = D().maxHp;
-  S.hero.en = D().maxEn;
+  S.hero = S.party[0];
+  // gold and the pack belong to the party, not to one of them
+  S.bag = ['bandage','bandage','tonic','rations'];
+  S.party.forEach(h => { h.hp = D(h).maxHp; h.en = D(h).maxEn; });
   V.layerSig = null; V.sel = null; V.hover = null;
-  reveal(S.pos, 1 + D().scout);
+  reveal(S.pos, 1 + PARTY().scout);
   S.map[key(0,0)].explored = true;
-  log('You ride out of Kestrel Hold at first light. Seed ' + S.seed + '.', 'y');
+  log(`${S.party.map(h => h.nm).join(', ')} ride out of Kestrel Hold at first light. Seed ${S.seed}.`, 'y');
   log('Three lairs feed the Sable Crown. Break them, then break it.', 'v');
-  log(`You carry ${plural(S.hero.hand.length,'ability card')}. Spend them wisely; a night's sleep returns the lost ones.`, 'b');
+  log(`Each of you carries ${S.party[0].hand.length} ability cards. A night's sleep returns the lost ones.`, 'b');
   rollMovement(true);
   save();
 }
@@ -1440,7 +1517,7 @@ function drawMap(){
   ctx.restore();
   ctx.font = `${Math.round(s*0.46)}px system-ui, sans-serif`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(S.hero.ic, hx2, hy + bob + s*0.03);
+  ctx.fillText((leadHero() || S.hero).ic, hx2, hy + bob + s*0.03);
 }
 
 /* one throttled loop for the pulse, the marching dashes and the hero bobbing */
@@ -1470,11 +1547,11 @@ function canvasHex(ev){
    MOVEMENT
    ========================================================================= */
 function rollMovement(silent){
-  const n = D().move;
+  const n = PARTY().move;
   S.dice = [];
   for(let i=0;i<n;i++) S.dice.push({f: MDIE[Math.floor(rnd()*6)], spent:false});
   sfx('dice', 200);
-  for(let i = 0; i < D().wild && i < S.dice.length; i++) S.dice[i].f = 'wild';
+  for(let i = 0; i < PARTY().wild && i < S.dice.length; i++) S.dice[i].f = 'wild';
   S.movedThisDay = 0;
   V.rolled = true;
   if(!silent) log(`Dawn of day ${S.day}. You roll ${plural(n,'travel die')}.`, 'b');
@@ -1485,19 +1562,19 @@ function dieMatches(die, m){
   if(die.spent) return false;
   if(die.f === 'wild') return true;
   if(die.f === m.t) return true;
-  if(S.hero.id === 'ranger' && (die.f === 'forest' || die.f === 'hills')) return true;
+  if(alive().some(h => h.id === 'ranger') && (die.f === 'forest' || die.f === 'hills')) return true;   // the Ranger leads the whole party through
   const cur = hereHex();
   if(m.road && cur.road) return true;             // roads take any face
   return false;
 }
 function moveCost(m){ return m.t === 'mountain' ? 2 : 1; }
 
-function hasGear(id){ const g = S.hero.gear; return g.weapon===id||g.offhand===id||g.armor===id||g.trinket1===id||g.trinket2===id; }
+function hasGear(id){ return party().some(h => Object.values(h.gear).includes(id)); }
 function diceForMove(m){
   if(!m) return null;
   if(m.t === 'water' && !V.boat) return null;
   const cur = hereHex();
-  if(D().roadfree && m.road && cur.road) return [];            // Cartwright
+  if(PARTY().roadfree && m.road && cur.road) return [];            // Cartwright
   const idx = [];
   for(let i=0;i<S.dice.length;i++) if(dieMatches(S.dice[i], m)){ idx.push(i); break; }
   if(!idx.length) return null;
@@ -1550,7 +1627,7 @@ function tryMove(q, r){
   S.movedThisDay++;
   sfx('move');
   V.sel = {q,r};
-  const rev = reveal(S.pos, 1 + D().scout);
+  const rev = reveal(S.pos, 1 + PARTY().scout);
   if(rev) log(`You take in ${plural(rev,'new hex')} of country.`);
   if(m.t === 'water'){ V.boat = false; log('You paddle across and pull the coracle up the far bank.', 'b'); }
   if(m.t === 'marsh' && freeDice().length && !hasGear('anklet')){
@@ -1578,12 +1655,16 @@ function endDay(opt){
   S.day++;
   sfx('dawn', 500);
   const d = D();
-  let heal = d.regen + (S.hero.id === 'priest' ? 2 : 0);
-  if(heal) healHero(heal, 'the night\'s rest');
-  S.hero.en = clamp(S.hero.en + 2, 0, d.maxEn);
-  const wasLost = S.hero.lost.length;
+  party().forEach(h => {
+    const hd = D(h);
+    const heal = hd.regen + (h.id === 'priest' ? 2 : 0);
+    if(heal && !isDown(h)) healHero(heal, "the night's rest", h);
+  });
+  party().forEach(h => { h.en = clamp(h.en + 2, 0, D(h).maxEn); });
+  const wasLost = party().reduce((n,h) => n + h.lost.length, 0);
   recoverAll();
-  if(wasLost) log(`${plural(wasLost,'spent card')} back in your hand.`, 'v');
+  if(wasLost) log(`${plural(wasLost,'spent card')} back in the party's hands.`, 'v');
+  party().forEach(h => { if(isDown(h)){ h.hp = Math.max(1, Math.round(D(h).maxHp * 0.5)); log(`${h.nm} is back on their feet.`, 'g'); } });
   rollMovement();
   if(S.dread >= S.dreadMax){
     if(!S.crownAwake) crownMarches();
@@ -1631,44 +1712,55 @@ function scaledTier(base){ return clamp(base + (chance(0.5) ? dreadTier() : Math
 /* =========================================================================
    HERO HELPERS
    ========================================================================= */
-function healHero(n, src){
-  const d = D();
-  const before = S.hero.hp;
-  S.hero.hp = clamp(S.hero.hp + n, 0, d.maxHp);
-  const got = S.hero.hp - before;
-  if(got > 0){ log(`You recover ${got} HP${src ? ' from ' + src : ''}.`, 'g'); sfx('heal', 120); }
+/* whoever most needs it, unless a caller names someone */
+function mostWounded(){
+  return party().filter(h => !isDown(h) && h.hp < D(h).maxHp)
+    .sort((a,b) => (a.hp / D(a).maxHp) - (b.hp / D(b).maxHp))[0] || null;
+}
+function healHero(n, src, who){
+  const h = who || mostWounded() || leadHero() || S.hero;
+  const d = D(h);
+  const before = h.hp;
+  h.hp = clamp(h.hp + n, 0, d.maxHp);
+  const got = h.hp - before;
+  if(got > 0){ log(`${h.nm} recovers ${got} HP${src ? ' from ' + src : ''}.`, 'g'); sfx('heal', 120); }
   return got;
 }
-function hurtHero(n, src){
-  S.hero.hp -= n;
-  log(`You take ${n} damage${src ? ' — ' + src : ''}.`, 'r');
-  if(S.hero.hp <= 0) heroFalls();
+/* damage with nobody named lands on the front rank, not on whoever you happen
+   to be looking at — the selected hero may be lying down. */
+function hurtHero(n, src, who){
+  const h = who || leadHero() || S.hero;
+  h.hp -= n;
+  log(`${h.nm} takes ${n} damage${src ? ' — ' + src : ''}.`, 'r');
+  if(h.hp <= 0){ h.hp = 0; log(`${h.nm} goes down.`, 'r'); heroFalls(); }
 }
 function gainGold(n){
   n = Math.round(n * goldMult());
-  S.hero.gold += n;
+  S.gold += n;
   log(`+${n} gold.`, 'y');
   sfx('gold', 150);
   return n;
 }
 function spendEnergy(n){ if(S.hero.en < n) return false; S.hero.en -= n; return true; }
 function gainXp(n){
-  S.hero.xp += n;
-  log(`+${n} XP.`, 'b');
-  if(S.hero.xp >= S.hero.xpNext) setTimeout(tryLevelUp, T(320));
+  party().forEach(h => h.xp += n);
+  log(`+${n} XP to everyone.`, 'b');
+  if(party().some(h => h.lvl < 10 && h.xp >= h.xpNext)) setTimeout(tryLevelUp, T(320));
 }
 function heroFalls(){
   const wasCrown = V.lastBoss === 'crown' || (V.combat && V.combat.opts && V.combat.opts.boss === 'crown');
   V.lastBoss = null;
+  if(conscious().length){ save(); render(); return; }      // somebody is still standing
   if(wasCrown){
     V.combat = null;
-    gameOver('The Sable Crown puts you down where you stood. There is no second thread for this one.');
+    gameOver('The Sable Crown puts the party down where they stood. There is no second thread for this one.');
     return;
   }
-  if(S.hero.fated){
-    S.hero.fated = false; S.deaths++;
-    const lost = Math.floor(S.hero.gold / 2);
-    S.hero.gold -= lost;
+  if(party().some(h => h.fated)){
+    party().forEach(h => h.fated = false);
+    S.deaths++;
+    const lost = Math.floor(S.gold / 2);
+    S.gold -= lost;
     // dragged to the nearest settlement
     let best = null, bd = 99;
     for(const k in S.map){
@@ -1679,7 +1771,8 @@ function heroFalls(){
       }
     }
     S.pos = best ? {q:best.q, r:best.r} : {q:0,r:0};
-    S.hero.hp = Math.max(1, Math.round(D().maxHp * 0.4));
+    party().forEach(h => { h.hp = Math.max(1, Math.round(D(h).maxHp * 0.4)); });
+    S.lead = 0;
     recoverAll();
     S.day += 3; S.dread += 3;
     V.combat = null;
@@ -1692,7 +1785,7 @@ function heroFalls(){
     save();
     return;
   }
-  gameOver('Your run ends here. The region keeps what it takes.');
+  gameOver('The party falls together. The region keeps what it takes.');
 }
 
 /* =========================================================================
@@ -1701,7 +1794,8 @@ function heroFalls(){
 function skillTest(o){
   // o = {stat, dc, nm, ok(margin), fail(margin)}
   let push = 0;
-  const d = D();
+  const who = bestAt(o.stat);          // the party puts its best hand to it
+  const d = D(who);
   const render_ = () => {
     const bonus = d[o.stat] + d.test + push;
     modal({
@@ -1716,14 +1810,14 @@ function skillTest(o){
           <div class="kv"><span>Rolling</span><b>2d6 +${bonus}</b></div>
         </div>
         <div class="row wr" style="margin-top:11px">
-          <button class="btn sm" id="pushE" ${S.hero.en < 1 || push >= 3 ? 'disabled' : ''}>⚡ Push (+1, costs 1 energy)</button>
-          <span class="tiny muted">Energy ${S.hero.en}/${d.maxEn}</span>
+          <button class="btn sm" id="pushE" ${who.en < 1 || push >= 3 ? 'disabled' : ''}>⚡ Push (+1, costs 1 energy)</button>
+          <span class="tiny muted">${who.ic} ${esc(who.nm)} · energy ${who.en}/${d.maxEn}</span>
         </div>`,
       f: [{lb:'Roll', cls:'primary', id:'rollT'}],
       noClose: true,
     });
     const pe = $('#pushE');
-    if(pe) pe.onclick = () => { if(spendEnergy(1)){ push++; render_(); } };
+    if(pe) pe.onclick = () => { if(who.en >= 1){ who.en--; push++; render_(); } };
     $('#rollT').onclick = () => {
       const a = d6(), b = d6(), tot = a + b + bonus;
       const win = tot >= o.dc || (a === 6 && b === 6);
@@ -1756,15 +1850,15 @@ const EVENTS = [
      {lb:'Put your shoulder to it', sub:'Might 8', test:{stat:'mig', dc:8},
       okTx:'The wheel comes free with a wet crack of mud.', failTx:'The axle snaps under your hands.',
       ok:()=>{ gainGold(ri(22,40)); gainXp(2); }, fail:()=>{ hurtHero(3,'a slipped wagon'); }},
-     {lb:'Buy their trouble off them', sub:'Pay 15 gold for what they are carrying', need:()=>S.hero.gold>=15,
-      fn:()=>{ S.hero.gold -= 15; const it = rollItem(2); giveItem(it.id); return `They hand over a ${it.nm} and walk out with what they can carry.`; }},
+     {lb:'Buy their trouble off them', sub:'Pay 15 gold for what they are carrying', need:()=>S.gold>=15,
+      fn:()=>{ S.gold -= 15; const it = rollItem(2); giveItem(it.id); return `They hand over a ${it.nm} and walk out with what they can carry.`; }},
      {lb:'Ride on', fn:()=>{ return 'You do not look back, which is its own kind of decision.'; }},
    ]},
   {id:'shrine', ic:'⛩️', nm:'Offering Stone', tier:[1,2,3],
    tx:'A flat stone, a bowl, and a smell of old smoke.',
    opts:[
-     {lb:'Leave an offering', sub:'Pay 20 gold', need:()=>S.hero.gold>=20,
-      fn:()=>{ S.hero.gold -= 20; healHero(10,'the old rite'); S.hero.en = D().maxEn; return 'The bowl empties while you watch. You feel considerably better about the week.'; }},
+     {lb:'Leave an offering', sub:'Pay 20 gold', need:()=>S.gold>=20,
+      fn:()=>{ S.gold -= 20; healHero(10,'the old rite'); S.hero.en = D().maxEn; return 'The bowl empties while you watch. You feel considerably better about the week.'; }},
      {lb:'Pray', sub:'Spirit 8', test:{stat:'spi', dc:8},
       okTx:'Something answers, briefly, and without words.', failTx:'Nothing answers. The silence has weight.',
       ok:()=>{ healHero(8,'the stone'); gainXp(3); }, fail:()=>{ S.hero.en = Math.max(0, S.hero.en-1); }},
@@ -1782,8 +1876,8 @@ const EVENTS = [
   {id:'toll', ic:'🪙', nm:'A Toll, Of Sorts', tier:[1,2,3],
    tx:'Three armed men have decided this stretch of road belongs to them.',
    opts:[
-     {lb:'Pay the toll', sub:'25 gold', need:()=>S.hero.gold>=25,
-      fn:()=>{ S.hero.gold -= 25; return 'They wave you through with elaborate courtesy.'; }},
+     {lb:'Pay the toll', sub:'25 gold', need:()=>S.gold>=25,
+      fn:()=>{ S.gold -= 25; return 'They wave you through with elaborate courtesy.'; }},
      {lb:'Refuse', fight:'bandit'},
      {lb:'Talk them down', sub:'Wits 9', test:{stat:'wit', dc:9},
       okTx:'You explain, patiently, what the Crown does to men who stay in one place.',
@@ -1818,8 +1912,8 @@ const EVENTS = [
   {id:'refugees', ic:'👥', nm:'Refugees', tier:[2,3],
    tx:'Twenty people on foot, going the other way, carrying nothing useful.',
    opts:[
-     {lb:'Give them coin', sub:'30 gold', need:()=>S.hero.gold>=30,
-      fn:()=>{ S.hero.gold -= 30; S.dread = Math.max(0, S.dread-2); gainXp(4); return 'They will reach the Hold. Dread falls by 2.'; }},
+     {lb:'Give them coin', sub:'30 gold', need:()=>S.gold>=30,
+      fn:()=>{ S.gold -= 30; S.dread = Math.max(0, S.dread-2); gainXp(4); return 'They will reach the Hold. Dread falls by 2.'; }},
      {lb:'Ask what they ran from', sub:'Wits 8', test:{stat:'wit', dc:8},
       okTx:'One of them draws you a map in the dirt.', failTx:'They are past explaining anything.',
       ok:()=>{ const n = reveal(S.pos, 3); markNearestLair(); gainXp(3); }, fail:()=>{}},
@@ -1831,8 +1925,8 @@ const EVENTS = [
      {lb:'Take the duel', sub:'First blood, no killing', test:{stat:'agi', dc:10},
       okTx:'You take the touch clean.', failTx:'You do not.',
       ok:()=>{ gainXp(6); gainGold(ri(30,50)); }, fail:()=>{ hurtHero(6,'a duelling cut'); gainXp(2); }},
-     {lb:'Buy the sword instead', sub:'60 gold', need:()=>S.hero.gold>=60,
-      fn:()=>{ S.hero.gold -= 60; giveItem('sword'); return 'He hands it over, faintly insulted.'; }},
+     {lb:'Buy the sword instead', sub:'60 gold', need:()=>S.gold>=60,
+      fn:()=>{ S.gold -= 60; giveItem('sword'); return 'He hands it over, faintly insulted.'; }},
      {lb:'Decline', fn:()=>'He nods, and does not get up.'},
    ]},
   {id:'darkwater', ic:'🌑', nm:'The Water Is Wrong', tier:[2,3],
@@ -1865,8 +1959,8 @@ const EVENTS = [
    opts:[
      {lb:'Listen to the whole story', sub:'Costs the rest of the day',
       fn:()=>{ S.dice.forEach(d=>d.spent=true); gainXp(6); return 'It takes hours. You learn more about fighting than you wanted to.'; }},
-     {lb:'Buy him a drink', sub:'12 gold', need:()=>S.hero.gold>=12,
-      fn:()=>{ S.hero.gold -= 12; markNearestLair(); return 'He tells you where the ground goes bad.'; }},
+     {lb:'Buy him a drink', sub:'12 gold', need:()=>S.gold>=12,
+      fn:()=>{ S.gold -= 12; markNearestLair(); return 'He tells you where the ground goes bad.'; }},
      {lb:'Excuse yourself', fn:()=>'He keeps talking after you have gone.'},
    ]},
   {id:'crownherald', ic:'📯', nm:'A Herald of the Crown', tier:[3,4],
@@ -1904,7 +1998,7 @@ const diff = () => DIFFS.find(d => d.id === (S && S.diff)) || DIFFS[1];
 function scaleFoe(m, opts){
   opts = opts || {};
   const F = diff();
-  const lvl = Math.max(0, (S.hero.lvl || 1) - 1);
+  const lvl = Math.max(0, party().reduce((n,h) => Math.max(n, h.lvl || 1), 1) - 1);
   const dt = dreadTier();
   // Wandering monsters take the level scaling in full — that is the point, so
   // out-levelling the region stops working. Set-piece bosses are already tuned
@@ -1912,11 +2006,19 @@ function scaleFoe(m, opts){
   const boss = opts.boss || opts.crown;
   const lvlMul = 1 + lvl * F.lvlHp * (boss ? 0.25 : 1);
   const dtMul  = 1 + dt * (boss ? 0.06 : 0.12);
-  const hpMul  = (opts.crown ? F.crownHp : F.hp) * lvlMul * dtMul;
+  // A second and third hero roughly double and triple what the party swings for
+  // each round, so a monster tuned for one is over in two. Measured against a
+  // kitted level-10 party: three heroes hit for about 3.4x a lone hero, so the
+  // health goes up by the same factor. What it hits BACK for is scaled in
+  // foeAttackVal instead, because a flat bonus that troubles a trio flattens a
+  // tier-1 wolf.
+  const extra  = Math.max(0, party().length - 1);
+  const hpMul  = (opts.crown ? F.crownHp : F.hp) * lvlMul * dtMul * (1 + extra * 1.2);
   m.hp = Math.max(6, Math.round(m.hp * hpMul));
   m.maxHp = m.hp;
   m.pwr = Math.max(0, (m.pwr || 0) + F.pwr + Math.floor(lvl / F.lvlPwr / (boss ? 2 : 1)) + dt);
   if(dt >= 2 && !boss) m.arm = (m.arm || 0) + 1;
+  if(extra) m.arm = (m.arm || 0) + extra;   // three sets of dice find the gaps faster
   return m;
 }
 
@@ -1939,7 +2041,7 @@ function rollItem(tier){
   return chance(0.72) ? pick(pool) : pick(use);
 }
 function giveItem(id){
-  S.hero.bag.push(id);
+  S.bag.push(id);
   const it = ITEM(id);
   log(`You gain ${it.nm}.`, 'y');
 }
@@ -2001,8 +2103,8 @@ function siteEvent(m){
       break;
     }
     case 'grove': {
-      const d = D();
-      S.hero.hp = d.maxHp; S.hero.en = d.maxEn;
+      party().forEach(m => { const md = D(m); m.hp = md.maxHp; m.en = md.maxEn; });
+      S.lead = 0;
       done('Nothing hunts here. You sleep for eleven hours and wake whole.');
       break;
     }
@@ -2057,15 +2159,15 @@ function siteEvent(m){
       modal({ic:'🛖', h:'Hermitage', b:
         `<p>One door, one window, and an occupant who has clearly been expecting somebody, though possibly not you.</p>
          <div class="sep"></div>
-         <button class="choice" id="hA" ${S.hero.gold < price ? 'disabled' : ''}>
+         <button class="choice" id="hA" ${S.gold < price ? 'disabled' : ''}>
            <b>${offer.ic} Buy the ${esc(offer.nm)} — ${price}g</b><div class="sub">${esc(offer.tx)}</div></button>
-         <button class="choice" id="hB" ${S.hero.gold < 70 || !tal ? 'disabled' : ''}>
+         <button class="choice" id="hB" ${S.gold < 70 || !tal ? 'disabled' : ''}>
            <b>${tal ? tal.ic : ''} Be taught: ${tal ? esc(tal.nm) : '—'} — 70g</b><div class="sub">${tal ? esc(tal.tx) : 'Nothing left to learn here.'}</div></button>
          <button class="choice" id="hC"><b>🍵 Accept the tea and leave</b><div class="sub">Heal fully. Restore energy.</div></button>`,
         f:[]});
-      $('#hA').onclick = () => { S.hero.gold -= price; giveItem(offer.id); closeModal(); save(); render(); };
-      $('#hB').onclick = () => { S.hero.gold -= 70; S.hero.talents.push(tal.id); log(`You learn ${tal.nm}.`,'v'); closeModal(); save(); render(); };
-      $('#hC').onclick = () => { const d = D(); S.hero.hp = d.maxHp; S.hero.en = d.maxEn; log('The tea is remarkable.','g'); closeModal(); save(); render(); };
+      $('#hA').onclick = () => { S.gold -= price; giveItem(offer.id); closeModal(); save(); render(); };
+      $('#hB').onclick = () => { S.gold -= 70; S.hero.talents.push(tal.id); log(`You learn ${tal.nm}.`,'v'); closeModal(); save(); render(); };
+      $('#hC').onclick = () => { party().forEach(m => { const md = D(m); m.hp = md.maxHp; m.en = md.maxEn; }); S.lead = 0; log('The tea is remarkable.','g'); closeModal(); save(); render(); };
       break;
     }
     default: drawEncounter(m);
@@ -2287,11 +2389,43 @@ const MDECK = {
 const intentDeck = foe => INTENTS[MDECK[foe.id] || (foe.tier >= 4 ? 'brute' : 'skulk')] || INTENTS.skulk;
 
 /* =========================================================================
-   COMBAT
-   Each round: the enemy reveals its intent, you play the TOP half of one
-   ability card and the BOTTOM half of another, initiative decides who
-   swings first, and your dice pool is the modifier rolled on top.
+   COMBAT — the party
+   Every hero still standing plays a TOP and a BOTTOM each round, exactly as
+   the solo game did. Their halves are pooled into one set of party numbers,
+   their dice into one pool. The lowest initiative played sets the order, and
+   whoever stands in the front rank takes what comes back.
    ========================================================================= */
+function conscious(){ return party().filter(h => !isDown(h)); }
+
+/* everything the party's chosen halves add up to this round */
+function blankPlay(){
+  return {atk:0, sh:0, shHelp:0, heal:0, ward:0, rr:0, en:0, pierce:0, stun:0, dbl:0, leech:0,
+          refresh:0, burn:0, psn:0, curse:0, retal:0, gold:0, cure:0, dice:[], surge:[]};
+}
+function mergeHalf(play, half){
+  for(const k in half){
+    if(k === 'tx' || k === 'lost') continue;
+    if(k === 'dice' || k === 'surge') play[k] = play[k].concat(half[k]);
+    else play[k] = (play[k] || 0) + half[k];
+  }
+  return play;
+}
+/* The combined pool: every standing hero's dice, plus anything the cards add.
+   Each die remembers whose it is, because shields are not pooled the way
+   attack is — see myShields. */
+function partyPool(){
+  const pool = [];
+  for(const h of conscious()) D(h).pool.forEach(k => pool.push({k, hid:h.id}));
+  return pool;
+}
+function partyAtkBonus(){ return conscious().reduce((n,h) => n + D(h).atk, 0); }
+function partyRerolls(){ return conscious().reduce((n,h) => n + D(h).rrTotal, 0); }
+function partySurgeOptions(){
+  const out = new Set();
+  conscious().forEach(h => D(h).surge.forEach(x => out.add(x)));
+  return Array.from(out);
+}
+
 function startCombat(foe, opts){
   opts = opts || {};
   const deck = intentDeck(foe);
@@ -2301,66 +2435,19 @@ function startCombat(foe, opts){
     opts, round:1, phase:'cards',
     intentDeck: deck, order: shuffle(deck.map((x,i) => i)), intent: null,
     myDice:[], foeDice:[], rrLeft:0, spentSurge:0, sharp:0,
-    pickTop:null, pickBot:null, play:null, myInit:99, resting:false,
+    picks:{},                 // heroId -> {top, bot}
+    viewing: 0,               // whose hand is on screen
+    play:null, myInit:99, resting:false,
     pend:{dmg:0, pierce:false, guard:0},
     me:{burn:0, poison:0, stun:0, hexed:0, stone:0, fury:0, curse:0},
     done:false, hist:[],
   };
   V.combat = C;
   V.lastBoss = null;
+  C.viewing = party().indexOf(leadHero());
   MUS.set(opts.boss ? 'boss' : 'combat', true);
   log(`${foe.ic} ${foe.nm} blocks the way.`, 'r');
   newCombatRound(true);
-}
-function cPool(){ return D().pool; }
-function sunderIfEntrenched(C){
-  const extra = D().sunder;                       // the Plate Breaker strips anything, not just the entrenched
-  if(C.foe.trait === 'entrench' && C.foe.arm){
-    C.foe.arm = Math.max(0, C.foe.arm - 3);
-    cLog(`Plates shear off it. Armor down to ${C.foe.arm}.`, 'g');
-  } else if(extra && C.foe.arm){
-    C.foe.arm = Math.max(0, C.foe.arm - extra);
-    cLog(`You break its guard open. Armor down to ${C.foe.arm}.`, 'g');
-  }
-}
-function applyNoBlank(dice){
-  const d = D();
-  if(d.noBlank || d.minatk) dice.forEach(x => { if(!x.a && !x.d && !x.s) x.a = 1; });
-  if(d.gambit && dice.length){          // the Gambit Coin rerolls your worst die for free
-    let worst = 0, low = Infinity;
-    dice.forEach((x,i) => { const v = x.a*2 + x.d + x.s*2; if(v < low){ low = v; worst = i; } });
-    const nd = rollDie(dice[worst].k);
-    dice[worst].a = nd.a; dice[worst].d = nd.d; dice[worst].s = nd.s; dice[worst].fresh = true;
-  }
-}
-function cLog(t, cls){ const C = V.combat; if(C){ C.hist.push((cls?'§'+cls+'§':'')+t); if(C.hist.length>40) C.hist.shift(); } log(t, cls); }
-
-/* ---------- hand ---------- */
-function handIds(){ return S.hero.hand.slice(); }
-function spendCard(id, lost){
-  const h = S.hero;
-  const i = h.hand.indexOf(id);
-  if(i >= 0) h.hand.splice(i, 1);
-  (lost ? h.lost : h.discard).push(id);
-}
-function recoverDiscards(){
-  const h = S.hero;
-  if(!h.discard.length) return;
-  h.hand = h.hand.concat(h.discard);
-  h.discard = [];
-}
-function recoverAll(){
-  const h = S.hero;
-  h.hand = h.deck.slice();
-  h.discard = []; h.lost = [];
-}
-
-function drawIntent(){
-  const C = V.combat;
-  if(!C.order.length) C.order = shuffle(C.intentDeck.map((x,i) => i));
-  C.intent = C.intentDeck[C.order.shift()];
-  C.intentFresh = true;
-  sfx('intent', 200);
 }
 
 function newCombatRound(first){
@@ -2388,97 +2475,126 @@ function newCombatRound(first){
     }
   }
   if(C.done) return;
+  if(!conscious().length){ partyDown(); return; }
   if(C.me.stun > 0) C.me.stun--;
   if(C.foe.stun > 0) C.foe.stun--;
-  if(C.me.curse > 0) C.me.curseNow = C.me.curse, C.me.curse = 0; else C.me.curseNow = 0;
-  if(C.foe.curse > 0) C.foe.curseNow = C.foe.curse, C.foe.curse = 0; else C.foe.curseNow = 0;
+  if(C.foe.stunBrace > 0) C.foe.stunBrace--;
+  C.me.curseNow = C.me.curse || 0; C.me.curse = 0;
+  C.foe.curseNow = C.foe.curse || 0; C.foe.curse = 0;
 
+  // anyone who cannot field two cards this round simply sits it out
   C.mustRest = false;
-  if(S.hero.hand.length < 2){
-    if(S.hero.discard.length >= 2){
+  const able = conscious().filter(h => h.hand.length >= 2);
+  if(!able.length){
+    if(conscious().some(h => h.discard.length >= 2)){
       C.mustRest = true;
-      cLog('You are down to your last card. Catch your breath or it is over.', 'y');
+      cLog('Nobody has a hand left. Catch your breath or it is over.', 'y');
     } else { exhausted(); return; }
   }
 
   drawIntent();
-  C.pickTop = null; C.pickBot = null; C.play = null; C.resting = false; C.shown = null;
+  C.picks = {}; C.play = null; C.resting = false; C.shown = null;
   C.myDice = []; C.foeDice = []; C.pend = {dmg:0, pierce:false, guard:0}; C.spentSurge = 0;
+  if(isDown(party()[C.viewing]) || !party()[C.viewing]) C.viewing = party().indexOf(conscious()[0]);
   C.phase = 'cards';
   renderCombat();
 }
 
+/* who still owes a choice */
+function pendingHeroes(){
+  const C = V.combat;
+  return conscious().filter(h => h.hand.length >= 2 && !(C.picks[h.id] && C.picks[h.id].top && C.picks[h.id].bot));
+}
 function pickHalf(id, half){
   const C = V.combat;
-  if(!C || C.phase !== 'cards') return;
-  if(half === 'top'){
-    if(C.pickTop === id){ C.pickTop = null; }
-    else { if(C.pickBot === id) C.pickBot = null; C.pickTop = id; }
-  } else {
-    if(C.pickBot === id){ C.pickBot = null; }
-    else { if(C.pickTop === id) C.pickTop = null; C.pickBot = id; }
-  }
+  if(!C || C.phase !== 'cards' || C.mustRest) return;
+  const h = party()[C.viewing];
+  if(!h || isDown(h)) return;
+  const p = C.picks[h.id] = C.picks[h.id] || {top:null, bot:null};
+  const other = half === 'top' ? 'bot' : 'top';
+  if(p[half] === id) p[half] = null;
+  else { if(p[other] === id) p[other] = null; p[half] = id; }
   renderCombat();
 }
 function commitCards(){
   const C = V.combat;
-  if(!C || C.phase !== 'cards' || !C.pickTop || !C.pickBot) return;
-  const topCard = CARD(C.pickTop), botCard = CARD(C.pickBot);
-  const A = topCard.top, B = botCard.bot;
-  if(!V.fast) flyCards([C.pickTop, C.pickBot]);
-  sfx('cardPlay');
-  const play = {atk:0, sh:0, heal:0, ward:0, rr:0, en:0, pierce:0, stun:0, dbl:0, leech:0,
-                refresh:0, burn:0, psn:0, curse:0, retal:0, gold:0, cure:0, dice:[], surge:[]};
-  for(const a of [A, B]){
-    for(const k in a){
-      if(k === 'tx' || k === 'lost') continue;
-      if(k === 'dice' || k === 'surge') play[k] = play[k].concat(a[k]);
-      else play[k] = (play[k] || 0) + a[k];
+  if(!C || C.phase !== 'cards' || pendingHeroes().length) return;
+  const play = blankPlay();
+  let init = 99;
+  const shown = [];
+  const flying = [];
+  /* Attack, shields and dice pool because the party swings together. Healing
+     does NOT, or three hands each printing "heal 2" would mend six. Each heal
+     stays one heal, aimed by the party at whoever is worst off. */
+  const heals = [];
+  for(const h of conscious()){
+    const p = C.picks[h.id];
+    if(!p || !p.top || !p.bot) continue;
+    const tc = CARD(p.top), bc = CARD(p.bot);
+    if(tc.top.heal) heals.push(tc.top.heal);
+    if(bc.bot.heal) heals.push(bc.bot.heal);
+    mergeHalf(play, tc.top);
+    mergeHalf(play, bc.bot);
+    if(h !== leadHero()){          // a guard played from the back rank covers, it does not block
+      const back = (tc.top.sh || 0) + (bc.bot.sh || 0);
+      play.sh -= back; play.shHelp += back;
     }
+    init = Math.min(init, tc.init);
+    shown.push({who:h, topNm:tc.nm, topTx:tc.top.tx, botNm:bc.nm, botTx:bc.bot.tx});
+    flying.push(p.top, p.bot);
+    spendCardFor(h, p.top, tc.top.lost);
+    spendCardFor(h, p.bot, bc.bot.lost);
   }
+  if(!V.fast) flyCards(flying);
+  sfx('cardPlay');
   C.play = play;
-  C.myInit = topCard.init;
-  C.shown = {topNm:topCard.nm, topTx:A.tx, botNm:botCard.nm, botTx:B.tx};
-  cLog(`${topCard.nm} (top) into ${botCard.nm} (bottom).`, 'b');
-  spendCard(C.pickTop, A.lost);
-  spendCard(C.pickBot, B.lost);
+  C.myInit = init;
+  C.shown = shown;
+  cLog(shown.map(x => `${x.who.nm}: ${x.topNm} / ${x.botNm}`).join(' · '), 'b');
 
-  if(play.heal) healHero(play.heal, 'your own hand');
-  if(play.en){ S.hero.en = clamp(S.hero.en + play.en, 0, D().maxEn); cLog(`+${play.en} energy.`, 'b'); }
+  for(const n of heals) healHero(n, "the party's own hands");
+  if(play.en) conscious().forEach(h => { h.en = clamp(h.en + play.en, 0, D(h).maxEn); });
   if(play.cure){ C.me.burn = 0; C.me.poison = 0; cLog('You are clean of it.', 'g'); }
   if(play.burn){ C.foe.burn = play.burn; cLog(`${C.foe.nm} catches light.`, 'y'); }
   if(play.psn){ C.foe.psn = play.psn; cLog(`${C.foe.nm} is poisoned.`, 'y'); }
-  if(play.stun){ C.foe.stun = 2; cLog(`${C.foe.nm} is staggered.`, 'y'); sunderIfEntrenched(C); }
+  if(play.stun) staggerFoe(C);
   if(play.curse){ C.foe.curse = play.curse; cLog(`${C.foe.nm} will hit ${play.curse} softer next round.`, 'y'); }
   if(play.gold) gainGold(play.gold);
   if(play.refresh){
-    if(S.hero.lost.length){
-      const id = S.hero.lost.pop();
-      S.hero.hand.push(id);
-      cLog(`${CARD(id).nm} comes back to your hand.`, 'v');
-    } else cLog('Nothing lost to take back.', 'y');
+    const hasLost = conscious().find(h => h.lost.length);
+    if(hasLost){ const id = hasLost.lost.pop(); hasLost.hand.push(id); cLog(`${CARD(id).nm} comes back to ${hasLost.nm}.`, 'v'); }
+    else cLog('Nothing lost to take back.', 'y');
   }
 
-  C.myDice = cPool().concat(play.dice).map(k => Object.assign(rollDie(k), {mark:false, fresh:true}));
+  C.myDice = partyPool().concat(play.dice.map(k => ({k, hid:null})))
+    .map(x => Object.assign(rollDie(x.k), {mark:false, fresh:true, hid:x.hid}));
   applyNoBlank(C.myDice);
   C.foeDice = C.foe.pool.map(k => rollDie(k));
-  C.rrLeft = Math.max(0, D().rrTotal + play.rr - (C.me.hexed ? 1 : 0));
+  C.rrLeft = Math.max(0, partyRerolls() + play.rr - (C.me.hexed ? 1 : 0));
   C.pend = {dmg:0, pierce:!!play.pierce, guard:0};
   C.spentSurge = 0;
   C.phase = 'dice';
   renderCombat();
 }
+function spendCardFor(h, id, lost){
+  const i = h.hand.indexOf(id);
+  if(i >= 0) h.hand.splice(i, 1);
+  (lost ? h.lost : h.discard).push(id);
+}
 function catchBreath(){
-  const C = V.combat, h = S.hero;
+  const C = V.combat;
   if(!C || C.phase !== 'cards') return;
-  if(h.discard.length < 2){ flash('You need at least two cards in the discard to make it worth the round.'); return; }
-  const i = Math.floor(rnd() * h.discard.length);
-  const lostId = h.discard.splice(i, 1)[0];
-  h.lost.push(lostId);
-  h.hand = h.hand.concat(h.discard);
-  h.discard = [];
-  cLog(`You catch your breath. ${CARD(lostId).nm} is spent for good.`, 'y');
-  C.play = null; C.myInit = 99; C.resting = true;
+  const who = conscious().filter(h => h.discard.length >= 2);
+  if(!who.length){ flash('Nobody has enough in their discard to make it worth the round.'); return; }
+  for(const h of who){
+    const i = Math.floor(rnd() * h.discard.length);
+    const lostId = h.discard.splice(i, 1)[0];
+    h.lost.push(lostId);
+    h.hand = h.hand.concat(h.discard);
+    h.discard = [];
+    cLog(`${h.nm} catches their breath. ${CARD(lostId).nm} is spent for good.`, 'y');
+  }
+  C.play = null; C.myInit = 99; C.resting = true; C.shown = null;
   C.myDice = [];
   C.foeDice = C.foe.pool.map(k => rollDie(k));
   C.rrLeft = 0; C.spentSurge = 0; C.pend = {dmg:0, pierce:false, guard:0};
@@ -2488,41 +2604,144 @@ function catchBreath(){
 function exhausted(){
   const C = V.combat;
   const dmg = Math.max(2, (C.foe.tier || 1) * 2);
-  cLog('Your hand is empty. You break off and run for it.', 'r');
+  cLog('The party is out of cards. You break off and run for it.', 'r');
   V.combat = null;
-  MUS.set('travel');
   closeModal();
+  MUS.set('travel');
   recoverDiscards();
   S.dice.forEach(d => d.spent = true);
   log('Out of cards and out of the fight. Camp or take a room to get the lost ones back.', 'y');
-  hurtHero(dmg, 'a parting blow as you break off');
+  const lead = leadHero();
+  if(lead) hurtHero(dmg, 'a parting blow as you break off', lead);
   save(); render();
+}
+function partyDown(){
+  const C = V.combat;                     // read the fight BEFORE dropping it
+  V.lastBoss = (C && C.opts && C.opts.boss) || V.lastBoss;
+  V.combat = null;
+  setTimeout(heroFalls, T(300));
+}
+
+/* Stagger costs the enemy a whole attack, which is the strongest thing in the
+   game, and a party plays six halves a round instead of two — so without this
+   a trio simply keeps anything permanently staggered and never gets hit. After
+   it shakes one off it is BRACED, and the next stagger slides off it. */
+function staggerFoe(C, src){
+  if(C.foe.stunBrace > 0){
+    cLog(`${C.foe.nm} is braced for that. The stagger does not take.`, 'y');
+    return false;
+  }
+  C.foe.stun = 2;
+  C.foe.stunBrace = 4;
+  cLog(`${C.foe.nm} is staggered${src ? ' by ' + src : ''}.`, 'y');
+  sunderIfEntrenched(C);
+  return true;
+}
+function sunderIfEntrenched(C){
+  const extra = D().sunder;                       // the Plate Breaker strips anything, not just the entrenched
+  if(C.foe.trait === 'entrench' && C.foe.arm){
+    C.foe.arm = Math.max(0, C.foe.arm - 3);
+    cLog(`Plates shear off it. Armor down to ${C.foe.arm}.`, 'g');
+  } else if(extra && C.foe.arm){
+    C.foe.arm = Math.max(0, C.foe.arm - extra);
+    cLog(`You break its guard open. Armor down to ${C.foe.arm}.`, 'g');
+  }
+}
+function applyNoBlank(dice){
+  const d = D(leadHero() || S.hero);
+  if(d.noBlank || d.minatk) dice.forEach(x => { if(!x.a && !x.d && !x.s) x.a = 1; });
+  if(d.gambit && dice.length){          // the Gambit Coin rerolls your worst die for free
+    let worst = 0, low = Infinity;
+    dice.forEach((x,i) => { const v = x.a*2 + x.d + x.s*2; if(v < low){ low = v; worst = i; } });
+    const nd = rollDie(dice[worst].k);
+    dice[worst].a = nd.a; dice[worst].d = nd.d; dice[worst].s = nd.s; dice[worst].fresh = true;
+  }
+}
+function cLog(t, cls){ const C = V.combat; if(C){ C.hist.push((cls?'§'+cls+'§':'')+t); if(C.hist.length>40) C.hist.shift(); } log(t, cls); }
+
+/* ---------- hand ---------- */
+function recoverDiscards(){
+  party().forEach(h => {
+    if(!h.discard.length) return;
+    h.hand = h.hand.concat(h.discard);
+    h.discard = [];
+  });
+}
+function recoverAll(){
+  party().forEach(h => { h.hand = h.deck.slice(); h.discard = []; h.lost = []; });
+}
+
+function drawIntent(){
+  const C = V.combat;
+  if(!C.order.length) C.order = shuffle(C.intentDeck.map((x,i) => i));
+  C.intent = C.intentDeck[C.order.shift()];
+  C.intentFresh = true;
+  sfx('intent', 200);
 }
 
 /* ---------- the numbers ---------- */
 function mySurges(){ const C = V.combat; return C.myDice.reduce((s,d)=>s+d.s,0) - C.spentSurge; }
-function surgeOptions(){ const C = V.combat; return Array.from(new Set(D().surge.concat((C.play && C.play.surge) || []))); }
+function surgeOptions(){ const C = V.combat; return Array.from(new Set(partySurgeOptions().concat((C.play && C.play.surge) || []))); }
 function myAttack(){
-  const C = V.combat, d = D(), p = C.play || {};
+  const C = V.combat, p = C.play || {};
   if(C.me.stun > 0) return 0;
   let diceAtk = C.myDice.reduce((s,x)=>s+x.a,0);
   if(p.dbl) diceAtk *= 2;
-  let a = diceAtk + d.atk + (p.atk||0) + C.pend.dmg + C.me.fury + (C.sharp||0);
-  if(S.hero.id === 'blade' && C.round === 1) a += 3;
-  if(d.firstatk && C.myInit != null && C.intent && C.myInit <= (C.intent.init || 99)) a += d.firstatk;
-  if(d.zeal && S.hero.hp <= d.maxHp/2) a += d.zeal;
+  let a = diceAtk + partyAtkBonus() + (p.atk||0) + C.pend.dmg + C.me.fury + (C.sharp||0);
+  for(const h of conscious()){                 // every hero still standing brings their own edge
+    const hd = D(h);
+    if(h.id === 'blade' && C.round === 1) a += 3;
+    if(hd.zeal && h.hp <= hd.maxHp/2) a += hd.zeal;
+    if(hd.firstatk && C.intent && C.myInit <= (C.intent.init || 99)) a += hd.firstatk;
+  }
   if(C.me.curseNow) a -= C.me.curseNow;
   if(C.me.hexed) a -= 2;
   return Math.max(0, a);
 }
-function myShields(){ const C = V.combat, p = C.play || {}; return C.myDice.reduce((s,x)=>s+x.d,0) + C.pend.guard + (p.sh||0); }
-function myWard(){ const C = V.combat, p = C.play || {}; return D().ward + (p.ward||0) + (C.me.stone ? 3 : 0); }
+/* Attack is pooled, because three heroes really are all swinging at one thing.
+   A guard is not: only the hero in the front rank is being hit, so only THEIR
+   shields stop the blow in full. Everyone else is covering from behind, which
+   is worth half. Without this a trio's pooled shields simply exceed anything
+   in the region and nothing can touch them. */
+function myShields(){
+  const C = V.combat, p = C.play || {};
+  const lead = leadHero();
+  const lid = lead ? lead.id : null;
+  let own = 0, help = 0;
+  C.myDice.forEach(x => { if(!x.hid || x.hid === lid) own += x.d; else help += x.d; });
+  own += C.pend.guard + (p.sh || 0);
+  help += (p.shHelp || 0);
+  return own + Math.floor(help / 2);
+}
+/* only the hero in the front rank wears their own armour and wards */
+function myWard(){
+  const C = V.combat, p = C.play || {};
+  const lead = leadHero();
+  return (lead ? D(lead).ward : 0) + (p.ward||0) + (C.me.stone ? 3 : 0);
+}
+function leadArmor(){ const lead = leadHero(); return lead ? D(lead).arm : 0; }
+/* Every extra hero adds a whole bottom half of shields and a whole dice pool to
+   the party's guard, but the enemy still only swings at one of them. Measured,
+   a kitted trio's mitigation is about 1.7x a lone hero's, so what comes back at
+   the front rank is multiplied to match. Proportional, not flat, so it lands
+   the same way on a wolf as on the Crown.
+   It RAMPS, because that mitigation advantage is mostly gear and shield cards:
+   a level-1 trio in starting leathers does not have it yet, and taking 1.7x on
+   day two just killed them in the field. Per extra hero, 15% at level 1 rising
+   to 33% at level 10. */
+function threatMul(){
+  const extra = Math.max(0, party().length - 1);
+  if(!extra) return 1;
+  const lvl = party().reduce((n,h) => Math.max(n, h.lvl || 1), 1);
+  return 1 + extra * (0.15 + 0.02 * (lvl - 1));
+}
 function foeAttackVal(){
   const C = V.combat;
   if(C.foe.stun > 0) return 0;
   const it = C.intent || {};
   // the revealed intent replaces the monster's old flat attack bonus rather than stacking on it
-  return Math.max(0, C.foeDice.reduce((s,x)=>s+x.a,0) + (it.atk||0) + (C.foe.pwr||0) + (C.foe.rage||0) - (C.foe.curseNow||0));
+  const raw = C.foeDice.reduce((s,x)=>s+x.a,0) + (it.atk||0) + (C.foe.pwr||0) + (C.foe.rage||0);
+  return Math.max(0, Math.round(raw * threatMul()) - (C.foe.curseNow||0));
 }
 function foeShields(){ const C = V.combat; return C.foeDice.reduce((s,x)=>s+x.d,0) + (C.foe.shieldBonus||0) + ((C.intent && C.intent.sh)||0); }
 
@@ -2537,17 +2756,24 @@ function dealToFoe(n, src, quiet){
   if(C.foe.hp <= 0 && !C.done){ C.done = true; setTimeout(() => winCombat(C), T(420)); }
 }
 function dealToMe(n, src, quiet){
-  const C = V.combat, d = D();
+  const C = V.combat;
+  const target = leadHero() || S.hero;
   let dmg = n;
   if(!quiet) dmg = Math.max(0, dmg - myWard());
-  if(dmg <= 0){ cLog(`You shrug off ${src}.`); return 0; }
-  S.hero.hp -= dmg;
-  cLog(`${cap(src)} costs you ${dmg}.`, 'r');
+  if(dmg <= 0){ cLog(`${target.nm} shrugs off ${src}.`); return 0; }
+  target.hp -= dmg;
+  cLog(`${cap(src)} costs ${target.nm} ${dmg}.`, 'r');
   floatText('-' + dmg, '#ef5350', '#meCard');
   fx('#meCard', 'redflash', 640);
   sfx(quiet ? 'burn' : 'hitMe', 70);
   const el = $('#meCard'); if(el){ el.classList.add('hit'); setTimeout(()=>el.classList.remove('hit'), 320); }
-  if(S.hero.hp <= 0 && !C.done){ C.done = true; V.lastBoss = C.opts.boss || null; V.combat = null; setTimeout(heroFalls, T(400)); }
+  if(target.hp <= 0){
+    target.hp = 0;
+    cLog(`${target.nm} goes down.`, 'r');
+    const next = party().findIndex(h => !isDown(h));
+    if(next >= 0){ S.lead = next; cLog(`${party()[next].nm} steps into the front rank.`, 'y'); }
+    else if(C && !C.done){ C.done = true; V.lastBoss = C.opts.boss || null; V.combat = null; setTimeout(heroFalls, T(400)); }
+  }
   return dmg;
 }
 
@@ -2580,9 +2806,9 @@ function spendSurge(id){
   if(id === 'dmg') C.pend.dmg += 2;
   if(id === 'pierce') C.pend.pierce = true;
   if(id === 'guard') C.pend.guard += 2;
-  if(id === 'stagger'){ C.foe.stun = 2; cLog(`${C.foe.nm} is staggered.`, 'y'); sunderIfEntrenched(C); }
+  if(id === 'stagger') staggerFoe(C, 'the surge');
   if(id === 'scorch'){ C.foe.burn = 3; cLog(`${C.foe.nm} catches light.`, 'y'); }
-  if(id === 'mend') healHero(D().mend >= 2 ? 4 : 2, 'a small rite');
+  if(id === 'mend'){ const m = Math.max(0, ...conscious().map(h => D(h).mend)); healHero(m >= 2 ? 4 : 2, 'a small rite'); }
   renderCombat();
 }
 function foeSurgeSpend(){
@@ -2592,7 +2818,7 @@ function foeSurgeSpend(){
   while(s > 0){
     if(sp === 'poison'){ C.me.poison = 3; cLog('Venom works into the wound.', 'r'); }
     else if(sp === 'burn'){ C.me.burn = 3; cLog('You are burning.', 'r'); }
-    else if(sp === 'drain'){ C.foe.hp = Math.min(C.foe.maxHp, C.foe.hp + 3); S.hero.en = Math.max(0, S.hero.en - 1); cLog(`${C.foe.nm} drains 3 and takes an energy.`, 'r'); }
+    else if(sp === 'drain'){ C.foe.hp = Math.min(C.foe.maxHp, C.foe.hp + 3); const dl = leadHero() || S.hero; dl.en = Math.max(0, dl.en - 1); cLog(`${C.foe.nm} drains 3 and takes an energy from ${dl.nm}.`, 'r'); }
     else if(sp === 'crush'){ C.foe.crush = true; cLog('It swings through your guard.', 'r'); }
     else if(sp === 'parry'){ C.foe.shieldBonus = (C.foe.shieldBonus||0) + 3; cLog('It parries hard.', 'r'); }
     else if(sp === 'hex'){ C.me.hexed = 2; cLog('A hex settles on you.', 'r'); }
@@ -2627,7 +2853,7 @@ function strike(){
     // what the blow is made of, so a trait can strip out the parts it ignores
     const parts = {
       card: p.atk || 0,
-      gear: d.atk,
+      gear: partyAtkBonus(),
       surge: C.pend.dmg,
       arcane: C.myDice.reduce((n,x) => n + (x.k === 'arcane' ? x.a : 0), 0),
       attackingDice: C.myDice.filter(x => x.a > 0).length,
@@ -2635,14 +2861,17 @@ function strike(){
     };
     const out = damageToFoe(C, toFoe, parts);
     toFoe = Math.max(0, Math.round(out.dmg));
-    if(toFoe > 0 && d.pyre && C.foe.burn > 0) toFoe += d.pyre;
-    if(toFoe > 0 && d.execute && C.foe.hp <= C.foe.maxHp * 0.25){ toFoe *= 2; cLog('It is already failing. You finish the motion.', 'g'); }
-    if(d.spill && mySurges() > 0) toFoe += mySurges();
+    const pyre = Math.max(0, ...conscious().map(h => D(h).pyre));
+    if(toFoe > 0 && pyre && C.foe.burn > 0) toFoe += pyre;
+    const exec = Math.max(0, ...conscious().map(h => D(h).execute));
+    if(toFoe > 0 && exec && C.foe.hp <= C.foe.maxHp * 0.25){ toFoe *= 2; cLog('It is already failing. You finish the motion.', 'g'); }
+    const spill = Math.max(0, ...conscious().map(h => D(h).spill));
+    if(spill && mySurges() > 0) toFoe += mySurges();
     if(out.note) cLog(out.note, toFoe > 0 ? 'g' : 'y');
     if(toFoe > 0){
       dealToFoe(toFoe);
       if(p.leech){ const h = Math.ceil(toFoe / 2); healHero(h, 'the wound you opened'); }
-      if(d.kindle && !C.me.kindled){ C.me.kindled = true; C.foe.burn = Math.max(C.foe.burn, 3); cLog('It catches light on the first cut.', 'y'); }
+      if(conscious().some(h => D(h).kindle) && !C.me.kindled){ C.me.kindled = true; C.foe.burn = Math.max(C.foe.burn, 3); cLog('It catches light on the first cut.', 'y'); }
       if(C.foe.trait === 'mirror' && toFoe > 12){
         const back = Math.floor(toFoe / 3);
         cLog('The blow comes back off it.', 'r');
@@ -2657,7 +2886,7 @@ function strike(){
     const fatk = foeAttackVal();
     if(fatk <= 0){ if(C.foe.stun > 0) cLog(`${C.foe.nm} is still recovering.`, 'y'); return; }
     const msh = (C.foe.crush || it.pierce) ? 0 : myShields();
-    const raw = Math.max(0, fatk - msh - d.arm);
+    const raw = Math.max(0, fatk - msh - leadArmor());
     const dealt = raw > 0 ? dealToMe(raw, C.foe.nm + '\'s ' + (it.nm || 'attack')) : 0;
     if(raw <= 0){ cLog('You take the blow on your guard.', 'g'); sfx('block'); return; }
     if(dealt > 0){
@@ -2695,7 +2924,7 @@ function tryFlee(){
   const C = V.combat;
   if(!C || C.done) return;
   if(C.opts.boss){ flash('There is no walking away from this one.'); return; }
-  const auto = S.hero.id === 'reaver';
+  const auto = alive().some(h => h.id === 'reaver');    // the Reaver knows a way out for everyone
   const dc = 7 + C.foe.tier * 2;
   const finish = ok => {
     if(ok){
@@ -2731,7 +2960,7 @@ function winCombat(C){
   let loot = null;
   const lootChance = 0.3 + (C.opts.loot ? 0.4 : 0) + foe.tier * 0.06;
   if(chance(lootChance)){ loot = rollItem(clamp(foe.tier, 1, 3)); giveItem(loot.id); }
-  if(foe.tier >= 4 && chance(0.25)){ const rel = pick(RELICS().filter(r => !S.hero.bag.includes(r.id))); if(rel){ giveItem(rel.id); loot = rel; } }
+  if(foe.tier >= 4 && chance(0.25)){ const rel = pick(RELICS().filter(r => !S.bag.includes(r.id))); if(rel){ giveItem(rel.id); loot = rel; } }
   if(C.opts.camp){ const m = S.map[C.opts.camp]; if(m){ m.feat = null; m.threat = null; S.dread = Math.max(0, S.dread - 1); } }
   const boss = C.opts.boss;
   const spent = S.hero.discard.length + S.hero.lost.length;
@@ -2759,8 +2988,9 @@ function winCombat(C){
      <div class="kv"><span>Experience</span><b>+${foe.xp}</b></div>
      <div class="kv"><span>Gold</span><b>+${g}</b></div>
      ${loot ? `<div class="kv"><span>Salvage</span><b>${loot.ic} ${esc(loot.nm)}</b></div>` : ''}
-     <div class="kv"><span>Health</span><b>${S.hero.hp} / ${D().maxHp}</b></div>
-     <div class="kv"><span>Cards in hand</span><b>${S.hero.hand.length}${S.hero.lost.length ? ` <span class="mini faint">(${S.hero.lost.length} lost until you sleep)</span>` : ''}</b></div>`,
+     ${party().map(m => `<div class="kv"><span>${m.ic} ${esc(m.nm)}</span><b>${
+        isDown(m) ? '<span style="color:var(--red)">down</span>' : Math.max(0,m.hp) + ' / ' + D(m).maxHp
+      } <span class="mini faint">&#9995;${m.hand.length}${m.lost.length ? ', ' + m.lost.length + ' lost' : ''}</span></b></div>`).join('')}`,
     f:[{lb:'Continue', cls:'primary', fn:()=>{ closeModal(); save(); render(); }}], noClose:true});
   save();
 }
@@ -2856,8 +3086,11 @@ TALENTS.push(
    ========================================================================= */
 // A level-up must never stamp over a modal the player is still reading.
 function tryLevelUp(){
-  if(!S || S.hero.lvl >= 10 || S.hero.xp < S.hero.xpNext) return;
+  if(!S) return;
+  const due = party().find(h => h.lvl < 10 && h.xp >= h.xpNext);
+  if(!due) return;
   if(!$('#scrim').classList.contains('hidden')){ setTimeout(tryLevelUp, V.fast ? 60 : 450); return; }
+  selectHero(party().indexOf(due));
   levelUp();
 }
 function levelUp(){
@@ -2901,11 +3134,15 @@ function showLevelUp(entry){
   });
 }
 function spendRewards(){
-  const h = S.hero;
+  let h = S.hero;
+  if(!(h.pts || h.drafts || h.cardDrafts)){          // move on to whoever still has something owed
+    const owed = party().findIndex(m => m.pts || m.drafts || m.cardDrafts);
+    if(owed >= 0){ selectHero(owed); h = S.hero; }
+  }
   if(h.pts > 0){ pickStat(); return; }
   if(h.cardDrafts > 0){ draftCard(); return; }
   if(h.drafts > 0){ draftTalent(); return; }
-  if(h.lvl < 10 && h.xp >= h.xpNext){ setTimeout(tryLevelUp, T(150)); return; }
+  setTimeout(tryLevelUp, T(150));
   save(); render();
 }
 function pickStat(){
@@ -2913,7 +3150,7 @@ function pickStat(){
   const d = D();
   modal({
     ic:'📈', h:'Raise a Stat', noClose:true,
-    b:`<p class="muted">${plural(h.pts,'point')} to spend. Each is permanent.</p><div class="sep"></div>` +
+    b:`<p class="muted"><b style="color:var(--ink)">${h.ic} ${esc(h.nm)}</b> — ${plural(h.pts,'point')} to spend. Each is permanent.</p><div class="sep"></div>` +
       Object.keys(STATNM).map(k => `<button class="choice" data-st="${k}">
         <b>${STATIC[k]} ${STATNM[k]} — ${h.stats[k]} → ${h.stats[k]+1}</b>
         <div class="sub">${gtx({
@@ -2937,7 +3174,7 @@ function draftTalent(){
   if(!pool.length){ h.drafts = 0; save(); render(); return; }
   modal({
     ic:'🎴', h:'Draft a Talent', noClose:true,
-    b:`<p class="muted">Three cards off the top. Take one.</p><div class="sep"></div>` +
+    b:`<p class="muted"><b style="color:var(--ink)">${h.ic} ${esc(h.nm)}</b> — three cards off the top. Take one.</p><div class="sep"></div>` +
       pool.map(t => `<button class="choice" data-tal="${t.id}">
         <b>${t.ic} ${esc(t.nm)}</b><div class="sub">${gtx(t.tx)}</div></button>`).join(''),
     f:[],
@@ -2957,9 +3194,9 @@ function draftCard(){
   if(!pool.length){ h.cardDrafts = 0; save(); render(); return; }
   modal({
     ic:'🃏', h:'A New Ability', wide:true, noClose:true,
-    b:`<p class="muted">Something you have been working towards. Take one into your deck — it joins your hand now.</p><div class="sep"></div>
+    b:`<p class="muted"><b style="color:var(--ink)">${h.ic} ${esc(h.nm)}</b> — something they have been working towards. Take one into the deck; it joins the hand now.</p><div class="sep"></div>
        <div class="hand draftgrid">${pool.map(c => `
-         <div class="acard pick" data-newcard="${c.id}" data-cmpcard="${c.id}" style="--accent:${heroArt().col}">
+         <div class="acard pick" data-newcard="${c.id}" data-cmpcard="${c.id}" style="--accent:${heroArt(h).col}">
            ${cardWatermark()}
            <div class="ahd"><span class="initb">${c.init}</span><span class="aic">${c.ic}</span><span class="anm">${esc(c.nm)}</span></div>
            <div class="ahalf top"><span class="lbl">Top</span><span class="atx">${gtx(c.top.tx)}</span></div>
@@ -3004,8 +3241,11 @@ const GLOSSARY = {
     tx:'What you are swinging for: your card\'s printed attack + every ⚔ on your dice + your gear bonus. <b>Damage dealt = attack − their shields − their armor.</b>',
     alias:['attack']},
   shields:  {nm:'Shields', ic:'🛡', grp:'Numbers',
-    tx:'Subtracted from the attack coming at you <b>this round only</b>. They come from card bottoms, 🛡 faces on your dice, and Guard dice. They reset every round.',
+    tx:'Subtracted from the attack coming at you <b>this round only</b>. They come from card bottoms, 🛡 faces on your dice, and Guard dice. They reset every round.<br><br>With a party, only the hero in the <b>front rank</b> is being hit, so only their own shields stop the blow in full. Everyone else is covering from behind and theirs count <b>half</b>. Attack is pooled; a guard is not.',
     alias:['shields','shield']},
+  front:    {nm:'Front rank', ic:'◤', grp:'Numbers',
+    tx:'The one hero everything the enemy does lands on. Only <b>their</b> armor, warding and shields reduce it. Swap who stands there between rounds — it is usually whoever is healthiest, or whoever just played a heavy guard.',
+    alias:['front rank','in the front rank','takes the hits']},
   armor:    {nm:'Armor', ic:'🪖', grp:'Numbers',
     tx:'Flat damage reduction from your gear that applies <b>every</b> round. It is never rolled and never runs out. Pierce ignores shields, but never armor.',
     alias:['armor']},
@@ -3021,8 +3261,11 @@ const GLOSSARY = {
     tx:'Ignore the enemy\'s <b>shields</b> for this attack. Its armor still applies. The answer to anything that hides behind a big guard.',
     alias:['pierce','piercing']},
   stagger:  {nm:'Stagger', ic:'💫', grp:'Effects',
-    tx:'The enemy loses its <b>whole next attack</b>. It still reveals an intent and still shields, but it swings for nothing. One of the strongest things you can buy.',
+    tx:'The enemy loses its <b>whole next attack</b>. It still reveals an intent and still shields, but it swings for nothing. One of the strongest things you can buy — so it will not take twice in a row.',
     alias:['stagger it','stagger','staggered']},
+  braced:   {nm:'Braced', ic:'🧱', grp:'Effects',
+    tx:'What the enemy is for a few rounds after it shakes off a stagger. While it is braced, another stagger simply slides off it, from a card, a surge or a bomb alike. Time the second one, and spend those rounds on damage instead.',
+    alias:['braced']},
   knockdown:{nm:'Knockdown', ic:'🥊', grp:'Effects',
     tx:'The same thing done to you: <b>you</b> lose your next attack. You still shield and you still play cards, but your swing that round does nothing.',
     alias:['knockdown','knocked off your feet']},
@@ -3725,6 +3968,20 @@ function tipOn(el, title, body){
 /* =========================================================================
    CHARACTER CARD
    ========================================================================= */
+/* a row of faces at the top of the card and pack screens, so you can flip
+   between heroes without closing what you are looking at */
+function heroStrip(){
+  if(party().length < 2) return '';
+  return `<div class="row wr" style="margin-bottom:10px">${party().map((m,i) => {
+    const owed = m.pts + m.drafts + (m.cardDrafts||0);
+    return `<button class="btn sm ${S.sel===i?'primary':'ghost'}" data-hsw="${i}">${m.ic} ${esc(m.nm.split(' ')[0])}${
+      isDown(m) ? ' <span class="mini">down</span>' : ''}${owed ? ` <span class="mini">${owed}&#9733;</span>` : ''}</button>`;
+  }).join('')}</div>`;
+}
+function wireHeroStrip(reopen){
+  $$('#scrim [data-hsw]').forEach(el => el.onclick = () => { selectHero(+el.dataset.hsw); reopen(); renderTop(); });
+}
+
 function openCard(){
   const h = S.hero, d = D();
   const track = TRACKS[h.id] || [];
@@ -3734,6 +3991,7 @@ function openCard(){
   modal({
     ic:h.ic, h:h.nm, wide:true, sub:`Level ${h.lvl} · ${h.xp} / ${h.xpNext === 999999 ? '—' : h.xpNext} XP · ${S.seals} of 3 seals`,
     b:`
+    ${heroStrip()}
     <div class="grid2">
       <div>
         <div class="card">
@@ -3781,7 +4039,7 @@ function openCard(){
           <div class="mini faint" style="margin-bottom:8px">${h.deck.length} of ${(CARDS[h.id]||[]).length} known · hand ${h.hand.length}, discard ${h.discard.length}, lost ${h.lost.length}</div>
           <div class="deckgrid">${h.deck.map(id => { const c = CARD(id); if(!c) return '';
             const where = h.lost.includes(id) ? 'lost' : h.discard.includes(id) ? 'spent' : 'in hand';
-            return `<div class="acard" data-cmpcard="${id}" style="width:auto;--accent:${heroArt().col}">
+            return `<div class="acard" data-cmpcard="${id}" style="width:auto;--accent:${heroArt(h).col}">
               ${cardWatermark()}
               <div class="ahd"><span class="initb">${c.init}</span><span class="aic">${c.ic}</span><span class="anm">${esc(c.nm)}</span>
                 <span class="mini faint">${where}</span></div>
@@ -3801,6 +4059,7 @@ function openCard(){
       {lb:'Gear & Pack', fn:()=>{ closeModal(); openInventory(); }},
     ],
   });
+  wireHeroStrip(openCard);
 }
 
 /* =========================================================================
@@ -3816,8 +4075,8 @@ function equipItem(id){
   }
   const old = h.gear[slot];
   h.gear[slot] = id;
-  h.bag.splice(h.bag.indexOf(id), 1);
-  if(old) h.bag.push(old);
+  S.bag.splice(S.bag.indexOf(id), 1);
+  if(old) S.bag.push(old);
   S.hero.hp = Math.min(S.hero.hp, D().maxHp);
   log(`Equipped ${it.nm}.`, 'y');
   openInventory();
@@ -3826,7 +4085,7 @@ function equipItem(id){
 function unequip(slot){
   const h = S.hero;
   if(!h.gear[slot]) return;
-  h.bag.push(h.gear[slot]);
+  S.bag.push(h.gear[slot]);
   h.gear[slot] = null;
   S.hero.hp = Math.min(S.hero.hp, D().maxHp);
   openInventory(); save(); render();
@@ -3938,7 +4197,7 @@ function openInventory(){
     if(!it) return `<div class="item" style="opacity:.5"><div class="ic">▫️</div><div style="flex:1"><div class="nm">${gtx(lbl)}</div><div class="tx">Empty</div></div></div>`;
     return itemCard(it, `<button class="btn sm ghost" data-unq="${s}">Remove</button>`);
   }).join('');
-  const bag = h.bag.map(id => ITEM(id)).filter(Boolean);
+  const bag = S.bag.map(id => ITEM(id)).filter(Boolean);
   const wear = bag.map((it,i) => it.slot !== 'use' ? itemCard(it, `<div class="col" style="gap:4px">
       <button class="btn sm" data-eq="${i}">Equip</button>
       <button class="btn sm ghost" data-sell="${i}">Sell</button></div>`, true) : '').join('');
@@ -3946,9 +4205,11 @@ function openInventory(){
       <button class="btn sm good" data-use="${i}">Use</button>
       <button class="btn sm ghost" data-sell="${i}">Sell</button></div>`) : '').join('');
   modal({
-    ic:'🎒', h:'Gear & Pack', wide:true, sub:`${h.gold} gold · ${plural(bag.length,'item')} carried`,
-    b:`<div class="grid2">
-        <div><h3 style="margin-bottom:7px">Equipped</h3>${gearHtml}
+    ic:'🎒', h:'Gear & Pack', wide:true,
+    sub:`${S.gold} gold · ${plural(bag.length,'item')} carried · the pack is shared, the gear is not`,
+    b:`${heroStrip()}
+      <div class="grid2">
+        <div><h3 style="margin-bottom:7px">${h.ic} ${esc(h.nm)} is wearing</h3>${gearHtml}
           ${h.gear.trinket1 && h.gear.trinket2 ? '' : ''}
         </div>
         <div>
@@ -3959,6 +4220,7 @@ function openInventory(){
       </div>`,
     f:[{lb:'Character card', fn:()=>{ closeModal(); openCard(); }}],
   });
+  wireHeroStrip(openInventory);
   $$('#scrim [data-unq]').forEach(b => b.onclick = () => unequip(b.dataset.unq));
   $$('#scrim [data-eq]').forEach(b => b.onclick = () => {
     const it = bag[+b.dataset.eq];
@@ -3975,8 +4237,8 @@ function openInventory(){
   $$('#scrim [data-sell]').forEach(b => b.onclick = () => {
     const it = bag[+b.dataset.sell];
     const price = Math.round(it.cost * 0.45);
-    h.bag.splice(h.bag.indexOf(it.id), 1);
-    h.gold += price;
+    S.bag.splice(S.bag.indexOf(it.id), 1);
+    S.gold += price;
     log(`Sold ${it.nm} for ${price}g.`, 'y');
     openInventory(); save(); render();
   });
@@ -3986,21 +4248,21 @@ function openInventory(){
 function useItem(id, inCombat){
   const it = ITEM(id);
   const h = S.hero, d = D(), C = V.combat;
-  const consume = () => { const i = h.bag.indexOf(id); if(i >= 0) h.bag.splice(i,1); };
+  const consume = () => { const i = S.bag.indexOf(id); if(i >= 0) S.bag.splice(i,1); };
   const combatOnly = ['fury','stone','sharp','stagger','rrs','bomb'];
   if(combatOnly.includes(it.use) && (!C || C.done)){ flash('Only useful in a fight.'); return; }
   switch(it.use){
-    case 'heal8': healHero(8, it.nm); break;
-    case 'heal16': healHero(16, it.nm); break;
-    case 'heal30': healHero(30, it.nm); break;
+    case 'heal8': healHero(8, it.nm, h); break;
+    case 'heal16': healHero(16, it.nm, h); break;
+    case 'heal30': healHero(30, it.nm, h); break;
     case 'energy3': h.en = clamp(h.en + 3, 0, d.maxEn); log('+3 energy.', 'b'); break;
-    case 'rations': healHero(5, it.nm); h.en = clamp(h.en + 2, 0, d.maxEn); break;
-    case 'wine': healHero(10, it.nm); h.en = d.maxEn; break;
-    case 'cure': if(C){ C.me.burn = 0; C.me.poison = 0; } healHero(4, it.nm); break;
+    case 'rations': healHero(5, it.nm, h); h.en = clamp(h.en + 2, 0, d.maxEn); break;
+    case 'wine': healHero(10, it.nm, h); h.en = d.maxEn; break;
+    case 'cure': if(C){ C.me.burn = 0; C.me.poison = 0; } healHero(4, it.nm, h); break;
     case 'fury': C.me.fury += 5; cLog('Fury oil. +5 attack this round.', 'y'); break;
     case 'sharp': C.me.sharp = (C.me.sharp||0); C.me.fury += 0; C.sharp = (C.sharp||0) + 2; cLog('Edge honed. +2 attack for the fight.', 'y'); break;
     case 'stone': C.me.stone = 1; cLog('Your skin goes hard as flint.', 'y'); break;
-    case 'stagger': C.foe.stun = 2; cLog(`${C.foe.nm} reels.`, 'y'); break;
+    case 'stagger': staggerFoe(C, it.nm); break;
     case 'rrs': C.rrLeft += 3; cLog('+3 rerolls.', 'y'); break;
     case 'bomb': dealToFoe(14, 'the bomb', true); break;
     case 'flee': if(C && !C.opts.boss){ V.combat = null; closeModal(); recoverDiscards(); log('You vanish into the smoke.', 'y'); consume(); save(); render(); return; } flash('Not from this one.'); return;
@@ -4014,7 +4276,7 @@ function useItem(id, inCombat){
 }
 
 function relicChoice(){
-  const held = new Set(S.hero.bag.concat(Object.values(S.hero.gear)));
+  const held = new Set(S.bag.concat(...party().map(h => Object.values(h.gear))));
   let pool = RELICS().filter(r => !held.has(r.id));
   if(pool.length < 2) pool = RELICS();
   const two = shuffle(pool).slice(0,2);
@@ -4054,39 +4316,42 @@ function stockFor(m){
 }
 function priceOf(it){
   const d = D();
-  return Math.max(4, Math.round(it.cost * (1 - d.haggle/100)));
+  return Math.max(4, Math.round(it.cost * (1 - PARTY().haggle/100)));
 }
 function openTown(m){
   const F = FEATS[m.feat];
   const nm = m.feat === 'city' ? 'Kestrel Hold' : (m.townName || (m.townName = pick(['Greyford','Tanner\'s Rest','Willowbrake','Copperditch','Nine Stones','Ashford','Mireford','Calloway','Thornholt','Saltgate'])) );
   const rank = townRank(m);
-  const innCost = 8 + S.hero.lvl * 4;
+  // beds, surgeons and trainers are all priced per head
+  const heads = party().length;
+  const innCost = (8 + S.hero.lvl * 4) * heads;
+  const healCost = 24 * heads;
+  const trainCost = 140;
   const d = D();
   modal({
-    ic:F.ic, h:nm, wide:true, sub:`${F.nm} · ${S.hero.gold} gold · Day ${S.day}`,
+    ic:F.ic, h:nm, wide:true, sub:`${F.nm} · ${S.gold} gold · Day ${S.day}`,
     b:`<p class="muted">${esc(F.tx)}</p><div class="sep"></div>
       <div class="grid2">
         <div>
           <button class="choice" id="tShop"><b>🏪 Market</b><div class="sub">${plural(stockFor(m).length,'thing')} for sale today.</div></button>
           <button class="choice" id="tSell"><b>💰 Sell from your pack</b><div class="sub">Half what it cost, roughly.</div></button>
-          <button class="choice" id="tInn" ${S.hero.gold < innCost ? 'disabled' : ''}>
-            <b>🛏️ Take a room — ${innCost}g</b><div class="sub">Full health and energy. Costs the rest of the day.</div></button>
-          ${rank >= 2 ? `<button class="choice" id="tHeal" ${S.hero.gold < 24 ? 'disabled' : ''}>
-            <b>⚕️ See the surgeon — 24g</b><div class="sub">Heal 18. Keeps your remaining travel dice.</div></button>` : ''}
+          <button class="choice" id="tInn" ${S.gold < innCost ? 'disabled' : ''}>
+            <b>🛏️ Take a room — ${innCost}g</b><div class="sub">Full health and energy for ${heads > 1 ? 'everyone' : 'you'}. Costs the rest of the day.</div></button>
+          ${rank >= 2 ? `<button class="choice" id="tHeal" ${S.gold < healCost ? 'disabled' : ''}>
+            <b>⚕️ See the surgeon — ${healCost}g</b><div class="sub">Heal 18 each. Keeps your remaining travel dice.</div></button>` : ''}
         </div>
         <div>
           <button class="choice" id="tBounty"><b>📋 Bounty board</b><div class="sub">${S.bounty ? 'You have one open.' : 'Somebody always wants something dead.'}</div></button>
-          ${rank === 3 ? `<button class="choice" id="tTrain" ${S.hero.gold < 140 ? 'disabled' : ''}>
-            <b>🎴 Train — 140g</b><div class="sub">Draft a talent from three.</div></button>` : ''}
-          ${rank >= 2 ? `<button class="choice" id="tMap" ${S.hero.gold < 30 ? 'disabled' : ''}>
+          ${rank === 3 ? `<button class="choice" id="tTrain" ${S.gold < trainCost ? 'disabled' : ''}>
+            <b>🎴 Train — ${trainCost}g</b><div class="sub">${esc(S.hero.nm)} drafts a talent from three. Pick who on the character card first.</div></button>` : ''}
+          ${rank >= 2 ? `<button class="choice" id="tMap" ${S.gold < 30 ? 'disabled' : ''}>
             <b>🗺️ Buy charts — 30g</b><div class="sub">Reveal a wide ring of country around the town.</div></button>` : ''}
           <button class="choice" id="tRumour"><b>🗣️ Listen in the taproom</b><div class="sub">Free. Marks the nearest lair you have not broken.</div></button>
         </div>
       </div>
       <div class="sep"></div>
       <div class="row wr tiny muted">
-        <span class="sb">❤️ ${S.hero.hp}/${d.maxHp}</span>
-        <span class="sb">⚡ ${S.hero.en}/${d.maxEn}</span>
+        ${party().map(m => `<span class="sb">${m.ic} ${Math.max(0,m.hp)}/${D(m).maxHp}</span>`).join('')}
         <span class="sb">🔱 ${S.seals}/3 seals</span>
         <span class="sb">🌑 dread ${S.dread}/${S.dreadMax}</span>
       </div>`,
@@ -4096,17 +4361,17 @@ function openTown(m){
   wire('tShop', () => openShop({nm, ic:F.ic, stock:stockFor(m), back:() => openTown(m)}));
   wire('tSell', () => openSell(() => openTown(m)));
   wire('tInn', () => {
-    S.hero.gold -= innCost;
-    const dd = D();
-    S.hero.hp = dd.maxHp; S.hero.en = dd.maxEn;
-    log('A bed, a bath, and a locked door.', 'g');
+    S.gold -= innCost;
+    party().forEach(h => { const hd = D(h); h.hp = hd.maxHp; h.en = hd.maxEn; });
+    S.lead = 0;
+    log('Beds, baths, and a locked door.', 'g');
     closeModal();
     endDay();
   });
-  wire('tHeal', () => { S.hero.gold -= 24; healHero(18, 'the surgeon'); openTown(m); save(); });
-  wire('tMap', () => { S.hero.gold -= 30; const n = reveal({q:m.q,r:m.r}, 4); log(`Charts bought. ${plural(n,'hex')} revealed.`, 'b'); openTown(m); save(); });
+  wire('tHeal', () => { S.gold -= healCost; party().forEach(h => healHero(18, 'the surgeon', h)); S.lead = 0; openTown(m); save(); });
+  wire('tMap', () => { S.gold -= 30; const n = reveal({q:m.q,r:m.r}, 4); log(`Charts bought. ${plural(n,'hex')} revealed.`, 'b'); openTown(m); save(); });
   wire('tRumour', () => { markNearestLair(); openTown(m); save(); });
-  wire('tTrain', () => { S.hero.gold -= 140; S.hero.drafts++; closeModal(); draftTalent(); });
+  wire('tTrain', () => { S.gold -= trainCost; S.hero.drafts++; closeModal(); draftTalent(); });
   wire('tBounty', () => openBounty(m));
 }
 
@@ -4120,10 +4385,10 @@ function openShop(o){
     const p = Math.round(priceOf(it) * (o.mark || 1));
     return itemCard(it, `<div class="col" style="gap:4px;align-items:flex-end">
       <div class="tiny" style="color:var(--gold);font-weight:700">${p}g</div>
-      <button class="btn sm ${S.hero.gold >= p ? 'primary' : ''}" data-buy="${i}" ${S.hero.gold < p ? 'disabled' : ''}>Buy</button></div>`, true);
+      <button class="btn sm ${S.gold >= p ? 'primary' : ''}" data-buy="${i}" ${S.gold < p ? 'disabled' : ''}>Buy</button></div>`, true);
   }).join('') : '<div class="tiny faint">Sold out.</div>';
   modal({
-    ic:'🏪', h:o.nm || 'Market', wide:true, sub:`${S.hero.gold} gold`,
+    ic:'🏪', h:o.nm || 'Market', wide:true, sub:`${S.gold} gold`,
     b:body,
     f:[{lb:'Sell instead', fn:()=>openSell(()=>openShop(o))}, {lb:'Done', cls:'primary', fn:()=>{ closeModal(); if(o.back) o.back(); else { save(); render(); } }}],
   });
@@ -4131,18 +4396,18 @@ function openShop(o){
     const i = +b.dataset.buy;
     const it = ITEM(stock[i]);
     const p = Math.round(priceOf(it) * (o.mark || 1));
-    if(S.hero.gold < p) return;
-    S.hero.gold -= p;
-    S.hero.bag.push(it.id);
+    if(S.gold < p) return;
+    S.gold -= p;
+    S.bag.push(it.id);
     stock.splice(i,1);
     log(`Bought ${it.nm} for ${p}g.`, 'y');
     save(); openShop(o);
   });
 }
 function openSell(back){
-  const bag = S.hero.bag.map(id => ITEM(id)).filter(Boolean);
+  const bag = S.bag.map(id => ITEM(id)).filter(Boolean);
   modal({
-    ic:'💰', h:'Sell', wide:true, sub:`${S.hero.gold} gold`,
+    ic:'💰', h:'Sell', wide:true, sub:`${S.gold} gold`,
     b: bag.length ? bag.map((it,i) => itemCard(it, `<div class="col" style="gap:4px;align-items:flex-end">
         <div class="tiny" style="color:var(--gold);font-weight:700">${Math.round(it.cost*0.45)}g</div>
         <button class="btn sm" data-s="${i}">Sell</button></div>`, true)).join('') : '<div class="tiny faint">Your pack is empty.</div>',
@@ -4150,8 +4415,8 @@ function openSell(back){
   });
   $$('#scrim [data-s]').forEach(b => b.onclick = () => {
     const it = bag[+b.dataset.s];
-    S.hero.bag.splice(S.hero.bag.indexOf(it.id), 1);
-    S.hero.gold += Math.round(it.cost * 0.45);
+    S.bag.splice(S.bag.indexOf(it.id), 1);
+    S.gold += Math.round(it.cost * 0.45);
     log(`Sold ${it.nm}.`, 'y');
     save(); openSell(back);
   });
@@ -4160,7 +4425,7 @@ function openBounty(m){
   const back = () => openTown(m);
   if(S.bounty && S.bounty.done){
     const b = S.bounty;
-    S.hero.gold += b.reward; gainXp(b.xp);
+    S.gold += b.reward; gainXp(b.xp);
     log(`Bounty paid: ${b.reward}g.`, 'y');
     S.bounty = null;
     modal({ic:'📋', h:'Bounty Paid', b:`<p>They count it out twice, which is fair enough.</p>`, f:[{lb:'Back', cls:'primary', fn:()=>{ closeModal(); back(); }}]});
@@ -4318,7 +4583,7 @@ const HEROART = {
   priest: {col:'#f0c674', svg:'<circle cx="50" cy="50" r="17" fill="currentColor"/><g stroke="currentColor" stroke-width="8" stroke-linecap="round"><path d="M50 6 V24"/><path d="M50 76 V94"/><path d="M6 50 H24"/><path d="M76 50 H94"/><path d="M19 19 L32 32"/><path d="M68 68 L81 81"/><path d="M81 19 L68 32"/><path d="M32 68 L19 81"/></g>'},
   reaver: {col:'#38bdf8', svg:'<circle cx="34" cy="34" r="17" fill="none" stroke="currentColor" stroke-width="9"/><g stroke="currentColor" stroke-width="9" stroke-linecap="round"><path d="M46 46 L84 84"/><path d="M62 74 L54 82"/><path d="M74 62 L66 70"/></g>'},
 };
-const heroArt = () => HEROART[S && S.hero ? S.hero.id : 'warden'] || HEROART.warden;
+const heroArt = (h) => HEROART[(h || (S && S.hero) || {}).id] || HEROART.warden;
 function cardWatermark(){
   const a = heroArt();
   return `<svg class="cwm" viewBox="0 0 100 100" aria-hidden="true" style="color:${a.col}">${a.svg}</svg>`;
@@ -4486,14 +4751,21 @@ function dieFaceHtml(die, cls, idx){
   const blank = !die.a && !die.d && !die.s;
   const title = [die.a ? `${die.a} attack` : '', die.d ? `${die.d} shield${die.d>1?'s':''}` : '',
                  die.s ? `${die.s} surge${die.s>1?'s':''}` : ''].filter(Boolean).join(', ') || 'blank face';
-  return `<div class="cdie ${DICE[die.k].cls} ${die.mark?'rr':''} ${blank?'blank':''} ${die.fresh?'roll':''}"
-    ${idx!=null?`data-die="${idx}"`:''} data-dk="${die.k}" title="${DICE[die.k].nm} die — ${title}">${dieSvg(die)}</div>`;
+  // whose die this is matters for shields, so say so and mark the front rank's
+  const owner = die.hid ? party().find(m => m.id === die.hid) : null;
+  const lead = leadHero();
+  const back = owner && lead && owner !== lead;
+  const who = owner ? ` — ${owner.nm}${back ? ', covering from behind (shields count half)' : ', in the front rank'}` : '';
+  return `<div class="cdie ${DICE[die.k].cls} ${die.mark?'rr':''} ${blank?'blank':''} ${die.fresh?'roll':''} ${back?'back':''}"
+    ${idx!=null?`data-die="${idx}"`:''} data-dk="${die.k}" title="${DICE[die.k].nm} die — ${title}${who}"
+    >${owner && party().length > 1 ? `<span class="downer">${owner.ic}</span>` : ''}${dieSvg(die)}</div>`;
 }
 function statusChips(o){
   const out = [];
   if(o.burn) out.push(`<span class="status gl" data-g="burn" style="color:#fb923c">🔥 burning ${o.burn}</span>`);
   if(o.poison || o.psn) out.push(`<span class="status gl" data-g="venom" style="color:#a3e635">🧪 venom ${o.poison||o.psn}</span>`);
   if(o.stun) out.push(`<span class="status gl" data-g="stagger" style="color:#e8b44a">💫 staggered</span>`);
+  if(o.stunBrace && !o.stun) out.push(`<span class="status gl" data-g="braced" style="color:#8aa0bd">🧱 braced ${o.stunBrace}</span>`);
   if(o.hexed) out.push(`<span class="status gl" data-g="hexed" style="color:#a78bfa">🔯 hexed</span>`);
   if(o.stone) out.push(`<span class="status gl" data-g="stone" style="color:#38bdf8">🪨 stoneskin</span>`);
   if(o.curseNow) out.push(`<span class="status gl" data-g="sap" style="color:#f472b6">🩶 hitting ${o.curseNow} softer</span>`);
@@ -4524,9 +4796,12 @@ function intentHtml(){
 function acardHtml(id){
   const C = V.combat, c = CARD(id);
   if(!c) return '';
-  const topOn = C.pickTop === id, botOn = C.pickBot === id;
-  const topTaken = C.pickTop && !topOn, botTaken = C.pickBot && !botOn;
-  return `<div class="acard ${topOn||botOn?'on':''}" data-cmpcard="${id}" style="--accent:${heroArt().col}">
+  // the hand on screen belongs to whoever you are viewing, so read THEIR picks
+  const vh = party()[C.viewing] || S.hero;
+  const pk = (C.picks && C.picks[vh.id]) || {top:null, bot:null};
+  const topOn = pk.top === id, botOn = pk.bot === id;
+  const topTaken = pk.top && !topOn, botTaken = pk.bot && !botOn;
+  return `<div class="acard ${topOn||botOn?'on':''}" data-cmpcard="${id}" style="--accent:${heroArt(vh).col}">
     ${cardWatermark()}
     <div class="ahd"><span class="initb">${c.init}</span><span class="aic">${c.ic}</span><span class="anm">${esc(c.nm)}</span></div>
     <button class="ahalf top ${topOn?'sel':''}" data-card="${id}" data-half="top" ${topTaken?'disabled':''}>
@@ -4550,26 +4825,40 @@ function renderCombat(){
   const toFoe = cards ? 0 : Math.max(0, mine - fsh - (C.foe.arm||0));
   const fatk = cards ? 0 : foeAttackVal();
   const msh = (C.foe.crush || it.pierce) ? 0 : myShields();
-  const toMe = cards ? 0 : Math.max(0, fatk - msh - d.arm - myWard());
+  const toMe = cards ? 0 : Math.max(0, fatk - msh - leadArmor() - myWard());
   const surges = cards ? 0 : mySurges();
-  const usables = h.bag.map(id => ITEM(id)).filter(i => i && i.slot === 'use');
+  const usables = S.bag.map(id => ITEM(id)).filter(i => i && i.slot === 'use');
   const meFirst = (C.myInit || 99) <= (it.init || 99);
 
   const body = `
     <div class="duel">
       <div class="fighter me" id="meCard">
-        <div class="nm">${h.ic} ${esc(h.nm)}</div>
-        <div class="hpbar"><i style="width:${clamp(h.hp/d.maxHp*100,0,100)}%"></i></div>
-        <div class="spread tiny"><span class="muted">${Math.max(0,h.hp)} / ${d.maxHp} HP</span><span class="muted">⚡ ${h.en}/${d.maxEn}</span></div>
+        <div class="nm">${party().length > 1 ? '⚔️ The party' : h.ic + ' ' + esc(h.nm)}</div>
+        <div class="proster">${party().map((m, i) => {
+          const md = D(m), down = isDown(m), isLead = leadHero() === m;
+          const pk = C.picks[m.id] || {};
+          const ready = down || (pk.top && pk.bot) || m.hand.length < 2;
+          return `<div class="pmem ${down?'down':''} ${C.viewing===i?'viewing':''} ${isLead?'lead':''}" data-pview="${i}">
+            <div class="row" style="gap:6px">
+              <span style="font-size:15px">${m.ic}</span>
+              <b class="tiny" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.nm.split(' ')[0])}</b>
+              ${isLead ? '<span class="frontpip" title="In the front rank — takes the hits">&#9700;</span>' : ''}
+              ${cards && !down ? `<span class="tiny ${ready?'':'faint'}" style="color:${ready?'var(--green)':''}">${(pk.top?1:0)+(pk.bot?1:0)}/2</span>` : ''}
+            </div>
+            <div class="hpbar" style="height:7px;margin:4px 0 2px"><i style="width:${clamp(m.hp/md.maxHp*100,0,100)}%"></i></div>
+            <div class="mini faint">${down ? 'down' : m.hp + '/' + md.maxHp} &middot; &#9995;${m.hand.length}</div>
+          </div>`;
+        }).join('')}</div>
         <div>${statusChips(C.me)}</div>
-        ${cards ? `<div class="tiny muted" style="margin-top:9px">
-            <span class="gl" data-g="hand">Hand <b style="color:var(--ink)">${h.hand.length}</b></span> · <span class="gl" data-g="discard">discard ${h.discard.length}</span> · <span class="gl" data-g="lost">lost ${h.lost.length}</span></div>`
-          : `<div class="tray" style="margin-top:9px">${C.myDice.length ? C.myDice.map((x,i)=>dieFaceHtml(x,'',i)).join('') : '<span class="tiny faint">No dice — you spent the round recovering.</span>'}</div>
+        ${cards ? `<div class="tiny muted" style="margin-top:8px">
+            <span class="gl" data-g="front">Front rank</span>: <b style="color:var(--ink)">${esc((leadHero()||h).nm)}</b> &mdash; its blows land on them, and only their guard stops it whole.
+            <button class="btn sm ghost" id="cLead" style="margin-left:6px">Swap front</button></div>`
+          : `<div class="tray" style="margin-top:9px">${C.myDice.length ? C.myDice.map((x,i)=>dieFaceHtml(x,'',i)).join('') : '<span class="tiny faint">No dice &mdash; the round went on recovering.</span>'}</div>
             <div class="tot">
-              <span class="gl" data-g="attack">⚔ Attack <b>${mine}</b></span>
-              <span class="gl" data-g="shields">🛡 Shields <b>${msh + d.arm + myWard()}</b></span>
-              <span class="gl" data-g="surge" style="color:var(--gold)">✦ Surges <b>${surges}</b></span>
-              <span class="${meFirst?'':'faint'}" style="color:${meFirst?'var(--green)':''}">${meFirst ? '⚡ you swing first' : '⏱ it swings first'}</span>
+              <span class="gl" data-g="attack">&#9876; Attack <b>${mine}</b></span>
+              <span class="gl" data-g="shields">&#128737; Shields <b>${msh + leadArmor() + myWard()}</b></span>
+              <span class="gl" data-g="surge" style="color:var(--gold)">&#10022; Surges <b>${surges}</b></span>
+              <span class="${meFirst?'':'faint'}" style="color:${meFirst?'var(--green)':''}">${meFirst ? 'you swing first' : 'it swings first'}</span>
             </div>`}
       </div>
       <div class="fighter foe" id="foeCard" style="--foe:${foeArt().col}">
@@ -4600,20 +4889,35 @@ function renderCombat(){
           <div class="tiny">${C.mustRest
             ? `<b style="color:var(--gold)">You are out of cards.</b> <span class="muted">${gtx('Catch your breath to pull your discard back, or break off.')}</span>`
             : `<b>${gtx('Play a top and a bottom.')}</b> <span class="muted">${gtx('The card you take the top from sets your initiative — lower swings first.')}</span>`}</div>
-          <button class="btn sm ${C.mustRest ? 'primary' : 'ghost'}" id="cBreath" ${h.discard.length >= 2 ? '' : 'disabled'}>😮‍💨 Catch your breath</button>
+          <button class="btn sm ${C.mustRest ? 'primary' : 'ghost'}" id="cBreath" ${conscious().some(m => m.discard.length >= 2) ? '' : 'disabled'}>😮‍💨 Catch your breath</button>
         </div>
         <div class="row wr tiny" style="margin-top:6px">
-          <span class="sb">Top: <b>${C.pickTop ? esc(CARD(C.pickTop).nm) : '—'}</b></span>
-          <span class="sb">Bottom: <b>${C.pickBot ? esc(CARD(C.pickBot).nm) : '—'}</b></span>
-          <span class="sb gl" data-g="initiative">Initiative: <b>${C.pickTop ? CARD(C.pickTop).init : '—'}</b> vs <b>${it.init}</b></span>
+          ${party().map(m => { const pk = C.picks[m.id] || {};
+            if(isDown(m)) return '';
+            return `<span class="sb">${m.ic} <b>${pk.top ? esc(CARD(pk.top).nm) : '—'}</b> / <b>${pk.bot ? esc(CARD(pk.bot).nm) : '—'}</b></span>`;
+          }).join('')}
+          <span class="sb gl" data-g="initiative">Initiative: <b>${(function(){
+            let lo = 99; party().forEach(m => { const pk = C.picks[m.id]; if(pk && pk.top) lo = Math.min(lo, CARD(pk.top).init); });
+            return lo === 99 ? '—' : lo; })()}</b> vs <b>${it.init}</b></span>
         </div>
       </div>
-      <div class="hand" ${C.mustRest ? 'style="opacity:.45;pointer-events:none"' : ''}>${h.hand.map(acardHtml).join('')}</div>
-      ${h.lost.length ? `<div class="tiny faint" style="margin-top:8px">Lost this day: ${h.lost.map(i=>esc(CARD(i).nm)).join(', ')}. Camping brings them back.</div>` : ''}
+      ${(function(){
+        const vh = party()[C.viewing] || h;
+        if(isDown(vh)) return `<div class="tiny faint" style="padding:14px 0">${esc(vh.nm)} is down and plays nothing this round.</div>`;
+        if(vh.hand.length < 2) return `<div class="tiny faint" style="padding:14px 0">${esc(vh.nm)} has nothing left to play and sits the round out.</div>`;
+        return `<div class="hand" ${C.mustRest ? 'style="opacity:.45;pointer-events:none"' : ''}>${vh.hand.map(acardHtml).join('')}</div>`;
+      })()}
+      ${(function(){
+        const spent = party().filter(m => m.lost.length);
+        if(!spent.length) return '';
+        return `<div class="tiny faint" style="margin-top:8px">Lost this day: ${spent.map(m =>
+          `${m.ic} ${m.lost.map(i=>esc(CARD(i).nm)).join(', ')}`).join(' &middot; ')}. Camping brings them back.</div>`;
+      })()}
     ` : `
-      ${C.shown && !C.resting ? `<div class="played">
-        <div class="pl"><span class="lbl">Top</span><b>${esc(C.shown.topNm)}</b> <span class="muted">${esc(C.shown.topTx)}</span></div>
-        <div class="pl"><span class="lbl">Bot</span><b>${esc(C.shown.botNm)}</b> <span class="muted">${esc(C.shown.botTx)}</span></div>
+      ${C.shown && C.shown.length && !C.resting ? `<div class="played">
+        ${C.shown.map(x => `<div class="pl"><span class="lbl">${x.who.ic}</span>
+          <b>${esc(x.topNm)}</b> <span class="muted">${esc(x.topTx)}</span><br>
+          <b>${esc(x.botNm)}</b> <span class="muted">${esc(x.botTx)}</span></div>`).join('')}
       </div>` : ''}
       <div class="card" style="margin-top:11px">
         <div class="spread">
@@ -4656,14 +4960,24 @@ function renderCombat(){
       ? [ {lb:'📖 Terms', cls:'ghost', fn:()=>openGlossary(renderCombat)},
           ...(C.opts.boss ? [] : [{lb:'🏃 Break away', cls:'ghost', fn:tryFlee}]),
           C.mustRest
-            ? {lb:'😮‍💨 Catch your breath', cls:'primary', fn:catchBreath, dis: h.discard.length < 2}
-            : {lb:'▶️ Commit', cls:'primary', fn:commitCards, dis: !(C.pickTop && C.pickBot)} ]
+            ? {lb:'😮‍💨 Catch your breath', cls:'primary', fn:catchBreath, dis: !conscious().some(m => m.discard.length >= 2)}
+            : {lb: pendingHeroes().length ? `▶️ ${pendingHeroes().length} still to choose` : '▶️ Commit',
+               cls:'primary', fn:commitCards, dis: pendingHeroes().length > 0} ]
       : [ {lb:'📖 Terms', cls:'ghost', fn:()=>openGlossary(renderCombat)},
           ...(C.opts.boss ? [] : [{lb:'🏃 Break away', cls:'ghost', fn:tryFlee}]),
           {lb:'⚔️ Strike', cls:'primary', fn:strike, dis: C.phase !== 'dice' || C.done} ],
   });
 
   $$('#scrim [data-card]').forEach(el => el.onclick = () => pickHalf(el.dataset.card, el.dataset.half));
+  $$('#scrim [data-pview]').forEach(el => el.onclick = () => { C.viewing = +el.dataset.pview; renderCombat(); });
+  const lb = $('#cLead');
+  if(lb) lb.onclick = () => {
+    const up = party().map((m,i)=>i).filter(i => !isDown(party()[i]));
+    if(up.length < 2) return;
+    S.lead = up[(up.indexOf(S.lead) + 1) % up.length];
+    cLog(`${party()[S.lead].nm} takes the front rank.`, 'y');
+    renderCombat();
+  };
   const breath = $('#cBreath'); if(breath) breath.onclick = catchBreath;
   const rrBtn = $('#cRR'); if(rrBtn) rrBtn.onclick = doReroll;
   $$('#scrim [data-die]').forEach(el => el.onclick = () => {
@@ -4692,7 +5006,7 @@ function victory(){
        <div class="sep"></div>
        <div class="grid2">
         <div class="card">
-          <div class="kv"><span>Hero</span><b>${esc(h.nm)}</b></div>
+          <div class="kv"><span>Party</span><b>${party().map(m=>m.ic).join(' ')}</b></div>
           <div class="kv"><span>Level</span><b>${h.lvl}</b></div>
           <div class="kv"><span>Days</span><b>${S.day}</b></div>
           <div class="kv"><span>Dread at the end</span><b>${S.dread} / ${S.dreadMax}</b></div>
@@ -4700,7 +5014,7 @@ function victory(){
         <div class="card">
           <div class="kv"><span>Kills</span><b>${S.kills}</b></div>
           <div class="kv"><span>Hexes explored</span><b>${S.explored}</b></div>
-          <div class="kv"><span>Gold</span><b>${h.gold}</b></div>
+          <div class="kv"><span>Gold</span><b>${S.gold}</b></div>
           <div class="kv"><span>Seed</span><b>${esc(S.seed)}</b></div>
         </div>
        </div>`,
@@ -4715,7 +5029,7 @@ function gameOver(msg){
        <div class="sep"></div>
        <div class="grid2">
         <div class="card">
-          <div class="kv"><span>Hero</span><b>${esc(S.hero.nm)}</b></div>
+          <div class="kv"><span>Party</span><b>${party().map(m=>m.ic+' '+m.nm.split(' ')[0]).join(', ')}</b></div>
           <div class="kv"><span>Level</span><b>${S.hero.lvl}</b></div>
           <div class="kv"><span>Days survived</span><b>${S.day}</b></div>
         </div>
@@ -4766,20 +5080,26 @@ function renderTop(){
   $('#topbar-inner').innerHTML = `
     <div class="brand">HEX<span class="d">BOUND</span></div>
     <span class="stat" title="Day">📅 <b>${S.day}</b></span>
-    <span class="stat" title="Health">❤️ <b>${Math.max(0,h.hp)}</b>/${d.maxHp}
-      <span class="bar hp"><i style="width:${clamp(h.hp/d.maxHp*100,0,100)}%"></i></span></span>
-    <span class="stat" title="Energy">⚡ <b>${h.en}</b>/${d.maxEn}</span>
+    <span class="partybar">${party().map((m,i) => {
+      const md = D(m);
+      return `<span class="pchip ${isDown(m)?'down':''} ${S.sel===i?'on':''}" data-psel="${i}"
+        title="${esc(m.nm)} — level ${m.lvl}${isDown(m)?' — down':''}${leadHero()===m?' — front rank':''}">
+        ${m.ic}<span class="mini">${Math.max(0,m.hp)}/${md.maxHp}</span>
+        ${leadHero()===m?'<span class="frontpip">&#9700;</span>':''}</span>`;
+    }).join('')}</span>
     <span class="stat" title="Level and experience">⭐ <b>L${h.lvl}</b>
       <span class="bar xp"><i style="width:${clamp(h.xp/(h.xpNext||1)*100,0,100)}%"></i></span></span>
-    <span class="stat" title="Gold">🪙 <b>${h.gold}</b></span>
+    <span class="stat" title="Gold">🪙 <b>${S.gold}</b></span>
     <span class="stat" title="Seals taken">🔱 <b>${S.seals}</b>/3</span>
     <span class="stat topspacer" title="Dread. At ${S.dreadMax} the Crown marches.">🌑 <b>${S.dread}</b>/${S.dreadMax}
       <span class="bar dread"><i style="width:${clamp(S.dread/S.dreadMax*100,0,100)}%"></i></span></span>
-    ${h.pts || h.drafts || h.cardDrafts ? `<button class="btn sm primary" id="tbLvl">⬆️ ${h.pts + h.drafts + (h.cardDrafts||0)} reward${(h.pts+h.drafts+(h.cardDrafts||0))>1?'s':''}</button>` : ''}
+    ${(function(){ const n = party().reduce((t,m) => t + m.pts + m.drafts + (m.cardDrafts||0), 0);
+      return n ? `<button class="btn sm primary" id="tbLvl">⬆️ ${n} reward${n>1?'s':''}</button>` : ''; })()}
     <button class="btn sm" id="tbCard">${h.ic} Card</button>
     <button class="btn sm" id="tbBag">🎒 Gear</button>
     <button class="btn sm ghost" id="tbSound" title="${(SFX.on || MUS.on) ? 'Audio on' : 'Audio off'}">${(SFX.on || MUS.on) ? '🔊' : '🔇'}</button>
     <button class="btn sm ghost" id="tbMenu">☰</button>`;
+  $$('#topbar [data-psel]').forEach(el => el.onclick = () => { selectHero(+el.dataset.psel); render(); });
   $('#tbCard').onclick = openCard;
   $('#tbBag').onclick = openInventory;
   $('#tbMenu').onclick = openMenu;
@@ -4789,7 +5109,11 @@ function renderTop(){
     if(!anyOn) sfx('open');
     renderTop();
   };
-  if($('#tbLvl')) $('#tbLvl').onclick = spendRewards;
+  if($('#tbLvl')) $('#tbLvl').onclick = () => {
+    const owed = party().findIndex(m => m.pts || m.drafts || m.cardDrafts);
+    if(owed >= 0) selectHero(owed);
+    spendRewards();
+  };
 }
 function renderSide(){
   const m = hereHex();
@@ -4858,10 +5182,11 @@ function renderSide(){
   V.rolled = false;
 }
 function makeCamp(){
-  const d = D();
-  const heal = 6 + d.spi * 2;
-  healHero(heal, 'a night in camp');
-  S.hero.en = clamp(S.hero.en + 2, 0, d.maxEn);
+  party().forEach(h => {
+    const hd = D(h);
+    if(!isDown(h)) healHero(6 + hd.spi * 2, 'a night in camp', h);
+    h.en = clamp(h.en + 2, 0, hd.maxEn);
+  });
   log('You make camp and keep the fire small.');
   endDay();
 }
@@ -4942,17 +5267,23 @@ function openCodex(){
       </div>
       <div>
         <div class="card"><h3>Combat</h3><div class="tiny muted">
-          Every round the enemy <b style="color:var(--ink)">reveals its intent first</b>. Then you play two ability cards from your hand: the <b style="color:var(--ink)">top half of one</b> and the <b style="color:var(--ink)">bottom half of the other</b>. The card you take the top from sets your initiative, and the lower number swings first — kill it before it acts and it never acts.
-          <br><br>Then both sides roll dice as the <b style="color:var(--ink)">modifier</b> on top of those card numbers. Faces show ⚔ attack, 🛡 shields, ✦ surges. Mark dice and reroll them (Wits-many a round, plus gear), spend surges, then strike.
-          <br><br>Damage dealt = card + dice + gear − their shields − their armor.</div></div>
+          Every round the enemy <b style="color:var(--ink)">reveals its intent first</b>. Then <b style="color:var(--ink)">every hero still standing</b> plays two ability cards from their own hand: the <b style="color:var(--ink)">top half of one</b> and the <b style="color:var(--ink)">bottom half of another</b>. Click a face along the top of your side to see that hero's hand; the round only commits once nobody is still choosing.
+          <br><br>Everything the party played is added together into one attack, one set of shields and one dice pool. The <b style="color:var(--ink)">lowest initiative anyone played</b> is the party's, and the lower number swings first — kill it before it acts and it never acts.
+          <br><br>Then both sides roll dice as the <b style="color:var(--ink)">modifier</b> on top of those card numbers. Faces show ⚔ attack, 🛡 shields, ✦ surges. Mark dice and reroll them, spend surges, then strike.
+          <br><br>Damage dealt = cards + dice + gear − their shields − their armor.</div></div>
+        <div class="card" style="margin-top:10px"><h3>Somebody has to stand in front</h3><div class="tiny muted">
+          The party attacks as one, but it does not take damage as one. Everything that comes back lands on the hero in the <b style="color:var(--ink)">front rank</b>, and only <b style="color:var(--ink)">their</b> armor and warding reduce it.
+          <br><br>Shields work the same way. The front rank's own shields — from their bottom half and their own dice — stop the blow in full; everyone else is covering from behind and theirs count <b style="color:var(--ink)">half</b>. So a guard is worth most on the hero who is about to be hit, and the swap button is a real decision.
+          <br><br>A hero at 0 HP is <b style="color:var(--ink)">down</b>, not dead: they play nothing and the next hero steps up. The run ends only when the last one falls. Camping, an inn or the surgeon puts them back on their feet.</div></div>
         <div class="card" style="margin-top:10px"><h3>Not every fight is a damage race</h3><div class="tiny muted">
           Many things out here carry a <b style="color:var(--ink)">trait</b>, stated on its card when you meet it, and a bigger attack will not answer it. Something Warded ignores your dice entirely and only feels the attack printed on your card. A Swarm does not care about totals at all, only how many of your dice showed anything. Regrowth heals 8 a round unless it is burning. An Entrenched thing sits behind Armor 8 until you stagger it open. A Feeder eats the surges you did not spend. Brittle things take double whenever you swing first.
           <br><br>Which is the point of burning, staggering, spending surges, going first and carrying odd dice at all. Read the trait before you plan the round.</div></div>
         <div class="card" style="margin-top:10px"><h3>Your hand is a second health bar</h3><div class="tiny muted">
-          Cards you play go to your <b style="color:var(--ink)">discard</b> and come back when the fight ends. Cards marked LOST are gone until you sleep. If you are ever down to fewer than two cards you break off and run, taking a parting blow.
-          <br><br><b style="color:var(--ink)">Catch your breath</b> mid-fight to pull your whole discard back, at the cost of the round and one random card burned for good. You will be made to do it when you run dry, so a long fight is really a question of how many breaths you can afford. Camping, an inn, or simply ending the day returns everything.</div></div>
+          Cards a hero plays go to <b style="color:var(--ink)">their own discard</b> and come back when the fight ends. Cards marked LOST are gone until you sleep. A hero down to fewer than two cards simply sits the round out; when <b style="color:var(--ink)">nobody</b> can field two, the party breaks off and runs, taking a parting blow.
+          <br><br><b style="color:var(--ink)">Catch your breath</b> mid-fight and the whole party pulls its discards back, at the cost of the round and one random card each burned for good. A long fight is really a question of how many breaths you can afford. Camping, an inn, or simply ending the day returns everything.</div></div>
         <div class="card" style="margin-top:10px"><h3>Levelling</h3><div class="tiny muted">
-          XP levels you to 10. Every level hands you the next reward printed on your character card, plus a stat point. Odd levels give you a draft of three talents; even levels give you a <b style="color:var(--ink)">new ability card</b> for your deck. Nothing is random about the track — it is the same every run, so you can plan around it.</div></div>
+          XP is shared: everyone gains it, so the party levels together, to 10. Every level hands that hero the next reward printed on <b style="color:var(--ink)">their own</b> character card, plus a stat point. Odd levels give a draft of three talents; even levels give a <b style="color:var(--ink)">new ability card</b> for that hero's deck. Nothing is random about the track — it is the same every run, so you can plan around it.
+          <br><br>Gold and the pack belong to the party. Gear does not: each hero wears their own, so check the character card before you equip.</div></div>
         <div class="card" style="margin-top:10px"><h3>Winning</h3><div class="tiny muted">
           Three lairs. Break each one for a seal, and dread falls by 4. With all three, the Obsidian Gate opens and you can finish the Sable Crown on your terms. Let dread hit ${(S&&S.dreadMax)||30} and it finishes you on its.</div></div>
       </div>
@@ -4968,23 +5299,25 @@ function renderTitle(){
   MUS.stop();
   $('#topbar').classList.add('hidden');
   const app = $('#app');
-  const sel = V.pickHero || HEROES[0].id;
+  V.roster = V.roster || [HEROES[0].id, HEROES[1].id, HEROES[3].id];
+  const sel = V.roster;
   app.innerHTML = `
     <div class="title-hero">
-      <div class="pill">A solo hex-crawl</div>
+      <div class="pill">A party hex-crawl</div>
       <h1>HEX<span>BOUND</span></h1>
-      <p>Ride out of Kestrel Hold. Break three lairs. Kill the thing that has been eating the region,<br>before it finishes the job and comes looking for you.</p>
+      <p>Take up to three of them out of Kestrel Hold. Break three lairs. Kill the thing that has been eating<br>the region, before it finishes the job and comes looking for you.</p>
     </div>
     ${hasSave() ? `<div class="panel center" style="margin-bottom:14px">
       <div class="row" style="justify-content:center"><b>A run is already in progress.</b>
       <button class="btn primary" id="btnResume">Resume</button>
       <button class="btn ghost danger" id="btnWipe">Discard it</button></div></div>` : ''}
     <div class="panel">
-      <div class="spread" style="margin-bottom:11px"><h2>Choose a hero</h2>
-        <span class="tiny muted">Each has its own ten-level card track</span></div>
+      <div class="spread" style="margin-bottom:11px"><h2>Choose your party</h2>
+        <span class="tiny muted">${V.roster.length} of 3 chosen &middot; each has its own deck, gear and ten-level track</span></div>
       <div class="hero-grid" id="heroGrid">
         ${HEROES.map(h => `
-          <div class="hero-card ${h.id===sel?'on':''}" data-h="${h.id}">
+          <div class="hero-card ${sel.includes(h.id)?'on':''}" data-h="${h.id}">
+            ${sel.includes(h.id) ? `<div class="pickpip">${sel.indexOf(h.id)+1}</div>` : ''}
             <div class="hd"><div class="av">${h.ic}</div>
               <div><div class="nm">${esc(h.nm)}</div>
               <div class="tiny muted">${h.hp} HP · ${h.move} travel dice</div></div></div>
@@ -5020,7 +5353,7 @@ function renderTitle(){
           <div class="tiny muted" style="margin-bottom:4px">Seed (optional — same seed, same region)</div>
           <input class="inp" id="seedIn" placeholder="leave blank for a new region" maxlength="12">
         </div>
-        <button class="btn primary" id="btnStart" style="align-self:flex-end;padding:11px 26px">Ride out</button>
+        <button class="btn primary" id="btnStart" style="align-self:flex-end;padding:11px 26px">Ride out with ${V.roster.length}</button>
         <button class="btn ghost" id="btnHelp" style="align-self:flex-end">📖 How it works</button>
       </div>
     </div>
@@ -5037,10 +5370,17 @@ function renderTitle(){
         </div>
       </div>
     </div>`;
-  $$('#heroGrid [data-h]').forEach(el => el.onclick = () => { V.pickHero = el.dataset.h; renderTitle(); });
+  $$('#heroGrid [data-h]').forEach(el => el.onclick = () => {
+    const id = el.dataset.h;
+    const i = V.roster.indexOf(id);
+    if(i >= 0){ if(V.roster.length > 1) V.roster.splice(i, 1); }        // never leave the party empty
+    else if(V.roster.length < 3) V.roster.push(id);
+    else { V.roster.shift(); V.roster.push(id); }
+    renderTitle();
+  });
   $$('[data-diff]').forEach(el => el.onclick = () => { V.pickDiff = el.dataset.diff; renderTitle(); });
   $('#btnStart').onclick = () => {
-    newRun(V.pickHero || HEROES[0].id, $('#seedIn').value);
+    newRun(V.roster.slice(), $('#seedIn').value);
     V.screen = 'game';
     $('#app').innerHTML = '';
     render();
