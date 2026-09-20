@@ -3018,13 +3018,11 @@ function buildSidebar() {
   if (isAdmin()) h += '<div class="sb-item" data-key="analytics" onclick="showAnalytics()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128202;</span> Analytics</div>';
   if (isAdmin()) h += '<div class="sb-item" data-key="contacts" onclick="showContacts()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128203;</span> Contacts</div>';
   if (isAdmin()) h += '<div class="sb-item" data-key="broadcast" onclick="showBroadcast()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128227;</span> Broadcast</div>';
-  // Practice policies are one job in three stages, so the nav says so instead of
-  // leaving three similarly-named siblings to imply it: understand it, decide it,
-  // download it. The heading shows for every tier, because seeing the whole ladder
-  // is how a Forum or free member learns what the locked rungs are for.
-  h += '<div class="sb-group-title" style="margin-top:12px">Practice Policies</div>';
-  if (isAdmin() || (typeof POLICY_LIBRARY_LIVE !== 'undefined' && POLICY_LIBRARY_LIVE && tierRank() >= 1)) h += '<div class="sb-item" data-key="policy-library" onclick="showPolicyLibrary()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128218;</span> Practice Guidance</div>';
-  if (isAdmin() || (typeof POLICY_LIBRARY_LIVE !== 'undefined' && POLICY_LIBRARY_LIVE && tierRank() >= 2)) h += '<div class="sb-item" data-key="policy-builder" onclick="showPolicyBuilder()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128736;</span> Policy Builder</div>';
+  // Two destinations, not three. Practice Policies is where a policy is understood,
+  // decided and generated; Template Library is every document that is not a policy.
+  // No group heading over the pair: "Template Library" sitting under a heading called
+  // Practice Policies would miscategorise the forms and agreements that live there.
+  if (policyLibraryNavLive()) h += '<div class="sb-item" data-key="practice-policies" onclick="showPracticePolicies()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128218;</span> Practice Policies</div>';
   h += '<div class="sb-item" data-key="library" onclick="showLibrary()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128196;</span> Template Library</div>';
   h += '<div class="sb-item" onclick="window.location.href=\'/vault\'" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128272;</span> The Vault</div>';
   h += '<div class="sb-item" data-key="learn" onclick="showLearn()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#129513;</span> Mentorship &amp; Courses</div>';
@@ -5945,13 +5943,25 @@ function renderLibrary() {
   h += (isAdmin() ? '<button class="rm-add-btn" style="margin-top:8px" onclick="openTemplateAdd()">+ Add template</button>' : '');
   h += '</div>';
 
+  // Practice policies are not listed here. They live in Practice Policies, where the
+  // same document can be built from the member's decisions instead of edited by hand.
+  // Nothing is deleted: the rows still exist, still download, still count as owned, and
+  // are reachable from their topic. This removes a duplicate card, not a document.
+  var libBrowse = (libData || []).filter(function(t){ return !isPolicyOwnedTemplate(t); });
+  if (policyLibraryNavLive()) {
+    h += '<div style="border:1px solid var(--teal);background:rgba(42,171,184,0.07);border-radius:var(--radius-lg);padding:13px 16px;margin-bottom:16px">'
+      + '<div style="font-weight:700;margin-bottom:3px">Looking for practice policies?</div>'
+      + '<div style="color:var(--text-secondary);font-size:0.88rem;line-height:1.5;margin-bottom:8px">Payment, billing, no-show, refill and controlled-substance policies now live in Practice Policies, where you can read what each one has to decide, build yours from your own choices, or download a generic starter to edit.</div>'
+      + '<a onclick="showPracticePolicies()" style="color:var(--teal);font-weight:600;font-size:0.88rem;cursor:pointer">Go to Practice Policies &rarr;</a></div>';
+  }
+
   h += '<div class="rm-tabs">' + TEMPLATE_CATS.map(function(c) {
-    var n = c.key === 'all' ? libData.length : libData.filter(function(t){ return t.category === c.key; }).length;
+    var n = c.key === 'all' ? libBrowse.length : libBrowse.filter(function(t){ return t.category === c.key; }).length;
     if (c.key !== 'all' && !n) return '';
     return '<button class="rm-tab' + (c.key === libCat ? ' on' : '') + '" onclick="libSetCat(\'' + c.key + '\')">' + c.label + (n ? ' <span class="rm-tab-n">' + n + '</span>' : '') + '</button>';
   }).join('') + '</div>';
 
-  var items = libCat === 'all' ? libData : libData.filter(function(t){ return t.category === libCat; });
+  var items = libCat === 'all' ? libBrowse : libBrowse.filter(function(t){ return t.category === libCat; });
   if (!items.length) {
     h += '<div style="padding:28px;border:1px dashed var(--border);border-radius:var(--radius-lg);color:var(--text-secondary);font-size:0.85rem;text-align:center">No templates here yet.</div>';
     center.innerHTML = h; window.scrollTo(0,0); return;
@@ -6008,12 +6018,21 @@ function starterPolicyBuilderAnchor(t) {
   if (!isStarterPolicy(t) || !policyBuilderUnlocked()) return null;
   return STARTER_POLICY_TEMPLATES[t.title];
 }
+// Which Practice Policies topic owns this starter document, so the card sends the member
+// to the place the policy actually lives rather than to a second parallel tool.
+function starterPolicyTopicKey(t) {
+  var found = null;
+  PRACTICE_POLICIES.forEach(function (pt) {
+    if (!found && (pt.starters || []).indexOf(t.title) !== -1) found = pt.key;
+  });
+  return found;
+}
 function starterPolicyLine(t) {
   if (!isStarterPolicy(t)) return '';
-  var anchor = starterPolicyBuilderAnchor(t);
-  if (!anchor) return '';
-  return '<div style="margin-top:5px;font-size:0.82rem;color:var(--text-secondary)">Want it tailored to your practice? '
-    + '<a onclick="event.stopPropagation();openPolicyBuilderAt(\'' + anchor + '\')" style="color:var(--teal);font-weight:600;cursor:pointer">Customize in Policy Builder &rarr;</a></div>';
+  var key = starterPolicyTopicKey(t);
+  if (!key || !policyGuidanceUnlocked() || !policyLibraryNavLive()) return '';
+  return '<div style="margin-top:5px;font-size:0.82rem;color:var(--text-secondary)">This is the generic starter. '
+    + '<a onclick="event.stopPropagation();showPolicyTopic(\'' + key + '\')" style="color:var(--teal);font-weight:600;cursor:pointer">Build yours instead &rarr;</a></div>';
 }
 async function openPolicyBuilderAt(did) {
   await showPolicyBuilder();
@@ -6118,6 +6137,7 @@ function viewTemplate(id) {
 
   if (t.description) h += '<div class="tpl-detail-desc">' + esc(t.description) + '</div>';
   h += starterPolicyLine(t);
+  h += formGuidanceHtml(t);
 
   if (access) {
     // Full access: the template content/file + optional source-post link.
@@ -6408,6 +6428,11 @@ async function downloadTemplate(id) {
 // Builder are admin-only, so the Sunday broadcast's "goes live Monday" depends on this one
 // line. Flipping it shows the Library to Forum and Full, and the Builder to Full.
 var POLICY_LIBRARY_LIVE = false;
+// Practice Policies is dark until this flips. Admins always see it so the whole thing
+// can be role-tested before anybody else does.
+function policyLibraryNavLive() {
+  return isAdmin() || (typeof POLICY_LIBRARY_LIVE !== 'undefined' && POLICY_LIBRARY_LIVE);
+}
 function policyGuidanceUnlocked() { return isAdmin() || tierRank() >= 1; }  // Forum, Full, or admin
 // The Builder is a tool, not guidance, and it produces usable policy language, so it sits on
 // the Full side with every one of the 15 Private Practice Foundations documents (all min_tier
@@ -6470,7 +6495,291 @@ var POLICY_LIBRARY = [
   ]}
 ];
 
-async function showPolicyLibrary() {
+// ════════════════════════════════════════════════════════════════════════════
+// PRACTICE POLICIES
+// One destination for anything that is a practice policy. Guidance, the decisions,
+// the generated document and the generic starter all live on the topic's own page,
+// because a member thinking "I need a no-show policy" should not have to know our
+// internal split between guidance, a builder and a template library.
+//
+// Everything that is NOT a policy (forms, authorizations, notices, consents,
+// agreements, letters) stays in the Template Library, cross-linked both ways.
+// ════════════════════════════════════════════════════════════════════════════
+
+// Whether a Forum member can download the generic starter policies.
+// Kept at 'full' because that is what the SERVER enforces: those rows are
+// min_tier='full' in template_library, so showing Forum an enabled download here
+// would hand them a 402. Flipping this to 'forum' requires the matching SQL:
+//   UPDATE public.template_library SET min_tier='forum'
+//    WHERE title IN ('Payment Policy','Billing & Discount Policy',
+//                    'No-Show & Late-Cancellation Policy','Medication Refill Policy',
+//                    'Benzodiazepine Policy');
+// Change both or neither.
+var POLICY_STARTER_MIN_TIER = 'full';
+
+var PRACTICE_POLICIES = [
+  { key: 'payments',   title: 'Payment & Patient Responsibility', match: 'When is payment due',
+    builder: 'payments',   starters: ['Payment Policy', 'Billing & Discount Policy'] },
+  { key: 'cardonfile', title: 'Card on File',                     match: 'When can I keep a card on file',
+    builder: 'cardonfile', starters: [],
+    forms: ['Recurring Card-on-File Authorization', 'One-Time Credit Card Authorization'] },
+  { key: 'attendance', title: 'No-Show & Late Cancellation',      match: 'What notice do I require',
+    builder: 'attendance', starters: ['No-Show & Late-Cancellation Policy'] },
+  { key: 'benzos',     title: 'Benzodiazepine Prescribing',       match: 'What should my benzodiazepine policy',
+    builder: 'benzos',     starters: ['Benzodiazepine Policy'] },
+  { key: 'refills',    title: 'Medication Refills',               match: 'How are refills requested',
+    builder: 'refills',    starters: ['Medication Refill Policy'] },
+  // Guidance exists, the interactive build does not yet. That is allowed: a topic is
+  // not required to have all three things before it can be useful.
+  { key: 'controlled', title: 'Controlled Substances (practice-wide)', match: 'practice-wide rules for controlled-substance',
+    builder: null, starters: [] },
+  { key: 'intake',     title: 'Intake, Eligibility & Continuity',  match: 'Who do I take on',
+    builder: null, starters: [] },
+  { key: 'comms',      title: 'Communication & Administrative Requests', match: 'How do patients reach me',
+    builder: null, starters: [] }
+];
+
+// Titles that Practice Policies owns. They are hidden from the Template Library browse
+// so the same document never appears as a card in two places. They remain downloadable,
+// purchasable and owned exactly as before: this hides a duplicate, it deletes nothing.
+// "Credit Card Authorization: Which Form?" is here because it answers a question rather
+// than being a form; its content is the Card on File guidance.
+var POLICY_OWNED_TEMPLATES = [
+  'Payment Policy', 'Billing & Discount Policy', 'No-Show & Late-Cancellation Policy',
+  'Medication Refill Policy', 'Benzodiazepine Policy', 'Credit Card Authorization: Which Form?'
+];
+function isPolicyOwnedTemplate(t) { return POLICY_OWNED_TEMPLATES.indexOf(t.title) !== -1; }
+
+// Six guidance entries are about a DOCUMENT rather than a decision: nobody chooses a
+// philosophy of release-of-information. Their guidance belongs beside the document in the
+// Template Library, not on a policy topic page. Matched on a distinctive fragment of the
+// question so a copy edit does not silently break the binding.
+var FORM_GUIDANCE = {
+  'Good Faith Estimate': 'Who gets a Good Faith Estimate',
+  'Notice of Privacy Practices': 'Notice of Privacy Practices need to say',
+  'Business Associate Agreement': 'When do I need a BAA',
+  'Release of Information': 'authorize releasing a patient',
+  'Telepsychiatry Consent': 'What belongs in my telehealth consent',
+  'Collaborative Practice Agreement': 'collaborative or supervisory agreement'
+};
+function formGuidanceFor(title) {
+  var frag = FORM_GUIDANCE[title];
+  if (!frag) return null;
+  var found = null;
+  POLICY_LIBRARY.forEach(function (g) {
+    g.entries.forEach(function (en) {
+      if (!found && en.q.toLowerCase().indexOf(frag.toLowerCase()) !== -1) found = en;
+    });
+  });
+  return found;
+}
+function formGuidanceHtml(t) {
+  var en = formGuidanceFor(t.title);
+  if (!en || !policyGuidanceUnlocked()) return '';
+  return '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:15px 17px;margin:14px 0">'
+    + '<div style="font-weight:700;margin-bottom:6px">' + esc(en.q) + '</div>'
+    + '<div style="color:var(--text-secondary);font-size:0.9rem;line-height:1.6">' + esc(en.g) + '</div></div>';
+}
+
+function policyTopic(key) {
+  return PRACTICE_POLICIES.filter(function (t) { return t.key === key; })[0] || null;
+}
+// The guidance body already written for this topic, found by a distinctive fragment of
+// its question so a copy edit to the wording does not silently break the binding.
+function policyTopicEntry(t) {
+  var found = null;
+  POLICY_LIBRARY.forEach(function (g) {
+    g.entries.forEach(function (en) {
+      if (!found && en.q.toLowerCase().indexOf(String(t.match).toLowerCase()) !== -1) found = en;
+    });
+  });
+  return found;
+}
+function policyTopicGroup(t) {
+  if (!t.builder) return null;
+  return POLICY_DECISIONS.filter(function (g) { return g.id === t.builder; })[0] || null;
+}
+function policyTopicAnswered(t) {
+  var g = policyTopicGroup(t);
+  if (!g) return 0;
+  return pbVisibleDecisions(g).filter(function (d) { return PB.answers[d.id]; }).length;
+}
+function templateByTitle(title) {
+  return (libData || []).filter(function (x) { return x.title === title; })[0] || null;
+}
+
+// ── Index ──
+async function showPracticePolicies() {
+  if (typeof closeSidebar === 'function') closeSidebar();
+  S.view = 'practice-policies';
+  clearActive();
+  var side = document.querySelector('.sb-item[data-key="practice-policies"]');
+  if (side) side.classList.add('active');
+  var center = document.getElementById('center');
+  center.innerHTML = '<div class="skel skel-h"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
+  await ensureLibData();
+  await loadOwnedTemplates();
+  renderPracticePolicies();
+}
+
+function renderPracticePolicies() {
+  var center = document.getElementById('center');
+  var unlocked = policyGuidanceUnlocked();
+  var canBuild = policyBuilderUnlocked();
+  var h = '<div class="space-head"><div class="space-accent" style="background:var(--teal)"></div>';
+  h += '<h1>Practice Policies</h1>';
+  h += '<p class="space-tagline">Pick the policy you need. Read what it has to decide, then either build yours from your own choices or start from a generic document and edit it yourself.</p>';
+  if (isAdmin()) h += '<div style="margin-top:6px"><span class="tpl-tag" style="background:#b91c1c;color:#fff">Admin preview - not member-visible yet</span></div>';
+  h += '</div>';
+
+  if (!unlocked) {
+    h += '<div class="tpl-gate" style="margin-bottom:16px"><div class="tpl-gate-title">&#128274; Practice policies are a member benefit</div>'
+      + '<p class="tpl-gate-sub">Forum and Full members get the guidance for every policy below. Full adds the guided build: answer how your practice works and download the finished policy.</p>'
+      + '<div class="tpl-detail-actions"><button class="btn-primary" onclick="startCheckout(\'forum_monthly_50\')">Join Forum &mdash; $50/mo</button>'
+      + '<button class="btn-ghost" onclick="startCheckout(\'full_monthly_119\')">Join Full &mdash; $119/mo</button></div></div>';
+  } else if (canBuild) {
+    var done = PRACTICE_POLICIES.filter(function (t) { return policyTopicAnswered(t) > 0; }).length;
+    if (done) {
+      h += '<div style="border:1px solid var(--teal);background:rgba(42,171,184,0.07);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:18px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between">'
+        + '<div style="flex:1 1 260px"><div style="font-weight:700;margin-bottom:2px">You have started ' + done + ' ' + (done === 1 ? 'policy' : 'policies') + '</div>'
+        + '<div style="color:var(--text-secondary);font-size:0.88rem;line-height:1.5">Download them together as one document, each policy starting on a new page.</div></div>'
+        + '<button class="btn-primary" onclick="pbDownloadSet()">&#11015; Download my policy set (.docx)</button></div>';
+    }
+  }
+
+  PRACTICE_POLICIES.forEach(function (t) {
+    var en = policyTopicEntry(t);
+    var answered = policyTopicAnswered(t);
+    var g = policyTopicGroup(t);
+    h += '<div onclick="showPolicyTopic(\'' + t.key + '\')" style="cursor:pointer;border:1px solid var(--border);border-radius:var(--radius-lg);padding:15px 18px;margin-bottom:10px">';
+    h += '<div style="display:flex;gap:14px;align-items:flex-start;justify-content:space-between">';
+    h += '<div style="flex:1 1 auto"><div style="font-weight:700;font-size:1.02rem;margin-bottom:3px">' + esc(t.title) + '</div>';
+    h += '<div style="color:var(--text-secondary);font-size:0.88rem;line-height:1.5">'
+      + esc(unlocked && en ? policyEntryLede(en.g) : 'Guidance and documents for this policy are included with membership.') + '</div>';
+    h += '<div style="margin-top:7px;display:flex;flex-wrap:wrap;gap:6px">';
+    if (g) h += '<span class="tpl-tag">' + (answered ? answered + ' of ' + pbVisibleDecisions(g).length + ' decisions made' : 'Build yours') + '</span>';
+    else h += '<span class="tpl-tag">Guidance &mdash; builder coming</span>';
+    (t.starters || []).forEach(function (title) { h += '<span class="tpl-tag">Starter document</span>'; });
+    h += '</div></div>';
+    h += '<span style="flex:0 0 auto;color:var(--teal);font-size:0.85rem;font-weight:600;padding-top:3px;white-space:nowrap">Open &rarr;</span>';
+    h += '</div></div>';
+  });
+
+  h += '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-top:18px">'
+    + '<div style="font-weight:700;margin-bottom:3px">Looking for a form, notice or agreement?</div>'
+    + '<div style="color:var(--text-secondary);font-size:0.88rem;line-height:1.5;margin-bottom:8px">Releases of information, card authorizations, privacy notices, consents, BAAs, collaborative agreements and the welcome letter are documents rather than decisions. They live in the Template Library.</div>'
+    + '<a onclick="showLibrary()" style="color:var(--teal);font-weight:600;font-size:0.88rem;cursor:pointer">Go to Template Library &rarr;</a></div>';
+
+  center.innerHTML = h; window.scrollTo(0, 0);
+}
+
+// ── One topic: understand, decide, preview, download ──
+async function showPolicyTopic(key) {
+  if (typeof closeSidebar === 'function') closeSidebar();
+  S.view = 'policy-topic';
+  S.policyTopic = key;
+  clearActive();
+  var side = document.querySelector('.sb-item[data-key="practice-policies"]');
+  if (side) side.classList.add('active');
+  await ensureLibData();
+  await loadOwnedTemplates();
+  renderPolicyTopic();
+}
+
+function renderPolicyTopic() {
+  var t = policyTopic(S.policyTopic);
+  if (!t) { showPracticePolicies(); return; }
+  var center = document.getElementById('center');
+  var en = policyTopicEntry(t);
+  var g = policyTopicGroup(t);
+  var unlocked = policyGuidanceUnlocked();
+  var canBuild = policyBuilderUnlocked();
+
+  var h = '<div class="post-full-back" onclick="showPracticePolicies()">&larr; All practice policies</div>';
+  h += '<div class="space-head"><div class="space-accent" style="background:var(--teal)"></div>';
+  h += '<h1>' + esc(t.title) + '</h1></div>';
+
+  // 1. What this policy has to decide.
+  if (unlocked && en) {
+    h += '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;margin-bottom:14px">'
+      + '<div style="font-weight:700;margin-bottom:6px">' + esc(en.q) + '</div>'
+      + '<div style="color:var(--text-secondary);font-size:0.92rem;line-height:1.65">' + esc(en.g) + '</div></div>';
+  } else if (!unlocked) {
+    h += '<div class="tpl-gate" style="margin-bottom:16px"><div class="tpl-gate-title">&#128274; Included with membership</div>'
+      + '<p class="tpl-gate-sub">Forum and Full members get the full guidance for this policy. Full adds the guided build and the finished document.</p>'
+      + '<div class="tpl-detail-actions"><button class="btn-primary" onclick="startCheckout(\'forum_monthly_50\')">Join Forum &mdash; $50/mo</button>'
+      + '<button class="btn-ghost" onclick="startCheckout(\'full_monthly_119\')">Join Full &mdash; $119/mo</button></div></div>';
+  }
+
+  // 2. Decide, 3. preview, 4. download. Full only.
+  if (g && unlocked) {
+    if (canBuild) {
+      h += '<div style="display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap">';
+      h += '<div style="flex:1 1 420px;min-width:300px">';
+      h += '<h2 style="font-family:var(--font-heading);font-size:1.25rem;margin:8px 0 12px">Make your decisions</h2>';
+      pbVisibleDecisions(g).forEach(function (d) { h += pbDecisionHtml(d); });
+      h += '</div>';
+      h += '<div style="flex:1 1 320px;min-width:280px;position:sticky;top:14px">';
+      h += '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;background:var(--bg-subtle)">';
+      h += '<div style="font-family:var(--font-heading);font-size:1.1rem;font-weight:700;margin-bottom:4px">Your ' + esc(t.title.toLowerCase()) + ' policy</div>';
+      h += '<div id="pb-count" style="color:var(--text-secondary);font-size:0.78rem;margin-bottom:12px"></div>';
+      h += '<div id="pb-draft" style="max-height:46vh;overflow:auto"></div>';
+      h += pbMissingHtml();
+      h += pbVaultGapHtml();
+      h += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">'
+        + '<button class="btn-primary" style="font-size:0.85rem;padding:7px 14px" onclick="pbDownloadGroup(\'' + g.id + '\')">&#11015; Download this policy (.docx)</button>'
+        + '<button class="btn-ghost" style="font-size:0.85rem;padding:7px 14px" onclick="pbDownloadSet()">Download my policy set</button>'
+        + '</div></div></div></div>';
+    } else {
+      h += '<div style="border:1px solid var(--teal);background:rgba(42,171,184,0.07);border-radius:var(--radius-lg);padding:15px 17px;margin-bottom:14px">'
+        + '<div style="font-weight:700;margin-bottom:3px">&#10024; Build this policy for your practice</div>'
+        + '<div style="color:var(--text-secondary);font-size:0.9rem;line-height:1.55;margin-bottom:10px">Answer how your practice actually works and we generate the finished policy from your choices and your Vault, with no brackets left to fill in. Included with Full.</div>'
+        + '<button class="btn-primary" onclick="startCheckout(\'full_monthly_119\')">Upgrade to Full &mdash; $119/mo</button></div>';
+    }
+  } else if (!g && unlocked) {
+    h += '<div style="border:1px dashed var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:14px;color:var(--text-secondary);font-size:0.9rem;line-height:1.55">'
+      + 'The guided build for this policy is not available yet. The guidance above is current, and a starter document is listed below where one exists.</div>';
+  }
+
+  // 5. The generic starter, secondary by design.
+  if (unlocked && (t.starters || []).length) {
+    h += '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-top:14px">';
+    h += '<div style="font-weight:700;margin-bottom:3px">Prefer to edit a document yourself?</div>';
+    h += '<div style="color:var(--text-secondary);font-size:0.88rem;line-height:1.5;margin-bottom:9px">These are generic starting documents with placeholders and options for you to choose between and delete. They are part of the Private Practice Foundations Pack.</div>';
+    h += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+    t.starters.forEach(function (title) {
+      var tpl = templateByTitle(title);
+      if (!tpl) { h += '<span class="tpl-tag">' + esc(title) + '</span>'; return; }
+      var ok = templateAccessible(tpl);
+      h += '<button class="btn-ghost" style="font-size:0.82rem;padding:5px 12px" onclick="' + (ok ? 'downloadTemplate' : 'viewTemplate') + '(\'' + tpl.id + '\')">'
+        + (ok ? '&#11015; ' : '&#128274; ') + esc(title) + '</button>';
+    });
+    h += '</div></div>';
+  }
+
+  // 6. Related forms, which are documents rather than decisions.
+  if (unlocked && (t.forms || []).length) {
+    h += '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-top:12px">';
+    h += '<div style="font-weight:700;margin-bottom:3px">Forms you will also need</div>';
+    h += '<div style="color:var(--text-secondary);font-size:0.88rem;line-height:1.5;margin-bottom:9px">These are forms a patient signs, not policy decisions. They live in the Template Library.</div>';
+    h += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+    t.forms.forEach(function (title) {
+      var tpl = templateByTitle(title);
+      if (!tpl) { h += '<span class="tpl-tag">' + esc(title) + '</span>'; return; }
+      h += '<button class="btn-ghost" style="font-size:0.82rem;padding:5px 12px" onclick="viewTemplate(\'' + tpl.id + '\')">&#128196; ' + esc(title) + '</button>';
+    });
+    h += '</div></div>';
+  }
+
+  center.innerHTML = h;
+  if (g && unlocked && canBuild) pbRenderDraft();
+  window.scrollTo(0, 0);
+}
+
+// Retired as destinations. Practice Guidance and Policy Builder are now the two halves
+// of one topic page, so these only exist to catch links made before the merge.
+async function showPolicyLibrary() { return showPracticePolicies(); }
+async function showPolicyLibraryLegacy() {
   if (typeof closeSidebar === 'function') closeSidebar();
   S.view = 'policy-library';
   clearActive();
@@ -7448,7 +7757,8 @@ function pbDownloadGroup(gid) {
   pbSaveDocx(pbSlug(g.topic) + '.docx', g.topic, [g]);
 }
 
-async function showPolicyBuilder() {
+async function showPolicyBuilder() { return showPracticePolicies(); }
+async function showPolicyBuilderLegacy() {
   if (typeof closeSidebar === 'function') closeSidebar();
   if (!policyBuilderUnlocked()) { showPolicyLibrary(); return; }   // Full-only; the Library is the Forum benefit
   S.view = 'policy-builder';
@@ -7489,6 +7799,75 @@ function pbRenderDraft() {
   }
 }
 
+// One decision, rendered. Extracted so a single policy topic can show its own
+// questions inline without the member travelling to a separate Builder page.
+function pbDecisionHtml(d) {
+  var h = '';
+  var sel = PB.answers[d.id];
+      h += '<div id="pb-d-' + d.id + '" style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;margin-bottom:12px">';
+    h += '<div style="font-weight:700;margin-bottom:4px">' + esc(d.q) + '</div>';
+    h += '<div style="color:var(--text-secondary);font-size:0.86rem;line-height:1.55;margin-bottom:12px">' + esc(d.why) + '</div>';
+
+    d.choices.forEach(function (c) {
+      var on = sel === c.id;
+      h += '<div onclick="pbSelect(\'' + d.id + '\',\'' + c.id + '\')" style="cursor:pointer;border:1px solid ' + (on ? 'var(--teal)' : 'var(--border)') + ';background:' + (on ? 'rgba(42,171,184,0.07)' : 'transparent') + ';border-radius:var(--radius-md,8px);padding:11px 13px;margin-bottom:8px">';
+      h += '<div style="display:flex;gap:9px;align-items:flex-start">';
+      h += '<span style="flex:0 0 auto;margin-top:2px;width:14px;height:14px;border-radius:50%;border:2px solid ' + (on ? 'var(--teal)' : 'var(--border)') + ';background:' + (on ? 'var(--teal)' : 'transparent') + ';box-shadow:' + (on ? 'inset 0 0 0 2px var(--bg)' : 'none') + '"></span>';
+      h += '<div style="flex:1 1 auto"><div style="font-weight:600;font-size:0.92rem">' + esc(c.label) + '</div>';
+      h += '<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;margin-top:2px">' + esc(c.desc) + '</div>';
+      if (on) {
+        if (c.pros && c.pros.length) {
+          h += '<div style="margin-top:9px;font-size:0.83rem;line-height:1.5"><span style="font-weight:700;color:var(--text-secondary)">What it gives you</span><ul style="margin:3px 0 0;padding-left:18px">';
+          c.pros.forEach(function (p) { h += '<li>' + esc(p) + '</li>'; });
+          h += '</ul></div>';
+        }
+        if (c.cons && c.cons.length) {
+          h += '<div style="margin-top:7px;font-size:0.83rem;line-height:1.5"><span style="font-weight:700;color:var(--text-secondary)">What it costs you</span><ul style="margin:3px 0 0;padding-left:18px">';
+          c.cons.forEach(function (p) { h += '<li>' + esc(p) + '</li>'; });
+          h += '</ul></div>';
+        }
+        if (c.caveat) {
+          h += '<div style="margin-top:9px;border-left:3px solid #d97706;background:rgba(217,119,6,.08);padding:8px 11px;border-radius:0 6px 6px 0;font-size:0.83rem;line-height:1.5">'
+            + '<b>Check before you adopt this.</b> ' + esc(c.caveat) + '</div>';
+        }
+      }
+      h += '</div></div></div>';
+    });
+
+    var c = pbChoice(d, sel);
+    if (c) {
+      if (c.fields && c.fields.length) {
+        h += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin:10px 0 4px">';
+        c.fields.forEach(function (f) {
+          var v = (PB.fields[d.id] && PB.fields[d.id][f.key] != null) ? PB.fields[d.id][f.key] : '';
+          h += '<label style="font-size:0.82rem;color:var(--text-secondary)">' + esc(f.label) + '<br>'
+            + '<span style="display:inline-flex;align-items:center;gap:4px;margin-top:3px">'
+            + (f.prefix ? '<span>' + esc(f.prefix) + '</span>' : '')
+            + '<input type="text" value="' + esc(String(v)) + '" placeholder="' + esc(f.placeholder || '') + '" '
+            + 'oninput="pbSetField(\'' + d.id + '\',\'' + f.key + '\',this.value)" '
+            + 'style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:0.88rem">'
+            + (f.suffix ? '<span>' + esc(f.suffix) + '</span>' : '')
+            + '</span></label>';
+        });
+        h += '</div>';
+      }
+      if (c.clause) {
+        h += '<div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:10px">';
+        h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:5px">'
+          + '<span style="font-weight:700;font-size:0.78rem;letter-spacing:.05em;text-transform:uppercase;color:var(--text-secondary)">The language this adds</span>'
+          + (PB.edits[d.id] != null ? '<button class="btn-ghost" style="font-size:0.76rem;padding:3px 9px" onclick="pbResetClause(\'' + d.id + '\')">Reset wording</button>' : '')
+          + '</div>';
+        h += '<textarea oninput="pbEditClause(\'' + d.id + '\',this.value)" rows="3" '
+          + 'style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:0.88rem;line-height:1.55;resize:vertical">'
+          + esc(pbClauseText(d, c)) + '</textarea>';
+        h += '<div style="color:var(--text-secondary);font-size:0.76rem;margin-top:3px">Edit this to match how you say it. Your wording is what gets exported.</div>';
+        h += '</div>';
+      }
+    }
+    h += '</div>';
+  return h;
+}
+
 function renderPolicyBuilder() {
   var center = document.getElementById('center');
   var h = '<div class="space-head"><div class="space-accent" style="background:var(--teal)"></div>';
@@ -7510,70 +7889,7 @@ function renderPolicyBuilder() {
     var ds = pbVisibleDecisions(g);
     if (!ds.length) return;
     h += '<h2 style="font-family:var(--font-heading);font-size:1.3rem;margin:22px 0 10px;padding-top:12px;border-top:1px solid var(--border)">' + esc(g.topic) + '</h2>';
-    ds.forEach(function (d) {
-      var sel = PB.answers[d.id];
-      h += '<div id="pb-d-' + d.id + '" style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;margin-bottom:12px">';
-      h += '<div style="font-weight:700;margin-bottom:4px">' + esc(d.q) + '</div>';
-      h += '<div style="color:var(--text-secondary);font-size:0.86rem;line-height:1.55;margin-bottom:12px">' + esc(d.why) + '</div>';
-
-      d.choices.forEach(function (c) {
-        var on = sel === c.id;
-        h += '<div onclick="pbSelect(\'' + d.id + '\',\'' + c.id + '\')" style="cursor:pointer;border:1px solid ' + (on ? 'var(--teal)' : 'var(--border)') + ';background:' + (on ? 'rgba(42,171,184,0.07)' : 'transparent') + ';border-radius:var(--radius-md,8px);padding:11px 13px;margin-bottom:8px">';
-        h += '<div style="display:flex;gap:9px;align-items:flex-start">';
-        h += '<span style="flex:0 0 auto;margin-top:2px;width:14px;height:14px;border-radius:50%;border:2px solid ' + (on ? 'var(--teal)' : 'var(--border)') + ';background:' + (on ? 'var(--teal)' : 'transparent') + ';box-shadow:' + (on ? 'inset 0 0 0 2px var(--bg)' : 'none') + '"></span>';
-        h += '<div style="flex:1 1 auto"><div style="font-weight:600;font-size:0.92rem">' + esc(c.label) + '</div>';
-        h += '<div style="color:var(--text-secondary);font-size:0.85rem;line-height:1.5;margin-top:2px">' + esc(c.desc) + '</div>';
-        if (on) {
-          if (c.pros && c.pros.length) {
-            h += '<div style="margin-top:9px;font-size:0.83rem;line-height:1.5"><span style="font-weight:700;color:var(--text-secondary)">What it gives you</span><ul style="margin:3px 0 0;padding-left:18px">';
-            c.pros.forEach(function (p) { h += '<li>' + esc(p) + '</li>'; });
-            h += '</ul></div>';
-          }
-          if (c.cons && c.cons.length) {
-            h += '<div style="margin-top:7px;font-size:0.83rem;line-height:1.5"><span style="font-weight:700;color:var(--text-secondary)">What it costs you</span><ul style="margin:3px 0 0;padding-left:18px">';
-            c.cons.forEach(function (p) { h += '<li>' + esc(p) + '</li>'; });
-            h += '</ul></div>';
-          }
-          if (c.caveat) {
-            h += '<div style="margin-top:9px;border-left:3px solid #d97706;background:rgba(217,119,6,.08);padding:8px 11px;border-radius:0 6px 6px 0;font-size:0.83rem;line-height:1.5">'
-              + '<b>Check before you adopt this.</b> ' + esc(c.caveat) + '</div>';
-          }
-        }
-        h += '</div></div></div>';
-      });
-
-      var c = pbChoice(d, sel);
-      if (c) {
-        if (c.fields && c.fields.length) {
-          h += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin:10px 0 4px">';
-          c.fields.forEach(function (f) {
-            var v = (PB.fields[d.id] && PB.fields[d.id][f.key] != null) ? PB.fields[d.id][f.key] : '';
-            h += '<label style="font-size:0.82rem;color:var(--text-secondary)">' + esc(f.label) + '<br>'
-              + '<span style="display:inline-flex;align-items:center;gap:4px;margin-top:3px">'
-              + (f.prefix ? '<span>' + esc(f.prefix) + '</span>' : '')
-              + '<input type="text" value="' + esc(String(v)) + '" placeholder="' + esc(f.placeholder || '') + '" '
-              + 'oninput="pbSetField(\'' + d.id + '\',\'' + f.key + '\',this.value)" '
-              + 'style="width:110px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:0.88rem">'
-              + (f.suffix ? '<span>' + esc(f.suffix) + '</span>' : '')
-              + '</span></label>';
-          });
-          h += '</div>';
-        }
-        if (c.clause) {
-          h += '<div style="margin-top:10px;border-top:1px dashed var(--border);padding-top:10px">';
-          h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:5px">'
-            + '<span style="font-weight:700;font-size:0.78rem;letter-spacing:.05em;text-transform:uppercase;color:var(--text-secondary)">The language this adds</span>'
-            + (PB.edits[d.id] != null ? '<button class="btn-ghost" style="font-size:0.76rem;padding:3px 9px" onclick="pbResetClause(\'' + d.id + '\')">Reset wording</button>' : '')
-            + '</div>';
-          h += '<textarea oninput="pbEditClause(\'' + d.id + '\',this.value)" rows="3" '
-            + 'style="width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid var(--border);border-radius:8px;background:var(--bg);color:var(--text);font-size:0.88rem;line-height:1.55;resize:vertical">'
-            + esc(pbClauseText(d, c)) + '</textarea>';
-          h += '<div style="color:var(--text-secondary);font-size:0.76rem;margin-top:3px">Edit this to match how you say it. Your wording is what gets exported.</div>';
-          h += '</div>';
-        }
-      }
-      h += '</div>';
-    });
+    ds.forEach(function (d) { h += pbDecisionHtml(d); });
   });
 
   h += '</div>';   // end questions column
