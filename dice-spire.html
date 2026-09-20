@@ -1117,7 +1117,7 @@ function faceValue(hero, f){
   if(f.k === 'power' && hasPerk(hero, 'h2')) v += 1;         /* Fanfare     */
   if(f.k === 'daze')  v += gearMod(hero, 'daze');
   if(f.k === 'charm') v += gearMod(hero, 'charm');
-  if(f.k !== 'blank' && !isSigil(f.k)) v += glob('allFaces');
+  if(f.k !== 'blank' && !isSigil(f.k)) v += glob('allFaces') + perkCount(hero, 'm2');   /* Sharpened */
   return Math.max(0, v);
 }
 const frontRank = () => livingEnemies().filter(e => !e.rank);
@@ -1383,7 +1383,7 @@ function beginPlayerTurn(){
   S.turnsPlayed++;
   /* shields fade between turns */
   allies().forEach(h => {
-    const keepHalf = has('bulwark') || hasPerk(h, 'v4');       /* Second Shield */
+    const keepHalf = has('bulwark') || hasPerk(h, 'v4') || partyPerk('v5');   /* Second Shield, Shield Wall */
     h.shield = keepHalf ? Math.floor(h.shield / 2) : 0;
     h.guarding = false;
     /* Opening shield belongs HERE, not in startCombat: that runs before the
@@ -1391,6 +1391,8 @@ function beginPlayerTurn(){
        it. Quartermaster had silently done nothing since it was written. */
     if(C.turn === 1 && (hasPerk(h, 'h3') || partyPerk('h3') || banner('vanguard')))
       h.shield = Math.max(h.shield, 3);
+    if(C.turn === 1) h.shield += 3 * perkCount(h, 'm3');                      /* Steadied  */
+    if(C.turn === 1) h.unshaken = perkCount(h, 'm6');                         /* Unshaken  */
   });
   C.mana += (has('wellspring') ? 1 : 0) + glob('manaTurn') + (partyPerk('p4') ? 1 : 0) + (setActive('mind') ? 1 : 0)
           + sigil('sigWell');
@@ -1411,7 +1413,7 @@ function beginPlayerTurn(){
   }
   C.phaseBanner = null;
   advanceRanks();
-  C.rerolls = maxRerolls();
+  C.rerolls = maxRerolls() + (C.turn === 1 ? partyPerkCount('m7') : 0);      /* Sure-handed */
   C.echoUsed = 0;
   C.rerollMode = false;
   C.pending = null;
@@ -1565,7 +1567,7 @@ function hurtHero(h, n, opts){
   if(h.downed || n <= 0) return;
   let left = n;
   if(!opts.ignoreArmour){
-    const armour = gearMod(h, 'armour') + (setActive('warden') ? 1 : 0);
+    const armour = gearMod(h, 'armour') + (setActive('warden') ? 1 : 0) + perkCount(h, 'm5');   /* Hardened */
     if(armour > 0) left = Math.max(0, left - armour);   /* worn plate soaks before shields */
   }
   if(!opts.ignoreShield && h.shield > 0){
@@ -1575,6 +1577,12 @@ function hurtHero(h, n, opts){
   const dealt = left;
   h.hp = Math.max(0, h.hp - left);
   if(dealt > 0 || n > 0) floatOn(h.uid, '-' + Math.max(dealt, 0), 'var(--red)');
+  if(h.hp === 0 && (h.unshaken || 0) > 0 && !h.isSummon){
+    h.unshaken--;
+    h.hp = 1;
+    floatOn(h.uid, 'UNSHAKEN', 'var(--gold)');
+    logc(`${h.name} will not go down.`);
+  }
   if(h.hp === 0){
     if(h.isSummon){
       logc(`${h.name} unravels.`);
@@ -1678,6 +1686,7 @@ function resolveFace(h, d, target){
     case 'dmg': {
       const e = enemyByUid(target.uid); if(!e) break;
       heroDamageToEnemy(e, v + (d.r === 'cruel' && e.hp <= e.maxHp / 2 ? 5 : 0), d.r === 'piercing');
+      if(hasPerk(h, 'd5') && e.hp > 0) e.poison += 1;                                        /* Bleed */
       if(banner('duelist') && !h.bannerHit){ h.bannerHit = true; heroDamageToEnemy(e, 4); }  /* Banner of the Edge */
       if(hasPerk(h, 'd4') && !h.struck){ h.struck = true; heroDamageToEnemy(e, v); }  /* Opening */
       const ls = glob('lifesteal');
@@ -1712,6 +1721,7 @@ function resolveFace(h, d, target){
       healHero(a, v);
       if(a.poison > 0) a.poison--;
       if(a.burn > 0) a.burn--;
+      if(hasPerk(h, 'w5')){ a.shield += 3; floatOn(a.uid, '+3', 'var(--blue)'); }   /* Herbalist */
       if(hasPerk(h, 'w2')) livingAllies().forEach(x => {        /* Field Surgeon */
         if(x.poison > 0) x.poison--; if(x.burn > 0) x.burn--; });
       logc(`${h.name} mends ${a.name} for ${v}.`);
@@ -1722,6 +1732,10 @@ function resolveFace(h, d, target){
       e.poison += v; floatOn(e.uid, '☠' + v, 'var(--lime)');
       if(hasPerk(h, 'n3') && e.trait && e.trait.k === 'armoured')  /* Corrosive */
         e.trait.v = Math.max(0, e.trait.v - 2);
+      if(hasPerk(h, 'n5')){                                       /* Virulent */
+        const other = livingEnemies().filter(x => x.uid !== e.uid);
+        if(other.length){ const o = pick(other); o.poison += Math.ceil(v / 2); floatOn(o.uid, '\u2620' + Math.ceil(v / 2), 'var(--lime)'); }
+      }
       logc(`${h.name} poisons ${e.name} for ${v}.`);
       break;
     }
@@ -1734,7 +1748,7 @@ function resolveFace(h, d, target){
     case 'daze': {
       const e = enemyByUid(target.uid); if(!e) break;
       const lost = e.power;
-      e.power = 0; e.weak += v;
+      e.power = 0; e.weak += v + (hasPerk(h, 's5') ? 1 : 0);       /* Deeper Hold */
       if(hasPerk(h, 's4')) e.shield = Math.max(0, e.shield - 6);   /* Unravel */            /* no longer a stun, so no lock to build */
       floatOn(e.uid, 'REELING', 'var(--gold)');
       logc(lost ? `${e.name} reels, and forgets ${lost} power.` : `${e.name} reels.`);
@@ -1791,6 +1805,7 @@ function resolveFace(h, d, target){
     case 'power': {
       const a = unitByUid(target.uid); if(!a) break;
       a.power += v; floatOn(a.uid, '+' + v + ' POW', 'var(--pink)');
+      if(hasPerk(h, 'h5')){ a.shield += 2; floatOn(a.uid, '+2', 'var(--blue)'); }   /* Warcry */
       logc(`${h.name} empowers ${a.name}.`);
       break;
     }
@@ -2103,10 +2118,15 @@ function endOfRound(){
   const stillBurning = burning.filter(e => e.hp > 0);
   stillBurning.forEach(e => { e.burn += banner('pyromancer') ? 2 : 1; });
   const unlit = livingEnemies().filter(e => e.burn === 0);
-  stillBurning.slice(0, unlit.length).forEach((src, i) => {
-    unlit[i].burn = 1;
-    floatOn(unlit[i].uid, '🔥', 'var(--orange)');
-    logc(`The fire spreads from ${src.name} to ${unlit[i].name}.`);
+  /* Firestorm lets each fire jump to two, not one */
+  const reach = partyPerk('p5') ? 2 : 1;
+  let spread = 0;
+  stillBurning.forEach(src => {
+    for(let j = 0; j < reach && spread < unlit.length; j++, spread++){
+      unlit[spread].burn = 1;
+      floatOn(unlit[spread].uid, '🔥', 'var(--orange)');
+      logc(`The fire spreads from ${src.name} to ${unlit[spread].name}.`);
+    }
   });
   if(fieldCleared()){ endCombat(true); return; }
 
@@ -2150,6 +2170,7 @@ function endOfRound(){
       logc(`${h.name} burns for ${h.burn}.`);
       h.burn--;                        /* you beat it out; it does not compound */
     }
+    if(perkCount(h, 'm8')) healHero(h, 3 * perkCount(h, 'm8'));  /* Enduring */
     if(hasPerk(h, 'w4')){                                      /* Vigil */
       const hurt = livingAllies().slice().sort((a,b) => (a.hp/a.maxHp) - (b.hp/b.maxHp))[0];
       if(hurt) healHero(hurt, 3);
@@ -2192,6 +2213,7 @@ function endCombat(won){
       h.shield = 0; h.power = 0; h.poison = 0;
     });
     S.party.forEach(h => healHero(h, Math.round(h.maxHp * 0.15)));
+    S.party.forEach(h => healHero(h, 5 * perkCount(h, 'm4')));                /* Seasoned */
     if(banner('warden')) S.party.forEach(h => healHero(h, 5));
     if(has('bloodstone')) S.party.forEach(h => healHero(h, 3));
     if(glob('postHeal')) S.party.forEach(h => healHero(h, glob('postHeal')));
@@ -2308,45 +2330,76 @@ const PERKS = {
     {key:'v1', name:'Bulwark Stance', desc:'Guard also gives 3 shield to every other hero.'},
     {key:'v2', name:'Immovable',      desc:'+8 max HP, healed at once.'},
     {key:'v3', name:'Riposte',        desc:'Attackers take 4 back while you are Guarding.'},
-    {key:'v4', name:'Second Shield',  desc:'Keep half your shield between turns.'}
+    {key:'v4', name:'Second Shield',  desc:'Keep half your shield between turns.'},
+    {key:'v5', name:'Shield Wall',    desc:'The WHOLE party keeps half their shield between turns.'}
   ],
   duelist: [
     {key:'d1', name:'Killing Blow',   desc:'Finisher charges in 3 Strikes instead of 4.'},
     {key:'d2', name:'Off Hand',       desc:'Stun also deals 4 damage.'},
     {key:'d3', name:'Footwork',       desc:'+1 to every Strike face you roll.'},
-    {key:'d4', name:'Opening',        desc:'Your first Strike each fight lands for double.'}
+    {key:'d4', name:'Opening',        desc:'Your first Strike each fight lands for double.'},
+    {key:'d5', name:'Bleed',          desc:'Your Strikes also leave 1 poison behind.'}
   ],
   warden: [
     {key:'w1', name:'Deep Roots',     desc:'Regrowth lasts a round longer.'},
     {key:'w2', name:'Field Surgeon',  desc:'Mend also clears a point of burning and poison from everyone.'},
     {key:'w3', name:'Greenwood',      desc:'+2 to every Mend face you roll.'},
-    {key:'w4', name:'Vigil',          desc:'Heal the most wounded hero 3 at the end of each round.'}
+    {key:'w4', name:'Vigil',          desc:'Heal the most wounded hero 3 at the end of each round.'},
+    {key:'w5', name:'Herbalist',      desc:'Your Mend also gives 3 shield.'}
   ],
   pyromancer: [
     {key:'p1', name:'Backdraft',      desc:'Your fire grows by 2 each round instead of 1.'},
     {key:'p2', name:'Wildfire',       desc:'Cleave sets 2 burning instead of 1.'},
     {key:'p3', name:'Ashes',          desc:'+1 to every Ignite face you roll.'},
-    {key:'p4', name:'Inner Furnace',  desc:'Gain 1 mana at the start of every turn.'}
+    {key:'p4', name:'Inner Furnace',  desc:'Gain 1 mana at the start of every turn.'},
+    {key:'p5', name:'Firestorm',      desc:'Your fire spreads to two enemies each round instead of one.'}
   ],
   venomist: [
     {key:'n1', name:'Potent',         desc:'+2 to every Venom face you roll.'},
     {key:'n2', name:'Lingering',      desc:'Poison loses 1 stack every other round instead of every round.'},
     {key:'n3', name:'Corrosive',      desc:'Your poison strips 2 armour from what it eats.'},
-    {key:'n4', name:'Distiller',      desc:'Miasma charges in 2 Venoms instead of 3.'}
+    {key:'n4', name:'Distiller',      desc:'Miasma charges in 2 Venoms instead of 3.'},
+    {key:'n5', name:'Virulent',       desc:'Venom also gives half as much to another enemy.'}
   ],
   herald: [
     {key:'h1', name:'Standing Order', desc:'Power you grant lasts through the whole fight and stacks past 3.'},
     {key:'h2', name:'Fanfare',        desc:'Empower gives 1 more.'},
     {key:'h3', name:'Quartermaster',  desc:'The whole party starts each fight with 3 shield.'},
-    {key:'h4', name:'Drillmaster',    desc:'Rally charges in 2 Empowers instead of 3.'}
+    {key:'h4', name:'Drillmaster',    desc:'Rally charges in 2 Empowers instead of 3.'},
+    {key:'h5', name:'Warcry',         desc:'Your Empower also gives 2 shield.'}
   ],
   sorcerer: [
     {key:'s1', name:'Lasting Hold',   desc:'Dominate lasts a turn longer.'},
     {key:'s2', name:'Bound Servant',  desc:'Thralls last 2 turns longer and carry 5 more HP.'},
     {key:'s3', name:'Deep Well',      desc:'+1 to every Focus face you roll.'},
-    {key:'s4', name:'Unravel',        desc:'Mindlock also strips 6 shield.'}
+    {key:'s4', name:'Unravel',        desc:'Mindlock also strips 6 shield.'},
+    {key:'s5', name:'Deeper Hold',    desc:'Mindlock lasts a turn longer.'}
   ]
 };
+/* ---------------------------------------------------------------- masteries
+   A hero's own list is finite, so a deep run used to hand out levels with one
+   option on the screen and then, once the list was empty, nothing at all --
+   the level was silently skipped. Masteries are the other branch: open to
+   anybody, and they stack, so a level always has something on it. They are
+   deliberately plainer than a signature perk. Breadth is the hero's own list;
+   this is depth. */
+const MASTERY_CAP = 3;
+const MASTERIES = [
+  {key:'m1', name:'Toughened',   desc:'+6 max HP, healed at once.', apply:h=>{ h.maxHp += 6; h.hp += 6; }},
+  {key:'m2', name:'Sharpened',   desc:'+1 to every numbered face this hero rolls.'},
+  {key:'m3', name:'Steadied',    desc:'Begin every fight with 3 shield.'},
+  {key:'m4', name:'Seasoned',    desc:'Mend 5 at the end of every fight.'},
+  {key:'m5', name:'Hardened',    desc:'Take 1 less from every blow.'},
+  {key:'m6', name:'Unshaken',    desc:'Once a fight, the blow that would drop this hero leaves them on 1 instead.'},
+  {key:'m7', name:'Sure-handed', desc:'One more reroll on the first turn of every fight.'},
+  {key:'m8', name:'Enduring',    desc:'Mend 3 at the end of every round.'}
+];
+const ROMAN = ['', '', 'II', 'III', 'IV'];
+const masteryDef = k => MASTERIES.find(m => m.key === k) || null;
+const perkDef = (h, k) => (PERKS[h.key] || []).find(x => x.key === k) || masteryDef(k);
+/* masteries stack, so counting matters where hasPerk only asks yes or no */
+const perkCount = (h, k) => (h && h.perks) ? h.perks.filter(x => x === k).length : 0;
+const partyPerkCount = k => S ? S.party.reduce((n, h) => n + perkCount(h, k), 0) : 0;
 const hasPerk = (h, k) => !!(h && h.perks && h.perks.includes(k));
 const partyPerk = k => S && S.party.some(h => hasPerk(h, k));
 function awardXp(amount){
@@ -2361,10 +2414,21 @@ function awardXp(amount){
   });
   return levelled;
 }
-/* two picks from what this hero has not taken yet */
+/* At most two of this hero's own perks, and from their second level onward a
+   mastery alongside them -- so the other branch is a standing choice and not
+   just what is left when the signature list runs dry. Once that list IS dry
+   the whole offer is masteries, which is why a level can no longer be empty. */
 function perkChoices(h){
-  const pool = (PERKS[h.key] || []).filter(pk => !hasPerk(h, pk.key));
-  return sample(pool, 2);
+  const own  = (PERKS[h.key] || []).filter(pk => !hasPerk(h, pk.key));
+  const open = MASTERIES.filter(m => perkCount(h, m.key) < MASTERY_CAP);
+  const want = (h.perks || []).length ? 3 : 2;      /* the first level is pure identity */
+  const picked = sample(own, Math.min(own.length, 2));
+  return picked.concat(sample(open, Math.max(0, want - picked.length)));
+}
+/* a mastery taken twice reads as Sharpened II */
+function perkTitle(h, pk){
+  const n = perkCount(h, pk.key);
+  return n > 0 ? `${pk.name} ${ROMAN[Math.min(n + 1, 4)]}` : pk.name;
 }
 function openLevelUp(queue){
   const h = queue[0];
@@ -2376,8 +2440,11 @@ function openLevelUp(queue){
 function takePerk(key){
   const m = UI.modal;
   const h = m.hero;
+  if(!m.choices.some(pk => pk.key === key)) return;   /* only what was offered */
   h.perks = h.perks || [];
   h.perks.push(key);
+  const def = perkDef(h, key);
+  if(def && def.apply) def.apply(h);
   if(key === 'v2'){ h.maxHp += 8; h.hp += 8; }
   const queue = m.queue; queue.shift();
   UI.modal = null; save();
@@ -3851,18 +3918,30 @@ function mLevelUp(m){
         <h2 style="margin-top:6px">${esc(h.name)} has learned something</h2></div>
     </div>
     <p class="muted tiny" style="margin:8px 0 12px">Pick one. It lasts the rest of the run.${
-      m.queue.length > 1 ? ` ${m.queue.length - 1} other hero also levelled.` : ''}</p>
+      m.queue.length > 1 ? ` ${m.queue.length - 1} other hero also levelled.` : ''}${
+      m.choices.some(pk => masteryDef(pk.key)) ? ' Masteries are open to anyone and can be taken more than once.' : ''}</p>
     <div class="col">
-      ${m.choices.map(pk => `<button class="opt" onclick="takePerk('${pk.key}')">
-        <div class="t">${esc(pk.name)}</div><div class="s">${esc(pk.desc)}</div></button>`).join('')}
+      ${m.choices.map(pk => { const mast = !!masteryDef(pk.key);
+        return `<button class="opt" onclick="takePerk('${pk.key}')">
+        <div class="t">${esc(perkTitle(h, pk))}${mast
+          ? ` <span class="tiny" style="color:var(--ink-faint);font-weight:400">\u00B7 mastery</span>` : ''}</div>
+        <div class="s">${esc(pk.desc)}</div></button>`; }).join('')}
     </div>
     <div class="sep"></div>
     ${faceChips(h, null, null)}`;
 }
 function perkLine(h){
   if(!h.perks || !h.perks.length) return '';
-  const all = PERKS[h.key] || [];
-  return h.perks.map(k => (all.find(x => x.key === k) || {}).name).filter(Boolean).join(' · ');
+  const seen = {};
+  return h.perks.map(k => {
+    const d = perkDef(h, k);
+    if(!d) return null;
+    seen[k] = (seen[k] || 0) + 1;
+    return seen[k] > 1 ? `${d.name} ${ROMAN[Math.min(seen[k], 4)]}` : d.name;
+  }).filter(Boolean).filter((nm, i, a) => {
+    /* keep only the deepest reading of a stacked mastery */
+    return !a.slice(i + 1).some(x => x.split(' ')[0] === nm.split(' ')[0]);
+  }).join(' · ');
 }
 function openInventory(keepBack){
   UI.modal = { type:'inventory', back: keepBack ? UI.modal : null };
