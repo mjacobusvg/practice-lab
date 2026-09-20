@@ -6432,6 +6432,15 @@ var POLICY_LIBRARY_LIVE = true;
 function policyLibraryNavLive() {
   return isAdmin() || (typeof POLICY_LIBRARY_LIVE !== 'undefined' && POLICY_LIBRARY_LIVE);
 }
+// Admin-only state chip. Derived from POLICY_LIBRARY_LIVE rather than hardcoded: three
+// copies of "not member-visible yet" survived the launch flip and told the owner the
+// opposite of the truth. Red while dark, neutral once live.
+function policyAdminBadge() {
+  if (!isAdmin()) return '';
+  var live = (typeof POLICY_LIBRARY_LIVE !== 'undefined' && POLICY_LIBRARY_LIVE);
+  return '<div style="margin-top:6px"><span class="tpl-tag" style="background:' + (live ? '#4b5563' : '#b91c1c') + ';color:#fff">'
+    + (live ? 'Admin view - live to members' : 'Admin preview - not member-visible yet') + '</span></div>';
+}
 function policyGuidanceUnlocked() { return isAdmin() || tierRank() >= 1; }  // Forum, Full, or admin
 // The Builder is a tool, not guidance, and it produces usable policy language, so it sits on
 // the Full side with every one of the 15 Private Practice Foundations documents (all min_tier
@@ -6625,7 +6634,7 @@ function renderPracticePolicies() {
   var h = '<div class="space-head"><div class="space-accent" style="background:var(--teal)"></div>';
   h += '<h1>Practice Policies</h1>';
   h += '<p class="space-tagline">Pick the policy you need. Read what it has to decide, then either build yours from your own choices or start from a generic document and edit it yourself.</p>';
-  if (isAdmin()) h += '<div style="margin-top:6px"><span class="tpl-tag" style="background:#b91c1c;color:#fff">Admin preview - not member-visible yet</span></div>';
+  h += policyAdminBadge();
   h += '</div>';
 
   if (!unlocked) {
@@ -6888,7 +6897,7 @@ function renderPolicyLibrary() {
   var h = '<div class="space-head"><div class="space-accent" style="background:var(--teal)"></div>';
   h += '<h1>Practice Guidance</h1>';
   h += '<p class="space-tagline">Figure out what your practice policy should be. Start from a common question, see which decisions matter and what varies by state or payer, then use Policy Builder to write your own language or download an editable starting document.</p>';
-  if (isAdmin()) h += '<div style="margin-top:6px"><span class="tpl-tag" style="background:#b91c1c;color:#fff">Admin preview - not member-visible yet</span></div>';
+  h += policyAdminBadge();
   h += '</div>';
   if (policyBuilderUnlocked()) {
     h += '<div style="border:1px solid var(--teal);background:rgba(42,171,184,0.07);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:18px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between">'
@@ -7499,6 +7508,13 @@ function pbClauseText(d, c) {
   return pbFill(c.clause, d, c);
 }
 
+// Redraw whatever surface the member is actually on. These handlers used to redraw the
+// retired all-groups Builder page unconditionally, which threw the member off their topic
+// page the moment they answered their first question.
+function pbRerender() {
+  if (S.view === 'policy-topic') { renderPolicyTopic(); return; }
+  renderPolicyBuilder();
+}
 function pbSelect(did, cid) {
   var d = pbDecision(did);
   if (PB.answers[did] !== cid) delete PB.edits[did];   // a new choice means a new clause
@@ -7510,7 +7526,7 @@ function pbSelect(did, cid) {
       if (!pbVisible(x)) { delete PB.answers[x.id]; delete PB.edits[x.id]; }
     });
   });
-  pbSave(); renderPolicyBuilder();
+  pbSave(); pbRerender();
   var el = document.getElementById('pb-d-' + did); if (el) el.scrollIntoView({ block: 'nearest' });
 }
 function pbSetField(did, key, val) {
@@ -7520,10 +7536,10 @@ function pbSetField(did, key, val) {
   pbSave(); pbRenderDraft();
 }
 function pbEditClause(did, val) { PB.edits[did] = val; pbSave(); pbRenderDraft(); }
-function pbResetClause(did) { delete PB.edits[did]; pbSave(); renderPolicyBuilder(); }
+function pbResetClause(did) { delete PB.edits[did]; pbSave(); pbRerender(); }
 function pbReset() {
   if (!confirm('Clear every choice and start the builder over? This cannot be undone.')) return;
-  PB = { answers: {}, fields: {}, edits: {} }; pbSave(); renderPolicyBuilder();
+  PB = { answers: {}, fields: {}, edits: {} }; pbSave(); pbRerender();
 }
 
 // ── The assembled policy ──
@@ -7935,9 +7951,9 @@ function pbDecisionHtml(d) {
 function renderPolicyBuilder() {
   var center = document.getElementById('center');
   var h = '<div class="space-head"><div class="space-accent" style="background:var(--teal)"></div>';
-  h += '<h1>Practice Policy Builder</h1>';
+  h += '<h1>Practice Policies</h1>';
   h += '<p class="space-tagline">Decide how your practice actually operates, and the policy language is built around your decisions.</p>';
-  if (isAdmin()) h += '<div style="margin-top:6px"><span class="tpl-tag" style="background:#b91c1c;color:#fff">Admin preview - not member-visible yet</span></div>';
+  h += policyAdminBadge();
   h += '</div>';
 
   h += '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:16px;background:var(--bg-subtle)">'
