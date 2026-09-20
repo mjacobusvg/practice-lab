@@ -6506,16 +6506,13 @@ var POLICY_LIBRARY = [
 // agreements, letters) stays in the Template Library, cross-linked both ways.
 // ════════════════════════════════════════════════════════════════════════════
 
-// Whether a Forum member can download the generic starter policies.
-// Kept at 'full' because that is what the SERVER enforces: those rows are
-// min_tier='full' in template_library, so showing Forum an enabled download here
-// would hand them a 402. Flipping this to 'forum' requires the matching SQL:
-//   UPDATE public.template_library SET min_tier='forum'
-//    WHERE title IN ('Payment Policy','Billing & Discount Policy',
-//                    'No-Show & Late-Cancellation Policy','Medication Refill Policy',
-//                    'Benzodiazepine Policy');
-// Change both or neither.
-var POLICY_STARTER_MIN_TIER = 'full';
+// Forum includes the five generic starter policies. This mirrors min_tier='forum' on
+// those rows in template_library, which is what the SERVER enforces; the two must agree
+// or a member sees a download button and gets a 402. The forms, notices and agreements
+// are deliberately NOT in this set and remain min_tier='full'.
+// The product line this draws: Forum gets the guidance and an editable starter to
+// customise themselves. Full says how your practice works and we build the finished one.
+var POLICY_STARTER_MIN_TIER = 'forum';
 
 var PRACTICE_POLICIES = [
   { key: 'payments',   title: 'Payment & Patient Responsibility', match: 'When is payment due',
@@ -6657,9 +6654,10 @@ function renderPracticePolicies() {
     h += '<div style="color:var(--text-secondary);font-size:0.88rem;line-height:1.5">'
       + esc(unlocked && en ? policyEntryLede(en.g) : 'Guidance and documents for this policy are included with membership.') + '</div>';
     h += '<div style="margin-top:7px;display:flex;flex-wrap:wrap;gap:6px">';
-    if (g) h += '<span class="tpl-tag">' + (answered ? answered + ' of ' + pbVisibleDecisions(g).length + ' decisions made' : 'Build yours') + '</span>';
-    else h += '<span class="tpl-tag">Guidance &mdash; builder coming</span>';
-    (t.starters || []).forEach(function (title) { h += '<span class="tpl-tag">Starter document</span>'; });
+    if (g && canBuild) h += '<span class="tpl-tag">' + (answered ? answered + ' of ' + pbVisibleDecisions(g).length + ' decisions made' : 'Build yours') + '</span>';
+    else if (g && unlocked) h += '<span class="tpl-tag">Build yours with Full</span>';
+    else if (!g) h += '<span class="tpl-tag">Guidance &mdash; builder coming</span>';
+    if ((t.starters || []).length && unlocked) h += '<span class="tpl-tag">' + ((t.starters.length > 1) ? t.starters.length + ' starter documents' : 'Starter document') + '</span>';
     h += '</div></div>';
     h += '<span style="flex:0 0 auto;color:var(--teal);font-size:0.85rem;font-weight:600;padding-top:3px;white-space:nowrap">Open &rarr;</span>';
     h += '</div></div>';
@@ -6684,6 +6682,34 @@ async function showPolicyTopic(key) {
   await ensureLibData();
   await loadOwnedTemplates();
   renderPolicyTopic();
+}
+
+// The same documents, framed by who is looking. For Forum this is the deliverable, so
+// it leads with a primary button and says plainly what work is left to them. For Full it
+// is the manual alternative to the thing they came for.
+function policyStarterHtml(t, primary) {
+  if (!(t.starters || []).length || !policyGuidanceUnlocked()) return '';
+  var h = '<div style="border:1px solid ' + (primary ? 'var(--teal)' : 'var(--border)') + ';'
+    + (primary ? 'background:rgba(42,171,184,0.05);' : '') + 'border-radius:var(--radius-lg);padding:15px 17px;margin-'
+    + (primary ? 'bottom' : 'top') + ':14px">';
+  h += '<div style="font-weight:700;margin-bottom:3px">'
+    + (primary ? '&#128196; Your editable starter policy' : 'Prefer to edit a document yourself?') + '</div>';
+  h += '<div style="color:var(--text-secondary);font-size:0.88rem;line-height:1.55;margin-bottom:10px">'
+    + (primary
+        ? 'Included with your membership. This is a generic Word document: it has placeholders for your practice details and, where practices legitimately differ, alternative wordings for you to choose between and delete.'
+        : 'Generic Word documents with placeholders and alternative wordings to choose between. Useful if you would rather write it yourself than answer the questions above.')
+    + '</div>';
+  h += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
+  t.starters.forEach(function (title) {
+    var tpl = templateByTitle(title);
+    if (!tpl) { h += '<span class="tpl-tag">' + esc(title) + '</span>'; return; }
+    var ok = templateAccessible(tpl);
+    h += '<button class="' + (primary && ok ? 'btn-primary' : 'btn-ghost') + '" style="font-size:0.82rem;padding:' + (primary ? '7px 14px' : '5px 12px') + '" '
+      + 'onclick="' + (ok ? 'downloadTemplate' : 'viewTemplate') + '(\'' + tpl.id + '\')">'
+      + (ok ? '&#11015; ' : '&#128274; ') + esc(title) + (ok ? ' (.docx)' : '') + '</button>';
+  });
+  h += '</div></div>';
+  return h;
 }
 
 function renderPolicyTopic() {
@@ -6711,6 +6737,11 @@ function renderPolicyTopic() {
       + '<button class="btn-ghost" onclick="startCheckout(\'full_monthly_119\')">Join Full &mdash; $119/mo</button></div></div>';
   }
 
+  // For Forum the starter document IS their route, so it leads and the Full pitch
+  // follows it. For Full the decisions lead and the starter is the alternative. Same
+  // page, ordered by what that member can actually do rather than by what we sell.
+  if (unlocked && !canBuild) h += policyStarterHtml(t, true);
+
   // 2. Decide, 3. preview, 4. download. Full only.
   if (g && unlocked) {
     if (canBuild) {
@@ -6732,8 +6763,8 @@ function renderPolicyTopic() {
         + '</div></div></div></div>';
     } else {
       h += '<div style="border:1px solid var(--teal);background:rgba(42,171,184,0.07);border-radius:var(--radius-lg);padding:15px 17px;margin-bottom:14px">'
-        + '<div style="font-weight:700;margin-bottom:3px">&#10024; Build this policy for your practice</div>'
-        + '<div style="color:var(--text-secondary);font-size:0.9rem;line-height:1.55;margin-bottom:10px">Answer how your practice actually works and we generate the finished policy from your choices and your Vault, with no brackets left to fill in. Included with Full.</div>'
+        + '<div style="font-weight:700;margin-bottom:3px">&#10024; Or have it built for you, with Full</div>'
+        + '<div style="color:var(--text-secondary);font-size:0.9rem;line-height:1.55;margin-bottom:10px">Instead of editing the starter by hand, answer how your practice actually works. Full turns your choices plus your Vault into the finished policy, with no placeholders and no options left to delete.</div>'
         + '<button class="btn-primary" onclick="startCheckout(\'full_monthly_119\')">Upgrade to Full &mdash; $119/mo</button></div>';
     }
   } else if (!g && unlocked) {
@@ -6741,21 +6772,9 @@ function renderPolicyTopic() {
       + 'The guided build for this policy is not available yet. The guidance above is current, and a starter document is listed below where one exists.</div>';
   }
 
-  // 5. The generic starter, secondary by design.
-  if (unlocked && (t.starters || []).length) {
-    h += '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-top:14px">';
-    h += '<div style="font-weight:700;margin-bottom:3px">Prefer to edit a document yourself?</div>';
-    h += '<div style="color:var(--text-secondary);font-size:0.88rem;line-height:1.5;margin-bottom:9px">These are generic starting documents with placeholders and options for you to choose between and delete. They are part of the Private Practice Foundations Pack.</div>';
-    h += '<div style="display:flex;flex-wrap:wrap;gap:8px">';
-    t.starters.forEach(function (title) {
-      var tpl = templateByTitle(title);
-      if (!tpl) { h += '<span class="tpl-tag">' + esc(title) + '</span>'; return; }
-      var ok = templateAccessible(tpl);
-      h += '<button class="btn-ghost" style="font-size:0.82rem;padding:5px 12px" onclick="' + (ok ? 'downloadTemplate' : 'viewTemplate') + '(\'' + tpl.id + '\')">'
-        + (ok ? '&#11015; ' : '&#128274; ') + esc(title) + '</button>';
-    });
-    h += '</div></div>';
-  }
+  // Forum already had this above, as their primary route. Only Full sees it here,
+  // as the alternative to the decisions.
+  if (canBuild) h += policyStarterHtml(t, false);
 
   // 6. Related forms, which are documents rather than decisions.
   if (unlocked && (t.forms || []).length) {
