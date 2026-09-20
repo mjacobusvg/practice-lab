@@ -3020,7 +3020,7 @@ function buildSidebar() {
   if (isAdmin()) h += '<div class="sb-item" data-key="broadcast" onclick="showBroadcast()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128227;</span> Broadcast</div>';
   h += '<div class="sb-item" data-key="library" onclick="showLibrary()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128196;</span> Template Library</div>';
   if (isAdmin() || (typeof POLICY_LIBRARY_LIVE !== 'undefined' && POLICY_LIBRARY_LIVE && tierRank() >= 1)) h += '<div class="sb-item" data-key="policy-library" onclick="showPolicyLibrary()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128218;</span> Practice Policy Library</div>';
-  if (isAdmin() || (typeof POLICY_LIBRARY_LIVE !== 'undefined' && POLICY_LIBRARY_LIVE && tierRank() >= 1)) h += '<div class="sb-item" data-key="policy-builder" onclick="showPolicyBuilder()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128736;</span> Policy Builder</div>';
+  if (isAdmin() || (typeof POLICY_LIBRARY_LIVE !== 'undefined' && POLICY_LIBRARY_LIVE && tierRank() >= 2)) h += '<div class="sb-item" data-key="policy-builder" onclick="showPolicyBuilder()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128736;</span> Policy Builder</div>';
   h += '<div class="sb-item" onclick="window.location.href=\'/vault\'" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128272;</span> The Vault</div>';
   h += '<div class="sb-item" data-key="learn" onclick="showLearn()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#129513;</span> Mentorship &amp; Courses</div>';
   h += '<div class="sb-item" data-key="directory" onclick="showDirectory()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128101;</span> Member Directory</div>';
@@ -6352,15 +6352,22 @@ async function downloadTemplate(id) {
 // Free/nonmembers get topic/entry teasers + a conversion CTA, never the guidance body.
 // Admins always see it. POLICY_LIBRARY_LIVE stays false during the admin-only dark
 // launch; flipping it to true at launch shows the nav to Forum/Full (not free).
+// LAUNCH FLIP: set to true on Monday 2026-09-21 and push. Until then the Library and the
+// Builder are admin-only, so the Sunday broadcast's "goes live Monday" depends on this one
+// line. Flipping it shows the Library to Forum and Full, and the Builder to Full.
 var POLICY_LIBRARY_LIVE = false;
 function policyGuidanceUnlocked() { return isAdmin() || tierRank() >= 1; }  // Forum, Full, or admin
+// The Builder is a tool, not guidance, and it produces usable policy language, so it sits on
+// the Full side with every one of the 15 Private Practice Foundations documents (all min_tier
+// = full). Forum keeps the complete Library, which stands on its own as guidance.
+function policyBuilderUnlocked() { return isAdmin() || tierRank() >= 2; }   // Full or admin
 var POLICY_LIBRARY = [
   { topic: 'Payments & Attendance', entries: [
     { q: 'When is payment due, what do we accept, and how do we handle balances?',
       g: 'Set expectations before money is owed: when payment is due (typically at the time of service), accepted methods, how insurance is handled, and what happens to unpaid balances. Keep nonpayment consequences proportional and lawful, tied to future non-urgent scheduling and, where appropriate, termination in accordance with applicable law, payer requirements, and continuity of care. Sliding-scale and hardship options belong here, offered only where law and payer contracts permit.',
       t: ['Payment Policy', 'Billing & Discount Policy'] },
     { q: 'When can I keep a card on file, and when can I actually charge it?',
-      g: 'A recurring card-on-file authorization suits ongoing patients; a one-time authorization is for a single charge. A known copay is generally collected at check-in; a deductible or coinsurance is an estimated patient responsibility you can collect as an estimate and reconcile after the claim adjudicates; self-pay is disclosed (with a Good Faith Estimate where it applies) and collected at check-in.',
+      g: 'A recurring card-on-file authorization suits ongoing patients; a one-time authorization is for a single charge. Practices differ on when a known copay is collected, before the visit, at check-in, at the end, or automatically afterward, and each has real tradeoffs. A deductible or coinsurance is not final until the claim adjudicates, so the choice is between collecting an estimate and reconciling it afterward or waiting for the payer-determined amount. Self-pay is disclosed (with a Good Faith Estimate where it applies) and collected at check-in. Whatever you choose, the authorization has to cover the charges you actually intend to make.',
       t: ['Credit Card Authorization: Which Form?', 'Recurring Card-on-File Authorization', 'One-Time Credit Card Authorization'] },
     { q: 'Who gets a Good Faith Estimate, when, and what has to be in it?',
       g: 'Uninsured or self-pay patients get a GFE. For scheduled care, when the service is scheduled at least 3 business days out (within the applicable 1- or 3-business-day window); on request, within 3 business days. It must carry the patient identifiers, your NPI/TIN and location, expected codes and charges, and the required disclaimers, including the patient-provider dispute-resolution right when billed at least $400 over the estimate. The current PPDR fee is $25.',
@@ -6441,11 +6448,16 @@ function renderPolicyLibrary() {
   h += '<p class="space-tagline">Answers to “what should my practice policy be about this?”, with the editable templates attached.</p>';
   if (isAdmin()) h += '<div style="margin-top:6px"><span class="tpl-tag" style="background:#b91c1c;color:#fff">Admin preview - not member-visible yet</span></div>';
   h += '</div>';
-  if (policyGuidanceUnlocked()) {
+  if (policyBuilderUnlocked()) {
     h += '<div style="border:1px solid var(--teal);background:rgba(42,171,184,0.07);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:18px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between">'
       + '<div style="flex:1 1 260px"><div style="font-weight:700;margin-bottom:2px">Ready to decide how your practice handles this?</div>'
       + '<div style="color:var(--text-secondary);font-size:0.88rem;line-height:1.5">The Policy Builder walks you through the choices and builds your policy language around the ones you make.</div></div>'
       + '<button class="btn-primary" onclick="showPolicyBuilder()">Build my policies &rarr;</button></div>';
+  } else if (policyGuidanceUnlocked()) {
+    h += '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px;margin-bottom:18px;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between">'
+      + '<div style="flex:1 1 260px"><div style="font-weight:700;margin-bottom:2px">Want the language built around your choices?</div>'
+      + '<div style="color:var(--text-secondary);font-size:0.88rem;line-height:1.5">The Practice Policy Builder turns these decisions into editable policy language, and Full also includes the 15 editable Private Practice Foundations documents.</div></div>'
+      + '<button class="btn-ghost" onclick="startCheckout(\'full_monthly_119\')">Full &mdash; $119/mo</button></div>';
   }
   var unlocked = policyGuidanceUnlocked();  // Forum, Full, or admin see full guidance
   if (!unlocked) {
@@ -7099,6 +7111,7 @@ function pbDownload() {
 
 async function showPolicyBuilder() {
   if (typeof closeSidebar === 'function') closeSidebar();
+  if (!policyBuilderUnlocked()) { showPolicyLibrary(); return; }   // Full-only; the Library is the Forum benefit
   S.view = 'policy-builder';
   clearActive();
   var side = document.querySelector('.sb-item[data-key="policy-builder"]');
