@@ -7139,7 +7139,7 @@ function pbDraftGroups() {
       var t = pbClauseText(d, c).trim();
       if (t) clauses.push({ did: d.id, text: t });
     });
-    if (clauses.length) out.push({ topic: g.topic, clauses: clauses });
+    if (clauses.length) out.push({ id: g.id, topic: g.topic, clauses: clauses });
   });
   return out;
 }
@@ -7161,28 +7161,126 @@ function pbCopy() {
   var t = pbPlainText();
   if (!t) { showToast('Make some choices first.'); return; }
   try { navigator.clipboard.writeText(t); } catch (e) {}
-  showToast('Policy copied.');
+  showToast('Policy text copied.');
 }
-// Word opens an HTML document with a .doc extension natively. That gives a clean,
-// editable document with no new dependency, which is the right trade for v1.
-function pbDownload() {
-  var gs = pbDraftGroups();
-  if (!gs.length) { showToast('Make some choices first.'); return; }
-  var h = '<html xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8">'
-    + '<title>Practice Policies</title></head><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;line-height:1.5">';
-  h += '<h1 style="font-size:18pt">Practice Policies</h1>';
-  gs.forEach(function (g) {
-    h += '<h2 style="font-size:13pt;margin-top:20pt">' + esc(g.topic) + '</h2>';
-    g.clauses.forEach(function (c) { h += '<p>' + esc(c.text) + '</p>'; });
+
+// ── Export ──
+// The Builder's job is to produce the member's document, not to hand them text to
+// paste into Word themselves. Both exports below are real .docx files, written as a
+// ZIP of WordprocessingML parts with STORED (uncompressed) entries, so this needs no
+// compression library, no CDN dependency and no build step. Entries are a few KB, so
+// skipping compression costs nothing.
+function pbCrc32(u8) {
+  if (!pbCrc32.table) {
+    var t = new Uint32Array(256);
+    for (var i = 0; i < 256; i++) { var c = i; for (var k = 0; k < 8; k++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1); t[i] = c >>> 0; }
+    pbCrc32.table = t;
+  }
+  var tbl = pbCrc32.table, crc = 0xffffffff;
+  for (var j = 0; j < u8.length; j++) crc = tbl[(crc ^ u8[j]) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+function pbZipParts(files) {
+  var enc = new TextEncoder(), locals = [], centrals = [], offset = 0;
+  var TIME = 0x6000, DATE = 0x5934;   // fixed timestamp; Word does not care
+  files.forEach(function (f) {
+    var name = enc.encode(f.name), data = enc.encode(f.data), crc = pbCrc32(data);
+    var lh = new Uint8Array(30 + name.length), ld = new DataView(lh.buffer);
+    ld.setUint32(0, 0x04034b50, true); ld.setUint16(4, 20, true);
+    ld.setUint16(10, TIME, true); ld.setUint16(12, DATE, true);
+    ld.setUint32(14, crc, true); ld.setUint32(18, data.length, true); ld.setUint32(22, data.length, true);
+    ld.setUint16(26, name.length, true);
+    lh.set(name, 30);
+    locals.push(lh, data);
+    var ch = new Uint8Array(46 + name.length), cd = new DataView(ch.buffer);
+    cd.setUint32(0, 0x02014b50, true); cd.setUint16(4, 20, true); cd.setUint16(6, 20, true);
+    cd.setUint16(12, TIME, true); cd.setUint16(14, DATE, true);
+    cd.setUint32(16, crc, true); cd.setUint32(20, data.length, true); cd.setUint32(24, data.length, true);
+    cd.setUint16(28, name.length, true); cd.setUint32(42, offset, true);
+    ch.set(name, 46);
+    centrals.push(ch);
+    offset += lh.length + data.length;
   });
-  h += '<hr><p style="font-size:9pt;color:#555">' + esc(PB_DISCLAIMER) + '</p></body></html>';
-  var blob = new Blob(['﻿', h], { type: 'application/msword' });
+  var cdSize = centrals.reduce(function (a, b) { return a + b.length; }, 0);
+  var eocd = new Uint8Array(22), ed = new DataView(eocd.buffer);
+  ed.setUint32(0, 0x06054b50, true);
+  ed.setUint16(8, files.length, true); ed.setUint16(10, files.length, true);
+  ed.setUint32(12, cdSize, true); ed.setUint32(16, offset, true);
+  return locals.concat(centrals, [eocd]);
+}
+function pbXmlEsc(t) {
+  return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+// Element order inside w:pPr and w:rPr is fixed by the schema, not free. Word rejects
+// a document that gets it wrong with "unreadable content", so these builders emit the
+// sequence directly rather than assembling properties ad hoc.
+function pbPara(text, style) {
+  return '<w:p>' + (style ? '<w:pPr><w:pStyle w:val="' + style + '"/></w:pPr>' : '')
+    + '<w:r><w:t xml:space="preserve">' + pbXmlEsc(text) + '</w:t></w:r></w:p>';
+}
+var PB_DOCX_STYLES =
+  '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+  + '<w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Calibri" w:hAnsi="Calibri" w:cs="Calibri"/><w:sz w:val="22"/><w:szCs w:val="22"/></w:rPr></w:rPrDefault>'
+  + '<w:pPrDefault><w:pPr><w:spacing w:after="160" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>'
+  + '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>'
+  + '<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/>'
+  + '<w:pPr><w:spacing w:after="280"/></w:pPr><w:rPr><w:b/><w:sz w:val="40"/><w:szCs w:val="40"/></w:rPr></w:style>'
+  + '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/>'
+  + '<w:pPr><w:spacing w:before="320" w:after="120"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:sz w:val="28"/><w:szCs w:val="28"/></w:rPr></w:style>'
+  + '<w:style w:type="paragraph" w:styleId="Disclaimer"><w:name w:val="Disclaimer"/><w:basedOn w:val="Normal"/>'
+  + '<w:pPr><w:spacing w:before="360"/></w:pPr><w:rPr><w:i/><w:color w:val="595959"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:style>'
+  + '</w:styles>';
+function pbDocxParts(title, groups) {
+  var DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n';
+  var body = pbPara(title, 'Title');
+  groups.forEach(function (g, i) {
+    if (i > 0) body += '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+    body += pbPara(g.topic, 'Heading1');
+    g.clauses.forEach(function (c) { body += pbPara(c.text, null); });
+  });
+  body += pbPara(PB_DISCLAIMER, 'Disclaimer');
+  var doc = DECL + '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
+    + body
+    + '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>'
+    + '</w:body></w:document>';
+  return [
+    { name: '[Content_Types].xml', data: DECL + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+      + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+      + '<Default Extension="xml" ContentType="application/xml"/>'
+      + '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+      + '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>' },
+    { name: '_rels/.rels', data: DECL + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>' },
+    { name: 'word/document.xml', data: doc },
+    { name: 'word/styles.xml', data: DECL + PB_DOCX_STYLES },
+    { name: 'word/_rels/document.xml.rels', data: DECL + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' }
+  ];
+}
+function pbSlug(t) {
+  return String(t).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'policy';
+}
+function pbSaveDocx(filename, title, groups) {
+  var blob = new Blob(pbZipParts(pbDocxParts(title, groups)),
+    { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
   var a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'practice-policies.doc';
+  a.download = filename;
   document.body.appendChild(a); a.click();
   setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-  showToast('Downloaded.');
+  showToast('Downloaded ' + filename);
+}
+// Every completed policy, one document, each starting on a new page.
+function pbDownloadSet() {
+  var gs = pbDraftGroups();
+  if (!gs.length) { showToast('Make some choices first.'); return; }
+  pbSaveDocx('practice-policies.docx', 'Practice Policies', gs);
+}
+// One policy on its own, for a member who only needed that one.
+function pbDownloadGroup(gid) {
+  var g = pbDraftGroups().filter(function (x) { return x.id === gid; })[0];
+  if (!g) { showToast('Make some choices in this policy first.'); return; }
+  pbSaveDocx(pbSlug(g.topic) + '.docx', g.topic, [g]);
 }
 
 async function showPolicyBuilder() {
@@ -7205,7 +7303,9 @@ function pbRenderDraft() {
       + 'Your policy language will build up here as you make choices. Nothing is written for you until you decide something.</div>';
   } else {
     gs.forEach(function (g) {
-      h += '<div style="margin-bottom:16px"><div style="font-weight:700;font-size:0.82rem;letter-spacing:.06em;text-transform:uppercase;color:var(--teal);margin-bottom:6px">' + esc(g.topic) + '</div>';
+      h += '<div style="margin-bottom:16px"><div style="display:flex;gap:10px;align-items:baseline;justify-content:space-between;margin-bottom:6px">'
+        + '<div style="font-weight:700;font-size:0.82rem;letter-spacing:.06em;text-transform:uppercase;color:var(--teal)">' + esc(g.topic) + '</div>'
+        + '<a onclick="pbDownloadGroup(\'' + g.id + '\')" style="flex:0 0 auto;color:var(--teal);font-size:0.76rem;font-weight:600;cursor:pointer;white-space:nowrap">&#11015; Download this policy</a></div>';
       g.clauses.forEach(function (c) {
         h += '<p style="margin:0 0 8px;font-size:0.9rem;line-height:1.6">' + esc(c.text) + '</p>';
       });
@@ -7321,9 +7421,9 @@ function renderPolicyBuilder() {
   h += '<div id="pb-count" style="color:var(--text-secondary);font-size:0.78rem;margin-bottom:12px"></div>';
   h += '<div id="pb-draft" style="max-height:52vh;overflow:auto"></div>';
   h += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">'
-    + '<button class="btn-primary" style="font-size:0.85rem;padding:7px 14px" onclick="pbCopy()">Copy policy</button>'
-    + '<button class="btn-ghost" style="font-size:0.85rem;padding:7px 14px" onclick="pbDownload()">Download</button>'
+    + '<button class="btn-primary" style="font-size:0.85rem;padding:7px 14px" onclick="pbDownloadSet()">&#11015; Download my policy set (.docx)</button>'
     + '<button class="btn-ghost" style="font-size:0.85rem;padding:7px 14px" onclick="pbReset()">Start over</button>'
+    + '<button class="btn-ghost" style="font-size:0.78rem;padding:5px 10px;opacity:0.75" onclick="pbCopy()">Copy as text</button>'
     + '</div>';
   h += '</div></div>';
 
