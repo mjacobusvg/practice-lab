@@ -3019,7 +3019,7 @@ function buildSidebar() {
   if (isAdmin()) h += '<div class="sb-item" data-key="contacts" onclick="showContacts()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128203;</span> Contacts</div>';
   if (isAdmin()) h += '<div class="sb-item" data-key="broadcast" onclick="showBroadcast()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128227;</span> Broadcast</div>';
   h += '<div class="sb-item" data-key="library" onclick="showLibrary()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128196;</span> Template Library</div>';
-  if (isAdmin() || (typeof POLICY_LIBRARY_LIVE !== 'undefined' && POLICY_LIBRARY_LIVE && tierRank() >= 1)) h += '<div class="sb-item" data-key="policy-library" onclick="showPolicyLibrary()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128218;</span> Practice Policy Library</div>';
+  if (isAdmin() || (typeof POLICY_LIBRARY_LIVE !== 'undefined' && POLICY_LIBRARY_LIVE && tierRank() >= 1)) h += '<div class="sb-item" data-key="policy-library" onclick="showPolicyLibrary()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128218;</span> Practice Playbook</div>';
   if (isAdmin() || (typeof POLICY_LIBRARY_LIVE !== 'undefined' && POLICY_LIBRARY_LIVE && tierRank() >= 2)) h += '<div class="sb-item" data-key="policy-builder" onclick="showPolicyBuilder()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128736;</span> Policy Builder</div>';
   h += '<div class="sb-item" onclick="window.location.href=\'/vault\'" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#128272;</span> The Vault</div>';
   h += '<div class="sb-item" data-key="learn" onclick="showLearn()" style="font-weight:600;margin-bottom:4px"><span style="font-size:13px;margin-right:2px">&#129513;</span> Mentorship &amp; Courses</div>';
@@ -6439,13 +6439,36 @@ async function showPolicyLibrary() {
   renderPolicyLibrary();
 }
 
+var policyEntrySeq = 0;
+
+// First sentence of a guidance body, used as the collapsed one-line answer.
+function policyEntryLede(g) {
+  var t = String(g || '').trim();
+  var m = t.match(/^[\s\S]*?[.?!](?=\s|$)/);
+  var lede = m ? m[0] : t;
+  if (lede.length > 190) lede = lede.slice(0, 187).replace(/\s+\S*$/, '') + '\u2026';
+  return lede;
+}
+
+function togglePolicyEntry(id) {
+  var body = document.getElementById(id);
+  if (!body) return;
+  var cta = document.getElementById(id + '-cta');
+  var sum = document.getElementById(id + '-sum');
+  var open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  if (cta) cta.innerHTML = open ? 'Read guidance &rarr;' : 'Hide &uarr;';
+  if (sum) sum.style.display = open ? 'block' : 'none';
+}
+
 function renderPolicyLibrary() {
+  policyEntrySeq = 0;
   var center = document.getElementById('center');
   var byTitle = {};
   (libData || []).forEach(function(t){ byTitle[t.title] = t.id; });
   var h = '<div class="space-head"><div class="space-accent" style="background:var(--teal)"></div>';
-  h += '<h1>Practice Policy Library</h1>';
-  h += '<p class="space-tagline">Answers to “what should my practice policy be about this?”, with the editable templates attached.</p>';
+  h += '<h1>Practice Playbook</h1>';
+  h += '<p class="space-tagline">How to decide what your practice does about this, and what the decision turns on. The editable documents live in the Template Library.</p>';
   if (isAdmin()) h += '<div style="margin-top:6px"><span class="tpl-tag" style="background:#b91c1c;color:#fff">Admin preview - not member-visible yet</span></div>';
   h += '</div>';
   if (policyBuilderUnlocked()) {
@@ -6462,28 +6485,39 @@ function renderPolicyLibrary() {
   var unlocked = policyGuidanceUnlocked();  // Forum, Full, or admin see full guidance
   if (!unlocked) {
     h += '<div class="tpl-gate" style="margin-bottom:16px"><div class="tpl-gate-title">&#128274; Full guidance is a member benefit</div>'
-      + '<p class="tpl-gate-sub">Forum and Full members get the complete Practice Policy Library: the practical guidance, the state/payer/legal caveats, and the editable templates. Below is what it covers.</p>'
+      + '<p class="tpl-gate-sub">Forum and Full members get the complete Practice Playbook: the practical guidance, the state/payer/legal caveats, and the editable templates. Below is what it covers.</p>'
       + '<div class="tpl-detail-actions"><button class="btn-primary" onclick="startCheckout(\'forum_monthly_50\')">Join Forum &mdash; $50/mo</button>'
       + '<button class="btn-ghost" onclick="startCheckout(\'full_monthly_119\')">Join Full &mdash; $119/mo</button></div></div>';
   }
   POLICY_LIBRARY.forEach(function(topic){
     h += '<h2 style="font-family:var(--font-heading);font-size:1.4rem;margin:22px 0 10px;padding-top:12px;border-top:1px solid var(--border)">' + esc(topic.topic) + '</h2>';
     topic.entries.forEach(function(en){
-      h += '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;margin-bottom:12px">';
-      h += '<div style="font-weight:700;margin-bottom:6px">' + esc(en.q) + '</div>';
+      var eid = 'pl-' + (policyEntrySeq++);
+      h += '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 18px;margin-bottom:10px">';
       if (unlocked) {
-        // Full guidance body + attached-template resources (Forum/Full/admin).
+        // Collapsed: the question plus a one-line answer. The full guidance and the
+        // related templates only appear on expand, so this reads as a reference and
+        // not as a second index of the Template Library.
+        h += '<div onclick="togglePolicyEntry(\'' + eid + '\')" style="cursor:pointer;display:flex;gap:14px;align-items:flex-start;justify-content:space-between">'
+          + '<div style="flex:1 1 auto"><div style="font-weight:700;margin-bottom:3px">' + esc(en.q) + '</div>'
+          + '<div id="' + eid + '-sum" style="color:var(--text-secondary);font-size:0.88rem;line-height:1.5">' + esc(policyEntryLede(en.g)) + '</div></div>'
+          + '<span id="' + eid + '-cta" style="white-space:nowrap;color:var(--teal);font-size:0.85rem;font-weight:600;padding-top:2px">Read guidance &rarr;</span></div>';
+        h += '<div id="' + eid + '" style="display:none;margin-top:12px">';
         h += '<div style="color:var(--text-secondary);font-size:0.9rem;line-height:1.6">' + esc(en.g) + '</div>';
         if (en.t && en.t.length) {
-          h += '<div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px">';
+          h += '<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">'
+            + '<div style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-secondary);margin-bottom:7px">Related templates</div>'
+            + '<div style="display:flex;flex-wrap:wrap;gap:8px">';
           en.t.forEach(function(title){
-            if (byTitle[title]) h += '<button class="btn-ghost" style="font-size:0.82rem;padding:5px 12px" onclick="viewTemplate(\'' + byTitle[title] + '\')">&#128196; ' + esc(title) + '</button>';
+            if (byTitle[title]) h += '<button class="btn-ghost" style="font-size:0.8rem;padding:4px 11px" onclick="viewTemplate(\'' + byTitle[title] + '\')">&#128196; ' + esc(title) + '</button>';
             else h += '<span class="tpl-tag">' + esc(title) + '</span>';
           });
-          h += '</div>';
+          h += '</div></div>';
         }
+        h += '</div>';
       } else {
         // Free/nonmember: teaser only. No guidance body, no template links.
+        h += '<div style="font-weight:700;margin-bottom:6px">' + esc(en.q) + '</div>';
         h += '<div style="color:var(--text-secondary);font-size:0.85rem;font-style:italic">Full guidance and the editable template are included with Forum and Full membership.</div>';
       }
       h += '</div>';
