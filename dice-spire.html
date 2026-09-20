@@ -1312,7 +1312,7 @@ function buildEncounter(type){
     const soft = pool.filter(b => b.hp <= 9);
     if(soft.length) pool = soft;
   }
-  const n = opening ? pick([1,2]) : pick({1:[1,2,2], 2:[2,2,3], 3:[2,2,3]}[act] || [2,2,3]);
+  const n = opening ? pick([2,3]) : pick({1:[2,3,3], 2:[3,3,4], 3:[3,3,4]}[act] || [3,3,4]);
   const out = [];
   /* deeper in an act, one of them is likely to be something that grew */
   const champChance = opening ? 0 : 0.06 + 0.15 * ((S.pos ? S.pos.floor : 0) / (FLOORS - 2));
@@ -1350,6 +1350,9 @@ function layOutRanks(list){
    already there. That is what the clock is for -- a long fight has to be a
    dangerous fight, or every standing rule you laid down would just be free. */
 const WAVE_CLOCK = 6;
+/* how many enemies may stand on the field at once. A summoner must not be the
+   thing that caps a siege, but the field still has to fit on a phone. */
+const FIELD_CAP = 6;
 function buildWaves(type){
   const act = S.act;
   /* what comes up the stair is a reinforcement, not a second encounter: it
@@ -1360,11 +1363,16 @@ function buildWaves(type){
     for(let i = 0; i < n; i++) list.push(makeEnemy(pick(pool), act, depthMul() * 0.8, { item:false, trait:false }));
     return list;
   };
-  /* act one is where the run is still being learned: no sieges there */
+  /* Act one is where the run is still being learned, so it stays a single
+     exchange. After that every fight is a siege: two waves in act two, three
+     in act three. The first wave is what walks in, so the queue below holds
+     the ones still to come. */
   if(act === 1) return [];
-  if(type === 'boss')  return act === 3 ? [mk(2)] : [];
-  if(type === 'elite') return [mk(act === 3 ? 2 : 1)];
-  return [];
+  const more = act === 3 ? 2 : 1;
+  const size = type === 'boss' || type === 'elite' ? 2 : act === 3 ? 2 : 1;
+  const out = [];
+  for(let i = 0; i < more; i++) out.push(mk(size));
+  return out;
 }
 /* the next wave arrives: behind the line if there is still a line, in front of
    you if there is not */
@@ -2207,7 +2215,7 @@ function enemyPhase(){
         }
         break;
       case 'summon': {
-        if(livingEnemies().length >= 4){ e.shield += 6; logc(`${e.name} calls, and nothing comes.`); break; }
+        if(livingEnemies().length >= FIELD_CAP){ e.shield += 6; logc(`${e.name} calls, and nothing comes.`); break; }
         const weak = BESTIARY.filter(bb => bb.acts.includes(S.act) && bb.hp <= 12);
         const pool = weak.length ? weak : BESTIARY.filter(bb => bb.acts.includes(S.act));
         const spawn = makeEnemy(pick(pool), S.act, undefined, { item:false });
@@ -2606,12 +2614,15 @@ function installFace(face, mode, after){
   UI.modal = { type:'install', face, mode: mode || 'replace', after: after || null };
   render();
 }
+function canInstallOn(h, face, idx, mode){
+  if(!h || !face) return false;
+  if(mode === 'add') return canTakeFace(h, face.k) && h.faces.length < MAX_FACES;
+  return mayInstall(h, face.k, idx);
+}
 function doInstall(heroUid, faceIdx){
   const m = UI.modal;
   const h = heroByUid(heroUid);
-  if(!h) return;
-  if(m.mode === 'add' ? (!canTakeFace(h, m.face.k) || h.faces.length >= MAX_FACES)
-                      : !mayInstall(h, m.face.k, faceIdx)) return;
+  if(!canInstallOn(h, m.face, faceIdx, m.mode)) return;
   if(m.mode === 'add') h.faces.push({...m.face});
   else h.faces[faceIdx] = {...m.face};
   const after = m.after;
@@ -4075,13 +4086,13 @@ function mInstall(m){
       ${S.party.map(h => `<div class="panel" style="background:var(--card);padding:12px">
         <div class="spread" style="margin-bottom:8px">
           <b>${h.av} ${esc(h.name)}</b>
-          ${add ? `<button class="btn sm ${roomFor(h) && canTakeFace(h, m.face.k) ? 'primary' : ''}"
-                ${roomFor(h) && canTakeFace(h, m.face.k) ? '' : 'disabled'} onclick="doInstall(${h.uid},0)">${
+          ${add ? `<button class="btn sm ${canInstallOn(h, m.face, 0, m.mode) ? 'primary' : ''}"
+                ${canInstallOn(h, m.face, 0, m.mode) ? '' : 'disabled'} onclick="doInstall(${h.uid},0)">${
                 roomFor(h) ? 'Add here' : `${MAX_FACES} sides already`}</button>`
               : `<span class="tiny muted">${h.faces.length} faces</span>`}
         </div>
         <div class="faces">${h.faces.map((f, i) => {
-          const okHere = add ? (canTakeFace(h, m.face.k) && roomFor(h)) : mayInstall(h, m.face.k, i);
+          const okHere = canInstallOn(h, m.face, i, m.mode);
           return faceHTML(f, 'big ' + (okHere ? 'pickable' : 'locked'), okHere ? `doInstall(${h.uid},${i})` : '');
         }).join('')}</div>
         ${(() => {
