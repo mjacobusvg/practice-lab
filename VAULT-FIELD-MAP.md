@@ -58,12 +58,16 @@ a copy of `practiceState`. **Superficial field-name similarity is not a mapping.
 | Practice Email | `practiceEmail` |
 | Insert phone / email · Insert practice / phone / email · Your Practice Contact Information | `practicePhone` + `practiceEmail` |
 | Insert state and location | `practiceState` + `practiceCity` |
+| Practice Website | `practiceWebsite` |
+| List insurances here. Update regularly. | `acceptedInsurances` |
+| List: cash, credit/debit card, check, HSA/FSA, etc. | `acceptedPaymentMethods` |
+| 45-60 (appointment length) | `initialAppointmentLength` / `followupAppointmentLength` |
 | Insert NPI | `npi1` |
 | Insert TIN | `ein` |
 | Your Practice Name / Logo · Your Practice Name or Logo | `practiceName` + `letterhead` |
 | Insert Effective Date · Insert Date | generated (today), never asked |
 
-**~20 tokens, 9 of the 14 templates.** Every one is already entered once in Vault.
+**~24 tokens, 10 of the 14 templates.** Every one is already entered once in Vault.
 
 ## Class 2 — policy decision (Builder)
 
@@ -117,15 +121,22 @@ May prompt with the Vault value as a **suggestion**, clearly marked, never silen
 Stable practice configuration with nowhere to live. All class 1 by nature; all currently
 forcing a member to type something the product should hold:
 
-1. **No practice website field** — Welcome Letter asks for `Practice Website`
-2. **No accepted-insurances list** — Payment Policy asks for "List insurances here"
-3. **No accepted-payment-methods list** — Billing & Discount asks for "List: cash,
-   credit/debit card, check, HSA/FSA"; currently neither a Vault field nor a Builder decision
-4. **No appointment-length value** — Welcome Letter asks for "45-60"
+1. ~~No practice website field~~ — **done.** `practiceWebsite`.
+2. ~~No accepted-insurances list~~ — **done.** `acceptedInsurances`.
+3. ~~No accepted-payment-methods list~~ — **done.** `acceptedPaymentMethods`.
+4. ~~No appointment-length value~~ — **done**, as **two** fields:
+   `initialAppointmentLength` and `followupAppointmentLength`. Not one scalar. Practices
+   routinely run a longer initial evaluation than a follow-up, and a single value would be
+   wrong for most of them; collapsing them later is easy, splitting them after documents
+   depend on the single value is not.
 5. ~~Builder does not read Vault for clause text~~ — **done.** Clauses support
    `{{vault.key|fallback}}`, and the packet carries a Vault-built contact section.
 6. **The 15 templates are static and cannot be hydrated.** Resolved as a product decision,
    below.
+
+These five fields are deliberately **not** added to `TRACKED_FIELDS`. They are optional
+practice configuration, not credentialing, and adding them would drop every member's
+completion percentage for fields they have never been shown.
 
 ## Decision: static templates are not personalized in place
 
