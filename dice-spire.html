@@ -154,6 +154,10 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .dieface i{font-style:normal;font-size:8px;opacity:.9}
 .dieface.blank{opacity:.3}
 .dieface.up{opacity:1;border-color:var(--gold);background:#1a2135}
+/* centred above its own die: hanging off the left edge put it over the die
+   beside it, which is the opposite of the point */
+.boon{position:absolute;top:-6px;left:50%;transform:translateX(-50%);font-size:9px;line-height:1;
+  padding:2px 5px;border-radius:5px;background:var(--bg);border:1px solid var(--gold);color:var(--gold)}
 .rider{position:absolute;top:-5px;right:-5px;font-size:10px;line-height:1;padding:2px 3px;border-radius:5px;
   background:var(--bg);border:1px solid var(--line)}
 .face{position:relative}
@@ -789,7 +793,7 @@ const ITEMS = [
    glob:{allFaces:2, bloodtax:1}, desc:'Every numbered face on every hero is worth +2. Every hero loses 3 HP after each combat.'},
   {key:'thirstblade',name:'Thirsting Edge',  ic:'🗡️', slot:'weapon', tier:3, price:200, cursed:true,
    mod:{dmg:6, heal:-3}, desc:'+6 Strike and Cleave, but this hero’s Mend faces are worth 3 less.'},
-  {key:'talisman',  name:'The Talisman',      ic:'🔯', slot:'quest', tier:3, price:400, desc:'The act three boss will not face anyone who does not carry it.'}
+  {key:'talisman',  name:'The Talisman',      ic:'🔯', slot:'quest', tier:3, price:400, desc:'The act three boss is fought at full strength, with an extra wave, by anyone who arrives without it.'}
 ];
 /* Three things the item layer was missing: a reason to collect a MATCHED
    pair, gear worth taking despite a real cost, and somewhere to improve what
@@ -1474,9 +1478,17 @@ function startCombat(type){
     h.downed = h.hp <= 0;
   });
   C.waves = buildWaves(type);
+  /* arriving at the last boss without the Talisman is the penalty, rather than
+     a locked door that would end the run where it stands */
+  const unwarded = type === 'boss' && S.act >= 3 && !S.talisman;
+  if(unwarded){
+    C.waves.push(buildWaves('boss')[0] || []);
+    C.enemies.forEach(e => { e.power += 3; });
+  }
   C.press = C.waves.length ? WAVE_CLOCK : 0;
   logc(type === 'boss' ? 'A boss blocks the stair.' : type === 'elite' ? 'Something big is waiting.' : 'Enemies close in.');
   if(C.waves.length) logc(`This is a siege. ${C.waves.length === 1 ? 'Another wave is' : C.waves.length + ' more waves are'} behind them.`);
+  if(unwarded) logc('You came without the Talisman. It is stronger for it, and it has brought more.');
   if(S.nextFight && S.nextFight.poison){
     S.party.forEach(h => { h.poison += S.nextFight.poison; });
     logc(`Whatever you picked up back there is still in your blood. ${S.nextFight.poison} poison on everyone.`);
@@ -1804,13 +1816,19 @@ function resolveFace(h, d, target){
   switch(d.k){
     case 'dmg': {
       const e = enemyByUid(target.uid); if(!e) break;
-      heroDamageToEnemy(e, v + (d.r === 'cruel' && e.hp <= e.maxHp / 2 ? 5 : 0), d.r === 'piercing');
+      const why = [];
+      let dealt = heroDamageToEnemy(e, v + (d.r === 'cruel' && e.hp <= e.maxHp / 2 ? 5 : 0), d.r === 'piercing');
+      if(d.r === 'cruel' && e.hp <= e.maxHp / 2) why.push('Cruel');
       if(hasPerk(h, 'd5') && e.hp > 0) e.poison += 1;                                        /* Bleed */
-      if(banner('duelist') && !h.bannerHit){ h.bannerHit = true; heroDamageToEnemy(e, 4); }  /* Banner of the Edge */
-      if(hasPerk(h, 'd4') && !h.struck){ h.struck = true; heroDamageToEnemy(e, v); }  /* Opening */
+      if(banner('duelist') && !h.bannerHit){                                                 /* Banner of the Edge */
+        h.bannerHit = true; dealt += heroDamageToEnemy(e, 4); why.push('the Banner of the Edge');
+      }
+      if(hasPerk(h, 'd4') && !h.struck){                                                     /* Opening */
+        h.struck = true; dealt += heroDamageToEnemy(e, v); why.push('Opening');
+      }
       const ls = glob('lifesteal');
       if(ls > 0 && !h.isSummon) healHero(h, ls);
-      logc(`${h.name} strikes ${e.name} for ${v}.`);
+      logc(`${h.name} strikes ${e.name} for ${dealt}${why.length ? ' (' + why.join(' and ') + ')' : ''}.`);
       break;
     }
     case 'dmgAll': {
@@ -1905,10 +1923,10 @@ function resolveFace(h, d, target){
     }
     case 'leech': {
       const e = enemyByUid(target.uid); if(!e) break;
-      heroDamageToEnemy(e, v + (d.r === 'cruel' && e.hp <= e.maxHp / 2 ? 5 : 0), d.r === 'piercing');
+      const dealt = heroDamageToEnemy(e, v + (d.r === 'cruel' && e.hp <= e.maxHp / 2 ? 5 : 0), d.r === 'piercing');
       const back = Math.ceil(v / 2);
       healHero(h, back);
-      logc(`${h.name} draws ${v} out of ${e.name} and keeps ${back}.`);
+      logc(`${h.name} draws ${dealt} out of ${e.name} and keeps ${back}.`);
       break;
     }
     case 'echo': {
@@ -2408,10 +2426,6 @@ function endCombat(won){
    ========================================================================== */
 function enterNode(n){
   if(!n) return;
-  if(n.type === 'boss' && S.act >= 3 && !S.talisman && availableNodes().some(x => x !== n)){
-    UI.modal = { type:'result', text:'The doors will not open. Whatever waits at the top of this spire does not face anyone who is not carrying the Talisman, and you are not. There is still another road.' };
-    render(); return;
-  }
   S.pos = { floor:n.floor, slot:n.slot };
   n.done = true;
   S.visited.push(n.floor + ',' + n.slot);
@@ -3683,7 +3697,7 @@ function nodeTip(n){
     case 'rest':     return 'Heal, sharpen a face, or drill for max HP.';
     case 'treasure': return 'A free relic.';
     case 'boss':     return S.act >= 3 && !S.talisman
-      ? 'The act boss. It will not face you without the Talisman.'
+      ? 'The act boss. Without the Talisman it meets you at full strength, and brings another wave.'
       : 'The act boss. Beating it ends the act.';
   }
   return '';
@@ -3800,12 +3814,14 @@ function viewCombat(){
     const sel = C.pending && C.pending.type === 'die' && C.pending.i === i;
     const rd = riderDef(d.r);
     const orphan = !h;                  /* whoever rolled it is gone */
+    const extras = orphan ? [] : faceExtras(h, d.k);
     return `<div class="die ${d.used || orphan ? 'used' : ''} ${sel ? 'sel' : ''} ${d.mark ? 'marked' : ''} ${d.fresh ? 'roll' : ''}"
         onclick="clickDie(${i})" data-tip="${esc(faceLabel(d))}|${orphan
           ? 'Whoever rolled this is no longer on the field, so it cannot be spent.'
-          : esc(faceTip({k:d.k, v, r:d.r}))}"
+          : esc(faceTip({k:d.k, v, r:d.r}) + (extras.length ? ' \u2014 and ' + extras.join(', and ') + '.' : ''))}"
         ${rd && !orphan ? `style="border-color:${rd.col}"` : ''}>
       ${rd ? `<span class="rider" style="color:${rd.col}">${rd.ic}</span>` : ''}
+      ${extras.length ? `<span class="boon" data-tip="More than the number says|${esc(extras.join('. And '))}.">\u25B2</span>` : ''}
       <div class="who">${h ? h.name : ''}</div>
       <div class="glyph">${K.ic}</div>
       ${d.k === 'blank' ? '<div class="val" style="color:var(--ink-faint)">—</div>'
@@ -4344,6 +4360,19 @@ function faceChips(h, oldIt, newIt){
    after gear and power. Without this you cannot tell whether a reroll is worth
    taking, because you cannot see what else is on the die. The side currently
    up is outlined. */
+/* What this face will do BEYOND the number printed on it, for this hero, right
+   now. A one-off like Opening or the Banner of the Edge is exactly why a Strike
+   can land for twice what the die says, so the die has to say so. */
+function faceExtras(h, k){
+  const out = [];
+  if(k === 'dmg' || k === 'dmgAll'){
+    if(banner('duelist') && !h.bannerHit && k === 'dmg') out.push('+4 from the Banner of the Edge, once this fight');
+    if(hasPerk(h, 'd4') && !h.struck && k === 'dmg') out.push('Opening lands it twice, once this fight');
+  }
+  if(C && sigil('sigEcho') && (C.echoUsed || 0) < sigil('sigEcho') && k !== 'blank' && !isSigil(k))
+    out.push('the Rite of Echo will repeat it');
+  return out;
+}
 function dieStrip(h){
   const up = C ? C.dice.filter(d => d.ownerUid === h.uid && !d.used).map(d => d.fi) : [];
   return `<div class="diestrip">` + h.faces.map((f, i) => {
