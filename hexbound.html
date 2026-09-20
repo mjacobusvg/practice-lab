@@ -356,6 +356,22 @@ button.ahalf:disabled{opacity:.3;cursor:not-allowed}
 .pips .pip.on{background:var(--gold);border-color:var(--gold)}
 .pips .pip.next{border-color:var(--gold);border-style:dashed}
 
+/* ---- the four actions ---- */
+.actgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:9px;margin-top:10px}
+.actcol{border:1px solid var(--line);border-radius:11px;background:var(--card);padding:7px}
+.acthd{display:flex;align-items:center;gap:6px;padding:2px 4px 7px;border-bottom:1px solid var(--line);margin-bottom:6px}
+.acttile{display:block;width:100%;text-align:left;padding:7px 8px;border-radius:9px;cursor:pointer;
+  border:1px solid var(--line);background:#0d1521;color:var(--ink);transition:.12s;font:inherit}
+.acttile+.acttile{margin-top:5px}
+.acttile:hover:not(.no){border-color:var(--gold);background:var(--card-hi);transform:translateY(-1px)}
+.acttile.on{border-color:var(--gold);background:linear-gradient(180deg,#22304a,#101a29);box-shadow:0 0 0 1px var(--gold)}
+.acttile.no{opacity:.4;cursor:not-allowed}
+.acttile .aticon{font-size:15px;line-height:1}
+.acttile .attx{margin-top:3px;line-height:1.35}
+.acttile .pips{margin:5px 0 0}
+.acttile .pips .pip{height:4px}
+.initb.sm{font-size:10px;padding:1px 5px}
+
 .hero-card{position:relative}
 .pickpip{position:absolute;top:8px;right:8px;width:22px;height:22px;border-radius:50%;background:var(--gold);
   color:#1a1205;font-weight:800;font-size:12px;display:grid;place-items:center;z-index:2}
@@ -518,51 +534,116 @@ const TRACK = id => BOARD.find(t => t.id === id);
    ========================================================================= */
 const MASTERY = {
   warden: {
-    m1:{nm:'Unbroken', ic:'🧿', tx:R=>`Every combat round, the first ${2+R} damage taken is prevented.`},
-    m2:{nm:'Set Against It', ic:'🧱', cost:2,
+    m1:{nm:'Unbroken', ic:'🧿', init:25,
+        tx:R=>`Shield ${2+R}, and prevent ${1+R} more damage this round. You step into the front rank.`,
+        fire:(C,h,R)=>{ C.mb.sh += 2+R; C.mb.ward += 1+R;
+          const i = party().indexOf(h); if(i >= 0) S.lead = i;
+          cLog(`${h.nm} plants and does not move.`, 'g'); }},
+    m2:{nm:'Set Against It', ic:'🧱', init:55, cost:2,
         tx:R=>`Your own guard counts double this round, and it takes ${2+R} back every time it lands a hit.`,
         fire:(C,h,R)=>{ C.mb.dblShield = 1; C.mb.retal += 2+R;
           cLog(`${h.nm} sets against it. Guard doubled, and it bleeds for trying.`, 'g'); }},
   },
   ranger: {
-    m1:{nm:'Pathfinder', ic:'🐾', tx:R=>`Forest and hill faces count as wild. You reveal ${1+Math.floor(R/2)} extra rings${R>=3?`, and roll ${Math.floor(R/3)} more travel dice`:''}.`},
-    m2:{nm:'Called Shot', ic:'🎯', cost:2,
-        tx:R=>`This attack pierces — its shields do not apply — and hits for ${2+R} more.`,
+    m1:{nm:'Mark the Shot', ic:'🎯', init:35,
+        tx:R=>`Your dice join the roll and you hit for ${1+R} more. Every die that comes up with no attack is rerolled once, free.`,
+        joins:1,
+        fire:(C,h,R)=>{ C.mb.atk += 1+R; cLog(`${h.nm} picks the seam in its guard.`, 'g'); },
+        afterRoll:(C,h,R)=>{ let n=0;
+          C.myDice.forEach(x => { if(!x.a && !x.rerolled){ const d=rollDie(x.k); x.a=d.a; x.d=d.d; x.s=d.s; x.fresh=true; x.rerolled=1; n++; } });
+          if(n) cLog(`${h.nm}'s eye fixes ${plural(n,'die')}.`, 'v'); }},
+    m2:{nm:'Called Shot', ic:'🏹', init:50, cost:2,
+        tx:R=>`Your dice join the roll. This attack pierces — its shields do not apply — and hits for ${2+R} more.`,
+        joins:1,
         fire:(C,h,R)=>{ C.mb.pierce = 1; C.mb.atk += 2+R;
           cLog(`${h.nm} takes the long breath and finds the gap.`, 'g'); }},
   },
   runecarver: {
-    m1:{nm:'Second Reading', ic:'📖', tx:R=>`Reroll ${2+R} extra dice each combat round.`},
-    m2:{nm:'Rewrite the Line', ic:'✍️', cost:2,
-        tx:R=>`Reroll every die that is not showing an attack, free, and hit for ${R} more.`,
-        fire:(C,h,R)=>{
-          let n = 0;
-          C.myDice.forEach(x => { if(!x.a){ const nd = rollDie(x.k); x.a=nd.a; x.d=nd.d; x.s=nd.s; x.fresh=true; n++; } });
-          C.mb.atk += R;
-          cLog(`${h.nm} cuts the line again. ${plural(n,'die')} rewritten.`, 'v'); sfx('dice', 0); }},
+    m1:{nm:'Second Reading', ic:'📖', init:30,
+        tx:R=>`Your dice join the roll, and the party gets ${2+R} more rerolls this round.`,
+        joins:1,
+        fire:(C,h,R)=>{ C.mb.rr += 2+R; cLog(`${h.nm} reads the line again, and it says something else.`, 'v'); }},
+    m2:{nm:'Rewrite the Line', ic:'✍️', init:60, cost:2,
+        tx:R=>`Your dice join the roll and you hit for ${R} more. Every die not showing an attack is rerolled, free.`,
+        joins:1,
+        fire:(C,h,R)=>{ C.mb.atk += R; cLog(`${h.nm} cuts the words out and cuts new ones in.`, 'v'); },
+        afterRoll:(C,h,R)=>{ let n=0;
+          C.myDice.forEach(x => { if(!x.a){ const d=rollDie(x.k); x.a=d.a; x.d=d.d; x.s=d.s; x.fresh=true; n++; } });
+          cLog(`${plural(n,'die')} rewritten.`, 'v'); sfx('dice', 0); }},
   },
   blade: {
-    m1:{nm:'Opening Stroke', ic:'🗡️', tx:R=>`+${3+R*2} attack on the first round of every combat.`},
-    m2:{nm:'Riposte', ic:'🤺', cost:2,
-        tx:R=>`You swing first this round whatever the initiative says, and hit for ${1+R} more.`,
+    m1:{nm:'Opening Stroke', ic:'🗡️', init:5,
+        tx:R=>`Your dice join the roll and you hit for ${2+R} more — and nothing in the region is faster than this.`,
+        joins:1,
+        fire:(C,h,R)=>{ C.mb.atk += 2+R; cLog(`${h.nm} is moving before it has finished deciding.`, 'g'); }},
+    m2:{nm:'Riposte', ic:'🤺', init:40, cost:2,
+        tx:R=>`Your dice join the roll. You swing first whatever the initiative says, and hit for ${1+R} more.`,
+        joins:1,
         fire:(C,h,R)=>{ C.mb.first = 1; C.mb.atk += 1+R;
           cLog(`${h.nm} steps inside its reach. You go first.`, 'g'); }},
   },
   priest: {
-    m1:{nm:'Dawnsong', ic:'🌅', tx:R=>`Heal ${2+R} each dawn. Surges may be spent to heal (1 surge).`},
-    m2:{nm:'Last Rite', ic:'🕯️', cost:2,
+    m1:{nm:'Dawnsong', ic:'🌅', init:20,
+        tx:R=>`Heal ${2+R} to whoever is worst off, and everyone still standing takes back 1 energy.`,
+        fire:(C,h,R)=>{ healHero(2+R, 'the dawnsong');
+          conscious().forEach(m => { m.en = clamp(m.en + 1, 0, D(m).maxEn); });
+          cLog(`${h.nm} keeps the small rite going.`, 'g'); }},
+    m2:{nm:'Last Rite', ic:'🕯️', init:45, cost:2,
         tx:R=>`Heal ${4+R*2} to whoever is worst off, and burn and venom are washed off the party.`,
         fire:(C,h,R)=>{ healHero(4+R*2, 'the last rite');
           if(C.me.burn || C.me.poison){ C.me.burn = 0; C.me.poison = 0; cLog('The fire goes out and the venom thins.', 'g'); } }},
   },
   reaver: {
-    m1:{nm:'Light Fingers', ic:'🪙', tx:R=>`+${50+R*10}% gold from every source. Breaking away always succeeds.`},
-    m2:{nm:'Cut Purse and Run', ic:'🗝️', cost:2,
-        tx:R=>`Its armor counts for nothing this round, and you lift ${10+R*8} gold off it while you are there.`,
+    m1:{nm:'Slip Behind', ic:'🗝️', init:15,
+        tx:R=>`Your dice join the roll, and its armor counts ${2+R} less this round.`,
+        joins:1,
+        fire:(C,h,R)=>{ C.mb.armCut += 2+R; cLog(`${h.nm} is somewhere it should not be able to reach.`, 'g'); }},
+    m2:{nm:'Cut Purse and Run', ic:'🪙', init:35, cost:2,
+        tx:R=>`Your dice join the roll, its armor counts for nothing this round, and you lift ${10+R*8} gold off it.`,
+        joins:1,
         fire:(C,h,R)=>{ C.mb.noArm = 1; gainGold(10+R*8);
           cLog(`${h.nm} finds the strap holding its plate on.`, 'g'); }},
   },
 };
+
+/* =========================================================================
+   THE FOUR ACTIONS
+   Every hero picks exactly one each round, off their own character card, the
+   way HEXplore It prints them. Attack and Defend are the same two for
+   everybody and read straight off the board; the other two are the masteries,
+   which nobody else has. Lower initiative swings first, and the party's is
+   the lowest anyone played — so the choice sets the speed of the round too.
+   ========================================================================= */
+const ACTIONS = [
+  {id:'atk', slot:null, nm:'Attack', ic:'⚔️', init:45, track:'atk', base:3,
+   tx:h=>`Your ${D(h).pool.length} dice join the roll and you swing for ${3 + rankOf(h,'atk') + D(h).atk} on top.`},
+  {id:'def', slot:null, nm:'Defend & Use Item', ic:'🛡️', init:20, track:'gua', base:3,
+   tx:h=>`Shield ${3 + rankOf(h,'gua')}, get ${1 + Math.floor(rankOf(h,'gua')/2)} health back, and use one thing out of the pack without it costing the round.`},
+  {id:'m1',  slot:'m1', nm:'First Mastery',  init:40, track:'m1'},
+  {id:'m2',  slot:'m2', nm:'Second Mastery', init:60, track:'m2'},
+];
+const ACT = id => ACTIONS.find(a => a.id === id);
+/* what a hero's chosen action is called and costs on screen */
+function actFor(h, id){
+  const a = ACT(id); if(!a) return null;
+  const m = a.slot ? MST(h, a.slot) : null;
+  const R = rankOf(h, a.track);
+  return {
+    id, a, m, R,
+    nm: m ? m.nm : a.nm,
+    ic: m ? m.ic : a.ic,
+    init: Math.max(1, (m && m.init != null ? m.init : a.init) - rankOf(h, 'nav')),
+    cost: (m && m.cost) ? Math.max(1, m.cost - (R >= 4 ? 1 : 0)) : 0,
+    tx: m ? m.tx(R) : a.tx(h),
+    joins: a.id === 'atk' || (m && m.joins),
+    locked: a.id === 'm2' && R < 1,
+  };
+}
+function canTake(h, id){
+  const f = actFor(h, id);
+  if(!f || f.locked) return false;
+  return h.en >= f.cost;
+}
 const MST = (h, slot) => (MASTERY[h.id] || {})[slot] || null;
 /* the rank a hero currently has on a track */
 function rankOf(h, id){
@@ -1000,7 +1081,7 @@ function D(h0){
   out.maxHp = h.baseHp + out.hp + (h.lvl - 1) * 3 + hlt * 4;
   out.maxEn = 3 + out.spi + out.en + eng;
   out.rrTotal = out.wit + out.rr;
-  out.pool = out.dice.concat(Array(Math.max(0, out.mig - 1)).fill('base'));
+  out.pool = out.dice.concat(Array(Math.max(0, Math.floor(out.mig / 2))).fill('base'));
   for(const u of out.upgrade){          // gear that reforges a die into a better one
     let n = u.n || 1;
     for(let i = 0; i < out.pool.length && n > 0; i++){
@@ -1050,9 +1131,6 @@ function load(){
       if(!S.bag) S.bag = S.hero.bag || [];
     }
     S.party.forEach(h => {                             // fields later builds added
-      if(!h.lost) h.lost = [];
-      if(!h.discard) h.discard = [];
-      if(h.cardDrafts == null) h.cardDrafts = 0;
       if(!h.ranks) h.ranks = {gua:0, m1:0, m2:0, hlt:0, eng:0};   // the rank board
       if(h.levelCards == null) h.levelCards = 0;
       if(h.ticks == null) h.ticks = h.pts || 0;        // stat points became ticks
@@ -1192,10 +1270,7 @@ function makeHero(H){
     gear:{weapon:null, offhand:null, armor:null, trinket1:null, trinket2:null},
     talents:[], perks:[], fated:true, ticks:0, drafts:0,
     ranks:{gua:0, m1:0, m2:0, hlt:0, eng:0}, levelCards:0, mRound:0,
-    deck:[], hand:[], discard:[], lost:[], cardDrafts:0,
   };
-  h.deck = (CARDS[H.id] || []).filter(c => c.start).map(c => c.id);
-  h.hand = h.deck.slice();
   return h;
 }
 function newRun(heroIds, seedStr){
@@ -1223,7 +1298,7 @@ function newRun(heroIds, seedStr){
   S.map[key(0,0)].explored = true;
   log(`${S.party.map(h => h.nm).join(', ')} ride out of Kestrel Hold at first light. Seed ${S.seed}.`, 'y');
   log('Three lairs feed the Sable Crown. Break them, then break it.', 'v');
-  log(`Each of you carries ${S.party[0].hand.length} ability cards. A night's sleep returns the lost ones.`, 'b');
+  log('Each of you has four actions printed on your card. One each, every round.', 'b');
   rollMovement(true);
   save();
 }
@@ -1827,9 +1902,7 @@ function endDay(opt){
     if(heal && !isDown(h)) healHero(heal, "the night's rest", h);
   });
   party().forEach(h => { const hd = D(h); h.en = clamp(h.en + hd.enRegen, 0, hd.maxEn); });
-  const wasLost = party().reduce((n,h) => n + h.lost.length, 0);
-  recoverAll();
-  if(wasLost) log(`${plural(wasLost,'spent card')} back in the party's hands.`, 'v');
+
   party().forEach(h => { if(isDown(h)){ h.hp = Math.max(1, Math.round(D(h).maxHp * 0.5)); log(`${h.nm} is back on their feet.`, 'g'); } });
   rollMovement();
   if(S.dread >= S.dreadMax){
@@ -1939,7 +2012,6 @@ function heroFalls(){
     S.pos = best ? {q:best.q, r:best.r} : {q:0,r:0};
     party().forEach(h => { h.hp = Math.max(1, Math.round(D(h).maxHp * 0.4)); });
     S.lead = 0;
-    recoverAll();
     S.day += 3; S.dread += 3;
     V.combat = null;
     reveal(S.pos, 1); centreOnHero(); rollMovement(true);
@@ -2172,14 +2244,14 @@ function scaleFoe(m, opts){
   const boss = opts.boss || opts.crown;
   const lvlMul = 1 + lvl * F.lvlHp * (boss ? 0.25 : 1);
   const dtMul  = 1 + dt * (boss ? 0.06 : 0.12);
-  // A second and third hero roughly double and triple what the party swings for
-  // each round, so a monster tuned for one is over in two. Measured against a
-  // kitted level-10 party: three heroes hit for about 3.4x a lone hero, so the
-  // health goes up by the same factor. What it hits BACK for is scaled in
-  // foeAttackVal instead, because a flat bonus that troubles a trio flattens a
-  // tier-1 wolf.
+  // A party does NOT hit three times as hard, because only the heroes who take
+  // the Attack action are in the swing — the usual shape of a round is two
+  // swinging while one guards. Measured at level 1 and level 8 alike, a trio
+  // deals about 1.6x a lone hero, so that is what the health scales by. It was
+  // 3.4x while every hero contributed a card every round, and leaving it there
+  // turned every fight into a twelve-round grind.
   const extra  = Math.max(0, party().length - 1);
-  const hpMul  = (opts.crown ? F.crownHp : F.hp) * lvlMul * dtMul * (1 + extra * 1.2);
+  const hpMul  = (opts.crown ? F.crownHp : F.hp) * lvlMul * dtMul * (1 + extra * 0.3);
   m.hp = Math.max(6, Math.round(m.hp * hpMul));
   m.maxHp = m.hp;
   m.pwr = Math.max(0, (m.pwr || 0) + F.pwr + Math.floor(lvl / F.lvlPwr / (boss ? 2 : 1)) + dt);
@@ -2468,6 +2540,9 @@ reaver: [
  {id:'v12',nm:'Took It All',      ic:'👑', init:7,  top:{tx:'LOST: double your dice attack, pierce', dbl:1, pierce:1, lost:1}, bot:{tx:'Shield 3, heal 5', sh:3, heal:5}},
 ],
 };
+/* RETIRED. The 72 ability cards below are kept as written but nothing draws
+   them any more: a round is four printed actions now, not two card halves.
+   Left in the file because the wording is worth mining for future masteries. */
 const CARD = id => { for(const k in CARDS){ const c = CARDS[k].find(x => x.id === id); if(c) return c; } return null; };
 
 /* ---------- enemy intent decks ---------- */
@@ -2564,58 +2639,36 @@ const intentDeck = foe => INTENTS[MDECK[foe.id] || (foe.tier >= 4 ? 'brute' : 's
 function conscious(){ return party().filter(h => !isDown(h)); }
 
 /* what the Second Masteries have added to this round */
-function blankBuff(){ return {atk:0, retal:0, rr:0, pierce:0, first:0, dblShield:0, noArm:0}; }
+function blankBuff(){ return {atk:0, sh:0, shHelp:0, ward:0, retal:0, rr:0, pierce:0, first:0, dblShield:0, noArm:0, armCut:0}; }
 /* what a hero's Second Mastery costs them right now */
 function mCost(h){
   const m = MST(h, 'm2'); if(!m) return 0;
   return Math.max(1, m.cost - (rankOf(h, 'm2') >= 4 ? 1 : 0));
 }
-function canFireMastery(h){
-  const C = V.combat;
-  if(!C || C.phase !== 'dice' || C.done || C.resting) return false;
-  if(isDown(h) || rankOf(h, 'm2') < 1 || !MST(h, 'm2')) return false;
-  if(h.mRound === C.round) return false;
-  return h.en >= mCost(h);
-}
-function fireMastery(id){
-  const C = V.combat; if(!C) return;
-  const h = party().find(x => x.id === id);
-  if(!h || !canFireMastery(h)) return;
-  const m = MST(h, 'm2'), R = rankOf(h, 'm2');
-  h.en -= mCost(h);
-  h.mRound = C.round;
-  sfx('levelUp', 0);
-  fx('#meCard', 'redflash', 420);
-  m.fire(C, h, R);
-  renderCombat();
-}
-
-/* everything the party's chosen halves add up to this round */
-function blankPlay(){
-  return {atk:0, sh:0, shHelp:0, heal:0, ward:0, rr:0, en:0, pierce:0, stun:0, dbl:0, leech:0,
-          refresh:0, burn:0, psn:0, curse:0, retal:0, gold:0, cure:0, dice:[], surge:[]};
-}
-function mergeHalf(play, half){
-  for(const k in half){
-    if(k === 'tx' || k === 'lost') continue;
-    if(k === 'dice' || k === 'surge') play[k] = play[k].concat(half[k]);
-    else play[k] = (play[k] || 0) + half[k];
-  }
-  return play;
-}
-/* The combined pool: every standing hero's dice, plus anything the cards add.
-   Each die remembers whose it is, because shields are not pooled the way
+/* Only the heroes whose action actually puts them in the swing roll dice, and
+   each die remembers whose it is, because shields are not pooled the way
    attack is — see myShields. */
+const swinging = () => conscious().filter(h => { const f = actFor(h, actOf(h)); return f && f.joins; });
+const actOf = h => (V.combat && V.combat.acts) ? V.combat.acts[h.id] : null;
 function partyPool(){
   const pool = [];
-  for(const h of conscious()) D(h).pool.forEach(k => pool.push({k, hid:h.id}));
+  for(const h of swinging()) D(h).pool.forEach(k => pool.push({k, hid:h.id}));
   return pool;
 }
-function partyAtkBonus(){ return conscious().reduce((n,h) => n + D(h).atk, 0); }
+/* Every hero who took Attack swings for its printed base plus their rank plus
+   their gear. The base is what a played card used to put on the table; without
+   it a level-1 round is three dice and a rounding error. A mastery that puts
+   its hero in the swing brings their gear and dice but no Attack base — the
+   mastery's own number is what it is worth. */
+function partyAtkBonus(){
+  return swinging().reduce((n,h) =>
+    n + D(h).atk + (actOf(h) === 'atk' ? 3 + rankOf(h,'atk') : 0), 0);
+}
 function partyRerolls(){ return conscious().reduce((n,h) => n + D(h).rrTotal, 0); }
 function partySurgeOptions(){
   const out = new Set();
-  conscious().forEach(h => D(h).surge.forEach(x => out.add(x)));
+  swinging().forEach(h => D(h).surge.forEach(x => out.add(x)));
+  if(!out.size) conscious().forEach(h => D(h).surge.forEach(x => out.add(x)));
   return Array.from(out);
 }
 
@@ -2625,20 +2678,19 @@ function startCombat(foe, opts){
   const C = {
     foe: Object.assign({}, foe, {maxHp: foe.hp, burn:0, psn:0, stun:0, shieldBonus:0, rage:0, curse:0,
                                  arm: foe.trait === 'entrench' ? Math.max(foe.arm||0, 8) : foe.arm}),
-    opts, round:1, phase:'cards',
+    opts, round:1, phase:'acts',
     intentDeck: deck, order: shuffle(deck.map((x,i) => i)), intent: null,
     myDice:[], foeDice:[], rrLeft:0, spentSurge:0, sharp:0,
-    mb: blankBuff(),          // this round's mastery buffs
-    picks:{},                 // heroId -> {top, bot}
-    viewing: 0,               // whose hand is on screen
-    play:null, myInit:99, resting:false,
+    mb: blankBuff(),          // what this round's chosen actions add up to
+    acts:{},                  // heroId -> action id, one each
+    itemUsed:{},              // heroId -> did their Defend already spend its item
+    myInit:99,
     pend:{dmg:0, pierce:false, guard:0},
     me:{burn:0, poison:0, stun:0, hexed:0, stone:0, fury:0, curse:0},
     done:false, hist:[],
   };
   V.combat = C;
   V.lastBoss = null;
-  C.viewing = party().indexOf(leadHero());
   MUS.set(opts.boss ? 'boss' : 'combat', true);
   log(`${foe.ic} ${foe.nm} blocks the way.`, 'r');
   newCombatRound(true);
@@ -2676,141 +2728,88 @@ function newCombatRound(first){
   C.me.curseNow = C.me.curse || 0; C.me.curse = 0;
   C.foe.curseNow = C.foe.curse || 0; C.foe.curse = 0;
 
-  // anyone who cannot field two cards this round simply sits it out
-  C.mustRest = false;
-  const able = conscious().filter(h => h.hand.length >= 2);
-  if(!able.length){
-    if(conscious().some(h => h.discard.length >= 2)){
-      C.mustRest = true;
-      cLog('Nobody has a hand left. Catch your breath or it is over.', 'y');
-    } else { exhausted(); return; }
-  }
-
   drawIntent();
-  C.picks = {}; C.play = null; C.resting = false; C.shown = null;
+  C.acts = {}; C.itemUsed = {}; C.shown = null;
   C.myDice = []; C.foeDice = []; C.pend = {dmg:0, pierce:false, guard:0}; C.spentSurge = 0;
-  C.mb = blankBuff();                       // this round's mastery buffs
-  party().forEach(h => { h.mRound = 0; });  // everyone may fire again
-  if(isDown(party()[C.viewing]) || !party()[C.viewing]) C.viewing = party().indexOf(conscious()[0]);
-  C.phase = 'cards';
+  C.mb = blankBuff();
+  C.phase = 'acts';
   renderCombat();
 }
 
-/* who still owes a choice */
+/* who has not chosen their action yet */
 function pendingHeroes(){
   const C = V.combat;
-  return conscious().filter(h => h.hand.length >= 2 && !(C.picks[h.id] && C.picks[h.id].top && C.picks[h.id].bot));
+  return conscious().filter(h => !C.acts[h.id]);
 }
-function pickHalf(id, half){
+function pickAction(heroId, actId){
   const C = V.combat;
-  if(!C || C.phase !== 'cards' || C.mustRest) return;
-  const h = party()[C.viewing];
+  if(!C || C.phase !== 'acts') return;
+  const h = party().find(x => x.id === heroId);
   if(!h || isDown(h)) return;
-  const p = C.picks[h.id] = C.picks[h.id] || {top:null, bot:null};
-  const other = half === 'top' ? 'bot' : 'top';
-  if(p[half] === id) p[half] = null;
-  else { if(p[other] === id) p[other] = null; p[half] = id; }
+  if(C.acts[h.id] === actId){ delete C.acts[h.id]; renderCombat(); return; }
+  if(!canTake(h, actId)){
+    const f = actFor(h, actId);
+    flash(f && f.locked ? 'That mastery is locked. A tick opens it.' : 'Not enough energy for that.');
+    return;
+  }
+  C.acts[h.id] = actId;
+  sfx('cardPlay', 0);
   renderCombat();
 }
-function commitCards(){
+
+/* =========================================================================
+   COMMITTING THE ROUND
+   Everyone's chosen action is resolved into one set of party numbers: who is
+   swinging (their dice join the roll), what is being guarded, what the
+   masteries added, and the lowest initiative anybody played.
+   ========================================================================= */
+function commitActions(){
   const C = V.combat;
-  if(!C || C.phase !== 'cards' || pendingHeroes().length) return;
-  const play = blankPlay();
+  if(!C || C.phase !== 'acts' || pendingHeroes().length) return;
+  C.mb = blankBuff();
   let init = 99;
   const shown = [];
-  const flying = [];
-  /* Attack, shields and dice pool because the party swings together. Healing
-     does NOT, or three hands each printing "heal 2" would mend six. Each heal
-     stays one heal, aimed by the party at whoever is worst off. */
-  const heals = [];
+  const lead = leadHero();
+  const afterRoll = [];
+
   for(const h of conscious()){
-    const p = C.picks[h.id];
-    if(!p || !p.top || !p.bot) continue;
-    const tc = CARD(p.top), bc = CARD(p.bot);
-    if(tc.top.heal) heals.push(tc.top.heal);
-    if(bc.bot.heal) heals.push(bc.bot.heal);
-    mergeHalf(play, tc.top);
-    mergeHalf(play, bc.bot);
-    if(h !== leadHero()){          // a guard played from the back rank covers, it does not block
-      const back = (tc.top.sh || 0) + (bc.bot.sh || 0);
-      play.sh -= back; play.shHelp += back;
+    const f = actFor(h, C.acts[h.id]);
+    if(!f) continue;
+    init = Math.min(init, f.init);
+    if(f.cost) h.en = Math.max(0, h.en - f.cost);
+
+    if(f.id === 'def'){
+      // a guard from the back rank covers rather than blocks — see myShields
+      const sh = 3 + rankOf(h, 'gua');
+      if(h === lead) C.mb.sh += sh; else C.mb.shHelp += sh;
+      // the breath you get back from not swinging. Without this a party with no
+      // Hedge Priest has no way at all to heal inside a fight, and the card
+      // bottoms used to do it constantly.
+      healHero(1 + Math.floor(rankOf(h, 'gua') / 2), 'the moment behind your guard', h);
     }
-    init = Math.min(init, tc.init);
-    shown.push({who:h, topNm:tc.nm, topTx:tc.top.tx, botNm:bc.nm, botTx:bc.bot.tx});
-    flying.push(p.top, p.bot);
-    spendCardFor(h, p.top, tc.top.lost);
-    spendCardFor(h, p.bot, bc.bot.lost);
+    if(f.m && f.m.fire) f.m.fire(C, h, f.R);
+    if(f.m && f.m.afterRoll) afterRoll.push([f.m, h, f.R]);
+
+    shown.push({who:h, nm:f.nm, ic:f.ic, tx:f.tx, init:f.init, cost:f.cost});
   }
-  if(!V.fast) flyCards(flying);
-  sfx('cardPlay');
-  C.play = play;
+
   C.myInit = init;
   C.shown = shown;
-  cLog(shown.map(x => `${x.who.nm}: ${x.topNm} / ${x.botNm}`).join(' · '), 'b');
+  C.afterRoll = afterRoll;
+  sfx('cardPlay');
+  cLog(shown.map(x => `${x.who.nm}: ${x.nm}`).join(' · '), 'b');
 
-  for(const n of heals) healHero(n, "the party's own hands");
-  if(play.en) conscious().forEach(h => { h.en = clamp(h.en + play.en, 0, D(h).maxEn); });
-  if(play.cure){ C.me.burn = 0; C.me.poison = 0; cLog('You are clean of it.', 'g'); }
-  if(play.burn){ C.foe.burn = play.burn; cLog(`${C.foe.nm} catches light.`, 'y'); }
-  if(play.psn){ C.foe.psn = play.psn; cLog(`${C.foe.nm} is poisoned.`, 'y'); }
-  if(play.stun) staggerFoe(C);
-  if(play.curse){ C.foe.curse = play.curse; cLog(`${C.foe.nm} will hit ${play.curse} softer next round.`, 'y'); }
-  if(play.gold) gainGold(play.gold);
-  if(play.refresh){
-    const hasLost = conscious().find(h => h.lost.length);
-    if(hasLost){ const id = hasLost.lost.pop(); hasLost.hand.push(id); cLog(`${CARD(id).nm} comes back to ${hasLost.nm}.`, 'v'); }
-    else cLog('Nothing lost to take back.', 'y');
-  }
-
-  C.myDice = partyPool().concat(play.dice.map(k => ({k, hid:null})))
-    .map(x => Object.assign(rollDie(x.k), {mark:false, fresh:true, hid:x.hid}));
+  C.myDice = partyPool().map(x => Object.assign(rollDie(x.k), {mark:false, fresh:true, hid:x.hid}));
   applyNoBlank(C.myDice);
+  for(const [m, h, R] of afterRoll) m.afterRoll(C, h, R);
   C.foeDice = C.foe.pool.map(k => rollDie(k));
-  C.rrLeft = Math.max(0, partyRerolls() + play.rr - (C.me.hexed ? 1 : 0));
-  C.pend = {dmg:0, pierce:!!play.pierce, guard:0};
+  C.rrLeft = Math.max(0, partyRerolls() + C.mb.rr - (C.me.hexed ? 1 : 0));
+  C.pend = {dmg:0, pierce:false, guard:0};
   C.spentSurge = 0;
   C.phase = 'dice';
   renderCombat();
 }
-function spendCardFor(h, id, lost){
-  const i = h.hand.indexOf(id);
-  if(i >= 0) h.hand.splice(i, 1);
-  (lost ? h.lost : h.discard).push(id);
-}
-function catchBreath(){
-  const C = V.combat;
-  if(!C || C.phase !== 'cards') return;
-  const who = conscious().filter(h => h.discard.length >= 2);
-  if(!who.length){ flash('Nobody has enough in their discard to make it worth the round.'); return; }
-  for(const h of who){
-    const i = Math.floor(rnd() * h.discard.length);
-    const lostId = h.discard.splice(i, 1)[0];
-    h.lost.push(lostId);
-    h.hand = h.hand.concat(h.discard);
-    h.discard = [];
-    cLog(`${h.nm} catches their breath. ${CARD(lostId).nm} is spent for good.`, 'y');
-  }
-  C.play = null; C.myInit = 99; C.resting = true; C.shown = null;
-  C.myDice = [];
-  C.foeDice = C.foe.pool.map(k => rollDie(k));
-  C.rrLeft = 0; C.spentSurge = 0; C.pend = {dmg:0, pierce:false, guard:0};
-  C.phase = 'dice';
-  renderCombat();
-}
-function exhausted(){
-  const C = V.combat;
-  const dmg = Math.max(2, (C.foe.tier || 1) * 2);
-  cLog('The party is out of cards. You break off and run for it.', 'r');
-  V.combat = null;
-  closeModal();
-  MUS.set('travel');
-  recoverDiscards();
-  S.dice.forEach(d => d.spent = true);
-  log('Out of cards and out of the fight. Camp or take a room to get the lost ones back.', 'y');
-  const lead = leadHero();
-  if(lead) hurtHero(dmg, 'a parting blow as you break off', lead);
-  save(); render();
-}
+
 function partyDown(){
   const C = V.combat;                     // read the fight BEFORE dropping it
   V.lastBoss = (C && C.opts && C.opts.boss) || V.lastBoss;
@@ -2819,9 +2818,9 @@ function partyDown(){
 }
 
 /* Stagger costs the enemy a whole attack, which is the strongest thing in the
-   game, and a party plays six halves a round instead of two — so without this
-   a trio simply keeps anything permanently staggered and never gets hit. After
-   it shakes one off it is BRACED, and the next stagger slides off it. */
+   game, and a party of three gets three goes at it — so without this a trio
+   simply keeps anything permanently staggered and never gets hit. After it
+   shakes one off it is BRACED, and the next stagger slides off it. */
 function staggerFoe(C, src){
   if(C.foe.stunBrace > 0){
     cLog(`${C.foe.nm} is braced for that. The stagger does not take.`, 'y');
@@ -2834,7 +2833,7 @@ function staggerFoe(C, src){
   return true;
 }
 function sunderIfEntrenched(C){
-  const extra = D().sunder;                       // the Plate Breaker strips anything, not just the entrenched
+  const extra = Math.max(0, ...conscious().map(h => D(h).sunder || 0));   // the Plate Breaker strips anything
   if(C.foe.trait === 'entrench' && C.foe.arm){
     C.foe.arm = Math.max(0, C.foe.arm - 3);
     cLog(`Plates shear off it. Armor down to ${C.foe.arm}.`, 'g');
@@ -2855,18 +2854,6 @@ function applyNoBlank(dice){
 }
 function cLog(t, cls){ const C = V.combat; if(C){ C.hist.push((cls?'§'+cls+'§':'')+t); if(C.hist.length>40) C.hist.shift(); } log(t, cls); }
 
-/* ---------- hand ---------- */
-function recoverDiscards(){
-  party().forEach(h => {
-    if(!h.discard.length) return;
-    h.hand = h.hand.concat(h.discard);
-    h.discard = [];
-  });
-}
-function recoverAll(){
-  party().forEach(h => { h.hand = h.deck.slice(); h.discard = []; h.lost = []; });
-}
-
 function drawIntent(){
   const C = V.combat;
   if(!C.order.length) C.order = shuffle(C.intentDeck.map((x,i) => i));
@@ -2875,18 +2862,24 @@ function drawIntent(){
   sfx('intent', 200);
 }
 
+/* Defend & Use Item is the only way into the pack mid-fight, and it is one
+   thing per defender per round. */
+function canUseItemNow(){
+  const C = V.combat;
+  if(!C || C.done) return null;
+  return conscious().find(h => C.acts[h.id] === 'def' && !C.itemUsed[h.id]) || null;
+}
+
 /* ---------- the numbers ---------- */
 function mySurges(){ const C = V.combat; return C.myDice.reduce((s,d)=>s+d.s,0) - C.spentSurge; }
-function surgeOptions(){ const C = V.combat; return Array.from(new Set(partySurgeOptions().concat((C.play && C.play.surge) || []))); }
+function surgeOptions(){ return partySurgeOptions(); }
 function myAttack(){
-  const C = V.combat, p = C.play || {};
+  const C = V.combat, mb = C.mb || blankBuff();
   if(C.me.stun > 0) return 0;
-  let diceAtk = C.myDice.reduce((s,x)=>s+x.a,0);
-  if(p.dbl) diceAtk *= 2;
-  let a = diceAtk + partyAtkBonus() + (p.atk||0) + C.pend.dmg + C.me.fury + (C.sharp||0) + ((C.mb && C.mb.atk) || 0);
-  for(const h of conscious()){                 // every hero still standing brings their own edge
+  const diceAtk = C.myDice.reduce((s,x)=>s+x.a,0);
+  let a = diceAtk + partyAtkBonus() + mb.atk + C.pend.dmg + C.me.fury + (C.sharp||0);
+  for(const h of swinging()){                  // only the heroes actually swinging bring their edge
     const hd = D(h);
-    if(h.id === 'blade' && C.round === 1) a += 3 + ((h.ranks && h.ranks.m1) || 0) * 2;
     if(hd.zeal && h.hp <= hd.maxHp/2) a += hd.zeal;
     if(hd.firstatk && C.intent && C.myInit <= (C.intent.init || 99)) a += hd.firstatk;
   }
@@ -2900,38 +2893,30 @@ function myAttack(){
    is worth half. Without this a trio's pooled shields simply exceed anything
    in the region and nothing can touch them. */
 function myShields(){
-  const C = V.combat, p = C.play || {};
+  const C = V.combat, mb = C.mb || blankBuff();
   const lead = leadHero();
   const lid = lead ? lead.id : null;
   let own = 0, help = 0;
   C.myDice.forEach(x => { if(!x.hid || x.hid === lid) own += x.d; else help += x.d; });
-  own += C.pend.guard + (p.sh || 0);
-  help += (p.shHelp || 0);
-  if(C.mb && C.mb.dblShield) own *= 2;          // Set Against It doubles the front rank's own guard
+  own += C.pend.guard + mb.sh;
+  help += mb.shHelp;
+  if(mb.dblShield) own *= 2;                    // Set Against It doubles the front rank's own guard
   return own + Math.floor(help / 2);
 }
 /* only the hero in the front rank wears their own armour and wards */
 function myWard(){
-  const C = V.combat, p = C.play || {};
+  const C = V.combat, mb = C.mb || blankBuff();
   const lead = leadHero();
-  return (lead ? D(lead).ward : 0) + (p.ward||0) + (C.me.stone ? 3 : 0);
+  return (lead ? D(lead).ward : 0) + mb.ward + (C.me.stone ? 3 : 0);
 }
 function leadArmor(){ const lead = leadHero(); return lead ? D(lead).arm : 0; }
-/* Every extra hero adds a whole bottom half of shields and a whole dice pool to
-   the party's guard, but the enemy still only swings at one of them. Measured,
-   a kitted trio's mitigation is about 1.7x a lone hero's, so what comes back at
-   the front rank is multiplied to match. Proportional, not flat, so it lands
-   the same way on a wolf as on the Crown.
-   It RAMPS, because that mitigation advantage is mostly gear and shield cards:
-   a level-1 trio in starting leathers does not have it yet, and taking 1.7x on
-   day two just killed them in the field. Per extra hero, 15% at level 1 rising
-   to 33% at level 10. */
-function threatMul(){
-  const extra = Math.max(0, party().length - 1);
-  if(!extra) return 1;
-  const lvl = party().reduce((n,h) => Math.max(n, h.lvl || 1), 1);
-  return 1 + extra * (0.15 + 0.02 * (lvl - 1));
-}
+/* A party's guard no longer scales with its size either: the enemy swings at
+   the front rank, and only one hero is usually defending, so a trio's
+   mitigation is close to a lone hero's. What the extra bodies really buy is a
+   health pool to lose them out of, so the multiplier here is small — enough
+   that three people standing in the open are a bigger target, not enough to
+   punish them for existing. */
+const threatMul = () => 1 + 0.15 * Math.max(0, party().length - 1);
 function foeAttackVal(){
   const C = V.combat;
   if(C.foe.stun > 0) return 0;
@@ -3038,7 +3023,7 @@ function strike(){
   C.phase = 'resolve';
   C.foe.crush = false;
   foeSurgeSpend();
-  const d = D(), p = C.play || {}, it = C.intent || {};
+  const d = D(), it = C.intent || {};
   const mb = C.mb || blankBuff();
   const meFirst = mb.first ? true : (C.myInit || 99) <= (it.init || 99);
 
@@ -3047,11 +3032,11 @@ function strike(){
     if(C.me.stun > 0){ cLog('You are still shaking off the blow.', 'y'); return; }
     const mine = myAttack();
     const fsh = (C.pend.pierce || mb.pierce) ? 0 : foeShields();
-    const farm = mb.noArm ? 0 : (C.foe.arm || 0);
+    const farm = mb.noArm ? 0 : Math.max(0, (C.foe.arm || 0) - mb.armCut);
     let toFoe = C.foe.trait === 'swarm' ? 0 : Math.max(0, mine - fsh - farm);
     // what the blow is made of, so a trait can strip out the parts it ignores
     const parts = {
-      card: p.atk || 0,
+      card: mb.atk,
       gear: partyAtkBonus(),
       surge: C.pend.dmg,
       arcane: C.myDice.reduce((n,x) => n + (x.k === 'arcane' ? x.a : 0), 0),
@@ -3069,15 +3054,16 @@ function strike(){
     if(out.note) cLog(out.note, toFoe > 0 ? 'g' : 'y');
     if(toFoe > 0){
       dealToFoe(toFoe);
-      if(p.leech){ const h = Math.ceil(toFoe / 2); healHero(h, 'the wound you opened'); }
+      const leech = Math.max(0, ...swinging().map(x => D(x).leech || 0));
+      if(leech){ healHero(Math.ceil(toFoe / 2), 'the wound you opened'); }
       if(conscious().some(h => D(h).kindle) && !C.me.kindled){ C.me.kindled = true; C.foe.burn = Math.max(C.foe.burn, 3); cLog('It catches light on the first cut.', 'y'); }
       if(C.foe.trait === 'mirror' && toFoe > 12){
         const back = Math.floor(toFoe / 3);
         cLog('The blow comes back off it.', 'r');
         dealToMe(back, 'your own strike, returned', true);
       }
-    } else if(C.resting){ /* spent the round recovering */ }
-    else { cLog('Your blow finds nothing but shield and plate.', 'y'); sfx('block'); }
+    } else if(swinging().length) { cLog('Your blow finds nothing but shield and plate.', 'y'); sfx('block'); }
+    else cLog('Nobody swung. Nothing lands.', 'y');
   };
   const swingTheirs = () => {
     if(C.done) return;
@@ -3094,7 +3080,7 @@ function strike(){
       if(it.burn){ C.me.burn = it.burn; cLog('You are burning.', 'r'); }
       if(it.stun){ C.me.stun = 2; cLog('You are knocked off your feet.', 'r'); }
       if(it.curse){ C.me.curse = it.curse; cLog(`You will hit ${it.curse} softer next round.`, 'r'); }
-      const retal = (p.retal || 0) + (mb.retal || 0);
+      const retal = mb.retal || 0;
       if(retal && !C.done) dealToFoe(retal, 'your guard', true);
     }
   };
@@ -3130,7 +3116,6 @@ function tryFlee(){
     if(ok){
       V.combat = null; closeModal();
       MUS.set('travel');
-      recoverDiscards();
       log('You break contact and go.', 'y');
       S.dice.forEach(x => x.spent = true);
       save(); render();
@@ -3163,10 +3148,8 @@ function winCombat(C){
   if(foe.tier >= 4 && chance(0.25)){ const rel = pick(RELICS().filter(r => !S.bag.includes(r.id))); if(rel){ giveItem(rel.id); loot = rel; } }
   if(C.opts.camp){ const m = S.map[C.opts.camp]; if(m){ m.feat = null; m.threat = null; S.dread = Math.max(0, S.dread - 1); } }
   const boss = C.opts.boss;
-  const spent = S.hero.discard.length + S.hero.lost.length;
   V.combat = null;
   MUS.set('travel');
-  recoverDiscards();
   if(boss === 'crown'){ victory(); return; }
   if(boss === 'lair'){
     sfx('lair');
@@ -3192,7 +3175,7 @@ function winCombat(C){
      ${loot ? `<div class="kv"><span>Salvage</span><b>${loot.ic} ${esc(loot.nm)}</b></div>` : ''}
      ${party().map(m => `<div class="kv"><span>${m.ic} ${esc(m.nm)}</span><b>${
         isDown(m) ? '<span style="color:var(--red)">down</span>' : Math.max(0,m.hp) + ' / ' + D(m).maxHp
-      } <span class="mini faint">&#9995;${m.hand.length}${m.lost.length ? ', ' + m.lost.length + ' lost' : ''}</span></b></div>`).join('')}`,
+      } <span class="mini faint">&#9889;${m.en}/${D(m).maxEn}</span></b></div>`).join('')}`,
     f:[{lb:'Continue', cls:'primary', fn:()=>{ closeModal(); save(); render(); }}], noClose:true});
   save();
 }
@@ -3307,7 +3290,7 @@ function levelUp(){
   }
   h.levelCards = (h.levelCards || 0) + 1;                      // a card decides the ticks
   if(h.lvl % 2 === 1) h.drafts += 1;                           // talent draft on odd levels
-  if(h.lvl % 2 === 0) h.cardDrafts = (h.cardDrafts||0) + 1;    // new ability card on even levels
+  if(h.lvl % 2 === 0) h.ticks += 1;                            // a spare tick on even levels
   const d = D();
   S.hero.hp = clamp(S.hero.hp + 6, 0, d.maxHp);
   log(`Level ${h.lvl}. ${entry ? entry.nm + ' — ' + entry.tx : ''}`, 'v');
@@ -3330,7 +3313,6 @@ function showLevelUp(entry){
           <div class="kv"><span>${gword('levelcard','Level cards to draw')}</span><b>${h.levelCards||0}</b></div>
           <div class="kv"><span>${gword('tick','Ticks in hand')}</span><b>${h.ticks}</b></div>
           <div class="kv"><span>${gword('talent','Talent drafts waiting')}</span><b>${h.drafts}</b></div>
-          <div class="kv"><span>${gword('hand','New ability cards waiting')}</span><b>${h.cardDrafts||0}</b></div>
         </div>`,
     f:[{lb:'Spend rewards', cls:'primary', fn:() => { closeModal(); spendRewards(); }}],
     noClose:true,
@@ -3344,13 +3326,12 @@ function spendRewards(){
   }
   if(h.levelCards > 0){ drawLevelCard(); return; }
   if(h.ticks > 0){ spendTick(); return; }
-  if(h.cardDrafts > 0){ draftCard(); return; }
   if(h.drafts > 0){ draftTalent(); return; }
   setTimeout(tryLevelUp, T(150));
   save(); render();
 }
-const owedBy = h => !!(h && (h.levelCards || h.ticks || h.drafts || h.cardDrafts));
-const owedCount = h => (h.levelCards||0) + (h.ticks||0) + (h.drafts||0) + (h.cardDrafts||0);
+const owedBy = h => !!(h && (h.levelCards || h.ticks || h.drafts));
+const owedCount = h => (h.levelCards||0) + (h.ticks||0) + (h.drafts||0);
 
 /* =========================================================================
    LEVEL CARDS
@@ -3496,34 +3477,6 @@ function draftTalent(){
   });
 }
 
-function draftCard(){
-  const h = S.hero;
-  const pool = (CARDS[h.id] || []).filter(c => !h.deck.includes(c.id));
-  if(!pool.length){ h.cardDrafts = 0; save(); render(); return; }
-  modal({
-    ic:'🃏', h:'A New Ability', wide:true, noClose:true,
-    b:`<p class="muted"><b style="color:var(--ink)">${h.ic} ${esc(h.nm)}</b> — something they have been working towards. Take one into the deck; it joins the hand now.</p><div class="sep"></div>
-       <div class="hand draftgrid">${pool.map(c => `
-         <div class="acard pick" data-newcard="${c.id}" data-cmpcard="${c.id}" style="--accent:${heroArt(h).col}">
-           ${cardWatermark()}
-           <div class="ahd"><span class="initb">${c.init}</span><span class="aic">${c.ic}</span><span class="anm">${esc(c.nm)}</span></div>
-           <div class="ahalf top"><span class="lbl">Top</span><span class="atx">${gtx(c.top.tx)}</span></div>
-           <div class="ahalf bot"><span class="lbl">Bottom</span><span class="atx">${gtx(c.bot.tx)}</span></div>
-         </div>`).join('')}</div>`,
-    f:[],
-  });
-  $$('#scrim [data-newcard]').forEach(el => el.onclick = () => {
-    const id = el.dataset.newcard;
-    h.deck.push(id);
-    h.hand.push(id);
-    h.cardDrafts--;
-    log(`${CARD(id).nm} joins your deck.`, 'v');
-    closeModal();
-    setTimeout(spendRewards, T(120));
-  });
-}
-
-
 /* =========================================================================
    GLOSSARY
    Every term the game uses, explained once, and hover-linked wherever it
@@ -3549,17 +3502,11 @@ const GLOSSARY = {
 
   /* --- the round --- */
   initiative:{nm:'Initiative', ic:'⏱', grp:'The round',
-    tx:'The number in the corner of every ability card. Yours comes from the card you took the <b>top</b> half of. Lower goes first — and if you kill it before it acts, it never acts at all.',
+    tx:'The number in the corner of every action. The party\'s is the <b>lowest</b> anybody played, and lower goes first — if you kill it before it acts, it never acts at all. Defend is fast, a Second Mastery is slow, and every rank of Navigate takes a point off yours.',
     alias:['initiative','swings first','acts first']},
   intent:   {nm:'Intent', ic:'👁', grp:'The round',
     tx:'The card the enemy reveals <b>before</b> you choose yours. It shows exactly what it will do and when. Play around it.',
     alias:['intent']},
-  top:      {nm:'Top half', ic:'⬆️', grp:'The round',
-    tx:'Each round you take the <b>top</b> of one card and the <b>bottom</b> of another. You never get both halves of the same card, so every card is two choices you cannot both have.',
-    alias:['top half','a top and a bottom']},
-  bottom:   {nm:'Bottom half', ic:'⬇️', grp:'The round',
-    tx:'The defensive or supporting half — shields, healing, energy, rerolls. Taken from a different card than your top.',
-    alias:['bottom half']},
 
   /* --- combat numbers --- */
   attack:   {nm:'Attack', ic:'⚔', grp:'Numbers',
@@ -3619,22 +3566,16 @@ const GLOSSARY = {
     tx:'You lose a reroll and 2 attack while it lasts. Cast by warlocks and things that have been listening to them.',
     alias:['hexed','hex']},
 
-  /* --- the hand --- */
-  hand:     {nm:'Hand', ic:'🖐', grp:'Your hand',
-    tx:'The cards you can still play. It is effectively a second health bar: every round costs you two of them.',
-    alias:['hand']},
-  discard:  {nm:'Discard', ic:'📥', grp:'Your hand',
-    tx:'Cards spent this fight. They <b>all come back</b> the moment the fight ends, or when you catch your breath.',
-    alias:['discard']},
-  lost:     {nm:'LOST', ic:'💀', grp:'Your hand',
-    tx:'Playing this half burns the card for the rest of the <b>day</b>, not just the fight. Camping, an inn, or ending the day brings it back. That is the price of the big effects.',
-    alias:['lost']},
-  breath:   {nm:'Catch your breath', ic:'😮‍💨', grp:'Your hand',
-    tx:'Forfeit the round — no attack, no card shields — to pull your <b>whole discard</b> back into your hand, burning one random card of it for good. When you run dry you will be made to do it.',
-    alias:['catch your breath','catch your breath.']},
-  exhaust:  {nm:'Breaking off', ic:'🏃', grp:'Your hand',
-    tx:'With fewer than two cards in hand and nothing left to recover, you break off and run, taking a parting blow and losing the rest of the day.',
-    alias:['break off','breaking off']},
+  /* --- the four actions --- */
+  action:   {nm:'Action', ic:'🎯', grp:'The round',
+    tx:'Every hero picks exactly one each round, off the four printed on their own card: <b>Attack</b>, <b>Defend &amp; Use Item</b>, their <b>First Mastery</b> and their <b>Second Mastery</b>. The rank on that track is what the action is worth.',
+    alias:['action','actions','one action each']},
+  swing:    {nm:'Swinging', ic:'⚔', grp:'The round',
+    tx:'Only the heroes whose action actually puts them in the attack roll dice. Someone who defended or played a supporting mastery contributes what that action says and nothing to the swing — so a round where everyone guards deals nothing at all.',
+    alias:['swinging','joins the roll','your dice join the roll','dice join the roll']},
+  defend:   {nm:'Defend & Use Item', ic:'🛡', grp:'The round',
+    tx:'Shield 2 plus your Guard rank, and reach into the pack for one thing without it costing you the round. It is the <b>only</b> way to use an item mid-fight, so somebody has to take it when the potions are needed.',
+    alias:['defend & use item','defend and use item','defend']},
 
   /* --- dice --- */
   grit:     {nm:'Grit die', ic:'⚪', grp:'Dice',
@@ -3696,7 +3637,7 @@ Object.assign(GLOSSARY, {
     tx:'Your maximum <b>energy</b>, and the stat behind every test of nerve.',
     alias:['spirit']},
   xp:      {nm:'Experience', ic:'⭐', grp:'Attributes',
-    tx:'Earned from kills, landmarks and events. Ten levels in all. Each one hands you the next reward printed on your character card plus a stat point; odd levels add a talent draft, even levels a new ability card.',
+    tx:'Earned from kills, landmarks and events, and shared by the whole party. Ten levels in all. Each one hands that hero the next perk printed on their level track plus a <b>level card</b> to draw; odd levels add a talent draft, even levels a spare tick.',
     alias:['experience','xp']},
   talent:  {nm:'Talent', ic:'🎴', grp:'Attributes',
     tx:'A permanent passive drafted three-at-a-time on odd levels. Unlike your card track, which is fixed, talents are the part of the build you gamble on.',
@@ -3832,14 +3773,6 @@ function dieTipHtml(k){
 function wireGlossary(){
   const findDie = e => e.target && e.target.closest && e.target.closest('[data-dk]');
   const findCmp = e => e.target && e.target.closest && e.target.closest('[data-cmp]');
-  const findCard = e => e.target && e.target.closest && e.target.closest('[data-cmpcard]');
-  const showCard = el => {
-    const c = CARD(el.dataset.cmpcard);
-    const html = cardProjHtml(el.dataset.cmpcard);
-    if(!c || !html) return false;
-    showTip(el, c.ic + ' ' + c.nm, html, 'gloss', true);
-    return true;
-  };
   const find = e => e.target && e.target.closest && e.target.closest('.gl[data-g]');
   const showCmp = el => {
     const it = ITEM(el.dataset.cmp);
@@ -3849,8 +3782,6 @@ function wireGlossary(){
     return true;
   };
   document.addEventListener('mouseover', e => {
-    const cc = findCard(e);
-    if(cc && !find(e)){ if(showCard(cc)) return; }
     const c = findCmp(e);
     if(c && !find(e) && !findDie(e)){ if(showCmp(c)) return; }
     const dk = findDie(e);
@@ -3862,17 +3793,9 @@ function wireGlossary(){
     const g = GLOSSARY[el.dataset.g]; if(!g) return;
     showTip(el, g.ic + ' ' + g.nm, g.tx, 'gloss');
   });
-  document.addEventListener('mouseout', e => { if(find(e) || findDie(e) || findCmp(e) || findCard(e)) hideTip('gloss'); });
+  document.addEventListener('mouseout', e => { if(find(e) || findDie(e) || findCmp(e)) hideTip('gloss'); });
   // touch: a tap explains the term, unless it sits inside a button that does something else
   document.addEventListener('click', e => {
-    const cc = findCard(e);
-    if(cc && !e.target.closest('button') && !find(e)){
-      if(showCard(cc)){
-        clearTimeout(V.tipTimer);
-        V.tipTimer = setTimeout(() => hideTip('gloss'), 6000);
-        return;
-      }
-    }
     const c = findCmp(e);
     if(c && !e.target.closest('button') && !find(e) && !findDie(e)){
       if(showCmp(c)){
@@ -4376,17 +4299,16 @@ function openCard(){
           }).join('')}
         </div>
         <div class="card" style="margin-top:10px">
-          <div class="spread"><h3>Ability Deck</h3>${h.cardDrafts?`<span class="pill t2">${h.cardDrafts} new card waiting</span>`:''}</div>
-          <div class="mini faint" style="margin-bottom:8px">${h.deck.length} of ${(CARDS[h.id]||[]).length} known · hand ${h.hand.length}, discard ${h.discard.length}, lost ${h.lost.length}</div>
-          <div class="deckgrid">${h.deck.map(id => { const c = CARD(id); if(!c) return '';
-            const where = h.lost.includes(id) ? 'lost' : h.discard.includes(id) ? 'spent' : 'in hand';
-            return `<div class="acard" data-cmpcard="${id}" style="width:auto;--accent:${heroArt(h).col}">
-              ${cardWatermark()}
-              <div class="ahd"><span class="initb">${c.init}</span><span class="aic">${c.ic}</span><span class="anm">${esc(c.nm)}</span>
-                <span class="mini faint">${where}</span></div>
-              <div class="ahalf top"><span class="lbl">Top</span><span class="atx">${gtx(c.top.tx)}</span></div>
-              <div class="ahalf bot"><span class="lbl">Bottom</span><span class="atx">${gtx(c.bot.tx)}</span></div>
-            </div>`; }).join('')}</div>
+          <h3>Their Four Actions</h3>
+          <div class="mini faint" style="margin-bottom:8px">${gtx('One of these each round, and the rank on the track sets the numbers.')}</div>
+          ${ACTIONS.map(A => { const f = actFor(h, A.id); if(!f) return '';
+            return `<div class="item" style="padding:7px 9px;margin-bottom:5px;${f.locked?'opacity:.5':''}">
+              <div class="ic">${f.ic}</div>
+              <div style="flex:1"><div class="nm" style="font-size:12.5px">${esc(f.nm)}
+                <span class="mini faint">${A.slot ? (A.slot === 'm1' ? 'First Mastery' : 'Second Mastery') : ''} rank ${f.R} &middot; initiative ${f.init}${f.cost ? ' &middot; &#9889;' + f.cost : ''}</span></div>
+                <div class="tx mini">${f.locked ? 'Locked. One tick opens it.' : gtx(f.tx)}</div>
+              </div></div>`;
+          }).join('')}
         </div>
         <div class="card" style="margin-top:10px">
           <div class="spread"><h3>Talents</h3>${h.drafts?`<span class="pill t2">${h.drafts} draft waiting</span>`:''}</div>
@@ -4588,10 +4510,21 @@ function openInventory(){
 
 function useItem(id, inCombat){
   const it = ITEM(id);
-  const h = S.hero, d = D(), C = V.combat;
+  let h = S.hero;
+  const C = V.combat;
+  /* In a fight the pack is only open to a hero who chose Defend & Use Item,
+     and to one thing each. Out of a fight anyone may use anything. */
+  let defender = null;
+  if(C && !C.done){
+    defender = canUseItemNow();
+    if(!defender){ flash('Nobody defended this round. The pack stays shut.'); return; }
+    h = defender;
+  }
+  const d = D(h);
   const consume = () => { const i = S.bag.indexOf(id); if(i >= 0) S.bag.splice(i,1); };
   const combatOnly = ['fury','stone','sharp','stagger','rrs','bomb'];
   if(combatOnly.includes(it.use) && (!C || C.done)){ flash('Only useful in a fight.'); return; }
+  if(defender) C.itemUsed[defender.id] = 1;
   switch(it.use){
     case 'heal8': healHero(8, it.nm, h); break;
     case 'heal16': healHero(16, it.nm, h); break;
@@ -4606,7 +4539,7 @@ function useItem(id, inCombat){
     case 'stagger': staggerFoe(C, it.nm); break;
     case 'rrs': C.rrLeft += 3; cLog('+3 rerolls.', 'y'); break;
     case 'bomb': dealToFoe(14, 'the bomb', true); break;
-    case 'flee': if(C && !C.opts.boss){ V.combat = null; closeModal(); recoverDiscards(); log('You vanish into the smoke.', 'y'); consume(); save(); render(); return; } flash('Not from this one.'); return;
+    case 'flee': if(C && !C.opts.boss){ V.combat = null; closeModal(); log('You vanish into the smoke.', 'y'); consume(); save(); render(); return; } flash('Not from this one.'); return;
     case 'reveal': { const n = reveal(S.pos, 3); log(`${plural(n,'hex')} revealed.`, 'b'); break; }
     case 'boat': { V.boat = true; flash('You may cross one water hex this turn.'); break; }
     default: break;
@@ -5089,37 +5022,6 @@ function flushFx(){
   }
 }
 /* the two cards you just committed peel off the hand and fly to the discard */
-function flyCards(ids){
-  const target = $('#meCard');
-  const tr = target ? target.getBoundingClientRect()
-                    : {left: 40, top: innerHeight - 90, width: 120, height: 50};
-  ids.forEach((id, i) => {
-    const half = document.querySelector(`.acard [data-card="${id}"]`);
-    const card = half && half.closest('.acard');
-    if(!card) return;
-    const r = card.getBoundingClientRect();
-    const c = card.cloneNode(true);
-    c.classList.add('flycard');
-    c.style.left = r.left + 'px'; c.style.top = r.top + 'px';
-    c.style.width = r.width + 'px'; c.style.height = r.height + 'px';
-    c.style.setProperty('--dx', Math.round(tr.left + tr.width*0.18 - r.left) + 'px');
-    c.style.setProperty('--dy', Math.round(tr.top + tr.height*0.62 - r.top) + 'px');
-    c.style.setProperty('--rot', (i ? 16 : -13) + 'deg');
-    c.style.animationDelay = (i * 60) + 'ms';
-    document.body.appendChild(c);
-    setTimeout(() => c.remove(), 620 + i*60);
-  });
-}
-
-
-/* =========================================================================
-   CARD PROJECTION
-   Dice are not rolled until you commit, so an exact preview is impossible.
-   An expected one is not: average every die in your pool and the enemy's,
-   add the card and the revealed intent, and show roughly what the round
-   looks like if you lead with this card.
-   ========================================================================= */
-const DIEAVG = {};
 function dieAvg(k){
   if(DIEAVG[k]) return DIEAVG[k];
   const f = DICE[k].faces;
@@ -5133,56 +5035,6 @@ function poolAvg(pool){
   return pool.reduce((m, k) => { const v = dieAvg(k); m.a += v.a; m.d += v.d; m.s += v.s; return m; },
                      {a:0, d:0, s:0});
 }
-function cardProjHtml(id){
-  const C = V.combat;
-  const c = CARD(id);
-  if(!c) return null;
-  if(!C || C.phase !== 'cards'){          // outside a fight, just lay the halves out
-    return `<div class="cmpgrid">
-      <div class="cmprow"><span>Initiative</span><b>${c.init}</b></div>
-      <div class="cmprow" style="display:block"><span>Top</span><div style="color:var(--ink)">${gtx(c.top.tx)}</div></div>
-      <div class="cmprow" style="display:block"><span>Bottom</span><div style="color:var(--ink)">${gtx(c.bot.tx)}</div></div>
-    </div>`;
-  }
-  const d = D(), it = C.intent || {};
-  const mine = poolAvg(d.pool), foe = poolAvg(C.foe.pool);
-  const foeAtk = Math.max(0, foe.a + (it.atk||0) + (C.foe.pwr||0) + (C.foe.rage||0) - (C.foe.curseNow||0));
-  const foeSh  = foe.d + (it.sh||0);
-
-  const t = c.top, bt = c.bot;
-  const myAtkV = mine.a * (t.dbl ? 2 : 1) + d.atk + (t.atk||0);
-  let dealt = Math.max(0, Math.round(myAtkV - (t.pierce ? 0 : foeSh) - (C.foe.arm||0)));
-  const tr = C.foe.trait;
-  if(tr === 'warded') dealt = Math.max(0, d.atk + (t.atk||0));
-  else if(tr === 'swarm') dealt = d.pool.length * 3 * 0.72 | 0;
-  else if(tr === 'phasing' && C.round % 2 === 1) dealt = Math.max(0, Math.round(d.pool.filter(k=>k==='arcane').length * dieAvg('arcane').a));
-  else if(tr === 'brittle' && c.init <= (it.init||99)) dealt *= 2;
-  const myShV  = mine.d + (bt.sh||0) + d.arm + d.ward + (bt.ward||0);
-  const pierced = C.foe.crush || it.pierce;
-  const taken  = Math.max(0, Math.round(foeAtk - (pierced ? d.arm + d.ward : myShV)));
-
-  const meFirst = c.init <= (it.init || 99);
-  const kills   = dealt >= C.foe.hp;
-  const rows = [];
-  rows.push(`<div class="cmprow"><span>⚔ As your top</span><b style="color:var(--green)">~${dealt} damage</b></div>`);
-  if(t.stun)   rows.push(`<div class="cmprow"><span>💫 Also</span><b style="color:var(--gold)">it loses its next attack</b></div>`);
-  if(t.pierce) rows.push(`<div class="cmprow"><span>🗡 Also</span><b style="color:var(--gold)">ignores its ${Math.round(foeSh)} shields</b></div>`);
-  if(t.leech)  rows.push(`<div class="cmprow"><span>🩸 Also</span><b style="color:var(--green)">heals you ~${Math.ceil(dealt/2)}</b></div>`);
-  rows.push(`<div class="cmprow"><span>🛡 As your bottom</span><b style="color:${taken ? '#ff9b99' : 'var(--green)'}">you take ~${taken}</b></div>`);
-  if(bt.heal) rows.push(`<div class="cmprow"><span>✚ Also</span><b style="color:var(--green)">heals ${bt.heal}</b></div>`);
-  rows.push(`<div class="cmprow"><span>⏱ Initiative ${c.init} vs ${it.init}</span><b style="color:${meFirst ? 'var(--green)' : 'var(--ink-dim)'}">${meFirst ? 'you swing first' : 'it swings first'}</b></div>`);
-  if(kills && meFirst) rows.push(`<div class="cmprow"><span>☠️ On average</span><b style="color:var(--gold)">this kills it before it acts</b></div>`);
-  else if(kills) rows.push(`<div class="cmprow"><span>☠️ On average</span><b style="color:var(--gold)">this kills it</b></div>`);
-  if(t.lost || bt.lost) rows.push(`<div class="cmprow"><span>💀 Costs</span><b style="color:var(--red)">the card, until you sleep</b></div>`);
-
-  return `<div class="cmphead">Against <b>${esc(C.foe.nm)}</b>, playing ${it.nm ? 'into ' + esc(it.nm) : 'this round'}</div>
-    <div class="cmpgrid">${rows.join('')}</div>
-    <div class="mini faint" style="margin-top:6px">Averages across your dice, not a promise. Rerolls and surges move it.</div>`;
-}
-
-/* =========================================================================
-   COMBAT UI
-   ========================================================================= */
 function dieFaceHtml(die, cls, idx){
   const blank = !die.a && !die.d && !die.s;
   const title = [die.a ? `${die.a} attack` : '', die.d ? `${die.d} shield${die.d>1?'s':''}` : '',
@@ -5229,37 +5081,19 @@ function intentHtml(){
     <div class="row wr tiny" style="gap:9px;margin-top:3px">${bits.join('')}</div>
   </div>`;
 }
-function acardHtml(id){
-  const C = V.combat, c = CARD(id);
-  if(!c) return '';
-  // the hand on screen belongs to whoever you are viewing, so read THEIR picks
-  const vh = party()[C.viewing] || S.hero;
-  const pk = (C.picks && C.picks[vh.id]) || {top:null, bot:null};
-  const topOn = pk.top === id, botOn = pk.bot === id;
-  const topTaken = pk.top && !topOn, botTaken = pk.bot && !botOn;
-  return `<div class="acard ${topOn||botOn?'on':''}" data-cmpcard="${id}" style="--accent:${heroArt(vh).col}">
-    ${cardWatermark()}
-    <div class="ahd"><span class="initb">${c.init}</span><span class="aic">${c.ic}</span><span class="anm">${esc(c.nm)}</span></div>
-    <button class="ahalf top ${topOn?'sel':''}" data-card="${id}" data-half="top" ${topTaken?'disabled':''}>
-      <span class="lbl">Top</span><span class="atx">${gtx(c.top.tx)}</span></button>
-    <button class="ahalf bot ${botOn?'sel':''}" data-card="${id}" data-half="bot" ${botTaken?'disabled':''}>
-      <span class="lbl">Bottom</span><span class="atx">${gtx(c.bot.tx)}</span></button>
-  </div>`;
-}
 function renderCombat(){
   const C = V.combat;
   if(!C || C.paid) return;
   const d = D();
   const h = S.hero;
-  const cards = C.phase === 'cards';
-  const p = C.play || {};
+  const cards = C.phase === 'acts';      // "cards" kept as the name for the choosing phase
   const it = C.intent || {};
 
   // previewed numbers (dice phase only)
   const mb = C.mb || blankBuff();
   const mine = cards ? 0 : myAttack();
   const fsh = (C.pend.pierce || mb.pierce) ? 0 : foeShields();
-  const toFoe = cards ? 0 : Math.max(0, mine - fsh - (mb.noArm ? 0 : (C.foe.arm||0)));
+  const toFoe = cards ? 0 : Math.max(0, mine - fsh - (mb.noArm ? 0 : Math.max(0, (C.foe.arm||0) - mb.armCut)));
   const fatk = cards ? 0 : foeAttackVal();
   const msh = (C.foe.crush || it.pierce) ? 0 : myShields();
   const toMe = cards ? 0 : Math.max(0, fatk - msh - leadArmor() - myWard());
@@ -5273,17 +5107,17 @@ function renderCombat(){
         <div class="nm">${party().length > 1 ? '⚔️ The party' : h.ic + ' ' + esc(h.nm)}</div>
         <div class="proster">${party().map((m, i) => {
           const md = D(m), down = isDown(m), isLead = leadHero() === m;
-          const pk = C.picks[m.id] || {};
-          const ready = down || (pk.top && pk.bot) || m.hand.length < 2;
-          return `<div class="pmem ${down?'down':''} ${C.viewing===i?'viewing':''} ${isLead?'lead':''}" data-pview="${i}">
+          const chosen = C.acts[m.id] ? actFor(m, C.acts[m.id]) : null;
+          const ready = down || !!chosen;
+          return `<div class="pmem ${down?'down':''} ${chosen?'viewing':''} ${isLead?'lead':''}">
             <div class="row" style="gap:6px">
               <span style="font-size:15px">${m.ic}</span>
               <b class="tiny" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.nm.split(' ')[0])}</b>
               ${isLead ? '<span class="frontpip" title="In the front rank — takes the hits">&#9700;</span>' : ''}
-              ${cards && !down ? `<span class="tiny ${ready?'':'faint'}" style="color:${ready?'var(--green)':''}">${(pk.top?1:0)+(pk.bot?1:0)}/2</span>` : ''}
+              ${cards && !down ? `<span class="tiny ${ready?'':'faint'}" style="color:${ready?'var(--green)':''}">${chosen ? chosen.ic : '—'}</span>` : ''}
             </div>
             <div class="hpbar" style="height:7px;margin:4px 0 2px"><i style="width:${clamp(m.hp/md.maxHp*100,0,100)}%"></i></div>
-            <div class="mini faint">${down ? 'down' : m.hp + '/' + md.maxHp} &middot; &#9995;${m.hand.length}</div>
+            <div class="mini faint">${down ? 'down' : m.hp + '/' + md.maxHp}</div>
           </div>`;
         }).join('')}</div>
         <div>${statusChips(C.me)}</div>
@@ -5321,40 +5155,47 @@ function renderCombat(){
     </div>
 
     ${cards ? `
-      <div class="card" style="margin-top:11px${C.mustRest ? ';border-color:rgba(232,180,74,.55)' : ''}">
+      <div class="card" style="margin-top:11px">
         <div class="spread">
-          <div class="tiny">${C.mustRest
-            ? `<b style="color:var(--gold)">You are out of cards.</b> <span class="muted">${gtx('Catch your breath to pull your discard back, or break off.')}</span>`
-            : `<b>${gtx('Play a top and a bottom.')}</b> <span class="muted">${gtx('The card you take the top from sets your initiative — lower swings first.')}</span>`}</div>
-          <button class="btn sm ${C.mustRest ? 'primary' : 'ghost'}" id="cBreath" ${conscious().some(m => m.discard.length >= 2) ? '' : 'disabled'}>😮‍💨 Catch your breath</button>
-        </div>
-        <div class="row wr tiny" style="margin-top:6px">
-          ${party().map(m => { const pk = C.picks[m.id] || {};
-            if(isDown(m)) return '';
-            return `<span class="sb">${m.ic} <b>${pk.top ? esc(CARD(pk.top).nm) : '—'}</b> / <b>${pk.bot ? esc(CARD(pk.bot).nm) : '—'}</b></span>`;
-          }).join('')}
-          <span class="sb gl" data-g="initiative">Initiative: <b>${(function(){
-            let lo = 99; party().forEach(m => { const pk = C.picks[m.id]; if(pk && pk.top) lo = Math.min(lo, CARD(pk.top).init); });
+          <div class="tiny"><b>${gtx('One action each, off your own card.')}</b>
+            <span class="muted">${gtx('The lowest initiative anybody plays is the party\'s, and lower swings first.')}</span></div>
+          <span class="sb gl" data-g="initiative">Initiative <b>${(function(){
+            let lo = 99; conscious().forEach(m => { const f = C.acts[m.id] && actFor(m, C.acts[m.id]); if(f) lo = Math.min(lo, f.init); });
             return lo === 99 ? '—' : lo; })()}</b> vs <b>${it.init}</b></span>
         </div>
       </div>
-      ${(function(){
-        const vh = party()[C.viewing] || h;
-        if(isDown(vh)) return `<div class="tiny faint" style="padding:14px 0">${esc(vh.nm)} is down and plays nothing this round.</div>`;
-        if(vh.hand.length < 2) return `<div class="tiny faint" style="padding:14px 0">${esc(vh.nm)} has nothing left to play and sits the round out.</div>`;
-        return `<div class="hand" ${C.mustRest ? 'style="opacity:.45;pointer-events:none"' : ''}>${vh.hand.map(acardHtml).join('')}</div>`;
-      })()}
-      ${(function(){
-        const spent = party().filter(m => m.lost.length);
-        if(!spent.length) return '';
-        return `<div class="tiny faint" style="margin-top:8px">Lost this day: ${spent.map(m =>
-          `${m.ic} ${m.lost.map(i=>esc(CARD(i).nm)).join(', ')}`).join(' &middot; ')}. Camping brings them back.</div>`;
-      })()}
+      <div class="actgrid">
+        ${conscious().map(m => {
+          const chosen = C.acts[m.id];
+          return `<div class="actcol">
+            <div class="acthd"><span>${m.ic}</span><b class="tiny">${esc(m.nm)}</b>
+              <span class="mini faint" style="margin-left:auto">&#9889;${m.en}/${D(m).maxEn}</span></div>
+            ${ACTIONS.map(A => {
+              const f = actFor(m, A.id);
+              if(!f) return '';
+              const on = chosen === A.id;
+              const ok = canTake(m, A.id);
+              return `<button class="acttile ${on?'on':''} ${ok?'':'no'}" data-act="${m.id}:${A.id}" ${ok?'':'disabled'}>
+                <div class="row" style="gap:6px">
+                  <span class="aticon">${f.ic}</span>
+                  <b class="tiny" style="flex:1;min-width:0">${esc(f.nm)}</b>
+                  ${f.cost ? `<span class="mini" style="color:var(--gold)">&#9889;${f.cost}</span>` : ''}
+                  <span class="initb sm">${f.init}</span>
+                </div>
+                <div class="mini muted attx">${f.locked ? 'Locked — one tick opens it.' : gtx(f.tx)}</div>
+                ${A.track ? `<div class="pips tiny">${Array.from({length:MAXRANK},(_,k)=>
+                    `<i class="pip ${k < rankOf(m, A.track) ? 'on':''}"></i>`).join('')}</div>` : ''}
+              </button>`;
+            }).join('')}
+          </div>`;
+        }).join('')}
+      </div>
     ` : `
-      ${C.shown && C.shown.length && !C.resting ? `<div class="played">
-        ${C.shown.map(x => `<div class="pl"><span class="lbl">${x.who.ic}</span>
-          <b>${esc(x.topNm)}</b> <span class="muted">${esc(x.topTx)}</span><br>
-          <b>${esc(x.botNm)}</b> <span class="muted">${esc(x.botTx)}</span></div>`).join('')}
+      ${C.shown && C.shown.length ? `<div class="played">
+        ${C.shown.map(x => `<div class="pl"><span class="lbl">${x.who.ic} ${esc(x.who.nm.split(' ')[0])}</span>
+          <b>${x.ic} ${esc(x.nm)}</b>${x.cost ? ` <span class="mini" style="color:var(--gold)">&#9889;${x.cost}</span>` : ''}
+          <span class="mini faint">init ${x.init}</span>
+          <div class="muted">${esc(x.tx)}</div></div>`).join('')}
       </div>` : ''}
       <div class="card" style="margin-top:11px">
         <div class="spread">
@@ -5364,27 +5205,8 @@ function renderCombat(){
             <button class="btn sm ${C.myDice.some(x=>x.mark) ? 'primary' : ''}" id="cRR" ${C.rrLeft <= 0 || !C.myDice.some(x=>x.mark) ? 'disabled' : ''}>🎲 Reroll ${C.myDice.filter(x=>x.mark).length || 'marked'}</button>
           </div>
         </div>
-        <div class="mini faint" style="margin-top:4px">${C.resting ? 'You spent the round recovering. Take the hit.' : gtx('Click your own dice to mark them (dashed outline), then hit Reroll. Spend surges, then strike.')}</div>
+        <div class="mini faint" style="margin-top:4px">${gtx('Click your own dice to mark them (dashed outline), then hit Reroll. Spend surges, then strike.')}</div>
       </div>
-
-      ${(function(){
-        const able = conscious().filter(m => rankOf(m,'m2') >= 1 && MST(m,'m2'));
-        if(!able.length) return '';
-        return `<div style="margin-top:10px">
-          <div class="tiny muted" style="margin-bottom:5px">${gword('mastery','Second Masteries')} &mdash; spend energy before you strike</div>
-          ${able.map(m => {
-            const ms = MST(m,'m2'), R = rankOf(m,'m2'), cost = mCost(m), can = canFireMastery(m);
-            const why = m.mRound === C.round ? 'already spent this round'
-                      : m.en < cost ? `needs ${cost} energy, has ${m.en}` : '';
-            return `<div class="surge-opt ${can?'can':''}" ${can?`data-mfire="${m.id}"`:''} style="${can?'cursor:pointer':'opacity:.45'}">
-              <div style="flex:1"><b>${ms.ic} ${esc(ms.nm)}</b>
-                <span class="mini faint">${m.ic} ${esc(m.nm.split(' ')[0])} &middot; rank ${R}</span>
-                <div class="muted tiny">${gtx(ms.tx(R))}</div>
-                ${why ? `<div class="mini faint">${esc(why)}</div>` : ''}</div>
-              <div style="color:var(--gold);font-weight:700;white-space:nowrap">⚡${cost}</div></div>`;
-          }).join('')}
-        </div>`;
-      })()}
 
       ${surges > 0 ? `<div style="margin-top:10px">
         <div class="tiny muted" style="margin-bottom:5px">Spend surges (${surges} available)</div>
@@ -5397,10 +5219,16 @@ function renderCombat(){
         }).join('')}
       </div>` : ''}
 
-      ${usables.length ? `<div style="margin-top:10px">
-        <div class="tiny muted" style="margin-bottom:5px">Pack</div>
-        <div class="row wr">${usables.map(i => `<button class="btn sm" data-uitem="${i.id}">${i.ic} ${esc(i.nm)}</button>`).join('')}</div>
-      </div>` : ''}
+      ${(function(){
+        if(!usables.length) return '';
+        const who = canUseItemNow();
+        return `<div style="margin-top:10px">
+          <div class="tiny muted" style="margin-bottom:5px">Pack &mdash; ${who
+            ? `${who.ic} ${esc(who.nm)} defended, so they may use one thing`
+            : 'nobody defended this round, so the pack stays shut'}</div>
+          <div class="row wr">${usables.map(i => `<button class="btn sm" data-uitem="${i.id}" ${who?'':'disabled'}>${i.ic} ${esc(i.nm)}</button>`).join('')}</div>
+        </div>`;
+      })()}
     `}
 
     <div class="log" style="height:${cards ? 78 : 96}px;margin-top:11px">${C.hist.slice(-16).map(l => {
@@ -5415,17 +5243,17 @@ function renderCombat(){
     f: cards
       ? [ {lb:'📖 Terms', cls:'ghost', fn:()=>openGlossary(renderCombat)},
           ...(C.opts.boss ? [] : [{lb:'🏃 Break away', cls:'ghost', fn:tryFlee}]),
-          C.mustRest
-            ? {lb:'😮‍💨 Catch your breath', cls:'primary', fn:catchBreath, dis: !conscious().some(m => m.discard.length >= 2)}
-            : {lb: pendingHeroes().length ? `▶️ ${pendingHeroes().length} still to choose` : '▶️ Commit',
-               cls:'primary', fn:commitCards, dis: pendingHeroes().length > 0} ]
+          {lb: pendingHeroes().length ? `▶️ ${pendingHeroes().length} still to choose` : '▶️ Commit',
+           cls:'primary', fn:commitActions, dis: pendingHeroes().length > 0} ]
       : [ {lb:'📖 Terms', cls:'ghost', fn:()=>openGlossary(renderCombat)},
           ...(C.opts.boss ? [] : [{lb:'🏃 Break away', cls:'ghost', fn:tryFlee}]),
           {lb:'⚔️ Strike', cls:'primary', fn:strike, dis: C.phase !== 'dice' || C.done} ],
   });
 
-  $$('#scrim [data-card]').forEach(el => el.onclick = () => pickHalf(el.dataset.card, el.dataset.half));
-  $$('#scrim [data-pview]').forEach(el => el.onclick = () => { C.viewing = +el.dataset.pview; renderCombat(); });
+  $$('#scrim [data-act]').forEach(el => el.onclick = () => {
+    const [hid, aid] = el.dataset.act.split(':');
+    pickAction(hid, aid);
+  });
   const lb = $('#cLead');
   if(lb) lb.onclick = () => {
     const up = party().map((m,i)=>i).filter(i => !isDown(party()[i]));
@@ -5434,7 +5262,6 @@ function renderCombat(){
     cLog(`${party()[S.lead].nm} takes the front rank.`, 'y');
     renderCombat();
   };
-  const breath = $('#cBreath'); if(breath) breath.onclick = catchBreath;
   const rrBtn = $('#cRR'); if(rrBtn) rrBtn.onclick = doReroll;
   $$('#scrim [data-die]').forEach(el => el.onclick = () => {
     const i = +el.dataset.die;
@@ -5444,7 +5271,6 @@ function renderCombat(){
     renderCombat();
   });
   $$('#scrim [data-surge]').forEach(el => el.onclick = () => spendSurge(el.dataset.surge));
-  $$('#scrim [data-mfire]').forEach(el => el.onclick = () => fireMastery(el.dataset.mfire));
   $$('#scrim [data-uitem]').forEach(el => el.onclick = () => useItem(el.dataset.uitem, true));
   C.myDice.forEach(x => x.fresh = false);
   C.intentFresh = false;
@@ -5724,28 +5550,29 @@ function openCodex(){
       </div>
       <div>
         <div class="card"><h3>Combat</h3><div class="tiny muted">
-          Every round the enemy <b style="color:var(--ink)">reveals its intent first</b>. Then <b style="color:var(--ink)">every hero still standing</b> plays two ability cards from their own hand: the <b style="color:var(--ink)">top half of one</b> and the <b style="color:var(--ink)">bottom half of another</b>. Click a face along the top of your side to see that hero's hand; the round only commits once nobody is still choosing.
-          <br><br>Everything the party played is added together into one attack, one set of shields and one dice pool. The <b style="color:var(--ink)">lowest initiative anyone played</b> is the party's, and the lower number swings first — kill it before it acts and it never acts.
-          <br><br>Then both sides roll dice as the <b style="color:var(--ink)">modifier</b> on top of those card numbers. Faces show ⚔ attack, 🛡 shields, ✦ surges. Mark dice and reroll them, spend surges, then strike.
-          <br><br>Damage dealt = cards + dice + gear − their shields − their armor.</div></div>
+          Every round the enemy <b style="color:var(--ink)">reveals its intent first</b>. Then <b style="color:var(--ink)">every hero still standing picks one action</b> off the four printed on their own card: <b style="color:var(--ink)">Attack</b>, <b style="color:var(--ink)">Defend &amp; Use Item</b>, their <b style="color:var(--ink)">First Mastery</b> or their <b style="color:var(--ink)">Second Mastery</b>. The rank on that track is what the action is worth. The round commits once nobody is still choosing.
+          <br><br>Only the heroes whose action puts them in the swing <b style="color:var(--ink)">roll dice</b>. Three heroes all attacking is a big pool and no guard; two attacking while one defends is the usual shape of it. A round where everybody guards deals nothing at all, and sometimes that is correct.
+          <br><br>The <b style="color:var(--ink)">lowest initiative anybody played</b> is the party's, and the lower number swings first — kill it before it acts and it never acts. Defend is fast, a Second Mastery is slow, and every rank of Navigate takes a point off whatever you picked.
+          <br><br>Then the dice roll as the <b style="color:var(--ink)">modifier</b> on top. Faces show ⚔ attack, 🛡 shields, ✦ surges. Mark dice and reroll them, spend surges, then strike.
+          <br><br>Damage dealt = ranks + dice + gear − their shields − their armor.</div></div>
         <div class="card" style="margin-top:10px"><h3>Somebody has to stand in front</h3><div class="tiny muted">
           The party attacks as one, but it does not take damage as one. Everything that comes back lands on the hero in the <b style="color:var(--ink)">front rank</b>, and only <b style="color:var(--ink)">their</b> armor and warding reduce it.
-          <br><br>Shields work the same way. The front rank's own shields — from their bottom half and their own dice — stop the blow in full; everyone else is covering from behind and theirs count <b style="color:var(--ink)">half</b>. So a guard is worth most on the hero who is about to be hit, and the swap button is a real decision.
+          <br><br>Shields work the same way. The front rank's own guard — their Defend and their own dice — stops the blow in full; anyone else defending is covering from behind and theirs counts <b style="color:var(--ink)">half</b>. So the hero about to be hit is usually the one who should be defending, and the swap button is a real decision.
           <br><br>A hero at 0 HP is <b style="color:var(--ink)">down</b>, not dead: they play nothing and the next hero steps up. The run ends only when the last one falls. Camping, an inn or the surgeon puts them back on their feet.</div></div>
         <div class="card" style="margin-top:10px"><h3>Not every fight is a damage race</h3><div class="tiny muted">
           Many things out here carry a <b style="color:var(--ink)">trait</b>, stated on its card when you meet it, and a bigger attack will not answer it. Something Warded ignores your dice entirely and only feels the attack printed on your card. A Swarm does not care about totals at all, only how many of your dice showed anything. Regrowth heals 8 a round unless it is burning. An Entrenched thing sits behind Armor 8 until you stagger it open. A Feeder eats the surges you did not spend. Brittle things take double whenever you swing first.
           <br><br>Which is the point of burning, staggering, spending surges, going first and carrying odd dice at all. Read the trait before you plan the round.</div></div>
-        <div class="card" style="margin-top:10px"><h3>Your hand is a second health bar</h3><div class="tiny muted">
-          Cards a hero plays go to <b style="color:var(--ink)">their own discard</b> and come back when the fight ends. Cards marked LOST are gone until you sleep. A hero down to fewer than two cards simply sits the round out; when <b style="color:var(--ink)">nobody</b> can field two, the party breaks off and runs, taking a parting blow.
-          <br><br><b style="color:var(--ink)">Catch your breath</b> mid-fight and the whole party pulls its discards back, at the cost of the round and one random card each burned for good. A long fight is really a question of how many breaths you can afford. Camping, an inn, or simply ending the day returns everything.</div></div>
+        <div class="card" style="margin-top:10px"><h3>Energy is the thing you run out of</h3><div class="tiny muted">
+          A First Mastery is free and you may take it every round. A <b style="color:var(--ink)">Second Mastery costs Energy</b>, and Energy only comes back at dawn, in camp, or out of a bottle. So the real question in a long day is how many big moves you can still afford, not how many rounds you can last.
+          <br><br>The pack is shut mid-fight unless somebody takes <b style="color:var(--ink)">Defend &amp; Use Item</b>, and then it is one thing for that hero. A potion is a decision about the round, not a free extra.</div></div>
         <div class="card" style="margin-top:10px"><h3>The rank board</h3><div class="tiny muted">
           Every hero's card carries <b style="color:var(--ink)">nine tracks</b> — Attack, Guard, their two Masteries, Health, Energy, Navigate, Explore and Survival — and each holds eight ranks. A <b style="color:var(--ink)">tick</b> buys a rank, and a tick is the only progression currency there is. Gear stacks on top of whatever the board gives you.
           <br><br>Ticks come from three places. A level hands you a <b style="color:var(--ink)">level card</b>: some give a tick to place wherever you like, and some give you two or three for letting the card choose the track. Breaking a lair or bringing in a bounty draws a <b style="color:var(--ink)">reward card</b> — gold, salvage, a relic, or ticks for the whole party. And any town of decent size has a <b style="color:var(--ink)">training hall</b> that will simply sell you one, dearer every rank.</div></div>
         <div class="card" style="margin-top:10px"><h3>Masteries</h3><div class="tiny muted">
-          Two per hero, and nobody else has them. The <b style="color:var(--ink)">First Mastery</b> is the thing that hero already does and never switches off; ranks make it stronger. The <b style="color:var(--ink)">Second Mastery</b> is an action, and it starts <b style="color:var(--ink)">locked</b> — one tick opens it.
-          <br><br>It costs <b style="color:var(--ink)">Energy</b>, and it fires in the dice phase: after you have seen what you rolled, before you strike. Once per hero per round. Ranks make it hit harder, and at rank 4 it costs one less. This is what Energy is really for, and why the Energy track is worth ticks.</div></div>
+          Two of a hero's four actions are theirs alone. The <b style="color:var(--ink)">First Mastery</b> is free and you may take it every round; ranks make it stronger. The <b style="color:var(--ink)">Second Mastery</b> starts <b style="color:var(--ink)">locked</b> — one tick opens it — costs Energy, and is the biggest thing that hero can do. At rank 4 it costs one less.
+          <br><br>Some masteries put their hero in the swing and some do not, and that is the real texture of a round: the Runecarver's Second Reading hands the whole party rerolls, the Priest's Dawnsong heals and returns energy, the Reaver's Slip Behind cuts straight through armor. Read all four before you pick.</div></div>
         <div class="card" style="margin-top:10px"><h3>Levelling</h3><div class="tiny muted">
-          XP is shared: everyone gains it, so the party levels together, to 10. Every level hands that hero the next reward printed on <b style="color:var(--ink)">their own</b> level track, plus a level card to draw. Odd levels give a draft of three talents; even levels give a <b style="color:var(--ink)">new ability card</b> for that hero's deck. Nothing is random about the printed track — it is the same every run, so you can plan around it. The level cards are the part that is not.
+          XP is shared: everyone gains it, so the party levels together, to 10. Every level hands that hero the next reward printed on <b style="color:var(--ink)">their own</b> level track, plus a level card to draw. Odd levels give a draft of three talents; even levels give a spare tick. Nothing is random about the printed track — it is the same every run, so you can plan around it. The level cards are the part that is not.
           <br><br>Gold and the pack belong to the party. Gear does not: each hero wears their own, so check the character card before you equip.</div></div>
         <div class="card" style="margin-top:10px"><h3>Winning</h3><div class="tiny muted">
           Three lairs. Break each one for a seal, and dread falls by 4. With all three, the Obsidian Gate opens and you can finish the Sable Crown on your terms. Let dread hit ${(S&&S.dreadMax)||30} and it finishes you on its.</div></div>
@@ -5795,7 +5622,7 @@ function renderTitle(){
                 <span class="mini faint">${slot==='m1'?'First Mastery':'Second Mastery · ⚡'+m.cost}</span>
                 <div class="muted">${esc(m.tx(slot === 'm1' ? 0 : 1))}</div></div>`;
             }).join('')}
-            <div class="tiny muted" style="margin-top:7px">Pool: ${h.dice.map(k=>DICE[k].ic).join(' ')} · deck of ${(CARDS[h.id]||[]).length} abilities nobody else can play</div>
+            <div class="tiny muted" style="margin-top:7px">Pool: ${h.dice.map(k=>DICE[k].ic).join(' ')} · ${h.hp} HP · ${h.move} travel dice</div>
           </div>`).join('')}
       </div>
       <div class="sep"></div>
@@ -5833,7 +5660,7 @@ function renderTitle(){
           <p style="margin-top:8px"><b style="color:var(--ink)">The map is unknown.</b> A region of 91 hexes, generated fresh, revealed as you push into it. Settlements, landmarks, lairs and one gate.</p>
         </div>
         <div class="tiny muted">
-          <p><b style="color:var(--ink)">Fights are cards over dice.</b> The enemy shows its intent, then you play the top of one ability card and the bottom of another, and initiative decides who swings first. Your dice are the modifier rolled on top, so gear still changes what you roll.</p>
+          <p><b style="color:var(--ink)">Fights are four choices over dice.</b> The enemy shows its intent, then each hero takes one of the four actions printed on their card, and initiative decides who swings first. Only the ones who swing roll dice, so choosing is the whole game.</p>
           <p style="margin-top:8px"><b style="color:var(--ink)">Dread is the clock.</b> It rises every day and hardens the whole region twice on the way up. Breaking a lair pushes it back. You are always trading time for strength.</p>
         </div>
       </div>
