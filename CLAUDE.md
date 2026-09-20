@@ -182,3 +182,18 @@ delete it; just leave it in place and only advance it when a deploy is worth int
   `members` / `nonmembers` / `free` / `forum` / `full`; supports `test_email` preview and
   `dry_run`) from the admin area in `platform.html`, with scheduling via
   `send-scheduled-broadcasts.js`. Never route a broadcast, post, or member action through Circle.
+- **Michael's test alts are Rae Linden and John Dexit. Nothing else.** Do not guess which
+  accounts are his from the email address, and never assume a throwaway-looking domain is a
+  test account: the `@slmails.com` addresses belong to **Elijah, a real member**, and every
+  other `forum` account is a real paying member too. Use these and only these for role testing:
+
+  | alt | email | governing tier |
+  |---|---|---|
+  | Rae Linden | `michael@corspokane.com` | `accounts.tier` |
+  | John Dexit | `michael@thinkbeyondpolitics.com` | `accounts.tier` |
+
+  The admin account is `michael@thinkbeyondpsych.com`. **`accounts.tier` is what a session
+  actually runs at** — `platform-auth.js` mints the token's tier claim from the `accounts` row,
+  so `contacts.tier` can disagree and does not govern. `isAdmin()` in `platform.html` reads the
+  `accounts.is_admin` column, but `template-download.js` uses its own hardcoded `ADMIN_EMAILS`
+  list; the two definitions of admin do not match, which matters when role-testing a download.
