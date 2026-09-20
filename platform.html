@@ -6689,14 +6689,30 @@ async function showPolicyTopic(key) {
 // the real file. Billing & Discount is absent on purpose: the Builder has no discount or
 // sliding-scale decisions, so that document has placeholders but no alternatives, and the
 // copy must not claim otherwise.
-var STARTER_DECISION_COUNTS = {
-  'Payment Policy': 3,
-  'No-Show & Late-Cancellation Policy': 4,
-  'Benzodiazepine Policy': 6,
-  'Medication Refill Policy': 4
+// Which starter documents are generated FROM a Builder decision set. Billing & Discount
+// is deliberately absent: it has no Builder coverage and ships as plain generic prose, so
+// it gets the generic blurb.
+var STARTER_DECISION_GROUPS = {
+  'Payment Policy': 'payments',
+  'No-Show & Late-Cancellation Policy': 'attendance',
+  'Benzodiazepine Policy': 'benzos',
+  'Medication Refill Policy': 'refills'
 };
+// Counts the "Choose one" blocks the member will actually meet in the document. A decision
+// carrying a single clause renders as fixed prose, not a choice, so it must not be counted.
+// Derived rather than hardcoded: the hardcoded map said 6 for Benzodiazepine long after
+// benzo_taper became a single fixed clause and the document dropped to 5.
+function starterDecisionCount(title) {
+  var gid = STARTER_DECISION_GROUPS[title];
+  if (!gid) return 0;
+  var grp = POLICY_DECISIONS.filter(function (g) { return g.id === gid; })[0];
+  if (!grp) return 0;
+  return (grp.decisions || []).filter(function (d) {
+    return (d.choices || []).filter(function (c) { return String(c.clause || '').trim(); }).length > 1;
+  }).length;
+}
 function starterBlurb(title) {
-  var n = STARTER_DECISION_COUNTS[title];
+  var n = starterDecisionCount(title);
   return n
     ? 'Generic editable Word policy with placeholders and ' + n + ' sets of choices.'
     : 'Generic editable Word policy with placeholders to customize.';
