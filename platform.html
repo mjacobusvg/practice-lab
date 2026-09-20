@@ -7164,6 +7164,76 @@ function pbCopy() {
   showToast('Policy text copied.');
 }
 
+// ── Vault ──
+// Vault exists so stable practice facts are entered once and every generator reuses
+// them. A tool that re-asks for the practice name is a tool ignoring the point of it.
+// Same origin as this page, so the mirror is readable directly; the server copy is
+// authoritative but this is the copy the Vault page keeps in sync on every save.
+function pbVault() {
+  try { return JSON.parse(localStorage.getItem('tbp_vault') || '{}') || {}; } catch (e) { return {}; }
+}
+function pbVaultStr(key) {
+  var v = pbVault()[key];
+  return (v == null) ? '' : String(v).trim();
+}
+
+// ── Completeness ──
+// A field the clinician never filled renders as ________ in the draft. That is right
+// for a working preview and wrong for a finished document: nobody should download a
+// policy packet with blank lines where their own numbers belong. Export is blocked
+// until they are resolved, and the block says exactly which ones.
+function pbMissingFields(groups) {
+  var want = {};
+  (groups || pbDraftGroups()).forEach(function (g) { want[g.id] = true; });
+  var missing = [];
+  POLICY_DECISIONS.forEach(function (g) {
+    if (!want[g.id]) return;
+    pbVisibleDecisions(g).forEach(function (d) {
+      var c = pbChoice(d, PB.answers[d.id]);
+      if (!c || !c.fields || !c.fields.length) return;
+      if (PB.edits[d.id] != null) return;            // hand-edited wording is theirs to own
+      c.fields.forEach(function (f) {
+        var v = (PB.fields[d.id] && PB.fields[d.id][f.key] != null) ? String(PB.fields[d.id][f.key]).trim() : '';
+        if (!v) missing.push({ did: d.id, topic: g.topic, q: d.q, label: f.label || f.key });
+      });
+    });
+  });
+  return missing;
+}
+function pbGoTo(did) {
+  var el = document.getElementById('pb-d-' + did);
+  if (!el) return;
+  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  el.style.transition = 'box-shadow .5s';
+  el.style.boxShadow = '0 0 0 2px var(--teal)';
+  setTimeout(function () { el.style.boxShadow = ''; }, 1600);
+}
+// Rendered above the export buttons so the reason a download is refused is visible
+// before it is refused, not only in a toast afterwards.
+function pbMissingHtml() {
+  var missing = pbMissingFields();
+  if (!missing.length) return '';
+  var h = '<div style="border:1px solid #b45309;background:rgba(180,83,9,0.10);border-radius:var(--radius-lg);padding:11px 13px;margin-top:12px">'
+    + '<div style="font-weight:700;font-size:0.82rem;margin-bottom:5px">Still needed before you can download</div>'
+    + '<div style="font-size:0.8rem;color:var(--text-secondary);line-height:1.5;margin-bottom:7px">'
+    + 'These are your numbers, so we will not guess them or leave a blank line in a finished policy.</div>'
+    + '<div style="display:flex;flex-direction:column;gap:4px">';
+  missing.forEach(function (m) {
+    h += '<a onclick="pbGoTo(\'' + m.did + '\')" style="color:var(--teal);font-size:0.82rem;font-weight:600;cursor:pointer">'
+      + esc(m.label) + ' &rarr;</a>';
+  });
+  return h + '</div></div>';
+}
+function pbBlockedByMissing(groups) {
+  var missing = pbMissingFields(groups);
+  if (!missing.length) return false;
+  showToast(missing.length === 1
+    ? 'Still needed: ' + missing[0].label
+    : missing.length + ' values are still blank. Fill them in before downloading.');
+  pbGoTo(missing[0].did);
+  return true;
+}
+
 // ── Export ──
 // The Builder's job is to produce the member's document, not to hand them text to
 // paste into Word themselves. Both exports below are real .docx files, written as a
@@ -7224,37 +7294,72 @@ var PB_DOCX_STYLES =
   + '<w:pPrDefault><w:pPr><w:spacing w:after="160" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>'
   + '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/></w:style>'
   + '<w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/>'
-  + '<w:pPr><w:spacing w:after="280"/></w:pPr><w:rPr><w:b/><w:sz w:val="40"/><w:szCs w:val="40"/></w:rPr></w:style>'
+  + '<w:pPr><w:spacing w:after="60"/></w:pPr><w:rPr><w:b/><w:sz w:val="40"/><w:szCs w:val="40"/></w:rPr></w:style>'
+  + '<w:style w:type="paragraph" w:styleId="Subtitle"><w:name w:val="Subtitle"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/>'
+  + '<w:pPr><w:spacing w:after="40"/></w:pPr><w:rPr><w:color w:val="404040"/><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr></w:style>'
+  + '<w:style w:type="paragraph" w:styleId="DocMeta"><w:name w:val="Document Meta"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/>'
+  + '<w:pPr><w:pBdr><w:bottom w:val="single" w:sz="6" w:space="6" w:color="BFBFBF"/></w:pBdr><w:spacing w:after="360"/></w:pPr>'
+  + '<w:rPr><w:color w:val="595959"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:style>'
   + '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:qFormat/>'
-  + '<w:pPr><w:spacing w:before="320" w:after="120"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:sz w:val="28"/><w:szCs w:val="28"/></w:rPr></w:style>'
+  + '<w:pPr><w:spacing w:before="320" w:after="160"/><w:outlineLvl w:val="0"/></w:pPr><w:rPr><w:b/><w:sz w:val="28"/><w:szCs w:val="28"/></w:rPr></w:style>'
   + '<w:style w:type="paragraph" w:styleId="Disclaimer"><w:name w:val="Disclaimer"/><w:basedOn w:val="Normal"/>'
-  + '<w:pPr><w:spacing w:before="360"/></w:pPr><w:rPr><w:i/><w:color w:val="595959"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:style>'
+  + '<w:pPr><w:pBdr><w:top w:val="single" w:sz="6" w:space="8" w:color="BFBFBF"/></w:pBdr><w:spacing w:before="400"/></w:pPr>'
+  + '<w:rPr><w:i/><w:color w:val="595959"/><w:sz w:val="18"/><w:szCs w:val="18"/></w:rPr></w:style>'
+  + '<w:style w:type="paragraph" w:styleId="FooterStyle"><w:name w:val="footer"/><w:basedOn w:val="Normal"/>'
+  + '<w:pPr><w:jc w:val="center"/></w:pPr><w:rPr><w:color w:val="808080"/><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr></w:style>'
   + '</w:styles>';
+// Centred "Page N" via a PAGE field, so Word numbers the packet itself.
+var PB_DOCX_FOOTER =
+  '<w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p>'
+  + '<w:pPr><w:pStyle w:val="FooterStyle"/></w:pPr>'
+  + '<w:r><w:t xml:space="preserve">Page </w:t></w:r>'
+  + '<w:r><w:fldChar w:fldCharType="begin"/></w:r>'
+  + '<w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r>'
+  + '<w:r><w:fldChar w:fldCharType="separate"/></w:r>'
+  + '<w:r><w:t>1</w:t></w:r>'
+  + '<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p></w:ftr>';
 function pbDocxParts(title, groups) {
   var DECL = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n';
-  var body = pbPara(title, 'Title');
+  // Identity comes from Vault. Nothing is invented and nothing is asked for twice;
+  // a line with no Vault value behind it is simply left out.
+  var practice = pbVaultStr('practiceName');
+  var clinician = [pbVaultStr('legalName'), pbVaultStr('credentials')].filter(Boolean).join(', ');
+  var today = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+  var meta = [clinician, practice && clinician ? practice : '', 'Effective ' + today]
+    .filter(Boolean).join('  \u00b7  ');
+
+  var body = pbPara(practice || title, 'Title');
+  if (practice) body += pbPara(title, 'Subtitle');
+  body += pbPara(meta, 'DocMeta');
   groups.forEach(function (g, i) {
     if (i > 0) body += '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
     body += pbPara(g.topic, 'Heading1');
     g.clauses.forEach(function (c) { body += pbPara(c.text, null); });
   });
-  body += pbPara(PB_DISCLAIMER, 'Disclaimer');
-  var doc = DECL + '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>'
+  body += pbPara(PB_DISCLAIMER, 'Disclaimer');   // once, at the end of the set
+  var doc = DECL
+    + '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+    + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>'
     + body
-    + '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr>'
-    + '</w:body></w:document>';
+    + '<w:sectPr><w:footerReference w:type="default" r:id="rId2"/>'
+    + '<w:pgSz w:w="12240" w:h="15840"/>'
+    + '<w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>'
+    + '</w:sectPr></w:body></w:document>';
   return [
     { name: '[Content_Types].xml', data: DECL + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
       + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
       + '<Default Extension="xml" ContentType="application/xml"/>'
       + '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
-      + '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>' },
+      + '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>'
+      + '<Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>' },
     { name: '_rels/.rels', data: DECL + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
       + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>' },
     { name: 'word/document.xml', data: doc },
     { name: 'word/styles.xml', data: DECL + PB_DOCX_STYLES },
+    { name: 'word/footer1.xml', data: DECL + PB_DOCX_FOOTER },
     { name: 'word/_rels/document.xml.rels', data: DECL + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-      + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' }
+      + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+      + '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>' }
   ];
 }
 function pbSlug(t) {
@@ -7274,12 +7379,14 @@ function pbSaveDocx(filename, title, groups) {
 function pbDownloadSet() {
   var gs = pbDraftGroups();
   if (!gs.length) { showToast('Make some choices first.'); return; }
+  if (pbBlockedByMissing(gs)) return;
   pbSaveDocx('practice-policies.docx', 'Practice Policies', gs);
 }
 // One policy on its own, for a member who only needed that one.
 function pbDownloadGroup(gid) {
   var g = pbDraftGroups().filter(function (x) { return x.id === gid; })[0];
   if (!g) { showToast('Make some choices in this policy first.'); return; }
+  if (pbBlockedByMissing([g])) return;
   pbSaveDocx(pbSlug(g.topic) + '.docx', g.topic, [g]);
 }
 
@@ -7420,6 +7527,7 @@ function renderPolicyBuilder() {
     + '<div style="font-family:var(--font-heading);font-size:1.1rem;font-weight:700">Your practice policy draft</div></div>';
   h += '<div id="pb-count" style="color:var(--text-secondary);font-size:0.78rem;margin-bottom:12px"></div>';
   h += '<div id="pb-draft" style="max-height:52vh;overflow:auto"></div>';
+  h += pbMissingHtml();
   h += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">'
     + '<button class="btn-primary" style="font-size:0.85rem;padding:7px 14px" onclick="pbDownloadSet()">&#11015; Download my policy set (.docx)</button>'
     + '<button class="btn-ghost" style="font-size:0.85rem;padding:7px 14px" onclick="pbReset()">Start over</button>'
