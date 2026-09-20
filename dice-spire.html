@@ -146,6 +146,14 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
 .enemy-row{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;min-height:150px;align-items:flex-end}
 .enemy-row.rear{min-height:0;transform:scale(.88);transform-origin:bottom center;margin-bottom:-10px}
 .rank-label{text-align:center;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);margin:2px 0 -2px}
+.diestrip{display:flex;flex-wrap:wrap;gap:3px;justify-content:center;
+  margin-top:7px;padding-top:7px;border-top:1px solid var(--line)}
+.dieface{font-size:10px;line-height:1;display:inline-flex;align-items:center;gap:2px;
+  padding:3px 4px;border-radius:5px;background:#0d1524;border:1px solid var(--line);opacity:.7}
+.dieface b{font-weight:800}
+.dieface i{font-style:normal;font-size:8px;opacity:.9}
+.dieface.blank{opacity:.3}
+.dieface.up{opacity:1;border-color:var(--gold);background:#1a2135}
 .rider{position:absolute;top:-5px;right:-5px;font-size:10px;line-height:1;padding:2px 3px;border-radius:5px;
   background:var(--bg);border:1px solid var(--line)}
 .face{position:relative}
@@ -1416,8 +1424,9 @@ function beginPlayerTurn(){
 
 function rollAll(){
   C.dice = rollingAllies().map(h => {
-    const f = h.faces[rnd(h.faces.length)];
-    return { id:uid(), ownerUid:h.uid, k:f.k, v:f.v, r:f.r || null, used:false, mark:false, fresh:true };
+    const fi = rnd(h.faces.length);
+    const f = h.faces[fi];
+    return { id:uid(), ownerUid:h.uid, fi, k:f.k, v:f.v, r:f.r || null, used:false, mark:false, fresh:true };
   });
 }
 function rerollMarked(){
@@ -1427,8 +1436,9 @@ function rerollMarked(){
   marked.forEach(d => {
     const h = unitByUid(d.ownerUid);
     if(!h) return;
-    const f = h.faces[rnd(h.faces.length)];
-    d.k = f.k; d.v = f.v; d.r = f.r || null; d.mark = false; d.fresh = true;
+    const fi = rnd(h.faces.length);
+    const f = h.faces[fi];
+    d.fi = fi; d.k = f.k; d.v = f.v; d.r = f.r || null; d.mark = false; d.fresh = true;
   });
   logc(`Rerolled ${marked.length} ${marked.length === 1 ? 'die' : 'dice'}.`);
   C.rerollMode = C.rerolls > 0;
@@ -3262,6 +3272,7 @@ function viewCombat(){
       <div class="hptext">${h.hp} / ${h.maxHp}</div>
       <div class="badges">${badges.join('')}</div>
       ${h.isSummon ? '' : `<div class="badges" style="margin-top:2px">${gearStrip(h)}</div>`}
+      ${h.downed ? '' : dieStrip(h)}
     </div>`;
   }).join('');
 
@@ -3805,6 +3816,22 @@ function faceChips(h, oldIt, newIt){
     return `<span class="badge" ${rdc ? `data-tip="${esc(faceLabel(f))}|${esc(faceTip(f))}"` : ''}
       style="border-color:${d ? (d > 0 ? 'var(--green)' : 'var(--red)') : rdc ? rdc.col : 'var(--line)'}">
       ${K.ic}${rdc ? `<span style="color:${rdc.col}">${rdc.ic}</span>` : ''} <b style="color:${K.col}">${now}</b>${d ? `<span style="color:${d > 0 ? 'var(--green)' : 'var(--red)'}">→${Math.max(0, now + d)}</span>` : ''}</span>`;
+  }).join('') + `</div>`;
+}
+/* Every side of this hero's die, with what each is actually worth right now
+   after gear and power. Without this you cannot tell whether a reroll is worth
+   taking, because you cannot see what else is on the die. The side currently
+   up is outlined. */
+function dieStrip(h){
+  const up = C ? C.dice.filter(d => d.ownerUid === h.uid && !d.used).map(d => d.fi) : [];
+  return `<div class="diestrip">` + h.faces.map((f, i) => {
+    const K = KIND[f.k];
+    const rd = riderDef(f.r);
+    const isUp = up.includes(i);
+    const val = f.k === 'blank' || isSigil(f.k) ? '' : `<b style="color:${K.col}">${faceValue(h, f)}</b>`;
+    return `<span class="dieface ${isUp ? 'up' : ''} ${f.k === 'blank' ? 'blank' : ''}"
+      data-tip="${esc(faceLabel(f))}|${esc(faceTip(f))}${isUp ? ' This is the side showing right now.' : ''}">${K.ic}${val}${
+      rd ? `<i style="color:${rd.col}">${rd.ic}</i>` : ''}</span>`;
   }).join('') + `</div>`;
 }
 function gearStrip(h){
