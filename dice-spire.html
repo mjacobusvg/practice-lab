@@ -868,27 +868,79 @@ function rollItem(act){
 }
 
 /* ------------------------------------------------------------------- spells */
+/* ----------------------------------------------------------------- spells
+   A spell is data, the same way a perk is. Each field below resolves in one
+   place, so a caster's book can grow without growing the switch that reads it.
+
+     dmg n | dmgAll n | vsHurt n   damage to the target / to everything /
+                                   more again if the target is at or below half
+     burn n | burnAll n | poison n | poisonAll n
+     stun n | stunAll n | charm n | daze n
+     heal n | healAll n | shield n | shieldAll n | regen n | cleanse n
+     power n | powerAll n
+     drainHurt n   mends your most wounded hero
+     reroll n | mana n | summon n | summonFill n | revive true
+
+   `class` marks a spell as a caster's OWN: those are learned by levelling that
+   hero, never sold. A spell with no class is general, and the merchant keeps
+   selling those exactly as before. */
 const SPELLS = [
-  {key:'firebolt', name:'Firebolt',       cost:2, target:'enemy',     desc:'Deal 7 damage to one enemy.'},
-  {key:'mend',     name:'Greater Mend',   cost:2, target:'ally',      desc:'Heal an ally for 8.'},
-  {key:'bulwark',  name:'Bulwark',        cost:0, target:'ally',      charge:{owner:'vanguard', need:3, on:['shield','shieldAll','guard'], verb:'Shield'},
+  /* ---- general: the merchant's stock --------------------------------- */
+  {key:'firebolt', name:'Firebolt',       cost:2, target:'enemy',     dmg:7,  desc:'Deal 7 damage to one enemy.'},
+  {key:'mend',     name:'Greater Mend',   cost:2, target:'ally',      heal:8, cleanse:2, desc:'Heal an ally for 8, and clear 2 poison and 2 burning from them.'},
+  {key:'chain',    name:'Chain Lightning',cost:3, target:'allEnemies',dmgAll:5, desc:'Deal 5 damage to every enemy.'},
+  {key:'frost',    name:'Frost Nail',     cost:3, target:'enemy',     stun:1, desc:'Stun an enemy for 1 turn.'},
+  {key:'siphon',   name:'Siphon',         cost:3, target:'enemy',     dmg:5, drainHurt:5, desc:'Deal 5 damage and heal your most wounded hero 5.'},
+  {key:'quicken',  name:'Quicken',        cost:1, target:'self',      reroll:1, desc:'Gain 1 reroll this turn.'},
+  {key:'wildfire', name:'Wildfire',       cost:5, target:'allEnemies',dmgAll:10, desc:'Deal 10 damage to every enemy.'},
+  {key:'dominate', name:'Dominate',       cost:4, target:'enemy',     charm:2, desc:'Seize an enemy for 2 turns. It turns on its own side.'},
+  {key:'legion',   name:'Legion',         cost:4, target:'self',      summonFill:2, desc:'Call up two Thralls at once.'},
+
+  /* ---- charged: a hero's own, paid for in their own work --------------- */
+  {key:'bulwark',  name:'Bulwark',        cost:0, target:'ally',      shield:9,
+   charge:{owner:'vanguard', need:3, on:['shield','shieldAll','guard'], verb:'Shield'},
    desc:'Give an ally 9 shield.'},
-  {key:'chain',    name:'Chain Lightning',cost:3, target:'allEnemies',desc:'Deal 5 damage to every enemy.'},
-  {key:'frost',    name:'Frost Nail',     cost:3, target:'enemy',     desc:'Stun an enemy for 1 turn.'},
-  {key:'siphon',   name:'Siphon',         cost:3, target:'enemy',     desc:'Deal 5 damage and heal your most wounded hero 5.'},
-  {key:'quicken',  name:'Quicken',        cost:1, target:'self',      desc:'Gain 1 reroll this turn.'},
-  {key:'wildfire', name:'Wildfire',       cost:5, target:'allEnemies',desc:'Deal 10 damage to every enemy.'},
-  {key:'finisher', name:'Finisher',       cost:0, target:'enemy',     reach:false,
+  {key:'finisher', name:'Finisher',       cost:0, target:'enemy',     reach:false, dmg:6, vsHurt:8,
    charge:{owner:'duelist', need:4, on:['dmg','dmgAll'], verb:'Strike'},
    desc:'Deal 6 damage, or 14 if the target is at or below half HP. It has to be swung, so it only reaches the front rank.'},
-  {key:'conflag',  name:'Conflagration',  cost:3, target:'allEnemies',desc:'Set every enemy burning for 3.'},
-  {key:'miasma',   name:'Miasma',         cost:0, target:'allEnemies',charge:{owner:'venomist', need:3, on:['poison'], verb:'Venom'},
+  {key:'conflag',  name:'Conflagration',  cost:3, target:'allEnemies',burnAll:3, desc:'Set every enemy burning for 3.'},
+  {key:'miasma',   name:'Miasma',         cost:0, target:'allEnemies',poisonAll:4,
+   charge:{owner:'venomist', need:3, on:['poison'], verb:'Venom'},
    desc:'Apply 4 poison to every enemy.'},
-  {key:'rally',    name:'Rally',          cost:0, target:'allAllies', charge:{owner:'herald', need:3, on:['power'], verb:'Empower'},
+  {key:'rally',    name:'Rally',          cost:0, target:'allAllies', powerAll:1,
+   charge:{owner:'herald', need:3, on:['power'], verb:'Empower'},
    desc:'Give every hero +1 power for this fight.'},
-  {key:'dominate', name:'Dominate',       cost:4, target:'enemy',     desc:'Seize an enemy for 2 turns. It turns on its own side.'},
-  {key:'legion',   name:'Legion',         cost:4, target:'self',      desc:'Call up two Thralls at once.'}
+
+  /* ---- the Warden's book: keeping people standing ---------------------- */
+  {key:'bind',     name:'Bind Wounds',    cost:2, target:'ally',      class:'warden', heal:14, desc:'Heal an ally for 14.'},
+  {key:'rain',     name:'Cleansing Rain', cost:2, target:'allAllies', class:'warden', healAll:4, cleanseAll:2, desc:'Heal every hero 4, and clear 2 poison and 2 burning from all of them.'},
+  {key:'thornward',name:'Thornward',      cost:3, target:'allAllies', class:'warden', shieldAll:6, desc:'Give every hero 6 shield.'},
+  {key:'grove',    name:"Grove's Blessing",cost:3, target:'ally',     class:'warden', regen:5, desc:'An ally mends 5 at the end of the round, then 4, and so on.'},
+  {key:'evergrow', name:'Evergrowth',     cost:4, target:'allAllies', class:'warden', healAll:9, desc:'Heal every hero 9.'},
+  {key:'secondsp', name:'Second Wind',    cost:5, target:'self',      class:'warden', revive:true, desc:'Bring a downed hero back at half HP.'},
+
+  /* ---- the Pyromancer's book: everything catches ----------------------- */
+  {key:'cinderbl', name:'Cinder Blast',   cost:2, target:'enemy',     class:'pyromancer', dmg:6, burn:2, desc:'Deal 6 damage and set the target burning for 2.'},
+  {key:'immolate', name:'Immolate',       cost:3, target:'enemy',     class:'pyromancer', burn:7, desc:'Set one enemy burning for 7.'},
+  {key:'flashfire',name:'Flashfire',      cost:1, target:'allEnemies',class:'pyromancer', burnAll:2, desc:'Set every enemy burning for 2.'},
+  {key:'firewall', name:'Firewall',       cost:4, target:'allEnemies',class:'pyromancer', dmgAll:6, burnAll:2, desc:'Deal 6 to every enemy and set them all burning for 2.'},
+  {key:'meteor',   name:'Meteor',         cost:5, target:'enemy',     class:'pyromancer', dmg:20, desc:'Deal 20 damage to one enemy.'},
+  {key:'emberward',name:'Ember Ward',     cost:2, target:'allAllies', class:'pyromancer', shieldAll:4, burnAll:1, desc:'Give every hero 4 shield, and set every enemy burning for 1.'},
+
+  /* ---- the Sorcerer's book: minds and things called up ----------------- */
+  {key:'mindspike',name:'Mind Spike',     cost:2, target:'enemy',     class:'sorcerer', daze:2, desc:'Strip an enemy of its power, and halve its attacks for 2 turns.'},
+  {key:'conjure',  name:'Conjure',        cost:3, target:'self',      class:'sorcerer', summon:1, desc:'Call up a Thrall.'},
+  {key:'hex',      name:'Hex',            cost:3, target:'enemy',     class:'sorcerer', poison:7, desc:'Apply 7 poison to one enemy.'},
+  {key:'timeslip', name:'Time Slip',      cost:2, target:'self',      class:'sorcerer', reroll:2, desc:'Gain 2 rerolls this turn.'},
+  {key:'confusion',name:'Mass Confusion', cost:5, target:'allEnemies',class:'sorcerer', stunAll:1, desc:'Stun every enemy for a turn.'},
+  {key:'souldrain',name:'Soul Drain',     cost:4, target:'enemy',     class:'sorcerer', dmg:8, drainHurt:8, desc:'Deal 8 damage and heal your most wounded hero 8.'}
 ];
+/* which heroes have a book of their own: the ones who can make mana */
+const CASTERS = ownersOf('mana');
+const isCaster = h => !!h && CASTERS.includes(h.key);
+const classSpells = h => isCaster(h) ? SPELLS.filter(sp => sp.class === h.key && !S.spells.includes(sp.key)) : [];
+/* a spell with no class is general, and those are what the merchant sells */
+const isGeneralSpell = sp => !sp.class && !sp.charge;
 const spellDef = k => SPELLS.find(s => s.key === k);
 /* A charged spell runs on its own hero rather than the shared mana pool: the
    Duelist's Finisher is paid for in Strikes, the Vanguard's Bulwark in blocks.
@@ -1977,43 +2029,55 @@ function applySpell(key, target){
   if(!spellReady(sp)) return;
   if(sp.charge){ const h = chargeHero(sp); if(h) h.charge = Math.max(0, (h.charge || 0) - sp.charge.need); }
   else C.mana -= sp.cost;
-  switch(key){
-    case 'firebolt': { const e = enemyByUid(target.uid); if(e) heroDamageToEnemy(e, 7); logc(`Firebolt hits ${e ? e.name : 'nothing'} for 7.`); break; }
-    case 'mend':     { const a = unitByUid(target.uid); if(a){ healHero(a, 8); a.poison = Math.max(0, a.poison - 2); a.burn = Math.max(0, a.burn - 2); } logc('Greater Mend restores 8.'); break; }
-    case 'bulwark':  { const a = unitByUid(target.uid); if(a){ a.shield += 9; floatOn(a.uid,'+9','var(--blue)'); } logc('Bulwark grants 9 shield.'); break; }
-    case 'chain':    { livingEnemies().forEach(e => heroDamageToEnemy(e, 5)); logc('Chain Lightning arcs for 5.'); break; }
-    case 'frost':    { const e = enemyByUid(target.uid); if(e) tryControl(e, 'stun', 1, 'Frost Nail'); break; }
-    case 'siphon':   {
-      const e = enemyByUid(target.uid); if(e) heroDamageToEnemy(e, 5);
-      const hurt = livingAllies().slice().sort((a,b) => (a.hp/a.maxHp) - (b.hp/b.maxHp))[0];
-      if(hurt) healHero(hurt, 5);
-      logc('Siphon drains 5.'); break;
-    }
-    case 'quicken':  { C.rerolls += 1; logc('Quicken grants a reroll.'); break; }
-    case 'wildfire': { livingEnemies().forEach(e => heroDamageToEnemy(e, 10)); logc('Wildfire scours the room for 10.'); break; }
-    case 'finisher': {
-      const e = enemyByUid(target.uid); if(!e) break;
-      const big = e.hp <= e.maxHp / 2;
-      heroDamageToEnemy(e, big ? 14 : 6);
-      logc(big ? 'Finisher lands clean for 14.' : 'Finisher glances off for 6.');
-      break;
-    }
-    case 'conflag':  { livingEnemies().forEach(e => { e.burn += 3; floatOn(e.uid, '🔥' + '3', 'var(--orange)'); }); logc('Conflagration sets the room alight.'); break; }
-    case 'miasma':   { livingEnemies().forEach(e => { e.poison += 4; floatOn(e.uid, '☠4', 'var(--lime)'); }); logc('Miasma settles over everything.'); break; }
-    case 'rally':    { livingAllies().forEach(h => { h.power += 1; floatOn(h.uid, '+1 POW', 'var(--pink)'); }); logc('Rally lifts the whole party.'); break; }
-    case 'dominate': {
-      const e = enemyByUid(target.uid); if(!e) break;
-      tryControl(e, 'charm', 2, 'Dominate');
-      break;
-    }
-    case 'legion': {
-      while(C.summons.length < 2) C.summons.push(makeThrall(1));
-      C.summons.forEach(t => { healHero(t, t.maxHp); t.turns = Math.max(t.turns, 3); });
-      logc('Two Thralls answer the call.');
-      break;
-    }
-  }
+  resolveSpell(sp, target);
 }
+
+/* Everything a spell can do, in one place. A spell that says nothing here does
+   nothing at all, which is what the audit in the test suite checks for. */
+function resolveSpell(sp, target){
+  const e = (target && target.uid !== undefined) ? enemyByUid(target.uid) : null;
+  const a = (target && target.uid !== undefined) ? unitByUid(target.uid) : null;
+  const mark = (u, t, col) => floatOn(u.uid, t, col);
+
+  if(sp.dmg && e)    heroDamageToEnemy(e, sp.dmg + (sp.vsHurt && e.hp <= e.maxHp / 2 ? sp.vsHurt : 0));
+  if(sp.dmgAll)      livingEnemies().forEach(x => heroDamageToEnemy(x, sp.dmgAll));
+  if(sp.burn && e && e.hp > 0){ e.burn += sp.burn; mark(e, '\u{1F525}' + sp.burn, 'var(--orange)'); }
+  if(sp.burnAll)     livingEnemies().forEach(x => { x.burn += sp.burnAll; mark(x, '\u{1F525}' + sp.burnAll, 'var(--orange)'); });
+  if(sp.poison && e && e.hp > 0){ e.poison += sp.poison; mark(e, '\u2620' + sp.poison, 'var(--lime)'); }
+  if(sp.poisonAll)   livingEnemies().forEach(x => { x.poison += sp.poisonAll; mark(x, '\u2620' + sp.poisonAll, 'var(--lime)'); });
+  if(sp.stun && e)   tryControl(e, 'stun', sp.stun, sp.name);
+  if(sp.stunAll)     livingEnemies().forEach(x => tryControl(x, 'stun', sp.stunAll, sp.name));
+  if(sp.charm && e)  tryControl(e, 'charm', sp.charm, sp.name);
+  if(sp.daze && e){  e.power = 0; e.weak += sp.daze; mark(e, 'REELING', 'var(--gold)'); }
+
+  if(sp.heal && a)   healHero(a, sp.heal);
+  if(sp.healAll)     livingAllies().forEach(x => healHero(x, sp.healAll));
+  if(sp.shield && a){ a.shield += sp.shield; mark(a, '+' + sp.shield, 'var(--blue)'); }
+  if(sp.shieldAll)   livingAllies().forEach(x => { x.shield += sp.shieldAll; mark(x, '+' + sp.shieldAll, 'var(--blue)'); });
+  if(sp.regen && a){ a.regen = (a.regen || 0) + sp.regen; mark(a, '\u{1F331}' + sp.regen, 'var(--green)'); }
+  if(sp.cleanse && a){ a.poison = Math.max(0, a.poison - sp.cleanse); a.burn = Math.max(0, a.burn - sp.cleanse); }
+  if(sp.cleanseAll)  livingAllies().forEach(x => { x.poison = Math.max(0, x.poison - sp.cleanseAll); x.burn = Math.max(0, x.burn - sp.cleanseAll); });
+  if(sp.power && a){ a.power += sp.power; mark(a, '+' + sp.power + ' POW', 'var(--pink)'); }
+  if(sp.powerAll)    livingAllies().forEach(x => { x.power += sp.powerAll; mark(x, '+' + sp.powerAll + ' POW', 'var(--pink)'); });
+
+  if(sp.drainHurt){
+    const hurt = livingAllies().slice().sort((x, y) => (x.hp / x.maxHp) - (y.hp / y.maxHp))[0];
+    if(hurt) healHero(hurt, sp.drainHurt);
+  }
+  if(sp.reroll)      C.rerolls += sp.reroll;
+  if(sp.mana)        C.mana += sp.mana;
+  if(sp.summon)      for(let i = 0; i < sp.summon && C.summons.length < 2; i++) C.summons.push(makeThrall(1));
+  if(sp.summonFill){
+    while(C.summons.length < sp.summonFill) C.summons.push(makeThrall(1));
+    C.summons.forEach(t => { healHero(t, t.maxHp); t.turns = Math.max(t.turns, 3); });
+  }
+  if(sp.revive){
+    const d = S.party.find(x => x.downed);
+    if(d){ d.downed = false; d.hp = Math.max(1, Math.round(d.maxHp * 0.5)); mark(d, 'UP', 'var(--green)'); logc(`${d.name} is back on their feet.`); }
+  }
+  logc(`${sp.name}.`);
+}
+
 
 function afterAction(){
   if(fieldCleared()){ endCombat(true); return; }
@@ -2401,7 +2465,7 @@ function postCombatRewards(type){
    always on the screen, because trading sides is still the spine of the run. */
 const canMakeMana = () => S.party.some(h => h.faces.some(f => f.k === 'mana'))
   || glob('manaTurn') > 0 || glob('manaCombat') > 0 || has('wellspring') || has('clover');
-const learnableSpells = () => SPELLS.filter(sp => !S.spells.includes(sp.key) && !sp.charge && canMakeMana());
+const learnableSpells = () => SPELLS.filter(sp => !S.spells.includes(sp.key) && isGeneralSpell(sp) && canMakeMana());
 const REWARD_KINDS = [
   {k:'rider',   w:6, ok:() => S.party.some(h => h.faces.some(canInscribe))},
   {k:'sharpen', w:5, ok:() => canForge()},
@@ -2688,7 +2752,19 @@ const MASTERIES = [
 ];
 const ROMAN = ['', '', 'II', 'III', 'IV'];
 const masteryDef = k => MASTERIES.find(m => m.key === k) || null;
-const perkDef = (h, k) => (PERKS[h.key] || []).find(x => x.key === k) || masteryDef(k);
+/* A caster's level-up offers one of their OWN spells in the third slot. It
+   rides through the same machinery as a perk, under a prefixed key, so the
+   screen, the autopilot and takePerk all handle it without a second path. */
+const SPELL_PREFIX = 'sp:';
+function spellPerk(key){
+  const sp = spellDef(key);
+  if(!sp) return null;
+  return { key: SPELL_PREFIX + key, spell: key, name: sp.name,
+           desc: `${sp.desc} Costs ${sp.cost} mana.` };
+}
+const perkDef = (h, k) => k && k.indexOf(SPELL_PREFIX) === 0
+  ? spellPerk(k.slice(SPELL_PREFIX.length))
+  : ((PERKS[h.key] || []).find(x => x.key === k) || masteryDef(k));
 /* masteries stack, so counting matters where hasPerk only asks yes or no */
 const perkCount = (h, k) => (h && h.perks) ? h.perks.filter(x => x === k).length : 0;
 const partyPerkCount = k => S ? S.party.reduce((n, h) => n + perkCount(h, k), 0) : 0;
@@ -2752,6 +2828,14 @@ function perkChoices(h){
   const open = MASTERIES.filter(m => perkCount(h, m.key) < MASTERY_CAP);
   const want = (h.perks || []).length ? 3 : 2;      /* the first level is pure identity */
   const picked = sample(own, Math.min(own.length, 2));
+  /* a caster spends the third slot on their own book while it has anything
+     left in it; everybody else, and a caster who has learned the lot, gets a
+     mastery there instead */
+  const book = classSpells(h);
+  if(want > picked.length && book.length){
+    const sp = spellPerk(pick(book).key);
+    if(sp) picked.push(sp);
+  }
   return picked.concat(sample(open, Math.max(0, want - picked.length)));
 }
 /* a mastery taken twice reads as Sharpened II */
@@ -2770,9 +2854,16 @@ function takePerk(key){
   const m = UI.modal;
   const h = m.hero;
   if(!m.choices.some(pk => pk.key === key)) return;   /* only what was offered */
+  const def = perkDef(h, key);
+  if(def && def.spell){                              /* a spell joins the book, not the hero */
+    if(!S.spells.includes(def.spell)) S.spells.push(def.spell);
+    const q = m.queue; q.shift();
+    UI.modal = null; save();
+    if(q.length) openLevelUp(q); else finishLevels();
+    return;
+  }
   h.perks = h.perks || [];
   h.perks.push(key);
-  const def = perkDef(h, key);
   if(def && def.maxHp){ h.maxHp += def.maxHp; h.hp += def.maxHp; }
   if(def && def.apply) def.apply(h);
   const queue = m.queue; queue.shift();
@@ -2940,7 +3031,7 @@ function openShop(){
      useless to a party with no way to make mana, so it is not offered either */
   const canMana = S.party.some(h => h.faces.some(f => f.k === 'mana'))
     || glob('manaTurn') > 0 || glob('manaCombat') > 0 || has('wellspring') || has('clover');
-  const unowned = SPELLS.filter(s => !S.spells.includes(s.key) && !s.charge && canMana);
+  const unowned = SPELLS.filter(s => !S.spells.includes(s.key) && isGeneralSpell(s) && canMana);
   const stock = sample(unowned, 2).map(sp => ({ key:sp.key, price: Math.round((60 + sp.cost * 22) * priceMod()) }));
   const wares = [];
   for(let i = 0; i < 2; i++){
@@ -3153,7 +3244,7 @@ const EVENTS = [
     text:'Something at the bottom is reciting words in the right order. You could learn them.',
     choices:[
       {t:'Listen for an hour', s:'Learn a spell. Every hero loses 4 max HP.', go:()=>{
-        const un=SPELLS.filter(s=>!S.spells.includes(s.key) && !s.charge);
+        const un=SPELLS.filter(s=>!S.spells.includes(s.key) && isGeneralSpell(s));
         if(un.length) S.spells.push(pick(un).key);
         S.party.forEach(h=>{h.maxHp=Math.max(5,h.maxHp-4); h.hp=Math.min(h.hp,h.maxHp);});
         eventResult(un.length?'The words settle behind your teeth.':'You already know everything it has to say.');
@@ -3248,7 +3339,7 @@ const ADVENTURE = [
    text:'He will trade knowledge for blood, as they always do.',
    choices:[
      {t:'Take his bargain', s:'Learn a spell. Every hero loses 6 max HP.', go:()=>{
-        const un = SPELLS.filter(x => !S.spells.includes(x.key) && !x.charge);
+        const un = SPELLS.filter(x => !S.spells.includes(x.key) && isGeneralSpell(x));
         if(un.length) S.spells.push(pick(un).key);
         S.party.forEach(h => { h.maxHp = Math.max(5, h.maxHp - 6); h.hp = Math.min(h.hp, h.maxHp); });
         advResult(un.length ? 'The words stick, painfully.' : 'He has nothing left to teach you.'); }},
@@ -3487,6 +3578,7 @@ function viewTitle(){
       <b style="color:var(--ink)">Heroes level up</b> as you win fights, and each level is a choice of two from that hero's own list. Elites and bosses count double.<br>
       <b style="color:var(--ink)">Mana</b> comes only from the Warden, Pyromancer and Sorcerer. Everyone else pays for their signature spell in their own work: the Duelist charges Finisher with Strikes, the Vanguard charges Bulwark by blocking.<br>
       <b style="color:var(--ink)">The first hero you pick</b> carries their banner, a rule that holds for the whole run. The other two do not.<br>
+      <b style="color:var(--ink)">Casters learn their own spells</b> as they level: the Warden, Pyromancer and Sorcerer each have a book nobody sells. Everything else on a merchant\u2019s shelf is open to anyone.<br>
       <b style="color:var(--ink)">Riders</b> are written onto a single die face at a camp fire or an engraver, and change what that face does rather than what it is worth.<br>
       <b style="color:var(--ink)">Enemies stand in two ranks.</b> Strikes, Leech and Stun only reach the front; fire, venom, Cleave and anything cast go over it. Kill the front and the back steps up.<br>
       <b style="color:var(--ink)">Elites and bosses are sieges.</b> Clear what is in front of you and more comes up the stair, and if you stall the clock brings it early.<br>
@@ -4271,12 +4363,14 @@ function mLevelUp(m){
     </div>
     <p class="muted tiny" style="margin:8px 0 12px">Pick one. It lasts the rest of the run.${
       m.queue.length > 1 ? ` ${m.queue.length - 1} other hero also levelled.` : ''}${
-      m.choices.some(pk => masteryDef(pk.key)) ? ' Masteries are open to anyone and can be taken more than once.' : ''}</p>
+      m.choices.some(pk => pk.spell) ? ' A spell goes into the party\u2019s book and can be cast by anyone who has the mana.'
+      : m.choices.some(pk => masteryDef(pk.key)) ? ' Masteries are open to anyone and can be taken more than once.' : ''}</p>
     <div class="col">
-      ${m.choices.map(pk => { const mast = !!masteryDef(pk.key);
+      ${m.choices.map(pk => { const mast = !!masteryDef(pk.key), spell = !!pk.spell;
         return `<button class="opt" onclick="takePerk('${pk.key}')">
-        <div class="t">${esc(perkTitle(h, pk))}${mast
-          ? ` <span class="tiny" style="color:var(--ink-faint);font-weight:400">\u00B7 mastery</span>` : ''}</div>
+        <div class="t" style="${spell ? 'color:var(--violet)' : ''}">${esc(perkTitle(h, pk))}${mast
+          ? ` <span class="tiny" style="color:var(--ink-faint);font-weight:400">\u00B7 mastery</span>`
+          : spell ? ` <span class="tiny" style="color:var(--ink-faint);font-weight:400">\u00B7 ${esc(h.name)}\u2019s own spell</span>` : ''}</div>
         <div class="s">${esc(pk.desc)}</div></button>`; }).join('')}
     </div>
     <div class="sep"></div>
