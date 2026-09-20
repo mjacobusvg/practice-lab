@@ -6627,6 +6627,73 @@ async function showPracticePolicies() {
   renderPracticePolicies();
 }
 
+// Two memberships are for sale on this page, so the locked state has to say which one buys
+// what BEFORE either button. "Forum and Full members get the guidance" let a free member buy
+// Forum expecting the guided build they were looking at, which is Full. Never call what Forum
+// gets "the templates": it gets the generic policy starters, not the 15 Foundations documents.
+function policyTierCompareHtml() {
+  var starters = {};
+  PRACTICE_POLICIES.forEach(function (t) { (t.starters || []).forEach(function (x) { starters[x] = 1; }); });
+  var nStarters = Object.keys(starters).length;
+  var col = function (name, price, promise, bullets, plan, lead) {
+    return '<div style="flex:1 1 270px;min-width:250px;border:1px solid ' + (lead ? 'var(--teal)' : 'var(--border)') + ';'
+      + (lead ? 'background:rgba(42,171,184,0.06);' : '') + 'border-radius:var(--radius-lg);padding:15px 17px;display:flex;flex-direction:column">'
+      + '<div style="display:flex;align-items:baseline;gap:8px"><span style="font-weight:700;font-size:1.05rem">' + name + '</span>'
+      + '<span style="color:var(--text-secondary);font-size:0.9rem">' + price + '</span></div>'
+      + '<div style="font-weight:600;font-size:0.9rem;margin:3px 0 9px">' + promise + '</div>'
+      + '<ul style="margin:0 0 13px;padding-left:18px;color:var(--text-secondary);font-size:0.87rem;line-height:1.6">'
+      + bullets.map(function (b) { return '<li>' + b + '</li>'; }).join('') + '</ul>'
+      + '<button class="' + (lead ? 'btn-primary' : 'btn-ghost') + '" style="width:100%;margin-top:auto" '
+      + 'onclick="startCheckout(\'' + plan + '\')">Join ' + name + ' (' + price + ')</button></div>';
+  };
+  return '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px 18px;margin-bottom:16px">'
+    + '<div style="font-weight:700;font-size:1.05rem;margin-bottom:2px">&#128274; Practice Policies is a member benefit</div>'
+    + '<div style="color:var(--text-secondary);font-size:0.9rem;line-height:1.5;margin-bottom:13px">Choose how much help you want building your policies.</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:12px">'
+    + col('Forum', '$50/mo', 'Guidance and do-it-yourself starter policies', [
+        'Read the full guidance for every policy topic',
+        'Download the ' + nStarters + ' generic starter policies as Word documents',
+        'Fill in the placeholders and choose the wording yourself'
+      ], 'forum_monthly_50', false)
+    + col('Full', '$119/mo', 'The finished policy is built for you', [
+        'Everything in Forum',
+        'Answer guided questions about how your practice actually works',
+        'Your choices become finished policy language',
+        'Your practice details fill in automatically from your Vault',
+        'Download one customized policy or your complete policy set',
+        'All 15 Private Practice Foundations documents and forms'
+      ], 'full_monthly_119', true)
+    + '</div>'
+    + '<div style="margin-top:13px;padding-top:11px;border-top:1px solid var(--border);font-size:0.9rem;line-height:1.55">'
+    + '<b>Want the finished policy generated for you? Choose Full.</b> Forum gives you the guidance and a generic document you edit yourself.</div>'
+    + '</div>';
+}
+
+// What a locked card promises has to match what THIS topic actually offers. Three of the
+// eight topics have no guided build, and Card on File has forms rather than a starter, so a
+// single line of copy for all of them would oversell most of them.
+function policyLockedCardHtml(t) {
+  var hasBuild = !!t.builder, hasStarter = (t.starters || []).length > 0, hasForms = (t.forms || []).length > 0;
+  var rows;
+  if (hasBuild && hasStarter) {
+    rows = [['Forum', 'full guidance plus a generic starter policy you edit yourself'],
+            ['Full', 'guided choices plus a customized policy generated for you']];
+  } else if (hasBuild && hasForms) {
+    rows = [['Forum &amp; Full', 'full guidance'],
+            ['Full', 'guided policy building plus the related authorization forms']];
+  } else if (hasBuild) {
+    rows = [['Forum &amp; Full', 'full guidance'],
+            ['Full', 'guided choices plus a customized policy generated for you']];
+  } else {
+    rows = [['Forum &amp; Full', 'full guidance'],
+            ['', 'Guided build for this policy is coming later']];
+  }
+  return '<div style="color:var(--text-secondary);font-size:0.88rem;line-height:1.55">'
+    + rows.map(function (r) {
+        return '<div>' + (r[0] ? '<b style="color:var(--text-primary)">' + r[0] + ':</b> ' : '') + esc(r[1]) + '</div>';
+      }).join('') + '</div>';
+}
+
 function renderPracticePolicies() {
   var center = document.getElementById('center');
   var unlocked = policyGuidanceUnlocked();
@@ -6638,10 +6705,7 @@ function renderPracticePolicies() {
   h += '</div>';
 
   if (!unlocked) {
-    h += '<div class="tpl-gate" style="margin-bottom:16px"><div class="tpl-gate-title">&#128274; Practice policies are a member benefit</div>'
-      + '<p class="tpl-gate-sub">Forum and Full members get the guidance for every policy below. Full adds the guided build: answer how your practice works and download the finished policy.</p>'
-      + '<div class="tpl-detail-actions"><button class="btn-primary" onclick="startCheckout(\'forum_monthly_50\')">Join Forum &mdash; $50/mo</button>'
-      + '<button class="btn-ghost" onclick="startCheckout(\'full_monthly_119\')">Join Full &mdash; $119/mo</button></div></div>';
+    h += policyTierCompareHtml();
   } else if (canBuild) {
     var done = PRACTICE_POLICIES.filter(function (t) { return policyTopicAnswered(t) > 0; }).length;
     if (done) {
@@ -6659,12 +6723,15 @@ function renderPracticePolicies() {
     h += '<div onclick="showPolicyTopic(\'' + t.key + '\')" style="cursor:pointer;border:1px solid var(--border);border-radius:var(--radius-lg);padding:15px 18px;margin-bottom:10px">';
     h += '<div style="display:flex;gap:14px;align-items:flex-start;justify-content:space-between">';
     h += '<div style="flex:1 1 auto"><div style="font-weight:700;font-size:1.02rem;margin-bottom:3px">' + esc(t.title) + '</div>';
-    h += '<div style="color:var(--text-secondary);font-size:0.88rem;line-height:1.5">'
-      + esc(unlocked && en ? policyEntryLede(en.g) : 'Guidance and documents for this policy are included with membership.') + '</div>';
+    if (unlocked && en) {
+      h += '<div style="color:var(--text-secondary);font-size:0.88rem;line-height:1.5">' + esc(policyEntryLede(en.g)) + '</div>';
+    } else {
+      h += policyLockedCardHtml(t);
+    }
     h += '<div style="margin-top:7px;display:flex;flex-wrap:wrap;gap:6px">';
     if (g && canBuild) h += '<span class="tpl-tag">' + (answered ? answered + ' of ' + pbVisibleDecisions(g).length + ' decisions made' : 'Build yours') + '</span>';
     else if (g && unlocked) h += '<span class="tpl-tag">Build yours with Full</span>';
-    else if (!g) h += '<span class="tpl-tag">Guidance &mdash; builder coming</span>';
+    else if (!g && unlocked) h += '<span class="tpl-tag">Guidance, builder coming</span>';
     if ((t.starters || []).length && unlocked) h += '<span class="tpl-tag">' + ((t.starters.length > 1) ? t.starters.length + ' starter documents' : 'Starter document') + '</span>';
     h += '</div></div>';
     h += '<span style="flex:0 0 auto;color:var(--teal);font-size:0.85rem;font-weight:600;padding-top:3px;white-space:nowrap">Open &rarr;</span>';
