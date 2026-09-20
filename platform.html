@@ -6680,7 +6680,7 @@ var POLICY_DECISIONS = [
         desc: 'Balances are billed and patients who cannot pay in full can arrange a plan.',
         pros: ['Keeps patients in care who would otherwise disengage over money', 'Avoids abrupt escalation'],
         cons: ['Someone has to track and manage the plans', 'Plans that quietly fail turn into aged balances anyway'],
-        clause: 'Unpaid balances are billed to you by statement. If you are unable to pay a balance in full, contact the office and we will make a reasonable effort to arrange a payment plan.' },
+        clause: 'Unpaid balances are billed to you by statement. If you are unable to pay a balance in full, contact {{vault.practiceName|the office}} and we will make a reasonable effort to arrange a payment plan.' },
       { id: 'scheduling', label: 'Balances affect future non-urgent scheduling',
         desc: 'Non-urgent follow-up is held until the balance is resolved or a plan is in place.',
         pros: ['Balances rarely grow very large', 'Clear and enforceable without a collections vendor'],
@@ -6920,7 +6920,7 @@ var POLICY_DECISIONS = [
         desc: 'Lost, stolen or early-finished prescriptions are not routinely replaced.',
         pros: ['Removes the negotiation and applies consistently', 'The expectation is set before the situation arises'],
         cons: ['Genuine loss and theft do happen, so an exception route is still needed'],
-        clause: 'Benzodiazepine prescriptions are written to last until your next scheduled appointment and are not routinely replaced early, including for lost or stolen medication. If something has genuinely gone wrong, contact the office and we will discuss it with you; any exception is a clinical decision and is documented.' },
+        clause: 'Benzodiazepine prescriptions are written to last until your next scheduled appointment and are not routinely replaced early, including for lost or stolen medication. If something has genuinely gone wrong, contact {{vault.practiceName|the office}} and we will discuss it with you; any exception is a clinical decision and is documented.' },
       { id: 'case_by_case', label: 'Assessed case by case',
         desc: 'Each request is evaluated on its circumstances.',
         pros: ['Room for genuine situations', 'No policy you will end up breaking anyway'],
@@ -6984,12 +6984,12 @@ var POLICY_DECISIONS = [
         desc: 'The patient contacts you directly.',
         pros: ['You see the request immediately', 'Easier to catch the request that should really be an appointment'],
         cons: ['Requests arrive in several formats and places', 'More inbox traffic'],
-        clause: 'Refill requests should be made by contacting the office directly rather than through your pharmacy.' },
+        clause: 'Refill requests should be made by contacting {{vault.practiceName|the office}} directly rather than through your pharmacy.' },
       { id: 'either', label: 'Either route',
         desc: 'Both are accepted.',
         pros: ['Nothing falls through because the patient used the wrong channel'],
         cons: ['Duplicate requests are common, and it is easy to fill twice or not at all'],
-        clause: 'Refill requests may be made either through your pharmacy or by contacting the office directly.' }
+        clause: 'Refill requests may be made either through your pharmacy or by contacting {{vault.practiceName|the office}} directly.' }
     ] },
 
   { id: 'rx_window',
@@ -7082,8 +7082,28 @@ function pbVisibleDecisions(g) { return g.decisions.filter(pbVisible); }
 
 // Substitute the clinician's own numbers into the clause. An unfilled field stays a
 // visible blank rather than silently disappearing, so nobody exports "a fee of ."
+// {{vault.key|fallback}} resolves a stable practice fact from Vault. The fallback is
+// required, not optional: with an empty Vault the clause must still read as correct
+// prose, never as a blank. Vault saves typing here; it never decides anything, which is
+// why a missing value degrades to the generic wording rather than blocking a download.
+function pbFillVault(text) {
+  return String(text || '').replace(/\{\{vault\.(\w+)\|([^}]*)\}\}/g, function (m, key, fallback) {
+    return pbVaultStr(key) || fallback;
+  });
+}
+// Stable facts a generated policy reads better for, and which Vault already has a home
+// for. Surfaced as a prompt to complete Vault, never as a reason to block a download.
+var PB_VAULT_WANTED = [
+  { key: 'practiceName', label: 'Practice name' },
+  { key: 'practicePhone', label: 'Practice phone' },
+  { key: 'practiceEmail', label: 'Practice email' },
+  { key: 'practiceAddress', label: 'Practice address' }
+];
+function pbVaultGaps() {
+  return PB_VAULT_WANTED.filter(function (f) { return !pbVaultStr(f.key); });
+}
 function pbFill(text, d, c) {
-  return String(text || '').replace(/\{\{(\w+)\}\}/g, function (m, key) {
+  return pbFillVault(String(text || '')).replace(/\{\{(\w+)\}\}/g, function (m, key) {
     var v = (PB.fields[d.id] && PB.fields[d.id][key] != null) ? String(PB.fields[d.id][key]).trim() : '';
     if (!v) return '________';
     var f = null;
@@ -7224,6 +7244,19 @@ function pbMissingHtml() {
   });
   return h + '</div></div>';
 }
+// Distinct from pbMissingHtml on purpose. A missing Builder decision is the member's
+// call and stops the download; a missing Vault fact only makes the document more generic,
+// so it is offered, not enforced.
+function pbVaultGapHtml() {
+  var gaps = pbVaultGaps();
+  if (!gaps.length) return '';
+  return '<div style="border:1px solid var(--border);border-radius:var(--radius-lg);padding:11px 13px;margin-top:12px">'
+    + '<div style="font-weight:700;font-size:0.82rem;margin-bottom:5px">Missing from your Vault</div>'
+    + '<div style="font-size:0.8rem;color:var(--text-secondary);line-height:1.5;margin-bottom:7px">'
+    + 'Your policy will still download. Adding these fills them in here and in every document you generate after: '
+    + gaps.map(function (g) { return esc(g.label); }).join(', ') + '.</div>'
+    + '<a href="/vault" style="color:var(--teal);font-size:0.82rem;font-weight:600">Update my Vault &rarr;</a></div>';
+}
 function pbBlockedByMissing(groups) {
   var missing = pbMissingFields(groups);
   if (!missing.length) return false;
@@ -7325,8 +7358,9 @@ function pbDocxParts(title, groups) {
   var practice = pbVaultStr('practiceName');
   var clinician = [pbVaultStr('legalName'), pbVaultStr('credentials')].filter(Boolean).join(', ');
   var today = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
-  var meta = [clinician, practice && clinician ? practice : '', 'Effective ' + today]
-    .filter(Boolean).join('  \u00b7  ');
+  // The title block already carries the practice name (or the document name when
+  // Vault has none), so the meta line never repeats either. It is who and when.
+  var meta = [clinician, 'Effective ' + today].filter(Boolean).join('  \u00b7  ');
 
   var body = pbPara(practice || title, 'Title');
   if (practice) body += pbPara(title, 'Subtitle');
@@ -7336,6 +7370,17 @@ function pbDocxParts(title, groups) {
     body += pbPara(g.topic, 'Heading1');
     g.clauses.forEach(function (c) { body += pbPara(c.text, null); });
   });
+  var contact = [
+    ['Phone', pbVaultStr('practicePhone')],
+    ['After hours', pbVaultStr('afterHoursPhone')],
+    ['Email', pbVaultStr('practiceEmail')],
+    ['Fax', pbVaultStr('practiceFax')],
+    ['Address', pbVaultStr('practiceAddress')]
+  ].filter(function (r) { return r[1]; });
+  if (contact.length) {
+    body += pbPara('How to reach us', 'Heading1');
+    contact.forEach(function (r) { body += pbPara(r[0] + ': ' + r[1], null); });
+  }
   body += pbPara(PB_DISCLAIMER, 'Disclaimer');   // once, at the end of the set
   var doc = DECL
     + '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
@@ -7528,6 +7573,7 @@ function renderPolicyBuilder() {
   h += '<div id="pb-count" style="color:var(--text-secondary);font-size:0.78rem;margin-bottom:12px"></div>';
   h += '<div id="pb-draft" style="max-height:52vh;overflow:auto"></div>';
   h += pbMissingHtml();
+  h += pbVaultGapHtml();
   h += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">'
     + '<button class="btn-primary" style="font-size:0.85rem;padding:7px 14px" onclick="pbDownloadSet()">&#11015; Download my policy set (.docx)</button>'
     + '<button class="btn-ghost" style="font-size:0.85rem;padding:7px 14px" onclick="pbReset()">Start over</button>'
