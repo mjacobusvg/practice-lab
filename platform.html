@@ -5897,34 +5897,44 @@ async function showLibrary() {
   if (side) side.classList.add('active');
   var center = document.getElementById('center');
   center.innerHTML = '<div class="skel skel-h"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
-  if (libData === null) {
-    // Admins load every row (including visible=false preview cards) via a service-role,
-    // admin-gated function, since RLS only exposes visible=true rows to the anon key.
-    // Everyone else uses the normal anon query and never sees hidden rows.
-    if (isAdmin()) {
-      try {
-        var ares = await fetch('/.netlify/functions/admin-list-templates', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: getAuthToken() })
-        });
-        var adata = await ares.json();
-        libData = (adata && adata.ok && adata.rows) ? adata.rows : [];
-      } catch(e) { console.error('admin library:', e); libData = []; }
-    } else {
-      try {
-        var { data, error } = await SB
-          .from('template_library')
-          .select('id, title, description, category, min_tier, is_paid, price_cents, member_price_cents, grant_membership_days, preview, source_post_id, file_url, storage_path, bundle_id, forum_posts:source_post_id(id,title)')
-          .eq('visible', true)
-          .order('sort_order', { ascending: true })
-          .order('created_at', { ascending: false });
-        if (error) throw error;
-        libData = data || [];
-      } catch(e) { console.error('library:', e); libData = []; }
-    }
-  }
+  await ensureLibData();
   await loadOwnedTemplates();
   renderLibrary();
+}
+
+// ONE loader for every view that needs the template rows. This was two copies, and only one
+// of them ran for members: showPolicyLibrary() fetched only when isAdmin(), so a member who
+// opened the Policy Library FIRST left libData null, and renderPolicyLibrary()'s byTitle map
+// came back empty. Every attached template then fell through to the dead grey-tag branch
+// instead of a working button, which reads as broken rather than gated. Opening the Template
+// Library first populated libData and masked it completely, which is how it survived review.
+//
+// Admins load every row (including visible=false preview cards) via a service-role,
+// admin-gated function, since RLS only exposes visible=true rows to the anon key.
+// Everyone else uses the normal anon query and never sees hidden rows.
+async function ensureLibData() {
+  if (libData !== null) return;
+  if (isAdmin()) {
+    try {
+      var ares = await fetch('/.netlify/functions/admin-list-templates', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: getAuthToken() })
+      });
+      var adata = await ares.json();
+      libData = (adata && adata.ok && adata.rows) ? adata.rows : [];
+    } catch(e) { console.error('admin library:', e); libData = []; }
+  } else {
+    try {
+      var { data, error } = await SB
+        .from('template_library')
+        .select('id, title, description, category, min_tier, is_paid, price_cents, member_price_cents, grant_membership_days, preview, source_post_id, file_url, storage_path, bundle_id, forum_posts:source_post_id(id,title)')
+        .eq('visible', true)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      libData = data || [];
+    } catch(e) { console.error('library:', e); libData = []; }
+  }
 }
 
 function renderLibrary() {
@@ -6468,16 +6478,11 @@ async function showPolicyLibrary() {
   if (side) side.classList.add('active');
   var center = document.getElementById('center');
   center.innerHTML = '<div class="skel skel-h"></div><div class="skel skel-row"></div><div class="skel skel-row"></div>';
-  if (libData === null && isAdmin()) {
-    try {
-      var ares = await fetch('/.netlify/functions/admin-list-templates', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: getAuthToken() })
-      });
-      var adata = await ares.json();
-      libData = (adata && adata.ok && adata.rows) ? adata.rows : [];
-    } catch(e) { libData = libData || []; }
-  }
+  // Members need these rows too, not just admins: the attached-template buttons are built
+  // from them. loadOwnedTemplates() matters here as well, since a purchased template should
+  // open as owned from the Policy Library exactly as it does from the Template Library.
+  await ensureLibData();
+  await loadOwnedTemplates();
   renderPolicyLibrary();
 }
 
