@@ -2272,7 +2272,8 @@ function postCombatRewards(type){
     kind: type,
     gold,
     relic,
-    faces: faceRewards(bonus ? 4 : 3),
+    faces: faceRewards(bonus ? 4 : 3),   /* the shop and event paths still read this */
+    offers: rewardOffers(bonus),
     taken: false
   };
   S.screen = 'map';
@@ -2283,6 +2284,134 @@ function postCombatRewards(type){
     return;
   }
   save(); render();
+}
+
+/* ---------------------------------------------------------------- rewards
+   Every victory screen used to ask exactly the same question: which of these
+   three faces is worth giving a side up for. These are the other things a win
+   can be worth, so the question changes from fight to fight. One face is
+   always on the screen, because trading sides is still the spine of the run. */
+const MAX_FACES = 8;
+const canMakeMana = () => S.party.some(h => h.faces.some(f => f.k === 'mana'))
+  || glob('manaTurn') > 0 || glob('manaCombat') > 0 || has('wellspring') || has('clover');
+const learnableSpells = () => SPELLS.filter(sp => !S.spells.includes(sp.key) && !sp.charge && canMakeMana());
+const REWARD_KINDS = [
+  {k:'rider',   w:6, ok:() => S.party.some(h => h.faces.some(canInscribe))},
+  {k:'sharpen', w:5, ok:() => canForge()},
+  {k:'mastery', w:5, ok:() => true},
+  {k:'side',    w:3, ok:() => S.party.some(h => h.faces.length < MAX_FACES)},
+  {k:'spell',   w:4, ok:() => learnableSpells().length > 0},
+  {k:'fate',    w:3, ok:() => S.fate < fateMax()},
+  {k:'face',    w:9, ok:() => true}
+];
+/* three offers: a face, then two more drawn from everything a win can be */
+function rewardOffers(bonus){
+  const want = bonus ? 4 : 3;
+  const faces = faceRewards(want + 1);
+  const out = [{ kind:'face', face: faces.shift() }];
+  const pool = REWARD_KINDS.filter(o => o.ok());
+  let guard = 0;
+  while(out.length < want && guard++ < 80){
+    const total = pool.reduce((a, o) => a + o.w, 0);
+    let n = rnd(total), pickKind = pool[pool.length - 1];
+    for(const o of pool){ n -= o.w; if(n < 0){ pickKind = o; break; } }
+    const made = makeOffer(pickKind.k, faces);
+    /* one of each kind per screen, except faces, which are all different */
+    if(!made) continue;
+    if(made.kind !== 'face' && out.some(o => o.kind === made.kind)) continue;
+    out.push(made);
+  }
+  while(out.length < want && faces.length) out.push({ kind:'face', face: faces.shift() });
+  return out;
+}
+function makeOffer(kind, faces){
+  switch(kind){
+    case 'face':    return faces.length ? { kind:'face', face: faces.shift() } : null;
+    case 'side':    return faces.length ? { kind:'side', face: faces.shift() } : null;
+    case 'mastery': {
+      const open = MASTERIES.filter(m => S.party.some(h => perkCount(h, m.key) < MASTERY_CAP));
+      return open.length ? { kind:'mastery', key: pick(open).key } : null;
+    }
+    case 'spell': { const sp = learnableSpells(); return sp.length ? { kind:'spell', key: pick(sp).key } : null; }
+    case 'rider':   return { kind:'rider' };
+    case 'sharpen': return { kind:'sharpen' };
+    case 'fate':    return { kind:'fate', n: 2 };
+  }
+  return null;
+}
+/* how each one draws on the victory screen */
+function offerCard(o, i){
+  const wrap = (ic, col, nm, ds, note) => `<div class="reward" onclick="takeReward(${i})">
+    <div style="font-size:26px">${ic}</div>
+    <div class="nm" style="color:${col}">${esc(nm)}</div>
+    <div class="ds">${esc(ds)}</div>
+    ${note ? `<div class="tiny" style="margin-top:6px;line-height:1.5">${note}</div>` : ''}</div>`;
+  switch(o.kind){
+    case 'face': return wrap(KIND[o.face.k].ic, KIND[o.face.k].col, faceLabel(o.face),
+      KIND[o.face.k].desc(o.face.v), faceVerdict(o.face));
+    case 'side': return wrap(KIND[o.face.k].ic, 'var(--cyan)', 'Another side · ' + faceLabel(o.face),
+      `Add this as a NEW side rather than trading one in. The die grows to ${
+        Math.min(MAX_FACES, Math.max(...S.party.map(h => h.faces.length)) + 1)} sides, so everything on it comes up a little less often.`,
+      `<span style="color:var(--cyan)">Give nothing up</span> <span class="faint">· ${esc(KIND[o.face.k].desc(o.face.v))}</span>`);
+    case 'mastery': { const m = masteryDef(o.key);
+      return wrap('⭐', 'var(--gold)', m.name, m.desc,
+        `<span class="faint">A mastery, for any one hero. It can be taken again later.</span>`); }
+    case 'spell': { const sp = spellDef(o.key);
+      return wrap('\u{1F4DC}', 'var(--violet)', sp.name, sp.desc,
+        `<span class="faint">◆${sp.cost} mana, cast from the tray in any fight.</span>`); }
+    case 'rider': return wrap('✒️', 'var(--violet)', 'An inscription',
+      'Write a rider onto a face one of your heroes already carries: what it does, not what it is worth.',
+      `<span style="color:var(--cyan)">Give nothing up</span> <span class="faint">· you choose the face and the rider</span>`);
+    case 'sharpen': return wrap('\u{1FA93}', 'var(--gold)', 'A whetstone',
+      'Permanently sharpen one face on any die.',
+      `<span style="color:var(--cyan)">Give nothing up</span>`);
+    case 'fate': return wrap('✨', 'var(--gold)', `${o.n} Fate`,
+      'Fate buys a reroll when your rerolls are gone. It carries between fights.',
+      `<span class="faint">You hold ${S.fate} of ${fateMax()}.</span>`);
+  }
+  return '';
+}
+function takeReward(i){
+  const m = UI.modal;
+  const o = m && m.offers && m.offers[i];
+  if(!o) return;
+  switch(o.kind){
+    case 'face':    installFace(o.face, 'replace', finishReward); return;
+    case 'side':    installFace(o.face, 'add', finishReward); return;
+    case 'rider':   UI.modal = { type:'inscribe', after: finishReward }; render(); return;
+    case 'sharpen': UI.modal = { type:'forge', after: finishReward }; render(); return;
+    case 'mastery': UI.modal = { type:'grant', key: o.key, after: finishReward }; render(); return;
+    case 'spell':   if(!S.spells.includes(o.key)) S.spells.push(o.key); finishReward(); return;
+    case 'fate':    S.fate += o.n; clampFate(); finishReward(); return;
+  }
+}
+/* which hero gets the mastery */
+function grantMastery(heroUid){
+  const m = UI.modal;
+  if(!m || m.type !== 'grant') return;
+  const h = heroByUid(heroUid);
+  const def = masteryDef(m.key);
+  if(!h || !def || perkCount(h, m.key) >= MASTERY_CAP) return;
+  h.perks = h.perks || [];
+  h.perks.push(m.key);
+  if(def.apply) def.apply(h);
+  const after = m.after;
+  UI.modal = null; save();
+  if(after) after(); else render();
+}
+function mGrant(m){
+  const def = masteryDef(m.key);
+  return `<h2>⭐ ${esc(def.name)}</h2>
+    <p class="muted tiny" style="margin-bottom:12px">${esc(def.desc)} Who learns it?</p>
+    <div class="col">
+      ${S.party.map(h => { const n = perkCount(h, m.key), full = n >= MASTERY_CAP;
+        return `<button class="opt" ${full ? 'disabled' : ''} onclick="grantMastery(${h.uid})">
+          <div class="t">${h.av} ${esc(h.name)}${n ? ` <span class="tiny" style="color:var(--gold);font-weight:400">· already ${esc(perkTitle(h, def))}</span>` : ''}</div>
+          <div class="s">${full ? 'Has taken this as deep as it goes.' : `${h.hp}/${h.maxHp} HP · ${perkLine(h) || 'nothing learned yet'}`}</div>
+        </button>`; }).join('')}
+    </div>
+    <div class="sep"></div>
+    <div class="row" style="justify-content:flex-end"><button class="btn ghost" onclick="${m.after ? 'finishReward()' : 'closeEvent()'}">Take none →</button></div>`;
 }
 
 function finishReward(){
@@ -2713,12 +2842,17 @@ function temperItem(heroUid, slot){
   UI.modal = null; save(); render();
 }
 function forgeFace(heroUid, idx){
+  const m = UI.modal;
   const h = heroByUid(heroUid);
-  const f = h.faces[idx];
+  const f = h && h.faces[idx];
   if(!forgeable(f)) return;                           /* a rite has no number to sharpen */
   f.v += (['stun','charm','daze','summon','guard','echo','dmgAll','shieldAll','power','mana','burn'].includes(f.k) ? 1 : 2);
-  UI.modal = null; save(); render();
+  const after = m && m.after;
+  UI.modal = null; save();
+  if(after) after(); else render();
 }
+/* a whetstone taken as a reward hands you back to the victory screen */
+function leaveForge(){ const a = UI.modal && UI.modal.after; UI.modal = null; if(a) a(); else closeEvent(); }
 function campInscribe(){ UI.modal = { type:'inscribe' }; render(); }
 /* an inscription bought at the counter goes back to the counter, one taken at
    a camp fire just ends */
@@ -3522,6 +3656,7 @@ function renderModal(){
   let html = '';
   switch(m.type){
     case 'reward':   html = mReward(m); break;
+    case 'grant':    html = mGrant(m); break;
     case 'install':  html = mInstall(m); break;
     case 'pickface': html = mPickFace(m); break;
     case 'ancestral':html = mAncestral(m); break;
@@ -3605,20 +3740,16 @@ function mReward(m){
         <div style="font-size:28px">${relicDef(m.relic).ic}</div>
         <div><b>${esc(relicDef(m.relic).name)}</b><div class="tiny muted">${esc(relicDef(m.relic).desc)}</div></div></div>` : ''}
     <div class="sep"></div>
-    <h3 style="font-size:17px;margin-bottom:4px">Take a face</h3>
-    <p class="tiny muted" style="margin-bottom:10px">A die has six sides. Taking one of these means giving one up.</p>
+    <h3 style="font-size:17px;margin-bottom:4px">Take one</h3>
+    <p class="tiny muted" style="margin-bottom:10px">A die has six sides, so taking a face means giving one up. The rest cost you nothing.</p>
     ${partyDiceBlock()}
     <div class="reward-grid">
-      ${m.faces.map((f, i) => `<div class="reward" onclick="takeRewardFace(${i})">
-        <div style="font-size:26px">${KIND[f.k].ic}</div>
-        <div class="nm" style="color:${KIND[f.k].col}">${esc(faceLabel(f))}</div>
-        <div class="ds">${esc(KIND[f.k].desc(f.v))}</div>
-        <div class="tiny" style="margin-top:6px;line-height:1.5">${faceVerdict(f)}</div></div>`).join('')}
+      ${(m.offers || []).map((o, i) => offerCard(o, i)).join('')}
     </div>
     <div class="sep"></div>
     <div class="spread">${invButton()}<button class="btn ghost" onclick="finishReward()">Take none →</button></div>`;
 }
-function takeRewardFace(i){
+function takeRewardFace(i){          /* kept for the shop and event paths */
   const f = UI.modal.faces[i];
   installFace(f, 'replace', finishReward);
 }
@@ -3802,7 +3933,7 @@ function mForge(){
       </div>`).join('')}
     </div>
     <div class="sep"></div>
-    <div class="row" style="justify-content:flex-end"><button class="btn ghost" onclick="closeEvent()">Never mind</button></div>`;
+    <div class="row" style="justify-content:flex-end"><button class="btn ghost" onclick="leaveForge()">Never mind</button></div>`;
 }
 /* Tooltips are mousemove-driven, so on a touch screen they never fire at all.
    Anything a player needs in order to choose has to be on the page itself. */
