@@ -474,6 +474,32 @@ collapse old med-trajectory lines into a summary after N entries so a long med h
 not accrue forever). Hold until we've seen real follow-ups on ambient-56, then tune from what
 actually reads as bloated.
 
+**QUEUED, BLOCKED ON THE PORT: full guided-walkthrough rewrite (`TBP_TOUR` in
+`pm-ai-scribe.html`).** Michael asked to be reminded after the setup restructure ports from
+`/practice` to live (said ~5 days out on 23 Sept 2026). Do NOT start it before the port; the
+steps below describe a flow that is being replaced, so writing them now means writing them
+twice.
+
+Partial fix already shipped (`ambient-105`): the opening step promised three jobs and only
+showed one, so steps for **Review outside records** and **Reason through this case (Discern)**
+were added. Everything below is still outstanding:
+
+1. **The six setup-modal steps** (`#visit-opts`, `#wf-prep`, `#context`, `#sections-toggles`,
+   `#therapy-guide-toggle`, `#prep-btn`) plus the closing `.tmpl-bar` step. These describe the
+   old setup flow. The restructure replaces it with one primary action, inputs above it, and
+   settings collapsed, so all seven need rewriting against whatever actually ships.
+2. **ADHD Evaluation Framework.** Live today and absent from the tour. Deliberately deferred
+   because its entry points (`#ep-adhd` on the prep screen, the hidden `.adhd-trigger` in the
+   collapsed strip) sit inside the flow being restructured. Re-anchor after the port.
+3. **The ADHD Interview**, if it ports with the restructure.
+4. **Vocabulary, and this is the deepest problem.** The tour predates
+   `PRODUCT-ARCHITECTURE-AND-NAMING.md`. It calls the whole product "the Scribe" throughout and
+   never uses the workspace framing or the Read -> Prepare -> Reason -> Interview story. That
+   doc wins where it and the marketing spine disagree, so the tour is currently teaching the
+   superseded frame. This is a tone pass across all 31 steps, not a patch.
+
+Remember the lockstep rule on any Scribe change, and leave `notify` alone for tour copy.
+
 ### C. Infrastructure / safety debt (non-negotiable, not the exciting part)
 
 - Resolve the known marketplace RLS exposure (Supabase audit found marketplace tables with
