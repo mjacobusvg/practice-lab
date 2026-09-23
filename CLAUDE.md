@@ -197,3 +197,37 @@ delete it; just leave it in place and only advance it when a deploy is worth int
   so `contacts.tier` can disagree and does not govern. `isAdmin()` in `platform.html` reads the
   `accounts.is_admin` column, but `template-download.js` uses its own hardcoded `ADMIN_EMAILS`
   list; the two definitions of admin do not match, which matters when role-testing a download.
+- **`accounts` -> `contacts` is kept in sync by a database trigger, not by application code.**
+  `trg_sync_contact_from_account` on `public.accounts` runs `sync_contact_from_account()`
+  `AFTER INSERT OR UPDATE OF tier`: it mirrors `accounts.tier` into the matching `contacts` row
+  (matched on `lower(email)`), and inserts a `contacts` row (`source` 'platform',
+  `subscribed` true) when none exists. Emails ending `@example.com` are skipped. Nothing in the
+  repo mentions this, and it is not in `migration_log`, so it is easy to go looking for the
+  signup code that creates contacts and conclude it is missing. It does not exist. The trigger
+  is the mechanism.
+
+  **Why this matters:** `broadcast-send.js` emails `public.contacts`, so an account with no
+  `contacts` row cannot be reached by ANY broadcast, at any tier, and nothing surfaces that.
+  In Sept 2026, 68 accounts created between May and Sept had no `contacts` row and were
+  invisible to every send; they predated the trigger, and the May/July `contacts` rows had come
+  from the Circle migration import rather than from any live code path. They were backfilled by
+  re-setting `tier` to its own value, which fires the trigger and produces exactly the same row
+  shape as a normal signup:
+
+  ```sql
+  update accounts a set tier = a.tier
+  where a.email not ilike '%@example.com'
+    and not exists (select 1 from contacts c where lower(c.email) = lower(a.email));
+  ```
+
+  **The gap that remains:** the trigger fires on INSERT and on a TIER change, and on nothing
+  else. An account whose **email** is later corrected still gets no `contacts` row, because
+  `UPDATE OF tier` does not cover it. If someone reports never receiving email, check for a
+  `contacts` row before checking anything else. A periodic run of the query above is the cheap
+  guard.
+
+  `sync_contact_from_account()` is `SECURITY DEFINER` and the security advisor flags it as
+  executable by `anon`. It is inert: it returns `trigger`, and Postgres rejects a direct call
+  with `0A000: trigger functions can only be called as triggers`. Revoking EXECUTE from
+  `PUBLIC` / `anon` / `authenticated` is hygiene, not a fix, and does not affect the trigger,
+  which is privilege-checked at `CREATE TRIGGER` rather than at fire time.
