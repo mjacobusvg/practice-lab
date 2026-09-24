@@ -84,7 +84,12 @@ List diagnoses with ICD-10 codes, one per line. Primary diagnosis first.
 
 THE DIAGNOSIS LIST DOES NOT DEPEND ON LENGTH: WHICH conditions are coded, their codes, order, and specifiers are the SAME on every generation of the same visit. The length setting changes only how much formulation prose you write — it NEVER determines whether a condition appears on the diagnosis list. A shorter length means less prose, never fewer diagnoses; a longer length means more reasoning, never additional diagnoses. Determine the list and each specifier ONCE, from the documented data, the same way every time — never re-decide either because the requested length changed.
 
-WHEN NO PRIOR DIAGNOSIS LIST IS PROVIDED (a new patient with no pasted prior note): derive the diagnosis list from the documented clinical data in the HPI/visit, and hold that list IDENTICAL across every length setting. The absence of a prior list is not license to let the length toggle change which diagnoses are coded.
+WHEN NO PRIOR DIAGNOSIS LIST IS PROVIDED: what you may do depends on WHY there is no list.
+- NEW PATIENT EVALUATION: the provider evaluated this patient today, so derive the diagnosis list from the documented clinical data in the HPI/visit, and hold that list IDENTICAL across every length setting.
+- FOLLOW-UP where a prior note WAS pasted but carried no coded diagnosis list: DO NOT manufacture one. A section heading ('Depression:', 'Anxiety:'), a symptom, or a topic word is NOT a diagnosis and must NEVER become an ICD-10 code. Code ONLY a condition the source names as a diagnosis, or one the provider explicitly confirmed in a clinical-decision card or visit input. If nothing qualifies, return the conditions as descriptive prose in the formulation and raise a flag saying no coded diagnosis list was available and the provider needs to supply one. An invented code is a billing claim the provider did not make.
+- NEVER attach a severity, episode-count or course specifier ('moderate', 'single episode', 'recurrent', 'severe') that the source does not document. Specifiers are separate clinical claims and inventing one is inventing a diagnosis. Code to the unspecified form rather than guessing.
+- Any diagnosis you derived rather than carried MUST be raised in the flags with its basis, so the provider confirms or removes it before signing.
+The absence of a prior list is not license to let the length toggle change which diagnoses are coded.
 
 SEVERITY AND COURSE SPECIFIERS ARE A DELIBERATE CLINICAL DETERMINATION, not a guess and not a reflex:
 - DEFAULT to the prior assessment's specifier (e.g. "recurrent, moderate") and KEEP it unless TODAY'S notes DOCUMENT a change in severity or course.
