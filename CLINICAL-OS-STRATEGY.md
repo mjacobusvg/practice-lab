@@ -1274,6 +1274,143 @@ instructions, accommodation letter, handoff, consultation summary).
 Worth **not** borrowing: Freed's chat can update the note when it reads a message as an editing
 instruction. That is precisely the boundary above, and we should be on the other side of it.
 
+
+### Discern deep review and context-specific reasoning frameworks
+
+The category comparison surfaced a useful distinction that should become part of the product:
+**Discern should not only be a chat beside a note. It should also be able to become the entire
+workspace for a dedicated case-analysis session.** A clinician should be able to open a case, add
+the available records, medication list, labs, collateral and working formulation, and spend the
+session doing nothing except thinking through the case.
+
+This does not require a separate intelligence layer. It is the same Discern reasoning engine with
+a different task contract, context pack and output structure.
+
+Call the product concept **Deep Review** for now (working name, not marketing-approved):
+
+> **Deep Review = use Discern as a structured case conference with the record in front of it.**
+
+A Deep Review should be able to organise the case across:
+- psychiatric differential and competing formulations;
+- medical and neurologic contributors;
+- medication effects, interactions, adverse-effect burden and monitoring;
+- substance use, intoxication and withdrawal;
+- patient-specific modifiers (age, pregnancy, organ function, cognition, trauma, adherence,
+  social context, prior treatment response);
+- risk and level-of-care considerations;
+- conflicting evidence and what is still unknown;
+- the next questions, tests, collateral or observations most likely to change the formulation;
+- explicit "what would make me change my mind?" reasoning;
+- a concise synthesis the clinician can adopt, reject or carry into the assessment.
+
+The important product rule is the same as §34: the output is **structured considerations, not a
+diagnosis or prescription handed down by the system.** The clinician weighs the evidence and owns
+the decision.
+
+This also gives us a clean way to compete with products that advertise "complex case support."
+Do not answer that claim by pretending Discern has a mysterious smarter model. Make Discern better
+at complex cases by giving the model **reliable context-specific scaffolding** so it consistently
+checks the domains that matter in that setting.
+
+#### Clinical Context frameworks
+
+Discern should eventually expose an optional **Clinical Context** selector. The context does not
+change the underlying model. It changes what the reasoning layer is required to attend to, the
+questions it prioritises, and the structure of its answer.
+
+Initial contexts worth building:
+
+| Context | What the framework must reliably attend to |
+|---|---|
+| **General outpatient** | longitudinal course, treatment response, adherence, competing psychiatric explanations, function, psychotherapy, medication burden, monitoring, unresolved threads |
+| **Medical / hospital (C-L)** | consult question, delirium/encephalopathy, medical and neurologic mimics, medication/toxic contributors, organ function, QTc/electrolytes, withdrawal/intoxication, capacity when relevant, safety, what the primary team needs from psychiatry |
+| **Emergency / crisis** | immediate safety, intoxication/withdrawal, delirium/medical instability, agitation drivers, suicide/violence risk, capacity, disposition, what must be established before discharge vs admission |
+| **Perinatal** | pregnancy/lactation status, gestational timing, prior perinatal episodes, maternal/fetal risk tradeoffs, medication exposure, sleep disruption, postpartum risk, feeding plans, obstetric coordination |
+| **Geriatric** | baseline cognition/function, delirium vs dementia vs psychiatric illness, anticholinergic/sedative burden, falls, renal/hepatic clearance, polypharmacy, sensory impairment, caregiver/collateral, capacity |
+| **Addiction / dual diagnosis** | intoxication/withdrawal, substance-induced symptoms, MOUD, cross-substance interactions, overdose risk, readiness/change, co-occurring psychiatric symptoms, what persists outside substance effects |
+| **Neuropsychiatry** | TBI, seizure, stroke, movement disorder, neurocognitive disease, medication neurologic effects, temporal relationship between neurologic disease and psychiatric symptoms |
+| **Child / adolescent** | development, family/system context, school function, collateral, age-appropriate differential, medication developmental considerations, safety, guardianship/consent |
+| **Forensic / capacity** | exact referral question, decision-specific capacity, understanding/appreciation/reasoning/choice, coercion, reliability of information, collateral, legal vs clinical question boundaries |
+| **Eating disorders** | medical stability, weight/vital trends, electrolyte/cardiac risk, compensatory behaviours, level-of-care thresholds, medication limitations, comorbidity without losing the medical risk picture |
+
+These are **frameworks, not specialty-branded AIs.** Avoid marketing language implying the model
+turns into a consultation-liaison psychiatrist, addiction psychiatrist, forensic psychiatrist, etc.
+The value is that the framework reduces omission risk and gives a strong general reasoning model a
+disciplined way to think in that clinical context.
+
+#### Medical / hospital (C-L) framework in more detail
+
+C-L means **consultation-liaison psychiatry**: psychiatric reasoning inside a medical setting where
+the presentation may be psychiatric, medical, neurologic, toxic, medication-related, or several at
+once. This is exactly the kind of situation where generic "psychiatric differential" prompting is
+not enough because the framework must deliberately resist premature psychiatric attribution.
+
+A C-L Deep Review should start with the **consult question**, then dynamically expand only the
+relevant branches:
+
+1. **Why is psychiatry being asked to see this patient?**
+   Agitation, confusion, "psychosis", depression, refusal of care, suicidality, medication advice,
+   capacity, disposition, behaviour interfering with treatment, etc.
+
+2. **Immediate medical / neurologic explanation check.**
+   Delirium/encephalopathy, infection, hypoxia, metabolic or endocrine disturbance, seizure,
+   stroke/TBI, pain, sleep deprivation, medication effects, withdrawal/intoxication and other
+   reversible contributors before assuming a primary psychiatric syndrome.
+
+3. **Delirium and baseline cognition.**
+   Acute vs chronic, fluctuation, attention, arousal, baseline cognitive status, surgery/ICU
+   context, recent medication changes and physiologic stressors.
+
+4. **Medication + physiology.**
+   Current MAR, recent additions/stops, renal/hepatic function, QTc, electrolytes, anticholinergic
+   burden, sedatives/opioids, dopamine blockade, serotonergic burden, CYP interactions, steroid
+   effects, withdrawal risk and monitoring implications.
+
+5. **Substance contribution.**
+   Intoxication, withdrawal and substance-induced syndromes, including the possibility that the
+   treatment choice changes materially depending on the cause of agitation/confusion.
+
+6. **Safety and capacity when relevant.**
+   Suicide/violence/elopement risk and decision-specific capacity. Never produce a generic
+   "has/does not have capacity" conclusion without identifying the actual decision at issue.
+
+7. **Psychiatric differential after the above.**
+   Mood, psychosis, catatonia, anxiety, trauma-related, adjustment, substance-induced and other
+   psychiatric explanations, weighted in context rather than treated as the starting assumption.
+
+8. **What the medical team actually needs.**
+   A short, operational output: working formulation, what to clarify/check, medication or
+   non-medication considerations requiring clinician review, monitoring, what to stop/avoid if
+   supported, when psychiatry should reassess, and disposition considerations.
+
+The UI should not dump this eight-part checklist every time. The framework is an internal
+attention map. The output should be adaptive:
+- postoperative hallucinations + fluctuating attention -> delirium branch becomes dominant;
+- lupus patient refusing dialysis -> capacity + medical contributors dominate;
+- agitation with QTc 525 on methadone/haloperidol -> medication physiology and monitoring dominate.
+
+That is the broader architecture rule: **context frameworks should increase reliability without
+turning Discern into a questionnaire.**
+
+#### Build sequence
+
+This is relatively cheap compared with a new standalone product because the hard infrastructure is
+already Discern + record context. Build in this order:
+
+1. **Deep Review session mode** using the existing Discern engine and uploaded/reviewed records.
+2. **General structured review** (psychiatric / medical-neurologic / medication / substance /
+   patient-specific / risk / unknowns / what changes the formulation).
+3. **Medical / hospital (C-L)** as the first context-specific framework because it most clearly
+   proves that context changes the reasoning task.
+4. Add **Emergency, Perinatal, Geriatric, Addiction and Neuropsychiatry** based on actual use.
+5. Only add more context frameworks when they produce a genuinely different attention map, not to
+   inflate a "30+ specialties" marketing count.
+
+A future Deep Review can also produce a clinician-approved **consultation summary** or **assessment
+reasoning block**, but only through the existing Adopted Reasoning boundary. The exploratory case
+conference itself stays temporary.
+
+
 ### What would make this good rather than impressive
 
 The riskiest failure is not philosophical objection. It is Discern stating a verifiable
