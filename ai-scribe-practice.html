@@ -377,7 +377,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-127-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-128-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -714,7 +714,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-127-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-128-sub</span></div>
 </div>
 </div>
 
@@ -1802,6 +1802,13 @@ function thirdPartyDirective(tmpl){
   return '';
 }
 
+// Is there actually a prior note in the box? gatherSource() includes the PRIOR SIGNED NOTE block
+// only when this has text, so every follow-up carry-forward rule has to be conditioned on the
+// same thing or it instructs the model about a document that is not in its prompt.
+function tbpHasPriorNote(){
+  try { var el = document.getElementById('context'); return !!(el && el.value && el.value.trim()); }
+  catch(e){ return false; }
+}
 function draftSystem(){
   var label = visitType==='new_eval' ? 'new patient psychiatric evaluation' : 'psychiatric follow-up visit';
   var tmpl = (vaultTemplates[visitType] || houseTemplates[visitType] || '').trim();
@@ -1835,7 +1842,21 @@ function draftSystem(){
   s += "=== MEDICATIONS (keep exactly as written) ===\n";
   s += "OUTSIDE RECORDS ARE NOT TODAY'S HISTORY. When the source material includes information from an outside record (a prior evaluation, discharge summary, referral, school or psychological testing, or any 'Historical Note:' line describing records reviewed), that information KEEPS ITS ATTRIBUTION in the note and never becomes a present-tense patient fact. Write 'the 2024 neuropsychological evaluation documented ADHD' or 'records reviewed described childhood-onset inattention' — NEVER 'the patient has ADHD diagnosed in childhood' on the strength of a record alone. An ABSENCE in a record is an absence in the record, never a patient denial: write 'the records reviewed did not document prior suicide attempts', NEVER 'the patient denies prior suicide attempts'. Something the patient told you today is documented as the patient's report; something a record documents is documented as the record's. Never let the two collapse into each other, and never merge a record-derived statement and a today statement into one undifferentiated sentence.\n\n";
   s += "Never change, correct, normalize, or guess medication names, doses, routes, or frequencies. Write each exactly as the clinician documented it; do not convert brand to generic or generic to brand. If a medication name or dose looks implausible, misspelled, or unrecognized, keep it verbatim, do not substitute a 'correct' name, and let the review pass flag it.\n\n";
-  if(visitType === 'follow_up'){
+  if(visitType === 'follow_up' && !tbpHasPriorNote()){
+    // A follow-up with an EMPTY prior-note box. Every carry-forward rule below assumes a prior
+    // note is in the prompt, and gatherSource() only includes that block when the box has text.
+    // Emitting them into a vacuum told the model to carry forward and mine a note it could not
+    // see, and it invented one: a sertraline titration, two diagnoses, a prior episode, a
+    // discontinued therapy course and quotes, all framed "as previously documented", out of
+    // three lines of today's notes. This replaces the whole block in that case.
+    s += "=== FOLLOW-UP WITH NO PRIOR NOTE \u2014 THERE IS NOTHING TO CARRY FORWARD ===\n";
+    s += "This visit is marked a follow-up, but NO prior note was provided. You have ONLY today's notes. There is no last visit in front of you, so there is nothing to carry forward and nothing to mine.\n";
+    s += "- Document ONLY what today's notes contain. If today's notes are three lines, the HPI is short. A short, accurate note is correct here; a full-looking one is not.\n";
+    s += "- You MUST NOT invent prior-visit content of any kind: no previous medication, dose or titration, no prior diagnosis, no earlier episode, no past treatment or therapy course, no previously documented symptom, no prior advice given, and no patient quote you were not given.\n";
+    s += "- You MUST NOT use continuity framing for anything: no 'as previously documented', 'previously described', 'previously advised', 'continues to', 'remains', 'since the last visit', 'at the prior visit'. Every one of those asserts a prior record you do not have.\n";
+    s += "- Do not name a diagnosis the notes do not name, and do not infer one from symptoms.\n";
+    s += "- Omit any template section today's notes give you nothing for, per the governing rule in STRUCTURE.\n\n";
+  } else if(visitType === 'follow_up'){
     s += "=== FOLLOW-UP: CARRY EVERYTHING FORWARD, EDIT THE DELTAS ===\n";
     s += "This is a follow-up. The prior-context block is last visit's note; today's notes are what changed or was added this visit. This clinician CARRIES THE WHOLE NOTE FORWARD and edits what changed, and does NOT want sections removed (dropping a section breaks next visit's carry-forward). So:\n";
     s += "- CARRY THE SUBSTANCE FORWARD, SECTION BY SECTION. Every section the clinician's template and prior note contain is a candidate to keep, and keeping it means keeping its CONTENT — dropping a section that HAS content breaks next visit's carry-forward, so a section is never removed merely because today's notes did not mention it. Never write 'not addressed at this visit'. Where a section genuinely has no substance from today AND none from the prior note, the governing rule in STRUCTURE applies: omit that section entirely rather than printing it blank or filling it with a placeholder. There is nothing to carry forward from an empty section.\n";
@@ -1923,7 +1944,8 @@ function verifySystem(){
   s += "PROVENANCE: if the draft states as a present-tense patient fact something the source attributes to an outside record (a prior evaluation, discharge summary, referral, testing, or a 'Historical Note:' line about records reviewed), restore the attribution to match the source. Likewise, if the draft converted an absence in the records into a patient denial ('denies prior hospitalization' where the source says only that records did not document one), rewrite it as what the records did or did not document. Do this silently, without a flag. Never remove an attribution the source carries.\n";
   s += "RISK: never let the draft add, drop, or soften any documented risk (SI, HI, self-harm, plan, intent). If the draft DROPPED or softened a risk the source documents, restore it to match the source exactly. If the draft ADDED a risk statement or denial the source does not document (e.g. a 'denies SI' the source never recorded), remove it. Do this silently, without a flag.\n";
   s += "IMPLAUSIBILITY (ASK, do NOT fix): if something clinically consequential looks wrong and the source gives you no way to correct it — an unrecognized or likely-misspelled MEDICATION name, an implausible dose/frequency/duration, a number that affects care, or an internal contradiction you cannot resolve — do NOT guess or invent a correction; raise a one-sentence flag so the clinician can resolve it, and preserve the exact wording. A garbled NON-medication proper noun (a person, device, or place name) or a cosmetic date/spelling issue that does not change care: leave it as documented, no flag.\n\n";
-  if(visitType === 'follow_up'){ s += "FOLLOW-UP CARRY-FORWARD: silently correct any current-visit assessment, especially SI/HI or self-harm, that the draft asserts as done today but that only the prior note supports and today's notes do not, so a prior safety assessment never reads as if performed today. Standing items carried as 'continued/stable' are fine. Do this silently, without a flag.\n\n"; }
+  if(visitType === 'follow_up' && !tbpHasPriorNote()){ s += "NO PRIOR NOTE WAS PROVIDED for this follow-up, so the draft had only today's notes. STRIP any prior-visit content it asserts: a previous medication, dose or titration, an earlier episode, a past treatment or therapy course, a prior diagnosis, a previously documented symptom, advice previously given, or any quote. Also strip continuity framing that claims a record you cannot see: 'as previously documented', 'previously described', 'previously advised', 'continues to', 'remains', 'since the last visit', 'at the prior visit'. A short note is the correct outcome.\n\n"; }
+  else if(visitType === 'follow_up'){ s += "FOLLOW-UP CARRY-FORWARD: silently correct any current-visit assessment, especially SI/HI or self-harm, that the draft asserts as done today but that only the prior note supports and today's notes do not, so a prior safety assessment never reads as if performed today. Standing items carried as 'continued/stable' are fine. Do this silently, without a flag.\n\n"; }
   if(isTranscriptMode(sourceMode)){ s += "The source is a transcript (dictation/ambient) with no clinician-written ground truth, so do NOT guess a correction for a likely mis-transcription. If a probable mis-transcription is clinically consequential and you cannot resolve it, raise a one-sentence flag; otherwise leave it as documented.\n\n"; }
   s += "The corrected 'hpi' must stay plain, chart-ready text with NO Markdown (no #/## headings, no --- dividers, no ** bold **, no > blockquotes).\n\n";
   if(thirdDir){
