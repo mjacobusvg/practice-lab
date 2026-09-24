@@ -64,8 +64,23 @@ same renderer, then checksum both against a local render before and after.
   `shared-clinical` (discussion prompts meant to be argued with), `workflow`, `practice-growth`.
 - `ce_candidate` true for substantive teaching posts, false for discussion prompts and tool
   announcements.
-- `email_blast` has been false for the recent run. The only true rows are members-gated posts.
-  A free post surfaces on the platform without an email push.
+- **`email_blast` is ALWAYS true. Michael's standing instruction, 24 Sept 2026.** Every
+  scheduled post emails. It is also the column default, so the thing to watch is nothing
+  silently setting it false: an earlier run had it false throughout, and the Thursday 24 Sept
+  post was queued that way until he caught it. Set it explicitly to `true` on every row.
+
+  What it actually does: `publish-scheduled.js` passes `emailBlast: s.email_blast !== false`
+  into `notifyNewPost` (`netlify/functions/_lib/notify.js`), which emails **`accounts`
+  directly, per account, NOT through `broadcast-send.js`**. So a post blast leaves NO row in
+  `broadcasts` and does not appear in the broadcast send log. Do not conclude from an empty
+  `broadcasts` table that no email went out.
+
+  **Reach is much wider than a broadcast.** The recipient filter is paid tiers only, UNTIL the
+  post is `free_visible`, which widens it to `tier in (free,forum,full)`. Of 419 accounts, 404
+  have `notify_email_posts` on, so a free-visible post emails roughly 404 people plus an
+  in-app row each and a push to ~415. A broadcast to the `free` audience reaches far fewer,
+  because broadcasts go to `contacts` and post notifications go to `accounts`. Those are
+  different populations; see the `accounts` -> `contacts` trigger note in `CLAUDE.md`.
 - `members_teaser` / `members_extra` gate a members-only section. Leave both null when the value
   of the post is the conversation, since a gate splits the thread.
 - Member **broadcasts are email**, via `netlify/functions/broadcast-send.js` (AWS SES to
