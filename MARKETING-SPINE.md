@@ -4,6 +4,11 @@ This is the **master narrative** for the AI Scribe and the Think Beyond Practice
 membership. It is the approved, canonical pitch. Reuse it — do not reinvent the
 pitch from scratch each time. Cut it down per channel (see "Channel cuts" below).
 
+> **Feed this from real member words.** `WHY-MEMBERS-CHOSE-US.md` is the voice-of-customer
+> list: verbatim reasons prescribers chose TBP. Log new ones there as they come in, and when
+> a theme keeps recurring, graduate the sharpest quote into this spine. The pitch should track
+> what buyers actually say wins them over.
+
 House style: **no em-dashes.** Open like you built something worth considering,
 not like you're apologizing for mentioning it. Do **not** claim "no other scribe
 audits notes" as an absolute unless it has been competitively established — the
