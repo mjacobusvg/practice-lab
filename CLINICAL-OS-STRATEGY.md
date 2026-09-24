@@ -620,6 +620,163 @@ The current Monitoring Protocol already contains medication-driven monitoring sc
 
 Longer term this can connect to actual lab ordering.
 
+
+## 17A. Integrative psychiatry reference: medical contributors, labs, and evidence-backed adjuncts
+
+A useful member-facing reference can sit beside Monitoring and Discern without becoming a
+"functional medicine lab panel" generator. The design principle is **question first, test second**:
+start from the clinical problem, then surface only labs or adjuncts that are plausibly relevant to
+that problem and distinguish routine, conditional, emerging and low-evidence options.
+
+Working concept name: **Medical Contributors & Adjuncts** or **Integrative Psychiatry Reference**.
+Do not over-brand it as "functional psychiatry" if that implies indiscriminate testing or weakly
+supported claims.
+
+### Fast reference mode
+
+A clinician should be able to search a condition or symptom and get a compact, evidence-graded
+reference.
+
+Examples:
+
+> **Depression**
+> - medical contributors / labs to consider when indicated
+> - evidence-backed supplements / adjuncts
+> - major medication interactions
+> - when the evidence is too weak to recommend routine use
+
+> **OCD**
+> - adjunctive supplement options with the quality of evidence made explicit
+> - studied dose/formulation where evidence exists
+> - interaction / contraindication check against the patient's medication list
+
+The reference should be useful even when no patient chart is open.
+
+### Organize labs by the clinical question, not by a universal panel
+
+Instead of a giant "psychiatric labs" checklist, let the clinician enter or choose the thing they
+are trying to explain:
+
+- fatigue / low energy;
+- cognitive complaints;
+- anxiety / palpitations;
+- sleep disturbance;
+- depressive symptoms with atypical or unexplained features;
+- possible thyroid contribution;
+- restrictive diet, malabsorption or nutritional risk;
+- heavy menstrual bleeding / possible iron deficiency;
+- antipsychotic or other medication-driven metabolic monitoring;
+- eating-disorder or nutritional concern;
+- heavy alcohol use / substance-related nutritional risk;
+- pregnancy / perinatal context;
+- other symptom clusters where a medical contributor could materially change the psychiatric
+  formulation.
+
+For each lab or study, show:
+
+- **Why consider it**
+- **When it is actually relevant**
+- **What an abnormal result may mean**
+- **What it does NOT establish**
+- **Evidence / guideline basis**
+- **Routine vs conditional vs emerging / low-evidence**
+- **Who should act on the result / when medical follow-up is appropriate**
+
+This should explicitly resist the common failure mode of ordering every plausible lab because it
+appears on a functional-medicine checklist.
+
+### Evidence-backed supplements / nonprescription adjuncts
+
+Build a parallel reference for supplements and nutraceuticals used in psychiatric care. The product
+must make evidence quality visible rather than flattening everything into "may help."
+
+Each entry should contain:
+
+- indication / population actually studied;
+- adjunctive vs monotherapy evidence;
+- quality and consistency of evidence;
+- formulation-specific issues where they matter;
+- studied dose range rather than an invented "recommended dose";
+- expected time horizon if supported;
+- common adverse effects;
+- medication / supplement interactions;
+- contraindications and special-population cautions;
+- renal / hepatic / pregnancy considerations where relevant;
+- monitoring, if any;
+- source links and evidence date;
+- an explicit label such as **better-supported adjunct / mixed evidence / emerging / insufficient
+  evidence / avoid or use with caution**.
+
+The usefulness is not "a supplement stack." It is fast access to **what has enough evidence to be
+worth considering, for whom, and what could make it unsafe or irrelevant.**
+
+### Interaction checking should be one click
+
+If the clinician is in a patient workspace, the supplement reference should be able to use the
+medication list already in encounter context.
+
+Example:
+
+> OCD -> NAC selected -> **Check against current medications**
+
+The interaction layer should reuse the existing Interaction Interpreter architecture rather than
+inventing a separate supplement checker. The output should distinguish:
+- known clinically meaningful interaction;
+- theoretical / low-certainty concern;
+- duplicate pharmacologic effect or bleeding / sedation / serotonergic burden;
+- no important interaction identified in the available evidence;
+- uncertainty because evidence is sparse.
+
+Do not imply that "no interaction found" means proven safety.
+
+### Discern integration
+
+Discern should be able to surface medical contributors and adjunctive options when they are relevant
+to the reasoning task, but it should not reflexively turn every psychiatric presentation into a lab
+or supplement workup.
+
+Examples:
+
+> Patient has depression, fatigue, a vegan diet, heavy menses and restless legs.
+> Discern: "Before attributing all of the fatigue and concentration difficulty to depression, it may
+> be worth clarifying whether anemia / iron deficiency, B12 deficiency and thyroid disease have been
+> evaluated."
+
+> Patient asks about "natural" options for OCD while taking multiple serotonergic medications.
+> Discern: "There are adjunctive supplements with varying levels of evidence. I can show the OCD
+> adjunct reference and check the current medication list for interaction concerns."
+
+This is another instance of the general rule: **the reasoning layer notices when a capability may
+matter, then offers it. It does not silently run every capability.**
+
+### Relationship to Monitoring and lab ordering
+
+Keep these jobs distinct:
+
+- **Monitoring Protocol** = what should be monitored because of a medication / treatment.
+- **Medical Contributors & Adjuncts** = what may be worth evaluating because of the clinical
+  presentation or because the clinician is considering a nonprescription adjunct.
+- **Lab Ordering** = the later transactional layer that actually places an order.
+
+The reference should be useful long before electronic ordering exists. If lab ordering is eventually
+connected, a clinician can move from:
+**clinical question -> evidence-backed consideration -> clinician choice -> order**
+without TBP ever silently ordering tests.
+
+### Evidence architecture and safety bar
+
+This should inherit the evidence rules in §§12-15. Do not ship the supplement layer as a naked LLM.
+
+The durable source model should separate:
+1. structured entries (condition, intervention, population, dose/formulation studied, safety flags);
+2. retrieved evidence (guidelines, systematic reviews/meta-analyses, relevant RCTs, FDA / NIH / other
+   authoritative safety material where applicable);
+3. AI synthesis for patient-specific context.
+
+Every clinical claim needs provenance and a last-reviewed date. The evidence corpus should make it
+easy to update a supplement entry when the literature changes rather than burying claims in prompts.
+
+
 ## 18. Medication Interaction integration
 
 The Interaction Interpreter should remain independently available.
