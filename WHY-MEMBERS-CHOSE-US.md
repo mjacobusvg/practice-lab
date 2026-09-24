@@ -113,8 +113,11 @@ her own. Candidates to promote into `CLINICAL-OS-STRATEGY.md` as validated direc
 
 ## Graduated to the pitch
 
-Strong candidates to promote into `MARKETING-SPINE.md` (confirm with Michael before editing the
-spine; anonymize until Vicki okays attribution):
+**Done (2026-09-24):** the insights below (not the quotes) were integrated into
+`MARKETING-SPINE.md` (new "Core positioning principles" section + reframed master-narrative opening
+to lead with support-your-reasoning), into `CLINICAL-OS-STRATEGY.md` (design principles under the
+thesis), and into the homepage Think Beyond AI lede in `index.html`. The insight was stolen, not
+the wording; nothing is attributed to Vicki publicly. Quotes retained here as the evidence trail:
 
 - Positioning proof for **"Think beyond the scribe"** / workspace framing:
   > "it feels like a psych workspace or copilot rather than simply a scribe, and that is really what I've been looking for."

@@ -50,9 +50,42 @@ semantics.
 
 ---
 
+## Core positioning principles (elevated Sept 2026)
+
+The capability list is differentiating, but the deeper differentiator sits under it:
+**Think Beyond removes the cognitive overhead around psychiatric practice without removing the
+clinician's judgment from it.** You still do the thinking; the platform makes it easier to do the
+thinking well. Prep remembers. Scribe organizes. Therapy Coach makes implicit skills explicit.
+Discern helps you examine the case. Audit teaches you what your documentation actually proves. The
+community lets you reason with other clinicians. The Practice Lab lets you make mistakes somewhere
+safe.
+
+Five principles carry that positioning. Lead with the whole idea; use the capabilities as proof.
+
+1. **AI should support clinical reasoning, not replace it.** The Scribe brings something to your
+   attention, makes you stop and consider it, lets you make the call, and then helps you put that
+   reasoning into a strong assessment. A core Think Beyond AI principle, not a Scribe detail.
+2. **Continuity means unfinished clinical threads,** not generic "prior-note context." The moment
+   it solves: a patient arrives with three new concerns and afterward you realize you never asked
+   whether they tried the medication change from last visit.
+3. **The tools teach while you use them.** The Audit + Coder shows where your reasoning is thin or
+   what you could have documented better, a learning tool rather than a coding calculator, and that
+   teach-in-the-workflow quality runs across the platform.
+4. **Better, not just faster.** The value is not only speed; it is becoming a sharper clinician
+   while the work gets easier. A recurring theme, not a one-off line.
+5. **The community has a developmental arc.** Not just "peer support": a clinician can come in
+   needing help, grow, and become someone who helps the next one. Members describe wanting to walk
+   that arc themselves, which is the point of the community.
+
+These were validated in Sept 2026 by a target user describing the product back to us; verbatim
+evidence lives in `WHY-MEMBERS-CHOSE-US.md`. Steal the insight, not the quotes: this is the product
+philosophy, now confirmed by someone in the audience, not a testimonial to paste on the site.
+
+---
+
 ## Master narrative (full — for website, email, demo page, launch post)
 
-I built Think Beyond Practice's AI Scribe specifically for psychiatric practice, and the biggest difference is that it doesn't stop at writing the note. It audits the finished note before you sign it.
+I built Think Beyond Practice's AI Scribe for psychiatric practice, to support the way a psychiatric clinician actually thinks and works without taking the clinical thinking away from you. It does the clerical work around the visit: it gets you ready before you walk in, keeps the unfinished threads from last visit in view, reads the outside records, drafts in your own template around the calls you made, and helps you reason through what you are seeing. And the single strongest thing it does comes at the end: before you sign, it audits the finished note the way an auditor would.
 
 It looks for the kinds of problems that actually matter in an audit: contradictions between the HPI, ROS, MSE, assessment, medication list, and plan; missing support for the level of service; documentation that doesn't line up with what was billed; and other inconsistencies you may not notice when you're moving quickly. Then the Chart Audit + Coder evaluates the visit, recommends the appropriate coding, and shows you the reasoning behind it rather than just spitting out a CPT code.
 
@@ -113,7 +146,10 @@ I built Think Beyond Practice's AI Scribe for psychiatric practice, and the bigg
 ## Why this works (keep these principles when adapting)
 
 - Opens with what you built and for whom, not an apology.
-- Leads with the **audit layer** — the real wedge. Other scribes write the note and stop.
+- On owned channels, leads with the **support-your-reasoning, whole-workflow** frame (see the
+  channel rule up top and the core positioning principles). The **audit layer** is the strongest
+  single capability inside that, and other scribes write the note and stop, so it stays the proof
+  and the wedge, and it leads audit-first in comparison threads.
 - Explains the scribe across the **whole workflow**: before the visit, during the visit, after the visit.
 - Ties the psychotherapy guide to something clinicians care about: actually doing and
   documenting billable psychotherapy, not just generating prose.
