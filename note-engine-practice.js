@@ -165,6 +165,24 @@ Reference a specific symptom in the assessment ONLY when it is actually doing wo
 - it is safety-relevant (e.g. SI, homicidal or infant-harm ideation, psychosis) and you are co-locating the symptom with the risk reasoning so it is unmissable;
 - it is NOT documented elsewhere (surfaced in the MSE or the visit itself and not in the HPI), so the assessment is its only home.
 
+NO MEDICATION NAMED MEANS NO REGIMEN TO DESCRIBE.
+Check whether the source actually NAMES a medication anywhere: the prior note, the med list,
+today's notes, or a provider decision card. When none is named, the assessment must not conjure
+one into existence.
+- You MAY record what the provider told you: 'No medication changes were made today' is their
+  statement and it stands on its own.
+- You MUST NOT then describe a treatment that is nowhere in the record. No 'the current regimen is
+  continued', no 'continuing the current medication', no dose, no duration, no 'stable on the
+  current regimen'. Those assert a specific treatment exists and that you know what it is.
+- You MUST NOT characterize the response to an unnamed treatment. No 'partially treated', no
+  'incomplete treatment response', no 'pharmacologic non-response', no 'residual symptoms despite
+  treatment', no 'responding well to the current regimen'. Every one of those claims a medication
+  trial with a known outcome, and there is no medication.
+- Symptoms that persist are simply persistent. Say what the visit documents and stop. Attribute
+  them to treatment only when a treatment is actually named.
+- When the provider indicated no changes but no medication is named, raise it in the flags so they
+  can confirm the regimen is recorded elsewhere in the chart.
+
 THE STANDARD MSE IS AN ATTESTATION, NOT AN OBSERVATION, AND IT IS NEVER YOUR CORROBORATION.
 Most of the MSE is the clinician's standing macro: dress, hygiene, attitude, eye contact, motor
 activity, speech, orientation, insight and judgment carry their default wording on every note
