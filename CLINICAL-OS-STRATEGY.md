@@ -51,6 +51,33 @@ Anything the clinician does with those assists stays part of the encounter state
 use it later when drafting the note. **The clinician should never have to remember to document work
 the assistant just helped them do.**
 
+### Validated in the field (Sept 2026): a target user described the thesis back to us
+
+A new PMHNP evaluating the platform (Vicki H.) articulated this thesis on her own, unprompted, in
+clearer language than most of our copy. It is worth treating her feedback as design principles, not
+testimonials (verbatim quotes and the competitive read are in `WHY-MEMBERS-CHOSE-US.md`). The
+principles she surfaced, which sharpen the direction above:
+
+- **The Scribe preserves the clinician's reasoning; it does not do the reasoning.** The refinement
+  she implicitly asks for: do the clerical work silently, and interrupt ONLY when there is something
+  clinically worth thinking about, rather than a fixed preflight questionnaire before every note. The
+  right form is a single, targeted, reasoning-eliciting prompt ("last visit you were weighing
+  activation vs emerging hypomania; today adds reduced sleep and goal-directed behavior, has your
+  formulation changed?"), not six mandatory questions. This is the attention test applied to the
+  preflight: depth only when it earns its interruption.
+- **Continuity surfaces unfinished clinical threads,** not just prior-note context (the "patient
+  came with three new concerns and I never asked whether they tried last visit's med change" moment).
+- **Therapy Coach teaches the clinician to recognize and intentionally use what they already do,**
+  and to translate it into documentation, rather than fabricating psychotherapy after the fact.
+- **The Coder explains WHY documentation does or does not support a code:** a learning tool, not a
+  calculator.
+- **One integrated psychiatric workspace / copilot,** experienced across prepare -> see -> reason ->
+  document -> code -> learn -> discuss, not twelve separate utilities. The value is the whole.
+- **Meta-principle:** the tools are scaffolding for becoming a better psychiatric clinician, not just
+  software that makes you faster. "The workflow itself teaches" may differentiate TBP more than any
+  single feature. Her own summary: "I don't just want something that makes me faster. I want
+  something that helps me become better while still making my life easier."
+
 ---
 
 ## Status of this document
