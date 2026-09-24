@@ -185,7 +185,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-114"></script>
+<script src="/note-engine.js?v=ambient-115"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -472,7 +472,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-114</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-115</span></div>
 </div>
 </div>
 
@@ -4137,7 +4137,26 @@ function tbpHideReason(){
   document.documentElement.classList.remove('rsn-open');   // give the workspace its width back
 }
 
-var rsnLast = null;   // {q, a} — the last exchange, so a reload does not lose it
+var rsnLast = null;   // {q, a} — the most recent exchange, kept for the existing draft shape
+// THE WHOLE THREAD. Discern used to overwrite #rsn-out on every run and keep only the last
+// exchange, so asking a second question destroyed the answer to the first. Mid-visit that is the
+// worst possible moment to lose reasoning you were relying on. The panel is now a transcript.
+var rsnLog = [];      // [{q, a}, ...] oldest first
+function tbpRsnBlockHtml(i, q){
+  return '<div class="rsn-x" style="margin-bottom:16px">'
+    + '<div style="font-weight:700;font-size:.82rem;color:var(--teal);margin-bottom:5px;line-height:1.4">' + esc(q || '') + '</div>'
+    + '<div id="rsn-body-' + i + '" style="background:var(--navy);border:1px solid var(--rule);border-radius:7px;'
+    + 'padding:13px 15px;white-space:pre-wrap;font-size:.9rem;line-height:1.62;color:var(--cream)"></div></div>';
+}
+function tbpRsnRenderAll(){
+  var out = document.getElementById('rsn-out');
+  if(!out) return;
+  out.innerHTML = rsnLog.map(function(x,i){ return tbpRsnBlockHtml(i, x.q); }).join('');
+  rsnLog.forEach(function(x,i){
+    var b = document.getElementById('rsn-body-' + i);
+    if(b) b.textContent = x.a;
+  });
+}
 
 function tbpRsnBodyHtml(){
   return '<div id="rsn-body" style="background:var(--navy);border:1px solid var(--rule);border-radius:7px;'
@@ -4147,15 +4166,13 @@ function tbpRsnBodyHtml(){
 // Put a saved exchange back exactly as it was left: the question in the box, the answer below it.
 // An answer with no question above it reads as though it arrived from nowhere.
 function tbpRsnRestore(x){
-  if(!x || !x.a) return;
-  rsnLast = x;
-  var out = document.getElementById('rsn-out');
-  var q = document.getElementById('rsn-q');
-  if(q && x.q) q.value = x.q;
-  if(!out) return;
-  out.innerHTML = tbpRsnBodyHtml();
-  var body = document.getElementById('rsn-body');
-  if(body) body.textContent = x.a;
+  if(!x) return;
+  // A draft saved by the old build carries a single {q,a}; a new one carries the whole log.
+  var log = (x.log && x.log.length) ? x.log : ((x.a) ? [{ q: x.q, a: x.a }] : []);
+  if(!log.length) return;
+  rsnLog = log.slice();
+  rsnLast = rsnLog[rsnLog.length - 1];
+  tbpRsnRenderAll();
 }
 
 async function tbpRunReason(question){
@@ -4170,8 +4187,11 @@ async function tbpRunReason(question){
   }
   if(go) go.disabled = true;
   if(msg) msg.innerHTML = '<span class="spinner"></span>Thinking&hellip;';
-  out.innerHTML = tbpRsnBodyHtml();
-  var body = document.getElementById('rsn-body');
+  // APPEND this question to the thread instead of replacing what is already there.
+  var idx = rsnLog.length;
+  out.insertAdjacentHTML('beforeend', tbpRsnBlockHtml(idx, question));
+  var body = document.getElementById('rsn-body-' + idx);
+  if(body && body.scrollIntoView) body.scrollIntoView({ block:'nearest' });
   var acc = '';
   try {
     // NOTE: callAPI's onDelta is handed the ACCUMULATED text so far, not an increment.
@@ -4184,15 +4204,17 @@ async function tbpRunReason(question){
       undefined,
       'discern'
     ) || '';
-    if(!acc.trim()){ out.innerHTML = '<div class="hint" style="color:var(--amber)">Nothing came back. Try again.</div>'; }
+    if(!acc.trim()){ if(body) body.innerHTML = '<span class="hint" style="color:var(--amber)">Nothing came back. Try again.</span>'; }
     else {
       // Keep the exchange, and persist immediately — like the framework, this costs a model call
       // and the autosave only fires on input events, which asking a question does not produce.
       rsnLast = { q: question, a: acc };
+      rsnLog.push(rsnLast);
       try { if(window.tbpSaveDraft) window.tbpSaveDraft(); } catch(e){}
     }
   } catch(err){
-    out.innerHTML = '<div class="hint" style="color:var(--red)">' + esc(err.message || err) + '</div>';
+    if(body) body.innerHTML = '<span class="hint" style="color:var(--red)">' + esc(err.message || err) + '</span>';
+    else out.insertAdjacentHTML('beforeend', '<div class="hint" style="color:var(--red)">' + esc(err.message || err) + '</div>');
   } finally {
     if(go) go.disabled = false;
     if(msg) msg.innerHTML = '';
@@ -8068,7 +8090,9 @@ function initTherapyCoach(){
       // It is derived text — the same class as the snapshot above — not the source documents,
       // which stay unstored by design and by the promise printed on the gather screen.
       adhd: (typeof adhdFw !== 'undefined' && adhdFw) ? adhdFw : null,
-      rsn: (typeof rsnLast !== 'undefined' && rsnLast) ? rsnLast : null,
+      rsn: (typeof rsnLog !== 'undefined' && rsnLog.length)
+        ? { q: rsnLast && rsnLast.q, a: rsnLast && rsnLast.a, log: rsnLog }   // log added; q/a kept so an older build can still read it
+        : ((typeof rsnLast !== 'undefined' && rsnLast) ? rsnLast : null),
       ts: Date.now()
     };
   }
