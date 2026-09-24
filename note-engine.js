@@ -536,12 +536,36 @@ function scopeNote(scope){
 
 // Preflight review: surface the provider-owned clinical decisions before anything is written.
 // Returns { questions: [...] } including the fixed length card when an assessment is in scope.
+
+// Does the pasted prior context actually CARRY a diagnosis list, or is it just text?
+// dxSignal used to ask only whether the box was non-empty. A prior note pasted without its
+// assessment ("Depression: ... / Anxiety: ...") therefore counted as "list provided, carry it
+// forward, do NOT ask" — so the mandatory clin_dx card never fired, the engine got no list, and
+// it derived billable codes from section headings instead. The clinician was never asked.
+//
+// Deterministic on purpose: a coded list is what the UI asks people to paste, so look for a real
+// ICD-10 code (letter + two digits + decimal, which "B12" and "GAD7" cannot satisfy) or an
+// explicit diagnosis line with content. When in doubt this returns false, which ASKS. Asking is
+// always the safe direction; assuming is what produced F32.1 out of a heading.
+function tbpHasPriorDxList(text){
+  var t = String(text || '');
+  if(!t.trim()) return false;
+  if(/\b[A-TV-Z][0-9]{2}\.[0-9A-Z]{1,4}\b/.test(t)) return true;          // F32.1, G47.26
+  var lines = t.split('\n');
+  for(var i = 0; i < lines.length; i++){
+    var m = lines[i].match(/^[ \t]*(?:diagnos[ei]s|dx|problem list)\s*[:\-]\s*(.+)$/i);
+    if(m && m[1] && m[1].trim().length > 2) return true;                     // "Diagnoses: ..."
+    if(/\b[A-TV-Z][0-9]{2}\b/.test(lines[i]) && /diagnos|assessment|axis|icd/i.test(lines[i])) return true;
+  }
+  return false;
+}
+
 async function runPreflight(inp, scope){
   // Tell the preflight explicitly whether a prior diagnosis list exists, so it knows when to emit
   // the mandatory diagnosis-confirmation card (new patient with no list to carry forward).
-  var dxSignal = (inp.dxprior && String(inp.dxprior).trim())
+  var dxSignal = tbpHasPriorDxList(inp.dxprior)
     ? '\n\n---\n\nPRIOR DIAGNOSIS LIST: provided above. Carry it forward; do NOT emit a clin_dx diagnosis-confirmation card.'
-    : '\n\n---\n\nPRIOR DIAGNOSIS LIST: NONE provided. If an assessment is in scope, you MUST emit exactly one clin_dx diagnosis-confirmation card as specified.';
+    : '\n\n---\n\nPRIOR DIAGNOSIS LIST: NONE provided (the prior context, if any, carries no coded diagnosis list). If an assessment is in scope, you MUST emit exactly one clin_dx diagnosis-confirmation card as specified. Propose the codes you believe the documentation supports, and let the PROVIDER confirm or change them. Do not proceed to an assessment on codes nobody confirmed.';
   // Preflight runs on Haiku (faster — it's on the critical path, the card spinner). A/B vs Sonnet:
   // hit the mandatory dx card + correct modalities; slightly thinner (missed one nuance attribution
   // card, used an unspecified vs severity-specified code). On trial — flip back to Sonnet if the
