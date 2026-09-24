@@ -85,6 +85,32 @@ drawing her and what she was comparing against.
   richer, reasoning-eliciting preflight IS the ethos of the Scribe. Worth revisiting whether the
   fuller preflight should return (ideally optional / fast-path toggle) rather than stay trimmed.
 
+## Design principles this feedback validates (not just testimonials)
+
+These are not compliments; they are product-design requirements a target user articulated on
+her own. Candidates to promote into `CLINICAL-OS-STRATEGY.md` as validated direction.
+
+- **Scribe preserves the clinician's reasoning** (support the thinking, do not replace it).
+  Refinement: do the clerical work automatically, and interrupt ONLY when there is something
+  clinically worth thinking about, rather than asking a fixed set of preflight questions
+  before every note. Example interruption: "Before I draft the assessment: last visit you were
+  weighing activation vs emerging hypomania; today adds reduced sleep and increased
+  goal-directed behavior. Has your formulation changed?" This keeps what she loves without
+  turning the Scribe into a questionnaire.
+- **Continuity surfaces unfinished clinical threads,** not just prior-note context (the "never
+  asked whether they tried the med change" failure mode).
+- **Therapy Coach teaches the clinician to recognize and intentionally use what they already
+  do** and to translate it into documentation, rather than fabricating psychotherapy after
+  the fact.
+- **Coder explains WHY documentation does or does not support a code** (a learning tool, not a
+  calculator).
+- **One integrated psychiatric workspace,** experienced as a single copilot across prepare ->
+  see -> reason -> document -> code -> learn -> discuss, not twelve separate utilities. The
+  value is the whole, not any one part.
+- **Meta-principle:** the tools are scaffolding for becoming a better psychiatric clinician,
+  not just software that makes you faster. "The workflow itself teaches" may differentiate TBP
+  more than any single feature.
+
 ## Graduated to the pitch
 
 Strong candidates to promote into `MARKETING-SPINE.md` (confirm with Michael before editing the
