@@ -81,7 +81,7 @@ The interview is a plan, not a record. An unanswered question must establish not
 |---|---|---|
 | C.1 | Load the interview, answer NOTHING, Draft. The note contains no claim that any interview topic was reviewed, covered, explored, assessed or discussed | |
 | C.2 | Same state, Audit. Audit does not treat interview questions as supported content | |
-| C.3 | Same state, Framework Check ("what did today establish?"). It reports nothing established from unanswered questions | |
+| C.3 | Same state, Framework Check. It reports nothing established from unanswered questions. **Requires a built Framework: run this at the top of Block D, not here.** The panel footer only renders when one exists, and with nothing typed its button reads "Check again", not "What did today establish?" | |
 | C.4 | Answer 3 of 30 questions, Draft. ONLY those 3 reach the note. The other 27 establish nothing | |
 | C.5 | Answer a question, then delete your answer. Draft does not carry the deleted content | |
 | C.6 | Type a freeform paragraph under a heading rather than under a bullet. It is preserved, not filtered away | |

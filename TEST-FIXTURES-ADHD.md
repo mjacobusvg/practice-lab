@@ -230,10 +230,17 @@ The fastest way to run C.1-C.4:
 1. Start a new eval, tick **ADHD interview**, start the visit.
 2. Confirm the interview panel loaded with its 12 headings.
 3. **Type nothing.** Draft immediately. That is C.1.
-4. Undo the draft, Audit on the same state. That is C.2.
-5. Same state, run "what did today establish?". That is C.3.
-6. Now answer exactly three questions, in three DIFFERENT headings, with short concrete
+4. Audit that draft. That is C.2.
+5. Now answer exactly three questions, in three DIFFERENT headings, with short concrete
    answers. Draft. Only those three may appear. That is C.4.
+
+**C.3 does NOT belong here.** The Framework Check lives in the Framework panel footer
+(the ADHD Framework button, or the Pt detail / info tab), and that footer renders only when a
+Framework has been built. With no records loaded there is nothing to click. Run C.3 at the top of
+Block D, once R1 has produced a Framework: load the interview, type nothing, then click the footer
+button. With nothing typed it reads **Check again**, not "What did today establish?" -- the second
+wording appears only once roughly 400 characters of new visit material have arrived. Same call
+either way. Expect "Nothing new was established.
 
 For C.4 use these three so they are easy to spot in the output:
 
