@@ -242,9 +242,24 @@ var seq = 0;
 var DRAFT_PREFIX = 'tbp_draft_';
 var LABELS_KEY = 'tbp_desk_labels';
 function newSlot(){ return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
-function getLabels(){ try{ return JSON.parse(localStorage.getItem(LABELS_KEY) || '{}') || {}; }catch(e){ return {}; } }
-function setLabelFor(slot, label){ if(!slot) return; try{ var m = getLabels(); m[slot] = label; localStorage.setItem(LABELS_KEY, JSON.stringify(m)); }catch(e){} }
-function clearLabelFor(slot){ try{ var m = getLabels(); delete m[slot]; localStorage.setItem(LABELS_KEY, JSON.stringify(m)); }catch(e){} }
+function getLabels(){
+  // Read the legacy single-blob map first, then let per-slot keys win. One blob meant one failed
+  // or truncated write lost EVERY patient's name at once; per-slot keys fail one at a time.
+  var m = {};
+  try{ m = JSON.parse(localStorage.getItem(LABELS_KEY) || '{}') || {}; }catch(e){ m = {}; }
+  try{
+    for(var i = 0; i < localStorage.length; i++){
+      var k = localStorage.key(i);
+      if(k && k.indexOf(LABELS_KEY + '_') === 0){
+        var v = localStorage.getItem(k);
+        if(v) m[k.slice((LABELS_KEY + '_').length)] = v;
+      }
+    }
+  }catch(e){}
+  return m;
+}
+function setLabelFor(slot, label){ if(!slot) return; try{ localStorage.setItem(LABELS_KEY + '_' + slot, String(label)); }catch(e){} try{ var m = {}; try{ m = JSON.parse(localStorage.getItem(LABELS_KEY) || '{}') || {}; }catch(e2){} m[slot] = label; localStorage.setItem(LABELS_KEY, JSON.stringify(m)); }catch(e){} }
+function clearLabelFor(slot){ try{ localStorage.removeItem(LABELS_KEY + '_' + slot); }catch(e){} try{ var m = {}; try{ m = JSON.parse(localStorage.getItem(LABELS_KEY) || '{}') || {}; }catch(e2){} delete m[slot]; localStorage.setItem(LABELS_KEY, JSON.stringify(m)); }catch(e){} }
 function removeDraft(slot){ try{ localStorage.removeItem(DRAFT_PREFIX + slot); }catch(e){} clearLabelFor(slot); }
 function scanDrafts(){
   // Drafts self-expire after 18h; expired or malformed ones are purged here so PHI does not linger.
@@ -342,14 +357,18 @@ function addPatient(autoName, slot, label){
   seq++;
   var id = 'p' + seq;
   slot = slot || newSlot();
-  label = label || ('Patient ' + seq);
+  // Did the caller hand us a REAL name, or are we about to invent "Patient 7"? This mattered
+  // because the default was being persisted over the stored name: any recovery that failed to
+  // find a label destroyed it, so refreshing again could never bring it back.
+  var namedByCaller = !!(label && String(label).trim());
+  label = namedByCaller ? label : ('Patient ' + seq);
 
   var frame = document.createElement('iframe');
   frame.className = 'pframe';
   // ?v= is a build tag: bump it whenever the framed Scribe changes so the iframe loads the NEW file
   // instead of a browser-cached copy (an iframe can serve stale JS even after a parent hard-reload,
   // which stranded the ambient auto-draft on old code across several deploys).
-  frame.src = SCRIBE_URL + '?slot=' + encodeURIComponent(slot) + '&v=ambient-134-sub' + (TBP_DEMO ? '&demo=1' : '');   // per-tab autosave key
+  frame.src = SCRIBE_URL + '?slot=' + encodeURIComponent(slot) + '&v=ambient-135-sub' + (TBP_DEMO ? '&demo=1' : '');   // per-tab autosave key
   frame.title = label;
   // Let the isolated Scribe use the mic (ambient) and screen share (telehealth) and clipboard.
   frame.setAttribute('allow', 'microphone; camera; display-capture; clipboard-write; clipboard-read');
@@ -375,7 +394,7 @@ function addPatient(autoName, slot, label){
   x.addEventListener('click', function(e){ e.stopPropagation(); closePatient(id); });
 
   patients.push({ id:id, label:label, slot:slot, frameEl:frame, tabEl:tab });
-  setLabelFor(slot, label);
+  if(namedByCaller) setLabelFor(slot, label);
   activate(id);
   if(autoName){ startRename(id); }   // new patient from the button: name it right away
 }
