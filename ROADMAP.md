@@ -84,33 +84,82 @@ with a free 2-week trial. Members + contacts in Supabase; email broadcasts via
 We have enough features. The problem is adoption, integration, proof of habitual use, and
 marketing what already exists. Stop expanding breadth.
 
-**In the practice copy, not live (Sep 2026).** `ai-scribe-practice.html` +
+**In the practice copy, not live (updated 25 Sep 2026).** `ai-scribe-practice.html` +
 `ai-scribe-practice-workspace.html` + `note-engine-practice.js`, reachable at `/practice`, carry
 work that has NOT been ported to the live Scribe. Porting is a deliberate step and not a file
 copy: the live files carry the build-tag lockstep rules the practice copy deliberately opts out
-of. What is there:
+of. Live is `ambient-115`; practice is `ambient-135-sub`. Practice is ~1,440 lines longer, and
+24 commits touch only the practice files.
 
-- **Outside records.** Upload a PDF/DOCX/TXT/RTF, get a clinical review of it (not a summary —
-  see `CLINICAL-OS-STRATEGY.md` §32 on why that distinction is the whole feature), optionally let
-  it inform new-eval prep, optionally insert a chart-ready record summary onto the existing
-  `Historical Note:` carry-forward rail. Raw file and extracted text stay in memory only.
-- **Reason through this case.** One streamed call over what the session already holds, available
-  before, during and after the visit. No retrieval, no Archive, no background job.
-- **Provenance in the shared prompts.** Outside-record claims stay attributed in `draftSystem`
-  and `verifySystem`, not only in the document feature.
-- **Landing chooser.** The Scribe's jobs are visible on the working-note screen and collapse to a
-  compact strip rather than disappearing.
+FEATURES ARE FROZEN for this set. The release gate, the ordered test sequence and the port
+chunks live in `RELEASE-GATE-ADHD-PORT.md`. Nothing new goes into the practice copy until that
+gate is cleared, except a fix for a defect the tests expose.
 
-Before any member beta: run the case battery against it (inadequate trial, duration vs failure,
-tolerability, missing information, diagnostic anchoring, contradictory outside record, and a
-direct attempt to make it assert a dose or interaction), then port.
+What is waiting, by functional stack. Port in this order; each chunk is independently testable.
 
-**Next: Discern** (`CLINICAL-OS-STRATEGY.md` §34) — the reasoning workspace the practice-copy
-feature grows into, including the exploratory / adopted / documented boundary, ambient one-tap
-starters, and the cost and latency architecture. Then the ADHD Evaluation **Framework** (renamed
-from Guide; a framework structures reasoning, a guide implies it knows the path), which needed the
-record and longitudinal-context layer underneath it first. A faster Scribe-side Ask the Archive
-sits alongside, not above, those.
+1. **Framework delta and case file** (`93/95/96-sub`). Framework questions append to the working
+   note instead of refusing. The mid-visit check is a DELTA (`adhdDeltaSystem`) rather than a
+   rebuild (`adhdUpdateSystem`), so "what did today establish?" is a cheap second call, not the
+   whole framework again. The pre-visit case file and the mid-visit interrupt are separate
+   things with separate renders.
+2. **Mid-visit card** (`105/106/107-sub`). Collapses the Framework behind it, speaks in
+   fragments, adds only ASK NEXT with the overflow as an opt-in in the panel. Case tools stopped
+   competing visually with Draft.
+3. **Interview stack** (`108/109-sub`). The interview is a Vault-stored `interview_<kind>` with a
+   house default served live from Michael's Vault, loaded by an explicit prep action into its own
+   collapsible work area, split per heading with individual folding and a per-heading answered
+   count. Ships with `TBP_ADHD_INTERVIEW_SEED`, a 12-heading starter ADHD interview that seeds
+   the editor only. `tbpInterview*` is 26 references in practice and ZERO in live: the interview
+   does not exist on the live Scribe in any form.
+4. **Interview safety filters** (`110/111/112/116-sub`). The unanswered interview stops being fed
+   to Framework Check, to Draft and to Audit; `tbpInterviewAnswered` passes only answered items
+   through, with the prompt contract in `draftSystem`/`verifySystem` that an interview is a plan
+   and never a record. The interview stopped vanishing from the working note, and the filter
+   stopped deleting what the clinician typed.
+5. **Setup restructure** (`113/114/115-sub`). `#visit-launcher`, a collapsed
+   `<details id="setup-settings">`, and `tbpVisitStart` as the single primary action, with inputs
+   above it. Legacy blocks teaching the old setup model removed. "Start with" is per-visit rather
+   than a stored default, and the interview is offered before the Framework. **This is the
+   blocker the Monday walkthrough-rewrite reminder checks for** (zero matches for those three
+   identifiers in `pm-ai-scribe.html` means the port has not happened).
+6. **Information preservation** (the empty-HPI work). `tbpDropEmptySections`, `tbpSectionMap`,
+   `TBP_TOPIC_HINTS`, `tbpPriorProse`/`tbpTopicInPriorProse` cross-template carry-forward loss
+   detection, the `PRIOR SIGNED NOTE` source contract, and `tbpHasPriorNote()` branching so a
+   follow-up with an empty prior-note box is not told to carry forward a note that is not there.
+   Governing rule: preserve information, not empty structure. If neither today nor the prior note
+   provides meaningful content for a section, OMIT THE SECTION rather than emit a blank heading.
+   All of `tbpDropEmptySections`, `tbpSectionMap` and `TBP_TOPIC_HINTS` are ZERO in live.
+7. **Counseling and risk/benefit** (`119/120/121-sub`). The clinician attests and the AI reasons;
+   the counseling attestation is longitudinal, attested once rather than every visit; the
+   risk/benefit button is gone in favour of an automatic configured default.
+8. **Preflight retune.** Clinical-decision preflight tuned to "moderate but sharp".
+
+**DO NOT PORT.** These are practice-only by design and must be excluded:
+- `07b32f3` / `96cebf6` (`122/123-sub`) — the HPI section-pass trace and its on-page verdict
+  banner. Diagnostic scaffolding for one investigation, already answered (the DRAFT pass produced
+  the blanks, not the verifier). It has no place in a clinical file.
+- `eadd0b4` (`103-sub`) — practice-desk telemetry self-identification. Live has its own labelling
+  from `64e6cd8` / `a6b1c84`.
+- `TBP_BUILD = 'ambient-999999'` and every `-sub` build tag. Live gets real lockstep tags.
+- The `-practice` filenames and cross-references. The practice trio references only itself.
+
+**Already live, do not re-port:** ADHD Framework and New Evaluation Prep (`ambient-83`), the
+visit-type gate (`ambient-97`), the psychotherapy modality card, carry-forward content
+(`ambient-100`), risk/benefit reasoning (`ambient-104`), all five September fabrication fixes
+(invented name, invented dx code, the `clin_dx` preflight card, MSE-as-corroboration, phantom
+regimen), and the three clinic bugs of 24-25 Sept (tab labels, working-note page scroll, Discern
+transcript).
+
+**Designed and deliberately NOT built: the evidence-aware adaptive interview**
+(`CLINICAL-OS-STRATEGY.md` §38). Record review should change what the interview SHOWS. It does
+not yet. The Framework already computes the evidence picture from records (`<<<ESTABLISHED>>>`
+organised under fixed domain headings, `<<<GAPS>>>`, `<<<COMPETING>>>`, `<<<QUESTIONS>>>`) and
+pins it above the working note; the interview already renders as per-heading collapsible blocks
+with a state badge. **Neither knows about the other, and that join is the whole missing feature.**
+`tbpAdhdFeedPrep` records the deliberate decision not to auto-install Framework questions into
+the interview. Until the join exists, DO NOT market this release as adapting to the clinician's
+records. It is a Framework plus a clinician-owned structured interview, which is a true and
+sufficient claim.
 
 **Shipped recently:**
 - **Note-as-memory bridge** — follow-up drafts carry durable *dated* context forward (med
