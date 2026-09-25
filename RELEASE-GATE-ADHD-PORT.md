@@ -32,10 +32,10 @@ where "while we're here" creeps back in.
 
 | # | Test | Pass |
 |---|---|---|
-| 0.1 | `/practice` loads, footer reads `build ambient-135-sub` | |
-| 0.2 | Open a patient tab, name it, hard-reload, name survives | |
-| 0.3 | Full-screen working note scrolls as a page, not just inside a panel | |
-| 0.4 | Discern: ask two questions, both Q&A remain on screen | |
+| 0.1 | `/practice` loads, footer reads `build ambient-135-sub` | PASS 25 Sep |
+| 0.2 | Open a patient tab, name it, hard-reload, name survives | PASS 25 Sep |
+| 0.3 | Full-screen working note scrolls as a page, not just inside a panel | PASS 25 Sep |
+| 0.4 | Discern: ask two questions, both Q&A remain on screen | PASS 25 Sep |
 
 ---
 
@@ -79,10 +79,10 @@ The interview is a plan, not a record. An unanswered question must establish not
 
 | # | Test | Pass |
 |---|---|---|
-| C.1 | Load the interview, answer NOTHING, Draft. The note contains no claim that any interview topic was reviewed, covered, explored, assessed or discussed | |
-| C.2 | Same state, Audit. Audit does not treat interview questions as supported content | |
+| C.1 | Load the interview, answer NOTHING, Draft. The note contains no claim that any interview topic was reviewed, covered, explored, assessed or discussed | **PASS 25 Sep.** 12 headings, ~60 questions loaded; draft returned "No source material was provided" |
+| C.2 | Same state, Audit. Audit does not treat interview questions as supported content | **PASS 25 Sep.** Audit auto-ran and named the absence rather than validating question text |
 | C.3 | Same state, Framework Check. It reports nothing established from unanswered questions. **Requires a built Framework: run this at the top of Block D, not here.** The panel footer only renders when one exists, and with nothing typed its button reads "Check again", not "What did today establish?" | |
-| C.4 | Answer 3 of 30 questions, Draft. ONLY those 3 reach the note. The other 27 establish nothing | |
+| C.4 | Answer 3 of 30 questions, Draft. ONLY those 3 reach the note. The other 27 establish nothing | **PASS 25 Sep.** HPI carried exactly the 3 typed facts; 9 untouched headings silent; assessment correctly refused to generate |
 | C.5 | Answer a question, then delete your answer. Draft does not carry the deleted content | |
 | C.6 | Type a freeform paragraph under a heading rather than under a bullet. It is preserved, not filtered away | |
 | C.7 | Interview + ambient transcript together: a topic in the interview that the transcript actually covers IS documented; one only the interview names is not | |
@@ -189,4 +189,7 @@ Anything cosmetic or "would be nicer if" found during the gate goes here, not in
 
 | Found in | Note |
 |---|---|
-| | |
+| B (interview render) | Seed title line `ADHD EVALUATION INTERVIEW` is parsed as a heading by `tbpInterviewSplit`, producing an empty first block with no answer count above REASON FOR EVALUATION. Cosmetic; content is preserved. |
+| Preflight (C.4) | Offered `F32.9 MDD` with the rationale "no mood/anhedonia documented but initial presentation warrants rule-out", and `F41.1 GAD` off occupational stress alone. Nothing is written unless selected and the rationale discloses its own lack of support, so not blocking. Open question whether "moderate but sharp" is tuned too hot for a new eval. |
+| MSE (C.4) | MSE emitted `Mood is not reported.` and `Affect is congruent with reported mood.` in the same paragraph. Internally incoherent: affect cannot be congruent with a mood that does not exist. Audit caught the mood field but not the affect line. Small, real, and an auditor would notice. |
+| MSE (C.4) | `Motor activity is unremarkable` while the visit documents standing twice in a 90-minute meeting and occupying the hands. Defensible (reported symptom vs observed exam) but reads as internally inconsistent. Michael's call. |
