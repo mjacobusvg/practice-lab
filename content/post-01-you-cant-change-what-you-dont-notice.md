@@ -72,6 +72,10 @@ You are not only feeling the urge. You notice: there is the urge.
 
 It is a little like Inception, except instead of dreams within dreams, it is awareness within awareness.
 
+You are aware that you are the one being aware.
+
+It is a little like stepping outside the ego. Not the Freudian one. The part of us that is so wrapped up in the thinking that it never notices the thinking is happening.
+
 Put the three next to each other and the difference is easier to see.
 
 Awareness: I am anxious.
