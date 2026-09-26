@@ -242,10 +242,15 @@ Learned the hard way on the 14 Sept post; they apply to every post in this serie
 - **Lists must be one category.** Do not mix an intervention, a state, a behaviour and a circumstance
   in the same list.
 - **No absolutes we would have to defend.** No em-dashes (house style).
-- **Do not formalize prematurely, including in this file.** A description of what the writing is
-  doing is not a rule about what it must do. When a structure gets written down here, say which it
-  is, because the next session will enforce whatever looks enforceable. See the editorial rule in
-  §1 for the shape that survived this mistake once.
+- **Formalize only what has earned stability, including in this file.** Until then, record
+  observations as observations, hypotheses as hypotheses, and decisions as decisions. The failure is
+  not writing things down; it is writing an observation in authoritative language, after which the
+  next session treats it as architecture. So say which one a thing is. "Lucid dreaming primarily
+  conveys the phenomenology" is an observation. "Do not cut lucid dreaming" is a rule only once
+  somebody decides it is indispensable and says so. This is the same discipline
+  `CLINICAL-ONTOLOGY.md` runs with its ENFORCED / DECIDED / INFERRED / OPEN tags; the writing side
+  had no equivalent, which is how a descriptive table of recognition aids nearly became an
+  ontology. See the editorial rule in §1 for the shape that survived it.
 - **Never claim novelty against the mindfulness literature.** Not in a post, not in a commit message,
   not in chat. Michael's contribution is a teaching sequence, not a new construct, and every
   component already has a home in the literature. See the third overreach in §1b.
