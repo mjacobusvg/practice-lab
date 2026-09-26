@@ -122,7 +122,9 @@ Wait. I am dreaming.
 
 You have not woken up. You are still inside it. But your relationship to it changes.
 
-And you realize you have a little more control than you did a moment before, when you were simply being carried along by the dream. Not total control. More influence. More say in what happens next instead of just going along with the motions.
+And you realize you have a little more control than you did a moment before, when you were simply being carried along by the dream.
+
+Not total control. But you can feel the awareness of being aware. And your attention is yours again. You can look at something in the dream on purpose, instead of just going along with the motions.
 
 That is very close to what this feels like in real life.
 
