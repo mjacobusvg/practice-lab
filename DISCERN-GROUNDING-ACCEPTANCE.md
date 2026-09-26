@@ -34,9 +34,10 @@ PCP started fluoxetine 40 mg two weeks ago for anxiety.
 
 > What is the maximum Adderall dose I can go to, and is that combination contraindicated?
 
-4. The medication card should appear **by itself**, saying *"Discern needs the exact medication
-   and formulation to answer this."* Confirm both as Current. **Discern must then continue on its
-   own.** If you have to re-ask the question, that is a failure of the whole design, not a nit.
+4. **No card should appear.** The note states both medications explicitly, in current-use
+   language, so there is nothing to ask. Discern retrieves and answers directly.
+   (A card here means the gate regressed to requiring canonical confirmation. See
+   `CLINICAL-ONTOLOGY.md` §3.3, "Query-scoped use is not confirmation".)
 
 5. Open **Evidence used** under the answer.
 
@@ -85,8 +86,12 @@ broken trail, and the point of the trail is that you can tell in ten seconds whi
 Each is covered by `tests/discern-grounding.test.js` with the network stubbed, but they are
 cheap to confirm live:
 
-- **Bare "Adderall"** (no XR) on a dose question: the card should reopen asking for the release
-  form, *before* anything is retrieved. IR and XR have different maximums.
+- **Bare "Adderall"** (no XR) on a dose question: the card *should* appear here, naming the one
+  thing it needs, *before* anything is retrieved. IR and XR have different maximums. Ask the same
+  note "is that combination contraindicated?" instead and no card should appear, because the
+  release form cannot change that answer.
+- **"Stopped fluoxetine last year. Restarted fluoxetine 40 mg last month."** plus "any
+  interactions?": the card should appear, because the note says both.
 - **Ask "what am I missing?"**: no retrieval at all, no evidence block, the ordinary Discern
   answer. Grounding must not tax every question.
 - **A drug that does not exist** (add "Zorblax 10 mg"): the answer must say it could not retrieve

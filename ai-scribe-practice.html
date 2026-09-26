@@ -395,10 +395,10 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/rx-vocabulary.js?v=ambient-154-sub"></script>
-<script src="/rx-detect.js?v=ambient-154-sub"></script>
-<script src="/rx-grounding.js?v=ambient-154-sub"></script>
-<script src="/note-engine-practice.js?v=ambient-154-sub"></script>
+<script src="/rx-vocabulary.js?v=ambient-155-sub"></script>
+<script src="/rx-detect.js?v=ambient-155-sub"></script>
+<script src="/rx-grounding.js?v=ambient-155-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-155-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -760,7 +760,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-154-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-155-sub</span></div>
 </div>
 </div>
 
@@ -4404,6 +4404,11 @@ function tbpMedProject(list){
 // fields count.
 var TBP_RESULT_INPUTS = {
   medications:           { current: function(){ return tbpEncounterState.medications.current; },    project: tbpMedProject },
+  // Medications read from today's material rather than from a confirmed list. An answer
+  // grounded on what the note said is still verifiable later: re-read the note and compare.
+  notedMedications:      { current: function(){
+                             try { return (tbpMedScan() || []).filter(function(c){ return c.proposedStatus === 'current'; }); }
+                             catch(e){ return []; } },                                              project: tbpMedProject },
   medicationsHistorical: { current: function(){ return tbpEncounterState.medications.historical; }, project: tbpMedProject },
   medicationChanges:     { current: function(){ return tbpEncounterState.medications.changes; },    project: tbpMedProject },
   diagnoses:             { current: function(){ return tbpEncounterState.preflight.diagnoses; } },
@@ -4771,10 +4776,22 @@ function tbpMedRenderRows(){
   }).join('');
 }
 
-function tbpShowMeds(purpose, reason, onDone){
+function tbpShowMeds(purpose, reason, onDone, asks){
   tbpMedDraftRows = tbpMedRowsFromState();
   tbpMedOnDone = (typeof onDone === 'function') ? onDone : null;
   var why = document.getElementById('meds-why');
+  if(why && asks && asks.length){
+    // One specific missing distinction, named. Every row still shows, because confirming a
+    // filtered list would silently drop the medications that were not in question.
+    why.innerHTML = esc(asks.map(function(a){ return a.drug + ': ' + a.why; }).join(' '))
+      + '<div style="margin-top:6px;color:var(--cream-dim)">Everything else here is already clear; it is shown so the list stays whole.</div>';
+    var goB = document.getElementById('meds-confirm');
+    if(goB) goB.textContent = tbpMedOnDone ? 'Confirm and continue' : 'Save this list';
+    var msgB = document.getElementById('meds-msg'); if(msgB) msgB.textContent = '';
+    tbpMedRenderRows();
+    document.getElementById('meds-modal').classList.add('open');
+    return;
+  }
   if(why){
     var lead = TBP_MED_ASK[purpose] || 'Confirm what the patient is currently taking:';
     var extra = TBP_MED_WHY[reason] || '';
@@ -6115,17 +6132,30 @@ async function tbpRunReason(question){
   // A medication question needs confirmed medication identity BEFORE it can be answered. The
   // clinician asks their question; the system works out what it needs. They are never sent off
   // to prepare a data structure first, and after confirming they never re-ask.
-  var cls = window.TBP_RX_GROUNDING ? window.TBP_RX_GROUNDING.classifyQuestion(question)
-                                    : { needsMedicationFacts: false, classes: [] };
-  if(cls.needsMedicationFacts && typeof tbpMedEnsure === 'function'){
-    var purpose = window.TBP_RX_GROUNDING.purposeFor(cls.classes);
-    var need = tbpMedConfirmationNeeded(purpose);
-    if(need){ tbpShowMeds(purpose, need, function(){ tbpRunReasonNow(question, cls); }); return; }
+  var G = window.TBP_RX_GROUNDING;
+  var cls = G ? G.classifyQuestion(question) : { needsMedicationFacts: false, classes: [] };
+  if(!cls.needsMedicationFacts || !G) return tbpRunReasonNow(question, cls, null);
+
+  // What does THIS question need? Not "a confirmed medication list" -- the evidence for the
+  // claims being made. A note that says "Adderall XR 20 mg every morning" has already answered
+  // the only identity question a dose lookup asks, and making the clinician ratify it first is
+  // exposing an internal state requirement as though it were a clinical one.
+  var scope = G.resolveQueryScope({
+    classes: cls.classes,
+    confirmed: (tbpEncounterState.medications.current || []).slice(),
+    candidates: (typeof tbpMedScan === 'function') ? tbpMedScan() : []
+  });
+  if(scope.asks.length){
+    // Ask ONLY for the distinction that changes the evidence, and say which one it is.
+    var ask = scope.asks[0];
+    tbpShowMeds(ask.need === 'formulation' ? 'dose' : 'conflict', null,
+                function(){ tbpRunReasonNow(question, cls, null); }, scope.asks);
+    return;
   }
-  return tbpRunReasonNow(question, cls);
+  return tbpRunReasonNow(question, cls, scope);
 }
 
-async function tbpRunReasonNow(question, cls){
+async function tbpRunReasonNow(question, cls, scope){
   var out = document.getElementById('rsn-out');
   var msg = document.getElementById('rsn-msg');
   var go  = document.getElementById('rsn-go');
@@ -6146,7 +6176,10 @@ async function tbpRunReasonNow(question, cls){
   var meds = [], evidence = [], wanted = [], gaps = [], trail = [], evidenceBlock = '';
   var grounded = !!(cls && cls.needsMedicationFacts && G);
   if(grounded){
-    meds = (tbpEncounterState.medications.current || []).slice();
+    // Query-scoped inputs where the question could be answered from what is written; the
+    // confirmed list where one exists. Using the note does NOT promote anything into
+    // medications.current -- reading is not confirming.
+    meds = scope ? scope.inputs.slice() : (tbpEncounterState.medications.current || []).slice();
     if(!meds.length){
       // A medication question with no confirmed medication list must NOT quietly become an
       // ungrounded answer: that is answering from memory with extra steps, which is the exact
@@ -6208,9 +6241,13 @@ async function tbpRunReasonNow(question, cls){
       try {
         if(typeof tbpRecordResult === 'function'){
           tbpRecordResult('discern', {
-            inputs: grounded ? { medications: tbpEncounterState.medications.current } : null,
+            inputs: !grounded ? null
+                    : (scope && scope.source === 'note')
+                      ? { notedMedications: meds }                       // answered from the note
+                      : { medications: tbpEncounterState.medications.current },
             data: { question: question, answer: acc },
             meta: { classes: (cls && cls.classes) || [], grounded: !!evidenceBlock,
+                    medicationSource: (scope && scope.source) || 'confirmed',
                     evidence: trail, gaps: gaps, evidenceSource: 'DailyMed SPL' }
           });
         }

@@ -252,5 +252,70 @@ test('the trail distinguishes the four failure modes', () => {
   assert.ok(t[2].candidates, 'an ambiguous row shows what it was torn between');
 });
 
+// ---- query scope: what the CLAIM needs, not what the state model wants -----------------------
+// The error this replaces: "needs medication facts" was treated as "needs a confirmed medication
+// list", so a note that plainly said "Adderall XR 20 mg every morning" still produced a
+// two-row confirmation form before anything could be answered.
+const xr   = { rawName: 'Adderall XR', formulation: 'extended-release', interactionKey: 'amphetamine_mixed_salts', proposedStatus: 'current' };
+const bare = { rawName: 'Adderall', interactionKey: 'amphetamine_mixed_salts', proposedStatus: 'current' };
+const flx  = { rawName: 'fluoxetine', interactionKey: 'fluoxetine', proposedStatus: 'current' };
+const oldFlx = { rawName: 'fluoxetine', interactionKey: 'fluoxetine', proposedStatus: 'historical' };
+const scope = (classes, candidates, confirmed) =>
+  G.resolveQueryScope({ classes, candidates, confirmed: confirmed || [] });
+
+test('THE REGRESSION: an explicit note needs no confirmation', () => {
+  const s = scope(['dosing', 'contraindication'], [xr, flx]);
+  assert.strictEqual(s.asks.length, 0, 'nothing to ask: the note already says it');
+  assert.strictEqual(s.sufficient, true);
+  assert.deepStrictEqual(s.inputs.map((m) => m.rawName), ['Adderall XR', 'fluoxetine']);
+  assert.strictEqual(s.source, 'note');
+});
+
+test('a confirmed list is used when one exists', () => {
+  const s = scope(['dosing'], [xr], [{ rawName: 'Adderall XR', formulation: 'extended-release', status: 'current' }]);
+  assert.strictEqual(s.source, 'confirmed');
+});
+
+test('the ONE ask: a release form that changes which label applies', () => {
+  const s = scope(['dosing'], [bare]);
+  assert.strictEqual(s.asks.length, 1);
+  assert.strictEqual(s.asks[0].need, 'formulation');
+  assert.strictEqual(s.sufficient, false);
+});
+
+test('the same gap does NOT block a question the release form cannot change', () => {
+  assert.strictEqual(scope(['contraindication'], [bare, flx]).asks.length, 0);
+  assert.strictEqual(scope(['interaction'], [bare, flx]).asks.length, 0);
+  assert.strictEqual(scope(['warnings'], [bare]).asks.length, 0);
+});
+
+test('a drug with no release-form ambiguity is never asked about', () => {
+  assert.strictEqual(scope(['dosing'], [flx]).asks.length, 0,
+    'fluoxetine has no IR/XR distinction worth interrupting for');
+});
+
+test('current and stopped in the same note is a real conflict', () => {
+  const s = scope(['interaction'], [flx, oldFlx]);
+  assert.ok(s.asks.some((a) => a.need === 'status'));
+});
+
+test('a drug mentioned only as stopped is excluded, not queried about', () => {
+  const s = scope(['interaction'], [xr, oldFlx]);
+  assert.deepStrictEqual(s.inputs.map((m) => m.rawName), ['Adderall XR']);
+  assert.strictEqual(s.asks.length, 0, 'nothing ambiguous about a stopped drug');
+});
+
+test('an unclear mention is not treated as current', () => {
+  const s = scope(['interaction'], [{ rawName: 'lithium', interactionKey: 'lithium', proposedStatus: 'unclear' }]);
+  assert.strictEqual(s.inputs.length, 0);
+  assert.strictEqual(s.sufficient, false, 'nothing to ground on');
+});
+
+test('no medications at all is not sufficient, and not an ask either', () => {
+  const s = scope(['dosing'], []);
+  assert.strictEqual(s.sufficient, false);
+  assert.strictEqual(s.asks.length, 0, 'there is nothing to ask ABOUT');
+});
+
 console.log(`\n${checks - failures}/${checks} passed`);
 if (failures) { console.error(`${failures} FAILED`); process.exit(1); }

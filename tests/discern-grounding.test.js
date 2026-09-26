@@ -138,16 +138,43 @@ async function ask(ctx, question) {
     });
   })();
 
+  // ---- THE REGRESSION: a note that already says it must not trigger a confirmation form ------
   await (async () => {
-    const ctx = makeEnv({ note: 'Takes Adderall XR 20 mg. PCP started fluoxetine 40 mg.', evidenceResponse: RESOLVED });
+    const ctx = makeEnv({ note: '34yo woman, follow-up for ADHD and anxiety.\n'
+      + 'Currently taking Adderall XR 20 mg every morning.\n'
+      + 'PCP started fluoxetine 40 mg two weeks ago for anxiety.', evidenceResponse: RESOLVED });
     await ask(ctx, Q);
-    test('a medication question with nothing confirmed opens the card instead of answering', () => {
-      assert.strictEqual(ctx.__captured.calls.length, 0, 'the model must not be called yet');
-      assert.strictEqual(ctx.__captured.fetches.length, 0);
+    test('NOTHING CONFIRMED but the note is explicit: it just answers', () => {
+      // The whole point. "Adderall XR 20 mg every morning" and "fluoxetine 40 mg" are written
+      // down in current-use language. Requiring the clinician to ratify a medication list
+      // before reading what they wrote is exposing an internal state requirement as though it
+      // were a clinical one.
+      assert.strictEqual(ctx.__captured.fetches.length, 1, 'it retrieves');
+      assert.strictEqual(ctx.__captured.calls.length, 1, 'and answers, with no card');
+      assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.__captured.fetches[0].body.drugs)),
+        ['Adderall XR', 'fluoxetine'], 'read straight from the note');
+    });
+
+    test('reading the note does NOT promote anything into canonical state', () => {
+      assert.strictEqual(run(ctx, 'tbpEncounterState.medications.current.length'), 0,
+        'reading is not confirming');
+      assert.strictEqual(run(ctx, 'tbpEncounterState.medications.confirmedAt'), null);
+    });
+
+    test('the answer records that it was grounded on the note, not on a confirmed list', () => {
+      const rec = run(ctx, "tbpLatestResult('discern')");
+      assert.strictEqual(rec.record.meta.medicationSource, 'note');
+      assert.ok(rec.record.inputs.notedMedications, 'declared as note-scoped');
+      assert.strictEqual(rec.status, 'current', 'and still verifiable against the note later');
+    });
+
+    test('editing the note out from under a note-grounded answer marks it stale', () => {
+      run(ctx, "document.getElementById('raw').value = 'Currently taking Adderall XR 30 mg every morning.';");
+      assert.strictEqual(run(ctx, "tbpLatestResult('discern').status"), 'stale');
     });
   })();
 
-  // ---- the resume: confirming continues the ORIGINAL question ----------------------------------
+  // ---- a confirmed list is used when one exists, and is not required for one to exist --------
   await (async () => {
     const ctx = makeEnv({ note: 'Takes Adderall XR 20 mg. PCP started fluoxetine 40 mg.', evidenceResponse: RESOLVED });
     run(ctx, CONFIRM);
@@ -306,21 +333,55 @@ async function ask(ctx, question) {
 
   // ---- the confirmation gate stops the unanswerable BEFORE retrieval ---------------------------
   await (async () => {
-    const ctx = makeEnv({ note: 'Takes Adderall 20 mg.', evidenceResponse: RESOLVED });
-    run(ctx, "tbpMedApplyConfirmation([{rawName:'Adderall', dose:'20 mg', interactionKey:'amphetamine_mixed_salts', status:'current'}]);");
+    const ctx = makeEnv({ note: 'Takes Adderall 20 mg every morning.', evidenceResponse: RESOLVED });
     await ask(ctx, 'What is the max dose?');
-    test('FORMULATION UNRESOLVED on a dose question stops before retrieval', () => {
+    test('FORMULATION UNRESOLVED on a dose question is the ONE thing worth asking', () => {
       assert.strictEqual(ctx.__captured.fetches.length, 0, 'no lookup against an unknown formulation');
-      assert.strictEqual(ctx.__captured.calls.length, 0, 'and no answer');
-      assert.strictEqual(run(ctx, "tbpMedConfirmationNeeded('dose')"), 'ambiguous');
-      const why = run(ctx, "tbpMedAmbiguities('dose')");
-      assert.ok(/release form/.test(why[0].issue), 'IR and XR have different maximums');
+      assert.strictEqual(ctx.__captured.calls.length, 0, 'and no answer yet');
+      const scope = run(ctx, `TBP_RX_GROUNDING.resolveQueryScope({ classes:['dosing'],
+        confirmed: [], candidates: tbpMedScan() })`);
+      assert.strictEqual(scope.asks.length, 1);
+      assert.strictEqual(scope.asks[0].need, 'formulation');
+      assert.ok(/different labeled maximums/.test(scope.asks[0].why));
+    });
+  })();
+
+  await (async () => {
+    const ctx = makeEnv({ note: 'Takes Adderall 20 mg every morning and fluoxetine 40 mg.', evidenceResponse: RESOLVED });
+    await ask(ctx, 'Is that combination contraindicated?');
+    test('the SAME bare Adderall needs no asking for a contraindication question', () => {
+      // The release form does not change which contraindications section applies. Asking here
+      // would be friction with no effect on the answer.
+      assert.strictEqual(ctx.__captured.fetches.length, 1);
+      assert.strictEqual(ctx.__captured.calls.length, 1);
+    });
+  })();
+
+  await (async () => {
+    const ctx = makeEnv({ note: 'Stopped fluoxetine last year. Restarted fluoxetine 40 mg last month.',
+                          evidenceResponse: RESOLVED });
+    await ask(ctx, 'Any interactions?');
+    test('a drug described as BOTH current and stopped is worth asking about', () => {
+      assert.strictEqual(ctx.__captured.calls.length, 0, 'no answer until the conflict is settled');
+      const scope = run(ctx, `TBP_RX_GROUNDING.resolveQueryScope({ classes:['interaction'],
+        confirmed: [], candidates: tbpMedScan() })`);
+      assert.ok(scope.asks.some((a) => a.need === 'status'));
+    });
+  })();
+
+  await (async () => {
+    const ctx = makeEnv({ note: 'Previously stopped Concerta after five days. Takes fluoxetine 40 mg.',
+                          evidenceResponse: RESOLVED });
+    await ask(ctx, 'Any interactions?');
+    test('a drug mentioned only as stopped is not an input and not an ask', () => {
+      assert.strictEqual(ctx.__captured.fetches.length, 1);
+      assert.deepStrictEqual(JSON.parse(JSON.stringify(ctx.__captured.fetches[0].body.drugs)), ['fluoxetine'],
+        'a stopped drug is not part of the current regimen');
     });
   })();
 
   await (async () => {
     const ctx = makeEnv({ note: 'Doing well, no changes.', evidenceResponse: RESOLVED });
-    run(ctx, 'tbpMedApplyConfirmation([]);');   // the clinician confirmed: there are none
     await ask(ctx, 'Any interactions?');
     test('NO CONFIRMED MEDICATIONS is a gap, not a licence to answer from memory', () => {
       assert.strictEqual(ctx.__captured.fetches.length, 0, 'nothing to look up');

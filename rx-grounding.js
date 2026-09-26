@@ -87,6 +87,91 @@
     return 'grounding';
   }
 
+  // ── 1b. QUERY SCOPE: what this question needs, which is not the medication list ───────────
+  //
+  // The mistake this replaces: "this question needs medication facts" was treated as "this
+  // question needs a clinician-confirmed canonical medication list". They are not the same, and
+  // conflating them put a two-row reconciliation form in front of a clinician whose note already
+  // said, in plain words, "Adderall XR 20 mg every morning" and "fluoxetine 40 mg".
+  //
+  // Using a medication that today's note states clearly does NOT promote it into canonical
+  // confirmed state. It is a QUERY-SCOPED input: good enough to retrieve a label and answer,
+  // not a claim that the clinician has ratified a medication list. Canonical confirmation is
+  // for state the app will persist, reuse, modify or act on later. It is not the price of
+  // admission for answering a question whose inputs are already written down.
+  //
+  // So the gate is per CLAIM and asks only for a distinction that materially changes the
+  // evidence:
+  //   "maximum dose" of a drug that comes in IR and XR, with no release form stated  -> ask
+  //   "is A + B contraindicated", both named                                          -> do not ask
+  //   the same drug appearing as both current and stopped                             -> ask
+
+  // Drugs where the release form changes which label applies, and therefore the dose answer.
+  var FORM_SENSITIVE = ['amphetamine_mixed_salts', 'methylphenidate', 'dextroamphetamine',
+    'bupropion', 'venlafaxine', 'quetiapine', 'paliperidone', 'carbamazepine', 'divalproex',
+    'lithium', 'guanfacine', 'clonidine', 'metformin', 'oxycodone', 'morphine', 'tramadol'];
+
+  // Only a claim about dosing or a formulation-specific fact is changed by the release form.
+  // "Is A contraindicated with B" is answered from the same sections either way.
+  function classNeedsFormulation(classes) {
+    return (classes || []).indexOf('dosing') > -1;
+  }
+
+  function resolveQueryScope(opts) {
+    opts = opts || {};
+    var classes = opts.classes || [];
+    var confirmed = opts.confirmed || [];
+    var candidates = opts.candidates || [];
+    var asks = [], inputs = [], source;
+
+    if (confirmed.length) {
+      // A confirmed list is authoritative when one exists. It is not required for one to exist.
+      inputs = confirmed.slice();
+      source = 'confirmed';
+    } else {
+      // Anything today's material states as current use. 'unclear' and 'historical' are left
+      // out: "we discussed lithium" is not a regimen, and neither is "stopped fluoxetine".
+      inputs = candidates.filter(function (c) { return c.proposedStatus === 'current'; });
+      source = 'note';
+    }
+
+    // A drug stated as current in one place and stopped in another genuinely changes the
+    // answer, and no amount of reading will settle it. That is worth asking about.
+    var byKey = {};
+    candidates.forEach(function (c) {
+      var k = c.interactionKey || c.rawName;
+      (byKey[k] = byKey[k] || []).push(c);
+    });
+    if (source === 'note') {
+      Object.keys(byKey).forEach(function (k) {
+        var group = byKey[k];
+        var cur = group.filter(function (c) { return c.proposedStatus === 'current'; });
+        var past = group.filter(function (c) { return c.proposedStatus === 'historical'; });
+        if (cur.length && past.length) {
+          asks.push({ drug: cur[0].rawName, need: 'status',
+            why: 'your note describes this as both current and stopped' });
+        } else if (!cur.length && group.length && classes.length) {
+          // Mentioned but never as current use: not an input, and not an ask either. The
+          // question may not be about it at all.
+        }
+      });
+    }
+
+    // The only identity gap worth interrupting for: a release form that would select a
+    // different label, on a question whose answer depends on which label.
+    if (classNeedsFormulation(classes)) {
+      inputs.forEach(function (m) {
+        if (m.formulation) return;
+        if (FORM_SENSITIVE.indexOf(m.interactionKey) === -1) return;
+        asks.push({ drug: m.rawName, need: 'formulation',
+          why: 'immediate-release and extended-release have different labeled maximums, and your note does not say which' });
+      });
+    }
+
+    return { inputs: inputs, source: source, asks: asks,
+             sufficient: inputs.length > 0 && asks.length === 0 };
+  }
+
   // ── 2. The evidence block ─────────────────────────────────────────────────────────────────
   //
   // Kept OUT of the case material on purpose. If label text is pasted into the chart narrative,
@@ -258,6 +343,7 @@
   }
 
   var API = { classifyQuestion: classifyQuestion, purposeFor: purposeFor,
+              resolveQueryScope: resolveQueryScope, FORM_SENSITIVE: FORM_SENSITIVE,
               buildEvidenceBlock: buildEvidenceBlock, groundingRules: groundingRules,
               summarizeTrail: summarizeTrail, evidenceGaps: evidenceGaps,
               SECTION_CAP: SECTION_CAP };

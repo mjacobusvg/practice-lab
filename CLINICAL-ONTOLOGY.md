@@ -346,6 +346,36 @@ note's tense was. Last visit's present tense is not today's present tense.
 **ENFORCED.** Status cues are sentence-scoped. An earlier version leaked across the boundary and
 filed an active prescription as historical because the *next* sentence said "previously stopped".
 
+### Query-scoped use is not confirmation. **DECIDED 26 Sept 2026, ENFORCED**
+
+Exposed by implementation, which is the only reason it is here.
+
+> **Wrong model:** a question that needs medication facts needs a clinician-confirmed canonical
+> medication list first.
+> **Why wrong:** it conflates two different things, and it puts a reconciliation form in front of
+> a clinician whose note already says, in plain words, *"Currently taking Adderall XR 20 mg every
+> morning"* and *"PCP started fluoxetine 40 mg two weeks ago"*. Nothing about that is ambiguous.
+> Making them ratify it before the question can be answered exposes an internal state-management
+> requirement as though it were a clinical information requirement. It is not one.
+> **Correct model:** reading is not confirming. A medication stated clearly enough in today's
+> material is a **query-scoped input**: good enough to retrieve a label and answer, and it does
+> NOT enter `medications.current`. Canonical confirmation is for state the app will persist,
+> reuse, modify or act on later.
+
+**The gate is per CLAIM, and asks only for a distinction that changes the evidence:**
+
+| situation | ask? |
+|---|---|
+| "max dose" of a drug that comes in IR and XR, no release form stated | **yes**, the label differs |
+| the same drug, but the question is "is A + B contraindicated" | no, same section either way |
+| a drug described as both current and stopped | **yes**, no amount of reading settles it |
+| a drug mentioned only as stopped | no, it is simply not an input |
+| a drug with no release-form ambiguity | no |
+
+**ENFORCED:** `resolveQueryScope()` in `rx-grounding.js`; the result records
+`meta.medicationSource` as `note` or `confirmed`, and declares `notedMedications` rather than
+`medications` as its input so a note-grounded answer still goes stale if the note changes.
+
 ## 3.4 Authority
 
 > **Wrong model:** medication-looking text can populate `medications.current`.
