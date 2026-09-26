@@ -280,8 +280,25 @@ Learned the hard way on the 14 Sept post; they apply to every post in this serie
 
 Real ideas that are not in the current arc. Add here rather than losing them mid-conversation.
 
-- **Mindfulness across modalities** — the common denominator across CBT, ERP, ACT, DBT, MI. Currently
-  folded into post 1; could be its own piece if post 1 gets crowded.
+- **Mindfulness across modalities / what each therapy is actually asking the patient to do** — **OPEN,
+  not committed.** Do not build this as "mindfulness is the secret ingredient in every therapy." The
+  stronger possible frame is a modality series: CBT, ACT, DBT, ERP, MI, behavioral activation, etc.,
+  each asking something different of the patient, with mindfulness/meta-awareness named only where it
+  genuinely functions as a prerequisite, stance, or skill. ACT could be one post, DBT another, and so
+  on, but only if each modality earns a distinct argument rather than repeating the same mindfulness
+  point.
+
+- **Mindfulness across diagnoses/presentations** — **OPEN, not committed.** Post 2 may be enough. If
+  writing it exposes genuinely different clinical material, later application posts could look at OCD,
+  panic/GAD, depression/rumination, craving/substance use, anger/interpersonal reactivity, etc. The
+  frame would be "what becomes visible once the patient can catch the process while it is happening,"
+  not "mindfulness treats every disorder." Do not manufacture a series merely because the lens travels.
+
+- **A Framework for Anxiety — Finding the Patterns We Can Actually Change** — **PARKED as a separate
+  future series, not the container for the mindfulness pair.** See §1b for the developed architecture.
+  Likely entry point: "What Keeps Anxiety Going?" followed by process/disorder-specific pieces. The
+  mindfulness pair can be referenced as the prior skill of noticing the machinery, but it is not Part
+  1/2 of the anxiety series.
 - **"The medication stopped working" is really OCD reorganizing** — SSRI lowers intensity, ERP never
   progresses, rituals get subtler, distress returns, medication gets blamed. Strong, and a direct
   sequel to the 14/17 Sept medication-response pair. Probably belongs after post 4.
