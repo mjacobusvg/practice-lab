@@ -167,6 +167,11 @@ delete it; just leave it in place and only advance it when a deploy is worth int
   exists in the repo before building, detect cheaply and call AI only when needed, keep
   structured data / retrieved evidence / AI synthesis separate, and surface tradeoffs to Michael
   before consequential product decisions.
+- `CONTENT-PIPELINE.md` is the working map of **what we are writing and why**: the current post
+  series, what each post argues, how they connect, Michael's own load-bearing lines (use them, do
+  not paraphrase them), the house rules for these posts, and the parked ideas. **Read it before
+  drafting, planning or re-sequencing any post.** It is meant to be edited as thinking changes, so
+  when an idea moves, move it there rather than re-deriving the plan in conversation.
 - `FORUM-POSTS.md` is the state file for **member-facing forum posts**: the limited Markdown a
   post body actually supports, the `scheduled_posts` -> `forum_posts` pipeline, the Mon/Thu 15:00
   UTC cadence and field conventions, the checksum discipline for any body write, and how reader
