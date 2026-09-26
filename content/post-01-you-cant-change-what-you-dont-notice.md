@@ -1,3 +1,25 @@
+Before I explain any of this, try something. It takes about thirty seconds.
+
+Pick a point in front of you. Anything. Keep your eyes on it and do not move them.
+
+Put your attention on that point.
+
+Now, without moving your eyes, move your attention out to whatever is in your peripheral vision.
+
+Now to the sounds around you.
+
+Now back to the point.
+
+Your eyes never moved. Nothing in the room changed. Something moved anyway, and you are the one who moved it.
+
+Now stop trying, and let your attention go wherever it wants.
+
+Wait for it.
+
+There. That moment you realized you had drifted.
+
+That is what this whole post is about, and it is one piece of what I mean by mindfulness. The rest of it is harder to describe, which is why this is going to take a while.
+
 When I was much younger, I thought mindfulness was supposed to be something almost metaphysical.
 
 It sat somewhere on the fringe between psychology, religion, spirituality and meditation. I would try to meditate, try to clear my mind, and mostly end up frustrated because nothing happened.
@@ -250,29 +272,13 @@ This is the actual reason mindfulness gets practiced when nothing much is happen
 
 Not because noticing your breath while sitting still is the point. It is rehearsal.
 
-Here is one that takes about a minute, and that you can hand a patient.
+You already ran one, at the top of this post.
 
-Pick something to look at. A candle, a mark on the wall, anything. Keep your eyes on it and do not move them.
+That is a version of what a patient can practice, and you can hand it to them in about a minute. A point on the wall. A candle if they want one. Attention on the object, then out to the periphery, then to sound, then to the body, without the eyes ever moving. Then the part that actually does the work: stop trying, let it wander, and catch it when it has gone.
 
-Put your attention on the object. The edges, the movement, the color.
+The catching is the rep. Not the staring.
 
-Now, without moving your eyes, move your attention out to whatever is in your peripheral vision.
-
-Then to the sounds in the room.
-
-Then to your feet on the floor, or your breathing, or the weight of your body in the chair.
-
-You have been looking at the same spot the whole time. Nothing in the room changed. What moved was your attention, and you are the one who moved it.
-
-Then see if you can catch yourself doing it. Not the looking. The directing.
-
-And then stop trying. Let your attention go wherever it wants.
-
-Within about ten seconds you are thinking about dinner, or wondering whether you are doing this right, or noticing an itch, or rehearsing a conversation from this morning.
-
-Then: oh. I stopped doing it.
-
-There it is. The whole thing, in a minute, with nothing at stake.
+And notice what you were doing when you caught it. Not looking at the object. Directing.
 
 You learn what it feels like to notice a thought as a thought. A sensation as a sensation. An urge as an urge. You learn the difference between having an experience and immediately responding to it.
 
