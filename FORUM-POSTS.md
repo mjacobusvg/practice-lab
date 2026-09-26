@@ -21,6 +21,14 @@ fixed allowlist of constructs is re-introduced. Nothing else survives.
 | `## Sub`      | `<h3>` |
 | `### Sub-sub` | `<h4>` |
 | `**Section**` on its own line | `<p><strong>Section</strong></p>` — **a bold paragraph, NOT a heading** |
+**The offset cuts both ways, and the second direction has bitten too.** `#` is ALREADY the section
+level: it renders `<h2>`. Do not "correct" a section to `##` in order to get an `<h2>`; that yields
+`<h3>` and makes it a subsection of the section above it. Every top-level section in a post body is
+`#`, full stop. Verify rather than reason about it:
+
+```
+node -e "const {toRichHtml}=require('./netlify/functions/_lib/richtext'); console.log(toRichHtml('# Test'))"
+```
 
 **This last row has bitten us and cost a long debugging detour.** A line wrapped in `**` looks
 like a heading in a draft and in most Markdown previews, but the platform renders it as ordinary

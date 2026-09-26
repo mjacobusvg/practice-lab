@@ -50,7 +50,7 @@ Not a special state. Not simple awareness either.
 
 Closer to this: noticing what is happening while it is happening, understanding something about what you are noticing, and recognizing that you are the one having the experience.
 
-Which is already several things at once. Awareness. Insight. Attention, because none of it happens without direction. And the recursive one, noticing your own noticing while it is running.
+Which is already several things at once. Awareness. Insight. Attention, because part of this is noticing where your attention has gone and being able to move it on purpose. And the recursive one, noticing your own noticing while it is running.
 
 None of those is quite the same as the others, and the differences are where this stops being abstract and turns into something you can use in a room with a patient.
 
