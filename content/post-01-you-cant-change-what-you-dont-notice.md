@@ -140,9 +140,7 @@ You are no longer only the person inside the reaction.
 
 And once you have felt that switch, you cannot unsee it.
 
-You have become aware of it.
-
-You may still not be able to put it into words for anybody else. But you know the difference now between being carried along by something and catching yourself being carried along.
+You have become aware of it. Not of some permanent state you now live in, but of the difference. There is being carried along by an experience, and there is catching yourself being carried along by it. You may still not be able to put that into words for anybody else. But you know now that those are two different things.
 
 You would think that would be the end of the problem.
 
