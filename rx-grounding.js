@@ -172,6 +172,29 @@
              sufficient: inputs.length > 0 && asks.length === 0 };
   }
 
+  // ── 1c. IDENTITY GRANULARITY BY CLAIM ────────────────────────────────────────────────────
+  //
+  // "I found 52 generic fluoxetine labels and cannot tell which manufacturer's bottle she has,
+  // therefore I cannot retrieve fluoxetine evidence" is the wrong level of identity for the
+  // claim being made. Whether fluoxetine inhibits CYP2D6 is an INGREDIENT-level fact; it is the
+  // same in every equivalent label, and PD-Rx versus RemedyRepack has no bearing on it.
+  //
+  // Whether 60 mg/day is reachable on Adderall XR is a PRODUCT-level fact: extended-release and
+  // immediate-release have different labels and different numbers, and getting that wrong is
+  // the defect this whole layer exists for.
+  //
+  //     claim  ->  required identity granularity  ->  appropriate evidence
+  //
+  // not: every medication claim -> exact manufacturer SPL, or failure.
+  function granularityFor(med) {
+    // The identity the clinician actually wrote decides it. A named product with a release form
+    // is a product-level identity and must resolve as one. A bare ingredient name is an
+    // ingredient-level identity, and any authoritative label for that ingredient will answer an
+    // ingredient-level question.
+    if (med && (med.formulation || med.brand)) return 'product';
+    return 'ingredient';
+  }
+
   // ── 2. The evidence block ─────────────────────────────────────────────────────────────────
   //
   // Kept OUT of the case material on purpose. If label text is pasted into the chart narrative,
@@ -231,6 +254,41 @@
     return parts.join('\n');
   }
 
+  // The Tier 2 block, kept visually and verbally separate from the label. Its whole value is
+  // that the clinician can see the figure, see where it came from, and correct it. Presenting it
+  // with the same weight as the labeling would throw that away.
+  function buildReferenceBlock(refs) {
+    if (!refs || !refs.length) return '';
+    var parts = [
+      'TIER 2: PRACTICAL CLINICAL DOSING REFERENCE (Think Beyond Practice curated table)',
+      '',
+      'This is NOT product labeling and NOT patient material. It is a curated table of practical',
+      'adult ranges, kept because the FDA label frequently does not contain the concept a clinician',
+      'means by "the maximum I can go to". Use it for the practical ceiling. Never cite it as the',
+      'label, and never let it override a labeled figure.'
+    ];
+    var anyUnverified = refs.some(function (r) { return !r.entry.verified; });
+    refs.forEach(function (r) {
+      var e = r.entry;
+      parts.push('');
+      parts.push('  ' + r.requested + '  (' + e.product + ', ' + (e.population || 'adult') + ')');
+      if (e.adultPracticalCeiling) parts.push('    practical ceiling in common use: ' + e.adultPracticalCeiling);
+      if (e.labelRecommended)      parts.push('    labeled recommended dose: ' + e.labelRecommended);
+      if (e.basis)                 parts.push('    basis: ' + e.basis);
+      if (e.note)                  parts.push('    note: ' + e.note);
+      parts.push('    status: ' + (e.verified
+        ? 'clinician-verified ' + (e.reviewedBy || '') + ' ' + (e.reviewedAt || '')
+        : 'NOT clinician-verified'));
+    });
+    if (anyUnverified) {
+      parts.push('');
+      parts.push('SOME ENTRIES ABOVE ARE NOT YET CLINICIAN-VERIFIED. Give the figure, because it is what');
+      parts.push('the clinician asked for, and say it is a commonly cited practical ceiling rather than a');
+      parts.push('labeled one. Do not present an unverified entry as authoritative or as labeling.');
+    }
+    return parts.join('\n');
+  }
+
   // ── 3. What the model may do with it ──────────────────────────────────────────────────────
   //
   // Two halves, and the second is the one that matters. Telling a model to use the evidence is
@@ -249,6 +307,18 @@
     lines.push('number and the shape of the decision first; the provenance matters and belongs right after.');
     lines.push('Opening with what a document does not contain is a non-answer, and a non-answer is worse');
     lines.push('than useless here because it costs the clinician the time it took to read it.');
+    lines.push('');
+    lines.push('THE FIRST SENTENCE ANSWERS THE QUESTION. If they asked for a maximum, the first sentence');
+    lines.push('contains a number and what kind of number it is. Not the labeled dose they are already');
+    lines.push('on, not a description of the label, not a preamble. The shape is:');
+    lines.push('');
+    lines.push('    <the practical answer, with its category>. <what the label states, and what it does');
+    lines.push('    not>. <the other categories that matter>. <what it means for this decision>.');
+    lines.push('');
+    lines.push('DO NOT UPGRADE THE SOURCE\'S HEDGING. If the label says an interaction MAY increase');
+    lines.push('exposure, say may or can. Do not turn it into "has likely increased" for this patient:');
+    lines.push('that converts a general pharmacologic statement into a patient-specific claim nobody');
+    lines.push('measured. The same goes downward: do not soften a stated contraindication into a caution.');
     lines.push('');
     lines.push('TWO KINDS OF SOURCE, WITH DIFFERENT AUTHORITY:');
     lines.push('');
@@ -318,6 +388,7 @@
         of_candidates: s.of_candidates || null,
         lookups: e.lookups || null,
         unmapped_codes: e.unmapped_codes || null,
+        attempts: e.attempts || null,
         chosen_because: s.chosen_because || null,
         candidates: e.candidates || null,
         sections: (e.sections || []).map(function (x) {
@@ -369,7 +440,9 @@
 
   var API = { classifyQuestion: classifyQuestion, purposeFor: purposeFor,
               resolveQueryScope: resolveQueryScope, FORM_SENSITIVE: FORM_SENSITIVE,
-              buildEvidenceBlock: buildEvidenceBlock, groundingRules: groundingRules,
+              granularityFor: granularityFor,
+              buildEvidenceBlock: buildEvidenceBlock, buildReferenceBlock: buildReferenceBlock,
+              groundingRules: groundingRules,
               summarizeTrail: summarizeTrail, evidenceGaps: evidenceGaps,
               SECTION_CAP: SECTION_CAP };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;

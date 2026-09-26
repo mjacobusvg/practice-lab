@@ -405,12 +405,48 @@ between sound sources is information, not an inability to answer.
 quote or imply what an unread document says. It should still answer from practice, say briefly
 what could not be verified, and not make that the headline.
 
-**Still open: the Tier 2 source.** Today "established clinical practice" means the model's own
-knowledge, labeled as such. The intended hierarchy is Tier 1 FDA/DailyMed, Tier 2 a vetted
-clinical drug reference (practical ranges, commonly accepted maximums, interaction management),
-Tier 3 guidelines and primary literature. Tier 2 does not exist yet, and building it from model
-knowledge and calling it a reference would recreate the original problem with extra steps. It
-needs a real source or a curated table someone qualified has actually vetted.
+### Tier 2 exists, and is NOT yet verified. **DECIDED 26 Sept 2026**
+
+The most useful sentence in a real answer, *"many references cite 40-60 mg/day as a practical
+adult ceiling"*, was model memory: the trail showed only DailyMed. Deleting the sentence would
+have been the wrong fix, because it is what the clinician asked for.
+
+`rx-clinical-reference.js` is the home for it. Every entry carries its figure, its basis, its
+granularity and `verified: false` until a clinician reviews it. **Being written down is the only
+thing separating this from recall** — it is inspectable, versioned and correctable, and the model
+is told to give the figure while saying it is commonly cited rather than labeled.
+
+The precedent is `pm-lai.html`, which already carries curated dosing with a per-fact marker
+distinguishing label-derived from TBP synthesis.
+
+| tier | source | establishes |
+|---|---|---|
+| 1 | FDA / DailyMed SPL | labeled dose, explicit labeled maximum **where one exists**, contraindications, interactions, warnings, populations |
+| 2 | `rx-clinical-reference.js` | practical adult ranges, commonly cited ceilings |
+| 3 | guidelines, primary literature | not built |
+
+**Open:** nothing is verified. An unverified entry beats recall; a wrong entry is worse than none.
+Verification is a clinician's job, not a model's.
+
+### Identity granularity follows the claim. **DECIDED 26 Sept 2026, ENFORCED**
+
+> **Wrong model:** every medication claim needs the exact manufacturer's SPL, or it fails.
+> **Why wrong:** "I found 52 generic fluoxetine labels and cannot tell which manufacturer's
+> bottle she has, therefore I cannot retrieve fluoxetine evidence." Whether fluoxetine inhibits
+> CYP2D6 is identical in every equivalent label. Refusing there is the mirror image of collapsing
+> Adderall XR into Adderall: one demands too little specificity, the other too much.
+> **Correct model:** `claim -> required identity granularity -> appropriate evidence`.
+
+| claim | granularity | why |
+|---|---|---|
+| Adderall XR maximum | **product** | IR and XR are different labels with different numbers |
+| fluoxetine inhibits CYP2D6 | **ingredient** | the same fact in every equivalent label |
+| is A + B contraindicated | pair, at each drug's own level | |
+
+**ENFORCED:** `granularityFor()` decides per drug from the identity the clinician wrote (a brand
+or a release form means product level, a bare ingredient name means ingredient level), and
+`chooseSpl` relaxes its tie rule accordingly: at ingredient level a different manufacturer or
+dose form is not a reason to refuse, a different *product* still is.
 
 ## 3.4 Authority
 

@@ -166,7 +166,7 @@ function isCombinationOf(productName, queryWords) {
   return parts.some(part => !queryWords.some(w => part.indexOf(w) !== -1));
 }
 
-function chooseSpl(list, queryName) {
+function chooseSpl(list, queryName, granularity) {
   if (!list || !list.length) return null;
   const q = String(queryName || '').toLowerCase();
   const words = q.split(/\s+/).filter(w => w.length > 2);
@@ -211,7 +211,11 @@ function chooseSpl(list, queryName) {
     // manufacturers of the same generic are not an ambiguity worth refusing over; an
     // immediate-release and an extended-release label at the same score are.
     const near = scored.slice(1).filter(s => (top.score - s.score) <= 10);
-    const different = near.filter(s => s.isER !== top.isER || s.product !== top.product);
+    let different = near.filter(s => s.isER !== top.isER || s.product !== top.product);
+    // AT INGREDIENT GRANULARITY, a release-form difference between equivalent generics is not a
+    // reason to refuse: whether fluoxetine inhibits CYP2D6 is the same fact in every label. Only
+    // a genuinely different PRODUCT (a combination, another drug) still counts.
+    if (granularity === 'ingredient') different = different.filter(s => s.product !== top.product);
     if (different.length) {
       ambiguous = different.length + ' materially different label(s) scored as well as the best match: '
         + different.slice(0, 3).map(s => s.product).join('; ');
@@ -220,6 +224,9 @@ function chooseSpl(list, queryName) {
 
   return {
     spl: top.spl,
+    // The whole ranked list, so a candidate that turns out to be an empty shell can be skipped
+    // for the next one instead of the lookup reporting success with no content.
+    ranked: scored,
     candidate_count: list.length,
     ambiguous: ambiguous,
     // Kept for the debug trail: "wrong label chosen" and "right label, wrong section" are
@@ -340,7 +347,7 @@ function extractSections(xml) {
 // ── 4. fetch + cache one drug ───────────────────────────────────────────────────────────────
 const CACHE_DAYS = 30;
 
-async function ingestDrug(queryName) {
+async function ingestDrug(queryName, wantedSections, granularity) {
   const res = await resolveRxcui(queryName);
   if (!res) return { ok: false, kind: 'identity_unresolved', query: queryName,
                      error: 'no RxNorm concept matches "' + queryName + '"' };
@@ -364,7 +371,7 @@ async function ingestDrug(queryName) {
   list.forEach(x => { seen[x.setid || x.set_id] = true; });
   rxHits.forEach(x => { const k = x.setid || x.set_id; if (!seen[k]) { seen[k] = true; list.push(x); } });
 
-  const pick = list.length ? chooseSpl(list, queryName) : null;
+  const pick = list.length ? chooseSpl(list, queryName, granularity) : null;
   if (!pick) return { ok: false, kind: 'label_not_found', query: queryName, rxcui: res.rxcui,
                       lookups: tried,
                       error: 'no SPL found by drug name or by RXCUI ' + res.rxcui };
@@ -376,15 +383,44 @@ async function ingestDrug(queryName) {
              candidate_count: pick.candidate_count, error: pick.ambiguous };
   }
 
-  const setid = pick.spl.setid || pick.spl.set_id;
-  const xml = await (await fetch(DAILYMED + '/spls/' + encodeURIComponent(setid) + '.xml')).text();
-  const sections = extractSections(xml);
-  // Codes this label carries that we have no name for. Four defects so far were invisible in
-  // the answer and obvious in the trail; this is the same trick for a section we never see.
-  const unmapped = {};
-  let cm;
-  const allCodes = /<code[^>]*\bcode="(\d{4,5}-\d)"[^>]*>/gi;
-  while ((cm = allCodes.exec(xml)) !== null) if (!SECTIONS[cm[1]]) unmapped[cm[1]] = true;
+  // A LABEL THAT YIELDS NOTHING IS NOT A RESOLVED LABEL. The first run picked a repackager SPL
+  // for fluoxetine, extracted zero sections, and still reported success: the trail said
+  // "resolved ... sections: none" and the clinician got no fluoxetine evidence at all. Ranking
+  // by title and date says which label is most likely right; it says nothing about whether that
+  // document actually carries readable content. So try the ranked candidates in order and keep
+  // the first that produces what was asked for.
+  const attempts = [];
+  let setid = null, sections = [], xml = '', unmapped = {}, chosen = null;
+  const ranked = pick.ranked || [{ spl: pick.spl }];
+  for (let i = 0; i < Math.min(5, ranked.length); i++) {
+    const cand = ranked[i].spl;
+    const id = cand.setid || cand.set_id;
+    if (!id) continue;
+    let secs = [];
+    try {
+      xml = await (await fetch(DAILYMED + '/spls/' + encodeURIComponent(id) + '.xml')).text();
+      secs = extractSections(xml);
+    } catch (e) {
+      attempts.push({ setid: id, title: cand.title, sections: 0, error: String(e && e.message || e) });
+      continue;
+    }
+    const names = secs.map(x => x.section_name);
+    const hasWanted = !wantedSections || !wantedSections.length
+      || names.some(n => wantedSections.indexOf(n) !== -1);
+    attempts.push({ setid: id, title: cand.title, sections: names.length, hasWanted: hasWanted });
+    if (secs.length && hasWanted) {
+      setid = id; sections = secs; chosen = cand;
+      let cm2; const allCodes = /<code[^>]*\bcode="(\d{4,5}-\d)"[^>]*>/gi;
+      while ((cm2 = allCodes.exec(xml)) !== null) if (!SECTIONS[cm2[1]]) unmapped[cm2[1]] = true;
+      break;
+    }
+  }
+  if (!setid) {
+    return { ok: false, kind: 'no_readable_sections', query: queryName, rxcui: res.rxcui,
+             lookups: tried, attempts: attempts, candidate_count: pick.candidate_count,
+             error: 'found ' + pick.candidate_count + ' label(s) but none carried a readable '
+                  + ((wantedSections && wantedSections.length) ? 'requested ' : '') + 'section' };
+  }
 
   await sb('tbp_rx_drug', {
     method: 'POST',
@@ -399,8 +435,8 @@ async function ingestDrug(queryName) {
     headers: { Prefer: 'resolution=merge-duplicates' },
     body: JSON.stringify({
       setid: setid, rxcui: res.rxcui, title: pick.spl.title,
-      spl_version: pick.spl.spl_version ? parseInt(pick.spl.spl_version, 10) : null,
-      published_date: pick.spl.published_date || null,
+      spl_version: chosen.spl_version ? parseInt(chosen.spl_version, 10) : null,
+      published_date: chosen.published_date || null,
       source_url: 'https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=' + setid,
       candidate_count: pick.candidate_count, chosen_reason: pick.chosen_reason,
       fetched_at: new Date().toISOString()
@@ -416,14 +452,16 @@ async function ingestDrug(queryName) {
   return {
     ok: true, query: queryName, rxcui: res.rxcui, setid: setid,
     resolved_by: res.resolved_by, candidate_count: pick.candidate_count,
-    chosen_reason: pick.chosen_reason, lookups: tried,
+    chosen_reason: pick.chosen_reason + (attempts.length > 1
+      ? ' [skipped ' + (attempts.length - 1) + ' candidate(s) with no readable section]' : ''),
+    lookups: tried, attempts: attempts,
     unmapped_codes: Object.keys(unmapped).slice(0, 12),
     sections: sections.map(s => s.section_name)
   };
 }
 
 // ── 5. THE INTERFACE. The only function Discern's path calls. ───────────────────────────────
-async function getEvidence(drugNames, classes) {
+async function getEvidence(drugNames, classes, opts) {
   const want = {};
   (classes && classes.length ? classes : ['dosing']).forEach(c => {
     (CLASS_SECTIONS[c] || []).forEach(s => { want[s] = true; });
@@ -432,10 +470,12 @@ async function getEvidence(drugNames, classes) {
   // What a missing section actually means depends on whether it was the section being asked for.
   const primary = (classes && classes.length ? classes : ['dosing'])
     .map(c => CLASS_PRIMARY[c]).filter(Boolean);
+  // Per-drug identity granularity, decided by the caller from the claim being made.
+  const granByDrug = (opts && opts.granularity) || {};
   const out = [];
 
   for (const name of (drugNames || []).slice(0, 6)) {
-    let row = null;
+    let row = null, ingested = null;
     try {
       const r = await sb('tbp_drug_label?select=*,tbp_rx_drug!inner(query_name)&tbp_rx_drug.query_name=eq.'
         + encodeURIComponent(name) + '&order=fetched_at.desc&limit=1');
@@ -446,7 +486,7 @@ async function getEvidence(drugNames, classes) {
     const stale = !row || (Date.now() - new Date(row.fetched_at).getTime()) > CACHE_DAYS * 864e5;
     if (stale) {
       let ing;
-      try { ing = await ingestDrug(name); }
+      try { ing = await ingestDrug(name, wanted, granByDrug[name] || 'product'); }
       catch (e) { out.push({ requested: name, drug: name, resolution_status: 'failed',
                              failure_kind: 'service_error', error: String(e && e.message || e) }); continue; }
       if (!ing.ok) {
@@ -457,9 +497,11 @@ async function getEvidence(drugNames, classes) {
                    resolution_status: ing.kind === 'identity_ambiguous' ? 'ambiguous' : 'failed',
                    failure_kind: ing.kind || 'unknown', rxcui: ing.rxcui || null,
                    resolved_by: ing.resolved_by || null, candidates: ing.candidates || null,
-                   lookups: ing.lookups || null, error: ing.error });
+                   lookups: ing.lookups || null, attempts: ing.attempts || null,
+                   error: ing.error });
         continue;
       }
+      ingested = ing;
       const r2 = await sb('tbp_drug_label?setid=eq.' + encodeURIComponent(ing.setid) + '&select=*');
       row = (await r2.json())[0];
     }
@@ -473,9 +515,12 @@ async function getEvidence(drugNames, classes) {
       requested: name,
       drug: name,
       resolution_status: 'resolved',
+      granularity: granByDrug[name] || 'product',
       rxcui: row.rxcui || null,
       sections: (secs || []).map(s => ({ section: s.section_name, loinc: s.loinc_code, text: s.text })),
-      unmapped_codes: null,
+      unmapped_codes: (ingested && ingested.unmapped_codes) || null,
+      attempts: (ingested && ingested.attempts) || null,
+      lookups: (ingested && ingested.lookups) || null,
       source: {
         label_title: row.title,
         setid: row.setid,

@@ -395,10 +395,11 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/rx-vocabulary.js?v=ambient-158-sub"></script>
-<script src="/rx-detect.js?v=ambient-158-sub"></script>
-<script src="/rx-grounding.js?v=ambient-158-sub"></script>
-<script src="/note-engine-practice.js?v=ambient-158-sub"></script>
+<script src="/rx-vocabulary.js?v=ambient-159-sub"></script>
+<script src="/rx-detect.js?v=ambient-159-sub"></script>
+<script src="/rx-grounding.js?v=ambient-159-sub"></script>
+<script src="/rx-clinical-reference.js?v=ambient-159-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-159-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -760,7 +761,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-158-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-159-sub</span></div>
 </div>
 </div>
 
@@ -4664,7 +4665,13 @@ async function tbpRxFetchEvidence(meds, classes){
     method: 'POST',
     headers: { 'Content-Type': 'application/json',
                'Authorization': 'Bearer ' + (typeof authToken !== 'undefined' ? (authToken || '') : '') },
-    body: JSON.stringify({ drugs: names, classes: classes })
+    // Per-drug identity granularity, from the claim. "Is fluoxetine a CYP2D6 inhibitor" is an
+    // ingredient-level fact and must not fail because 52 manufacturers publish equivalent labels.
+    body: JSON.stringify({ drugs: names, classes: classes, granularity: (function(){
+      var g = {};
+      (meds || []).forEach(function(m){ g[m.rawName] = window.TBP_RX_GROUNDING.granularityFor(m); });
+      return g;
+    })() })
   });
   if(!res.ok){
     var why = 'evidence service returned ' + res.status;
@@ -6072,7 +6079,7 @@ function tbpRsnRenderAll(){
     if(b) b.textContent = x.a;
     // The trail is part of the answer: an answer you cannot audit after a reload is an answer
     // you have to take on trust, which is the thing grounding exists to avoid.
-    if(b && (x.trail || x.gaps) && b.parentNode) b.parentNode.insertAdjacentHTML('beforeend', tbpRsnTrailHtml(x.trail, x.gaps));
+    if(b && (x.trail || x.gaps || x.refs) && b.parentNode) b.parentNode.insertAdjacentHTML('beforeend', tbpRsnTrailHtml(x.trail, x.gaps, x.refs));
   });
 }
 
@@ -6096,13 +6103,19 @@ function tbpRsnRestore(x){
 // identical in a wrong answer and need different fixes: wrong medication identity, right
 // identity but the wrong label, right label but the wrong section, and correct evidence
 // reasoned over badly. Collapsed by default so it costs no attention until something looks off.
-function tbpRsnTrailHtml(trail, gaps){
+var tbpRsnLastRefs = [];
+function tbpRsnTrailHtml(trail, gaps, refs){
+  tbpRsnLastRefs = refs || [];
   if((!trail || !trail.length) && (!gaps || !gaps.length)) return '';
   var rows = (trail || []).map(function(t){
     var head = '<b>' + esc(t.requested) + '</b> &rarr; ' + esc(t.status);
     if(t.status !== 'resolved') return '<li style="margin-bottom:7px">' + head
       + (t.failure ? '<div>' + esc(t.failure) + '</div>' : '')
       + (t.lookups ? '<div>looked up by: ' + t.lookups.map(function(l){ return esc(l.by) + ' (' + l.found + ')'; }).join(', ') + '</div>' : '')
+      + (t.attempts && t.attempts.length
+          ? '<div>tried ' + t.attempts.length + ' label(s), none with a readable section: '
+            + t.attempts.map(function(a){ return esc(String(a.title || a.setid).slice(0, 44)); }).join('; ') + '</div>'
+          : '')
       + (t.candidates && t.candidates.length
           ? '<div>candidates: ' + t.candidates.map(function(c){ return esc(c.title) + ' (' + c.score + ')'; }).join('; ') + '</div>'
           : '') + '</li>';
@@ -6113,12 +6126,21 @@ function tbpRsnTrailHtml(trail, gaps){
       + (t.effective_date ? ' &middot; ' + esc(t.effective_date) : '') + '</div>'
       + (t.lookups ? '<div>looked up by: ' + t.lookups.map(function(l){ return esc(l.by) + ' (' + l.found + ')'; }).join(', ') + '</div>' : '')
       + '<div>chosen: ' + esc(t.chosen_because || '?') + '</div>'
+      + (t.attempts && t.attempts.length > 1
+          ? '<div>tried ' + t.attempts.length + ' label(s): ' + t.attempts.map(function(a){
+              return esc(String(a.title || a.setid).slice(0, 44)) + ' (' + a.sections + ' sections)'; }).join('; ') + '</div>'
+          : '')
       + (t.unmapped_codes && t.unmapped_codes.length
           ? '<div>label also carries unmapped LOINC codes: ' + esc(t.unmapped_codes.join(', ')) + '</div>' : '')
       + '<div>sections: ' + (t.sections.length
           ? t.sections.map(function(x){ return esc(x.section) + ' (' + x.chars + ' chars)'; }).join(', ')
           : 'none') + '</div>'
       + '</li>';
+  }).join('');
+  var refRows = (tbpRsnLastRefs || []).map(function(r){
+    return '<li style="margin-bottom:5px"><b>' + esc(r.requested) + '</b>: ' + esc(r.entry.adultPracticalCeiling || '?')
+      + ' &middot; ' + (r.entry.verified ? 'clinician-verified' : '<span style="color:var(--amber)">not clinician-verified</span>')
+      + '<div>' + esc(r.entry.basis || '') + '</div></li>';
   }).join('');
   var gapRows = (gaps || []).map(function(g){
     return '<li style="color:var(--amber);margin-bottom:5px">' + esc(g.drug) + ': ' + esc(g.why) + '</li>';
@@ -6127,6 +6149,7 @@ function tbpRsnTrailHtml(trail, gaps){
     + 'color:var(--cream-dim);letter-spacing:.05em;text-transform:uppercase">Evidence used</summary>'
     + '<div style="font-size:.78rem;color:var(--cream-dim);line-height:1.5;margin-top:7px">'
     + (rows ? '<ul style="margin:0;padding-left:17px">' + rows + '</ul>' : '')
+    + (refRows ? '<div style="margin-top:6px">Tier 2, TBP curated practical dosing table:</div><ul style="margin:0;padding-left:17px">' + refRows + '</ul>' : '')
     + (gapRows ? '<div style="margin-top:6px">Not retrieved:</div><ul style="margin:0;padding-left:17px">' + gapRows + '</ul>' : '')
     + '<div style="margin-top:7px;opacity:.75">Source: DailyMed (NLM) current labeling, retrieved for the products confirmed in this encounter. Derived normalization, not clinician-confirmed patient state.</div>'
     + '</div></details>';
@@ -6178,6 +6201,7 @@ async function tbpRunReasonNow(question, cls, scope){
   // ── retrieve, if this question turns on a medication fact ──
   var G = window.TBP_RX_GROUNDING;
   var meds = [], evidence = [], wanted = [], gaps = [], trail = [], evidenceBlock = '';
+  var refs = [], referenceBlock = '';
   var grounded = !!(cls && cls.needsMedicationFacts && G);
   if(grounded){
     // Query-scoped inputs where the question could be answered from what is written; the
@@ -6206,6 +6230,13 @@ async function tbpRunReasonNow(question, cls, scope){
       gaps = G.evidenceGaps(evidence, wanted);
       trail = G.summarizeTrail(evidence);
       evidenceBlock = G.buildEvidenceBlock(evidence);
+      // Tier 2: the practical ceiling the label usually does not contain. Separate block,
+      // separate authority, and it rides in the trail so the claim is traceable to a row
+      // someone can check rather than to model memory.
+      try {
+        refs = (window.TBP_RX_REFERENCE ? window.TBP_RX_REFERENCE.forMeds(meds) : []);
+        referenceBlock = refs.length ? G.buildReferenceBlock(refs) : '';
+      } catch(e){ refs = []; }
     }
   }
 
@@ -6217,11 +6248,12 @@ async function tbpRunReasonNow(question, cls, scope){
     // says, and would leave the reader unable to tell either.
     var userMsg = 'PATIENT / ENCOUNTER MATERIAL (this session):\n\n' + c.text;
     if(evidenceBlock) userMsg += '\n\n---\n\n' + evidenceBlock;
+    if(referenceBlock) userMsg += '\n\n---\n\n' + referenceBlock;
     userMsg += '\n\n---\n\nTHE CLINICIAN ASKS: ' + question;
 
     // Grounding rules go in only when evidence is actually present, and they name the gaps so
     // a failed retrieval cannot be quietly answered from memory instead.
-    var rules = (evidenceBlock || gaps.length) ? G.groundingRules(cls.classes, gaps) : null;
+    var rules = (evidenceBlock || referenceBlock || gaps.length) ? G.groundingRules(cls.classes, gaps) : null;
 
     // NOTE: callAPI's onDelta is handed the ACCUMULATED text so far, not an increment.
     acc = await callAPI(
@@ -6234,11 +6266,12 @@ async function tbpRunReasonNow(question, cls, scope){
     else {
       // Keep the exchange, and persist immediately — like the framework, this costs a model call
       // and the autosave only fires on input events, which asking a question does not produce.
-      rsnLast = { q: question, a: acc, trail: trail.length ? trail : null, gaps: gaps.length ? gaps : null };
+      rsnLast = { q: question, a: acc, trail: trail.length ? trail : null,
+                  gaps: gaps.length ? gaps : null, refs: refs.length ? refs : null };
       rsnLog.push(rsnLast);
-      if(trail.length || gaps.length){
+      if(trail.length || gaps.length || refs.length){
         var blk = body && body.parentNode;
-        if(blk) blk.insertAdjacentHTML('beforeend', tbpRsnTrailHtml(trail, gaps));
+        if(blk) blk.insertAdjacentHTML('beforeend', tbpRsnTrailHtml(trail, gaps, refs));
       }
       // The return leg. Declaring `medications` as the input means this answer is marked stale
       // the moment the regimen changes, which for a dose answer is exactly right.
@@ -6252,6 +6285,8 @@ async function tbpRunReasonNow(question, cls, scope){
             data: { question: question, answer: acc },
             meta: { classes: (cls && cls.classes) || [], grounded: !!evidenceBlock,
                     medicationSource: (scope && scope.source) || 'confirmed',
+                    tier2: refs.map(function(r){ return { drug: r.requested, product: r.entry.product,
+                             ceiling: r.entry.adultPracticalCeiling, verified: !!r.entry.verified }; }),
                     evidence: trail, gaps: gaps, evidenceSource: 'DailyMed SPL' }
           });
         }

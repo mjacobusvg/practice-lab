@@ -61,7 +61,10 @@ exports.handler = async function (event) {
   try {
     // getEvidence returns { evidence, wanted_sections }; the caller needs wanted_sections to
     // tell "this label has no interactions section" from "we never asked for one".
-    const result = await getEvidence(drugs, classes);
+    // Per-drug identity granularity, decided by the caller from the claim: product-level where
+    // the formulation changes the answer, ingredient-level for pharmacology that does not.
+    const granularity = (body.granularity && typeof body.granularity === 'object') ? body.granularity : {};
+    const result = await getEvidence(drugs, classes, { granularity: granularity });
     return { statusCode: 200, headers: CORS, body: JSON.stringify(result) };
   } catch (e) {
     return { statusCode: 502, headers: CORS, body: JSON.stringify({ error: String(e && e.message || e) }) };
