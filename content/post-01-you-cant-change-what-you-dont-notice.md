@@ -6,13 +6,15 @@ I kept waiting for whatever it was I was apparently supposed to experience. Some
 
 Then I accumulated a great deal of psychology. Psychology in high school. An undergraduate degree in it. A master's in clinical psychology. More psychology and psychotherapy coursework in PMHNP school. Classes on therapeutic modalities, theories, historical figures, behavior, cognition, emotion, development.
 
-Mindfulness kept appearing in all of it.
+Mindfulness was in there somewhere. For a long time I am not sure I really understood why it mattered.
 
-For a long time I am not sure I really understood why it mattered.
+What actually made it click came later, and it came back through the same territory I had always associated it with. Reading The Power of Now. Reading Thich Nhat Hanh.
 
-What eventually made it click came back through the same territory I had always associated it with. Reading The Power of Now. Reading Thich Nhat Hanh. Then coming back around to mindfulness through psychotherapy, awareness, behavior and change.
+And then I went back and looked at the training again.
 
-And somewhere in there I stopped thinking of mindfulness as a state you are supposed to achieve, and started thinking about it as something much more ordinary. Noticing what is happening while it is happening.
+Because once you have a working sense of what mindfulness actually is, it becomes hard to miss how much of it is already sitting inside the therapies we were taught. Not as a technique someone added on. As something the work quietly requires.
+
+Somewhere in there I stopped thinking of mindfulness as a state you are supposed to achieve, and started thinking about it as something much more ordinary. Noticing what is happening while it is happening.
 
 Even that is not quite right.
 
