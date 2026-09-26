@@ -88,6 +88,10 @@ And notice what that layer is not. It is not deciding the slight was imaginary. 
 
 The slight may still sting, and the urge may still be there. But for a moment you are not completely identified with it. You are no longer only the one who was slighted.
 
+You are still having the experience. You can also see yourself having it.
+
+And that is not dissociation. You have not gone numb, and you have not left the room. You are entirely in it. You are simply not only in it.
+
 Put the three next to each other and the difference is easier to see.
 
 Awareness: I am anxious.
@@ -104,13 +108,15 @@ That is the whole difference. Not an easy moment, and not some magical freedom f
 
 And in that moment there is a choice point that did not exist a second earlier.
 
-That is a hard thing to describe to somebody who has not caught it happening. The closest I have come is a dream.
+That is a hard thing to describe to somebody who has never caught one of those moments. The words start going in circles. You are aware that you are aware. You are inside the thing and somehow also watching yourself be inside it.
+
+But if you have ever had a lucid dream, you may already know exactly what I am describing.
 
 # If you have ever lucid dreamed
 
-If you have ever had a lucid dream, it is a similar experience.
+You are dreaming, and until that moment you are simply inside it. Whatever is happening is what is happening, and you respond to it as real.
 
-You are still dreaming. The dream does not stop. Whatever is happening in it may still feel completely real. And then there is this moment:
+Then something shifts.
 
 Wait. I am dreaming.
 
@@ -130,7 +136,7 @@ Or: there is the urge to check.
 
 Or: I am starting to do the thing I always do when I feel uncertain.
 
-You are having the experience and noticing yourself have it, at the same time.
+You are no longer only the person inside the reaction.
 
 # And we do not stay there
 
