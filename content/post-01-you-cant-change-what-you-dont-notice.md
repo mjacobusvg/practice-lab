@@ -74,15 +74,19 @@ It is a little like Inception, except instead of dreams within dreams, it is awa
 
 You are aware that you are the one being aware.
 
-It can feel a little like stepping outside the ego. Not the Freudian one. The part of us that runs everything through me. What this means about me, what was done to me, what I have to defend or correct or prove.
+It can almost feel like stepping outside the ego. Not the Freudian ego. I mean the way we become identified with our own interpretation of what just happened, particularly the part of that interpretation that is about us.
 
-Somebody says something dismissive, and before there is any space around it: that was a slight against me. I need to respond.
+Something happens, and almost immediately it becomes: what does this mean about me. What did they do to me. What do I have to defend, correct, prove or protect.
 
-Notice that the ego is not offering that up as a thought to consider. It is offering it as reality.
+Somebody says something dismissive, and within a second it is: they disrespected me. I cannot let that stand. I need to respond.
 
-Then the second layer arrives. I can see myself taking that as a slight. I can feel the urge to fire back.
+The important part is that while we are inside it, none of that feels like interpretation. It feels like what happened.
 
-The slight may still sting, and the urge may still be there. But you are no longer only the one who was slighted.
+Meta-awareness adds the second layer. I can see that I am taking this as a slight. I can feel the part of me that wants to defend itself.
+
+And notice what that layer is not. It is not deciding the slight was imaginary. Maybe it was a slight. It is seeing that I am the one doing the interpreting.
+
+The slight may still sting, and the urge may still be there. But for a moment you are not completely identified with it. You are no longer only the one who was slighted.
 
 Put the three next to each other and the difference is easier to see.
 
