@@ -293,6 +293,7 @@
         spl_version: s.spl_version || null,
         effective_date: s.effective_date || null,
         of_candidates: s.of_candidates || null,
+        lookups: e.lookups || null,
         chosen_because: s.chosen_because || null,
         candidates: e.candidates || null,
         sections: (e.sections || []).map(function (x) {

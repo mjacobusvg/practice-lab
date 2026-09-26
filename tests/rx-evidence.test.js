@@ -159,5 +159,46 @@ ok('splBaseName separates the product from the ingredient list',
    L.splBaseName('ADDERALL XR- dextroamphetamine saccharate, ... capsule') === 'adderall xr'
    && L.splBaseName('FLUOXETINE- fluoxetine hydrochloride capsule') === 'fluoxetine');
 
+
+// ── The titles DailyMed ACTUALLY returned on the first live run ─────────────────────────────
+// Both failures below were real. The fixes are tested against the exact strings, not against a
+// guess at the format: the previous splBaseName split on "-", which this format does not use,
+// so the whole title survived and 46 repackager labels for one generic read as 46 different
+// products. The lookup refused, and the clinician got no evidence at all.
+const REAL = [
+  'FLUOXETINE CAPSULE [REMEDYREPACK INC.]',
+  'FLUOXETINE TABLET, FILM COATED [REMEDYREPACK INC.]',
+  'FLUOXETINE (FLUOXETINE HYDROCHLORIDE) CAPSULE [REMEDYREPACK INC.]',
+  'OLANZAPINE AND FLUOXETINE (OLANZAPINE AND FUOXETINE) CAPSULE [PAR HEALTH USA, LLC]'
+].map((t, i) => ({ title: t, setid: 'set' + i, published_date: '20240101' }));
+
+ok('the labeler is not part of the product identity',
+   L.splProductName('FLUOXETINE CAPSULE [REMEDYREPACK INC.]') === 'fluoxetine');
+ok('nor is the dosage form',
+   L.splProductName('FLUOXETINE TABLET, FILM COATED [X]') === 'fluoxetine');
+ok('nor the parenthetical ingredient restatement',
+   L.splProductName('FLUOXETINE (FLUOXETINE HYDROCHLORIDE) CAPSULE [X]') === 'fluoxetine');
+ok('a real combination keeps both ingredients',
+   L.splProductName('OLANZAPINE AND FLUOXETINE (OLANZAPINE AND FUOXETINE) CAPSULE [Y]') === 'olanzapine and fluoxetine');
+ok('an extended-release product keeps its release form',
+   L.splProductName('BUPROPION HYDROCHLORIDE EXTENDED RELEASE TABLET [Z]').indexOf('bupropion') === 0);
+
+const flxPick = L.chooseSpl(REAL, 'fluoxetine');
+ok('REGRESSION: repackagers of one generic are NOT an ambiguity', flxPick.ambiguous === null);
+ok('and the chosen label is fluoxetine', /^FLUOXETINE/.test(flxPick.spl.title));
+
+ok('a combination product is not an answer to a single-ingredient query',
+   L.isCombinationOf('olanzapine and fluoxetine', ['fluoxetine']) === true);
+ok('and the same combination IS right when both were asked for',
+   L.isCombinationOf('olanzapine and fluoxetine', ['olanzapine', 'fluoxetine']) === false);
+const combo = flxPick.candidates.find(c => /OLANZAPINE/.test(c.title));
+ok('Symbyax scores far below the fluoxetine labels', combo && combo.score < 0);
+ok('and says why', combo && /DIFFERENT PRODUCT/.test(combo.why));
+
+ok('a genuinely different product at a similar score is still an ambiguity',
+   !!L.chooseSpl([{ title: 'ADDERALL XR CAPSULE, EXTENDED RELEASE [A]', setid: '1', published_date: '20240101' },
+                  { title: 'AMPHETAMINE SULFATE TABLET [B]', setid: '2', published_date: '20240101' }],
+                 'Adderall').ambiguous === null ? false : true);
+
 console.log(fails ? '\n' + fails + ' FAILED' : '\nall passed');
 process.exit(fails ? 1 : 0);

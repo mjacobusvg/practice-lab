@@ -105,11 +105,43 @@ async function resolveRxcui(name) {
 // resolved, because the pipeline continuing is not evidence that it continued correctly.
 const MIN_CONFIDENT = 100;
 
-function splBaseName(title) {
-  // DailyMed titles read "ADDERALL XR- dextroamphetamine saccharate, ... capsule". The part
-  // before the first dash is the product as marketed, which is what distinguishes two labels
-  // that matter from two labels that are the same generic from different manufacturers.
-  return String(title || '').split('-')[0].trim().toLowerCase();
+// DailyMed v2 titles come back as "<PRODUCT NAME> <DOSAGE FORM> [<LABELER>]", for example
+// "FLUOXETINE CAPSULE [REMEDYREPACK INC.]" or
+// "OLANZAPINE AND FLUOXETINE (OLANZAPINE AND FUOXETINE) CAPSULE [PAR HEALTH USA, LLC]".
+// An earlier version split on "-" and treated everything before it as the product, which is the
+// format DailyMed uses elsewhere but NOT here: the whole title survived, so forty-six repackager
+// labels for one generic all looked like materially different products and the lookup refused.
+const DOSE_FORMS = /\b(capsule|tablet|film coated|delayed release|extended release|oral solution|solution|suspension|syrup|elixir|injection|injectable|powder|granules?|kit|patch|film|spray|cream|ointment|gel|lotion|suppository|chewable|disintegrating|for oral use|concentrate|pellets?|sprinkle)\b/gi;
+
+function splProductName(title) {
+  const raw = String(title || '');
+  // DailyMed returns BOTH shapes. The older one puts the marketed name before a dash and the
+  // ingredient list after it ("ADDERALL XR- dextroamphetamine saccharate, ... capsule"); the
+  // newer one appends the dosage form and a bracketed labeler instead. Handling only one of
+  // them is how this broke: fixing the bracket format silently un-fixed the dash format.
+  const dashed = raw.match(/^([^-\[]{2,}?)-\s/);
+  if (dashed) return dashed[1].replace(/\s+/g, ' ').trim().toLowerCase();
+  return raw
+    .replace(/\[[^\]]*\]/g, ' ')     // the labeler, which is not part of the product's identity
+    .replace(/\([^)]*\)/g, ' ')      // the ingredient restatement DailyMed puts in parentheses
+    .replace(DOSE_FORMS, ' ')        // dosage form: a capsule and a tablet of one drug share a label's content
+    .replace(/[,\-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+// Kept under the old name so nothing that imported it breaks.
+function splBaseName(title) { return splProductName(title); }
+
+// "OLANZAPINE AND FLUOXETINE" matched a query for "fluoxetine" with a full-title score, because
+// every word asked for really does appear in it. It is a different drug (Symbyax), and putting
+// its label in front of a model asked about fluoxetine is precisely the identity collapse this
+// whole layer exists to prevent.
+function isCombinationOf(productName, queryWords) {
+  const parts = String(productName).split(/\s+and\s+|\s*\+\s*|\s*\/\s*/).map(x => x.trim()).filter(Boolean);
+  if (parts.length < 2) return false;
+  // A combination is "extra" only when a component is nothing the caller asked about.
+  return parts.some(part => !queryWords.some(w => part.indexOf(w) !== -1));
 }
 
 function chooseSpl(list, queryName) {
@@ -128,9 +160,14 @@ function chooseSpl(list, queryName) {
     const isER = /extended[- ]release|\bxr\b|\ber\b|\bxl\b/.test(title);
     if (wantER === isER) { score += 25; why.push(wantER ? 'both extended-release' : 'neither extended-release'); }
     else { score -= 60; mismatch = true; why.push('RELEASE FORM MISMATCH'); }
+    // An extra active ingredient makes this a different product, whatever the title match says.
+    const product = splProductName(s.title);
+    const extra = isCombinationOf(product, words);
+    if (extra) { score -= 150; why.push('DIFFERENT PRODUCT (contains an ingredient not asked for)'); }
     const d = String(s.published_date || '');
     if (d) score += Math.min(10, Math.max(0, (parseInt(d.slice(0, 4), 10) || 2000) - 2015));
-    return { spl: s, score: score, why: why.join('; '), full: full, isER: isER, mismatch: mismatch };
+    return { spl: s, score: score, why: why.join('; '), full: full, isER: isER,
+             mismatch: mismatch, product: product, extra: extra };
   }).sort((a, b) => b.score - a.score);
 
   const top = scored[0];
@@ -149,9 +186,10 @@ function chooseSpl(list, queryName) {
     // manufacturers of the same generic are not an ambiguity worth refusing over; an
     // immediate-release and an extended-release label at the same score are.
     const near = scored.slice(1).filter(s => (top.score - s.score) <= 10);
-    const different = near.filter(s => s.isER !== top.isER || splBaseName(s.spl.title) !== splBaseName(top.spl.title));
+    const different = near.filter(s => s.isER !== top.isER || s.product !== top.product);
     if (different.length) {
-      ambiguous = different.length + ' materially different label(s) scored as well as the best match';
+      ambiguous = different.length + ' materially different label(s) scored as well as the best match: '
+        + different.slice(0, 3).map(s => s.product).join('; ');
     }
   }
 
@@ -242,16 +280,34 @@ async function ingestDrug(queryName) {
   if (!res) return { ok: false, kind: 'identity_unresolved', query: queryName,
                      error: 'no RxNorm concept matches "' + queryName + '"' };
 
-  const spls = await getJson(DAILYMED + '/spls.json?rxcui=' + encodeURIComponent(res.rxcui) + '&pagesize=50');
-  const list = (spls && spls.data) || [];
-  const pick = chooseSpl(list, queryName);
+  // TWO WAYS IN, because the RXCUI route alone silently fails for brand concepts. RxNorm
+  // resolves "Adderall XR" to a brand-name concept; DailyMed indexes SPLs by the product-level
+  // RXCUIs in the label's data elements, so a BN rxcui can legitimately match nothing and the
+  // whole lookup reports "no SPL on file" for a drug whose label plainly exists. Observed on
+  // the first real run: RXCUI 352398 for Adderall XR returned nothing.
+  const tried = [];
+  let list = [];
+  const byName = await getJson(DAILYMED + '/spls.json?drug_name=' + encodeURIComponent(queryName) + '&pagesize=50');
+  const nameHits = (byName && byName.data) || [];
+  tried.push({ by: 'drug_name', found: nameHits.length });
+  list = list.concat(nameHits);
+
+  const byRx = await getJson(DAILYMED + '/spls.json?rxcui=' + encodeURIComponent(res.rxcui) + '&pagesize=50');
+  const rxHits = (byRx && byRx.data) || [];
+  tried.push({ by: 'rxcui', found: rxHits.length });
+  const seen = {};
+  list.forEach(x => { seen[x.setid || x.set_id] = true; });
+  rxHits.forEach(x => { const k = x.setid || x.set_id; if (!seen[k]) { seen[k] = true; list.push(x); } });
+
+  const pick = list.length ? chooseSpl(list, queryName) : null;
   if (!pick) return { ok: false, kind: 'label_not_found', query: queryName, rxcui: res.rxcui,
-                      error: 'no SPL on file for RXCUI ' + res.rxcui };
+                      lookups: tried,
+                      error: 'no SPL found by drug name or by RXCUI ' + res.rxcui };
   // Nothing is written and nothing is retrieved when the product is not clear. A stored guess
   // would be cached for 30 days and would look exactly like a confident resolution.
   if (pick.ambiguous) {
     return { ok: false, kind: 'identity_ambiguous', query: queryName, rxcui: res.rxcui,
-             resolved_by: res.resolved_by, candidates: pick.candidates,
+             resolved_by: res.resolved_by, candidates: pick.candidates, lookups: tried,
              candidate_count: pick.candidate_count, error: pick.ambiguous };
   }
 
@@ -289,7 +345,7 @@ async function ingestDrug(queryName) {
   return {
     ok: true, query: queryName, rxcui: res.rxcui, setid: setid,
     resolved_by: res.resolved_by, candidate_count: pick.candidate_count,
-    chosen_reason: pick.chosen_reason, sections: sections.map(s => s.section_name)
+    chosen_reason: pick.chosen_reason, lookups: tried, sections: sections.map(s => s.section_name)
   };
 }
 
@@ -328,7 +384,7 @@ async function getEvidence(drugNames, classes) {
                    resolution_status: ing.kind === 'identity_ambiguous' ? 'ambiguous' : 'failed',
                    failure_kind: ing.kind || 'unknown', rxcui: ing.rxcui || null,
                    resolved_by: ing.resolved_by || null, candidates: ing.candidates || null,
-                   error: ing.error });
+                   lookups: ing.lookups || null, error: ing.error });
         continue;
       }
       const r2 = await sb('tbp_drug_label?setid=eq.' + encodeURIComponent(ing.setid) + '&select=*');
@@ -361,4 +417,5 @@ async function getEvidence(drugNames, classes) {
 }
 
 module.exports = { getEvidence, ingestDrug, extractSections, chooseSpl, splBaseName,
+                   splProductName, isCombinationOf,
                    resolveRxcui, SECTIONS, CLASS_SECTIONS, CLASS_PRIMARY, MIN_CONFIDENT };
