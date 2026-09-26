@@ -11,59 +11,79 @@ Last updated: 26 Sept 2026.
 
 ---
 
-## 1. The current arc
+## 1. The current work: a standalone mindfulness pair
 
-**Subject:** what maintains anxiety-spectrum problems, and where treatment can intervene.
+**Decided 26 Sept. This supersedes the anxiety-series architecture below it in the history.**
 
-**The thesis under the whole thing (REVISED 26 Sept, this replaces the avoidance thesis):**
+The material outgrew its container twice in one day. It was an avoidance series, then a
+mindfulness-lensed anxiety series, and it is now what it actually is: **two posts about
+mindfulness, with anxiety as the source of most examples rather than the frame.**
 
-**Mindfulness is the series-level lens. Avoidance is one maintenance process that becomes visible
-through it.** The content of anxiety changes and the mechanics change, but treatment always
-requires somebody to see the process while it is running.
+### Why
 
-### Why this changed, so nobody re-derives the old version
+Count what is anxiety-specific in Post 1. The cold-open exercise, the ego and the slight, the
+lucid dream, the control/agency section and the whole CBT/ERP/ACT/DBT/MI roll-call are not. Maybe
+a third of the piece is. It has been a mindfulness post wearing an anxiety jacket, and that is
+where the strain kept coming from.
 
-The arc was built on "all anxieties are avoidance disorders." That is a great engine and it does
-not survive contact with GAD. Worry is the clean counterexample: under the Contrast Avoidance
-model, worry may SUSTAIN negative affect to prevent a sudden emotional drop, which is not
-"do this to feel less anxious." Forcing every presentation through the avoidance funnel was going
-to require walking claims back in public.
+Mindfulness is not an anxiety mechanism. It is a transdiagnostic capacity: depression, substance
+use, anger, trauma, compulsive behaviour, interpersonal reactivity. Making it the opening of an
+anxiety series claimed less than it should and forced an ending that had to hand off to a target
+the post never argued for.
 
-The fix is not to drop avoidance. It is to stop it carrying the whole explanatory load. Anxiety is
-maintained by several interacting processes: what gets interpreted as threat, what captures and
-holds attention, what the person believes they must know or control, what they do in response,
-what relief reinforces that, and what they never get to learn because of it. Avoidance lives
-mostly in "what they do in response", and it is the highest-yield place to look. It is not the
-mechanism of anxiety.
+**The clinical thesis, and the line the pair turns on:** mindfulness does not tell you what the
+treatment target is. It lets you and the patient see the target while it is happening.
 
-**Also rejected, and why:** "anxiety is a lack of awareness." Anxious people are often
-hyper-aware, of the heartbeat, the expression, the intrusive thought. What is missing is not
-noticing. It is perspective and flexibility inside the noticing. Michael's mindfulness construct
-(awareness + insight + active attention + meta-awareness + enough distance to have a choice point)
-IS the thing that is missing, which is why the lens sits at the series level and the maintenance
-processes sit underneath it.
+### The two posts
 
-### The progression
+| # | Post | The one thing it argues | Status |
+|---|---|---|---|
+| 1 | **You Can't Change What You Don't Notice** | What this capacity is, what it feels like, and how you build it. Awareness, insight, active attention, meta-awareness, agency. | **Drafted**, `content/post-01-*.md` |
+| 2 | *(untitled)* | Where it shows up in the room, across presentations. Rumination caught mid-run, the craving and the ten seconds after, the slight and the urge to fire back, the obsession before the ritual, ambivalence heard in a patient's own voice. | Not started |
 
-> see the process while it is running -> ask what is keeping it going -> find the maintaining
-> process for THIS presentation -> intervene there
+**Michael's split, not ChatGPT's:** "how to foster it" belongs in Post 1, which already carries the
+practice section and the exercise. Post 2 is purely clinical application.
 
-| # | Post | The one thing it argues |
-|---|---|---|
-| 1 | **You Can't Change What You Don't Notice** | Awareness, insight and active attention meeting in the present moment is what makes any of the rest visible. **Drafted.** |
-| 2 | **What Keeps Anxiety Going?** | The shared maintenance frame: interpretation, attention, what the person does in response, and the relief that teaches them to do it again. |
-| 3+ | **By presentation** | Panic, social anxiety, GAD, OCD, health anxiety, PTSD. Same lens each time: what gets read as threat, where attention locks, what they do, what gets reinforced, what they never learn, where the choice point is. |
-| later | **Find the Avoidance, Find a Treatment Target** | Still a good post. No longer the framework. Runs once avoidance has shown up enough times to deserve its own treatment. |
+**Title:** no series prefix. "A Framework for Anxiety, Part 1:" is retired.
 
-**Status of the OCD and ERP posts:** unchanged as posts, demoted as architecture. OCD is now one
-presentation among several rather than the case that proves the framework.
-
-### Next slots
-- **Mon 28 Sept** — Post 1, *You Can't Change What You Don't Notice*
-- **Thu 1 Oct** — Post 2, *Find the Avoidance, Find a Treatment Target*
-- Nothing is in `scheduled_posts` past 24 Sept. Both slots are empty.
+### Slots
+- Mon 28 Sept and Thu 1 Oct are both empty. Nothing past 24 Sept is in `scheduled_posts`.
+- Post 1 is drafted and unscheduled. Michael schedules it, not Claude.
 
 ---
+
+## 1b. The anxiety series: parked, not cancelled
+
+Everything worked out about anxiety is still good and still wanted. It starts fresh later with
+"we have already covered the skill of noticing the machinery, now here is the machinery," and it
+does not have to carry mindfulness or avoidance as its theory.
+
+**The maintenance frame it inherits:** what gets read as threat, what captures and holds
+attention, what the person believes they must know or control, what they do in response, what
+relief reinforces it, and what they never get to learn because of it. Avoidance lives mostly in
+"what they do in response" and is the highest-yield place to look. It is not the mechanism.
+
+**Per presentation:** panic reveals catastrophic interpretation of bodily sensation. Social
+anxiety reveals self-focused attention and anticipated evaluation. GAD reveals worry, uncertainty
+and metacognitive belief. OCD reveals intrusion, meaning, and neutralisation. PTSD reveals threat
+activation, cues and altered learning.
+
+**Two overreaches, recorded as wrong so they are not re-derived:**
+
+*"All anxieties are avoidance disorders."* Great engine, does not survive GAD. Under the Contrast
+Avoidance model worry may SUSTAIN negative affect to prevent a sudden emotional drop, which is not
+"do this to feel less anxious."
+
+*"Anxiety is a lack of awareness."* Anxious people are frequently hyper-aware of the heartbeat,
+the expression, the intrusive thought. What is missing is perspective and flexibility inside the
+noticing, which is the whole mindfulness construct, which is why it sits above the anxiety
+material rather than inside it.
+
+**Still to write when that series runs:** OCD Is Adaptive, Why ERP Works, and Find the Avoidance,
+Find a Treatment Target. All three survive. None of them is the framework.
+
+**Note for whoever writes the avoidance post:** worry should read "can function as avoidance,"
+never "is avoidance." It is the one item in that list where the literature is genuinely split.
 
 ## 2. Michael's own lines — use these, do not paraphrase them
 

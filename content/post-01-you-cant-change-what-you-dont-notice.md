@@ -318,18 +318,18 @@ But when the two start operating together, in real time, something shifts. The p
 
 And now there is somewhere for the two of us to intervene.
 
-That is the foundation for the rest of this series. Because once we get better at noticing what is happening while it is happening, a more useful question opens up.
+And none of this is specific to anxiety.
 
-What is keeping this going?
+I have used anxiety for most of the examples because it is where the machinery is easiest to see. Threat narrows attention, interpretations start feeling like facts, and the urge to respond starts feeling necessary. But the same capacity matters anywhere somebody is trying to change a pattern instead of being carried along by it.
 
-Sometimes what becomes visible is the interpretation. A sensation that got read as danger. An ambiguous look that got read as contempt.
+Rumination that has been running for an hour before anybody notices it.
 
-Sometimes it is where attention went, and the fact that it has not come back.
+A craving, and the ten seconds after it.
 
-Very often it is what the person does in response, and the relief that follows. That is where avoidance lives, and it is one of the most useful things to find. Though it is worth saying now that avoidance is defined by what a behavior is doing rather than what it looks like, and that it is rarely the whole story.
+An email, and the urge to fire back.
 
-Different anxiety presentations organize these differently. The content changes. The mechanics change.
+Withdrawal that felt like a reasonable decision at the time.
 
-What does not change is that somebody has to be able to see the process while it is running.
+Mindfulness does not tell you what the treatment target is. It lets you and the patient see the target while it is happening.
 
-That is what the rest of this series is about.
+That is what I want to write about next. Not what this is, but where it shows up in the room.
