@@ -145,3 +145,42 @@ and the trail is what made each one diagnosable in a minute:
 
 None of these were visible in the answer text. All four were visible in one line of the trail.
 That is what the trail is for.
+
+
+---
+
+# PASSED, `ambient-159-sub`
+
+> **The practical adult ceiling for Adderall XR in common clinical use is 60 mg/day.** The label
+> states no explicit adult maximum. The 20 mg/day figure it gives is the labeled recommended
+> starting dose, and the 30 mg/day figure is the pediatric maximum for ages 6-12... That figure
+> is not from the label itself, so treat it as commonly cited practice rather than a labeled
+> number.
+>
+> The combination is not contraindicated, but it carries two real interactions worth naming...
+> concomitant use **may** increase amphetamine exposure...
+
+Against the criteria:
+
+| required | result |
+|---|---|
+| does not call the pediatric 30 mg an adult maximum | **named as the pediatric maximum for ages 6-12** |
+| distinguishes recommended from studied from practical ceiling | all three, each labelled |
+| distinguishes interaction from contraindication | "not contraindicated, but two real interactions" |
+| leads with the useful answer | first sentence is the number and its category |
+| does not upgrade the label's hedging | "may increase", as the label states it |
+| the claim is traceable | Tier 2 row shown in the trail, flagged not clinician-verified |
+
+The earlier run, with retrieval broken, is the other half: it refused to supply a ceiling from
+recall. The mechanism both **answers** and **refuses**, under the conditions each calls for.
+
+## What this cost, and what made it cheap
+
+Nine defects, in order: title format parsed for the wrong DailyMed shape; brand RXCUI matching no
+SPL; salt name treated as product identity; "coated" treated as product identity; a recency
+tiebreak that never once fired; classifier prefixes failing on inflected forms; a gap judged per
+drug instead of across labels; an empty label accepted as a resolution; a fresh-but-empty cache
+row served forever.
+
+**None was visible in the answer text. Every one was visible in the trail.** Two of them could
+not have been found any other way from a session container, which has no route to DailyMed.

@@ -475,7 +475,7 @@ async function getEvidence(drugNames, classes, opts) {
   const out = [];
 
   for (const name of (drugNames || []).slice(0, 6)) {
-    let row = null, ingested = null;
+    let row = null, ingested = null;   // `ingested` also marks that we already went to DailyMed
     try {
       const r = await sb('tbp_drug_label?select=*,tbp_rx_drug!inner(query_name)&tbp_rx_drug.query_name=eq.'
         + encodeURIComponent(name) + '&order=fetched_at.desc&limit=1');
@@ -508,9 +508,36 @@ async function getEvidence(drugNames, classes, opts) {
     if (!row) { out.push({ requested: name, drug: name, resolution_status: 'failed',
                            failure_kind: 'label_not_found', error: 'no label on file' }); continue; }
 
-    const sr = await sb('tbp_drug_label_section?setid=eq.' + encodeURIComponent(row.setid)
-      + '&section_name=in.(' + wanted.join(',') + ')&select=section_name,text,loinc_code&order=ord');
-    const secs = await sr.json();
+    async function readSections(setid) {
+      const r = await sb('tbp_drug_label_section?setid=eq.' + encodeURIComponent(setid)
+        + '&section_name=in.(' + wanted.join(',') + ')&select=section_name,text,loinc_code&order=ord');
+      return (await r.json()) || [];
+    }
+    let secs = await readSections(row.setid);
+
+    // A CACHE THAT CANNOT ANSWER IS NOT A CACHE HIT. An earlier run stored a repackager label
+    // that extracted no sections. The row was fresh, so `stale` was false, so the candidate
+    // retry added later never ran and the same empty shell was served on every subsequent
+    // question. Freshness is not usefulness: if the stored label has nothing that was asked
+    // for, go back to DailyMed once and take the next candidate that does.
+    if (!secs.length && !ingested) {
+      let ing2;
+      try { ing2 = await ingestDrug(name, wanted, granByDrug[name] || 'product'); }
+      catch (e) { ing2 = { ok: false, kind: 'service_error', error: String(e && e.message || e) }; }
+      if (ing2 && ing2.ok) {
+        ingested = ing2;
+        const r3 = await sb('tbp_drug_label?setid=eq.' + encodeURIComponent(ing2.setid) + '&select=*');
+        const fresh = (await r3.json())[0];
+        if (fresh) { row = fresh; secs = await readSections(fresh.setid); }
+      } else {
+        out.push({ requested: name, drug: name,
+                   resolution_status: ing2 && ing2.kind === 'identity_ambiguous' ? 'ambiguous' : 'failed',
+                   failure_kind: (ing2 && ing2.kind) || 'no_readable_sections',
+                   lookups: (ing2 && ing2.lookups) || null, attempts: (ing2 && ing2.attempts) || null,
+                   error: (ing2 && ing2.error) || 'the stored label carries no requested section' });
+        continue;
+      }
+    }
     out.push({
       requested: name,
       drug: name,

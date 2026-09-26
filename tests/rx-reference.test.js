@@ -78,10 +78,24 @@ test('an unverified figure is given, and flagged, rather than withheld', () => {
   assert.ok(/Do not present an unverified entry as authoritative/.test(b));
 });
 
+test('a Tier 2 basis never claims what a label says', () => {
+  // The first version of the Adderall basis opened "adult trials in the current labeling
+  // included 20, 40 and 60 mg/day", and the model repeated it as a label fact in a run where
+  // the clinical studies section was never retrieved. A basis explains why THIS TABLE holds a
+  // figure; it is not a report of any label's contents.
+  R.ENTRIES.forEach((e) => {
+    assert.ok(!/\bin the (current )?label(ing|s)?\b/i.test(e.basis || ''),
+      e.product + ': basis must not assert what the labeling contains -- ' + e.basis);
+  });
+  const b = G.buildReferenceBlock(refs).replace(/\s+/g, ' ');
+  assert.ok(/It is not a report of what any label says/.test(b));
+  assert.ok(/Do not attribute anything here to the labeling/.test(b));
+});
+
 test('the basis travels with the figure', () => {
   const b = G.buildReferenceBlock(refs);
   assert.ok(/basis:/.test(b));
-  assert.ok(/20, 40 and 60 mg\/day/.test(b), 'where the number comes from, not just the number');
+  assert.ok(/clinical references/.test(b), 'where the number comes from, not just the number');
 });
 
 test('no meds with entries means no block', () => {

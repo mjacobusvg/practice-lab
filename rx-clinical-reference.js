@@ -37,8 +37,13 @@
   var ENTRIES = [
     { key: 'amphetamine_mixed_salts', product: 'Adderall XR', granularity: 'product',
       population: 'adult', adultPracticalCeiling: '60 mg/day',
-      basis: 'adult trials in the current labeling included 20, 40 and 60 mg/day; 60 mg/day is '
-           + 'widely used as the practical adult ceiling in clinical references',
+      // NOTE ON WORDING. This basis previously began "adult trials in the current labeling
+      // included 20, 40 and 60 mg/day", and the model repeated that as a fact FROM THE LABEL in
+      // a run where the clinical studies section was never retrieved. A Tier 2 basis describes
+      // why THIS TABLE holds the figure. It must not make claims about what a label states.
+      basis: '60 mg/day is widely used as the practical adult ceiling in clinical references; '
+           + 'higher adult doses have been studied, and where the retrieved labeling shows the '
+           + 'studied range, cite the labeling for that and this table only for the ceiling',
       labelRecommended: '20 mg/day (adult, per current labeling)',
       note: 'the labeling states no explicit adult maximum; the 30 mg/day figure in it is the '
           + 'PEDIATRIC maximum for ages 6-12',

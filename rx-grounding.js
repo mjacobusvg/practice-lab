@@ -280,6 +280,10 @@
         ? 'clinician-verified ' + (e.reviewedBy || '') + ' ' + (e.reviewedAt || '')
         : 'NOT clinician-verified'));
     });
+    parts.push('');
+    parts.push('This table describes why IT holds a figure. It is not a report of what any label');
+    parts.push('says. Do not attribute anything here to the labeling: if a fact belongs to a label,');
+    parts.push('it is in the Tier 1 evidence block or it was not retrieved.');
     if (anyUnverified) {
       parts.push('');
       parts.push('SOME ENTRIES ABOVE ARE NOT YET CLINICIAN-VERIFIED. Give the figure, because it is what');
