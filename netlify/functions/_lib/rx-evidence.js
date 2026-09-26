@@ -111,7 +111,26 @@ const MIN_CONFIDENT = 100;
 // An earlier version split on "-" and treated everything before it as the product, which is the
 // format DailyMed uses elsewhere but NOT here: the whole title survived, so forty-six repackager
 // labels for one generic all looked like materially different products and the lookup refused.
-const DOSE_FORMS = /\b(capsule|tablet|film coated|delayed release|extended release|oral solution|solution|suspension|syrup|elixir|injection|injectable|powder|granules?|kit|patch|film|spray|cream|ointment|gel|lotion|suppository|chewable|disintegrating|for oral use|concentrate|pellets?|sprinkle)\b/gi;
+const DOSE_FORMS = /\b(capsules?|tablets?|film coated|sugar coated|enteric coated|coated|delayed release|extended release|immediate release|release|oral solution|solution|suspension|syrup|elixir|injections?|injectable|powder|granules?|kit|patch|films?|spray|aerosol|inhalation|cream|ointment|gel|lotion|suppository|chewable|disintegrating|for oral use|for suspension|concentrate|pellets?|sprinkle|orally|oral|metered|usp)\b/gi;
+
+// The salt is not the drug. DailyMed titles one generic six ways -- "FLUOXETINE",
+// "FLUOXETINE HYDROCHLORIDE", "FLUOXETINE HYDROCHLORIDE ... COATED" -- and without this every
+// spelling reads as a different product, which is what made nine repackager labels for one
+// generic look like nine materially different drugs and refuse the lookup.
+// A brand with its own identity is unaffected: those titles use the "APLENZIN- bupropion
+// hydrobromide ..." shape, where the name before the dash is taken whole.
+const SALTS = /\b(hydrochlorides?|hcl|hydrobromides?|hbr|sulfates?|sulphates?|succinates?|tartrates?|bitartrates?|maleates?|besylates?|mesylates?|fumarates?|citrates?|acetates?|phosphates?|bromides?|carbonates?|oxalates?|lactates?|decanoates?|palmitates?|pamoates?|valerates?|propionates?|furoates?|xinafoates?|dipropionates?|aspartates?|saccharates?|sodium|potassium|calcium|magnesium|dihydrate|monohydrate|anhydrous)\b/gi;
+
+function splYear(published) {
+  if (!published) return 0;
+  const str = String(published).trim();
+  const compact = str.match(/^((?:19|20)\d{2})(\d{2})(\d{2})$/);   // 20240712
+  if (compact) return parseInt(compact[1], 10);
+  const iso = str.match(/\b(19|20)\d{2}\b/);                      // 2024-07-12, May 6, 2026
+  if (iso) return parseInt(iso[0], 10);
+  const t = Date.parse(str);
+  return isNaN(t) ? 0 : new Date(t).getUTCFullYear();
+}
 
 function splProductName(title) {
   const raw = String(title || '');
@@ -121,7 +140,7 @@ function splProductName(title) {
   // them is how this broke: fixing the bracket format silently un-fixed the dash format.
   const dashed = raw.match(/^([^-\[]{2,}?)-\s/);
   if (dashed) return dashed[1].replace(/\s+/g, ' ').trim().toLowerCase();
-  return raw
+  const stripped = raw
     .replace(/\[[^\]]*\]/g, ' ')     // the labeler, which is not part of the product's identity
     .replace(/\([^)]*\)/g, ' ')      // the ingredient restatement DailyMed puts in parentheses
     .replace(DOSE_FORMS, ' ')        // dosage form: a capsule and a tablet of one drug share a label's content
@@ -129,6 +148,9 @@ function splProductName(title) {
     .replace(/\s+/g, ' ')
     .trim()
     .toLowerCase();
+  // Never reduce a name to nothing: "calcium carbonate" is a drug whose every word is a salt.
+  const desalted = stripped.replace(SALTS, ' ').replace(/\s+/g, ' ').trim();
+  return desalted || stripped;
 }
 // Kept under the old name so nothing that imported it breaks.
 function splBaseName(title) { return splProductName(title); }
@@ -164,8 +186,11 @@ function chooseSpl(list, queryName) {
     const product = splProductName(s.title);
     const extra = isCombinationOf(product, words);
     if (extra) { score -= 150; why.push('DIFFERENT PRODUCT (contains an ingredient not asked for)'); }
-    const d = String(s.published_date || '');
-    if (d) score += Math.min(10, Math.max(0, (parseInt(d.slice(0, 4), 10) || 2000) - 2015));
+    // DailyMed sends "May 6, 2026", not "20260506". parseInt on the first four characters gave
+    // NaN, so the recency bonus never fired once: the 2026 Takeda label scored the same 125 as
+    // every repackager, leaving nothing to break a tie with.
+    const year = splYear(s.published_date);
+    if (year) score += Math.min(10, Math.max(0, year - 2015));
     return { spl: s, score: score, why: why.join('; '), full: full, isER: isER,
              mismatch: mismatch, product: product, extra: extra };
   }).sort((a, b) => b.score - a.score);
@@ -417,5 +442,5 @@ async function getEvidence(drugNames, classes) {
 }
 
 module.exports = { getEvidence, ingestDrug, extractSections, chooseSpl, splBaseName,
-                   splProductName, isCombinationOf,
+                   splProductName, isCombinationOf, splYear,
                    resolveRxcui, SECTIONS, CLASS_SECTIONS, CLASS_PRIMARY, MIN_CONFIDENT };

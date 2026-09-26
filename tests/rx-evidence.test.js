@@ -200,5 +200,41 @@ ok('a genuinely different product at a similar score is still an ambiguity',
                   { title: 'AMPHETAMINE SULFATE TABLET [B]', setid: '2', published_date: '20240101' }],
                  'Adderall').ambiguous === null ? false : true);
 
+
+// ── Second live run: Adderall XR resolved, fluoxetine still refused ─────────────────────────
+// Trail said: '9 materially different label(s): fluoxetine hydrochloride; fluoxetine
+// hydrochloride coated; fluoxetine hydrochloride coated'. Three separate defects in one line.
+ok('the SALT is not the drug',
+   L.splProductName('FLUOXETINE HYDROCHLORIDE CAPSULE [X]') === 'fluoxetine');
+ok('"coated" is a dosage form, not part of the product name',
+   L.splProductName('FLUOXETINE HYDROCHLORIDE TABLET, COATED [X]') === 'fluoxetine');
+ok('a name made ENTIRELY of salt words is not reduced to nothing',
+   L.splProductName('CALCIUM CARBONATE TABLET, CHEWABLE [X]') === 'calcium carbonate');
+ok('a brand with its own identity survives salt stripping',
+   L.splProductName('APLENZIN- bupropion hydrobromide tablet, extended release') === 'aplenzin');
+ok('the Takeda Adderall XR title reduces to the product',
+   L.splProductName('ADDERALL XR (DEXTROAMPHETAMINE SULFATE, DEXTROAMPHETAMINE SACCHARATE, AMPHETAMINE SULFATE AND AMPHETAMINE ASPARTATE) CAPSULE, EXTENDED RELEASE [TAKEDA PHARMACEUTICALS AMERICA, INC.]') === 'adderall xr');
+
+// DailyMed sends "May 6, 2026". parseInt on the first four characters gave NaN, so the recency
+// bonus never fired: the 2026 Takeda label scored the same 125 as every repackager and there
+// was nothing to break a tie with.
+ok('recency parses the format DailyMed actually sends', L.splYear('May 6, 2026') === 2026);
+ok('and the compact format', L.splYear('20240712') === 2024);
+ok('and the ISO format', L.splYear('2024-07-12') === 2024);
+ok('and refuses to guess at nothing', L.splYear('') === 0 && L.splYear(null) === 0 && L.splYear('garbage') === 0);
+
+const FLX_REAL = [
+  'FLUOXETINE HYDROCHLORIDE CAPSULE [A]',
+  'FLUOXETINE HYDROCHLORIDE TABLET, COATED [B]',
+  'FLUOXETINE (FLUOXETINE HYDROCHLORIDE) CAPSULE [PD-RX PHARMACEUTICALS, INC.]',
+  'FLUOXETINE CAPSULE [REMEDYREPACK INC.]',
+  'FLUOXETINE TABLET, FILM COATED [REMEDYREPACK INC.]',
+  'OLANZAPINE AND FLUOXETINE (OLANZAPINE AND FUOXETINE) CAPSULE [PAR HEALTH USA, LLC]'
+].map((t, i) => ({ title: t, setid: 'f' + i, published_date: i === 3 ? 'May 6, 2026' : 'Jan 1, 2020' }));
+const flx2 = L.chooseSpl(FLX_REAL, 'fluoxetine');
+ok('REGRESSION: the exact candidate set from the live run now resolves', flx2.ambiguous === null);
+ok('to a fluoxetine label, not to Symbyax', /^FLUOXETINE/.test(flx2.spl.title));
+ok('and recency breaks the tie', /REMEDYREPACK/.test(flx2.spl.title));
+
 console.log(fails ? '\n' + fails + ' FAILED' : '\nall passed');
 process.exit(fails ? 1 : 0);

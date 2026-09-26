@@ -104,3 +104,44 @@ cheap to confirm live:
 - `d.review` still substitutes for a source document without labeling itself in the prompt
   (`CLINICAL-ONTOLOGY.md` §5.1). Real, unrelated to this defect, and changing it at the same time
   would obscure what fixed or broke Discern.
+
+
+---
+
+# Result: the Adderall side PASSED, 26 Sept 2026 (`ambient-156-sub`)
+
+Retrieved the Takeda label, Set ID `aff45863-ffe1-4d4f-8acf-c7081512a6c0`, SPL v38, 2026-05-06,
+five sections (`dosage_and_administration` 4,316 chars, `drug_interactions` 3,397 chars, plus
+boxed warning, contraindications and specific populations). The answer:
+
+> The Adderall XR label states a recommended adult dose of 20 mg/day but does not specify an
+> explicit labeled maximum for adults. The 30 mg/day figure in the label is the pediatric maximum
+> for children 6-12; it is not an adult ceiling.
+
+> On the combination: it is not contraindicated. The label lists fluoxetine under two interaction
+> categories... both entries say the same thing: this is an interaction to manage, not avoid.
+
+Every distinction the acceptance criteria named, held: adult recommended separated from a labeled
+maximum that does not exist, the pediatric figure named as pediatric, and an interaction
+distinguished from a contraindication. The CYP2D6 mechanism came from the label's own
+`drug_interactions` section rather than from recall.
+
+**The earlier run, with retrieval broken, is the other half of the proof.** It said *"I could not
+retrieve the Adderall XR label for this specific product, so I will not supply a ceiling number
+from recall."* The mechanism refuses under exactly the conditions that produced the original
+30 mg answer.
+
+## The generic-label problem, and what it cost
+
+Fluoxetine refused across three runs. Each refusal was correct by the rule and wrong in premise,
+and the trail is what made each one diagnosable in a minute:
+
+| run | trail said | actual defect |
+|---|---|---|
+| 1 | `46 materially different labels` | title parsed for the wrong DailyMed format |
+| 1 | `no SPL on file for RXCUI 352398` | brand RXCUI, needed a `drug_name` lookup |
+| 2 | `9 materially different: fluoxetine hydrochloride; ... coated` | salt name and "coated" treated as product identity |
+| 2 | every candidate scored `125` | recency never fired: `May 6, 2026` parsed as NaN |
+
+None of these were visible in the answer text. All four were visible in one line of the trail.
+That is what the trail is for.
