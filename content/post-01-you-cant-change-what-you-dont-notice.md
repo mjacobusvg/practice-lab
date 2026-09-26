@@ -60,6 +60,8 @@ The way I have come to think about it clinically is:
 
 **Mindfulness is when awareness and insight meet in the present moment.**
 
+That third line is doing most of the work, and it is the hardest of the three to describe.
+
 # Awareness within awareness
 
 The phrase I find myself using is awareness within awareness. Meta-awareness is the more technical term, but it does not convey the experience as well.
@@ -85,6 +87,8 @@ Read that last one again and notice the tense.
 That is the whole difference. Not an easy moment, and not some magical freedom from the anxiety. The person may desperately want the reassurance. But for a moment they are two things at once. The person having the urge, and the person watching themselves have it.
 
 And in that moment there is a choice point that did not exist a second earlier.
+
+That is a hard thing to describe to somebody who has not caught it happening. The closest I have come is a dream.
 
 # If you have ever lucid dreamed
 
@@ -134,6 +138,8 @@ Because the moment you recognize that you have been completely caught up in some
 
 Mindfulness is awareness of awareness in the present moment. Not because you have escaped the experience, but because for a moment you are not completely fused with it.
 
+Which brings me back to a word I used about the dream, and that I want to be careful with.
+
 # Control is not quite the word, but it is close
 
 Control gets tricky in anxiety treatment.
@@ -151,6 +157,8 @@ But if I recognize what is happening while it is happening, I have more choice a
 Agency is probably the better word. Mindfulness does not give us control over the experience. It gives us some agency inside it.
 
 That is where change becomes possible.
+
+With one large complication.
 
 # The catch is that this gets harder exactly when we need it
 
