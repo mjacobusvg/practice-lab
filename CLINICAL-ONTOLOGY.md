@@ -425,8 +425,17 @@ distinguishing label-derived from TBP synthesis.
 | 2 | `rx-clinical-reference.js` | practical adult ranges, commonly cited ceilings |
 | 3 | guidelines, primary literature | not built |
 
+**Reviewed 26 Sept 2026.** Seven of the eight seeded rows were deleted: each restated a figure the
+labeling already carries, and Tier 1 retrieves those authoritatively. One row remains, Adderall XR
+at 60 mg/day, and it stays `verified: false` on purpose. See `TIER2-REVIEW.md`.
+
+**The governing rule that came out of it: Tier 1 answers everything it can answer; Tier 2 exists
+only for a real gap in Tier 1.** Not a shadow medication database to maintain and certify. A Tier 2
+row that duplicates a labeled figure is an unverified copy sitting next to a retrievable fact,
+free to disagree with it.
+
 **Open:** nothing is verified. An unverified entry beats recall; a wrong entry is worse than none.
-Verification is a clinician's job, not a model's.
+Verification is a clinician's job, not a model's, and no entry is certified by its author.
 
 ### Identity granularity follows the claim. **DECIDED 26 Sept 2026, ENFORCED**
 

@@ -35,62 +35,59 @@
   'use strict';
 
   var ENTRIES = [
-    { key: 'amphetamine_mixed_salts', product: 'Adderall XR', granularity: 'product',
+    // ONE ROW. Reviewed 26 Sept 2026. Seven others were deleted after review because the figure
+    // they carried is already in the labeling, which Tier 1 retrieves authoritatively: Concerta
+    // 72, Vyvanse 70, fluoxetine 80, sertraline 200, escitalopram 20, bupropion XL 450, and
+    // Adderall IR (whose own label says only in rare cases is it necessary to exceed 40 mg/day).
+    // A Tier 2 row that restates a labeled figure is an unverified copy sitting next to a
+    // retrievable fact, free to disagree with it. Tier 2 exists for a REAL GAP in Tier 1.
+    //
+    // This row is the real gap: the current Adderall XR labeling gives an adult recommended dose
+    // of 20 mg/day, states NO explicit adult maximum, and its adult trial tested 20, 40 and
+    // 60 mg/day. "How high can I actually go" has no answer in that document.
+    {
+      key: 'amphetamine_mixed_salts', product: 'Adderall XR', granularity: 'product',
       population: 'adult', adultPracticalCeiling: '60 mg/day',
-      // NOTE ON WORDING. This basis previously began "adult trials in the current labeling
-      // included 20, 40 and 60 mg/day", and the model repeated that as a fact FROM THE LABEL in
-      // a run where the clinical studies section was never retrieved. A Tier 2 basis describes
-      // why THIS TABLE holds the figure. It must not make claims about what a label states.
-      basis: '60 mg/day is widely used as the practical adult ceiling in clinical references; '
-           + 'higher adult doses have been studied, and where the retrieved labeling shows the '
-           + 'studied range, cite the labeling for that and this table only for the ceiling',
-      labelRecommended: '20 mg/day (adult, per current labeling)',
-      note: 'the labeling states no explicit adult maximum; the 30 mg/day figure in it is the '
-          + 'PEDIATRIC maximum for ages 6-12',
-      verified: false, reviewedBy: null, reviewedAt: null },
+      // The basis says why THIS TABLE holds the figure. It does not report what any label
+      // contains: Tier 1 supplies that, and a basis that talks about labeling gets repeated as
+      // a label fact, which already happened once.
+      basis: '60 mg/day is widely cited as the adult upper limit for mixed amphetamine salts XR '
+           + 'in clinical references',
 
-    { key: 'amphetamine_mixed_salts', product: 'Adderall (immediate-release)', granularity: 'product',
-      population: 'adult', adultPracticalCeiling: '40 mg/day, commonly divided',
-      basis: 'commonly cited adult ceiling for the immediate-release product',
-      note: 'immediate-release dosing is not extended-release dosing',
-      verified: false, reviewedBy: null, reviewedAt: null },
-
-    { key: 'methylphenidate', product: 'Concerta', granularity: 'product',
-      population: 'adult', adultPracticalCeiling: '72 mg/day',
-      basis: 'commonly cited adult ceiling for the OROS extended-release product',
-      verified: false, reviewedBy: null, reviewedAt: null },
-
-    { key: 'lisdexamfetamine', product: 'Vyvanse', granularity: 'product',
-      population: 'adult', adultPracticalCeiling: '70 mg/day',
-      basis: 'commonly cited adult ceiling',
-      verified: false, reviewedBy: null, reviewedAt: null },
-
-    { key: 'fluoxetine', product: 'fluoxetine', granularity: 'ingredient',
-      population: 'adult', adultPracticalCeiling: '80 mg/day',
-      basis: 'commonly cited adult ceiling for depression and anxiety indications',
-      verified: false, reviewedBy: null, reviewedAt: null },
-
-    { key: 'sertraline', product: 'sertraline', granularity: 'ingredient',
-      population: 'adult', adultPracticalCeiling: '200 mg/day',
-      basis: 'commonly cited adult ceiling',
-      verified: false, reviewedBy: null, reviewedAt: null },
-
-    { key: 'escitalopram', product: 'escitalopram', granularity: 'ingredient',
-      population: 'adult', adultPracticalCeiling: '20 mg/day',
-      basis: 'commonly cited adult ceiling; higher doses are used off label and carry QT considerations',
-      verified: false, reviewedBy: null, reviewedAt: null },
-
-    { key: 'bupropion', product: 'bupropion XL', granularity: 'product',
-      population: 'adult', adultPracticalCeiling: '450 mg/day',
-      basis: 'commonly cited adult ceiling; seizure risk is dose related',
-      verified: false, reviewedBy: null, reviewedAt: null }
+      // NOT VERIFIED, deliberately. Michael reviewed the row on 26 Sept 2026 and kept it as the
+      // one candidate Tier 2 concept, while declining to certify the figure on the strength of
+      // model memory. His standing instruction: ground it in an actual current clinical or
+      // licensed reference and bring the source-backed wording for approval.
+      verified: false, reviewedBy: null, reviewedAt: null,
+      reviewStatus: 'kept as the only Tier 2 candidate, 26 Sept 2026; figure not yet certified',
+      leads: [
+        'an adult ADHD review drawing on CADDRA guidance lists mixed amphetamine salts XR at '
+        + '60 mg/day (lead supplied by Michael, not yet read or verified as the basis)'
+      ]
+    }
   ];
 
   // Look up by interaction key, preferring an entry whose product matches what was written.
   function lookup(med) {
     if (!med) return null;
     var key = med.interactionKey, written = String(med.rawName || '').toLowerCase();
+    if (!key) return null;
     var hits = ENTRIES.filter(function (e) { return e.key === key; });
+    if (!hits.length) return null;
+    // A PRODUCT-level row only answers for that product. With the IR row deleted there is one
+    // amphetamine entry left, and a bare "Adderall" would otherwise fall through the single-hit
+    // shortcut and collect the XR ceiling. That is the original defect exactly: a formulation
+    // the clinician did not write, inheriting a number that does not apply to it.
+    hits = hits.filter(function (e) {
+      if (e.granularity !== 'product') return true;
+      var prod = String(e.product).toLowerCase();
+      var head = prod.split(/[\s(]/)[0];
+      if (written.indexOf(head) === -1) return false;
+      var ER = /extended[- ]?release|\b(xr|er|xl|sr|cd|la)\b/i;
+      var wantER = ER.test((med.formulation || '') + ' ' + written);
+      var isER = ER.test(prod) && !/immediate/i.test(prod);
+      return wantER === isER;
+    });
     if (!hits.length) return null;
     if (hits.length === 1) return hits[0];
     // More than one product under one ingredient: match on what the clinician actually wrote,

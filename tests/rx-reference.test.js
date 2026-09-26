@@ -32,18 +32,28 @@ test('every entry states its basis, or it is indistinguishable from a guess', ()
 
 test('THE IDENTITY RULE holds inside the table too', () => {
   const xr = R.lookup({ rawName: 'Adderall XR', formulation: 'extended-release', interactionKey: 'amphetamine_mixed_salts' });
-  const ir = R.lookup({ rawName: 'Adderall', interactionKey: 'amphetamine_mixed_salts' });
   assert.strictEqual(xr.product, 'Adderall XR');
-  assert.ok(/immediate/.test(ir.product), 'bare Adderall must not pick the XR row');
-  assert.notStrictEqual(xr.adultPracticalCeiling, ir.adultPracticalCeiling,
-    'if these were the same number the distinction would be pointless');
+  // Deleting the immediate-release row left ONE amphetamine entry, and a bare "Adderall" would
+  // have fallen through the single-hit shortcut and collected the XR ceiling. That is the
+  // original defect exactly: a formulation the clinician never wrote, inheriting a number that
+  // does not apply to it.
+  const bare = R.lookup({ rawName: 'Adderall', interactionKey: 'amphetamine_mixed_salts' });
+  assert.strictEqual(bare, null, 'bare Adderall must NOT inherit the XR ceiling');
+  const ir = R.lookup({ rawName: 'Adderall', formulation: 'immediate-release', interactionKey: 'amphetamine_mixed_salts' });
+  assert.strictEqual(ir, null, 'and neither must an explicit IR identity');
 });
 
-test('word boundaries: "er" inside Adderall must not read as extended-release', () => {
-  // /er/ unanchored matches inside "Adderall", which made the immediate-release row test as
-  // extended-release, left both rows in play, and returned nothing at all.
-  const ir = R.lookup({ rawName: 'Adderall', interactionKey: 'amphetamine_mixed_salts' });
-  assert.ok(ir, 'a bare Adderall must resolve to something');
+test('REVIEWED 26 Sept 2026: exactly one row, and it is the real Tier 1 gap', () => {
+  assert.strictEqual(R.ENTRIES.length, 1, 'seven duplicate-of-label rows were deleted');
+  assert.strictEqual(R.ENTRIES[0].product, 'Adderall XR');
+  // Every deleted row restated a figure the labeling already carries, which Tier 1 retrieves.
+  ['methylphenidate', 'lisdexamfetamine', 'fluoxetine', 'sertraline', 'escitalopram', 'bupropion']
+    .forEach((k) => assert.strictEqual(R.lookup({ rawName: k, interactionKey: k }), null,
+      k + ' is answered by Tier 1 and must not have a Tier 2 row'));
+});
+
+test('a drug with no interaction key gets nothing', () => {
+  assert.strictEqual(R.lookup({ rawName: 'Vyvanse 40 mg' }), null);
 });
 
 test('a drug with no entry returns nothing rather than a nearby number', () => {
@@ -52,11 +62,22 @@ test('a drug with no entry returns nothing rather than a nearby number', () => {
   assert.strictEqual(R.lookup({ rawName: 'x', interactionKey: 'nope' }), null);
 });
 
-test('the XR row carries the distinctions that caused the original defect', () => {
+test('the XR row carries ONLY the figure Tier 1 cannot supply', () => {
   const xr = R.lookup({ rawName: 'Adderall XR', formulation: 'extended-release', interactionKey: 'amphetamine_mixed_salts' });
-  assert.ok(/60 mg/.test(xr.adultPracticalCeiling), 'the practical ceiling');
-  assert.ok(/20 mg/.test(xr.labelRecommended), 'separate from the labeled recommended dose');
-  assert.ok(/PEDIATRIC/.test(xr.note) && /30 mg/.test(xr.note), 'and the 30 mg figure named as pediatric');
+  assert.ok(/60 mg/.test(xr.adultPracticalCeiling), 'the practical ceiling, which the label lacks');
+  // The labeled recommended dose and the pediatric maximum are Tier 1 facts. They were in this
+  // row and are gone: Tier 1 retrieved both correctly in the passing run, and a Tier 2 copy of a
+  // retrievable fact is an unverified duplicate free to disagree with the real one.
+  assert.ok(!('labelRecommended' in xr), 'no restating the labeled dose');
+  assert.ok(!xr.note || !/label/i.test(xr.note), 'and no note about what the label says');
+});
+
+test('the row records its review state, so nobody has to guess', () => {
+  const xr = R.ENTRIES[0];
+  assert.strictEqual(xr.verified, false, 'kept, deliberately not certified');
+  assert.ok(/not yet certified/.test(xr.reviewStatus || ''));
+  assert.ok(Array.isArray(xr.leads) && xr.leads.length, 'the lead to chase is written down');
+  assert.ok(/not yet read or verified/.test(xr.leads[0]), 'and marked as unverified');
 });
 
 // ---- the block that reaches the model ----------------------------------------------------------
@@ -84,7 +105,7 @@ test('a Tier 2 basis never claims what a label says', () => {
   // the clinical studies section was never retrieved. A basis explains why THIS TABLE holds a
   // figure; it is not a report of any label's contents.
   R.ENTRIES.forEach((e) => {
-    assert.ok(!/\bin the (current )?label(ing|s)?\b/i.test(e.basis || ''),
+    assert.ok(!/\blabel(ing|s|ed)?\b/i.test(e.basis || ''),
       e.product + ': basis must not assert what the labeling contains -- ' + e.basis);
   });
   const b = G.buildReferenceBlock(refs).replace(/\s+/g, ' ');
@@ -95,7 +116,7 @@ test('a Tier 2 basis never claims what a label says', () => {
 test('the basis travels with the figure', () => {
   const b = G.buildReferenceBlock(refs);
   assert.ok(/basis:/.test(b));
-  assert.ok(/clinical references/.test(b), 'where the number comes from, not just the number');
+  assert.ok(/widely cited as the adult upper limit/.test(b), 'where the number comes from');
 });
 
 test('no meds with entries means no block', () => {
