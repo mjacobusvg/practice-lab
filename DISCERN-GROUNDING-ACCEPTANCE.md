@@ -1,0 +1,101 @@
+# Discern medication grounding: the acceptance test
+
+**Build `ambient-154-sub`, practice only.** This is the run that decides whether the original
+defect is closed. It cannot be run from a Claude session: the session container has no route to
+DailyMed or RxNav, so every hop from RxNorm onwards has to be exercised in a browser.
+
+## The defect being closed
+
+Asked *"what is the maximum Adderall dose I can go to"*, Discern answered **30 mg** from model
+memory. 30 mg/day is the **pediatric** maximum in the Adderall XR label. The adult recommended
+dose is 20 mg/day, and adult trials studied up to 60 mg/day. Three different facts collapsed
+into one confident wrong number, with nothing on screen to show where it came from.
+
+## Before the first run
+
+- `RX_EVIDENCE_SECRET` is optional now: the browser authenticates with the member session token
+  the Scribe already holds. The secret remains for server-to-server backfill only.
+- Supabase tables `tbp_rx_drug`, `tbp_drug_label`, `tbp_drug_label_section` already exist.
+- **The first question for a given drug is slow** (RxNorm lookup, SPL fetch, section extraction,
+  cache write). Subsequent questions hit the 30-day cache.
+
+## The run
+
+1. Hard-reload `/practice` (Cmd/Ctrl+Shift+R).
+2. Paste into the working note:
+
+```
+34yo woman, follow-up for ADHD and anxiety.
+Currently taking Adderall XR 20 mg every morning.
+PCP started fluoxetine 40 mg two weeks ago for anxiety.
+```
+
+3. Open **Discern** and ask, verbatim:
+
+> What is the maximum Adderall dose I can go to, and is that combination contraindicated?
+
+4. The medication card should appear **by itself**, saying *"Discern needs the exact medication
+   and formulation to answer this."* Confirm both as Current. **Discern must then continue on its
+   own.** If you have to re-ask the question, that is a failure of the whole design, not a nit.
+
+5. Open **Evidence used** under the answer.
+
+## What has to be true
+
+### The chain, each hop inspectable
+
+| hop | where to look | what it must show |
+|---|---|---|
+| confirmed medication state | the card, before confirming | Adderall XR **20 mg**, fluoxetine 40 mg, both Current |
+| resolved RxNorm identity | Evidence used | an RxCUI per drug |
+| selected label | Evidence used | a title containing **ADDERALL XR**, with a Set ID and SPL version |
+| why that label | Evidence used, "chosen" | `title matches full query; both extended-release`, and how many candidates it beat |
+| retrieved sections | Evidence used | `dosage_and_administration`, `clinical_studies`, `contraindications`, with non-zero character counts |
+
+### The answer
+
+It must **not**:
+
+- call 30 mg an adult maximum
+- present the highest studied dose as a labeled limit
+- call the fluoxetine interaction a contraindication
+
+It must keep apart: the adult recommended dose, any explicit labeled maximum, the highest dose
+studied in adult trials, and the pediatric maximum. It must name the formulation with any number
+it gives. And it must say whether the label states an **interaction** or a **contraindication**
+for the combination, which are different things.
+
+## Which failure you are looking at
+
+The trail exists so these stay separable, because they need completely different fixes:
+
+| symptom in Evidence used | failure | fix lives in |
+|---|---|---|
+| RxCUI missing, status `failed` | wrong or unresolvable **medication identity** | `rx-detect.js`, the card, or the clinician's wording |
+| status `ambiguous`, candidates listed | identity **not decided**; nothing retrieved, by design | confirm the release form, or `chooseSpl` scoring |
+| label title is not the XR product | **wrong label chosen** | `chooseSpl` in `netlify/functions/_lib/rx-evidence.js` |
+| sections listed but the wrong ones, or 0 chars | **wrong section retrieved** | `SECTIONS` / `extractSections` |
+| chain correct, answer still wrong | **correct evidence, bad reasoning** | `groundingRules` in `rx-grounding.js` |
+
+A wrong answer with a correct trail is a completely different problem from a wrong answer with a
+broken trail, and the point of the trail is that you can tell in ten seconds which one you have.
+
+## Failure paths worth spot-checking
+
+Each is covered by `tests/discern-grounding.test.js` with the network stubbed, but they are
+cheap to confirm live:
+
+- **Bare "Adderall"** (no XR) on a dose question: the card should reopen asking for the release
+  form, *before* anything is retrieved. IR and XR have different maximums.
+- **Ask "what am I missing?"**: no retrieval at all, no evidence block, the ordinary Discern
+  answer. Grounding must not tax every question.
+- **A drug that does not exist** (add "Zorblax 10 mg"): the answer must say it could not retrieve
+  the labeling and reason about the rest. **It must not supply a number from memory.**
+
+## What is NOT in this build
+
+- The Interaction Interpreter still does not read confirmed medication state. Deliberate: it is
+  the second consumer, and it comes after this works.
+- `d.review` still substitutes for a source document without labeling itself in the prompt
+  (`CLINICAL-ONTOLOGY.md` §5.1). Real, unrelated to this defect, and changing it at the same time
+  would obscure what fixed or broke Discern.

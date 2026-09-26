@@ -205,8 +205,32 @@ and interaction-key map. It is not an identity source.** It stores `brand: "Rita
 one string and `brand: "Adderall"` with no IR/XR distinction, correctly for its own purpose.
 `rx-vocabulary.js` splits sibling brands into distinct terms sharing one key.
 
-**ENFORCED.** `rxcui` is null and `identityStatus` reads `unresolved` until the RxNorm/DailyMed
-layer resolves it. A guessed RxCUI picks a label, and a wrong label is the whole bug.
+### External identity resolution is DERIVED, not clinician-confirmed. **DECIDED, ENFORCED**
+
+The clinician confirms *"Adderall XR 20 mg, current"*. The system then maps that prescribing
+identity to an RxCUI and an SPL Set ID. **Those are two different assertions with two different
+authors**, and writing the mapping into the confirmed record would read as though the clinician
+had confirmed an RxCUI. They did not.
+
+```
+CANONICAL ENCOUNTER ASSERTION      DERIVED EXTERNAL IDENTITY MAPPING
+  Adderall XR 20 mg, current   ->    RxCUI 541878
+  confirmedBy: clinician             SPL Set ID abc-123, version 41
+                                     identitySource: RxNorm + DailyMed
+                                     authority: noncanonical
+                                     status: resolved | ambiguous | failed
+```
+
+**ENFORCED:** the mapping lives in `tbpEncounterState.derived.identity`, keyed by the prescribing
+identity it was derived from. `medications.current[].rxcui` stays null.
+
+There is a second reason beyond honesty: resolution is part of the medication fingerprint, so
+writing an RxCUI into the canonical record after a lookup would mark every prior result stale
+because a lookup ran. Nothing about the patient changed.
+
+**ENFORCED:** if resolution is ambiguous it stays unresolved and **nothing is retrieved**. No
+label is chosen, nothing is cached, and the gap is named in the prompt. Picking whichever
+candidate lets the pipeline continue is how a pediatric maximum becomes an adult one.
 
 **DECIDED:** a combination product is **one prescribing identity with multiple pharmacologic
 components.** Suboxone 8/2 is one thing prescribed and one thing taken:

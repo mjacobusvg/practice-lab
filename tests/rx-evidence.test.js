@@ -121,5 +121,43 @@ ok('dosing pulls specific populations too', L.CLASS_SECTIONS.dosing.indexOf('use
 ok('interaction and contraindication are different classes',
    L.CLASS_SECTIONS.interaction.join() !== L.CLASS_SECTIONS.contraindication.join());
 
+
+// ── Ambiguity: refusing is an OUTCOME, not a degraded success ───────────────────────────────
+// Picking the best of several plausible labels is how "Adderall XR" quietly becomes some other
+// amphetamine product, and how a pediatric maximum becomes an adult one.
+const spl = (title, date) => ({ title: title, setid: title.slice(0, 10), published_date: date || '20240101' });
+
+const confident = L.chooseSpl([spl('ADDERALL XR- dextroamphetamine saccharate capsule, extended release'),
+                               spl('ADDERALL- dextroamphetamine saccharate tablet')], 'Adderall XR');
+ok('a confident pick is not marked ambiguous', confident.ambiguous === null);
+ok('and it is the XR label', /ADDERALL XR/.test(confident.spl.title));
+
+const irOnly = L.chooseSpl([spl('ADDERALL- dextroamphetamine saccharate tablet')], 'Adderall XR');
+ok('AMBIGUOUS when only a different release form exists', !!irOnly.ambiguous);
+ok('and it says why', /release form/.test(irOnly.ambiguous || ''));
+
+const vague = L.chooseSpl([spl('DEXTROAMPHETAMINE SULFATE- dextroamphetamine sulfate tablet')],
+                          'mixed amphetamine salts');
+ok('AMBIGUOUS when nothing matches the confirmed product closely', !!vague.ambiguous);
+
+const tie = L.chooseSpl([spl('BUPROPION HYDROCHLORIDE- bupropion tablet, extended release'),
+                         spl('WELLBUTRIN XL- bupropion hydrochloride tablet, extended release')],
+                        'bupropion XL');
+ok('two materially different labels either resolve clearly or refuse',
+   tie.ambiguous === null || /materially different/.test(tie.ambiguous));
+
+const manyGenerics = L.chooseSpl([spl('FLUOXETINE- fluoxetine hydrochloride capsule'),
+                                  spl('FLUOXETINE- fluoxetine hydrochloride tablet'),
+                                  spl('FLUOXETINE- fluoxetine capsule')], 'fluoxetine');
+ok('several manufacturers of ONE generic is not an ambiguity', manyGenerics.ambiguous === null);
+
+ok('candidates are kept for the debug trail',
+   Array.isArray(confident.candidates) && confident.candidates.length === 2
+   && confident.candidates[0].score > confident.candidates[1].score);
+
+ok('splBaseName separates the product from the ingredient list',
+   L.splBaseName('ADDERALL XR- dextroamphetamine saccharate, ... capsule') === 'adderall xr'
+   && L.splBaseName('FLUOXETINE- fluoxetine hydrochloride capsule') === 'fluoxetine');
+
 console.log(fails ? '\n' + fails + ' FAILED' : '\nall passed');
 process.exit(fails ? 1 : 0);

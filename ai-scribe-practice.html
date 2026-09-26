@@ -395,9 +395,10 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/rx-vocabulary.js?v=ambient-153-sub"></script>
-<script src="/rx-detect.js?v=ambient-153-sub"></script>
-<script src="/note-engine-practice.js?v=ambient-153-sub"></script>
+<script src="/rx-vocabulary.js?v=ambient-154-sub"></script>
+<script src="/rx-detect.js?v=ambient-154-sub"></script>
+<script src="/rx-grounding.js?v=ambient-154-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-154-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -759,7 +760,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-153-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-154-sub</span></div>
 </div>
 </div>
 
@@ -4085,7 +4086,10 @@ function tbpAdhdSplit(raw){
 // patient may be given. The evidence layer is eventually what makes the facts checkable.
 // ══════════════════════════════════════════════════════════════════════════════════════════
 
-function reasonSystem(){
+// `grounding` is appended when authoritative label sections were retrieved for this question.
+// It is additive: the base stance (support the clinician's reasoning, do not pose as authority)
+// is unchanged, and an ungrounded question gets exactly the prompt it got before.
+function reasonSystem(grounding){
   var s = "You are a psychiatric prescriber's clinical reasoning partner, thinking alongside them about a patient they are seeing. You are not writing a note and not documenting anything. You are the second opinion they would get from a trusted colleague who read the same material.\n\n";
 
   s += "=== HOW TO THINK ===\n";
@@ -4168,6 +4172,7 @@ function reasonSystem(){
   s += "Include a 'Medication considerations' section ONLY when the clinician's question is about medication. Include a 'Worth verifying' section ONLY when you named a prescribing detail that needs checking.\n";
   s += "END AS A COLLEAGUE, NOT AS A VERDICT. 'The more defensible path is X' and 'the correct next step is Y' hand down a plan. 'Before labelling this treatment-resistant, I would first establish whether she has had an adequate trial, and clarify what happened with the prior agents' is the same content, thinking alongside them. The clinician decides; you are the second opinion they asked for.\n";
   s += "Plain text. No Markdown, no bullets characters, no preamble, no closing summary. If the material is too thin to reason from, say exactly what you would need instead of guessing.";
+  if(grounding) s += '\n' + grounding + '\n';
   return s;
 }
 
@@ -4208,6 +4213,14 @@ function TBP_ENCOUNTER_BLANK(){
     medications: { current: [], historical: [], changes: [], confirmedAt: null },
     // No writer yet. A scale can be inserted into the note; a SCORED scale is not captured.
     screeners: [],
+    // DERIVED normalization metadata. RxNorm/DailyMed resolution is NOT clinician-confirmed
+    // patient state: the clinician confirmed "Adderall XR 20 mg", and the SYSTEM mapped that to
+    // an RxCUI and a Set ID. Recording the mapping inside the confirmed medication record would
+    // read as though they had confirmed an RxCUI, which they did not, and would perturb the
+    // result fingerprint every time a lookup ran. It lives here, in the derived layer, keyed by
+    // the prescribing identity it was derived from.
+    derived: { identity: {} },
+
     // The return leg: arrays of RESULT RECORDS, written through tbpRecordResult(). Not raw
     // answers -- see the result contract below for why a bare answer here is a clinical hazard.
     // Unknown keys survive a save/restore, so a new capability needs no schema change.
@@ -4250,6 +4263,7 @@ function tbpEncounterRestore(saved){
     },
     medications: { current: arr(m.current), historical: arr(m.historical), changes: arr(m.changes),
                    confirmedAt: (typeof m.confirmedAt === 'number') ? m.confirmedAt : null },
+    derived: { identity: obj((obj(saved.derived)).identity) },
     screeners: arr(saved.screeners),
     results: results
   };
@@ -4616,6 +4630,76 @@ function tbpMedConfirmationNeeded(purpose){
   if(tbpMedNewSinceConfirmation().length) return 'new-since-confirmed';
   if(tbpMedAmbiguities(purpose).length) return 'ambiguous';
   return null;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// MEDICATION GROUNDING — confirmed identity -> RxNorm/DailyMed -> label sections -> the prompt
+//
+// The defect this closes: asked for the maximum Adderall dose, Discern answered 30 mg from
+// model memory. 30 mg/day is the PEDIATRIC maximum in the Adderall XR label. The adult
+// recommended dose is 20 mg/day and adult trials studied up to 60 mg/day. Three facts collapsed
+// into one confident wrong number, with nothing on screen to show where it came from.
+// ══════════════════════════════════════════════════════════════════════════════════════════
+
+// The key a resolution is cached under: the prescribing identity, nothing else. Dose is not part
+// of it (the label is the same at any dose) but formulation is, because it picks the label.
+function tbpRxIdentityKey(med){
+  return [(med.rawName || '').toLowerCase().replace(/\s+/g, ' ').trim(),
+          (med.formulation || '')].join('|');
+}
+
+// NO PHI CROSSES THIS BOUNDARY. What goes out is product names and fact classes. The case stays
+// on the BAA-covered AWS path. "What does the Adderall XR label say about adult dosing" is not
+// PHI; "she is on Adderall XR and her PCP started fluoxetine" is.
+async function tbpRxFetchEvidence(meds, classes){
+  var names = (meds || []).map(function(m){ return m.rawName; })
+                          .filter(function(n){ return n && n.trim(); });
+  if(!names.length) return { evidence: [], wanted_sections: [] };
+  var res = await fetch('/.netlify/functions/drug-evidence', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json',
+               'Authorization': 'Bearer ' + (typeof authToken !== 'undefined' ? (authToken || '') : '') },
+    body: JSON.stringify({ drugs: names, classes: classes })
+  });
+  if(!res.ok){
+    var why = 'evidence service returned ' + res.status;
+    try { var j = await res.json(); if(j && j.error) why += ': ' + j.error; } catch(e){}
+    // A service failure is a GAP, not a reason to answer from memory. Every requested drug is
+    // returned as failed so the prompt can say so by name.
+    return { evidence: names.map(function(n){
+               return { requested: n, drug: n, resolution_status: 'failed',
+                        failure_kind: 'service_error', error: why }; }),
+             wanted_sections: [] };
+  }
+  var out = await res.json();
+  var evidence = out.evidence || [];
+
+  // Record the resolution as DERIVED metadata against the identity it came from. Never written
+  // into the confirmed medication record: the clinician confirmed a product, not an RxCUI.
+  try {
+    (meds || []).forEach(function(m){
+      var e = evidence.find(function(x){ return (x.requested || x.drug) === m.rawName; });
+      if(!e) return;
+      tbpEncounterState.derived.identity[tbpRxIdentityKey(m)] = {
+        forName: m.rawName, formulation: m.formulation || null,
+        status: e.resolution_status || (e.error ? 'failed' : 'resolved'),
+        failureKind: e.failure_kind || null,
+        rxcui: e.rxcui || null,
+        setid: (e.source && e.source.setid) || null,
+        splVersion: (e.source && e.source.spl_version) || null,
+        effectiveDate: (e.source && e.source.effective_date) || null,
+        labelTitle: (e.source && e.source.label_title) || null,
+        chosenBecause: (e.source && e.source.chosen_because) || null,
+        ofCandidates: (e.source && e.source.of_candidates) || null,
+        candidates: e.candidates || null,
+        identitySource: 'RxNorm + DailyMed',
+        layer: 'derived', authoredBy: 'system', authority: 'noncanonical',
+        resolvedAt: Date.now()
+      };
+    });
+    if(window.tbpSaveDraft) window.tbpSaveDraft();
+  } catch(e){}
+  return out;
 }
 
 // ── the card itself ───────────────────────────────────────────────────────────────────────
@@ -5969,6 +6053,9 @@ function tbpRsnRenderAll(){
   rsnLog.forEach(function(x,i){
     var b = document.getElementById('rsn-body-' + i);
     if(b) b.textContent = x.a;
+    // The trail is part of the answer: an answer you cannot audit after a reload is an answer
+    // you have to take on trust, which is the thing grounding exists to avoid.
+    if(b && (x.trail || x.gaps) && b.parentNode) b.parentNode.insertAdjacentHTML('beforeend', tbpRsnTrailHtml(x.trail, x.gaps));
   });
 }
 
@@ -5988,7 +6075,57 @@ function tbpRsnRestore(x){
   tbpRsnRenderAll();
 }
 
+// The answer block, plus an inspectable trail when evidence was used. Four failures look
+// identical in a wrong answer and need different fixes: wrong medication identity, right
+// identity but the wrong label, right label but the wrong section, and correct evidence
+// reasoned over badly. Collapsed by default so it costs no attention until something looks off.
+function tbpRsnTrailHtml(trail, gaps){
+  if((!trail || !trail.length) && (!gaps || !gaps.length)) return '';
+  var rows = (trail || []).map(function(t){
+    var head = '<b>' + esc(t.requested) + '</b> &rarr; ' + esc(t.status);
+    if(t.status !== 'resolved') return '<li style="margin-bottom:7px">' + head
+      + (t.failure ? '<div>' + esc(t.failure) + '</div>' : '')
+      + (t.candidates && t.candidates.length
+          ? '<div>candidates: ' + t.candidates.map(function(c){ return esc(c.title) + ' (' + c.score + ')'; }).join('; ') + '</div>'
+          : '') + '</li>';
+    return '<li style="margin-bottom:7px">' + head
+      + '<div>label: ' + esc(t.label_title || '?') + '</div>'
+      + '<div>RxCUI ' + esc(t.rxcui || '?') + ' &middot; Set ID ' + esc(t.setid || '?')
+      + (t.spl_version ? ' &middot; SPL v' + esc(t.spl_version) : '')
+      + (t.effective_date ? ' &middot; ' + esc(t.effective_date) : '') + '</div>'
+      + '<div>chosen: ' + esc(t.chosen_because || '?') + '</div>'
+      + '<div>sections: ' + (t.sections.length
+          ? t.sections.map(function(x){ return esc(x.section) + ' (' + x.chars + ' chars)'; }).join(', ')
+          : 'none') + '</div>'
+      + '</li>';
+  }).join('');
+  var gapRows = (gaps || []).map(function(g){
+    return '<li style="color:var(--amber);margin-bottom:5px">' + esc(g.drug) + ': ' + esc(g.why) + '</li>';
+  }).join('');
+  return '<details style="margin-top:8px"><summary style="cursor:pointer;font-size:.76rem;'
+    + 'color:var(--cream-dim);letter-spacing:.05em;text-transform:uppercase">Evidence used</summary>'
+    + '<div style="font-size:.78rem;color:var(--cream-dim);line-height:1.5;margin-top:7px">'
+    + (rows ? '<ul style="margin:0;padding-left:17px">' + rows + '</ul>' : '')
+    + (gapRows ? '<div style="margin-top:6px">Not retrieved:</div><ul style="margin:0;padding-left:17px">' + gapRows + '</ul>' : '')
+    + '<div style="margin-top:7px;opacity:.75">Source: DailyMed (NLM) current labeling, retrieved for the products confirmed in this encounter. Derived normalization, not clinician-confirmed patient state.</div>'
+    + '</div></details>';
+}
+
 async function tbpRunReason(question){
+  // A medication question needs confirmed medication identity BEFORE it can be answered. The
+  // clinician asks their question; the system works out what it needs. They are never sent off
+  // to prepare a data structure first, and after confirming they never re-ask.
+  var cls = window.TBP_RX_GROUNDING ? window.TBP_RX_GROUNDING.classifyQuestion(question)
+                                    : { needsMedicationFacts: false, classes: [] };
+  if(cls.needsMedicationFacts && typeof tbpMedEnsure === 'function'){
+    var purpose = window.TBP_RX_GROUNDING.purposeFor(cls.classes);
+    var need = tbpMedConfirmationNeeded(purpose);
+    if(need){ tbpShowMeds(purpose, need, function(){ tbpRunReasonNow(question, cls); }); return; }
+  }
+  return tbpRunReasonNow(question, cls);
+}
+
+async function tbpRunReasonNow(question, cls){
   var out = document.getElementById('rsn-out');
   var msg = document.getElementById('rsn-msg');
   var go  = document.getElementById('rsn-go');
@@ -5999,18 +6136,60 @@ async function tbpRunReason(question){
     return;
   }
   if(go) go.disabled = true;
-  if(msg) msg.innerHTML = '<span class="spinner"></span>Thinking&hellip;';
   var idx = rsnLog.length;
   out.insertAdjacentHTML('beforeend', tbpRsnBlockHtml(idx, question));
   var body = document.getElementById('rsn-body-' + idx);
   if(body && body.scrollIntoView) body.scrollIntoView({ block:'nearest' });
+
+  // ── retrieve, if this question turns on a medication fact ──
+  var G = window.TBP_RX_GROUNDING;
+  var meds = [], evidence = [], wanted = [], gaps = [], trail = [], evidenceBlock = '';
+  var grounded = !!(cls && cls.needsMedicationFacts && G);
+  if(grounded){
+    meds = (tbpEncounterState.medications.current || []).slice();
+    if(!meds.length){
+      // A medication question with no confirmed medication list must NOT quietly become an
+      // ungrounded answer: that is answering from memory with extra steps, which is the exact
+      // defect. It is a gap, named as one, and the rules below forbid filling it from recall.
+      gaps = [{ drug: 'the medication list', kind: 'no_medications',
+                why: 'no current medication has been confirmed for this encounter, so no labeling could be retrieved' }];
+      grounded = false;
+    } else {
+      if(msg) msg.innerHTML = '<span class="spinner"></span>Checking the labeling&hellip;';
+      try {
+        var got = await tbpRxFetchEvidence(meds, cls.classes);
+        evidence = got.evidence || [];
+        // Gaps are judged against the PRIMARY section for each class, not every section fetched.
+        wanted = got.primary_sections || got.wanted_sections || [];
+      } catch(e){
+        evidence = meds.map(function(m){ return { requested: m.rawName, drug: m.rawName,
+                    resolution_status: 'failed', failure_kind: 'service_error',
+                    error: String(e && e.message || e) }; });
+      }
+      gaps = G.evidenceGaps(evidence, wanted);
+      trail = G.summarizeTrail(evidence);
+      evidenceBlock = G.buildEvidenceBlock(evidence);
+    }
+  }
+
+  if(msg) msg.innerHTML = '<span class="spinner"></span>Thinking&hellip;';
   var acc = '';
   try {
+    // THREE LABELLED REGIONS. Label text pasted into the case narrative would leave the model
+    // unable to tell what this patient's clinician documented from what a manufacturer's label
+    // says, and would leave the reader unable to tell either.
+    var userMsg = 'PATIENT / ENCOUNTER MATERIAL (this session):\n\n' + c.text;
+    if(evidenceBlock) userMsg += '\n\n---\n\n' + evidenceBlock;
+    userMsg += '\n\n---\n\nTHE CLINICIAN ASKS: ' + question;
+
+    // Grounding rules go in only when evidence is actually present, and they name the gaps so
+    // a failed retrieval cannot be quietly answered from memory instead.
+    var rules = (evidenceBlock || gaps.length) ? G.groundingRules(cls.classes, gaps) : null;
+
     // NOTE: callAPI's onDelta is handed the ACCUMULATED text so far, not an increment.
     acc = await callAPI(
-      reasonSystem(),
-      [{ role:'user', content: 'CASE MATERIAL AVAILABLE THIS SESSION:\n\n' + c.text
-          + '\n\n---\n\nTHE CLINICIAN ASKS: ' + question }],
+      reasonSystem(rules),
+      [{ role:'user', content: userMsg }],
       2200,
       function(partial){ body.textContent = partial; }   // text starts appearing in seconds
     ) || '';
@@ -6018,8 +6197,24 @@ async function tbpRunReason(question){
     else {
       // Keep the exchange, and persist immediately — like the framework, this costs a model call
       // and the autosave only fires on input events, which asking a question does not produce.
-      rsnLast = { q: question, a: acc };
+      rsnLast = { q: question, a: acc, trail: trail.length ? trail : null, gaps: gaps.length ? gaps : null };
       rsnLog.push(rsnLast);
+      if(trail.length || gaps.length){
+        var blk = body && body.parentNode;
+        if(blk) blk.insertAdjacentHTML('beforeend', tbpRsnTrailHtml(trail, gaps));
+      }
+      // The return leg. Declaring `medications` as the input means this answer is marked stale
+      // the moment the regimen changes, which for a dose answer is exactly right.
+      try {
+        if(typeof tbpRecordResult === 'function'){
+          tbpRecordResult('discern', {
+            inputs: grounded ? { medications: tbpEncounterState.medications.current } : null,
+            data: { question: question, answer: acc },
+            meta: { classes: (cls && cls.classes) || [], grounded: !!evidenceBlock,
+                    evidence: trail, gaps: gaps, evidenceSource: 'DailyMed SPL' }
+          });
+        }
+      } catch(e){}
       try { if(window.tbpSaveDraft) window.tbpSaveDraft(); } catch(e){}
     }
   } catch(err){
@@ -6030,6 +6225,7 @@ async function tbpRunReason(question){
     if(msg) msg.innerHTML = '';
   }
 }
+
 
 document.getElementById('rsn-go').addEventListener('click', function(){
   var q = (document.getElementById('rsn-q').value || '').trim();

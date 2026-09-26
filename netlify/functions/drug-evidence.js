@@ -14,6 +14,7 @@
 // access logs, proxies and analytics.
 
 const { getEvidence } = require('./_lib/rx-evidence.js');
+const { verifyToken } = require('./_lib/session.js');
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -26,11 +27,20 @@ exports.handler = async function (event) {
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers: CORS, body: '' };
   if (event.httpMethod !== 'POST') return { statusCode: 405, headers: CORS, body: '{"error":"POST only"}' };
 
+  // The browser calls this, so the caller is the member's SIGNED SESSION TOKEN, the same one
+  // every other member-facing function verifies. A shared secret would have to ship to the
+  // client to be usable from the Scribe, which is not a secret. The server-to-server secret is
+  // kept for backfill jobs only, and only ever in a header.
+  const auth = String((event.headers && (event.headers.authorization || event.headers.Authorization)) || '');
+  const bearer = auth.replace(/^Bearer\s+/i, '').trim();
   const secret = process.env.RX_EVIDENCE_SECRET || process.env.BACKFILL_SECRET;
-  const auth = (event.headers && (event.headers.authorization || event.headers.Authorization)) || '';
-  if (!secret || auth !== 'Bearer ' + secret) {
-    return { statusCode: 401, headers: CORS, body: '{"error":"unauthorized"}' };
+  let allowed = false;
+  if (secret && bearer === secret) allowed = true;
+  else if (bearer) {
+    const session = verifyToken(bearer);
+    allowed = !!(session && session.valid && session.claims && session.claims.scope === 'member');
   }
+  if (!allowed) return { statusCode: 401, headers: CORS, body: '{"error":"unauthorized"}' };
 
   let body;
   try { body = JSON.parse(event.body || '{}'); }
@@ -49,8 +59,10 @@ exports.handler = async function (event) {
   }
 
   try {
-    const evidence = await getEvidence(drugs, classes);
-    return { statusCode: 200, headers: CORS, body: JSON.stringify({ evidence: evidence }) };
+    // getEvidence returns { evidence, wanted_sections }; the caller needs wanted_sections to
+    // tell "this label has no interactions section" from "we never asked for one".
+    const result = await getEvidence(drugs, classes);
+    return { statusCode: 200, headers: CORS, body: JSON.stringify(result) };
   } catch (e) {
     return { statusCode: 502, headers: CORS, body: JSON.stringify({ error: String(e && e.message || e) }) };
   }

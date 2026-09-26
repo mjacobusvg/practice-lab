@@ -50,6 +50,19 @@ const CLASS_SECTIONS = {
   indication:      ['indications_and_usage']
 };
 
+// The section that ANSWERS a class, as opposed to the ones that enrich the answer. Absence of a
+// supplementary section is information, not a retrieval failure: most labels have no boxed
+// warning, and reporting "this label has no boxed_warning section" as a gap on every question
+// trains the reader to ignore the gap list, which is where the real failures are reported.
+const CLASS_PRIMARY = {
+  dosing:           'dosage_and_administration',
+  interaction:      'drug_interactions',
+  contraindication: 'contraindications',
+  warnings:         'warnings_and_precautions',
+  populations:      'use_in_specific_populations',
+  indication:       'indications_and_usage'
+};
+
 function sb(path, opts) {
   const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_SERVICE_KEY;
   if (!url || !key) return Promise.reject(new Error('supabase not configured'));
@@ -88,30 +101,68 @@ async function resolveRxcui(name) {
 // An RXCUI maps to many SPLs: every manufacturer of a generic has its own label. Taking the
 // first is how "Adderall XR" quietly becomes some other amphetamine product. The ranking is
 // explicit and the reason is stored on the row, so a wrong pick is visible rather than silent.
+// A full-query title match is the bar. Anything less is reported as ambiguous rather than
+// resolved, because the pipeline continuing is not evidence that it continued correctly.
+const MIN_CONFIDENT = 100;
+
+function splBaseName(title) {
+  // DailyMed titles read "ADDERALL XR- dextroamphetamine saccharate, ... capsule". The part
+  // before the first dash is the product as marketed, which is what distinguishes two labels
+  // that matter from two labels that are the same generic from different manufacturers.
+  return String(title || '').split('-')[0].trim().toLowerCase();
+}
+
 function chooseSpl(list, queryName) {
   if (!list || !list.length) return null;
   const q = String(queryName || '').toLowerCase();
   const words = q.split(/\s+/).filter(w => w.length > 2);
+  const wantER = /\b(xr|er|extended[- ]release|sr|la|cd|xl)\b/.test(q);
   const scored = list.map(s => {
     const title = String(s.title || '').toLowerCase();
-    let score = 0, why = [];
+    let score = 0, why = [], full = false, mismatch = false;
     // Every word of what was asked for appears in the title: the strongest signal that this is
     // the same product, and what separates "Adderall XR" from immediate-release mixed salts.
-    if (words.length && words.every(w => title.indexOf(w) !== -1)) { score += 100; why.push('title matches full query'); }
+    if (words.length && words.every(w => title.indexOf(w) !== -1)) { score += 100; full = true; why.push('title matches full query'); }
     else if (words.some(w => title.indexOf(w) !== -1)) { score += 20; why.push('title matches part of query'); }
     // Extended-release asked for must not resolve to an immediate-release label, or vice versa.
-    const wantER = /\b(xr|er|extended[- ]release|sr|la|cd)\b/.test(q);
-    const isER = /extended[- ]release|\bxr\b|\ber\b/.test(title);
+    const isER = /extended[- ]release|\bxr\b|\ber\b|\bxl\b/.test(title);
     if (wantER === isER) { score += 25; why.push(wantER ? 'both extended-release' : 'neither extended-release'); }
-    else { score -= 60; why.push('RELEASE FORM MISMATCH'); }
+    else { score -= 60; mismatch = true; why.push('RELEASE FORM MISMATCH'); }
     const d = String(s.published_date || '');
     if (d) score += Math.min(10, Math.max(0, (parseInt(d.slice(0, 4), 10) || 2000) - 2015));
-    return { spl: s, score: score, why: why.join('; ') };
+    return { spl: s, score: score, why: why.join('; '), full: full, isER: isER, mismatch: mismatch };
   }).sort((a, b) => b.score - a.score);
+
   const top = scored[0];
+
+  // AMBIGUITY IS AN OUTCOME, NOT A DEGRADED SUCCESS. Picking the best of several plausible
+  // labels is how "Adderall XR" quietly becomes some other amphetamine product and a pediatric
+  // maximum becomes an adult one. Where the identity is not clear, say so and retrieve nothing.
+  let ambiguous = null;
+  if (top.mismatch) {
+    ambiguous = 'the closest label is a different release form from the confirmed product';
+  } else if (top.score < MIN_CONFIDENT) {
+    ambiguous = 'no label title matched the confirmed product closely enough'
+      + ' (best was "' + (top.spl.title || '').slice(0, 70) + '")';
+  } else {
+    // A near-tie only matters when the candidates are materially different products. Six
+    // manufacturers of the same generic are not an ambiguity worth refusing over; an
+    // immediate-release and an extended-release label at the same score are.
+    const near = scored.slice(1).filter(s => (top.score - s.score) <= 10);
+    const different = near.filter(s => s.isER !== top.isER || splBaseName(s.spl.title) !== splBaseName(top.spl.title));
+    if (different.length) {
+      ambiguous = different.length + ' materially different label(s) scored as well as the best match';
+    }
+  }
+
   return {
     spl: top.spl,
     candidate_count: list.length,
+    ambiguous: ambiguous,
+    // Kept for the debug trail: "wrong label chosen" and "right label, wrong section" are
+    // different failures and a clinician reviewing a bad answer needs to tell them apart.
+    candidates: scored.slice(0, 5).map(s => ({ title: s.spl.title, setid: s.spl.setid || s.spl.set_id,
+                                               score: s.score, why: s.why })),
     chosen_reason: top.why + ' (score ' + top.score + ' of ' + list.length + ' candidates)'
   };
 }
@@ -188,12 +239,21 @@ const CACHE_DAYS = 30;
 
 async function ingestDrug(queryName) {
   const res = await resolveRxcui(queryName);
-  if (!res) return { ok: false, query: queryName, error: 'no RxNorm concept for "' + queryName + '"' };
+  if (!res) return { ok: false, kind: 'identity_unresolved', query: queryName,
+                     error: 'no RxNorm concept matches "' + queryName + '"' };
 
   const spls = await getJson(DAILYMED + '/spls.json?rxcui=' + encodeURIComponent(res.rxcui) + '&pagesize=50');
   const list = (spls && spls.data) || [];
   const pick = chooseSpl(list, queryName);
-  if (!pick) return { ok: false, query: queryName, rxcui: res.rxcui, error: 'no SPL for RXCUI ' + res.rxcui };
+  if (!pick) return { ok: false, kind: 'label_not_found', query: queryName, rxcui: res.rxcui,
+                      error: 'no SPL on file for RXCUI ' + res.rxcui };
+  // Nothing is written and nothing is retrieved when the product is not clear. A stored guess
+  // would be cached for 30 days and would look exactly like a confident resolution.
+  if (pick.ambiguous) {
+    return { ok: false, kind: 'identity_ambiguous', query: queryName, rxcui: res.rxcui,
+             resolved_by: res.resolved_by, candidates: pick.candidates,
+             candidate_count: pick.candidate_count, error: pick.ambiguous };
+  }
 
   const setid = pick.spl.setid || pick.spl.set_id;
   const xml = await (await fetch(DAILYMED + '/spls/' + encodeURIComponent(setid) + '.xml')).text();
@@ -240,6 +300,9 @@ async function getEvidence(drugNames, classes) {
     (CLASS_SECTIONS[c] || []).forEach(s => { want[s] = true; });
   });
   const wanted = Object.keys(want);
+  // What a missing section actually means depends on whether it was the section being asked for.
+  const primary = (classes && classes.length ? classes : ['dosing'])
+    .map(c => CLASS_PRIMARY[c]).filter(Boolean);
   const out = [];
 
   for (const name of (drugNames || []).slice(0, 6)) {
@@ -253,18 +316,35 @@ async function getEvidence(drugNames, classes) {
 
     const stale = !row || (Date.now() - new Date(row.fetched_at).getTime()) > CACHE_DAYS * 864e5;
     if (stale) {
-      const ing = await ingestDrug(name);
-      if (!ing.ok) { out.push({ drug: name, error: ing.error }); continue; }
+      let ing;
+      try { ing = await ingestDrug(name); }
+      catch (e) { out.push({ requested: name, drug: name, resolution_status: 'failed',
+                             failure_kind: 'service_error', error: String(e && e.message || e) }); continue; }
+      if (!ing.ok) {
+        // Every failure mode stays distinguishable. An answer that is wrong because the drug
+        // never resolved needs a different fix from one that is wrong because two labels were
+        // equally plausible, and both differ from correct evidence reasoned over badly.
+        out.push({ requested: name, drug: name,
+                   resolution_status: ing.kind === 'identity_ambiguous' ? 'ambiguous' : 'failed',
+                   failure_kind: ing.kind || 'unknown', rxcui: ing.rxcui || null,
+                   resolved_by: ing.resolved_by || null, candidates: ing.candidates || null,
+                   error: ing.error });
+        continue;
+      }
       const r2 = await sb('tbp_drug_label?setid=eq.' + encodeURIComponent(ing.setid) + '&select=*');
       row = (await r2.json())[0];
     }
-    if (!row) { out.push({ drug: name, error: 'no label' }); continue; }
+    if (!row) { out.push({ requested: name, drug: name, resolution_status: 'failed',
+                           failure_kind: 'label_not_found', error: 'no label on file' }); continue; }
 
     const sr = await sb('tbp_drug_label_section?setid=eq.' + encodeURIComponent(row.setid)
       + '&section_name=in.(' + wanted.join(',') + ')&select=section_name,text,loinc_code&order=ord');
     const secs = await sr.json();
     out.push({
+      requested: name,
       drug: name,
+      resolution_status: 'resolved',
+      rxcui: row.rxcui || null,
       sections: (secs || []).map(s => ({ section: s.section_name, loinc: s.loinc_code, text: s.text })),
       source: {
         label_title: row.title,
@@ -277,7 +357,8 @@ async function getEvidence(drugNames, classes) {
       }
     });
   }
-  return out;
+  return { evidence: out, wanted_sections: wanted, primary_sections: primary };
 }
 
-module.exports = { getEvidence, ingestDrug, extractSections, chooseSpl, resolveRxcui, SECTIONS, CLASS_SECTIONS };
+module.exports = { getEvidence, ingestDrug, extractSections, chooseSpl, splBaseName,
+                   resolveRxcui, SECTIONS, CLASS_SECTIONS, CLASS_PRIMARY, MIN_CONFIDENT };
