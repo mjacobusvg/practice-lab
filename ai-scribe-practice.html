@@ -377,7 +377,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-141-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-142-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -739,7 +739,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-141-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-142-sub</span></div>
 </div>
 </div>
 
@@ -820,7 +820,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
     <div id="jobs-strip" style="display:none;align-items:center;gap:9px;flex-wrap:wrap">
       <span style="font-size:.78rem;color:var(--text3,var(--cream-dim));font-weight:600;letter-spacing:.06em;text-transform:uppercase;opacity:.8">Case tools</span>
       <button type="button" class="btn-case" id="case-setup-btn" title="Carry last visit forward, build today&rsquo;s checklist and set the visit type &mdash; or skip setup and just start writing." onclick="tbpShowSetup()">&#9881; Start or prep a visit</button>
-      <button type="button" class="btn-case" title="Read a prior evaluation, discharge summary or old records. Reviewing one does nothing to your note until you add it." onclick="tbpDocsFromNudge()">&#128196; Review outside records</button>
+      <button type="button" class="btn-case" id="case-records-btn" title="Read a prior evaluation, discharge summary or old records. Reviewing one does nothing to your note until you add it." onclick="tbpDocsFromNudge()">&#128196; Review outside records</button>
       <button type="button" class="btn-case rsn-trigger" title="Think through the case using what is already in this session. Nothing goes into your note unless you put it there." onclick="tbpShowReason()">&#129504; Discern</button>
       <button type="button" class="btn-case adhd-trigger adhd-entry" style="display:none" title="What this case establishes about the ADHD question, what it does not, and what is worth asking today." onclick="tbpAdhdEntryClick()">&#129504; ADHD Framework</button>
     </div>
@@ -4919,6 +4919,20 @@ document.getElementById('adhd-flash').addEventListener('click', function(e){
   // function the panel uses: nothing already in CHECK / ASK TODAY is rewritten or removed.
   if(e.target.closest('#adhd-flash-add')){ tbpAdhdQuestionsToNote(false, 'adhd-flash-msg', 'next'); return; }
 });
+// The same action, reached from the add-a-record panel instead of the framework's own footer.
+document.addEventListener('click', function(e){
+  if(!e.target || !e.target.closest) return;
+  if(!e.target.closest('#ep-fw-rebuild')) return;
+  e.preventDefault();
+  if(typeof tbpDemoBlock === 'function' && tbpDemoBlock()) return;
+  var b = document.getElementById('ep-fw-rebuild');
+  if(b){ b.disabled = true; b.innerHTML = '<span class="spinner"></span>Re-reading every record&hellip;'; }
+  try { tbpAdhdRun('update'); } catch(err){}
+  // Back to the note. The framework repaints itself in its own panel when the run lands, and the
+  // rundown above the note updates with it; standing in a settings screen watching a spinner is
+  // not where anyone wants to be.
+  try { if(window.tbpHideSetup) window.tbpHideSetup(); } catch(err){}
+});
 document.getElementById('adhd-rebuild').addEventListener('click', function(e){
   e.preventDefault();
   if(tbpDemoBlock()) return;
@@ -5006,7 +5020,9 @@ function tbpAdhdSyncTriggers(){
   document.querySelectorAll('.adhd-entry').forEach(function(el){
     el.style.display = adhdFw ? '' : 'none';
     if(!adhdFw) return;
-    el.innerHTML = ready ? '\uD83E\uDDE0 ADHD Framework \u00b7 what did today establish?'
+    // "what did today establish?" reads as a question being asked OF the clinician, not as a
+    // description of what pressing the button does. Name the action.
+    el.innerHTML = ready ? '\uD83E\uDDE0 ADHD Framework \u00b7 see what today added'
                          : '\uD83E\uDDE0 ADHD Framework';
     el.title = ready
       ? 'You have visit material the framework has not seen. Reopen it to weigh what today established against what the records already showed.'
@@ -5811,8 +5827,24 @@ function renderPrep(j, isEval){
       + up.map(function(x){ return '&bull; ' + esc(x); }).join('<br>')
       + '<div class="hint" style="margin-top:9px">Not in your note. Copy anything you want in it.</div></div></div>'
     : '';
+  // THE SECOND HALF OF THE SAME INTENTION. Handing this visit a new record and having the case
+  // re-read are one act, but the re-read lived as a grey text link in the bottom corner of a
+  // panel the clinician had already closed. Nothing told them it existed, and nothing told them
+  // it was needed. When a record is added mid-visit and a framework exists, the action to update
+  // it is the primary button, right here, the moment the add finishes -- and pressing it puts
+  // them back in the working note, which is where they were trying to get to.
+  var fwHtml = '';
+  try {
+    if(isEval && tbpSetupVisitUnderway() && (typeof adhdFw !== 'undefined' && adhdFw)){
+      fwHtml = '<div class="out" style="margin-top:16px;border-color:#a78bfa">'
+        + '<div style="color:var(--cream);font-weight:700;font-size:.95rem;margin-bottom:5px">The ADHD Framework has not read this yet</div>'
+        + '<div class="hint" style="margin-bottom:10px;line-height:1.5">It still reflects the records you had before. Re-reading takes about as long as the first build.</div>'
+        + '<button class="btn" type="button" id="ep-fw-rebuild" style="margin-top:0;background:#a78bfa;color:#1a1033">Update the framework and go back to my note &rarr;</button>'
+        + '<span class="hint" id="ep-fw-msg" style="margin-left:8px"></span></div>';
+    }
+  } catch(e){}
   var outEl = document.getElementById(isEval ? 'ep-results' : 'prep-results');
-  outEl.innerHTML = snapHtml + html + cnHtml + upHtml;
+  outEl.innerHTML = fwHtml + snapHtml + html + cnHtml + upHtml;
   var upT = document.getElementById('ep-up-toggle');
   if(upT) upT.addEventListener('click', function(e){
     e.preventDefault();
@@ -6289,6 +6321,13 @@ function tbpSyncSetupAddMode(){
 function tbpSyncCaseSetupLabel(){
   var b = document.getElementById('case-setup-btn'); if(!b) return;
   var started = !!(typeof visitType !== 'undefined' && visitType);
+  // Review outside records is the STANDALONE job: records arrived, you read them, you need a
+  // chart entry saying so. It is not something you do in the middle of seeing a patient, and
+  // leaving it here next to "Add to this visit" put two doors to overlapping things on the same
+  // row with no way to tell which one you wanted. It stays on the landing screen, where the
+  // choice is real. (One line to restore if that turns out to be wrong.)
+  var rb = document.getElementById('case-records-btn');
+  if(rb) rb.style.display = tbpSetupVisitUnderway() ? 'none' : '';
   b.innerHTML = started ? '&#9881; Add to this visit' : '&#9881; Start or prep a visit';
   b.title = started
     ? 'Add records or pasted information to this visit, change the visit type, or adjust what goes in the note.'
