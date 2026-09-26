@@ -43,16 +43,56 @@ about what a thing *is*. They have been about **who is allowed to say it is true
 These bind across every concept. They are the ones capable of corrupting downstream clinical
 reasoning if violated.
 
-### I-1. A model output may PROPOSE a state change. It never BECOMES encounter state because a model produced it. **DECIDED**
+### I-1. Three layers, and authority is what moves information between them. **DECIDED**
 
-Extraction, inference, summarization and reasoning all produce candidates. Canonical clinical
-state changes only through an act of authority (see §5). This is the general form of the
-medication rule and it will matter far beyond medications: a suggested diagnosis, an inferred
-adverse effect, a proposed dose change, an extracted vital.
+The deeper distinction is not AI versus clinician. It is:
 
-Corollary: a capability may write into `tbpEncounterState.results` freely, because a result is
-explicitly a record of what a capability established, not an assertion about the patient (§4).
-It may not write into `medications.current` or `preflight.diagnoses`.
+```
+SOURCE MATERIAL                    what was said, written or recorded
+  clinician note
+  patient report
+  outside record
+  transcript
+        |
+        v   model may derive freely
+DERIVED ARTIFACT                   an interpretation. storable, displayable, reasonable-over.
+  record summary                   NOT a claim about the patient.
+  prep snapshot
+  ADHD framework
+  draft assessment
+  Discern reasoning
+  capability result
+        |
+        v   requires authority (§6)
+CANONICAL ENCOUNTER ASSERTION      what the encounter holds as true
+  confirmed medication state
+  confirmed diagnosis
+  clinician decision
+  confirmed or entered finding
+```
+
+**The rule:** a model output may become a stored **derived artifact** or capability result. It
+may not establish a **canonical patient or encounter assertion** merely because the model
+produced it.
+
+So `prepSnapshot`, `adhdFw`, `d.review`, the drafted note and Discern's reasoning are all
+legitimate. They are derived artifacts and they are allowed to exist, persist, be shown, and
+feed further reasoning. What they may not do is silently become canonical.
+
+A derived artifact may say *"the records support longstanding inattentive symptoms."* It may not
+produce `diagnosis.ADHD = established`. That crossing requires the authority appropriate to that
+assertion.
+
+**ENFORCED:** `ctx.provenance` states each field's `layer` / `authoredBy` / `authority`, as data
+rather than as prose, so a consumer can check instead of inferring from a field name. This
+matters specifically because **`adhdFw.ESTABLISHED` is a heading inside a model synthesis** and
+its name invites exactly the wrong reading. The UI may keep saying "Established" to the
+clinician; nothing in code may treat the key as authoritative patient state.
+
+**DECIDED, not yet done:** the framework's internal shape should carry its own
+`artifactType: 'derived'` / `authoredBy: 'model'` / `authority: 'noncanonical'` rather than
+relying on the context map alone. Deferred as a rename with real regression surface; the
+provenance map closes the immediate hazard.
 
 ### I-2. State flows one way: application state to canonical context to rendered prose. Never back. **ENFORCED**
 
@@ -168,30 +208,105 @@ one string and `brand: "Adderall"` with no IR/XR distinction, correctly for its 
 **ENFORCED.** `rxcui` is null and `identityStatus` reads `unresolved` until the RxNorm/DailyMed
 layer resolves it. A guessed RxCUI picks a label, and a wrong label is the whole bug.
 
-**OPEN.** Compounded, combination and dose-form-ambiguous products. "Suboxone 8 mg/2 mg" parses
-as a combination dose today, but nothing decides whether a combination product is one medication
-or two for interaction purposes. Not forced yet; will be forced by the Interaction Interpreter.
+**DECIDED:** a combination product is **one prescribing identity with multiple pharmacologic
+components.** Suboxone 8/2 is one thing prescribed and one thing taken:
+
+```js
+{ rawName: 'Suboxone 8 mg/2 mg SL film', route: 'sublingual',
+  components: [ { ingredient: 'buprenorphine', strength: '8 mg' },
+                { ingredient: 'naloxone',      strength: '2 mg' } ] }
+```
+
+The Interaction Interpreter expands `components` when it needs pharmacologic logic; grounding
+resolves the product. Same for compounded products: one product identity, components represented
+individually **when known**. If the composition is uncertain it is `unresolved` (I-3). Do not
+invent components.
+
+**Status:** decided, not built. `components` has no writer; combination doses currently parse as
+a single dose string. Build it when the Interaction Interpreter forces it.
 
 ## 3.2 State
 
 **ENFORCED today:** `current` | `historical`, plus a candidate-only `unclear` that cannot be
 confirmed as itself.
 
-**OPEN.** `historical` is currently one bucket and clinically it is several. "Previously failed
-Concerta after five days" and "stopped lithium when she became pregnant" and "never started the
-sertraline the PCP sent in" are different facts with different implications for what to try next.
-The detector collapses all past-tense language into one state. **This needs a decision before any
-capability reasons over medication history**, because "failed" is the one a prescriber acts on.
+### Medication history is DIMENSIONS, not more buckets. **DECIDED**
 
-**OPEN.** `medications.changes` has a home in the store and no writer and no definition. It could
-mean: a change proposed today, a change made today, or a change since the last visit. These are
-three different things and at least two of them are clinically useful. Undefined, so unused.
+`historical` is too coarse. The fix is **not** a richer set of mutually exclusive states.
 
-**INFERRED, not binding.** Patient-reported use, prescribed-but-unverified, and confirmed-current
-are currently one state (`current`). The distinction is recognized elsewhere in the system (the
-MSE prompt separates observed from reported; `unresolved.adverseEffects` notes that
-patient-reported is not an observed finding) but is not modeled here. Flagging as a probable gap,
-not asserting a rule.
+> **Wrong model:** add `failed` as a medication state.
+> **Why wrong:** "failed" is a clinical **conclusion**, and usually the very conclusion being
+> evaluated. Five days of Concerta stopped for headaches is not a failed trial; it is not even an
+> adequate trial. Writing `state: failed` launders somebody else's interpretation into canonical
+> state, and then every capability downstream inherits the word as truth. This is the same error
+> as collapsing Adderall XR into Adderall, one layer up: a premature interpretation destroying
+> the distinction that the reasoning was supposed to make.
+> **Correct model:** preserve the dimensions a prescriber actually reasons from, and let the
+> capability draw the conclusion.
+
+```
+lifecycle:       current | historical | proposed | prescribed_not_started | unknown
+exposure:        never_started | started | unknown
+response:        beneficial | partial | no_benefit_reported | worsened | unknown
+discontinuation: adverse_effect | inefficacy | patient_preference | pregnancy |
+                 cost_access | other | unknown
+duration:        actual duration when known
+sourceLanguage:  the clinician's original wording, preserved
+```
+
+So "Previously stopped Concerta after five days due to headaches" becomes:
+
+```js
+{ lifecycle: 'historical', exposure: 'started', duration: '5 days',
+  response: 'unknown', discontinuation: 'adverse_effect',
+  adverseEffects: ['headaches'],
+  sourceLanguage: 'previously stopped Concerta after five days due to headaches' }
+```
+
+Discern can then conclude *"that does not establish an adequate efficacy trial"* instead of
+inheriting the word **failed**. Note `response: 'unknown'` is doing real work: stopping for a
+side effect at day five says nothing about whether the drug would have worked.
+
+**Status:** decided, not built. The detector currently emits `current` / `historical` /
+`unclear` only. This does not block Discern grounding, which needs confirmed CURRENT medications.
+It blocks anything that reasons over medication **history**.
+
+### Patient-reported vs clinician-confirmed is SOURCE and AUTHORITY, not another state. **DECIDED**
+
+The patient says *"I take Adderall XR 20 mg every morning."* The clinician confirms that this is
+the medication list for the encounter. Neither of those objectively verifies adherence, and the
+four axes keep them straight without inventing states:
+
+```
+Identity:   Adderall XR 20 mg
+State:      current
+Source:     patient report
+Authority:  clinician confirmation (for the canonical encounter list)
+```
+
+> **Wrong model:** `patient_reported_current`, `clinician_confirmed_current`,
+> `objectively_verified_current` as distinct states.
+> **Why wrong:** it mixes axes. Source and state are independent, and crossing them multiplies
+> the state space every time a new source appears.
+
+### `medications.changes` holds EVENTS, not a second state system. **DECIDED**
+
+The three readings are genuinely different and must not be collapsed:
+
+```js
+{ medication: '...',
+  event:  'start' | 'stop' | 'increase' | 'decrease' | 'switch',
+  status: 'reported_external' | 'clinician_decided' | 'proposed',
+  actor:  'PCP' | 'patient' | 'clinician',
+  timing: '...', source: '...', confirmedBy: 'clinician' | null }
+```
+
+- *"PCP started fluoxetine 40 mg two weeks ago"* is `reported_external`.
+- *"Increase Adderall XR to 25 mg"*, once the clinician decides it, is `clinician_decided`.
+- *"Could consider increasing Adderall XR"* from Discern is `proposed`, and **I-1 stops it
+  becoming a medication change because a model suggested it.**
+
+**Status:** decided, not built. No writer yet.
 
 ## 3.3 Source
 
@@ -290,7 +405,7 @@ an author, and the system currently tracks this unevenly:
 | confirmed medications | clinician | the medication card |
 | capability results | capability | `reviewed` flag, optional |
 
-**OPEN, and the most consequential open item in this document.** Several model-authored
+**Was the most consequential open item in this document; resolved by I-1.** Several model-authored
 artifacts re-enter the model's context as input, with no marker that they are model-authored
 beyond a prose label. Specifically:
 
@@ -305,11 +420,48 @@ beyond a prose label. Specifically:
    honest about this, saying the clinician "may have edited it since drafting", which is an
    admission that the system does not know.
 
-The question to decide: is there a general distinction between **working artifacts** (a rundown,
-a framework, a draft, a summary: model-authored aids the clinician reads and uses) and
-**assertions about the patient** (diagnoses, medications, findings), with I-1 biting only on the
-second? That reading is coherent and probably right, but it has never been stated, and if it is
-correct then several field names actively invite the wrong reading.
+**RESOLVED by I-1.** These are derived artifacts and are allowed to exist, persist and feed
+further reasoning. They may not become canonical assertions. `ctx.provenance` now states each
+field's layer as data, so nothing has to infer authority from a field name.
+
+### A summary may stand in for a source, but never invisibly. **DECIDED**
+
+> **Wrong model (A):** always resend the whole document, so the model always has the source.
+> **Why wrong:** a 35-page neuropsych report on every question destroys the architecture for a
+> different reason. The summary exists because the token cost is real.
+> **Wrong model (B):** send the summary and let the consumer believe it received the record.
+> **Why wrong:** absence from a summary reads as absence from the record, and a factual claim
+> gets made from a document nobody looked at.
+> **Correct model:** a derived summary may be used as a **retrieval and orientation** artifact,
+> and the consumer must know it is reasoning from a derived summary rather than the source. When
+> a specific factual claim materially depends on the source, retrieve the relevant **source
+> passage** rather than treating absence from the summary as absence from the record.
+
+This is the same shape as the DailyMed work, and that parallel is the point:
+
+```
+summary for navigation  ->  source for the claim
+```
+
+The renderer already applies exactly this principle to truncated raw text, saying in the prompt
+that absence in the excerpt is not absence in the record. `d.review` gets the same protection.
+
+**ENFORCED:** `ctx.sources[].reviewLayer` / `reviewAuthoredBy` mark a review as model-derived.
+
+**DECIDED, not yet done:** the rendered block must label itself, roughly:
+
+```
+OUTSIDE RECORD REVIEW
+artifactType: derived_summary
+sourceDocument: <name>
+coverage: summary, not the full document
+```
+
+Not shipped in this pass because it changes what every clinical prompt sees, which is a
+deliberate behaviour change deserving its own commit. **It will require a new baseline for
+`tests/encounter-context.test.js`**, whose whole value is that it is pinned to the pre-refactor
+prose. That is correct and expected: the test proves nothing changed accidentally, and this
+change is on purpose.
 
 ## 5.2 What may be hardcoded
 
@@ -339,9 +491,24 @@ system found. Requiring them to retype what is already on screen is a failure of
 **ENFORCED.** Confirmation runs before the work that consumes it, so a downstream failure does
 not discard a confirmation that really happened.
 
-**OPEN.** There is no revocation and no expiry. A confirmation is good for the encounter. Whether
-a long encounter, an interrupted one, or a resumed-after-reload one should ever re-ask has not
-been decided.
+**DECIDED: a confirmation does not expire because time passed. It becomes stale because relevant
+state changed.**
+
+> **Wrong model:** re-confirm every N minutes, or on reload.
+> **Why wrong:** it is pointless re-confirmation, which is the reconciliation chore wearing a
+> timer. Nothing about the patient changed while the clinician was typing.
+> **Correct model:** a confirmation stays valid for the encounter until a relevant fact changes,
+> a conflicting source appears, or the clinician edits or revokes it.
+
+- A reload does **not** invalidate it. **ENFORCED** (it survives crash recovery).
+- A newly detected medication may. **ENFORCED** (`new-since-confirmed`).
+- Adderall XR 20 to 30 mg does. **ENFORCED** (the change reopens the card and marks dependent
+  results stale).
+- A conflicting current-med statement should. **DECIDED, not built** (nothing detects conflict).
+
+This is the same event-driven invalidation as §4, deliberately: one mechanism, not two.
+
+**Still open:** explicit revocation. There is no way to un-confirm without editing the list.
 
 ---
 
@@ -355,27 +522,40 @@ source and a real writer, per I-3.
 | adverse effects | free text. Patient-reported is not an observed finding, and that distinction is unmodeled. |
 | vitals, labs | free text. No structured source. |
 | scored screeners | `TBP_SCALES` is a catalogue of instruments. A scored result is not captured. |
-| medication changes | home exists, no writer, no definition (§3.2) |
+| medication changes | defined as EVENTS (§3.2). No writer yet. |
 | psychotherapy modality | captured at preflight; not yet consumed by anything but the note |
 
 ---
 
-# 8. Open forks, collected
+# 8. Decisions log, and what is still open
 
-The decisions this document could not recover, gathered for one pass. Ordered by how much damage
-getting them wrong would do.
+All seven forks raised in the first draft were decided on 26 Sept 2026. Recorded here so the
+resolution is findable without reading the whole document, and so nobody re-opens a settled one.
 
-1. **Working artifact vs. assertion (§5.1).** Does I-1 bite on model-authored aids, or only on
-   assertions about the patient? Field names currently invite the wrong reading.
-2. **Medication history states (§3.2).** Is `historical` one state or several? "Failed" is the
-   one a prescriber acts on, and it is currently indistinguishable from "stopped for an unrelated
-   reason".
-3. **Patient-reported vs. confirmed-current (§3.2).** One state today.
-4. **`medications.changes` (§3.2).** Proposed today, made today, or since last visit?
-5. **Summary substituting for source (§5.1.2).** Should a consumer be able to tell it is reasoning
-   over a review rather than the document, and should some questions refuse the substitution?
-6. **Confirmation lifetime (§6).** Does a confirmation ever expire within an encounter?
-7. **Combination and compounded products (§3.1).** One medication or two?
+| # | fork | decision | built? |
+|---|---|---|---|
+| 1 | working artifact vs. assertion | three layers: source material -> derived artifact -> canonical assertion. A model may derive freely; crossing into canonical needs authority (I-1) | provenance map **yes**; per-artifact metadata no |
+| 2 | medication history granularity | **dimensions, not buckets.** No canonical `failed` state | no |
+| 3 | patient-reported vs. confirmed | a source/authority distinction, not a state (§3.2) | n/a, it is a modelling rule |
+| 4 | `medications.changes` | **events**, with `status` separating reported / decided / proposed | no |
+| 5 | summary substituting for source | allowed for orientation, never invisibly; source passage for a specific claim (§5.1) | context labels **yes**; prompt label no |
+| 6 | confirmation lifetime | no time expiry; event-driven invalidation only (§6) | **yes**, mostly |
+| 7 | combination products | one prescribing identity, `components[]` alongside | no |
+
+**The load-bearing one is #2.** Do not solve medication-history granularity by adding a canonical
+`failed` state. "Failed" is usually the conclusion being evaluated. Preserve exposure, duration,
+response, adverse effects and stop reason separately, so a capability can decide whether the
+history supports calling it a failed trial. Getting this wrong would put an unexamined
+interpretation into canonical state, which is the whole class of error this document exists to
+prevent, and it would do it in the place where Think Beyond AI is supposed to add the most value.
+
+## Still open
+
+1. **Explicit revocation of a confirmation (§6).** No way to un-confirm short of editing the list.
+2. **Conflict detection (§6).** A conflicting current-medication statement *should* invalidate a
+   confirmation. Nothing detects conflict.
+3. **Adverse effects (§7).** Patient-reported is not an observed finding and the distinction is
+   unmodeled. Likely resolves the same way as #3 above, on the source axis, but not decided.
 
 ---
 

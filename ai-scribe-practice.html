@@ -395,9 +395,9 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/rx-vocabulary.js?v=ambient-152-sub"></script>
-<script src="/rx-detect.js?v=ambient-152-sub"></script>
-<script src="/note-engine-practice.js?v=ambient-152-sub"></script>
+<script src="/rx-vocabulary.js?v=ambient-153-sub"></script>
+<script src="/rx-detect.js?v=ambient-153-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-153-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -759,7 +759,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-152-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-153-sub</span></div>
 </div>
 </div>
 
@@ -842,7 +842,6 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
       <button type="button" class="btn-case" id="case-setup-btn" title="Carry last visit forward, build today&rsquo;s checklist and set the visit type &mdash; or skip setup and just start writing." onclick="tbpShowSetup()">&#9881; Start or prep a visit</button>
       <button type="button" class="btn-case" id="case-records-btn" title="Read a prior evaluation, discharge summary or old records. Reviewing one does nothing to your note until you add it." onclick="tbpDocsFromNudge()">&#128196; Review outside records</button>
       <button type="button" class="btn-case rsn-trigger" title="Think through the case using what is already in this session. Nothing goes into your note unless you put it there." onclick="tbpShowReason()">&#129504; Discern</button>
-      <button type="button" class="btn-case" id="case-meds-btn" title="Confirm what the patient is actually taking. Found from what you have written; you confirm rather than retype. Medication capabilities open this on their own when they need it." onclick="tbpShowMeds('manual')">&#128138; Medications</button>
       <button type="button" class="btn-case adhd-trigger adhd-entry" style="display:none" title="What this case establishes about the ADHD question, what it does not, and what is worth asking today." onclick="tbpAdhdEntryClick()">&#129504; ADHD Framework</button>
     </div>
   </div>
@@ -4622,11 +4621,21 @@ function tbpMedConfirmationNeeded(purpose){
 // ── the card itself ───────────────────────────────────────────────────────────────────────
 var tbpMedDraftRows = [], tbpMedOnDone = null;
 
+// The card must say WHY it appeared, in terms of the thing the clinician was already doing.
+// "Confirm your medications" reads as a form that materialized for no reason. "Discern needs the
+// exact formulation to answer this" reads as the product doing work. Same click, different
+// experience, and only one of them respects the fact that they did not ask for a form.
+var TBP_MED_ASK = {
+  dose:        'Discern needs the exact medication and formulation to answer this. Here is what is in your note:',
+  interaction: 'Before checking interactions, confirm what the patient is currently taking:',
+  monitoring:  'Monitoring depends on the current regimen. Confirm what the patient is taking:',
+  grounding:   'To look this up against the actual label, the exact product and formulation have to be right:',
+  dev:         'DEV: opened directly. In the product this only appears when a capability needs it.'
+};
+// Secondary line, only when the situation adds something the purpose line does not.
 var TBP_MED_WHY = {
-  'never-confirmed':    'These were found in what you have written. Confirm what the patient is actually on now, and this will not ask again unless something changes.',
-  'new-since-confirmed':'Something changed in your note since you last confirmed. Check the new line.',
-  'ambiguous':          'One detail is missing that this particular question depends on.',
-  'manual':             'What was found in what you have written. Nothing here is on the list until you say so.'
+  'new-since-confirmed': 'Something changed in your note since you last confirmed. The new line is below.',
+  'ambiguous':           'One detail is missing that this particular question depends on.'
 };
 
 function tbpMedRowsFromState(){
@@ -4678,11 +4687,27 @@ function tbpMedRenderRows(){
   }).join('');
 }
 
-function tbpShowMeds(reason, onDone){
+function tbpShowMeds(purpose, reason, onDone){
   tbpMedDraftRows = tbpMedRowsFromState();
   tbpMedOnDone = (typeof onDone === 'function') ? onDone : null;
   var why = document.getElementById('meds-why');
-  if(why) why.textContent = TBP_MED_WHY[reason] || TBP_MED_WHY.manual;
+  if(why){
+    var lead = TBP_MED_ASK[purpose] || 'Confirm what the patient is currently taking:';
+    var extra = TBP_MED_WHY[reason] || '';
+    // Name the specific missing detail rather than the abstract category. "Adderall: release
+    // form not stated" is actionable; "one detail is missing" sends them hunting.
+    if(reason === 'ambiguous'){
+      try {
+        var amb = tbpMedAmbiguities(purpose);
+        if(amb.length) extra = amb.map(function(a){ return a.rawName + ': ' + a.issue; }).join('. ') + '.';
+      } catch(e){}
+    }
+    why.innerHTML = esc(lead) + (extra ? '<div style="margin-top:6px;color:var(--amber)">' + esc(extra) + '</div>' : '');
+  }
+  var go = document.getElementById('meds-confirm');
+  // The button says what happens next, because something DOES happen next: the capability the
+  // clinician actually invoked resumes. They must never have to restart the task they asked for.
+  if(go) go.textContent = tbpMedOnDone ? 'Confirm and continue' : 'Save this list';
   var msg = document.getElementById('meds-msg'); if(msg) msg.textContent = '';
   tbpMedRenderRows();
   document.getElementById('meds-modal').classList.add('open');
@@ -4694,11 +4719,35 @@ function tbpHideMeds(){
 
 // Open the card only if something actually needs it, then continue. When nothing needs it the
 // continuation runs immediately and the clinician never sees a form.
+// THE product behaviour for medication state. A capability calls this; it does not ask the
+// clinician to go and prepare anything first. Medication confirmation is a prerequisite of the
+// SYSTEM, not a task for the user, and a clinician should never have to know it exists.
+//
+//   capability invoked -> does it need confirmed medication identity?
+//     sufficient already -> continue immediately, nothing shown
+//     not sufficient     -> compact card saying why, one confirm, capability RESUMES
+//
+// The resume is the part that matters. Making them re-ask the question they already asked turns
+// a prerequisite into an interruption.
 function tbpMedEnsure(purpose, go){
   var need = tbpMedConfirmationNeeded(purpose);
   if(!need){ go(); return; }
-  tbpShowMeds(need, go);
+  tbpShowMeds(purpose, need, go);
 }
+
+// Direct access for development only. Medication state is infrastructure: exposing it as a
+// clinician-facing control puts a module in CASE TOOLS beside Discern, which is exactly the
+// "capabilities, not modules" rule this product is built on. It briefly WAS a button there, and
+// the tooltip had to admit "medication capabilities open this on their own" -- which is the
+// answer to why no one should ever click it.
+//   /practice?dev=1  ->  window.tbpDevMeds()
+(function(){
+  var dev = false;
+  try { dev = /[?&]dev=1\b/.test(location.search); } catch(e){}
+  if(!dev) return;
+  window.tbpDevMeds = function(){ tbpShowMeds('dev', 'never-confirmed', null); };
+  try { console.info('[dev] tbpDevMeds() opens the medication confirmation card directly.'); } catch(e){}
+})();
 
 (function(){
   var host = document.getElementById('meds-rows');
@@ -4825,6 +4874,28 @@ function getEncounterContext(){
     sources: [],
     framework: null,
 
+    // WHICH LAYER EACH FIELD BELONGS TO (CLINICAL-ONTOLOGY.md §1):
+    //   source material -> derived artifact -> canonical encounter assertion
+    // A derived artifact may be stored, shown and reasoned over. It does not become a canonical
+    // assertion about the patient because a model produced it. Stated here as data, not just in
+    // prose, so a consumer can check rather than infer from a field name -- adhdFw.ESTABLISHED
+    // is a heading inside a model synthesis, and nothing but this map says so.
+    provenance: {
+      note:        { layer: 'source',    authoredBy: 'clinician',  authority: 'source' },
+      priorNote:   { layer: 'source',    authoredBy: 'clinician',  authority: 'source' },
+      sources:     { layer: 'source',    authoredBy: 'external',   authority: 'source',
+                     note: 'sources[].review is a DERIVED summary of the document, not the document' },
+      drafted:     { layer: 'derived',   authoredBy: 'model',      authority: 'noncanonical',
+                     note: 'the clinician may have edited it since drafting; the system cannot tell which' },
+      prep:        { layer: 'derived',   authoredBy: 'model',      authority: 'noncanonical' },
+      framework:   { layer: 'derived',   authoredBy: 'model',      authority: 'noncanonical',
+                     note: 'section names such as ESTABLISHED label a model synthesis, NOT established patient state' },
+      results:     { layer: 'derived',   authoredBy: 'capability', authority: 'noncanonical' },
+      preflight:   { layer: 'canonical', authoredBy: 'clinician',  authority: 'canonical' },
+      medications: { layer: 'canonical', authoredBy: 'clinician',  authority: 'canonical' },
+      screeners:   { layer: 'canonical', authoredBy: 'clinician',  authority: 'canonical' }
+    },
+
     // Read from the durable store, as a DEEP COPY. A consumer holding this snapshot can push,
     // splice and overwrite freely without touching confirmed clinical state.
     preflight:   tbpEncClone(tbpEncounterState.preflight),
@@ -4863,6 +4934,11 @@ function getEncounterContext(){
     for(var i=0;i<tbpSources.length;i++){
       var d = tbpSources[i];
       ctx.sources.push({ id: d.id, name: d.name, text: d.text, review: d.review,
+                         // The review is a model summary standing in for the document. A consumer
+                         // reading it is reasoning over a derived artifact, and absence from a
+                         // summary is not absence from the record.
+                         reviewLayer: d.review ? 'derived' : null,
+                         reviewAuthoredBy: d.review ? 'model' : null,
                          useForPrep: !!d.useForPrep, chars: d.chars, pasted: !!d.pasted });
     }
   } catch(e){}

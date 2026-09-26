@@ -129,11 +129,42 @@ test('every ontology claim carries a provenance tag', () => {
     assert.ok(/\*\*(ENFORCED|DECIDED|INFERRED|OPEN)\*\*/.test(line), 'untagged invariant: ' + line));
 });
 
-test('open forks are collected where they can be found', () => {
-  const inline = (doc.match(/\*\*OPEN[.,]?\*\*/g) || []).length;
-  const collected = (doc.match(/^\d+\. \*\*/gm) || []).length;
-  assert.ok(inline >= 5, 'open forks should be marked where they arise');
-  assert.ok(collected >= 5, '§8 must collect them for one pass');
+test('decisions and open items are both findable in one place', () => {
+  assert.ok(/# 8\. Decisions log, and what is still open/.test(doc), 'the log must exist');
+  // Every fork raised must show a resolution in the log, so none can quietly go missing.
+  ['working artifact', 'medication history', 'patient-reported', 'medications.changes',
+   'summary substituting', 'confirmation lifetime', 'combination products']
+    .forEach((f) => assert.ok(doc.indexOf(f) > -1, 'fork dropped from the log: ' + f));
+  assert.ok(/## Still open/.test(doc), 'remaining open items must stay visible');
+});
+
+test('the load-bearing prohibition is explicit', () => {
+  // The single most dangerous thing a future session could add "helpfully": a canonical
+  // `failed` medication state, which launders the conclusion being evaluated into state.
+  assert.ok(/Do not solve medication-history granularity by adding a canonical/.test(doc),
+    'the failed-state prohibition must be stated as a prohibition');
+  assert.ok(/dimensions, not buckets/i.test(doc), 'and the replacement must be named');
+});
+
+test('the three layers are stated as a hierarchy', () => {
+  ['SOURCE MATERIAL', 'DERIVED ARTIFACT', 'CANONICAL ENCOUNTER ASSERTION']
+    .forEach((l) => assert.ok(doc.indexOf(l) > -1, 'missing layer: ' + l));
+});
+
+test('ENFORCED: the context states each field layer as data, not prose', () => {
+  const i = html.indexOf('provenance: {');
+  assert.ok(i > 0, 'ctx.provenance must exist');
+  const body = html.slice(i, html.indexOf('\n    },', i));
+  ['note:', 'drafted:', 'framework:', 'results:', 'preflight:', 'medications:']
+    .forEach((k) => assert.ok(body.indexOf(k) > -1, 'provenance missing ' + k));
+  assert.ok(/framework:[\s\S]*?authority: 'noncanonical'/.test(body),
+    'the framework is a derived artifact however its sections are named');
+  assert.ok(/medications:[\s\S]*?authority: 'canonical'/.test(body));
+});
+
+test('ENFORCED: a review is marked as a derived summary, not as the document', () => {
+  assert.ok(/reviewLayer: d\.review \? 'derived' : null/.test(html),
+    'a consumer must be able to tell it is reasoning over a summary');
 });
 
 test('the ontology is referenced from CLAUDE.md, or nobody will read it', () => {
