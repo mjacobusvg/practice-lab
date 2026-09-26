@@ -377,7 +377,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-147-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-148-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -739,7 +739,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-147-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-148-sub</span></div>
 </div>
 </div>
 
@@ -4135,78 +4135,155 @@ function reasonSystem(){
 }
 
 // Everything the session legitimately holds. Assembled fresh each time; never stored.
-function tbpCaseContext(){
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// ENCOUNTER CONTEXT — the canonical structured record of what this session knows.
+//
+// Every capability used to rediscover the same facts: Discern re-read the note, the Interaction
+// Interpreter needed them retyped in another tab, Monitoring asked again what changed. The cause
+// was that the only shared representation was a paragraph written for a model. A paragraph is
+// not a med list, so nothing deterministic could consume it.
+//
+// The direction is now one way and only one way:
+//     application state -> getEncounterContext() -> renderCaseContext() -> prose
+// never prose -> reconstructed context. The prose is a VIEW. If it is ever a source again, a
+// formatting change silently breaks whatever was reading it.
+//
+// tbpCaseContext() is kept as a compatibility wrapper and must stay byte-identical to what it
+// returned before this refactor; tests/encounter-context.test.js asserts exactly that against
+// the pre-refactor implementation across every branch.
+// ══════════════════════════════════════════════════════════════════════════════════════════
+
+function getEncounterContext(){
   function val(id){ var e = document.getElementById(id); return e ? (e.value||'').trim() : ''; }
-  var parts = [], bits = [];
 
-  var visit = (typeof visitType !== 'undefined' && visitType)
-    ? (visitType === 'new_eval' ? 'New patient evaluation' : 'Follow-up visit') : 'Visit type not set';
-  parts.push('VISIT TYPE: ' + visit);
-
-  // Read the working note the way tcoachCurrentNote does. In sections mode the plain
-  // #focus-note is HIDDEN but not cleared, so a naive `focus-note || raw` reads a stale copy
-  // and reasons about a version the clinician can no longer see. syncRawFromSections keeps
-  // #raw current, so the visible panels are the source of truth when sections are up.
-  var note = '';
+  // WHICH working note is authoritative. In sections mode the plain #focus-note is HIDDEN but
+  // not cleared, so a naive `focus-note || raw` reads a stale copy and reasons about a version
+  // the clinician can no longer see. syncRawFromSections keeps #raw current, so the visible
+  // panels are the source of truth when sections are up. `from` records which branch won,
+  // because a consumer that cares (a med list read off the visible panels) needs to know.
+  var noteText = '', noteFrom = 'none';
   var fo = document.getElementById('focus-overlay');
   var fn = document.getElementById('focus-note');
   if(fo && fo.classList.contains('open') && fn && fn.style.display !== 'none' && (fn.value||'').trim()){
-    note = fn.value.trim();
+    noteText = fn.value.trim(); noteFrom = 'focus';
   } else {
     var secs = [];
     document.querySelectorAll('#focus-sections .wn-ta').forEach(function(t){ if((t.value||'').trim()) secs.push(t.value.trim()); });
-    note = secs.length ? secs.join('\n\n') : val('raw');
+    if(secs.length){ noteText = secs.join('\n\n'); noteFrom = 'sections'; }
+    else { noteText = val('raw'); noteFrom = noteText ? 'raw' : 'none'; }
   }
-  if(note){ parts.push("TODAY'S WORKING NOTE (what the clinician captured; rough, pre-draft):\n" + note); bits.push('working note'); }
 
-  // The finished note is four outputs, not one — see copyFullNote(). Reasoning over only the
-  // HPI could not answer "does my assessment follow from this note?", which is the whole point
-  // of being able to do this after the visit.
+  var ctx = {
+    visitType: (typeof visitType !== 'undefined' && visitType) ? visitType : null,
+    note: { text: noteText, from: noteFrom },
+    // The finished note is four outputs, not one (see copyFullNote). Reasoning over only the HPI
+    // cannot answer "does my assessment follow from this note?".
+    drafted: { hpi: val('hpi-out'), assessment: val('assess-out'), therapy: val('therapy-out'), plan: val('plan-out') },
+    priorNote: val('context'),
+    prep: { snapshot: '', checklist: [] },
+    sources: [],
+    framework: null,
+
+    // NOT RESOLVED. No structured source exists for these yet, and inventing one by parsing the
+    // note is the extraction layer this refactor exists to avoid. Named here so the gap is
+    // visible rather than discovered later by whoever expects them to be populated.
+    unresolved: {
+      medications: 'free text only; no med list exists in the Scribe',
+      medicationChanges: 'free text only',
+      adverseEffects: 'free text only; note that patient-reported is not an observed finding',
+      vitals: 'free text only',
+      labs: 'free text only',
+      screenersCompleted: 'TBP_SCALES is a structured catalogue; a scored scale is not captured',
+      diagnoses: 'pfState holds the clinician-CONFIRMED list at generate time and discards it; capturing it is the next step, not this refactor'
+    },
+
+    // The return leg: what a capability established, so it is available later without retyping.
+    // Nothing writes here yet. It exists so the second consumer has somewhere to put an answer.
+    results: {}
+  };
+
+  try {
+    if(typeof prepSnapshot !== 'undefined' && prepSnapshot) ctx.prep.snapshot = prepSnapshot;
+    if(typeof prepChecklist !== 'undefined' && prepChecklist && prepChecklist.length) ctx.prep.checklist = prepChecklist.slice();
+  } catch(e){}
+
+  try { if(typeof adhdFw !== 'undefined' && adhdFw) ctx.framework = adhdFw; } catch(e){}
+
+  // Source ARTIFACTS, untouched. The review-preferred rule and the raw cap are rendering
+  // decisions and belong in the renderer, not here: a future consumer may want the full text.
+  try {
+    for(var i=0;i<tbpSources.length;i++){
+      var d = tbpSources[i];
+      ctx.sources.push({ id: d.id, name: d.name, text: d.text, review: d.review,
+                         useForPrep: !!d.useForPrep, chars: d.chars, pasted: !!d.pasted });
+    }
+  } catch(e){}
+
+  return ctx;
+}
+
+// The prose view. Byte-identical to what tbpCaseContext() produced before the refactor, because
+// the consumers of that string include every clinical prompt in the product.
+var TBP_RSN_RAW_CAP = 14000;
+
+function renderCaseContext(ctx){
+  var parts = [], bits = [];
+
+  var visit = ctx.visitType
+    ? (ctx.visitType === 'new_eval' ? 'New patient evaluation' : 'Follow-up visit') : 'Visit type not set';
+  parts.push('VISIT TYPE: ' + visit);
+
+  if(ctx.note && ctx.note.text){
+    parts.push("TODAY'S WORKING NOTE (what the clinician captured; rough, pre-draft):\n" + ctx.note.text);
+    bits.push('working note');
+  }
+
   var drafted = [];
-  var hpi = val('hpi-out');        if(hpi)     drafted.push('History of Present Illness:\n' + hpi);
-  var assess = val('assess-out');  if(assess)  drafted.push('Assessment:\n' + assess);
-  var thx = val('therapy-out');    if(thx)     drafted.push('Psychotherapy add-on:\n' + thx);
-  var plan = val('plan-out');      if(plan)    drafted.push('Plan:\n' + plan);
+  var D = ctx.drafted || {};
+  if(D.hpi)        drafted.push('History of Present Illness:\n' + D.hpi);
+  if(D.assessment) drafted.push('Assessment:\n' + D.assessment);
+  if(D.therapy)    drafted.push('Psychotherapy add-on:\n' + D.therapy);
+  if(D.plan)       drafted.push('Plan:\n' + D.plan);
   if(drafted.length){
     parts.push('DRAFTED NOTE for this visit (the clinician may have edited it since drafting):\n\n' + drafted.join('\n\n'));
     bits.push('drafted note');
   }
 
-  var last = val('context');
-  if(last){ parts.push("LAST VISIT'S NOTE (pasted by the clinician):\n" + last); bits.push('last visit'); }
+  if(ctx.priorNote){
+    parts.push("LAST VISIT'S NOTE (pasted by the clinician):\n" + ctx.priorNote);
+    bits.push('last visit');
+  }
 
-  try {
-    if(typeof prepSnapshot !== 'undefined' && prepSnapshot){ parts.push('PRE-VISIT SNAPSHOT:\n' + prepSnapshot); bits.push('prep'); }
-    if(typeof prepChecklist !== 'undefined' && prepChecklist && prepChecklist.length){
-      parts.push("PREP CHECKLIST (what prep flagged to ask today):\n" + prepChecklist.join('\n'));
-    }
-  } catch(e){}
+  if(ctx.prep && ctx.prep.snapshot){ parts.push('PRE-VISIT SNAPSHOT:\n' + ctx.prep.snapshot); bits.push('prep'); }
+  if(ctx.prep && ctx.prep.checklist && ctx.prep.checklist.length){
+    parts.push("PREP CHECKLIST (what prep flagged to ask today):\n" + ctx.prep.checklist.join('\n'));
+  }
 
-  // Outside records: prefer the summary already produced for this document over its full text.
-  // Resending a 35-page neuropsych report on every question is exactly the token sink this
-  // feature is supposed to avoid. Where no summary exists yet, send a bounded slice and SAY it
-  // is bounded, so the model never treats a truncated record as the whole record.
-  try {
-    var used = 0, RSN_RAW_CAP = 14000;
-    for(var i=0;i<tbpSources.length;i++){
-      var d = tbpSources[i];
-      if(!d.useForPrep || !d.text) continue;
-      used++;
-      if(d.review){
-        parts.push('OUTSIDE RECORD ' + used + ' (' + d.name + ') — clinician-facing REVIEW of the document, not its full text:\n' + d.review);
-      } else if(d.text.length > RSN_RAW_CAP){
-        parts.push('OUTSIDE RECORD ' + used + ' (' + d.name + ') — PARTIAL: the first '
-          + RSN_RAW_CAP + ' of ' + d.text.length + ' characters. Later pages are NOT included, so do not treat an absence here as an absence in the record:\n'
-          + d.text.slice(0, RSN_RAW_CAP));
-      } else {
-        parts.push('OUTSIDE RECORD ' + used + ' (' + d.name + '):\n' + d.text);
-      }
+  // Prefer the summary already produced for a document over its full text. Resending a 35-page
+  // neuropsych report on every question is the token sink this feature exists to avoid. Where no
+  // summary exists, send a bounded slice and SAY it is bounded, so the model never treats a
+  // truncated record as the whole record.
+  var used = 0;
+  (ctx.sources || []).forEach(function(d){
+    if(!d.useForPrep || !d.text) return;
+    used++;
+    if(d.review){
+      parts.push('OUTSIDE RECORD ' + used + ' (' + d.name + ') — clinician-facing REVIEW of the document, not its full text:\n' + d.review);
+    } else if(d.text.length > TBP_RSN_RAW_CAP){
+      parts.push('OUTSIDE RECORD ' + used + ' (' + d.name + ') — PARTIAL: the first '
+        + TBP_RSN_RAW_CAP + ' of ' + d.text.length + ' characters. Later pages are NOT included, so do not treat an absence here as an absence in the record:\n'
+        + d.text.slice(0, TBP_RSN_RAW_CAP));
+    } else {
+      parts.push('OUTSIDE RECORD ' + used + ' (' + d.name + '):\n' + d.text);
     }
-    if(used) bits.push(used + ' outside record' + (used>1?'s':''));
-  } catch(e){}
+  });
+  if(used) bits.push(used + ' outside record' + (used>1?'s':''));
 
   return { text: parts.join('\n\n---\n\n'), have: bits };
 }
+
+// Compatibility wrapper. Every existing caller keeps working unchanged.
+function tbpCaseContext(){ return renderCaseContext(getEncounterContext()); }
 
 function tbpRsnUpdateCtx(c){
   var el = document.getElementById('rsn-ctx'); if(!el) return;

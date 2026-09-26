@@ -5,9 +5,16 @@ workflow. This checks each item against the code rather than against the doc's o
 short version: **one item is done, three are partly done, five are untouched, and the one that
 everything else depends on is half-built in the wrong shape.**
 
+**UPDATE 26 Sept 2026, later the same day:** item 0 is no longer in the wrong shape. Step 1
+shipped to practice (ambient-148-sub): `getEncounterContext()` returns the canonical object,
+`renderCaseContext()` produces the prose, `tbpCaseContext()` is a wrapper, and 4,052 regression
+checks prove the prose is byte-identical to the pre-refactor version. The remaining gap in item 0
+is that `pfState` is still discarded and no capability writes to `ctx.results` yet. Row 0 below is
+updated; every other row still stands.
+
 | # | Item | State | Evidence |
 |---|---|---|---|
-| **0** | **Encounter-context foundation** | **~50%, wrong shape** | `tbpCaseContext()` (`ai-scribe-practice.html:4138`) already gathers visit type, working note, drafted outputs, prep snapshot, checklist and records. It emits **prose for a model**. Nothing deterministic can consume it: the Interaction Interpreter needs a med list, not a paragraph. |
+| **0** | **Encounter-context foundation** | **Structure done; consumers and `pfState` outstanding** | `getEncounterContext()` (`ai-scribe-practice.html:4156`) returns a structured object; `renderCaseContext()` renders the prose view; `tbpCaseContext()` wraps the two and is byte-identical (`tests/encounter-context.test.js`, 4,052 checks). Still open: `pfState` (confirmed diagnoses, modality, contributing factors) is discarded at the preflight handler, the medication list has no structured source, and no capability writes back to `ctx.results`. |
 | 1 | Scribe -> Chart Audit + Coder | **0%** | A `<option>` in the Clinical tools dropdown. `window.open(url,'_blank')`. No context passes. |
 | 2 | Scribe -> Monitoring Protocol | **0%** | Same dropdown, same new tab, retype everything. |
 | 3 | Scribe -> Interaction Interpreter | **0%** | Same. The 190-drug engine is one click and a full re-entry away. |

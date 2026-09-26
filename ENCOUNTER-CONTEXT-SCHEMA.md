@@ -1,6 +1,8 @@
-# Encounter Context: proposed minimal schema, and where every field comes from
+# Encounter Context: the schema, and where every field comes from
 
-**Proposal only. No code written.** The rule set before this: build the structure from existing
+**Step 1 SHIPPED 26 Sept 2026 in `ai-scribe-practice.html` (build ambient-148-sub).** The rest of
+this document is the design work that preceded it; the "Step 1 as built" section at the bottom
+records what actually landed and how it differs from the proposal. The rule set before this: build the structure from existing
 application state, not by re-parsing prose. So every field below names the variable that
 populates it, and the fields with no such variable are called out rather than quietly filled by
 an extractor.
@@ -130,3 +132,80 @@ never a source.
 
 Step 1 touches no clinical behaviour and is independently verifiable: the prose it renders should
 be byte-identical to what `tbpCaseContext()` produces today.
+
+
+---
+
+# Step 1 as built (26 Sept 2026)
+
+`ai-scribe-practice.html:4156`. Three functions where there was one:
+
+```
+getEncounterContext()   ->  the canonical object, read from application state
+renderCaseContext(ctx)  ->  the prose view every clinical prompt already consumes
+tbpCaseContext()        ->  renderCaseContext(getEncounterContext())   // unchanged signature
+```
+
+The direction is enforced one way: **application state -> context -> prose.** Never prose ->
+reconstructed context. The prose is a view. The moment anything parses it back, a wording change
+becomes a silent clinical change.
+
+## What it returns
+
+| Field | Populated | Notes |
+|---|---|---|
+| `visitType` | yes | `'new_eval'` / `'follow_up'` / `null` |
+| `note.text` | yes | the authoritative working note |
+| `note.from` | yes | `'focus'` / `'sections'` / `'raw'` / `'none'` — which branch won |
+| `drafted.{hpi,assessment,therapy,plan}` | yes | four addressable outputs, not one blob |
+| `priorNote` | yes | `#context` |
+| `prep.snapshot` | yes | string |
+| `prep.checklist` | yes | array, **copied** so a consumer cannot mutate app state |
+| `sources[]` | yes | FULL text, unfiltered and uncapped |
+| `framework` | yes | `adhdFw` |
+| `unresolved.*` | declared | seven named gaps, see below |
+| `results` | empty | the return channel; nothing writes to it yet |
+
+Two decisions worth keeping straight:
+
+**`note.from` is part of the contract.** In sections mode the plain `#focus-note` is hidden but
+not cleared, so `focus-note || raw` reads a stale copy of a note the clinician can no longer see.
+The selection rule is preserved exactly as it was, and now it reports which branch it took,
+because a consumer reading a med list off the visible panels needs to know which panels those are.
+
+**`sources[]` holds full text; the renderer applies the review-preferred rule and the 14,000
+character cap.** Those are rendering decisions (don't resend a 35-page neuropsych report to a
+model on every question). A deterministic consumer may well want the whole document, so the
+filtering does not happen in the context.
+
+## What it deliberately does NOT do
+
+`unresolved` names seven gaps as strings rather than leaving them absent, so the next person finds
+a declared gap instead of discovering an empty field: `medications`, `medicationChanges`,
+`adverseEffects`, `vitals`, `labs`, `screenersCompleted`, `diagnoses`.
+
+**`pfState` is still discarded, and that is the biggest remaining gap.** The table above calls it
+the richest structured clinical state in the app: the clinician's CONFIRMED diagnosis list,
+modality and contributing-factor selections, which live for one function call and are flattened
+into a sentence. Capturing it means changing the preflight handler, which is a behavior change,
+not a refactor. Step 1 was scoped to prove the shape is safe. `pfState` is the obvious next step.
+
+No extraction layer was added. Nothing parses the note for a med name. That is the whole point:
+the medication list has no structured source, and inventing one by regexing prose is the failure
+mode this work exists to avoid.
+
+## Why the test is the deliverable
+
+`tests/encounter-context.test.js` extracts the **actual pre-refactor `tbpCaseContext()`** from
+commit `9b6e832` with `git show`, runs it and the new pair against the same stubbed DOM, and
+asserts `{text, have}` is byte-identical: 52 hand-built branch cases (every working-note branch,
+every drafted subset, prep with and without a checklist, sources at 13,999 / 14,000 / 14,001
+characters, review-preferred, numbering that skips unused records) plus 4,000 randomized states.
+4,052/4,052.
+
+That string is the case context for Discern, prep, the ADHD framework builder and the mid-visit
+delta. A one-character change to it is a change to clinical output that no visible test catches.
+The regression is not a formality; it is the reason this refactor is safe to ship.
+
+Re-run it with `node tests/encounter-context.test.js`. It is pinned to the pre-refactor commit,
+not `HEAD`, so it keeps working after this lands.
