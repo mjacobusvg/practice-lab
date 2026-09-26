@@ -377,7 +377,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-146-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-147-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -739,7 +739,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-146-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-147-sub</span></div>
 </div>
 </div>
 
@@ -7072,7 +7072,7 @@ function clearVisit(){
   var rc=document.getElementById('record-consent'); if(rc) rc.checked=false;
   var rb=document.getElementById('record-btn'); if(rb){ rb.disabled=true; rb.innerHTML='&#9679; Start recording'; }
   try{ renderMode(); }catch(e){}
-  try{ if(window.tbpSaveDraft) window.tbpSaveDraft(); }catch(e){}   // drop the now-empty saved draft
+  try{ if(window.tbpPurgeDraft) window.tbpPurgeDraft(); }catch(e){}   // finishing the patient: drop the draft deliberately
   try{ window.scrollTo(0,0); }catch(e){}
 }
 
@@ -9753,9 +9753,18 @@ function initTherapyCoach(){
       || (d.adhd && (d.adhd.ESTABLISHED || d.adhd.GAPS || d.adhd.SNAPSHOT))
       || (d.rsn && d.rsn.a));
   }
-  function save(){ if(stopped) return; try{ var d = collect(); if(hasContent(d)) localStorage.setItem(KEY, JSON.stringify(d)); else localStorage.removeItem(KEY); }catch(e){} }
+  // AN EMPTY NOTE NEVER DELETES A SAVED ONE. This used to remove the key whenever the fields
+  // came up empty, and it is bound to beforeunload, so any path that left the note blank for a
+  // moment destroyed the draft on the way out of the page. That is exactly what turned a failed
+  // recovery into permanent loss: the restore was blanked, the clinician reloaded to try again,
+  // beforeunload fired against an empty note, and the only copy was removed. Deletion is now an
+  // explicit act (tbpPurgeDraft / tbpClearDraft), never a side effect of emptiness.
+  function save(){ if(stopped) return; try{ var d = collect(); if(hasContent(d)) localStorage.setItem(KEY, JSON.stringify(d)); }catch(e){} }
   function schedule(){ if(timer) clearTimeout(timer); timer = setTimeout(save, 700); }
-  window.tbpSaveDraft = save;   // clearVisit calls this after emptying the fields, dropping the stale draft
+  window.tbpSaveDraft = save;
+  // Finishing with a patient is the one time an empty note SHOULD drop the draft, and it says so
+  // rather than relying on save() inferring it from blank fields.
+  window.tbpPurgeDraft = function(){ try{ localStorage.removeItem(KEY); }catch(e){} };
   window.tbpClearDraft = function(){ stopped = true; try{ localStorage.removeItem(KEY); }catch(e){} };
   // In-flight transcription handle (per Desk tab), so a reload mid-transcription can resume the job
   // instead of losing the visit. 30-min TTL: an Azure batch job older than that is stale/gone.
