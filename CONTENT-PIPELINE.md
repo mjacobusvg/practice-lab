@@ -54,18 +54,25 @@ practice section and the exercise. Post 2 is purely clinical application.
 
 ### What post 1 actually is, mechanically
 
-Not a new theory of mindfulness. A **sequence of recognition aids**, each carrying one component,
-ordered so each one is available before the next needs it. This is the thing to protect in any
-edit: cutting a device silently removes the component it teaches, and the later material assumes it.
+Not a new theory of mindfulness. A **sequence of recognition aids**, ordered so what each one makes
+available is in hand before the next needs it.
 
-| device | what it makes recognizable |
-|---|---|
-| the attention exercise (cold open) | attention as separable from gaze, and the drift |
-| the slight, and who it is against | identification versus interpretation |
-| Inception | that awareness has layers |
-| lucid dreaming | the phenomenology of being inside a state and seeing it at once |
-| slipping in and out | the instability; that this is not an elevated state you arrive at |
-| the clinical examples | the choice point, before the behaviour |
+**The editorial rule: each recognition aid has a primary teaching job, although several carry more
+than one part of the model. Preserve the job each device is doing before cutting or moving it.**
+
+This is a DESCRIPTION of what the devices are doing, not a one-to-one assignment. Do not enforce it
+as one. The overlap is the point: it is why the post reads as continuous rather than as six lessons,
+and a device pulled because something else "already covers" its primary job takes its secondary work
+with it, silently.
+
+| device | primary job | also carries |
+|---|---|---|
+| the attention exercise (cold open) | attention can be intentionally directed | the beginning of meta-awareness, in noticing the drift |
+| the slight, and who it is against | identification versus interpretation | self-referential appraisal, and the urge to react |
+| Inception | the layering | |
+| lucid dreaming | the phenomenology of being inside a state and seeing it at once | the felt shift in control and agency, and the fragility of that state |
+| slipping in and out | the instability; that this is not an elevated state you arrive at | |
+| the clinical examples | the choice point, before the behaviour | |
 
 It maps closely onto existing decentering work, which describes roughly meta-awareness,
 disidentification from internal experience, and reduced reactivity to thought content. Treat that
@@ -235,6 +242,10 @@ Learned the hard way on the 14 Sept post; they apply to every post in this serie
 - **Lists must be one category.** Do not mix an intervention, a state, a behaviour and a circumstance
   in the same list.
 - **No absolutes we would have to defend.** No em-dashes (house style).
+- **Do not formalize prematurely, including in this file.** A description of what the writing is
+  doing is not a rule about what it must do. When a structure gets written down here, say which it
+  is, because the next session will enforce whatever looks enforceable. See the editorial rule in
+  §1 for the shape that survived this mistake once.
 - **Never claim novelty against the mindfulness literature.** Not in a post, not in a commit message,
   not in chat. Michael's contribution is a teaching sequence, not a new construct, and every
   component already has a home in the literature. See the third overreach in §1b.
