@@ -296,9 +296,119 @@ key, and source-level assertions that the page actually wires all of this up.
 
 ## Next, in order
 
-1. **Medication confirmation** writes structured meds into `tbpEncounterState.medications`.
-2. **Interaction Interpreter** reads them through `getEncounterContext()` and writes its result to
-   `tbpEncounterState.results.interactions`.
-3. **Discern** reads meds, grounded evidence, and a prior interaction result when relevant.
+See "Step 3" below for the result contract, then the build order at the end of this document.
 
-None of those needs another storage decision. That was the point of doing this first.
+
+---
+
+# Step 3 as built (26 Sept 2026): the result contract
+
+Established **before** any capability writes, because it is far easier to bake into the contract
+than to retrofit once five capabilities depend on it.
+
+## The bug it prevents
+
+```
+1. meds are Adderall XR 20 mg + fluoxetine 40 mg
+2. the Interaction Interpreter runs and writes its findings
+3. fluoxetine is stopped
+4. the old findings are still sitting in encounter state
+5. Assessment/Plan reads them as describing the current regimen
+```
+
+Nothing errors. The note is wrong. `results` therefore means **"this capability was run against
+these inputs at this point in the encounter"**, never "this is true about the patient".
+
+## Shape
+
+```js
+tbpRecordResult('interactions', {
+  inputs: { medications: [...] },        // what it was computed FROM; drives staleness
+  data:   [ ...findings... ],            // what it established
+  meta:   { evidenceVersion: 'spl-2026-03' }   // provenance; does NOT affect staleness
+});
+// stored as: { id, capability, inputs, inputCanon, fingerprint, data, meta,
+//              createdAt, reviewed, reviewedAt }
+```
+
+## Staleness is evaluated on READ, not by the consumer
+
+`getEncounterContext()` stamps `status` on every result it hands out:
+
+| status | meaning |
+|---|---|
+| `current` | the declared inputs are unchanged since the capability ran |
+| `stale` | they changed; rerun it, or do not rely on it |
+| `unknown` | it cannot be verified, so it must **not** be treated as current |
+
+This is deliberate. If checking were the consumer's job, the failure mode is a consumer that
+forgets, and that failure is silent and clinical. **Forgetting must not be possible.**
+
+`unknown` is the fail-closed default: no declared inputs, an empty inputs object, an input name
+this build cannot resolve, or a missing canon all read `unknown` rather than `current`.
+
+## Design decisions worth keeping straight
+
+**A medication set is a set.** Canonicalization sorts arrays and object keys and normalizes case
+and whitespace, so reordering the same two drugs, or `ADDERALL  XR` vs `Adderall XR`, is not a
+regimen change and does not force a spurious rerun.
+
+**Ambiguity errs toward stale.** `20mg` and `20 mg` compare as different. Rerunning is cheap; a
+wrong `current` is not.
+
+**Comparison is on the canonical string, never the hash.** `fingerprint` is an 8-hex display tag
+for provenance. A hash collision deciding staleness would show a stale result as current, so a
+test asserts `tbpResultStatus()` does not reference the fingerprint at all.
+
+**The canon is stored, not recomputed.** If the canonicalizer changes in a later deploy, an old
+record reads `stale`, not silently `current`.
+
+**Only declared inputs invalidate.** A result declaring `{medications}` is unaffected by a
+diagnosis change; one declaring `{medications, diagnoses}` is invalidated by either.
+
+**Superseding keeps history.** Rerunning appends. The old record stays, visibly stale, so
+"what did I check, against what, and when" is answerable.
+
+**Reviewing does not launder staleness.** A clinician signing off on a finding does not make it
+true of a regimen that changed afterwards. `reviewed: true` and `status: 'stale'` coexist.
+
+**Snapshots cannot write back**, including the status stamp itself: a consumer cannot overwrite
+its own staleness verdict.
+
+`tests/result-contract.test.js`, 23 checks, including the exact five-step scenario above.
+
+---
+
+# Build order from here
+
+1. **Medication confirmation** -> `tbpEncounterState.medications`. Lightweight: detect candidate
+   meds from the authoritative encounter material, show a compact confirm/edit list, and make the
+   confirmed list authoritative. **Not** a full reconciliation chore on every encounter. Force
+   clarification only where it matters: formulation unclear, dose missing *and* the question
+   depends on dose, current vs historical ambiguous, two sources conflict, or the clinician is
+   about to run a medication-specific capability.
+2. **Ground Discern.** Reads `getEncounterContext().medications`, pulls the relevant DailyMed/
+   RxNorm sections through the evidence service in `netlify/functions/_lib/rx-evidence.js`,
+   receives them as a separately labeled block, and applies the anti-collapse rules. **This closes
+   the original defect** and is the reason for the whole detour, so it comes before any further
+   integration.
+3. **Interaction Interpreter as the second consumer.** Reads the same structured medication state
+   instead of asking for re-entry, and writes back through `tbpRecordResult()` with the medication
+   set as its declared input. Second consumer is what proves this is shared architecture rather
+   than a medication pipeline built specially for Discern.
+
+**Not yet:** Monitoring, Letters, Chart Audit, Coder. Prove it with two consumers first.
+
+## Acceptance test for step 2
+
+Ask Discern: *"What is the maximum Adderall dose I can go to, and is that combination
+contraindicated?"* against Adderall XR 20 mg + fluoxetine 40 mg. Inspectable:
+
+- **Medication state** — Adderall XR 20 mg + fluoxetine 40 mg
+- **Evidence retrieved** — the exact SPL sections
+- **Source and version** — visible in provenance
+- **The answer** — keeps adult recommended dose, pediatric maximum and adult studied doses
+  distinct, and distinguishes an interaction from a contraindication
+
+Getting it right *because we can see exactly what facts it reasoned from* is the bar. Getting it
+right by luck is not a fix.

@@ -148,9 +148,23 @@ test('a FRESH getEncounterContext() carries the confirmed state', () => {
 
 test('results is reachable through a fresh snapshot after a capability writes it', () => {
   const ctx = makeEnv();
-  run(ctx, "tbpEncounterState.results.interactions.push({pair:'fluoxetine+tramadol', severity:'major'});");
-  deepEq(run(ctx, 'getEncounterContext().results.interactions'),
-    [{ pair: 'fluoxetine+tramadol', severity: 'major' }]);
+  run(ctx, "tbpEncounterState.medications.current = ['fluoxetine 40 mg', 'tramadol 50 mg'];");
+  run(ctx, `tbpRecordResult('interactions', {
+    inputs: { medications: tbpEncounterState.medications.current },
+    data: [{ pair: 'fluoxetine+tramadol', severity: 'major' }] });`);
+  const list = run(ctx, 'getEncounterContext().results.interactions');
+  assert.strictEqual(list.length, 1);
+  deepEq(list[0].data, [{ pair: 'fluoxetine+tramadol', severity: 'major' }]);
+  assert.strictEqual(list[0].status, 'current');
+});
+
+test('a bare value pushed into results is never reported as current', () => {
+  const ctx = makeEnv();
+  run(ctx, "tbpEncounterState.results.interactions.push({pair:'a+b'}); tbpEncounterState.results.discern.push('just a string');");
+  const r = run(ctx, 'getEncounterContext().results');
+  assert.strictEqual(r.interactions[0].status, 'unknown', 'no declared inputs means unverifiable');
+  assert.strictEqual(r.discern[0].status, 'unknown');
+  assert.strictEqual(r.discern[0].malformed, true);
 });
 
 // ---- 3. a snapshot cannot write back ------------------------------------------------------------
@@ -215,10 +229,12 @@ test('confirmed preflight survives a reload', () => {
 test('capability results survive a reload', () => {
   const ctx = makeEnv();
   run(ctx, "document.getElementById('raw').value = 'note';");
-  run(ctx, "tbpEncounterState.results.interactions.push({pair:'A+B'}); tbpEncounterState.results.discern.push({q:'x',a:'y'});");
+  run(ctx, "tbpRecordResult('interactions', {inputs:{medications:[]}, data:{pair:'A+B'}}); tbpRecordResult('discern', {inputs:{medications:[]}, data:{q:'x',a:'y'}});");
   const fresh = saveThenReload(ctx);
-  deepEq(run(fresh, 'tbpEncounterState.results.interactions'), [{ pair: 'A+B' }]);
-  deepEq(run(fresh, 'tbpEncounterState.results.discern'), [{ q: 'x', a: 'y' }]);
+  deepEq(run(fresh, 'tbpEncounterState.results.interactions[0].data'), { pair: 'A+B' });
+  deepEq(run(fresh, 'tbpEncounterState.results.discern[0].data'), { q: 'x', a: 'y' });
+  assert.strictEqual(run(fresh, "tbpLatestResult('interactions').status"), 'current',
+    'a result whose inputs are unchanged must still read current after a reload');
 });
 
 test('a result key added by a future capability is not dropped on reload', () => {
@@ -307,8 +323,8 @@ test('getEncounterContext is a reader, not the store', () => {
   const reader = body.slice(0, fnEnd);
   assert.ok(!/tbpEncounterState\s*(\.\w+)*\s*=[^=]/.test(reader),
     'getEncounterContext() must never assign into the store');
-  assert.ok(/tbpEncClone\(tbpEncounterState\.results\)/.test(reader),
-    'results must be handed out as a copy');
+  assert.ok(/results:\s*tbpResultsView\(\)/.test(reader),
+    'results must be handed out through the staleness-stamping view');
 });
 
 console.log(`\n${checks - failures}/${checks} passed`);

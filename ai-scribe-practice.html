@@ -377,7 +377,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-149-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-150-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -739,7 +739,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-149-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-150-sub</span></div>
 </div>
 </div>
 
@@ -4169,8 +4169,9 @@ function TBP_ENCOUNTER_BLANK(){
     medications: { current: [], changes: [] },
     // No writer yet. A scale can be inserted into the note; a SCORED scale is not captured.
     screeners: [],
-    // The return leg. A capability writes what it established so the next one does not re-derive
-    // it. Unknown keys survive a save/restore, so a new capability does not need a schema change.
+    // The return leg: arrays of RESULT RECORDS, written through tbpRecordResult(). Not raw
+    // answers -- see the result contract below for why a bare answer here is a clinical hazard.
+    // Unknown keys survive a save/restore, so a new capability needs no schema change.
     results: { interactions: [], monitoring: [], discern: [] }
   };
 }
@@ -4269,6 +4270,173 @@ function tbpRecordPreflight(questions, answers, parsed){
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════
+// RESULT CONTRACT — a capability result is a record of what was established AT A POINT, against
+// PARTICULAR INPUTS. It is never a standing fact about the patient.
+//
+// The bug this prevents, which would otherwise be invisible and clinical:
+//
+//   1. meds are Adderall XR 20 mg + fluoxetine 40 mg
+//   2. the Interaction Interpreter runs and writes its findings
+//   3. fluoxetine is stopped
+//   4. the old findings are still sitting in encounter state
+//   5. Assessment/Plan reads them as describing the current regimen
+//
+// Nothing errors. The note is wrong. So every record carries the INPUTS it was computed from,
+// and staleness is evaluated on READ rather than left to each consumer to remember to check.
+// getEncounterContext() stamps a `status` on every result it hands out:
+//
+//   'current'  the inputs are unchanged since the capability ran
+//   'stale'    they changed; rerun it or do not rely on it
+//   'unknown'  it cannot be verified, so it must NOT be treated as current
+//
+// 'unknown' is the fail-closed default: a record with no declared inputs, or one naming an input
+// this build cannot resolve, is never reported as current.
+// ══════════════════════════════════════════════════════════════════════════════════════════
+
+// Case and spacing are not regimen changes, so they are normalized away. Anything else counts as
+// a change: "20mg" and "20 mg" stay different, which errs toward 'stale'. That is the safe side.
+function tbpCanonNorm(v){ return String(v).toLowerCase().replace(/\s+/g, ' ').trim(); }
+
+// A deterministic string for any input value. Object keys AND arrays are sorted: a medication set
+// is a set, so reordering the same two drugs must not read as a new regimen.
+function tbpCanonical(v){
+  if(v === null || v === undefined) return 'null';
+  var t = typeof v;
+  if(t === 'number') return isFinite(v) ? String(v) : 'null';
+  if(t === 'boolean') return v ? 'true' : 'false';
+  if(t === 'string') return JSON.stringify(tbpCanonNorm(v));
+  if(Array.isArray(v)){
+    var items = [];
+    for(var i=0;i<v.length;i++) items.push(tbpCanonical(v[i]));
+    items.sort();
+    return '[' + items.join(',') + ']';
+  }
+  if(t === 'function') return 'null';
+  var keys = Object.keys(v).sort(), parts = [];
+  for(var k=0;k<keys.length;k++) parts.push(JSON.stringify(keys[k]) + ':' + tbpCanonical(v[keys[k]]));
+  return '{' + parts.join(',') + '}';
+}
+
+// A short readable tag for provenance display. FNV-1a. Staleness is decided by comparing the full
+// canonical strings, NEVER this hash: a collision here would show a stale result as current.
+function tbpFingerprint(v){
+  var str = (typeof v === 'string') ? v : tbpCanonical(v);
+  var h = 0x811c9dc5;
+  for(var i=0;i<str.length;i++){
+    h ^= str.charCodeAt(i);
+    h = (h + ((h<<1) + (h<<4) + (h<<7) + (h<<8) + (h<<24))) >>> 0;
+  }
+  return ('0000000' + h.toString(16)).slice(-8);
+}
+
+// The only input names a result may declare. An unrecognised name makes the record unverifiable,
+// which makes it 'unknown' rather than silently 'current'.
+var TBP_RESULT_INPUTS = {
+  medications: function(){ return tbpEncounterState.medications.current; },
+  medicationChanges: function(){ return tbpEncounterState.medications.changes; },
+  diagnoses: function(){ return tbpEncounterState.preflight.diagnoses; },
+  screeners: function(){ return tbpEncounterState.screeners; }
+};
+
+// Rebuild the CURRENT value of each named input. Returns null if any name is unresolvable.
+function tbpCurrentInputs(names){
+  var out = {};
+  for(var i=0;i<names.length;i++){
+    var n = names[i];
+    if(!Object.prototype.hasOwnProperty.call(TBP_RESULT_INPUTS, n)) return null;
+    out[n] = TBP_RESULT_INPUTS[n]();
+  }
+  return out;
+}
+
+// Write a capability result. `inputs` is the actual input VALUES the capability used, keyed by a
+// name from TBP_RESULT_INPUTS. Free-form context the capability wants on the record (the question
+// asked, the evidence version it retrieved) goes in `meta`, which does NOT affect staleness.
+function tbpRecordResult(capability, opts){
+  opts = opts || {};
+  var inputs = (opts.inputs && typeof opts.inputs === 'object' && !Array.isArray(opts.inputs)) ? opts.inputs : null;
+  var rec = {
+    id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+    capability: String(capability || ''),
+    inputs: inputs ? tbpEncClone(inputs) : null,
+    // The canonical form is STORED, not recomputed at read time, so a later change to the
+    // canonicalizer cannot silently reclassify an old record as current.
+    inputCanon: inputs ? tbpCanonical(inputs) : null,
+    fingerprint: inputs ? tbpFingerprint(inputs) : null,
+    data: (opts.data === undefined) ? null : tbpEncClone(opts.data),
+    meta: opts.meta ? tbpEncClone(opts.meta) : {},
+    createdAt: Date.now(),
+    reviewed: !!opts.reviewed,
+    reviewedAt: opts.reviewed ? Date.now() : null
+  };
+  if(!tbpEncounterState.results || typeof tbpEncounterState.results !== 'object') tbpEncounterState.results = {};
+  if(!Array.isArray(tbpEncounterState.results[rec.capability])) tbpEncounterState.results[rec.capability] = [];
+  tbpEncounterState.results[rec.capability].push(rec);
+  try { if(window.tbpSaveDraft) window.tbpSaveDraft(); } catch(e){}
+  return rec;
+}
+
+// Is this record still about the current encounter state?
+function tbpResultStatus(rec){
+  if(!rec || typeof rec !== 'object') return 'unknown';
+  if(!rec.inputs || typeof rec.inputs !== 'object' || typeof rec.inputCanon !== 'string') return 'unknown';
+  var names = Object.keys(rec.inputs);
+  if(!names.length) return 'unknown';
+  var now = tbpCurrentInputs(names);
+  if(!now) return 'unknown';                      // an input this build cannot resolve
+  return (tbpCanonical(now) === rec.inputCanon) ? 'current' : 'stale';
+}
+
+// The newest result for a capability, with its status. Consumers wanting "the interaction check
+// for this regimen" should require status === 'current'; a 'stale' or 'unknown' record is a
+// reason to rerun, not a fact to quote.
+function tbpLatestResult(capability){
+  try {
+    var list = tbpEncounterState.results[capability];
+    if(!Array.isArray(list) || !list.length) return null;
+    var rec = list[list.length - 1];
+    return { record: tbpEncClone(rec), status: tbpResultStatus(rec) };
+  } catch(e){ return null; }
+}
+
+function tbpMarkResultReviewed(capability, id){
+  try {
+    var list = tbpEncounterState.results[capability];
+    if(!Array.isArray(list)) return null;
+    for(var i=0;i<list.length;i++){
+      if(list[i].id === id){
+        list[i].reviewed = true; list[i].reviewedAt = Date.now();
+        try { if(window.tbpSaveDraft) window.tbpSaveDraft(); } catch(e){}
+        return list[i];
+      }
+    }
+  } catch(e){}
+  return null;
+}
+
+// A deep copy of results with `status` stamped on every record. Anything that is not a proper
+// record (a bare value pushed in by hand, or by a build that predates this contract) is wrapped
+// and marked 'unknown', so it can still be seen but can never be mistaken for a verified answer.
+function tbpResultsView(){
+  var out = {};
+  var src = tbpEncounterState.results || {};
+  for(var k in src){
+    if(!Object.prototype.hasOwnProperty.call(src, k)) continue;
+    var list = src[k];
+    if(!Array.isArray(list)){ out[k] = tbpEncClone(list); continue; }
+    out[k] = list.map(function(rec){
+      if(!rec || typeof rec !== 'object' || Array.isArray(rec)){
+        return { capability: k, data: tbpEncClone(rec), inputs: null, status: 'unknown', malformed: true };
+      }
+      var copy = tbpEncClone(rec);
+      copy.status = tbpResultStatus(rec);
+      return copy;
+    });
+  }
+  return out;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════
 // ENCOUNTER CONTEXT — the canonical structured record of what this session knows.
 //
 // Every capability used to rediscover the same facts: Discern re-read the note, the Interaction
@@ -4322,9 +4490,13 @@ function getEncounterContext(){
     preflight:   tbpEncClone(tbpEncounterState.preflight),
     medications: tbpEncClone(tbpEncounterState.medications),
     screeners:   tbpEncClone(tbpEncounterState.screeners),
-    // The return leg. Writes go to tbpEncounterState.results, NOT here: this is a copy, and
-    // anything written to it disappears with the next snapshot.
-    results:     tbpEncClone(tbpEncounterState.results),
+    // The return leg. Writes go through tbpRecordResult(), NOT here: this is a copy, and anything
+    // written to it disappears with the next snapshot.
+    //
+    // Every record is stamped with `status` HERE rather than left to each consumer to check,
+    // because the failure mode is a consumer that forgets and quotes a result computed against a
+    // regimen the patient is no longer on. Forgetting must not be possible.
+    results:     tbpResultsView(),
 
     // NOT RESOLVED. These now have a home in tbpEncounterState, but nothing writes to them, and
     // inventing a writer by parsing the note is the extraction layer this work exists to avoid.
