@@ -7,19 +7,24 @@ application state, not by re-parsing prose. So every field below names the varia
 populates it, and the fields with no such variable are called out rather than quietly filled by
 an extractor.
 
-## The headline: one field has no source, and it is the medication list
+## The headline: the medication list has no source
 
-Everything else in the minimal schema already exists as real state somewhere. **Current
-medications, with dose and formulation, exist only as free text the clinician typed.** There is
-no med-list widget anywhere in the Scribe. That is the single honest gap, and pretending
-otherwise is how an extraction layer sneaks back in.
+> **Stale as written, kept for the record.** The original analysis called the medication list the
+> single gap. Working through it turned up six more structured fields with no source, listed under
+> "Fields with NO structured source" below and now declared in `ctx.unresolved`. The medication
+> list is still the most consequential of them, and still the one an extraction layer would sneak
+> back in through, but it is not the only one.
+
+Most of the minimal schema already exists as real state somewhere. **Current medications, with
+dose and formulation, exist only as free text the clinician typed.** There is no med-list widget
+anywhere in the Scribe. Pretending otherwise is how an extraction layer sneaks back in.
 
 ## Fields that map cleanly to existing state
 
 | Field | Source | Shape today |
 |---|---|---|
 | `visitType` | `visitType` global | `'new_eval'` / `'follow_up'`. Already clean. |
-| `diagnoses` | **`pfState`** at the `clin_dx` preflight question (`:6753`) | **Clinician-CONFIRMED selections.** Real structured data that currently lives for one function call and is flattened into a prose string. |
+| `diagnoses` | **`pfState`** at the `clin_dx` preflight question | **Clinician-CONFIRMED selections.** ~~Lives for one function call and is flattened into a prose string.~~ **Step 2 (below): captured into `tbpEncounterState.preflight.diagnoses` at Generate.** |
 | `psychotherapy` | `pfState` modality + `timeChoice` + `code` | Clinician-selected. Same flattening. |
 | `clinicalDecisions` | `pfState` `clin_*` answers | Clinician-selected. Same flattening. |
 | `note.sections` | `wnSections` | Already an object: `{note, checklist, guide, interview, transcript, coach, screeners}`. |
@@ -209,3 +214,91 @@ The regression is not a formality; it is the reason this refactor is safe to shi
 
 Re-run it with `node tests/encounter-context.test.js`. It is pinned to the pre-refactor commit,
 not `HEAD`, so it keeps working after this lands.
+
+
+---
+
+# Step 2 as built (26 Sept 2026): the backing store
+
+Step 1 left a defect rather than a gap. `getEncounterContext()` builds a fresh object every call,
+so the `results: {}` it returned could not be the "remember" channel it was documented as: a
+capability writing an interaction result into a snapshot would lose it on the next call, silently
+and with no error. Shipping the medication card on top of that would have built the next feature
+on a channel that drops writes.
+
+## The split
+
+```
+existing app state (#raw, wnSections, tbpSources, prepSnapshot, adhdFw, ...)
+         +
+tbpEncounterState            <- the mutable store: things with no other home
+         |
+         v
+getEncounterContext()        <- a READER. assembles, never stores.
+         |
+         v
+canonical snapshot (deep copy)
+```
+
+`getEncounterContext()` stays an assembler. A test asserts it never assigns into the store.
+
+## What lives in the store, and what deliberately does not
+
+```js
+tbpEncounterState = {
+  preflight:   { confirmedAt, diagnoses: [], clinicalDecisions: [], psychotherapy: {} },
+  medications: { current: [], changes: [] },     // home exists, no writer yet
+  screeners:   [],                               // home exists, no writer yet
+  results:     { interactions: [], monitoring: [], discern: [] }
+}
+```
+
+**Only things with nowhere else to live.** The working note stays in `#raw` / `wnSections`, the
+framework stays in `adhdFw`, prep stays in `prepSnapshot` / `prepChecklist`. Copying those in
+would create two sources of truth for one fact, which is worse than having none.
+
+## `pfState` is captured, and it is the first user of the pattern
+
+`tbpRecordPreflight()` runs from the preflight **Generate** handler, which is the moment the
+clinician confirms, and runs **before** `generateNote()` so a failed generation does not discard a
+confirmation that really happened. It writes the confirmed diagnosis list, each `clin_*` decision
+with its selections, and modality/code/time.
+
+The prompt-facing `clinicalDecisions` array that drives the note is **untouched**. The capture is a
+parallel read of the same clicks, not a rewrite of how the note is generated, which is why the
+prose regression still passes byte-for-byte.
+
+## Reload recovery
+
+The store is part of the crash-recovery draft: `collect()` writes `enc`, `hasContent()` counts it
+(so confirming preflight before typing keeps a draft on its own, as a framework already did),
+`tbpRestoreDraft()` rebuilds it, and `clearVisit()` plus "Delete recovered draft" reset it.
+
+`tbpEncounterRestore()` shape-checks instead of trusting: a restore feeds whatever is in
+localStorage directly into clinical state, and a truncated or hand-edited key must not leave a
+consumer calling `.length` on a string. Unknown keys under `results` are preserved, so a
+capability added after a draft was saved does not silently lose its output on reload.
+
+## Tests
+
+`tests/encounter-state.test.js`, 20 checks. The save/reload tests run the **real crash-recovery
+IIFE extracted from the page**, not a reimplementation: `window.tbpSaveDraft()` into a stub
+localStorage, then a fresh environment seeded with it running `window.tbpRestoreDraft()`, which is
+what a refresh does. A reimplementation would pass while the shipped path stayed broken.
+
+They cover the four properties that matter: a confirmation survives the function that made it; a
+**fresh** snapshot still carries it; it survives save and reload; and mutating a snapshot cannot
+write back into the store (pushing, overwriting and splicing at every level, including nested
+`clinicalDecisions[0].selections`). Plus corrupt-blob restores, a pre-feature draft with no `enc`
+key, and source-level assertions that the page actually wires all of this up.
+
+`tests/encounter-context.test.js` still passes 4,052/4,052: no clinical prose changed.
+
+## Next, in order
+
+1. **Medication confirmation** writes structured meds into `tbpEncounterState.medications`.
+2. **Interaction Interpreter** reads them through `getEncounterContext()` and writes its result to
+   `tbpEncounterState.results.interactions`.
+3. **Discern** reads meds, grounded evidence, and a prior interaction result when relevant.
+
+None of those needs another storage decision. That was the point of doing this first.

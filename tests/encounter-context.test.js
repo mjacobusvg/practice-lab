@@ -35,7 +35,8 @@ const oldHtml = execSync(`git show ${BASE}:${HTML}`, { encoding: 'utf8', maxBuff
 const newHtml = require('fs').readFileSync(HTML, 'utf8');
 
 const oldFn = slice(oldHtml, 'function tbpCaseContext(){', '\nfunction tbpRsnUpdateCtx(');
-const newFns = slice(newHtml, 'function getEncounterContext(){', '\nfunction tbpRsnUpdateCtx(');
+// Starts at the encounter-state store, because getEncounterContext() now reads from it.
+const newFns = slice(newHtml, 'function TBP_ENCOUNTER_BLANK(){', '\nfunction tbpRsnUpdateCtx(');
 
 assert.ok(/function tbpCaseContext\(\)\{ return renderCaseContext/.test(newFns),
   'new source must still define the tbpCaseContext wrapper');
@@ -66,6 +67,7 @@ function makeSandbox(state) {
   const sections = (state.sections || []).map((v) => ({ value: v }));
 
   const sandbox = {
+    window: { addEventListener() {} },
     document: {
       getElementById: (id) => els[id] || null,
       querySelectorAll: (sel) => {
@@ -262,12 +264,14 @@ structural('mutating the context does not mutate app state', () => {
 
 structural('unresolved fields are declared, not silently absent', () => {
   const u = runNew({}).ctx.unresolved;
-  ['medications', 'medicationChanges', 'adverseEffects', 'vitals', 'labs', 'screenersCompleted', 'diagnoses']
+  ['medications', 'medicationChanges', 'adverseEffects', 'vitals', 'labs', 'screenersCompleted']
     .forEach((k) => assert.ok(typeof u[k] === 'string' && u[k].length, 'missing unresolved.' + k));
+  // diagnoses moved out of unresolved: the preflight capture now writes them.
+  assert.ok(!('diagnoses' in u), 'diagnoses is resolved now and must not be listed as a gap');
 });
 
-structural('results is an empty return channel', () => {
-  deepEq(runNew({}).ctx.results, {});
+structural('results is the declared return channel, empty on a fresh encounter', () => {
+  deepEq(runNew({}).ctx.results, { interactions: [], monitoring: [], discern: [] });
 });
 
 structural('missing globals do not throw', () => {

@@ -12,9 +12,16 @@ checks prove the prose is byte-identical to the pre-refactor version. The remain
 is that `pfState` is still discarded and no capability writes to `ctx.results` yet. Row 0 below is
 updated; every other row still stands.
 
+**UPDATE 2, same day (ambient-149-sub):** that remaining gap is closed. `ctx.results` was not
+actually a "remember" channel, because `getEncounterContext()` builds a fresh object every call and
+a write into a snapshot vanished on the next one. `tbpEncounterState` is now the durable backing
+store, `getEncounterContext()` reads from it and returns a deep copy, `pfState` is captured into it
+at preflight Generate, and it participates in crash recovery. Item 0 is **done**. What remains is
+writers (the medication card) and readers (the capability handoffs in rows 1-4), not foundation.
+
 | # | Item | State | Evidence |
 |---|---|---|---|
-| **0** | **Encounter-context foundation** | **Structure done; consumers and `pfState` outstanding** | `getEncounterContext()` (`ai-scribe-practice.html:4156`) returns a structured object; `renderCaseContext()` renders the prose view; `tbpCaseContext()` wraps the two and is byte-identical (`tests/encounter-context.test.js`, 4,052 checks). Still open: `pfState` (confirmed diagnoses, modality, contributing factors) is discarded at the preflight handler, the medication list has no structured source, and no capability writes back to `ctx.results`. |
+| **0** | **Encounter-context foundation** | **DONE** | `getEncounterContext()` (`ai-scribe-practice.html:4156`) returns a structured object; `renderCaseContext()` renders the prose view; `tbpCaseContext()` wraps the two and is byte-identical (`tests/encounter-context.test.js`, 4,052 checks). `tbpEncounterState` is the durable store for state with no other home, `pfState` is captured at preflight Generate, and the whole thing survives reload (`tests/encounter-state.test.js`, 20 checks against the real save/restore path). Remaining work is writers and readers, not foundation: no med-list widget exists, and no capability writes to `results` yet. |
 | 1 | Scribe -> Chart Audit + Coder | **0%** | A `<option>` in the Clinical tools dropdown. `window.open(url,'_blank')`. No context passes. |
 | 2 | Scribe -> Monitoring Protocol | **0%** | Same dropdown, same new tab, retype everything. |
 | 3 | Scribe -> Interaction Interpreter | **0%** | Same. The 190-drug engine is one click and a full re-entry away. |

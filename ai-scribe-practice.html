@@ -377,7 +377,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-148-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-149-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -739,7 +739,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-148-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-149-sub</span></div>
 </div>
 </div>
 
@@ -4136,6 +4136,139 @@ function reasonSystem(){
 
 // Everything the session legitimately holds. Assembled fresh each time; never stored.
 // ══════════════════════════════════════════════════════════════════════════════════════════
+// ENCOUNTER STATE — the durable home for structured clinical information that has no other
+// authoritative home in the app.
+//
+// getEncounterContext() is a READER. It assembles a snapshot and returns it. It is not a store,
+// so anything a capability writes into a returned snapshot is gone the moment the next snapshot
+// is built. That makes a snapshot the wrong place for the clinician's confirmed diagnosis list
+// or an interaction check's result: those have to outlive the call that produced them.
+//
+//     existing app state (#raw, wnSections, tbpSources, prepSnapshot, adhdFw, ...)
+//              +
+//     tbpEncounterState   <- everything with no other home
+//              |
+//              v
+//     getEncounterContext()  ->  canonical snapshot (a deep copy; mutating it changes nothing)
+//
+// Only things that genuinely have nowhere else to live belong here. The working note lives in
+// #raw and wnSections; the framework lives in adhdFw. Duplicating those into this object would
+// create two sources of truth for the same fact, which is worse than having none.
+//
+// It participates in the crash-recovery draft, because structured state that disappears on
+// refresh while the prose note survives is the same persistence bug in a new place.
+// ══════════════════════════════════════════════════════════════════════════════════════════
+
+function TBP_ENCOUNTER_BLANK(){
+  return {
+    // What the clinician CONFIRMED in the preflight cards. Written at Generate, which is the
+    // moment of confirmation, not while they are still clicking around the options.
+    preflight: { confirmedAt: null, diagnoses: [], clinicalDecisions: [], psychotherapy: {} },
+    // No writer yet: there is no medication-list widget anywhere in the Scribe. The home exists
+    // so the med-confirmation work has somewhere to land instead of inventing its own storage.
+    medications: { current: [], changes: [] },
+    // No writer yet. A scale can be inserted into the note; a SCORED scale is not captured.
+    screeners: [],
+    // The return leg. A capability writes what it established so the next one does not re-derive
+    // it. Unknown keys survive a save/restore, so a new capability does not need a schema change.
+    results: { interactions: [], monitoring: [], discern: [] }
+  };
+}
+var tbpEncounterState = TBP_ENCOUNTER_BLANK();
+
+// Deep copy. The snapshot getEncounterContext() hands out must not alias the store: a consumer
+// that does ctx.preflight.diagnoses.push(...) would otherwise be editing confirmed clinical state
+// through a variable it believes is a read-only view.
+function tbpEncClone(v){
+  if(v === null || typeof v !== 'object') return v;
+  if(Array.isArray(v)){ var a = []; for(var i=0;i<v.length;i++) a.push(tbpEncClone(v[i])); return a; }
+  var o = {};
+  for(var k in v){ if(Object.prototype.hasOwnProperty.call(v, k)) o[k] = tbpEncClone(v[k]); }
+  return o;
+}
+
+function tbpEncounterReset(){ tbpEncounterState = TBP_ENCOUNTER_BLANK(); return tbpEncounterState; }
+
+// Rebuild the store from a saved draft. Shape-checked rather than trusted: a restore feeds
+// whatever is in localStorage straight into clinical state, and a half-written or hand-edited
+// key must not leave a consumer calling .length on a string.
+function tbpEncounterRestore(saved){
+  if(!saved || typeof saved !== 'object' || Array.isArray(saved)) return tbpEncounterReset();
+  var arr = function(v){ return Array.isArray(v) ? tbpEncClone(v) : []; };
+  var obj = function(v){ return (v && typeof v === 'object' && !Array.isArray(v)) ? tbpEncClone(v) : {}; };
+  var p = obj(saved.preflight), m = obj(saved.medications), r = obj(saved.results);
+  // Unknown result keys are kept: a capability added after this draft was saved should not have
+  // its results silently dropped on reload.
+  var results = obj(saved.results);
+  ['interactions','monitoring','discern'].forEach(function(k){ results[k] = arr(r[k]); });
+  tbpEncounterState = {
+    preflight: {
+      confirmedAt: (typeof p.confirmedAt === 'number') ? p.confirmedAt : null,
+      diagnoses: arr(p.diagnoses),
+      clinicalDecisions: arr(p.clinicalDecisions),
+      psychotherapy: obj(p.psychotherapy)
+    },
+    medications: { current: arr(m.current), changes: arr(m.changes) },
+    screeners: arr(saved.screeners),
+    results: results
+  };
+  return tbpEncounterState;
+}
+
+// Does this hold anything worth persisting? Used by the draft autosave so that confirming
+// preflight on a visit is enough to keep a draft alive on its own, the same way a framework
+// built before a word is typed already is.
+function tbpEncounterHasContent(s){
+  s = s || tbpEncounterState;
+  try {
+    var p = s.preflight || {};
+    if((p.diagnoses||[]).length || (p.clinicalDecisions||[]).length) return true;
+    if(p.psychotherapy && Object.keys(p.psychotherapy).length) return true;
+    var m = s.medications || {};
+    if((m.current||[]).length || (m.changes||[]).length) return true;
+    if((s.screeners||[]).length) return true;
+    var r = s.results || {};
+    for(var k in r){ if(!Object.prototype.hasOwnProperty.call(r,k)) continue; var v = r[k];
+      if(Array.isArray(v) ? v.length : !!v) return true; }
+  } catch(e){}
+  return false;
+}
+
+// Called from the preflight Generate handler, which is the moment the clinician CONFIRMS. Until
+// now these selections were flattened into sentences for the model and thrown away: the
+// confirmed diagnosis list, the modality, the contributing factors they held together. The
+// prompt-facing clinicalDecisions array is built exactly as before and is untouched by this;
+// this is a parallel capture of the same clicks, not a rewrite of how the note is generated.
+function tbpRecordPreflight(questions, answers, parsed){
+  var picks = function(val){
+    var a = Array.isArray(val) ? val : (val ? [val] : []);
+    return a.filter(function(x){ return x && x !== '(custom)'; }).map(function(x){ return String(x); });
+  };
+  var dx = [], calls = [];
+  (questions || []).forEach(function(q, qi){
+    var id = (q && q.id) || '';
+    if(!/^clin_/.test(id)) return;
+    var chosen = picks((answers || {})[qi]);
+    if(id === 'clin_dx'){ dx = chosen; return; }
+    calls.push({ id: id, question: (q && q.text) || '', selections: chosen });
+  });
+  parsed = parsed || {};
+  tbpEncounterState.preflight = {
+    confirmedAt: Date.now(),
+    diagnoses: dx,
+    clinicalDecisions: calls,
+    psychotherapy: {
+      modality: parsed.modality || '',
+      code: parsed.code || '',
+      timeChoice: parsed.timeChoice || '',
+      none: !!parsed.noTherapy
+    }
+  };
+  try { if(window.tbpSaveDraft) window.tbpSaveDraft(); } catch(e){}
+  return tbpEncounterState.preflight;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════
 // ENCOUNTER CONTEXT — the canonical structured record of what this session knows.
 //
 // Every capability used to rediscover the same facts: Discern re-read the note, the Interaction
@@ -4184,22 +4317,26 @@ function getEncounterContext(){
     sources: [],
     framework: null,
 
-    // NOT RESOLVED. No structured source exists for these yet, and inventing one by parsing the
-    // note is the extraction layer this refactor exists to avoid. Named here so the gap is
-    // visible rather than discovered later by whoever expects them to be populated.
+    // Read from the durable store, as a DEEP COPY. A consumer holding this snapshot can push,
+    // splice and overwrite freely without touching confirmed clinical state.
+    preflight:   tbpEncClone(tbpEncounterState.preflight),
+    medications: tbpEncClone(tbpEncounterState.medications),
+    screeners:   tbpEncClone(tbpEncounterState.screeners),
+    // The return leg. Writes go to tbpEncounterState.results, NOT here: this is a copy, and
+    // anything written to it disappears with the next snapshot.
+    results:     tbpEncClone(tbpEncounterState.results),
+
+    // NOT RESOLVED. These now have a home in tbpEncounterState, but nothing writes to them, and
+    // inventing a writer by parsing the note is the extraction layer this work exists to avoid.
+    // Named here so the gap is visible rather than discovered by someone expecting a value.
     unresolved: {
-      medications: 'free text only; no med list exists in the Scribe',
-      medicationChanges: 'free text only',
-      adverseEffects: 'free text only; note that patient-reported is not an observed finding',
+      medications: 'home exists (encounter state); no writer — there is no med-list widget',
+      medicationChanges: 'home exists; no writer',
+      adverseEffects: 'free text only; patient-reported is not an observed finding',
       vitals: 'free text only',
       labs: 'free text only',
-      screenersCompleted: 'TBP_SCALES is a structured catalogue; a scored scale is not captured',
-      diagnoses: 'pfState holds the clinician-CONFIRMED list at generate time and discards it; capturing it is the next step, not this refactor'
-    },
-
-    // The return leg: what a capability established, so it is available later without retyping.
-    // Nothing writes here yet. It exists so the second consumer has somewhere to put an answer.
-    results: {}
+      screenersCompleted: 'home exists; TBP_SCALES is a catalogue, a SCORED scale is not captured'
+    }
   };
 
   try {
@@ -6854,6 +6991,9 @@ function renderPreflightCards(inp, scope, questions, planDetected){
     // Length is no longer asked in preflight; let generateNote apply the clinician's per-visit-type
     // default (or heuristic). Pass a length only if one was somehow collected.
     var _lenOpt = lengthChoice ? { lengthBlock: window.NoteEngine.buildLengthBlock(lengthChoice), lengthChoice: lengthChoice } : {};
+    // Preserve what the clinician just confirmed. This runs BEFORE generateNote so the structured
+    // selections survive even if generation then fails: the confirmation was real either way.
+    try { tbpRecordPreflight(questions, pfState, { modality: modality, code: code, timeChoice: timeChoice, noTherapy: noTherapy }); } catch(e){}
     generateNote(inp, scope, Object.assign({ clinBlock: window.NoteEngine.buildClinBlock(clinicalDecisions), modality: modality, code: code, noTherapy: noTherapy }, _lenOpt), clinicalDecisions);
   });
 }
@@ -7142,6 +7282,7 @@ function clearVisit(){
   ['raw','context','focus-note'].forEach(function(id){ var e=document.getElementById(id); if(e) e.value=''; });
   wnMode='plain'; wnSections={checklist:'',guide:'',note:''};
   prepChecklist=[]; prepFoci=[]; prepSnapshot='';   // drop the prior patient's rundown/scaffold
+  try{ tbpEncounterReset(); }catch(e){}   // and their confirmed diagnoses / structured state
   ['results','prep-results','assess-results','err-box'].forEach(function(id){ var e=document.getElementById(id); if(e) e.innerHTML=''; });
   rawBaseline='';
   var rs=document.getElementById('record-status'); if(rs) rs.textContent='';
@@ -9816,6 +9957,10 @@ function initTherapyCoach(){
       // It is derived text — the same class as the snapshot above — not the source documents,
       // which stay unstored by design and by the promise printed on the gather screen.
       adhd: (typeof adhdFw !== 'undefined' && adhdFw) ? adhdFw : null,
+      // Structured encounter state (confirmed preflight, and later meds and capability results).
+      // Without this a refresh keeps the prose note and silently drops everything the clinician
+      // confirmed, which is the G.1 persistence bug wearing a different hat.
+      enc: (function(){ try{ return tbpEncounterHasContent() ? tbpEncounterState : null; }catch(e){ return null; } })(),
       rsn: (typeof rsnLog !== 'undefined' && rsnLog.length)
         ? { q: rsnLast && rsnLast.q, a: rsnLast && rsnLast.a, log: rsnLog }
         : ((typeof rsnLast !== 'undefined' && rsnLast) ? rsnLast : null),
@@ -9828,6 +9973,8 @@ function initTherapyCoach(){
       // A framework built before a word is typed is worth keeping on its own. Without this the
       // save was a no-op and the key was actively cleared, so a reload lost it twice over.
       || (d.adhd && (d.adhd.ESTABLISHED || d.adhd.GAPS || d.adhd.SNAPSHOT))
+      // Same reasoning for confirmed structured state: it is worth a draft on its own.
+      || (function(){ try{ return !!(d.enc && tbpEncounterHasContent(d.enc)); }catch(e){ return false; } })()
       || (d.rsn && d.rsn.a));
   }
   // AN EMPTY NOTE NEVER DELETES A SAVED ONE. This used to remove the key whenever the fields
@@ -9871,6 +10018,7 @@ function initTherapyCoach(){
       // Restore the framework and its entry point. The source documents are gone — they were
       // never stored — so the panel notes that, since a reassess would otherwise silently run
       // without the originals it was built from.
+      try { tbpEncounterRestore(d.enc); } catch(e){}   // confirmed preflight etc. comes back with the note
       if(d.rsn && d.rsn.a){ try { tbpRsnRestore(d.rsn); } catch(e){} }
       if(typeof adhdFw !== 'undefined' && d.adhd){
         adhdFw = d.adhd;
@@ -9906,6 +10054,7 @@ function initTherapyCoach(){
           if(typeof wnSections !== 'undefined') wnSections = {checklist:'',guide:'',note:''};
           if(typeof wnMode !== 'undefined') wnMode = 'plain';
           if(typeof prepSnapshot !== 'undefined') prepSnapshot = '';
+          try{ tbpEncounterReset(); }catch(_){}
           try{ var fr2 = document.getElementById('focus-ref'); if(fr2) fr2.innerHTML=''; }catch(_){}
           try{ if(typeof renderMode === 'function') renderMode(); }catch(_){}
           box.innerHTML = ''; box.style.display = 'none';
