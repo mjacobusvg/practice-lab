@@ -312,18 +312,18 @@ But when the two start operating together, in real time, something shifts. The p
 
 And now there is somewhere for the two of us to intervene.
 
-That is the foundation for the rest of this series. Because once we get better at noticing what happens when anxiety shows up, the next question becomes the useful one:
+That is the foundation for the rest of this series. Because once we get better at noticing what is happening while it is happening, a more useful question opens up.
 
-What are we actually looking for?
+What is keeping this going?
 
-In anxiety, one of the most consistent answers is avoidance.
+Sometimes what becomes visible is the interpretation. A sensation that got read as danger. An ambiguous look that got read as contempt.
 
-But avoidance is not defined by what a behavior looks like. It is defined by what the behavior is doing.
+Sometimes it is where attention went, and the fact that it has not come back.
 
-Sometimes it is obvious. Not going. Leaving. Refusing.
+Very often it is what the person does in response, and the relief that follows. That is where avoidance lives, and it is one of the most useful things to find. Though it is worth saying now that avoidance is defined by what a behavior is doing rather than what it looks like, and that it is rarely the whole story.
 
-More often it looks like checking. Or reassurance. Or preparation. Or research. Or worry. Sometimes it looks like being responsible, or thorough, or careful.
+Different anxiety presentations organize these differently. The content changes. The mechanics change.
 
-So next we give this awareness a target.
+What does not change is that somebody has to be able to see the process while it is running.
 
-Find the avoidance, find a treatment target.
+That is what the rest of this series is about.

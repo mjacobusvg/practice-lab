@@ -15,58 +15,48 @@ Last updated: 26 Sept 2026.
 
 **Subject:** what maintains anxiety-spectrum problems, and where treatment can intervene.
 
-**The thesis under the whole thing:** diagnosis tells you what to call it; formulation tells you
-what to do next. Find what the person is avoiding and you have often found the treatment target.
+**The thesis under the whole thing (REVISED 26 Sept, this replaces the avoidance thesis):**
 
-**Working series titles (not chosen yet):**
-- *What Keeps Anxiety Going?* — narrow, accurate, plain
-- *Beyond the Diagnosis: Finding the Mechanism* — broader, fits the TBP name, could host later arcs
-- Recommendation: the second as the series banner, the first as this arc's subtitle.
+**Mindfulness is the series-level lens. Avoidance is one maintenance process that becomes visible
+through it.** The content of anxiety changes and the mechanics change, but treatment always
+requires somebody to see the process while it is running.
+
+### Why this changed, so nobody re-derives the old version
+
+The arc was built on "all anxieties are avoidance disorders." That is a great engine and it does
+not survive contact with GAD. Worry is the clean counterexample: under the Contrast Avoidance
+model, worry may SUSTAIN negative affect to prevent a sudden emotional drop, which is not
+"do this to feel less anxious." Forcing every presentation through the avoidance funnel was going
+to require walking claims back in public.
+
+The fix is not to drop avoidance. It is to stop it carrying the whole explanatory load. Anxiety is
+maintained by several interacting processes: what gets interpreted as threat, what captures and
+holds attention, what the person believes they must know or control, what they do in response,
+what relief reinforces that, and what they never get to learn because of it. Avoidance lives
+mostly in "what they do in response", and it is the highest-yield place to look. It is not the
+mechanism of anxiety.
+
+**Also rejected, and why:** "anxiety is a lack of awareness." Anxious people are often
+hyper-aware, of the heartbeat, the expression, the intrusive thought. What is missing is not
+noticing. It is perspective and flexibility inside the noticing. Michael's mindfulness construct
+(awareness + insight + active attention + meta-awareness + enough distance to have a choice point)
+IS the thing that is missing, which is why the lens sits at the series level and the maintenance
+processes sit underneath it.
 
 ### The progression
 
-Each post sets up the next. This is the logic, in one line:
-
-> notice the pattern → name what is being avoided → see how the disorder preserves it → target the
-> maintaining behavior.
+> see the process while it is running -> ask what is keeping it going -> find the maintaining
+> process for THIS presentation -> intervene there
 
 | # | Post | The one thing it argues |
 |---|---|---|
-| 1 | **You Can't Change What You Don't Notice** | Awareness is upstream of every therapy. Before someone can respond differently, they have to notice they are responding at all. |
-| 2 | **Find the Avoidance, Find a Treatment Target** | Avoidance is defined by function, not appearance. Naming it gives clinician and patient something concrete to work on. |
-| 3 | **OCD Is More Adaptable Than We Give It Credit For** | The form changes while the reinforcement loop survives. "Better" may mean quieter, not freer. |
-| 4 | **Why ERP Works** | It targets the relief-seeking process rather than chasing each new ritual. Which is why you can "do exposure" and still be stuck. |
-| 5+ | **Applications by presentation** | Social anxiety, panic, GAD, PTSD, health anxiety. Same lens, one presentation at a time: what is avoided, what the avoidance looks like, what the target is. |
+| 1 | **You Can't Change What You Don't Notice** | Awareness, insight and active attention meeting in the present moment is what makes any of the rest visible. **Drafted.** |
+| 2 | **What Keeps Anxiety Going?** | The shared maintenance frame: interpretation, attention, what the person does in response, and the relief that teaches them to do it again. |
+| 3+ | **By presentation** | Panic, social anxiety, GAD, OCD, health anxiety, PTSD. Same lens each time: what gets read as threat, where attention locks, what they do, what gets reinforced, what they never learn, where the choice point is. |
+| later | **Find the Avoidance, Find a Treatment Target** | Still a good post. No longer the framework. Runs once avoidance has shown up enough times to deserve its own treatment. |
 
-**Why this order.** Michael's own instinct, and it is the right one: start broad. Posts 1 and 2 give
-the reader a lens. OCD then lands as the most interesting *case* of that lens rather than as the
-whole framework, because in OCD the compulsion is usually the avoidance, which only reads as
-surprising once "avoidance is functional, not visual" is already established.
-
-**The one real tension, named so it does not get lost:** the OCD material is the strongest raw
-writing Michael has produced for this arc, and the sequence puts it third. Two defensible answers.
-Either run 1 and 2 next week and OCD/ERP the week after (keeps the best material close, keeps the
-logic intact), or hold OCD until the per-disorder posts have landed. **Decided: OCD and ERP run
-immediately after 1 and 2.** The per-disorder applications follow and can run indefinitely.
-
-### Post 1 is drafted
-
-`content/post-01-you-cant-change-what-you-dont-notice.md`, 11,649 characters.
-
-**Title field:** `A Framework for Anxiety, Part 1: You Can't Change What You Don't Notice`
-
-The series name and part number live in the TITLE, never in the body. The platform already renders
-the title as the page `h1`, so a `# A Framework for Anxiety` line in the body produces a second
-heading at the same level as the section headings, a `**subtitle**` line becomes a bold paragraph,
-and `## Part 1` renders *smaller* than both as an `h3`. Verified through `toRichHtml`. The body
-opens directly on "When I was much younger" and every `#` in it is a true section.
-
-**Bold is reserved for five structural lines**, not for examples: the three lines of the triad,
-"The behavior has not happened yet," and "The goal is not to never lose awareness. The practice is
-noticing that you lost it." These render as bold paragraphs on purpose. They are emphasis, not
-headings, and must not be "fixed" into `#` lines.
-
-Body is ASCII, no em-dashes, eight `h2` sections, zero bold pseudo-headings.
+**Status of the OCD and ERP posts:** unchanged as posts, demoted as architecture. OCD is now one
+presentation among several rather than the case that proves the framework.
 
 ### Next slots
 - **Mon 28 Sept** — Post 1, *You Can't Change What You Don't Notice*
@@ -90,9 +80,16 @@ polish of them. Where a draft needs a load-bearing sentence, start here.
 **The thesis of post 2:**
 > In anxiety disorders, if you can find what is being avoided, you find a target for treatment.
 
-**The claim that generated the arc:**
+**The claim that generated the arc, now DEMOTED (26 Sept):**
 > All anxieties are avoidance disorders. Social anxiety causes us not to be social; in OCD the
 > avoidance is in the compulsion.
+
+This line did its job: it produced the series. It is not the series thesis any more, for the
+reasons in section 1. Keep it as the thing that started the thinking, do not put it in a post as
+a claim.
+
+**"Find the avoidance, find a treatment target" is still his and still good.** It is now one of
+the recurring questions the lens makes answerable, not the organising principle. Do not delete it.
 
 *Note on that last one:* it is the engine of the series, and it overstates as written. Not everything
 called anxiety sits in the DSM anxiety chapter, and avoidance is not the whole disorder. Keep the
