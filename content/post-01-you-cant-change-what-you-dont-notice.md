@@ -164,9 +164,15 @@ And in that moment, you are back.
 
 So mindfulness is not a stable elevated state you finally reach and then live in. It is not a monk sitting in perfect uninterrupted awareness. We move in and out of it all day.
 
-And it does not happen on its own. This takes active attention. You are deliberately turning toward what is happening rather than waiting to notice it by accident.
+And it does not happen on its own. This takes active attention, and attention is doing more work here than it looks.
 
-But not the kind of effort people usually expect. You cannot hold the state open by force.
+Awareness tells you that something is happening. Attention decides what you do with that. Where it goes. How wide it is. Whether it stays stuck on whatever grabbed it first.
+
+Someone can be fully aware they are anxious, and even notice themselves being anxious, while their attention is still entirely taken up by what if this is dangerous, I need to figure this out, I need to check. Aware, and still being driven.
+
+So the attentional part is noticing where attention went, and being able to widen it, or bring it back, or put it somewhere on purpose.
+
+Active, but not forceful. You cannot hold the state open by straining at it.
 
 Which gives you the actual practice, and it is almost a paradox:
 
@@ -182,17 +188,27 @@ Which brings me back to a word I used about the dream, and that I want to be car
 
 Control gets tricky in anxiety treatment.
 
-If mindfulness becomes another technique for controlling thoughts, suppressing feelings or making anxiety go away, we have quietly turned it into another safety behavior. That is not what this is.
+Not because awareness cannot change how something feels. It can. Anxiety often does come down. The body settles. A thought loses some of its urgency. Some of that is the distance itself.
 
-It does not give us control over which thoughts appear. It does not give us control over fear. It does not make uncomfortable sensations stop.
+The problem is what happens when we make that the job.
 
-What it can give us is more say in what happens next.
+If mindfulness becomes the thing we deploy to shut the thought up, push the anxiety down or get rid of a sensation, we have quietly turned it into another safety behavior. And then it only counts as having worked if you feel better, which means the person who sees the pattern clearly and still feels awful has failed at it.
 
-I may not be able to choose whether an intrusive thought shows up. I may not be able to choose whether my heart races. I may not be able to choose whether uncertainty feels awful.
+Symptom relief can be an effect. It cannot be the condition for having done it right.
 
-But if I recognize what is happening while it is happening, I have more choice about whether I check, escape, reassure myself, ask someone else, start researching, rehearse, or run the ritual that usually follows.
+So here is the distinction I care about.
 
-Agency is probably the better word. Mindfulness does not give us control over the experience. It gives us some agency inside it.
+I may notice the anxiety and feel less anxious.
+
+I may notice it and feel exactly as anxious as I did thirty seconds ago.
+
+Either way something has changed, as long as I can see what is happening while it is happening.
+
+I may not get to choose whether an intrusive thought shows up, whether my heart races, or whether uncertainty feels awful. But I have more choice about what I do next. Whether I check, escape, reassure myself, ask someone else, start researching, rehearse, or run the ritual that usually follows.
+
+So control is not entirely the wrong word. Awareness really can change the experience.
+
+Agency is the more useful one for what we are building. Mindfulness may change how I feel. More reliably, it changes my relationship to what I feel, and gives me more say in what happens next.
 
 That is where change becomes possible.
 
