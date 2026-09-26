@@ -377,7 +377,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-140-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-141-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -404,7 +404,20 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
     var scrim=document.createElement('div'); scrim.id='setup-scrim';
     form.parentNode.insertBefore(scrim, form); scrim.appendChild(form);
     scrim.classList.add('hidden');   // note is home base on load; setup opens on demand (or on load in demo)
-    window.tbpShowSetup=function(){ scrim.classList.remove('hidden'); try{ tbpUpdateSetupNudge(); }catch(e){} };
+    window.tbpShowSetup=function(){
+      scrim.classList.remove('hidden');
+      // Opening setup mid-visit used to show the PREVIOUS run's output below the button: a rundown
+      // and a "You are set up for this visit" panel describing the state before you added anything.
+      // It reads as the result of what you are about to do. Clear it; the run repaints it, and the
+      // rundown is pinned above the working note anyway, so nothing is lost.
+      try {
+        if(tbpSetupVisitUnderway()){
+          var r = document.getElementById('ep-results'); if(r) r.innerHTML = '';
+          var pr = document.getElementById('prep-results'); if(pr) pr.innerHTML = '';
+        }
+      } catch(e){}
+      try{ tbpUpdateSetupNudge(); }catch(e){}
+    };
     window.tbpHideSetup=function(){ scrim.classList.add('hidden'); _pendingRecordOpen=false; var _grh=document.getElementById('record-gate-hint'); if(_grh) _grh.style.display='none'; try{ tbpUpdateSetupNudge(); }catch(e){} };
     // A close (X) and Escape dismiss setup and return to the note, so opening "Set up this visit"
     // to peek never traps you into completing a setup action. BACKDROP CLICK DELIBERATELY DOES NOT:
@@ -574,7 +587,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
             <div id="ep-opts-label" class="hint" style="margin:10px 0 5px;font-size:.72rem;letter-spacing:.09em;text-transform:uppercase;color:var(--cream-dim)">Optional additions</div>
           <label style="display:inline-flex;align-items:center;gap:7px;cursor:pointer;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream-dim);font-size:.85rem;margin:0">
               <input type="checkbox" id="ep-adhd" style="width:auto"> Add ADHD Evaluation Framework <span style="color:var(--cream-dim)">&mdash; if ADHD is part of what you are evaluating</span></label>
-            <div class="hint" style="margin:3px 0 9px 22px;line-height:1.5">In addition to the normal prep, tracks what supports ADHD, what is still unresolved, and what to clarify today, from the same records. After the visit it can tell you what today established.</div>
+            <div class="hint" id="ep-adhd-hint" style="margin:3px 0 9px 22px;line-height:1.5">In addition to the normal prep, tracks what supports ADHD, what is still unresolved, and what to clarify today, from the same records. After the visit it can tell you what today established.</div>
             <label style="display:flex;align-items:center;gap:7px;cursor:pointer;text-transform:none;font-weight:400;letter-spacing:0"><input type="checkbox" id="ep-questions" style="width:auto"> <span id="ep-q-label">Suggest general questions for today</span>
             </label>
           </div>
@@ -726,7 +739,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-140-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-141-sub</span></div>
 </div>
 </div>
 
@@ -6247,10 +6260,22 @@ function tbpSetupVisitUnderway(){
 function tbpSyncSetupAddMode(){
   var on = tbpSetupVisitUnderway();
   [['setup-visit-type', on], ['vl-startwith-k', on], ['vl-template-row', on],
-   ['setup-chartnote-link', on], ['setup-adhd-link', on]].forEach(function(pair){
+   ['setup-chartnote-link', on], ['setup-adhd-link', on],
+   ['vl-interview-row', on]].forEach(function(pair){
     var el = document.getElementById(pair[0]);
     if(el) el.style.display = pair[1] ? 'none' : '';
   });
+  // The three per-visit options are decisions made when the visit started. Offering them again
+  // while someone is handing this visit one more record is asking them to re-answer a settled
+  // question. The Framework tickbox is the one exception: hide it only once a framework EXISTS,
+  // because a clinician who started without one would otherwise have no route to add it here.
+  function row(id){ var e = document.getElementById(id); return e ? (e.closest('label') || e) : null; }
+  var q = row('ep-questions'); if(q) q.style.display = on ? 'none' : '';
+  var qh = document.getElementById('ep-q-hint'); if(qh) qh.style.display = on ? 'none' : '';
+  var ol = document.getElementById('ep-opts-label'); if(ol) ol.style.display = on ? 'none' : '';
+  var hasFw = !!(typeof adhdFw !== 'undefined' && adhdFw);
+  var fw = row('ep-adhd'); if(fw) fw.style.display = (on && hasFw) ? 'none' : '';
+  var fwh = document.getElementById('ep-adhd-hint'); if(fwh) fwh.style.display = (on && hasFw) ? 'none' : '';
   var head = document.getElementById('setup-addmode-head');
   if(head) head.style.display = on ? '' : 'none';
   var b = document.getElementById('vl-start');
