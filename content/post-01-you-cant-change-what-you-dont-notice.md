@@ -74,7 +74,15 @@ It is a little like Inception, except instead of dreams within dreams, it is awa
 
 You are aware that you are the one being aware.
 
-It is a little like stepping outside the ego. Not the Freudian one. The part of us that is so wrapped up in the thinking that it never notices the thinking is happening.
+It can feel a little like stepping outside the ego. Not the Freudian one. The part of us that runs everything through me. What this means about me, what was done to me, what I have to defend or correct or prove.
+
+Somebody says something dismissive, and before there is any space around it: that was a slight against me. I need to respond.
+
+Notice that the ego is not offering that up as a thought to consider. It is offering it as reality.
+
+Then the second layer arrives. I can see myself taking that as a slight. I can feel the urge to fire back.
+
+The slight may still sting, and the urge may still be there. But you are no longer only the one who was slighted.
 
 Put the three next to each other and the difference is easier to see.
 
