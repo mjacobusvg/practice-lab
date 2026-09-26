@@ -376,6 +376,42 @@ Exposed by implementation, which is the only reason it is here.
 `meta.medicationSource` as `note` or `confirmed`, and declares `notedMedications` rather than
 `medications` as its input so a note-grounded answer still goes stale if the note changes.
 
+### Grounding prevents invention. It does not prevent synthesis. **DECIDED 26 Sept 2026**
+
+The first failure was a fabricated maximum dose. The fix produced the opposite failure, and it
+took a live run to see it: an answer that opened with *"the label does not specify an explicit
+labeled maximum for adults"*. Technically grounded. Clinically useless.
+
+> **Wrong model (A):** the model answers medication questions from memory.
+> **Why wrong:** it invented a pediatric maximum and presented it as an adult one.
+> **Wrong model (B):** the model may only report what one retrieved document literally contains.
+> **Why wrong:** it turns a clinical decision-support tool into a document reader. "What is the
+> maximum I can go to" is a clinical question; "does this label contain a field called adult
+> maximum" is not the same question, and answering the second is a non-answer to the first. A
+> non-answer is worse than useless mid-visit, because it costs the time it took to read.
+> **Correct model:** answer the clinical question. Lead with the most useful accurate answer and
+> qualify second. The retrieved label is authoritative for what a label establishes and may not
+> be contradicted or have figures attributed to it that it does not contain. Established clinical
+> practice may supply what the label does not, **said plainly as practice rather than labeling**.
+
+Every number carries its category: FDA recommended dose, explicit labeled maximum *where one
+exists*, highest dose studied, practical ceiling in common use, pediatric versus adult,
+formulation-specific. Presenting one as another is the original defect in a new costume.
+
+Where good sources disagree on a ceiling, give the values and say which is which. Disagreement
+between sound sources is information, not an inability to answer.
+
+**A failed retrieval bars claiming the label, not answering the question.** It may not state,
+quote or imply what an unread document says. It should still answer from practice, say briefly
+what could not be verified, and not make that the headline.
+
+**Still open: the Tier 2 source.** Today "established clinical practice" means the model's own
+knowledge, labeled as such. The intended hierarchy is Tier 1 FDA/DailyMed, Tier 2 a vetted
+clinical drug reference (practical ranges, commonly accepted maximums, interaction management),
+Tier 3 guidelines and primary literature. Tier 2 does not exist yet, and building it from model
+knowledge and calling it a reference would recreate the original problem with extra steps. It
+needs a real source or a curated table someone qualified has actually vetted.
+
 ## 3.4 Authority
 
 > **Wrong model:** medication-looking text can populate `medications.current`.

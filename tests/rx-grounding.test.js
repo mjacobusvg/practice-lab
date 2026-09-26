@@ -114,33 +114,66 @@ test('no evidence means no block at all, not an empty heading', () => {
 });
 
 // ---- the rules ------------------------------------------------------------------------------
-test('the rules keep the five dose facts apart by name', () => {
-  const r = G.groundingRules(['dosing'], []);
-  [/recommended or usual ADULT dose/, /explicit labeled MAXIMUM/, /highest dose STUDIED/,
+test('the rules keep the dose facts apart by name', () => {
+  const r = G.groundingRules(['dosing'], []).replace(/\s+/g, ' ');
+  [/recommended or usual ADULT dose/, /explicit FDA-labeled MAXIMUM/, /highest dose STUDIED/,
+   /PRACTICAL CEILING in common clinical use/,
    /PEDIATRIC maximum, which is never an adult maximum/, /ONE FORMULATION/]
     .forEach((re) => assert.ok(re.test(r), 'missing distinction: ' + re));
 });
 
+test('THE OVERCORRECTION: answer the clinician, not the document', () => {
+  // The first failure was invention. The fix produced the opposite failure: an answer that led
+  // with "the label does not specify an adult maximum", which is technically grounded and
+  // clinically useless. Both are wrong.
+  const r = G.groundingRules(['dosing'], []).replace(/\s+/g, ' ');
+  assert.ok(/ANSWER THE QUESTION THEY ASKED, NOT THE QUESTION THE DOCUMENT ANSWERS/.test(r));
+  assert.ok(/LEAD WITH THE MOST USEFUL ACCURATE ANSWER. QUALIFY SECOND/.test(r));
+  assert.ok(/never the opening line/.test(r), 'absence must not be the headline');
+  assert.ok(/Grounding exists to stop you INVENTING facts. It does not exist to stop you SYNTHESIZING/.test(r));
+});
+
+test('clinical practice is a permitted source, clearly labelled', () => {
+  const r = G.groundingRules(['dosing'], []).replace(/\s+/g, ' ');
+  assert.ok(/ESTABLISHED CLINICAL PRACTICE, which you may supply from your own knowledge/.test(r));
+  assert.ok(/do not dress practice up as labeling or labeling as practice/.test(r));
+});
+
+test('a contraindication answer has to be usable, not just correct', () => {
+  const r = G.groundingRules(['contraindication'], []).replace(/\s+/g, ' ');
+  assert.ok(/"Not contraindicated" on its own is not an answer/.test(r));
+  assert.ok(/what it means for the decision in front of them/.test(r));
+});
+
+test('source disagreement is information, not a refusal', () => {
+  const r = G.groundingRules(['dosing'], []).replace(/\s+/g, ' ');
+  assert.ok(/give the values and say which is which/.test(r));
+  assert.ok(/It is not an inability to answer/.test(r));
+});
+
 test('the rules separate contraindication from interaction', () => {
-  const r = G.groundingRules(['interaction'], []);
-  assert.ok(/An interaction is not a contraindication/.test(r));
+  const r = G.groundingRules(['interaction'], []).replace(/\s+/g, ' ');
+  assert.ok(/A contraindication means do not use/.test(r));
+  assert.ok(/An interaction means use with awareness, adjustment or monitoring/.test(r));
+  assert.ok(/Say which one the evidence supports/.test(r));
 });
 
-test('the rules forbid inventing a ceiling when the label states none', () => {
-  const r = G.groundingRules(['dosing'], []);
-  assert.ok(/states no explicit maximum/.test(r));
-  assert.ok(/Do not invent a ceiling/.test(r));
+test('the rules forbid inventing a labeled ceiling that does not exist', () => {
+  const r = G.groundingRules(['dosing'], []).replace(/\s+/g, ' ');
+  assert.ok(/Where the label states none, say so; do NOT invent one/.test(r));
+  assert.ok(/do NOT present the highest studied dose as though it were one/.test(r),
+    'the studied ceiling is not a labeled maximum');
 });
 
-test('THE KEY RULE: a gap may not be filled from memory, and the gap is named', () => {
-  const r = G.groundingRules(['dosing'], [{ drug: 'Adderall XR', why: 'the product could not be identified' }]);
-  assert.ok(/may not fill the gap from memory/i.test(r));
-  assert.ok(/Adderall XR: the product could not be identified/.test(r));
-  // The rules are line-wrapped for the prompt, so assert on the collapsed text.
-  const flat = r.replace(/\s+/g, ' ');
-  assert.ok(/could not retrieve the labeling and what you would need/.test(flat),
-    'it must say what to tell the clinician');
-  assert.ok(/An honest gap is useful/.test(flat));
+test('THE KEY RULE, corrected: a gap bars claiming the LABEL, not answering at all', () => {
+  const flat = G.groundingRules(['dosing'],
+    [{ drug: 'Adderall XR', why: 'the product could not be identified' }]).replace(/\s+/g, ' ');
+  assert.ok(/Adderall XR: the product could not be identified/.test(flat), 'the gap is named');
+  assert.ok(/may NOT state what the labeling says, quote it, or imply you read it/.test(flat),
+    'still no inventing what a document it never read contains');
+  assert.ok(/You MAY still answer the clinical question from established practice/.test(flat),
+    'but a failed retrieval is not a reason to leave the clinician with nothing');
+  assert.ok(/Do NOT make the failed retrieval the headline/.test(flat));
 });
 
 // ---- gaps: every failure stays distinguishable -------------------------------------------------
@@ -190,7 +223,7 @@ test('the evidence service returning nothing leaves a gap, never silence', () =>
   assert.strictEqual(g.length, 1);
   assert.ok(/502/.test(g[0].why));
   const r = G.groundingRules(['dosing'], g);
-  assert.ok(/may not fill the gap from memory/i.test(r));
+  assert.ok(/may NOT state what the labeling says/.test(r.replace(/\s+/g, ' ')));
 });
 
 test('ONLY ONE OF TWO interacting drugs resolves: the other is named as a gap', () => {

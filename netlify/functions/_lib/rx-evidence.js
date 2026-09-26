@@ -288,6 +288,46 @@ function extractSections(xml) {
       out.push({ loinc_code: m[1], section_name: name, text: text, ord: out.length });
     }
   }
+  // TITLE FALLBACK. A section whose LOINC we never saw is invisible, and on the first real run
+  // the Adderall XR label came back without clinical_studies -- the section that holds "20, 40
+  // and 60 mg/day studied in adults", which is the single most useful number for a dose
+  // question. Matching on a heading is fragile, which is why it is a FALLBACK: it runs only for
+  // a section no coded match produced. Better a section found by its title than a clinician
+  // told the label is silent.
+  const found = {};
+  out.forEach(s => { found[s.section_name] = true; });
+  const TITLE_FALLBACK = [
+    [/^\s*\d*\s*CLINICAL STUDIES/im, 'clinical_studies', '34092-8'],
+    [/^\s*\d*\s*DOSAGE AND ADMINISTRATION/im, 'dosage_and_administration', '34068-7'],
+    [/^\s*\d*\s*DRUG INTERACTIONS/im, 'drug_interactions', '34073-7'],
+    [/^\s*\d*\s*CONTRAINDICATIONS/im, 'contraindications', '34070-3'],
+    [/^\s*\d*\s*WARNINGS AND PRECAUTIONS/im, 'warnings_and_precautions', '34071-1'],
+    [/^\s*\d*\s*USE IN SPECIFIC POPULATIONS/im, 'use_in_specific_populations', '43684-0']
+  ];
+  const titleRe = /<title[^>]*>([\s\S]{0,200}?)<\/title>/gi;
+  let tm;
+  while ((tm = titleRe.exec(src)) !== null) {
+    const heading = stripTags(tm[1]);
+    TITLE_FALLBACK.forEach(([re, name, loinc]) => {
+      if (found[name] || !re.test(heading)) return;
+      const secStart = src.lastIndexOf('<section', tm.index);
+      if (secStart === -1) return;
+      let depth = 0, end = -1, t2;
+      const tr = /<(\/?)section\b/gi;
+      tr.lastIndex = secStart;
+      while ((t2 = tr.exec(src)) !== null) {
+        if (t2[1] === '/') { depth--; if (depth === 0) { const gt = src.indexOf('>', t2.index); end = (gt === -1) ? t2.index : gt + 1; break; } }
+        else depth++;
+      }
+      if (end === -1) return;
+      const text = stripTags(src.slice(secStart, end));
+      if (text && text.length > 40) {
+        found[name] = true;
+        out.push({ loinc_code: loinc, section_name: name, text: text, ord: out.length, by: 'title' });
+      }
+    });
+  }
+
   // One label can carry the same code more than once; keep the longest, which is the real
   // section rather than a cross-reference to it.
   const best = {};
@@ -339,6 +379,12 @@ async function ingestDrug(queryName) {
   const setid = pick.spl.setid || pick.spl.set_id;
   const xml = await (await fetch(DAILYMED + '/spls/' + encodeURIComponent(setid) + '.xml')).text();
   const sections = extractSections(xml);
+  // Codes this label carries that we have no name for. Four defects so far were invisible in
+  // the answer and obvious in the trail; this is the same trick for a section we never see.
+  const unmapped = {};
+  let cm;
+  const allCodes = /<code[^>]*\bcode="(\d{4,5}-\d)"[^>]*>/gi;
+  while ((cm = allCodes.exec(xml)) !== null) if (!SECTIONS[cm[1]]) unmapped[cm[1]] = true;
 
   await sb('tbp_rx_drug', {
     method: 'POST',
@@ -370,7 +416,9 @@ async function ingestDrug(queryName) {
   return {
     ok: true, query: queryName, rxcui: res.rxcui, setid: setid,
     resolved_by: res.resolved_by, candidate_count: pick.candidate_count,
-    chosen_reason: pick.chosen_reason, lookups: tried, sections: sections.map(s => s.section_name)
+    chosen_reason: pick.chosen_reason, lookups: tried,
+    unmapped_codes: Object.keys(unmapped).slice(0, 12),
+    sections: sections.map(s => s.section_name)
   };
 }
 
@@ -427,6 +475,7 @@ async function getEvidence(drugNames, classes) {
       resolution_status: 'resolved',
       rxcui: row.rxcui || null,
       sections: (secs || []).map(s => ({ section: s.section_name, loinc: s.loinc_code, text: s.text })),
+      unmapped_codes: null,
       source: {
         label_title: row.title,
         setid: row.setid,

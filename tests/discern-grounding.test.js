@@ -215,9 +215,12 @@ async function ask(ctx, question) {
     test('the grounding rules are attached to the SYSTEM prompt, keeping the base intact', () => {
       const sys = ctx.__captured.calls[0].system;
       assert.ok(sys.startsWith('BASE-PROMPT'), 'the existing Discern stance is not replaced');
-      assert.ok(/PEDIATRIC maximum, which is never an adult maximum/.test(sys));
-      assert.ok(/An interaction is not a contraindication/.test(sys));
-      assert.ok(/highest dose STUDIED/.test(sys));
+      const f = sys.replace(/\s+/g, ' ');
+      assert.ok(/PEDIATRIC maximum, which is never an adult maximum/.test(f));
+      assert.ok(/A contraindication means do not use/.test(f));
+      assert.ok(/highest dose STUDIED/.test(f));
+      assert.ok(/LEAD WITH THE MOST USEFUL ACCURATE ANSWER/.test(f),
+        'the answer must not open with what a document lacks');
     });
 
     test('the answer is recorded with its evidence trail and declared inputs', () => {
@@ -261,7 +264,9 @@ async function ask(ctx, question) {
     ['the evidence service errors',
      { ok: false, status: 502, json: async () => ({ error: 'upstream timeout' }) },
      (sys, user) => {
-       assert.ok(/may not fill the gap from memory/i.test(sys), 'the model is told not to guess');
+       const f = sys.replace(/\s+/g, ' ');
+       assert.ok(/may NOT state what the labeling says/.test(f), 'no claiming a document it never read');
+       assert.ok(/You MAY still answer the clinical question/.test(f), 'but it still answers');
        assert.ok(/Adderall XR: evidence service returned 502/.test(sys), 'named, with the reason');
        assert.ok(!/RETRIEVED AUTHORITATIVE/.test(user), 'no empty evidence heading');
      }]
@@ -290,7 +295,7 @@ async function ask(ctx, question) {
     test('MULTIPLE PLAUSIBLE LABELS -> refuses, names it, does not answer from memory', () => {
       const sys = ctx.__captured.calls[0].system;
       assert.ok(/identified unambiguously|could not be identified/.test(sys));
-      assert.ok(/may not fill the gap from memory/i.test(sys));
+      assert.ok(/may NOT state what the labeling says/.test(sys.replace(/\s+/g, ' ')));
       assert.ok(!/RETRIEVED AUTHORITATIVE/.test(ctx.__captured.calls[0].user),
         'an ambiguous identity contributes no evidence at all');
       const d = run(ctx, 'tbpEncounterState.derived.identity');
@@ -312,7 +317,7 @@ async function ask(ctx, question) {
       assert.ok(/ADDERALL XR-/.test(u), 'the resolved label is still used');
       assert.ok(!/FLUOXETINE-/.test(u), 'the unresolved one contributes nothing');
       assert.ok(/fluoxetine: no SPL on file/.test(sys), 'and is named as a gap');
-      assert.ok(/may not fill the gap from memory/i.test(sys));
+      assert.ok(/may NOT state what the labeling says/.test(sys.replace(/\s+/g, ' ')));
     });
   })();
 
@@ -387,7 +392,7 @@ async function ask(ctx, question) {
       assert.strictEqual(ctx.__captured.fetches.length, 0, 'nothing to look up');
       assert.strictEqual(ctx.__captured.calls.length, 1, 'it still answers the rest');
       const sys = ctx.__captured.calls[0].system;
-      assert.ok(/may not fill the gap from memory/i.test(sys),
+      assert.ok(/may NOT state what the labeling says/.test(sys.replace(/\s+/g, ' ')),
         'without this the question silently becomes an ungrounded one');
       assert.ok(/no current medication has been confirmed/.test(sys));
       assert.ok(!/RETRIEVED AUTHORITATIVE/.test(ctx.__captured.calls[0].user));

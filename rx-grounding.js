@@ -238,38 +238,61 @@
   // from memory instead, which is the original defect.
   function groundingRules(classes, gaps) {
     var lines = [];
-    lines.push('=== MEDICATION FACTS: USE THE RETRIEVED EVIDENCE, NOT YOUR MEMORY ===');
+    lines.push('=== MEDICATION FACTS: ANSWER THE CLINICIAN, USING THE EVIDENCE ===');
     lines.push('');
-    lines.push('Authoritative label sections were retrieved for this question. For any factual claim');
-    lines.push('about a medication (dose, maximum, contraindication, interaction, warning, approved use,');
-    lines.push('use in a specific population), the RETRIEVED AUTHORITATIVE MEDICATION EVIDENCE block is');
-    lines.push('the source. State the fact as the label states it. Do not supply a number, a limit or a');
-    lines.push('contraindication from recall when the evidence block is there to be read.');
+    lines.push('ANSWER THE QUESTION THEY ASKED, NOT THE QUESTION THE DOCUMENT ANSWERS.');
+    lines.push('"What is the maximum dose I can go to" is a clinical question. It is NOT the question');
+    lines.push('"does this label contain a field called adult maximum". If the label states no explicit');
+    lines.push('maximum, that is one useful fact among several, not the answer and never the opening line.');
     lines.push('');
-    lines.push('KEEP THESE APART. They are different facts and collapsing them is the specific error');
-    lines.push('this evidence exists to prevent:');
-    lines.push('  - the recommended or usual ADULT dose');
-    lines.push('  - an explicit labeled MAXIMUM, which exists for some products and populations and not others');
-    lines.push('  - the highest dose STUDIED in trials, which is not the same as a labeled maximum');
+    lines.push('LEAD WITH THE MOST USEFUL ACCURATE ANSWER. QUALIFY SECOND. A clinician mid-visit needs the');
+    lines.push('number and the shape of the decision first; the provenance matters and belongs right after.');
+    lines.push('Opening with what a document does not contain is a non-answer, and a non-answer is worse');
+    lines.push('than useless here because it costs the clinician the time it took to read it.');
+    lines.push('');
+    lines.push('TWO KINDS OF SOURCE, WITH DIFFERENT AUTHORITY:');
+    lines.push('');
+    lines.push('  1. THE RETRIEVED LABEL is authoritative for what a label establishes: the labeled or');
+    lines.push('     recommended dose, an explicit labeled maximum WHERE THE LABEL STATES ONE, the doses');
+    lines.push('     studied, contraindications, interactions, warnings, and use in specific populations.');
+    lines.push('     Do not contradict it, and do not attribute to it a figure it does not contain.');
+    lines.push('');
+    lines.push('  2. ESTABLISHED CLINICAL PRACTICE, which you may supply from your own knowledge, clearly');
+    lines.push('     marked as such: the practical ceiling in common use, typical titration, how an');
+    lines.push('     interaction is actually managed, what most clinical references give as a maximum.');
+    lines.push('     Grounding exists to stop you INVENTING facts. It does not exist to stop you');
+    lines.push('     SYNTHESIZING an answer. Say plainly when a figure is common clinical practice rather');
+    lines.push('     than a labeled one, and do not dress practice up as labeling or labeling as practice.');
+    lines.push('');
+    lines.push('NAME THE CATEGORY OF EVERY NUMBER YOU GIVE. These are different facts and presenting one');
+    lines.push('as another is the specific error this evidence exists to prevent:');
+    lines.push('  - the FDA recommended or usual ADULT dose');
+    lines.push('  - an explicit FDA-labeled MAXIMUM, which exists for some products and populations and');
+    lines.push('    not others. Where the label states none, say so; do NOT invent one, and do NOT');
+    lines.push('    present the highest studied dose as though it were one.');
+    lines.push('  - the highest dose STUDIED in trials');
+    lines.push('  - the PRACTICAL CEILING in common clinical use, which is often what the clinician means');
     lines.push('  - a PEDIATRIC maximum, which is never an adult maximum');
-    lines.push('  - dosing that is specific to ONE FORMULATION (extended-release is not immediate-release)');
-    lines.push('  - a CONTRAINDICATION (do not use) versus an INTERACTION (use with awareness, adjustment');
-    lines.push('    or monitoring). An interaction is not a contraindication. Say which one the label states.');
+    lines.push('  - dosing specific to ONE FORMULATION (extended-release is not immediate-release)');
+    lines.push('Always name the population and the formulation alongside a number.');
     lines.push('');
-    lines.push('If the label states no explicit maximum, say that it states none, and give what it does');
-    lines.push('state. Do not invent a ceiling, and do not present the highest studied dose as a limit.');
-    lines.push('Name the population and the formulation whenever you give a number.');
+    lines.push('CONTRAINDICATION versus INTERACTION. A contraindication means do not use. An interaction');
+    lines.push('means use with awareness, adjustment or monitoring. Say which one the evidence supports,');
+    lines.push('name the mechanism if it is known, and say what it means for the decision in front of');
+    lines.push('them. "Not contraindicated" on its own is not an answer to a clinician weighing a change.');
+    lines.push('');
+    lines.push('IF AUTHORITATIVE SOURCES DISAGREE on a ceiling, give the values and say which is which.');
+    lines.push('Disagreement between good sources is information. It is not an inability to answer.');
     if (gaps && gaps.length) {
       lines.push('');
-      lines.push('EVIDENCE IS MISSING FOR THE FOLLOWING, AND YOU MAY NOT FILL THE GAP FROM MEMORY:');
-      gaps.forEach(function (g) {
-        lines.push('  - ' + g.drug + ': ' + g.why);
-      });
+      lines.push('RETRIEVAL WAS INCOMPLETE:');
+      gaps.forEach(function (g) { lines.push('  - ' + g.drug + ': ' + g.why); });
       lines.push('');
-      lines.push('For anything that depends on the missing evidence, say plainly that you could not');
-      lines.push('retrieve the labeling and what you would need. Reason about everything else normally.');
-      lines.push('An honest gap is useful to the clinician. A confident number from recall is the failure');
-      lines.push('mode that put this whole mechanism here.');
+      lines.push('For those, you may NOT state what the labeling says, quote it, or imply you read it.');
+      lines.push('You MAY still answer the clinical question from established practice, said plainly as');
+      lines.push('that, and you should: a clinician who asked a real question is owed a real answer plus');
+      lines.push('an honest note about what could not be verified. Say briefly what you could not');
+      lines.push('retrieve and what would confirm it. Do NOT make the failed retrieval the headline.');
     }
     return lines.join('\n');
   }
@@ -294,6 +317,7 @@
         effective_date: s.effective_date || null,
         of_candidates: s.of_candidates || null,
         lookups: e.lookups || null,
+        unmapped_codes: e.unmapped_codes || null,
         chosen_because: s.chosen_because || null,
         candidates: e.candidates || null,
         sections: (e.sections || []).map(function (x) {
