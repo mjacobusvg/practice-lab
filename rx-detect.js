@@ -182,19 +182,33 @@
     return merge(out);
   }
 
-  // Merge only where merging cannot lose a distinction: same ingredient, same dose, same proposed
-  // status. "Previously failed Concerta" and "currently on Ritalin 20 mg" stay separate, and so do
-  // Adderall IR and Adderall XR. Where a brand and its generic both appear for the same thing,
-  // the more specific label wins, because that is the one that picks the right SPL.
+  // Merge only where merging cannot lose a distinction. Two mentions are the same medication when
+  // they share an ingredient and a proposed status AND nothing about them contradicts:
+  //
+  //   both carry a dose -> the doses must match. "lithium 600 mg" then "lithium 900 mg" is a
+  //   change, not a repeat, and Adderall IR 20 mg is not Adderall XR 20 mg.
+  //   only one carries a dose -> a bare later reference to a drug already listed. A note that
+  //   says "Adderall XR 20 mg qam" and later "can we go higher on the Adderall" is discussing
+  //   ONE prescription, and showing the clinician two rows for it is noise they have to clean up.
+  //   stated release forms must agree wherever both are stated, since that is what picks the label.
+  //
+  // The surviving row is the most specific one, because that is what selects the right SPL, and
+  // it keeps every quote so nothing that was merged becomes invisible.
+  function compatibleForm(a, b) {
+    return !a.formulation || !b.formulation || a.formulation === b.formulation;
+  }
+  function sameMedication(a, b) {
+    if (a.interactionKey !== b.interactionKey) return false;
+    if (a.proposedStatus !== b.proposedStatus) return false;
+    if (!compatibleForm(a, b)) return false;
+    if (a.dose && b.dose) return a.dose === b.dose;
+    return true;
+  }
   function merge(list) {
     var seen = [];
     list.forEach(function (c) {
       var prior = null;
-      for (var i = 0; i < seen.length; i++) {
-        var s = seen[i];
-        if (s.interactionKey === c.interactionKey && s.dose === c.dose &&
-            s.proposedStatus === c.proposedStatus) { prior = s; break; }
-      }
+      for (var i = 0; i < seen.length; i++) if (sameMedication(seen[i], c)) { prior = seen[i]; break; }
       if (!prior) { c.quotes = [c.quote]; seen.push(c); return; }
       if (prior.quotes.indexOf(c.quote) === -1) prior.quotes.push(c.quote);
       if (specificity(c) > specificity(prior)) {

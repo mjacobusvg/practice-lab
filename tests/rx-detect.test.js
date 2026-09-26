@@ -183,6 +183,24 @@ test('merging prefers the more specific name', () => {
   assert.strictEqual(r.length, 1);
   assert.strictEqual(r[0].rawName, 'Adderall XR', 'the brand+formulation is what picks the right label');
 });
+test('a bare later reference folds into the dosed row', () => {
+  const r = run('Currently taking Adderall XR 20 mg every morning. Wants to know if we can go higher on the Adderall.');
+  assert.strictEqual(r.length, 1, 'one prescription, one row');
+  assert.strictEqual(r[0].rawName, 'Adderall XR', 'the specific row survives');
+  assert.strictEqual(r[0].dose, '20 mg');
+  assert.strictEqual(r[0].quotes.length, 2, 'both sentences stay visible');
+});
+
+test('a bare reference with a CONFLICTING release form does not fold in', () => {
+  const r = run('On Adderall XR 20 mg. Also has Adderall IR for afternoons.');
+  assert.strictEqual(r.length, 2, 'IR and XR are different products even when one has no dose');
+});
+
+test('folding respects status', () => {
+  const r = run('Takes lithium 900 mg nightly. Stopped lithium years ago is incorrect in the chart.');
+  assert.strictEqual(r.length, 2, 'a past mention must not fold into a current prescription');
+});
+
 test('same drug at two doses does not merge', () => {
   const r = run('Was on lithium 600 mg, now lithium 900 mg.');
   assert.strictEqual(r.length, 2);
