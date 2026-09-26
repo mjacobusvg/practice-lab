@@ -142,7 +142,7 @@ Run each against the Framework and against Draft. All seven are fabrication and 
 
 | # | Test | Pass |
 |---|---|---|
-| G.1 | Mid-visit reload: interview, typed answers, checklist, note, transcript and Framework all return | |
+| G.1 | Mid-visit reload: interview, typed answers, checklist, note, transcript and Framework all return | **FAILED 26 Sep -> FIXED ambient-146-sub. First release blocker of the gate.** Recovery reported success and returned a blank note. Diagnosed on a real draft: focus 194 chars, raw 0, wnMode plain. Save, scan, bar and restore all worked; the working note then opened on load and `openFocus` in plain mode repaints the view from the source (`fn.value = src.value`, `:6147`), writing empty `raw` over the restored text. Autosave can capture focus with raw still unsynced, which is how they diverge. Restore now backfills raw from focus. **Re-run this test after deploy.** |
 | G.2 | Close the working note, re-enter via the re-entry pill. Same session, nothing lost | |
 | G.3 | Crash recovery: recovered tab keeps its name and its slot | |
 | G.4 | Two patient tabs open at once. Neither sees the other's interview, answers or Framework | |
