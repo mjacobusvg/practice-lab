@@ -180,7 +180,7 @@ Which gives you the actual practice, and it is almost a paradox:
 
 Because the moment you recognize that you have been completely caught up in something for the last ten minutes, you are already back. And with practice, ten minutes becomes five. Five becomes thirty seconds. Eventually, sometimes, you catch the urge as it is forming.
 
-Mindfulness is awareness of awareness in the present moment. Not because you have escaped the experience, but because for a moment you are not completely fused with it.
+Which is the same thing the third line said. Awareness of awareness in the present moment, with insight telling you what you are looking at. Not because you have escaped the experience, but because for a moment you are not completely fused with it.
 
 Which brings me back to a word I used about the dream, and that I want to be careful with.
 
