@@ -52,6 +52,27 @@ practice section and the exercise. Post 2 is purely clinical application.
 
 ---
 
+### What post 1 actually is, mechanically
+
+Not a new theory of mindfulness. A **sequence of recognition aids**, each carrying one component,
+ordered so each one is available before the next needs it. This is the thing to protect in any
+edit: cutting a device silently removes the component it teaches, and the later material assumes it.
+
+| device | what it makes recognizable |
+|---|---|
+| the attention exercise (cold open) | attention as separable from gaze, and the drift |
+| the slight, and who it is against | identification versus interpretation |
+| Inception | that awareness has layers |
+| lucid dreaming | the phenomenology of being inside a state and seeing it at once |
+| slipping in and out | the instability; that this is not an elevated state you arrive at |
+| the clinical examples | the choice point, before the behaviour |
+
+It maps closely onto existing decentering work, which describes roughly meta-awareness,
+disidentification from internal experience, and reduced reactivity to thought content. Treat that
+mapping as a **reason not to claim novelty**, not as a citation: it was recalled from training, was
+not verifiable from the session environment, and the posts carry no citations by design. If a
+citation is ever wanted, look it up first.
+
 ## 1b. The anxiety series: parked, not cancelled
 
 Everything worked out about anxiety is still good and still wanted. It starts fresh later with
@@ -68,7 +89,7 @@ anxiety reveals self-focused attention and anticipated evaluation. GAD reveals w
 and metacognitive belief. OCD reveals intrusion, meaning, and neutralisation. PTSD reveals threat
 activation, cues and altered learning.
 
-**Two overreaches, recorded as wrong so they are not re-derived:**
+**Three overreaches, recorded as wrong so they are not re-derived:**
 
 *"All anxieties are avoidance disorders."* Great engine, does not survive GAD. Under the Contrast
 Avoidance model worry may SUSTAIN negative affect to prevent a sudden emotional drop, which is not
@@ -78,6 +99,16 @@ Avoidance model worry may SUSTAIN negative affect to prevent a sudden emotional 
 the expression, the intrusive thought. What is missing is perspective and flexibility inside the
 noticing, which is the whole mindfulness construct, which is why it sits above the anxiety
 material rather than inside it.
+
+*"Almost everything written about mindfulness is aimed at defining it; very little at helping
+someone recognize it."* Claude's, Sept 2026, in chat and in a commit message. It never reached a
+post, and Michael killed it. It is false. Kabat-Zinn's method is explicitly experiential and
+practice-based, requiring mindfulness to be embodied through repeated recognition of experience as
+it arises rather than learned as a definition. The decentering literature studies exactly the shift
+from being inside subjective experience to taking perspective on it. **The claim in the post is
+personal and must stay personal:** "The definitions were not what I was missing. I was missing a
+way to recognize the experience they were describing." That is about Michael. It is not a finding
+about the field, and it must never be upgraded into one.
 
 **Still to write when that series runs:** OCD Is Adaptive, Why ERP Works, and Find the Avoidance,
 Find a Treatment Target. All three survive. None of them is the framework.
@@ -204,6 +235,9 @@ Learned the hard way on the 14 Sept post; they apply to every post in this serie
 - **Lists must be one category.** Do not mix an intervention, a state, a behaviour and a circumstance
   in the same list.
 - **No absolutes we would have to defend.** No em-dashes (house style).
+- **Never claim novelty against the mindfulness literature.** Not in a post, not in a commit message,
+  not in chat. Michael's contribution is a teaching sequence, not a new construct, and every
+  component already has a home in the literature. See the third overreach in §1b.
 - **Sections are `# Heading`.** A line wrapped in `**` is a bold paragraph, not a heading. See
   `FORUM-POSTS.md` §1.
 - **Do not judge typography in a bespoke preview.** See `FORUM-POSTS.md` §5.

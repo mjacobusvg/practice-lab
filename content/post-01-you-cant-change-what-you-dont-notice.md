@@ -30,7 +30,7 @@ Then I accumulated a great deal of psychology. Psychology in high school. An und
 
 Mindfulness was in there somewhere. For a long time I am not sure I really understood why it mattered.
 
-Not because the definitions were bad. I am not sure mindfulness needs another definition. What it needed, for me, was some way to recognize the thing the definitions were pointing at.
+The definitions were not what I was missing. I was missing a way to recognize the experience they were describing.
 
 And running alongside all of that, I was reading The Power of Now and Thich Nhat Hanh. Ironically, right back in the territory I had always associated mindfulness with in the first place.
 
