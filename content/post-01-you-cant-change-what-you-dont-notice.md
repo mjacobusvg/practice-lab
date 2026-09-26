@@ -18,7 +18,9 @@ Wait for it.
 
 There. That moment you realized you had drifted.
 
-That is what this whole post is about, and it is one piece of what people are pointing at when they say mindfulness. The rest of it is harder to describe, which is why this is going to take a while.
+That moment is one small piece of what I mean when I talk about mindfulness.
+
+The rest of it is harder to describe, which is why this is going to take a while.
 
 When I was much younger, I thought mindfulness was supposed to be something almost metaphysical.
 

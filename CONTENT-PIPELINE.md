@@ -38,13 +38,18 @@ treatment target is. It lets you and the patient see the target while it is happ
 
 | # | Post | The one thing it argues | Status |
 |---|---|---|---|
-| 1 | **You Can't Change What You Don't Notice** | What this capacity is, what it feels like, and how you build it. Awareness, insight, active attention, meta-awareness, agency. | **Drafted**, `content/post-01-*.md` |
+| 1 | **You Can't Change What You Don't Notice: What Mindfulness Actually Is** | What this capacity is, what it feels like, and how you build it. Awareness, insight, active attention, meta-awareness, agency. | **Drafted**, `content/post-01-*.md` |
 | 2 | *(untitled)* | Where it shows up in the room, across presentations. Rumination caught mid-run, the craving and the ten seconds after, the slight and the urge to fire back, the obsession before the ritual, ambivalence heard in a patient's own voice. | Not started |
 
 **Michael's split, not ChatGPT's:** "how to foster it" belongs in Post 1, which already carries the
 practice section and the exercise. Post 2 is purely clinical application.
 
-**Title:** no series prefix. "A Framework for Anxiety, Part 1:" is retired.
+**Title:** `You Can't Change What You Don't Notice: What Mindfulness Actually Is`. No series
+prefix; "A Framework for Anxiety, Part 1:" is retired. The colon is load-bearing in both directions:
+the thesis is the memorable half, and the subject half exists because the post is no longer part of
+an anxiety series and nothing else tells a member what it is about. The feed card cannot help, since
+`excerpt` is the first 200 characters of the body and this body opens with an exercise that withholds
+the subject (see `FORUM-POSTS.md` §2). **No deck or subtitle:** the platform has no field for one.
 
 ### Slots
 - Mon 28 Sept and Thu 1 Oct are both empty. Nothing past 24 Sept is in `scheduled_posts`.

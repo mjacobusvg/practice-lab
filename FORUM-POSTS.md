@@ -49,6 +49,17 @@ comment_count, reaction_count, circle_post_id, created_at, updated_at, canonical
 post_type, ce_candidate, denial_meta, image_urls, poll, attachments, free_visible, edited_at,
 members_teaser, free_readonly`
 
+**There is no authored subtitle, deck or standfirst field, and `excerpt` is not one.**
+`publish-scheduled.js` derives it: `String(s.body).replace(/\s+/g,' ').slice(0,200)`. So the first
+200 characters of the body, whitespace collapsed, ARE the feed-card preview (two-line clamp) and the
+page meta description. `viewPost()` never renders `excerpt` inside the post; it only falls back to it
+if a body is missing.
+
+**Consequence when writing an opening:** the first 200 characters do double duty as marketing copy.
+A cold open that withholds the subject leaves the feed card with no signal, so the title has to
+carry the subject by itself. Decide which it is on purpose. Wanting a real deck under the title
+means a new column plus a `viewPost()` change, not a post edit.
+
 `netlify/functions/publish-scheduled.js` moves one to the other and sets
 `body_html: toRichHtml(s.body)`.
 
