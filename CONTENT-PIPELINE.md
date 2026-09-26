@@ -108,9 +108,26 @@ mindfulness; it felt elusive and vaguely metaphysical. Do not write him as a con
 > tried meditating but often left frustrated because clear my mind and nothing happened, searching
 > for that metaphysical thing.
 
-Then: high-school psychology, psych major, master's in clinical psychology, psychology coursework in
-PMHNP school, classes on modalities and historical figures. Then, ironically, back through the same
-fringe: *The Power of Now* and Thich Nhat Hanh. Then it clicked.
+**THE CHRONOLOGY. Three drafts have now got this wrong, twice by Claude and once by ChatGPT.**
+
+The education: high-school psychology, psych major, master's in clinical psychology, psychology
+coursework in PMHNP school, classes on modalities and historical figures.
+
+**The reading happened DURING school, not after it.** *The Power of Now* and Thich Nhat Hanh were
+running alongside the coursework, ironically right back in the fringe territory he had always
+associated mindfulness with. The two informed each other as he went, and at some point he tied them
+together.
+
+What came AFTER the reading is only the realization: that so many of the modalities he was being
+taught already require some degree of mindfulness. Not as a technique bolted on, as something the
+work quietly requires.
+
+So the order is: education and reading together -> mindfulness clicks -> looking back, he sees it
+was embedded in the therapies all along. **Three wrong versions to avoid.** "Mindfulness kept
+appearing in all of it" (says he noticed it at the time; he did not). "What actually made it click
+came later" (puts the reading after school). "Later I found myself back in that territory" (same
+error). The current draft says "running alongside all of that" and "At some point I started tying
+the two together." That is right. Leave it.
 
 **The triad. This is the load-bearing passage of the post:**
 > Awareness without insight is observation.
