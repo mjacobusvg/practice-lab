@@ -138,6 +138,14 @@ Or: I am starting to do the thing I always do when I feel uncertain.
 
 You are no longer only the person inside the reaction.
 
+And once you have felt that switch, you cannot unsee it.
+
+You have become aware of it.
+
+You may still not be able to put it into words for anybody else. But you know the difference now between being carried along by something and catching yourself being carried along.
+
+You would think that would be the end of the problem.
+
 # And we do not stay there
 
 Here is the part that matters, and the part that would have saved me years of frustration on a meditation cushion.
