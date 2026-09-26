@@ -316,9 +316,13 @@ That is the foundation for the rest of this series. Because once we get better a
 
 What are we actually looking for?
 
-In anxiety, one of the most consistent answers is avoidance. And avoidance does not always look like avoidance.
+In anxiety, one of the most consistent answers is avoidance.
 
-Sometimes it looks like checking. Sometimes reassurance. Sometimes preparation. Sometimes worry. Sometimes research. Sometimes a compulsion. Sometimes it looks like being responsible, or thorough, or careful.
+But avoidance is not defined by what a behavior looks like. It is defined by what the behavior is doing.
+
+Sometimes it is obvious. Not going. Leaving. Refusing.
+
+More often it looks like checking. Or reassurance. Or preparation. Or research. Or worry. Sometimes it looks like being responsible, or thorough, or careful.
 
 So next we give this awareness a target.
 
