@@ -412,3 +412,106 @@ contraindicated?"* against Adderall XR 20 mg + fluoxetine 40 mg. Inspectable:
 
 Getting it right *because we can see exactly what facts it reasoned from* is the bar. Getting it
 right by luck is not a fix.
+
+
+---
+
+# Step 4 as built (26 Sept 2026): medication confirmation
+
+## The identity rule this is built around
+
+`MEDICATIONS` in `pm-interaction-checker.html` is a **candidate-detection vocabulary and an
+interaction-engine key map. It is not medication identity.** It works at the ingredient level
+because CYP and serotonergic relationships do, so one entry carries `brand: "Ritalin/Concerta"`
+and another carries `brand: "Adderall"` with no IR/XR distinction. Those are different products
+with different labels and different maximum doses. **Resolving "Adderall XR" to generic "Adderall"
+is exactly the collapse that produced the hallucinated 30 mg maximum.**
+
+So: a dictionary hit says *this text probably mentions amphetamine mixed salts*. It never decides
+what product the patient is on. The written text is preserved and the clinician confirms it; the
+ingredient key rides **alongside**, never instead.
+
+## Files
+
+| file | role |
+|---|---|
+| `tools/gen-rx-vocabulary.js` | generates the vocabulary from the checker's dictionary |
+| `rx-vocabulary.js` | generated, committed (no build step); 210 entries, 446 terms, 37 kB |
+| `rx-detect.js` | pure detection: candidates with proposed status, dependency-free |
+| `ai-scribe-practice.html` | the card, the gate, and the write into encounter state |
+
+`Ritalin` and `Concerta` are now **separate terms sharing one interaction key**, which is the
+split that was missing. `tests/rx-vocabulary.test.js` re-runs the generator and fails on drift.
+
+## A hit means MENTIONED, never CURRENT
+
+`"Previously stopped Concerta"` is surfaced as a candidate with `proposedStatus: 'historical'` and
+the sentence that justifies it. Nothing reaches `medications.current` without a click.
+
+Status cues are sentence-scoped. An early version leaked across the boundary and filed
+*"PCP started fluoxetine 40 mg two weeks ago. Previously stopped Concerta..."* as historical,
+turning an active prescription into a past one. Cues are also biased toward the past, because
+wrongly listing a stopped drug as current is the dangerous direction.
+
+A drug appearing **only in the prior note** is downgraded to `unclear` whatever that note's tense
+was: last visit's present tense is not today's. Outside records are not scanned at all.
+
+## The card
+
+```
+Adderall XR    [20 mg]   [Current] [Past] [Not a med]
+"currently taking Adderall XR 20 mg every morning"
+extended-release (as written) · oral · from today's note
+```
+
+Editable name and dose, three-way status, the quote that justified the guess. `unclear` renders
+with **nothing selected**, so the clinician decides rather than accepting a default that happened
+to be right. Confirm is blocked until every named row has a status.
+
+## The gate: it stays out of the way
+
+`tbpMedConfirmationNeeded(purpose)` returns `null` unless a medication task asks. It never opens
+on its own. After one confirmation it goes quiet and reopens only when:
+
+- a drug appears in the note that was not on the confirmed list, or
+- something ambiguous matters **for this question**: a missing dose only when the question turns
+  on dose; a missing release form only for a drug that has distinct ones.
+
+`tbpMedEnsure(purpose, go)` runs `go()` immediately when nothing is needed, so a clinician who
+never asks a medication question never sees the form.
+
+## The record: both identities
+
+```js
+{ rawName: 'Adderall XR', brand: 'Adderall XR', ingredient: 'amphetamine mixed salts',
+  formulation: 'extended-release', formulationSource: 'text', route: null, dose: '20 mg',
+  rxcui: null, identityStatus: 'unresolved',
+  interactionKey: 'amphetamine_mixed_salts',
+  status: 'current', confirmedBy: 'clinician', confirmedAt: 1759..., sourceQuote: '...' }
+```
+
+`rxcui` is null and `identityStatus` says `unresolved`. The RxNorm/DailyMed layer fills it at
+grounding time. A guess here picks the wrong label, which is the whole bug.
+
+## A defect the tests caught
+
+Fingerprinting the whole medication record made **re-confirming an unchanged list mark every
+prior result stale**, because `confirmedAt` lives inside each record. That would have trained the
+clinician to ignore the staleness flag, destroying the one thing it is for.
+
+Fixed with `tbpMedProject()`: a medication list is projected to the prescribing facts
+(`rawName`, `dose`, `route`, `formulation`, `rxcui`, `status`) before fingerprinting. The
+projection runs on **both** sides, so recorded and compared values can never disagree about which
+fields count. A quote or a timestamp is not a regimen change. A dose is.
+
+## Tests
+
+`tests/rx-detect.test.js` (36) and `tests/med-confirmation.test.js` (26), the latter running the
+shipped Scribe code. Totals across the encounter work: **4,166 checks**.
+
+## Next: step 2, ground Discern
+
+`tbpMedEnsure('dose', ...)` is the hook. Discern reads `getEncounterContext().medications`,
+resolves each confirmed record through RxNorm, pulls the matching SPL sections via
+`netlify/functions/_lib/rx-evidence.js`, and receives them as a separately labeled block.
+The acceptance test is unchanged and is stated above.

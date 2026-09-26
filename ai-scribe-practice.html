@@ -72,6 +72,24 @@ textarea{min-height:150px;resize:vertical;line-height:1.6}
   transition:color .12s ease,border-color .12s ease,background .12s ease}
 .btn-case:hover{background:var(--navy);border-color:var(--teal);color:var(--teal)}
 .btn-case.adhd-trigger:hover{border-color:#a78bfa;color:#a78bfa}
+/* Medication confirmation rows. The status control is three plain buttons rather than a select:
+   the clinician is confirming at a glance, and a dropdown hides the choice they need to see. */
+.med-row{border:1px solid var(--rule);border-radius:9px;padding:12px 13px;margin-bottom:10px;background:var(--navy)}
+.med-row.excluded{opacity:.45}
+.med-head{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.med-name{flex:1 1 190px;min-width:150px;background:var(--navy-card);border:1px solid var(--rule);border-radius:6px;color:var(--white);padding:7px 9px;font-size:.9rem;font-weight:600}
+.med-dose{width:104px;background:var(--navy-card);border:1px solid var(--rule);border-radius:6px;color:var(--white);padding:7px 9px;font-size:.86rem}
+.med-seg{display:flex;gap:0;border:1px solid var(--rule);border-radius:6px;overflow:hidden}
+.med-seg button{background:transparent;border:0;border-right:1px solid var(--rule);color:var(--cream-dim);
+  padding:7px 10px;font-size:.76rem;font-weight:600;cursor:pointer;white-space:nowrap}
+.med-seg button:last-child{border-right:0}
+.med-seg button.on{background:var(--teal);color:var(--navy)}
+.med-seg button.on[data-st="historical"]{background:#c9a227;color:#1a1a1a}
+.med-seg button.on[data-st="exclude"]{background:var(--rule);color:var(--cream)}
+.med-quote{margin-top:8px;font-size:.83rem;color:var(--cream-dim);line-height:1.5;font-style:italic;
+  border-left:2px solid var(--rule);padding-left:9px}
+.med-meta{margin-top:7px;font-size:.74rem;color:var(--cream-dim);letter-spacing:.02em}
+.med-meta b{color:var(--cream);font-weight:600}
 /* The interview reads as the clinician's own backbone, visually separate from the Framework's
    purple additions in CHECK / ASK TODAY. */
 .vl-k{font-size:.72rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--cream-dim);margin-bottom:8px}
@@ -377,7 +395,9 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/note-engine-practice.js?v=ambient-150-sub"></script>
+<script src="/rx-vocabulary.js?v=ambient-151-sub"></script>
+<script src="/rx-detect.js?v=ambient-151-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-151-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -739,7 +759,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-150-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-151-sub</span></div>
 </div>
 </div>
 
@@ -822,6 +842,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
       <button type="button" class="btn-case" id="case-setup-btn" title="Carry last visit forward, build today&rsquo;s checklist and set the visit type &mdash; or skip setup and just start writing." onclick="tbpShowSetup()">&#9881; Start or prep a visit</button>
       <button type="button" class="btn-case" id="case-records-btn" title="Read a prior evaluation, discharge summary or old records. Reviewing one does nothing to your note until you add it." onclick="tbpDocsFromNudge()">&#128196; Review outside records</button>
       <button type="button" class="btn-case rsn-trigger" title="Think through the case using what is already in this session. Nothing goes into your note unless you put it there." onclick="tbpShowReason()">&#129504; Discern</button>
+      <button type="button" class="btn-case" id="case-meds-btn" title="Confirm what the patient is actually taking. Found from what you have written; you confirm rather than retype. Medication capabilities open this on their own when they need it." onclick="tbpShowMeds('manual')">&#128138; Medications</button>
       <button type="button" class="btn-case adhd-trigger adhd-entry" style="display:none" title="What this case establishes about the ADHD question, what it does not, and what is worth asking today." onclick="tbpAdhdEntryClick()">&#129504; ADHD Framework</button>
     </div>
   </div>
@@ -1228,6 +1249,23 @@ function tcoachSuggestTool(){
         <span class="hint" id="rsn-msg"></span>
         <span class="hint" id="rsn-ctx" style="color:var(--cream-dim);margin-left:auto;text-align:right"></span>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="meds-modal" style="z-index:9660">
+  <div class="modal" style="max-width:660px">
+    <button class="modal-x" type="button" onclick="tbpHideMeds()" aria-label="Close">&times;</button>
+    <h2 style="margin:0 0 4px">Medications for this visit</h2>
+    <div class="hint" id="meds-why" style="line-height:1.55;margin-bottom:4px"></div>
+    <div id="meds-rows" style="margin-top:18px"></div>
+    <div style="margin-top:14px;display:flex;gap:9px;flex-wrap:wrap;align-items:center">
+      <button type="button" class="btn-mini" id="meds-add">+ Add one it missed</button>
+      <span class="hint" id="meds-msg" style="margin-left:auto"></span>
+    </div>
+    <div style="margin-top:16px;border-top:1px solid var(--rule);padding-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <button type="button" class="btn" id="meds-confirm" style="margin-top:0">Confirm these medications</button>
+      <button type="button" class="btn-mini" onclick="tbpHideMeds()">Cancel</button>
     </div>
   </div>
 </div>
@@ -4164,9 +4202,11 @@ function TBP_ENCOUNTER_BLANK(){
     // What the clinician CONFIRMED in the preflight cards. Written at Generate, which is the
     // moment of confirmation, not while they are still clicking around the options.
     preflight: { confirmedAt: null, diagnoses: [], clinicalDecisions: [], psychotherapy: {} },
-    // No writer yet: there is no medication-list widget anywhere in the Scribe. The home exists
-    // so the med-confirmation work has somewhere to land instead of inventing its own storage.
-    medications: { current: [], changes: [] },
+    // Written by the medication confirmation card. `current` is the confirmed CURRENT regimen and
+    // is what interaction/monitoring results fingerprint against. `historical` holds what the
+    // clinician confirmed as past ("previously failed Concerta"), which is clinically useful and
+    // must never be mistaken for the current list. `changes` has no writer yet.
+    medications: { current: [], historical: [], changes: [], confirmedAt: null },
     // No writer yet. A scale can be inserted into the note; a SCORED scale is not captured.
     screeners: [],
     // The return leg: arrays of RESULT RECORDS, written through tbpRecordResult(). Not raw
@@ -4209,7 +4249,8 @@ function tbpEncounterRestore(saved){
       clinicalDecisions: arr(p.clinicalDecisions),
       psychotherapy: obj(p.psychotherapy)
     },
-    medications: { current: arr(m.current), changes: arr(m.changes) },
+    medications: { current: arr(m.current), historical: arr(m.historical), changes: arr(m.changes),
+                   confirmedAt: (typeof m.confirmedAt === 'number') ? m.confirmedAt : null },
     screeners: arr(saved.screeners),
     results: results
   };
@@ -4226,7 +4267,7 @@ function tbpEncounterHasContent(s){
     if((p.diagnoses||[]).length || (p.clinicalDecisions||[]).length) return true;
     if(p.psychotherapy && Object.keys(p.psychotherapy).length) return true;
     var m = s.medications || {};
-    if((m.current||[]).length || (m.changes||[]).length) return true;
+    if((m.current||[]).length || (m.historical||[]).length || (m.changes||[]).length) return true;
     if((s.screeners||[]).length) return true;
     var r = s.results || {};
     for(var k in r){ if(!Object.prototype.hasOwnProperty.call(r,k)) continue; var v = r[k];
@@ -4329,22 +4370,54 @@ function tbpFingerprint(v){
   return ('0000000' + h.toString(16)).slice(-8);
 }
 
+// A medication record carries bookkeeping alongside the prescribing facts: confirmedAt, which
+// sources it was seen in, the quote shown on the card. None of that changes what the patient is
+// taking. Fingerprinting the whole record means re-confirming an UNCHANGED list moves confirmedAt
+// and marks every prior result stale, which trains the clinician to ignore the staleness flag --
+// destroying the one thing it is for. So a medication list is projected down to what a capability
+// actually reasons about before it is fingerprinted.
+function tbpMedProject(list){
+  if(!Array.isArray(list)) return list;
+  return list.map(function(r){
+    if(!r || typeof r !== 'object' || Array.isArray(r)) return r;
+    return { rawName: r.rawName || '', dose: r.dose || '', route: r.route || '',
+             formulation: r.formulation || '', rxcui: r.rxcui || '', status: r.status || '' };
+  });
+}
+
 // The only input names a result may declare. An unrecognised name makes the record unverifiable,
-// which makes it 'unknown' rather than silently 'current'.
+// which makes it 'unknown' rather than silently 'current'. `project` runs on BOTH sides -- the
+// value recorded and the value compared against -- so the two can never disagree about which
+// fields count.
 var TBP_RESULT_INPUTS = {
-  medications: function(){ return tbpEncounterState.medications.current; },
-  medicationChanges: function(){ return tbpEncounterState.medications.changes; },
-  diagnoses: function(){ return tbpEncounterState.preflight.diagnoses; },
-  screeners: function(){ return tbpEncounterState.screeners; }
+  medications:           { current: function(){ return tbpEncounterState.medications.current; },    project: tbpMedProject },
+  medicationsHistorical: { current: function(){ return tbpEncounterState.medications.historical; }, project: tbpMedProject },
+  medicationChanges:     { current: function(){ return tbpEncounterState.medications.changes; },    project: tbpMedProject },
+  diagnoses:             { current: function(){ return tbpEncounterState.preflight.diagnoses; } },
+  screeners:             { current: function(){ return tbpEncounterState.screeners; } }
 };
 
-// Rebuild the CURRENT value of each named input. Returns null if any name is unresolvable.
+// Project a caller-supplied inputs object through the same lens used for comparison.
+// Returns null if any name is unrecognised, which is what makes such a record 'unknown'.
+function tbpProjectInputs(inputs){
+  var out = {};
+  for(var n in inputs){
+    if(!Object.prototype.hasOwnProperty.call(inputs, n)) continue;
+    var def = TBP_RESULT_INPUTS[n];
+    if(!def) return null;
+    out[n] = def.project ? def.project(inputs[n]) : inputs[n];
+  }
+  return out;
+}
+
+// Rebuild the CURRENT value of each named input, projected. Null if any name is unresolvable.
 function tbpCurrentInputs(names){
   var out = {};
   for(var i=0;i<names.length;i++){
-    var n = names[i];
-    if(!Object.prototype.hasOwnProperty.call(TBP_RESULT_INPUTS, n)) return null;
-    out[n] = TBP_RESULT_INPUTS[n]();
+    var n = names[i], def = TBP_RESULT_INPUTS[n];
+    if(!def) return null;
+    var v = def.current();
+    out[n] = def.project ? def.project(v) : v;
   }
   return out;
 }
@@ -4355,14 +4428,17 @@ function tbpCurrentInputs(names){
 function tbpRecordResult(capability, opts){
   opts = opts || {};
   var inputs = (opts.inputs && typeof opts.inputs === 'object' && !Array.isArray(opts.inputs)) ? opts.inputs : null;
+  // Projected before fingerprinting; an unrecognised input name yields null, which leaves the
+  // record unverifiable and therefore 'unknown' rather than falsely current.
+  var projected = inputs ? tbpProjectInputs(inputs) : null;
   var rec = {
     id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
     capability: String(capability || ''),
-    inputs: inputs ? tbpEncClone(inputs) : null,
+    inputs: inputs ? tbpEncClone(inputs) : null,          // as given, for the clinician to inspect
     // The canonical form is STORED, not recomputed at read time, so a later change to the
     // canonicalizer cannot silently reclassify an old record as current.
-    inputCanon: inputs ? tbpCanonical(inputs) : null,
-    fingerprint: inputs ? tbpFingerprint(inputs) : null,
+    inputCanon: projected ? tbpCanonical(projected) : null,
+    fingerprint: projected ? tbpFingerprint(projected) : null,
     data: (opts.data === undefined) ? null : tbpEncClone(opts.data),
     meta: opts.meta ? tbpEncClone(opts.meta) : {},
     createdAt: Date.now(),
@@ -4398,6 +4474,268 @@ function tbpLatestResult(capability){
     return { record: tbpEncClone(rec), status: tbpResultStatus(rec) };
   } catch(e){ return null; }
 }
+
+// ══════════════════════════════════════════════════════════════════════════════════════════
+// MEDICATION CONFIRMATION
+//
+// The clinician does not build a list. They confirm what was found, and they only see this at
+// all when something actually needs it. A medication reconciliation form at the top of every
+// encounter is precisely the attention tax this product exists to remove.
+//
+// Two rules the card must not break:
+//
+//   A dictionary hit means MENTIONED, never CURRENT. "Previously stopped Concerta" is offered
+//   as historical and has to be confirmed before it is anything. Nothing reaches
+//   medications.current without a click.
+//
+//   Specificity survives. What the clinician wrote -- "Adderall XR" -- is the identity, and the
+//   ingredient-level interaction key rides alongside it. rxcui and the authoritative formulation
+//   are filled in later by the RxNorm/DailyMed layer; until then identityStatus is 'unresolved'
+//   and nothing pretends otherwise.
+// ══════════════════════════════════════════════════════════════════════════════════════════
+
+// Detection runs per segment so the card can tell the clinician WHERE something came from.
+// Outside records are excluded: a 40-page neuropsych report is full of drug names that were
+// never this patient's current regimen, and "mentioned in a document" is the weakest possible
+// signal for a list whose whole job is to be trustworthy.
+function tbpMedSegments(){
+  var ctx = getEncounterContext();
+  var segs = [];
+  if(ctx.note && ctx.note.text) segs.push({ label: "today's note", text: ctx.note.text });
+  if(ctx.drafted && ctx.drafted.hpi) segs.push({ label: 'drafted HPI', text: ctx.drafted.hpi });
+  if(ctx.drafted && ctx.drafted.plan) segs.push({ label: 'drafted plan', text: ctx.drafted.plan });
+  if(ctx.priorNote) segs.push({ label: 'last visit', text: ctx.priorNote });
+  return segs;
+}
+
+function tbpMedScan(){
+  if(!window.TBP_RX_DETECT || !window.TBP_RX_VOCAB) return [];
+  var found = [], seenKeyDose = {};
+  tbpMedSegments().forEach(function(seg){
+    var list = [];
+    try { list = window.TBP_RX_DETECT.detect(seg.text, { vocab: window.TBP_RX_VOCAB }); } catch(e){ return; }
+    list.forEach(function(c){
+      // Across segments, the same drug at the same dose is one row. The earliest segment wins,
+      // which is today's note -- what is true now beats what was true last visit.
+      var sig = c.interactionKey + '|' + (c.dose || '') + '|' + (c.formulation || '');
+      if(seenKeyDose[sig]){
+        var prior = seenKeyDose[sig];
+        if(prior.sources.indexOf(seg.label) === -1) prior.sources.push(seg.label);
+        return;
+      }
+      c.sources = [seg.label];
+      // A drug seen only in the prior note is not presumed current, whatever the prior note's
+      // own tense was: it is last visit's sentence, not today's.
+      if(seg.label === 'last visit' && c.proposedStatus === 'current'){
+        c.proposedStatus = 'unclear';
+        c.statusReason = 'current last visit; not yet confirmed for today';
+      }
+      seenKeyDose[sig] = c;
+      found.push(c);
+    });
+  });
+  return found;
+}
+
+// A confirmed medication. Carries BOTH identities: the prescribing identity that decides which
+// label applies, and the ingredient key the existing deterministic checker already understands.
+function tbpMedRecord(c, status, who){
+  c = c || {};
+  return {
+    rawName: (c.rawName || '').trim(),          // as the clinician wrote it. The identity.
+    brand: c.brand || null,
+    ingredient: c.ingredient || null,
+    formulation: c.formulation || null,
+    formulationSource: c.formulationSource || null,
+    route: c.route || null,
+    dose: c.dose || null,
+    frequency: c.frequency || null,
+    // Filled by the RxNorm/DailyMed layer at grounding time. Null here is honest; a guess is not.
+    rxcui: c.rxcui || null,
+    identityStatus: c.rxcui ? 'resolved' : 'unresolved',
+    interactionKey: c.interactionKey || null,   // for the deterministic checker, NOT for grounding
+    drugClass: c.drugClass || '',
+    status: status,                             // 'current' | 'historical'
+    confirmedBy: who || 'clinician',
+    confirmedAt: Date.now(),
+    sourceQuote: (c.quotes && c.quotes[0]) || c.quote || null,
+    sources: c.sources ? c.sources.slice() : []
+  };
+}
+
+// Commit the clinician's decisions. This is the only path into medications.current.
+function tbpMedApplyConfirmation(rows, who){
+  var cur = [], hist = [];
+  (rows || []).forEach(function(r){
+    if(!r || !r.rawName || !String(r.rawName).trim()) return;
+    if(r.status === 'current') cur.push(tbpMedRecord(r, 'current', who));
+    else if(r.status === 'historical') hist.push(tbpMedRecord(r, 'historical', who));
+    // anything else ('exclude') is dropped: the clinician said it is not a medication here
+  });
+  tbpEncounterState.medications.current = cur;
+  tbpEncounterState.medications.historical = hist;
+  tbpEncounterState.medications.confirmedAt = Date.now();
+  try { if(window.tbpSaveDraft) window.tbpSaveDraft(); } catch(e){}
+  return tbpEncounterState.medications;
+}
+
+// Candidates the clinician has not ruled on. A drug that appears in the note after confirmation
+// is the common case: they confirmed, then documented a change.
+function tbpMedNewSinceConfirmation(){
+  var m = tbpEncounterState.medications;
+  if(!m.confirmedAt) return [];
+  var known = {};
+  m.current.concat(m.historical).forEach(function(r){
+    known[(r.interactionKey || r.rawName) + '|' + (r.dose || '')] = true;
+  });
+  return tbpMedScan().filter(function(c){ return !known[c.interactionKey + '|' + (c.dose || '')]; });
+}
+
+// Things worth stopping the clinician for, and nothing else. A missing dose only matters when
+// the question turns on dose; a missing formulation only matters for a drug that HAS distinct
+// release forms, because that is what picks the label.
+var TBP_FORM_SENSITIVE = ['amphetamine_mixed_salts','methylphenidate','bupropion','venlafaxine',
+  'quetiapine','paliperidone','carbamazepine','divalproex','lithium','dextroamphetamine',
+  'guanfacine','clonidine','metformin','oxycodone','morphine','tramadol'];
+
+function tbpMedAmbiguities(purpose){
+  var out = [];
+  tbpEncounterState.medications.current.forEach(function(r){
+    if(!r.dose && purpose === 'dose') out.push({ rawName: r.rawName, issue: 'no dose recorded, and the question turns on dose' });
+    if(!r.formulation && TBP_FORM_SENSITIVE.indexOf(r.interactionKey) > -1)
+      out.push({ rawName: r.rawName, issue: 'release form not stated, and this drug has distinct formulations with different labels' });
+  });
+  return out;
+}
+
+// The gate. Returns null when the card should stay out of the way, which is most of the time.
+// It NEVER opens on its own: a purpose has to ask for it.
+function tbpMedConfirmationNeeded(purpose){
+  if(!purpose) return null;                                  // no medication-related task: silence
+  var m = tbpEncounterState.medications;
+  if(!m.confirmedAt) return 'never-confirmed';
+  if(tbpMedNewSinceConfirmation().length) return 'new-since-confirmed';
+  if(tbpMedAmbiguities(purpose).length) return 'ambiguous';
+  return null;
+}
+
+// ── the card itself ───────────────────────────────────────────────────────────────────────
+var tbpMedDraftRows = [], tbpMedOnDone = null;
+
+var TBP_MED_WHY = {
+  'never-confirmed':    'These were found in what you have written. Confirm what the patient is actually on now, and this will not ask again unless something changes.',
+  'new-since-confirmed':'Something changed in your note since you last confirmed. Check the new line.',
+  'ambiguous':          'One detail is missing that this particular question depends on.',
+  'manual':             'What was found in what you have written. Nothing here is on the list until you say so.'
+};
+
+function tbpMedRowsFromState(){
+  var m = tbpEncounterState.medications, rows = [];
+  m.current.forEach(function(r){ rows.push(Object.assign({}, r, { status: 'current' })); });
+  m.historical.forEach(function(r){ rows.push(Object.assign({}, r, { status: 'historical' })); });
+  var known = {};
+  rows.forEach(function(r){ known[(r.interactionKey || r.rawName) + '|' + (r.dose || '')] = true; });
+  tbpMedScan().forEach(function(c){
+    if(known[c.interactionKey + '|' + (c.dose || '')]) return;
+    // A candidate is NEVER pre-set to current. 'unclear' becomes an unselected row, so the
+    // clinician has to actually decide rather than accept a default that happened to be right.
+    rows.push(Object.assign({}, c, { status: c.proposedStatus === 'historical' ? 'historical'
+                                            : (c.proposedStatus === 'current' ? 'current' : '') }));
+  });
+  return rows;
+}
+
+function tbpMedRenderRows(){
+  var host = document.getElementById('meds-rows');
+  if(!host) return;
+  if(!tbpMedDraftRows.length){
+    host.innerHTML = '<div class="hint" style="padding:10px 0">No medications found in what you have written yet. Add one below, or close this and keep going.</div>';
+    return;
+  }
+  host.innerHTML = tbpMedDraftRows.map(function(r, i){
+    var meta = [];
+    if(r.formulation) meta.push('<b>' + esc(r.formulation) + '</b>' + (r.formulationSource === 'text' ? ' (as written)' : ''));
+    if(r.route) meta.push(esc(r.route));
+    if(r.frequency) meta.push(esc(r.frequency));
+    if(r.sources && r.sources.length) meta.push('from ' + esc(r.sources.join(', ')));
+    if(r.statusReason && !r.confirmedBy) meta.push(esc(r.statusReason));
+    var q = (r.quotes && r.quotes[0]) || r.quote || r.sourceQuote || '';
+    return '<div class="med-row' + (r.status === 'exclude' ? ' excluded' : '') + '" data-i="' + i + '">'
+      + '<div class="med-head">'
+      +   '<input class="med-name" data-f="rawName" value="' + esc(r.rawName || '') + '" aria-label="Medication">'
+      +   '<input class="med-dose" data-f="dose" value="' + esc(r.dose || '') + '" placeholder="dose" aria-label="Dose">'
+      +   '<div class="med-seg">'
+      +     '<button type="button" data-st="current"'    + (r.status === 'current' ? ' class="on"' : '')    + '>Current</button>'
+      +     '<button type="button" data-st="historical"' + (r.status === 'historical' ? ' class="on"' : '') + '>Past</button>'
+      +     '<button type="button" data-st="exclude"'    + (r.status === 'exclude' ? ' class="on"' : '')    + '>Not a med</button>'
+      +   '</div>'
+      + '</div>'
+      + (q ? '<div class="med-quote">' + esc(q) + '</div>' : '')
+      + (meta.length ? '<div class="med-meta">' + meta.join(' &middot; ') + '</div>' : '')
+      + '</div>';
+  }).join('');
+}
+
+function tbpShowMeds(reason, onDone){
+  tbpMedDraftRows = tbpMedRowsFromState();
+  tbpMedOnDone = (typeof onDone === 'function') ? onDone : null;
+  var why = document.getElementById('meds-why');
+  if(why) why.textContent = TBP_MED_WHY[reason] || TBP_MED_WHY.manual;
+  var msg = document.getElementById('meds-msg'); if(msg) msg.textContent = '';
+  tbpMedRenderRows();
+  document.getElementById('meds-modal').classList.add('open');
+}
+function tbpHideMeds(){
+  document.getElementById('meds-modal').classList.remove('open');
+  tbpMedOnDone = null;
+}
+
+// Open the card only if something actually needs it, then continue. When nothing needs it the
+// continuation runs immediately and the clinician never sees a form.
+function tbpMedEnsure(purpose, go){
+  var need = tbpMedConfirmationNeeded(purpose);
+  if(!need){ go(); return; }
+  tbpShowMeds(need, go);
+}
+
+(function(){
+  var host = document.getElementById('meds-rows');
+  if(!host) return;
+  host.addEventListener('click', function(e){
+    var b = e.target.closest('.med-seg button'); if(!b) return;
+    var row = b.closest('.med-row'); if(!row) return;
+    var i = +row.getAttribute('data-i'), st = b.getAttribute('data-st');
+    // Clicking the selected state again clears it, so "I have not decided" stays expressible.
+    tbpMedDraftRows[i].status = (tbpMedDraftRows[i].status === st) ? '' : st;
+    tbpMedRenderRows();
+  });
+  host.addEventListener('input', function(e){
+    var f = e.target.getAttribute && e.target.getAttribute('data-f'); if(!f) return;
+    var row = e.target.closest('.med-row'); if(!row) return;
+    tbpMedDraftRows[+row.getAttribute('data-i')][f] = e.target.value;
+  });
+  var add = document.getElementById('meds-add');
+  if(add) add.addEventListener('click', function(){
+    tbpMedDraftRows.push({ rawName: '', dose: '', status: 'current', confirmedBy: 'clinician' });
+    tbpMedRenderRows();
+    var inputs = host.querySelectorAll('.med-name');
+    if(inputs.length) inputs[inputs.length - 1].focus();
+  });
+  var go = document.getElementById('meds-confirm');
+  if(go) go.addEventListener('click', function(){
+    var undecided = tbpMedDraftRows.filter(function(r){ return (r.rawName || '').trim() && !r.status; });
+    if(undecided.length){
+      var msg = document.getElementById('meds-msg');
+      if(msg) msg.innerHTML = '<span style="color:var(--amber)">Mark ' + esc(undecided[0].rawName)
+        + ' as current, past, or not a medication.</span>';
+      return;
+    }
+    tbpMedApplyConfirmation(tbpMedDraftRows, 'clinician');
+    var done = tbpMedOnDone;
+    tbpHideMeds();
+    if(done) done();
+  });
+})();
 
 function tbpMarkResultReviewed(capability, id){
   try {
@@ -4502,7 +4840,6 @@ function getEncounterContext(){
     // inventing a writer by parsing the note is the extraction layer this work exists to avoid.
     // Named here so the gap is visible rather than discovered by someone expecting a value.
     unresolved: {
-      medications: 'home exists (encounter state); no writer — there is no med-list widget',
       medicationChanges: 'home exists; no writer',
       adverseEffects: 'free text only; patient-reported is not an observed finding',
       vitals: 'free text only',
@@ -5663,7 +6000,7 @@ document.getElementById('up-choice-doc').addEventListener('click', function(){
   if(el) el.addEventListener('click', function(e){ if(e.target === el) el.classList.remove('open'); });
   document.addEventListener('keydown', function(e){
     if(e.key !== 'Escape') return;
-    ['upload-choice','docs-modal','reason-modal','adhd-setup','adhd-panel'].forEach(function(id){
+    ['upload-choice','docs-modal','meds-modal','reason-modal','adhd-setup','adhd-panel'].forEach(function(id){
       var m = document.getElementById(id);
       if(!m || !m.classList.contains('open')) return;
       if(id === 'reason-modal') tbpHideReason();

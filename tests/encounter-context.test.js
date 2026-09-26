@@ -264,10 +264,12 @@ structural('mutating the context does not mutate app state', () => {
 
 structural('unresolved fields are declared, not silently absent', () => {
   const u = runNew({}).ctx.unresolved;
-  ['medications', 'medicationChanges', 'adverseEffects', 'vitals', 'labs', 'screenersCompleted']
+  ['medicationChanges', 'adverseEffects', 'vitals', 'labs', 'screenersCompleted']
     .forEach((k) => assert.ok(typeof u[k] === 'string' && u[k].length, 'missing unresolved.' + k));
-  // diagnoses moved out of unresolved: the preflight capture now writes them.
-  assert.ok(!('diagnoses' in u), 'diagnoses is resolved now and must not be listed as a gap');
+  // Each of these left `unresolved` when it got a writer: diagnoses at the preflight capture,
+  // medications at the confirmation card. A field with a writer listed as a gap is a lie.
+  ['diagnoses', 'medications'].forEach((k) =>
+    assert.ok(!(k in u), k + ' is resolved now and must not be listed as a gap'));
 });
 
 structural('results is the declared return channel, empty on a fresh encounter', () => {
