@@ -8,11 +8,11 @@ Then I accumulated a great deal of psychology. Psychology in high school. An und
 
 Mindfulness was in there somewhere. For a long time I am not sure I really understood why it mattered.
 
-What actually made it click came later, and it came back through the same territory I had always associated it with. Reading The Power of Now. Reading Thich Nhat Hanh.
+And running alongside all of that, I was reading The Power of Now and Thich Nhat Hanh. Ironically, right back in the territory I had always associated mindfulness with in the first place.
 
-And then I went back and looked at the training again.
+At some point I started tying the two together.
 
-Because once you have a working sense of what mindfulness actually is, it becomes hard to miss how much of it is already sitting inside the therapies we were taught. Not as a technique someone added on. As something the work quietly requires.
+Because once you have a working sense of what mindfulness actually is, it becomes hard to miss how much of it is already sitting inside the therapies we were being taught. Not as a technique someone added on. As something the work quietly requires.
 
 Somewhere in there I stopped thinking of mindfulness as a state you are supposed to achieve, and started thinking about it as something much more ordinary. Noticing what is happening while it is happening.
 
