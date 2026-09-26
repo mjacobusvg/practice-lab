@@ -50,13 +50,13 @@ And then they do it anyway.
 
 Knowing about a pattern afterward is a different thing from recognizing it while you are inside it.
 
-So the distinction I keep coming back to is this:
+The way I have come to think about it clinically is:
 
-Awareness without insight is observation.
+**Awareness without insight is observation.**
 
-Insight without awareness is hindsight.
+**Insight without awareness is hindsight.**
 
-Mindfulness is when awareness and insight meet in the present moment.
+**Mindfulness is when awareness and insight meet in the present moment.**
 
 # Awareness within awareness
 
@@ -78,7 +78,7 @@ And the one we are actually after: I am anxious, and right now I can feel myself
 
 Read that last one again and notice the tense.
 
-The behavior has not happened yet.
+**The behavior has not happened yet.**
 
 That is the whole difference. Not an easy moment, and not some magical freedom from the anxiety. The person may desperately want the reassurance. But for a moment they are two things at once. The person having the urge, and the person watching themselves have it.
 
@@ -126,7 +126,7 @@ So mindfulness is not a stable elevated state you finally reach and then live in
 
 Which gives you the actual practice, and it is almost a paradox:
 
-The goal is not to never lose awareness. The practice is noticing that you lost it.
+**The goal is not to never lose awareness. The practice is noticing that you lost it.**
 
 Because the moment you recognize that you have been completely caught up in something for the last ten minutes, you are already back. And with practice, ten minutes becomes five. Five becomes thirty seconds. Eventually, sometimes, you catch the urge as it is forming.
 

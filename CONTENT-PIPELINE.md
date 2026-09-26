@@ -49,6 +49,25 @@ Either run 1 and 2 next week and OCD/ERP the week after (keeps the best material
 logic intact), or hold OCD until the per-disorder posts have landed. **Decided: OCD and ERP run
 immediately after 1 and 2.** The per-disorder applications follow and can run indefinitely.
 
+### Post 1 is drafted
+
+`content/post-01-you-cant-change-what-you-dont-notice.md`, 11,649 characters.
+
+**Title field:** `A Framework for Anxiety, Part 1: You Can't Change What You Don't Notice`
+
+The series name and part number live in the TITLE, never in the body. The platform already renders
+the title as the page `h1`, so a `# A Framework for Anxiety` line in the body produces a second
+heading at the same level as the section headings, a `**subtitle**` line becomes a bold paragraph,
+and `## Part 1` renders *smaller* than both as an `h3`. Verified through `toRichHtml`. The body
+opens directly on "When I was much younger" and every `#` in it is a true section.
+
+**Bold is reserved for five structural lines**, not for examples: the three lines of the triad,
+"The behavior has not happened yet," and "The goal is not to never lose awareness. The practice is
+noticing that you lost it." These render as bold paragraphs on purpose. They are emphasis, not
+headings, and must not be "fixed" into `#` lines.
+
+Body is ASCII, no em-dashes, eight `h2` sections, zero bold pseudo-headings.
+
 ### Next slots
 - **Mon 28 Sept** — Post 1, *You Can't Change What You Don't Notice*
 - **Thu 1 Oct** — Post 2, *Find the Avoidance, Find a Treatment Target*
