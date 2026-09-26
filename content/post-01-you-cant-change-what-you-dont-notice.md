@@ -152,7 +152,11 @@ Here is the part that matters, and the part that would have saved me years of fr
 
 Just like lucid dreaming, we do not stay lucid.
 
-You can become lucid in a dream and then get pulled straight back into it and forget you ever knew. The same thing happens awake. We notice ourselves worrying, or rehearsing, or checking, and five minutes later we are completely absorbed in it again.
+You can become lucid in a dream and then get pulled straight back into it and forget you ever knew. Or the realization itself ends the dream and you wake up. Either way the lucidity is gone.
+
+And waking up is no protection, because ordinary waking life is the immersed state too. You can be up for five minutes, read one email, and be completely back inside they disrespected me, I need to respond.
+
+The same thing happens all day. We notice ourselves worrying, or rehearsing, or checking, and a few minutes later we are completely absorbed in it again.
 
 Then: oh. I got pulled back in.
 
