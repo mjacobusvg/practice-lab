@@ -164,6 +164,10 @@ And in that moment, you are back.
 
 So mindfulness is not a stable elevated state you finally reach and then live in. It is not a monk sitting in perfect uninterrupted awareness. We move in and out of it all day.
 
+And it does not happen on its own. This takes active attention. You are deliberately turning toward what is happening rather than waiting to notice it by accident.
+
+But not the kind of effort people usually expect. You cannot hold the state open by force.
+
 Which gives you the actual practice, and it is almost a paradox:
 
 **The goal is not to never lose awareness. The practice is noticing that you lost it.**
