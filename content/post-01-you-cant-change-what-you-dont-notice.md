@@ -44,6 +44,18 @@ Somewhere in there I stopped thinking of mindfulness as a state you are supposed
 
 Even that is not quite right.
 
+# So what is it, then
+
+Not a special state. Not simple awareness either.
+
+Closer to this: noticing what is happening while it is happening, understanding something about what you are noticing, and recognizing that you are the one having the experience.
+
+Which is already several things at once. Awareness. Insight. Attention, because none of it happens without direction. And the recursive one, noticing your own noticing while it is running.
+
+None of those is quite the same as the others, and the differences are where this stops being abstract and turns into something you can use in a room with a patient.
+
+So the rest of this takes it apart.
+
 # Awareness is not the same as insight
 
 We use awareness, insight and mindfulness almost interchangeably. I do not think they are the same thing.

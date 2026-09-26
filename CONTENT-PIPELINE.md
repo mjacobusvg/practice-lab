@@ -51,6 +51,17 @@ an anxiety series and nothing else tells a member what it is about. The feed car
 `excerpt` is the first 200 characters of the body and this body opens with an exercise that withholds
 the subject (see `FORUM-POSTS.md` §2). **No deck or subtitle:** the platform has no field for one.
 
+**The bridge section, `# So what is it, then`, is structural.** Before it, the post jumped from
+"I started tying the two together" straight into awareness versus insight, with no provisional
+answer to what mindfulness is in this framework. It gives the reader the signpost: here is the
+thing, now it gets taken apart. Two things it must NOT do, both of which a later edit will be
+tempted toward. It must not use "The way I have come to think about it clinically is" (that phrase
+is reserved for the triad, twenty paragraphs on, and a second use both collides and spends the
+setup early), and it must not state the triad, which is the sharper formulation the decomposition
+earns. The bridge enumerates the components; the triad states the relations between them. It also
+names ATTENTION up front, which is where the decision that attention belongs in the definition
+actually lands, since attention otherwise does not appear until "And we do not stay there."
+
 ### Slots
 - Mon 28 Sept and Thu 1 Oct are both empty. Nothing past 24 Sept is in `scheduled_posts`.
 - Post 1 is drafted and unscheduled. Michael schedules it, not Claude.
