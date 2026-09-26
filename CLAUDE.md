@@ -119,6 +119,23 @@ delete it; just leave it in place and only advance it when a deploy is worth int
   which BAA covers what and how every kind of PHI is routed. The Netlify `clinical-proxy*.mjs` /
   `azure-transcribe*.mjs` files are OFF-BAA rollback-only; do not point traffic at them or at
   `api.anthropic.com`. See `MODEL-REGISTRY.md` for the per-tool model list.
+- **`CLINICAL-ONTOLOGY.md` defines what the Scribe's clinical state MEANS and who may establish
+  it. Read it before implementing any clinical capability, and implement AGAINST it.** It is the
+  fix for a specific recurring failure: an implementation that invents its own ontology as it
+  goes produces a system that is internally consistent, clinically wrong, and passes its tests.
+  It holds the universal invariants (a model output may propose a state change but never becomes
+  encounter state because a model produced it; state flows app -> context -> prose and never
+  back; unresolved means unresolved; fail closed; specificity in the source is never destroyed),
+  and for each concept it separates **identity / state / source / authority** because most of the
+  failures have been about *who is allowed to say a thing is true*, not about what it is. It
+  records **wrong models as wrong, with why**, which is the part that stops a future session
+  recreating the same mistake: "normalize a medication to its ingredient and use that as clinical
+  identity" is why a hallucinated maximum dose reached a clinician. Every claim is tagged
+  ENFORCED (in code, with the citation) / DECIDED / INFERRED (a description, NOT a rule) / OPEN.
+  **Do not resolve an OPEN fork by picking whichever reading makes the code easier** - raise it.
+  If implementation needs something the doc forbids, the ontology is incomplete: decide it,
+  record it, then build. `tests/ontology-invariants.test.js` makes the ENFORCED tags executable
+  so the doc cannot rot into fiction.
 - `CLINICAL-NOTE-GENERATOR-ARCHITECTURE.md` is the living design doc for the HPI Generator /
   Note Builder / coder pipeline. §0.3 / §0.3.1 hold the governing rule on what may be
   hardcoded vs. what must come from the clinician's Vault template — read it before changing
