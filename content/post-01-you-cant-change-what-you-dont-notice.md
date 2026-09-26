@@ -234,6 +234,30 @@ This is the actual reason mindfulness gets practiced when nothing much is happen
 
 Not because noticing your breath while sitting still is the point. It is rehearsal.
 
+Here is one that takes about a minute, and that you can hand a patient.
+
+Pick something to look at. A candle, a mark on the wall, anything. Keep your eyes on it and do not move them.
+
+Put your attention on the object. The edges, the movement, the color.
+
+Now, without moving your eyes, move your attention out to whatever is in your peripheral vision.
+
+Then to the sounds in the room.
+
+Then to your feet on the floor, or your breathing, or the weight of your body in the chair.
+
+You have been looking at the same spot the whole time. Nothing in the room changed. What moved was your attention, and you are the one who moved it.
+
+Then see if you can catch yourself doing it. Not the looking. The directing.
+
+And then stop trying. Let your attention go wherever it wants.
+
+Within about ten seconds you are thinking about dinner, or wondering whether you are doing this right, or noticing an itch, or rehearsing a conversation from this morning.
+
+Then: oh. I stopped doing it.
+
+There it is. The whole thing, in a minute, with nothing at stake.
+
 You learn what it feels like to notice a thought as a thought. A sensation as a sensation. An urge as an urge. You learn the difference between having an experience and immediately responding to it.
 
 And then, hopefully, it starts to generalize, and it shows up earlier in the sequence.
