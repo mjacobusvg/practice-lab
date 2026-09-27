@@ -102,6 +102,48 @@ The way I have come to think about it clinically is:
 
 That third line is doing most of the work, and it is the hardest of the three to describe.
 
+# Awareness is not the same as attention
+
+Awareness and attention are closely related, but they are not the same thing.
+
+Go back to the exercise at the beginning.
+
+Your eyes stayed on the same point. The point, your peripheral vision, the sounds around you, and whatever you could feel in your body were all available to you.
+
+What changed was where your attention went.
+
+Awareness is that something is present in your experience. Attention is what gets selected from that experience and brought to the foreground.
+
+And attention is not always active.
+
+It can get captured. It can narrow onto one thing. It can drift somewhere else without you realizing it. It can stay stuck on whatever grabbed it first.
+
+But you can also direct it deliberately.
+
+Put your attention on the point.
+
+Move it to your peripheral vision.
+
+Move it to sound.
+
+That is what I mean by active attention. You are not just having attention. You are directing it.
+
+Then I asked you to stop trying and let your attention go wherever it wanted.
+
+Attention kept moving, but you were no longer directing it.
+
+And then, eventually: there. You realized you had drifted.
+
+Now another layer had appeared. You were not only attending to something. You noticed what your attention had been doing.
+
+That is the attentional part of mindfulness that I care about clinically: noticing where attention has gone while you are still inside the experience, and being able to widen it, hold it, or move it deliberately.
+
+Someone can be fully aware they are anxious while nearly all of their attention is locked onto their heart rate, the expression on somebody's face, the intrusive thought, or the question they cannot answer.
+
+They are aware. Their attention is still being driven.
+
+Active attention is where some agency comes back.
+
 # Awareness within awareness
 
 The phrase I find myself using is awareness within awareness. Meta-awareness is the more technical term, but it does not convey the experience as well.
@@ -204,13 +246,13 @@ And in that moment, you are back.
 
 So mindfulness is not a stable elevated state you finally reach and then live in. It is not a monk sitting in perfect uninterrupted awareness. We move in and out of it all day.
 
-And it does not happen on its own. This takes active attention, and attention is doing more work here than it looks.
+And it does not happen on its own. This is where active attention matters.
 
-Awareness tells you that something is happening. Attention decides what you do with that. Where it goes. How wide it is. Whether it stays stuck on whatever grabbed it first.
+Awareness tells you that something is happening. Attention shapes what is foregrounded, what stays narrow, what gets held, and what can be redirected.
 
 Someone can be fully aware they are anxious, and even notice themselves being anxious, while their attention is still entirely taken up by what if this is dangerous, I need to figure this out, I need to check. Aware, and still being driven.
 
-So the attentional part is noticing where attention went, and being able to widen it, or bring it back, or put it somewhere on purpose.
+Active attention means noticing where attention went and deliberately widening it, bringing it back, or placing it somewhere else.
 
 Active, but not forceful. You cannot hold the state open by straining at it.
 
