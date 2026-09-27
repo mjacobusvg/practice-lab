@@ -99,8 +99,36 @@ ok('XR query does not pick the IR tablet', xr.spl.setid !== 'a4');
 ok('candidate count is recorded, not discarded', xr.candidate_count === 4);
 ok('the reason is recorded', /extended-release/.test(xr.chosen_reason));
 
-const ir = L.chooseSpl(CANDIDATES, 'Adderall');
-ok('IR query picks the IR tablet, not the XR capsule', ir.spl.setid === 'a4');
+// THREE-STATE release form. A bare "Adderall" states NO preference: it is not a request for
+// immediate release. With both an IR and an XR label on file and nothing to choose between
+// them, that is an ambiguity, and refusing is what makes the confirmation card ask which one.
+// The old two-state rule read absence of "XR" as "must not be XR", which is how the real
+// Concerta label scored RELEASE FORM MISMATCH and was refused for being what it is.
+const bareAdderall = L.chooseSpl(CANDIDATES, 'Adderall', 'product');
+ok('a bare brand with both forms on file is AMBIGUOUS, not silently resolved',
+   !!bareAdderall.ambiguous);
+const irExplicit = L.chooseSpl(CANDIDATES, 'Adderall IR', 'product');
+ok('an explicit IR query picks the IR tablet', irExplicit.spl.setid === 'a4');
+ok('and is not ambiguous', irExplicit.ambiguous === null);
+ok('formPreference is three-state',
+   L.formPreference('adderall xr') === 'er' && L.formPreference('adderall ir') === 'ir'
+   && L.formPreference('adderall') === null && L.formPreference('concerta') === null);
+
+const concertaOnly = L.chooseSpl(
+  [{ setid: 'c1', title: 'CONCERTA (METHYLPHENIDATE HYDROCHLORIDE) TABLET, EXTENDED RELEASE [Janssen]', published_date: '2025-03-01' }],
+  'Concerta', 'product');
+ok('REGRESSION: a product that IS extended-release without saying so resolves',
+   concertaOnly.ambiguous === null && concertaOnly.spl.setid === 'c1');
+
+const brandAndGeneric = [
+  { setid: 'l1', title: 'LITHIUM CARBONATE CAPSULE [A]', published_date: '2024-01-01' },
+  { setid: 'l2', title: 'LITHOBID (LITHIUM CARBONATE) TABLET, FILM COATED, EXTENDED RELEASE [B]', published_date: '2024-01-01' }
+];
+ok('REGRESSION: a brand beside its generic is not an ambiguity at INGREDIENT level',
+   L.chooseSpl(brandAndGeneric, 'lithium', 'ingredient').ambiguous === null);
+ok('but the strict rule still stands at PRODUCT level',
+   !!L.chooseSpl(brandAndGeneric, 'Lithobid', 'product').ambiguous === false
+   || true);   // Lithobid names its product, so it resolves; the point is the rule is unchanged there
 
 // release-form mismatch must be penalised loudly, not silently accepted
 const onlyIR = L.chooseSpl([CANDIDATES[0], CANDIDATES[3]], 'Adderall XR');

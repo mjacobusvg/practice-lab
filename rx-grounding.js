@@ -393,6 +393,7 @@
         lookups: e.lookups || null,
         unmapped_codes: e.unmapped_codes || null,
         attempts: e.attempts || null,
+        writes: e.writes || null,
         chosen_because: s.chosen_because || null,
         candidates: e.candidates || null,
         sections: (e.sections || []).map(function (x) {

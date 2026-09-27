@@ -395,11 +395,11 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/rx-vocabulary.js?v=ambient-164-sub"></script>
-<script src="/rx-detect.js?v=ambient-164-sub"></script>
-<script src="/rx-grounding.js?v=ambient-164-sub"></script>
-<script src="/rx-clinical-reference.js?v=ambient-164-sub"></script>
-<script src="/note-engine-practice.js?v=ambient-164-sub"></script>
+<script src="/rx-vocabulary.js?v=ambient-165-sub"></script>
+<script src="/rx-detect.js?v=ambient-165-sub"></script>
+<script src="/rx-grounding.js?v=ambient-165-sub"></script>
+<script src="/rx-clinical-reference.js?v=ambient-165-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-165-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -761,7 +761,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-164-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-165-sub</span></div>
 </div>
 </div>
 
@@ -4780,6 +4780,9 @@ async function tbpCoverageA(opts){
       row.sections = (e.sections || []).map(function(x){ return x.section + '(' + String(x.text||'').length + ')'; });
       row.lookups = e.lookups || null;
       row.attempts = e.attempts || null;
+      row.writes = e.writes || null;   // per-section storage outcome, with the HTTP error if any
+      row.writeFails = (e.writes || []).filter(function(w){ return !w.stored; })
+                                       .map(function(w){ return w.section + ': ' + w.error; });
       if(e.resolution_status === 'ambiguous'){ row.result = 'AMBIGUOUS'; row.stage = '3 identity'; row.detail = e.error; }
       else if(e.resolution_status === 'failed' || e.error){
         row.result = 'FAIL';
@@ -4788,7 +4791,14 @@ async function tbpCoverageA(opts){
                   : e.failure_kind === 'no_readable_sections' ? '5 sections' : '? service';
         row.detail = e.error;
       }
-      else if(!row.sections.length){ row.result = 'FAIL'; row.stage = '5 sections'; row.detail = 'no sections'; }
+      else if(!row.sections.length){
+        row.result = 'FAIL';
+        // Distinguish "nothing extracted" from "extracted but would not store".
+        row.stage = row.writeFails.length ? '5 storage' : '5 sections';
+        row.detail = row.writeFails.length ? row.writeFails[0]
+                   : ((row.writes && row.writes.length) ? 'stored ' + row.writes.length + ' but none requested'
+                                                        : 'no sections extracted');
+      }
       else { row.result = 'PASS'; row.stage = '-'; }
     } catch(err){ row.result = 'FAIL'; row.stage = '? service'; row.detail = String(err && err.message || err); }
     rows.push(row); n++;
@@ -4801,7 +4811,9 @@ async function tbpCoverageA(opts){
   console.table(rows.map(function(r){ return { cls:r.cls, written:r.written, result:r.result,
     stage:r.stage||'-', detected:r.detected||'-', rxcui:r.rxcui||'-',
     label:(r.label||'-').slice(0,42), setid:(r.setid||'-').slice(0,12), v:r.version||'-',
-    sections:(r.sections||[]).join(' ') || '-', detail:(r.detail||'').slice(0,60) }; }));
+    sections:(r.sections||[]).join(' ') || '-',
+    wrote:(r.writes||[]).map(function(w){ return w.section+(w.stored?'':'!'); }).join(' ') || '-',
+    detail:(r.detail||'').slice(0,90) }; }));
   window.TBP_COVERAGE_A = rows;
   console.log('Full rows in window.TBP_COVERAGE_A. copy(JSON.stringify(TBP_COVERAGE_A,null,1)) to paste back.');
   return rows;

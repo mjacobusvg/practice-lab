@@ -63,6 +63,7 @@ const CLASS_PRIMARY = {
   indication:       'indications_and_usage'
 };
 
+// Returns the raw response. Callers that must not proceed on a failed write use sbOk().
 function sb(path, opts) {
   const url = process.env.SUPABASE_URL, key = process.env.SUPABASE_SERVICE_KEY;
   if (!url || !key) return Promise.reject(new Error('supabase not configured'));
@@ -72,6 +73,26 @@ function sb(path, opts) {
       'Content-Type': 'application/json'
     }, (opts && opts.headers) || {})
   }));
+}
+
+// FAIL LOUDLY. `await sb(...)` resolves on a 400 or a 413 exactly as it does on success, so a
+// rejected write was indistinguishable from a successful ingest: Pass A found nine drugs where
+// the RIGHT label was identified and zero sections came back. Whether that is the cause is not
+// yet established, and guessing at section storage before knowing would be the wrong repair. So
+// every write is checked, and the status and body travel into the evidence trail where they can
+// be read.
+async function sbOk(path, opts, what) {
+  const r = await sb(path, opts);
+  if (!r.ok) {
+    let body = '';
+    try { body = (await r.text() || '').slice(0, 300); } catch (e) {}
+    const err = new Error('supabase ' + (what || path.split('?')[0]) + ' -> HTTP ' + r.status
+      + (body ? ': ' + body : ''));
+    err.httpStatus = r.status;
+    err.httpBody = body;
+    throw err;
+  }
+  return r;
 }
 
 async function getJson(url) {
@@ -166,11 +187,24 @@ function isCombinationOf(productName, queryWords) {
   return parts.some(part => !queryWords.some(w => part.indexOf(w) !== -1));
 }
 
+// THREE STATES, not two. A query with no release-form token used to make `wantER` false, which
+// the scorer then read as "must NOT be extended release" -- so the real Concerta label, which is
+// extended release by definition and does not carry "XR" in its name, scored RELEASE FORM
+// MISMATCH and the lookup refused. Absence of a token means NO PREFERENCE.
+//   'er'  the query asked for extended/sustained release
+//   'ir'  the query asked for immediate release
+//   null  the query said nothing, so neither is penalised
+function formPreference(q) {
+  if (/\bir\b|immediate[- ]?release/.test(q)) return 'ir';
+  if (/\b(xr|er|sr|la|cd|xl)\b|extended[- ]?release|sustained[- ]?release/.test(q)) return 'er';
+  return null;
+}
+
 function chooseSpl(list, queryName, granularity) {
   if (!list || !list.length) return null;
   const q = String(queryName || '').toLowerCase();
   const words = q.split(/\s+/).filter(w => w.length > 2);
-  const wantER = /\b(xr|er|extended[- ]release|sr|la|cd|xl)\b/.test(q);
+  const pref = formPreference(q);
   const scored = list.map(s => {
     const title = String(s.title || '').toLowerCase();
     let score = 0, why = [], full = false, mismatch = false;
@@ -179,8 +213,10 @@ function chooseSpl(list, queryName, granularity) {
     if (words.length && words.every(w => title.indexOf(w) !== -1)) { score += 100; full = true; why.push('title matches full query'); }
     else if (words.some(w => title.indexOf(w) !== -1)) { score += 20; why.push('title matches part of query'); }
     // Extended-release asked for must not resolve to an immediate-release label, or vice versa.
-    const isER = /extended[- ]release|\bxr\b|\ber\b|\bxl\b/.test(title);
-    if (wantER === isER) { score += 25; why.push(wantER ? 'both extended-release' : 'neither extended-release'); }
+    // With no preference stated, neither is rewarded and neither is punished.
+    const isER = /extended[- ]release|sustained[- ]release|\bxr\b|\ber\b|\bxl\b|\bsr\b/.test(title);
+    if (pref === null) { why.push('no release form requested'); }
+    else if ((pref === 'er') === isER) { score += 25; why.push(pref === 'er' ? 'both extended-release' : 'both immediate-release'); }
     else { score -= 60; mismatch = true; why.push('RELEASE FORM MISMATCH'); }
     // An extra active ingredient makes this a different product, whatever the title match says.
     const product = splProductName(s.title);
@@ -212,10 +248,16 @@ function chooseSpl(list, queryName, granularity) {
     // immediate-release and an extended-release label at the same score are.
     const near = scored.slice(1).filter(s => (top.score - s.score) <= 10);
     let different = near.filter(s => s.isER !== top.isER || s.product !== top.product);
-    // AT INGREDIENT GRANULARITY, a release-form difference between equivalent generics is not a
-    // reason to refuse: whether fluoxetine inhibits CYP2D6 is the same fact in every label. Only
-    // a genuinely different PRODUCT (a combination, another drug) still counts.
-    if (granularity === 'ingredient') different = different.filter(s => s.product !== top.product);
+    // AT INGREDIENT GRANULARITY the claim is about the ingredient, and every label for that
+    // ingredient answers it. A brand beside its own generic is not an ambiguity: `lithium`
+    // against LITHIUM CARBONATE and LITHOBID refused on exactly that, and nine of Pass A's
+    // twenty-six reported precisely ONE "materially different" label, which is what a brand
+    // sitting next to its generic looks like.
+    //
+    // A genuinely different DRUG is still caught, by the -150 penalty on a label carrying an
+    // ingredient nobody asked for. This loosening applies ONLY here: at product granularity the
+    // formulation is the point, and the strict rule stands.
+    if (granularity === 'ingredient') different = [];
     if (different.length) {
       ambiguous = different.length + ' materially different label(s) scored as well as the best match: '
         + different.slice(0, 3).map(s => s.product).join('; ');
@@ -371,6 +413,24 @@ async function ingestDrug(queryName, wantedSections, granularity) {
   list.forEach(x => { seen[x.setid || x.set_id] = true; });
   rxHits.forEach(x => { const k = x.setid || x.set_id; if (!seen[k]) { seen[k] = true; list.push(x); } });
 
+  // INGREDIENT FALLBACK, FOR DISCOVERY ONLY. "venlafaxine XR" resolves to an RxNorm concept
+  // DailyMed does not index, and no SPL title contains that string as written, so both lookups
+  // came back empty and four drugs failed with "no SPL found". Searching the bare ingredient
+  // finds the candidates.
+  //
+  // What it does NOT do is relax the requirement. chooseSpl is still called with the ORIGINAL
+  // query, so "venlafaxine XR" must still end on an extended-release label. Letting a fallback
+  // erase the formulation constraint would recreate the Adderall defect through a side door.
+  const bare = String(queryName).replace(/\b(xr|er|sr|la|cd|xl|ir|dr|odt)\b/gi, '')
+                                .replace(/extended[- ]?release|immediate[- ]?release|sustained[- ]?release/gi, '')
+                                .replace(/\s+/g, ' ').trim();
+  if (!list.length && bare && bare.toLowerCase() !== String(queryName).toLowerCase()) {
+    const byIng = await getJson(DAILYMED + '/spls.json?drug_name=' + encodeURIComponent(bare) + '&pagesize=50');
+    const ingHits = (byIng && byIng.data) || [];
+    tried.push({ by: 'ingredient:' + bare, found: ingHits.length });
+    ingHits.forEach(x => { const k = x.setid || x.set_id; if (!seen[k]) { seen[k] = true; list.push(x); } });
+  }
+
   const pick = list.length ? chooseSpl(list, queryName, granularity) : null;
   if (!pick) return { ok: false, kind: 'label_not_found', query: queryName, rxcui: res.rxcui,
                       lookups: tried,
@@ -422,7 +482,8 @@ async function ingestDrug(queryName, wantedSections, granularity) {
                   + ((wantedSections && wantedSections.length) ? 'requested ' : '') + 'section' };
   }
 
-  await sb('tbp_rx_drug', {
+  const writes = [];
+  await sbOk('tbp_rx_drug', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates' },
     body: JSON.stringify({
@@ -430,7 +491,7 @@ async function ingestDrug(queryName, wantedSections, granularity) {
       tty: pick.spl.title ? null : null, resolved_by: res.resolved_by, updated_at: new Date().toISOString()
     })
   });
-  await sb('tbp_drug_label', {
+  await sbOk('tbp_drug_label', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates' },
     body: JSON.stringify({
@@ -442,16 +503,27 @@ async function ingestDrug(queryName, wantedSections, granularity) {
       fetched_at: new Date().toISOString()
     })
   });
-  await sb('tbp_drug_label_section?setid=eq.' + encodeURIComponent(setid), { method: 'DELETE' });
+  await sbOk('tbp_drug_label_section?setid=eq.' + encodeURIComponent(setid), { method: 'DELETE' }, 'section delete');
   if (sections.length) {
-    await sb('tbp_drug_label_section', {
-      method: 'POST',
-      body: JSON.stringify(sections.map(s => Object.assign({ setid: setid }, s)))
-    });
+    // One row at a time is slower and tells the truth: a single array POST that fails takes
+    // every section down with it and reports nothing, which is exactly the shape Pass A saw.
+    for (const sec of sections) {
+      try {
+        await sbOk('tbp_drug_label_section', {
+          method: 'POST',
+          body: JSON.stringify([Object.assign({ setid: setid }, sec)])
+        }, 'section insert');
+        writes.push({ section: sec.section_name, chars: String(sec.text || '').length, stored: true });
+      } catch (e) {
+        writes.push({ section: sec.section_name, chars: String(sec.text || '').length,
+                      stored: false, error: String(e && e.message || e) });
+      }
+    }
   }
   return {
     ok: true, query: queryName, rxcui: res.rxcui, setid: setid,
     resolved_by: res.resolved_by, candidate_count: pick.candidate_count,
+    writes: writes,
     chosen_reason: pick.chosen_reason + (attempts.length > 1
       ? ' [skipped ' + (attempts.length - 1) + ' candidate(s) with no readable section]' : ''),
     lookups: tried, attempts: attempts,
@@ -498,7 +570,7 @@ async function getEvidence(drugNames, classes, opts) {
                    failure_kind: ing.kind || 'unknown', rxcui: ing.rxcui || null,
                    resolved_by: ing.resolved_by || null, candidates: ing.candidates || null,
                    lookups: ing.lookups || null, attempts: ing.attempts || null,
-                   error: ing.error });
+                   writes: ing.writes || null, error: ing.error });
         continue;
       }
       ingested = ing;
@@ -547,6 +619,9 @@ async function getEvidence(drugNames, classes, opts) {
       sections: (secs || []).map(s => ({ section: s.section_name, loinc: s.loinc_code, text: s.text })),
       unmapped_codes: (ingested && ingested.unmapped_codes) || null,
       attempts: (ingested && ingested.attempts) || null,
+      // Per-section write outcome, so "the label had no sections" and "the sections would not
+      // store" stop looking identical from the outside.
+      writes: (ingested && ingested.writes) || null,
       lookups: (ingested && ingested.lookups) || null,
       source: {
         label_title: row.title,
@@ -563,5 +638,5 @@ async function getEvidence(drugNames, classes, opts) {
 }
 
 module.exports = { getEvidence, ingestDrug, extractSections, chooseSpl, splBaseName,
-                   splProductName, isCombinationOf, splYear,
+                   splProductName, isCombinationOf, splYear, formPreference,
                    resolveRxcui, SECTIONS, CLASS_SECTIONS, CLASS_PRIMARY, MIN_CONFIDENT };
