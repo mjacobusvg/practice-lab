@@ -92,7 +92,7 @@ And then they do it anyway.
 
 Knowing about a pattern afterward is a different thing from recognizing it while you are inside it.
 
-The way I have come to think about it clinically is:
+The way I have come to think about one important part of it clinically is:
 
 **Awareness without insight is observation.**
 
@@ -146,6 +146,8 @@ They are aware. Their attention is still being driven.
 
 Active attention is where some agency comes back.
 
+And when what becomes visible is your own attention, thought, urge or reaction, we are getting into something else: meta-awareness.
+
 # Awareness within awareness
 
 The phrase I find myself using is awareness within awareness. Meta-awareness is the more technical term, but it does not convey the experience as well.
@@ -188,7 +190,7 @@ Read that last one again and notice the tense.
 
 **The behavior has not happened yet.**
 
-That is the whole difference. Not an easy moment, and not some magical freedom from the anxiety. The person may desperately want the reassurance. But for a moment they are two things at once. The person having the urge, and the person watching themselves have it.
+In this example, that is where the difference becomes clinically useful. Not an easy moment, and not some magical freedom from the anxiety. The person may desperately want the reassurance. But for a moment they are two things at once. The person having the urge, and the person watching themselves have it.
 
 And in that moment there is a choice point that did not exist a second earlier.
 
@@ -264,7 +266,7 @@ Which gives you the actual practice, and it is almost a paradox:
 
 Because the moment you recognize that you have been completely caught up in something for the last ten minutes, you are already back. And with practice, ten minutes becomes five. Five becomes thirty seconds. Eventually, sometimes, you catch the urge as it is forming.
 
-Which is the same thing the third line said. Awareness of awareness in the present moment, with insight telling you what you are looking at. Not because you have escaped the experience, but because for a moment you are not completely fused with it.
+Which is what that third line was trying to get at: awareness and insight meeting in the present moment while you can still see yourself inside the process. Not because you have escaped the experience, but because for a moment you are not completely fused with it.
 
 Which brings me back to a word I used about the dream, and that I want to be careful with.
 
@@ -340,7 +342,7 @@ That is a version of what a patient can practice, and you can hand it to them in
 
 The catching is the rep. Not the staring.
 
-And notice what you were doing when you caught it. Not looking at the object. Directing.
+You notice that your attention wandered. That is awareness of your own attention. Then you deliberately put it somewhere again. That is the active part.
 
 You learn what it feels like to notice a thought as a thought. A sensation as a sensation. An urge as an urge. You learn the difference between having an experience and immediately responding to it.
 
@@ -376,7 +378,7 @@ Different theories. Different language. Different interventions. But something h
 
 That does not mean awareness produces change on its own. It does not. Insight does not either. Someone can understand themselves extremely well and stay completely stuck, and someone can be exquisitely aware of their suffering and have no idea what is keeping it going.
 
-But when the two start operating together, in real time, something shifts. The patient is not only living inside the pattern. They are starting to see it while it is happening.
+But when awareness and insight are present in real time, and the person can notice what their own attention is doing, something shifts. The patient is not only living inside the pattern. They are starting to see it while it is happening.
 
 And now there is somewhere for the two of us to intervene.
 
