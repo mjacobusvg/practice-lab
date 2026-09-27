@@ -30,7 +30,9 @@ I kept waiting for whatever it was I was apparently supposed to experience. Some
 
 Then I accumulated a great deal of psychology. Psychology in high school. An undergraduate degree in it. A master's in clinical psychology. More psychology and psychotherapy coursework in PMHNP school. Classes on therapeutic modalities, theories, historical figures, behavior, cognition, emotion, development.
 
-Mindfulness was in there somewhere. For a long time I am not sure I really understood why it mattered.
+Mindfulness was in there, but mostly as one small idea in a very large world. It came up more explicitly in places like DBT and Marsha Linehan's work, but outside of that it never felt like a central organizing concept.
+
+I knew the word. I had heard the definitions. I am not sure I yet knew what I was supposed to recognize in my own experience.
 
 The definitions were not what I was missing. I was missing a way to recognize the experience they were describing.
 
