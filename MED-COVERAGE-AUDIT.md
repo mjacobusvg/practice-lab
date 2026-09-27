@@ -95,8 +95,49 @@ Stages 3-6 are untested for all 42. This audit says identity and detection hold 
 say the right label comes back, or that the answer follows the evidence. That needs a browser run
 against live DailyMed.
 
-## Recommended next step, not taken
+---
 
-A batch harness that pushes all 42 through the real retrieval path in one browser run and prints
-the same table with stages 3-6 filled in. Not built: the instruction was to produce the coverage
-map first and not to fix anything during the audit.
+# Round 2, 27 Sept 2026: fixes applied, live harness built
+
+## All three findings fixed. 42/42 on stages 1-2.
+
+**LAI** was not solved as a Maintena/Sustenna suffix rule. Those are product identities and must
+stay whole exactly as `Adderall XR` does. `tools/gen-rx-vocabulary.js` now reads them from
+`pm-lai.html`, where they are already maintained and already reviewed against labeling, so there
+is no second clinical list to drift. Six ingredients, thirteen products. A matched LAI product
+gets `formulation: 'long-acting injectable'` with `formulationSource: 'product'`, the dose parses
+again (the suffix no longer sits between name and number), and an injectable never merges with an
+oral of the same ingredient.
+
+**`divalproex`** added as an alias of `valproate`, with `valproic acid` and the salt forms.
+
+**`Symbyax`** added as a combination with `components: ['olanzapine','fluoxetine']`. Suboxone and
+Zubsolv too. Also fixed: a combination strength written with one unit at the end (`6/25 mg`)
+dropped the dose entirely.
+
+Regression tests for each exact failure, including every product in the LAI dataset.
+
+## Still NOT validated
+
+Stages 3-6 for all 42. This remains the honest statement: **42/42 passed offline
+detection and identity. That is not "medication grounding validated."**
+
+## The live harness, `/practice?dev=1`
+
+```
+await tbpCoverageA()     all 42: identity -> RxNorm -> SPL -> sections. No model calls.
+await tbpCoverageB()     14 difficult cases through full Discern reasoning.
+```
+
+**Pass A** reports PASS / FAIL / AMBIGUOUS per drug with the resolved identity, label title,
+Set ID, SPL version, sections with character counts, and the exact failure stage (`3 RxNorm`,
+`4 SPL`, `5 sections`, `? service`). Results land in `window.TBP_COVERAGE_A`.
+
+**Pass B** is deliberately smaller. Forty-two near-identical "what is the max dose" answers do not
+teach forty-two different things. The fourteen are the cases where being right is hard:
+formulation-sensitive stimulants (Adderall XR *and* bare Adderall, Concerta), an XR
+antidepressant, two narrow-therapeutic-index mood stabilisers, an antipsychotic with an
+indication-specific maximum, an LAI, a combination product, a boxed-warning question, and three
+interaction pairs. Answers and their trails land in `window.TBP_COVERAGE_B_RESULTS`.
+
+Run A first. Do not fix anything during it; the point is the completed map.
