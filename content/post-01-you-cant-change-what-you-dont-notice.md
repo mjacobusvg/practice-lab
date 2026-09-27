@@ -360,7 +360,7 @@ It is the difference between waking up after the dream and becoming lucid while 
 
 # You cannot change what you do not notice
 
-This is why I think awareness sits underneath so many different therapies.
+This is why I think mindfulness sits underneath so many different therapies.
 
 CBT asks people to notice thoughts, interpretations and behavior.
 
