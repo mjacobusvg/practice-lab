@@ -43,6 +43,7 @@ const rank = (t) => (TIER_RANK[t] || 0);
 function esc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
 const { authorizeAdmin } = require('./_lib/admin-auth');
+const guard = require('./_lib/scheduled-guard');
 
 exports.handler = async function (event) {
   const headers = { 'Content-Type': 'application/json' };
@@ -78,6 +79,18 @@ exports.handler = async function (event) {
     ...init,
     headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY, 'Content-Type': 'application/json', ...(init && init.headers) }
   });
+
+  // Run lock + audit trail (shared scheduled-guard, audit H4/H5 pattern). Netlify's
+  // scheduler sends no secret, so the scheduled path cannot be cryptographically
+  // authenticated — but Netlify also refuses external HTTP invocation of a scheduled
+  // function, and this lock makes any forged or duplicate call a rate-limited no-op
+  // regardless. Every run is recorded in function_run_log. Fails open: a logging
+  // outage never stops the nightly heal. The manual (secret) path above is unchanged.
+  const claim = await guard.claimRun('reconcile-subscriptions-heal', 6 * 60 * 60 * 1000, scheduled ? 'schedule' : 'secret');
+  if (!claim.claimed) {
+    return { statusCode: 429, headers, body: JSON.stringify({ ok: false, skipped: 'ran too recently', last_run_at: claim.lastRunAt }) };
+  }
+  return guard.settle(claim, async function () {
 
   try {
     // 1) Load accounts and index them the same way the webhook resolves identity.
@@ -192,6 +205,8 @@ exports.handler = async function (event) {
   } catch (e) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: e.message }) };
   }
+
+  }); // guard.settle
 };
 
 function rowTable(title, note, cols, rows) {
