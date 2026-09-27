@@ -53,6 +53,7 @@ function money(cents, interval) {
 function day(iso) { return iso ? String(iso).slice(0, 10) : '—'; }
 
 const { authorizeAdmin } = require('./_lib/admin-auth');
+const guard = require('./_lib/scheduled-guard');
 
 exports.handler = async function (event) {
   const headers = { 'Content-Type': 'application/json' };
@@ -83,6 +84,17 @@ exports.handler = async function (event) {
   const sb = (path) => fetch(SUPABASE_URL + '/rest/v1/' + path, {
     headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY }
   });
+
+  // Run lock + audit trail (shared scheduled-guard, audit H4/H5 pattern), same as
+  // reconcile-subscriptions-heal. This job is read-only (never changes billing), so
+  // a forged call only re-sends the report, but the lock still makes a duplicate or
+  // forged call a rate-limited no-op and records every run in function_run_log.
+  // Fails open. The manual (secret) path above is unchanged.
+  const claim = await guard.claimRun('reconcile-subscriptions', 6 * 60 * 60 * 1000, scheduled ? 'schedule' : 'secret');
+  if (!claim.claimed) {
+    return { statusCode: 429, headers, body: JSON.stringify({ ok: false, skipped: 'ran too recently', last_run_at: claim.lastRunAt }) };
+  }
+  return guard.settle(claim, async function () {
 
   try {
     // 1) Load accounts (email + circle_member_id + tier + override + stripe id).
@@ -249,6 +261,8 @@ exports.handler = async function (event) {
   } catch (e) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: e.message }) };
   }
+
+  }); // guard.settle
 };
 
 function table(title, note, cols, rows) {
