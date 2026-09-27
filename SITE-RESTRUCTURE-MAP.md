@@ -26,24 +26,28 @@ workspace / encounter-context-layer vision). House style: no em-dashes.
 
 ---
 
-## Proposed pages and nav
+## Pages and nav (decided 2026-09-27)
 
-Nav (keeps existing routes; no rename): **Home · AI Scribe · Practice Lab ·
-Credentialing · Pricing · About · [Members] · [Join]**
+Home lives behind the logo (no "Home" text item). Members and Join are account
+actions on the right. Everything else is a visible route.
+
+Nav: **[logo -> Home] · AI Scribe · Practice Lab · Credentialing · Community ·
+Pricing · About · Insights · [Members] · [Join]**
 
 | Page | Route | Job |
 |---|---|---|
-| Home | `/` | Convince of the core idea and route. Not a catalog of everything. |
-| AI Scribe (Think Beyond AI) | keep `#ai-scribe` / a real `/ai-scribe` | The workspace deep-dive: capabilities by Before/During/After, the roadmap, the arc. |
-| Practice Lab | `/practice-lab`, demo at `/practice-lab-demo.html` (exist) | Simulation-first training + the free demo. |
-| Credentialing | `/credentialing-concierge-preview.html` (exists) | Hub + Autopilot, pricing, preview. |
+| Home | `/` (behind logo) | Convince of the core idea and route. Not a catalog of everything. |
+| AI Scribe (Think Beyond AI) | keep `#ai-scribe`, promote to `/ai-scribe` | The workspace deep-dive: capabilities by Before/During/After, the roadmap, the arc. |
+| Practice Lab | `/practice-lab` (-> `practice-lab-hub.html`), demo `/practice-lab-demo.html` | Simulation-first training + the free demo. |
+| Credentialing | `/credentialing-concierge-preview.html` | Hub + Autopilot, pricing, preview. |
+| Community | `/community` (new) | Forum explainer (free access vs $50 participation) + the working Ask the Archive experience. Home links here. |
 | Pricing / Products | `/pricing` (new) | The single authoritative commerce page: all four offerings + ROI + founding rate. |
-| About | `/about` (new) | Founder story, why it is different, the problem, value-stack. Trust page. |
-| Insights | `/insights.html` (exists) | Keep as-is. |
+| About | `/about` (new) | Full founder story, why it is different, the problem, value-stack. Trust page. |
+| Insights | `/insights.html` (exists) | Keep as a visible route. |
 | Members app | `/platform` (unchanged) | Not a marketing page. |
 
-Open question: **Community / Forum + Ask the Archive** could be its own page or fold
-into Home + the members app. Flagged below, needs Michael's call.
+Existing homepage anchor links (`#ai-scribe`, `#platform`, `#pricing`, `#about`,
+`#try-archive`) must keep resolving, people may have them bookmarked or linked.
 
 Site-wide (every page): promo bar, nav, footer, email capture, cookie banner +
 analytics/consent.
@@ -67,18 +71,18 @@ purpose (reason given).
 | 7 | AI roadmap tiers (Next / Roadmap / Exploring) | CUT from home | AI Scribe page |
 | 8 | "Built with the people who use it" ask (mailto) | CUT from home | AI Scribe page |
 | 9 | "Yes it asks a little of you up front" reassurance | CUT from home | AI Scribe page |
-| 10 | Platform grid, 6 capability cards | SUMMARY (links out) | each card -> its page |
+| 10 | Platform grid, 6 capability cards | SUMMARY (links out) | Practice Lab -> `/practice-lab`; Clinical tools/Manager -> `/practice-manager-demo`; Ask the Archive -> Community; Forum -> Community; Credentialing -> `/credentialing-concierge-preview.html`; CE -> `thinkbeyondeducation.org` |
 | 11 | "Six integrated layers" heading | CUT (naming violation) | replace with capability framing |
 | 12 | "What This Replaces" ROI ($ figures, all that for $119) | TEASER (one value line) | Pricing page (full) |
 | 13 | Email capture ("Not ready to join yet?") | SITE (footer band) | Site-wide |
 | 14 | Practice Lab "See it working" free demo | TEASER (door) | Practice Lab page |
-| 15 | Ask the Archive interactive box (Q chips + email gate) | TEASER | Community page (or Home "try it") |
+| 15 | Ask the Archive interactive box (Q chips + email gate) | TEASER (link only) | Community page (full working experience) |
 | 16 | "Why It's Different" (4 differentiators) | SUMMARY (condensed) | About page (full) |
 | 17 | Testimonials (Haley, Abieyuwa x2, Isabella) | FULL (proof) | Home; also About |
 | 18 | About / founder story + photo + credentials | SUMMARY (trust strip + link) | About page (full) |
 | 19 | "The Problem" (information vs judgment) | CUT from home | About page |
 | 20 | "After the courses... now what?" | CUT from home | About page |
-| 21 | Founder value-stack callout quote | CUT from home | About or Pricing |
+| 21 | Founder value-stack callout quote | CUT from home | Pricing (it is a value-for-price claim) |
 | 22 | Footer links | SITE | Site-wide footer |
 | 23 | Cookie banner + gtag/fbq consent | SITE | Site-wide |
 
@@ -87,7 +91,7 @@ page, not that it disappears.
 
 ---
 
-## Commerce and signup paths (MUST all stay reachable) — the check I failed before
+## Commerce and signup paths (MUST all stay reachable): the check I failed before
 
 Every one of these is a live way someone gives money or signs up. Each must appear on
 at least the page named, and none may vanish.
@@ -127,19 +131,42 @@ dropped. They are revenue. They live on Pricing (and Credentialing), full stop.
 
 ---
 
-## Open questions for Michael
+## Decisions (resolved 2026-09-27)
 
-1. Nav/page list above, approve, merge, split, or rename anything?
-2. Community / Forum + Ask the Archive: own page, or fold into Home + members app?
-3. Is `/pricing` and `/about` as new routes fine, or keep everything on anchors for now?
+1. **Pages/nav:** keep the product pages, ADD Community, keep Insights as a visible
+   route. Home behind the logo; Members and Join are account actions.
+2. **Forum + Ask the Archive:** their own **Community** page (free vs $50 explained,
+   working Archive retained). Home links to it.
+3. **`/pricing` and `/about`:** create both. Pricing holds every purchase path; About
+   holds the full founder story. Existing homepage anchor links stay working.
 
-## Build order (proposed)
+## Link / asset verification (2026-09-27)
 
-1. Home (the router) + About (self-contained, called out first).
-2. Pricing / Products (highest revenue risk, get it complete and correct).
-3. AI Scribe (Think Beyond AI) deep-dive.
-4. Practice Lab, Credentialing (largely exist; align to new nav/footer).
-5. Wire site-wide nav, footer, promo bar, email capture, analytics onto every page.
+Checked that destinations resolve from the repo:
+- Exist: `index.html`, `insights.html`, `practice-lab-demo.html`,
+  `credentialing-concierge-preview.html`, `practice-manager-demo.html`,
+  `practice-lab-hub.html`, `privacy-policy.html`, `platform.html`,
+  `ai-scribe-workspace.html`.
+- Resolve via Netlify redirect: `/practice-lab` -> `practice-lab-hub.html`,
+  `/practice-manager-demo` -> `.html`, `/start-scribe` -> join+trial.
+- To be created: `/pricing`, `/about`, `/community`.
+- NOT testable from this environment (external / backend): the four Stripe buy
+  links, the `?buy=` / `?join=` / `?free=` platform checkout paths, and the two
+  forms (newsletter capture, Archive email gate). These must be click-tested on the
+  built previews before anything replaces the live page.
 
-Each page ships as a preview first and carries a checklist back to this map. No page
-replaces anything live until Michael verifies it against this document.
+## Build order (revised per decision: Pricing first)
+
+1. **Pricing / Products** first, it is the highest revenue risk (the draft dropped
+   purchase paths), so build and verify it complete before anything links to it.
+2. **About** (self-contained; carries founder story, why-different, problem,
+   value-stack).
+3. **Home** (the router) once Pricing and About are complete to link to.
+4. **AI Scribe (Think Beyond AI)** deep-dive.
+5. **Community** (forum explainer + working Archive), then align Practice Lab and
+   Credentialing to the new nav/footer.
+6. Wire site-wide nav, footer, promo bar, email capture, analytics onto every page.
+
+Each page ships as a preview first and carries a checklist back to this map, and its
+forms/demos/signup links are click-tested. No page replaces anything live until
+Michael verifies it against this document.
