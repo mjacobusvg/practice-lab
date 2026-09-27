@@ -135,7 +135,7 @@ const MIN_CONFIDENT = 100;
 // "extended release" and "extended-release" are the same thing. Matching only the spaced form
 // left "extended" glued to the product name, so EFFEXOR XR normalised two different ways from
 // two different labels and the lookup refused a product against itself.
-const DOSE_FORMS = /\b(capsules?|tablets?|film[- ]?coated|sugar[- ]?coated|enteric[- ]?coated|coated|delayed[- ]?release|extended[- ]?release|sustained[- ]?release|immediate[- ]?release|controlled[- ]?release|release|oral solution|solution|suspension|syrup|elixir|injections?|injectable|powder|granules?|kit|patch|films?|spray|aerosol|inhalation|cream|ointment|gel|lotion|suppository|chewable|disintegrating|for oral use|for suspension|concentrate|pellets?|sprinkle|orally|oral|metered|usp)\b/gi;
+const DOSE_FORMS = /\b(capsules?|tablets?|film[- ]?coated|sugar[- ]?coated|enteric[- ]?coated|coated|delayed[- ]?release|extended[- ]?release|sustained[- ]?release|immediate[- ]?release|controlled[- ]?release|release|oral solution|solution|suspension|syrup|elixir|injections?|injectable|powder|granules?|kit|patch|films?|spray|aerosol|inhalation|cream|ointment|gel|lotion|suppository|chewable|disintegrating|for oral use|for suspension|concentrate|pellets?|sprinkle|orally|oral|metered|usp|soluble|sublingual|buccal|transdermal|system|strips?|troche)\b/gi;
 
 // Release-form abbreviations. Stripped for the SAMENESS comparison only: "adderall xr" must stay
 // distinct from "adderall" in the product name, and isER carries that distinction separately.
@@ -194,7 +194,13 @@ function splBaseName(title) { return splProductName(title); }
 // candidates are the same product: "bupropion sr" and "bupropion" are, and isER keeps them
 // apart where that matters.
 function splProductCore(title) {
-  return splProductName(title).replace(FORM_ABBR, ' ').replace(/\s+/g, ' ').trim();
+  const words = splProductName(title).replace(FORM_ABBR, ' ').split(/\s+/).filter(Boolean);
+  // Some titles restate the product name, so normalisation leaves "venlafaxine venlafaxine"
+  // beside "venlafaxine" and the two read as different products. A repeated word adds nothing
+  // to an identity.
+  const seen = {}, out = [];
+  words.forEach(w => { if (!seen[w]) { seen[w] = true; out.push(w); } });
+  return out.join(' ');
 }
 
 // WHAT A QUERY HAS TO MATCH. Previously a candidate earned full-match credit if the query words
@@ -451,6 +457,16 @@ function extractSections(xml) {
 // ── 4. fetch + cache one drug ───────────────────────────────────────────────────────────────
 const CACHE_DAYS = 30;
 
+// The columns tbp_drug_label_section actually has. Anything else in the payload is rejected
+// whole by PostgREST (PGRST204), so the row must be built by whitelist, never by spread.
+const SECTION_COLUMNS = ['setid', 'loinc_code', 'section_name', 'text', 'ord'];
+function sectionRow(setid, sec) {
+  const src = Object.assign({}, sec, { setid: setid });
+  const row = {};
+  SECTION_COLUMNS.forEach(k => { row[k] = src[k]; });
+  return row;
+}
+
 async function ingestDrug(queryName, wantedSections, granularity) {
   const res = await resolveRxcui(queryName);
   if (!res) return { ok: false, kind: 'identity_unresolved', query: queryName,
@@ -571,9 +587,14 @@ async function ingestDrug(queryName, wantedSections, granularity) {
     // every section down with it and reports nothing, which is exactly the shape Pass A saw.
     for (const sec of sections) {
       try {
+        // ONLY the columns that exist. extractSections tags a title-fallback hit with `by`,
+        // which is useful in the trail and is not a column: PostgREST answered PGRST204, "could
+        // not find the column in the schema cache", the write was never checked, and the
+        // section vanished. That is why clinical_studies and warnings_and_precautions failed on
+        // nearly every label -- they are exactly the sections the title fallback finds.
         await sbOk('tbp_drug_label_section', {
           method: 'POST',
-          body: JSON.stringify([Object.assign({ setid: setid }, sec)])
+          body: JSON.stringify([sectionRow(setid, sec)])
         }, 'section insert');
         writes.push({ section: sec.section_name, chars: String(sec.text || '').length, stored: true });
       } catch (e) {
@@ -606,6 +627,7 @@ async function getEvidence(drugNames, classes, opts) {
     .map(c => CLASS_PRIMARY[c]).filter(Boolean);
   // Per-drug identity granularity, decided by the caller from the claim being made.
   const granByDrug = (opts && opts.granularity) || {};
+  const refresh = !!(opts && opts.refresh);
   const out = [];
 
   for (const name of (drugNames || []).slice(0, 6)) {
@@ -617,7 +639,10 @@ async function getEvidence(drugNames, classes, opts) {
       row = (j && j[0]) || null;
     } catch (e) { /* fall through to a fetch */ }
 
-    const stale = !row || (Date.now() - new Date(row.fetched_at).getTime()) > CACHE_DAYS * 864e5;
+    // `refresh` forces a re-fetch. Without it a label stored under older scoring is served for
+    // thirty days, so a resolver fix cannot be validated at all: the wrong lithium label
+    // survived a scoring fix that would have rejected it, purely because it was cached.
+    const stale = refresh || !row || (Date.now() - new Date(row.fetched_at).getTime()) > CACHE_DAYS * 864e5;
     if (stale) {
       let ing;
       try { ing = await ingestDrug(name, wanted, granByDrug[name] || 'product'); }
@@ -699,6 +724,7 @@ async function getEvidence(drugNames, classes, opts) {
   return { evidence: out, wanted_sections: wanted, primary_sections: primary };
 }
 
-module.exports = { getEvidence, ingestDrug, extractSections, chooseSpl, splBaseName,
+module.exports = {
+  SECTION_COLUMNS: SECTION_COLUMNS, sectionRow: sectionRow, getEvidence, ingestDrug, extractSections, chooseSpl, splBaseName,
                    splProductName, splProductCore, splIdentity, isCombinationOf, splYear, formPreference,
                    resolveRxcui, SECTIONS, CLASS_SECTIONS, CLASS_PRIMARY, MIN_CONFIDENT };

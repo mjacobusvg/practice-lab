@@ -64,7 +64,10 @@ exports.handler = async function (event) {
     // Per-drug identity granularity, decided by the caller from the claim: product-level where
     // the formulation changes the answer, ingredient-level for pharmacology that does not.
     const granularity = (body.granularity && typeof body.granularity === 'object') ? body.granularity : {};
-    const result = await getEvidence(drugs, classes, { granularity: granularity });
+    // refresh bypasses the 30-day cache; used by the coverage harness so a resolver fix can be
+    // validated instead of being masked by a label stored under the old scoring.
+    const result = await getEvidence(drugs, classes,
+      { granularity: granularity, refresh: !!body.refresh });
     return { statusCode: 200, headers: CORS, body: JSON.stringify(result) };
   } catch (e) {
     return { statusCode: 502, headers: CORS, body: JSON.stringify({ error: String(e && e.message || e) }) };

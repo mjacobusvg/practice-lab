@@ -315,3 +315,46 @@ label on file is extended release.
 `no SPL found by drug name or by RXCUI 405343`. The ingredient fallback did not fire because
 `Symbyax` contains no form token to strip, so the fallback name equalled the original. It may
 simply have no current SPL on DailyMed, which would be a true negative rather than a defect.
+
+## Pass A run 3 -> run 4: the three fixes
+
+Run 3 was 35 pass / 1 fail / 6 ambiguous. The instrumentation added before it answered the
+question it was added for, and two of the three remaining problems turned out not to be
+retrieval problems at all.
+
+**1. Section writes were failing on a column that does not exist.** The trail returned:
+
+```
+{section: 'drug_interactions', chars: 3938, stored: false,
+ error: "supabase section insert -> HTTP 400: {\"code\":\"PGRST204\", ... of
+         'tbp_drug_label_section' in the schema cache\"}"}
+```
+
+PGRST204 is PostgREST saying a column in the payload is not in the table. Not a size limit:
+3938 characters. The column was `by`, which `extractSections` attaches to a section it found
+by its heading rather than by its LOINC code. It is useful provenance and it is not a column,
+so PostgREST rejected the whole row, and because the response was never checked the section
+simply vanished. That is why `clinical_studies` and `warnings_and_precautions` failed on
+nearly every label: those are exactly the sections the title fallback finds.
+
+The row is now built from a whitelist (`SECTION_COLUMNS`), never by spreading the section
+object, so no future field can silently kill a write. `by` survives in memory for the trail.
+
+**2. Two of the run-3 failures were cached, not wrong.** `lithium` still resolved to
+`ENERGY CATALYST` and `oxcarbazepine` still to `OXTELLAR XR` after the scoring fixes that
+reject both. Neither was re-fetched: a stored label is served for thirty days, and re-ingest
+only fires when the section list is empty. A resolver fix cannot be validated at all under
+that rule. `tbpCoverageA({ fresh: true })` now passes `refresh` through to the function and
+bypasses the cache.
+
+**3. The six ambiguities were one normalisation artifact.** Every one showed a doubled core:
+`effexor effexor`, `venlafaxine venlafaxine`, `bupropion bupropion`, `vyvanse vyvanse`,
+`carbamazepine carbamazepine`, `suboxone soluble`. Some SPL titles restate the product name,
+so the normalised core came out doubled and read as a different product from the same drug's
+other label. A repeated word adds nothing to an identity, so `splProductCore` now drops
+repeats. `soluble`, `sublingual`, `buccal`, `transdermal` and `system` were also missing from
+the dosage-form list, which is the `suboxone soluble` case.
+
+**Still open going into run 4:** `Symbyax` found no SPL by name or by RXCUI 405343, and the
+ingredient fallback did not fire because there is no form token to strip. It may genuinely
+have no current label; run 4 with `fresh: true` will say.

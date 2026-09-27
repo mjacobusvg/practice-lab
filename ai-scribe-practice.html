@@ -395,11 +395,11 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/rx-vocabulary.js?v=ambient-166-sub"></script>
-<script src="/rx-detect.js?v=ambient-166-sub"></script>
-<script src="/rx-grounding.js?v=ambient-166-sub"></script>
-<script src="/rx-clinical-reference.js?v=ambient-166-sub"></script>
-<script src="/note-engine-practice.js?v=ambient-166-sub"></script>
+<script src="/rx-vocabulary.js?v=ambient-167-sub"></script>
+<script src="/rx-detect.js?v=ambient-167-sub"></script>
+<script src="/rx-grounding.js?v=ambient-167-sub"></script>
+<script src="/rx-clinical-reference.js?v=ambient-167-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-167-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -761,7 +761,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-166-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-167-sub</span></div>
 </div>
 </div>
 
@@ -4657,7 +4657,7 @@ function tbpRxIdentityKey(med){
 // NO PHI CROSSES THIS BOUNDARY. What goes out is product names and fact classes. The case stays
 // on the BAA-covered AWS path. "What does the Adderall XR label say about adult dosing" is not
 // PHI; "she is on Adderall XR and her PCP started fluoxetine" is.
-async function tbpRxFetchEvidence(meds, classes){
+async function tbpRxFetchEvidence(meds, classes, refresh){
   var names = (meds || []).map(function(m){ return m.rawName; })
                           .filter(function(n){ return n && n.trim(); });
   if(!names.length) return { evidence: [], wanted_sections: [] };
@@ -4667,7 +4667,7 @@ async function tbpRxFetchEvidence(meds, classes){
                'Authorization': 'Bearer ' + (typeof authToken !== 'undefined' ? (authToken || '') : '') },
     // Per-drug identity granularity, from the claim. "Is fluoxetine a CYP2D6 inhibitor" is an
     // ingredient-level fact and must not fail because 52 manufacturers publish equivalent labels.
-    body: JSON.stringify({ drugs: names, classes: classes, granularity: (function(){
+    body: JSON.stringify({ drugs: names, classes: classes, refresh: !!refresh, granularity: (function(){
       var g = {};
       (meds || []).forEach(function(m){ g[m.rawName] = window.TBP_RX_GROUNDING.granularityFor(m); });
       return g;
@@ -4758,6 +4758,9 @@ var TBP_COVERAGE_CASES = [
 
 // PASS A. No model calls: this is the evidence plumbing, one drug at a time so a failure names
 // itself instead of disappearing into a batch.
+// tbpCoverageA({ fresh: true }) bypasses the 30-day cache. Slower, and the only way to see
+// whether a resolver change actually worked: a label stored under the old scoring is served
+// unchanged otherwise.
 async function tbpCoverageA(opts){
   opts = opts || {};
   var G = window.TBP_RX_GROUNDING, D = window.TBP_RX_DETECT, V = window.TBP_RX_VOCAB;
@@ -4771,7 +4774,7 @@ async function tbpCoverageA(opts){
     var row = { cls: cls, written: phrase, detected: cand.rawName, key: cand.interactionKey,
                 form: cand.formulation || '-', gran: G.granularityFor(cand) };
     try {
-      var got = await tbpRxFetchEvidence([cand], classes);
+      var got = await tbpRxFetchEvidence([cand], classes, opts.fresh);
       var e = (got.evidence || [])[0] || {};
       row.rxcui = e.rxcui || null;
       row.label = (e.source && e.source.label_title) || null;

@@ -349,5 +349,24 @@ ok('and an explicit XR query is unaffected by it',
      [spl2('SEROQUEL XR (QUETIAPINE) TABLET, EXTENDED RELEASE [A]'),
       spl2('QUETIAPINE TABLET, FILM COATED [B]', 'Jan 1, 2026')], 'Seroquel XR', 'product').spl.title));
 
+// ---- section row payload: only real columns ----------------------------------------------
+// extractSections tags a title-fallback hit with `by`, which is not a column. It reached the
+// insert, PostgREST rejected the whole row with PGRST204, and because the response was never
+// checked the section silently disappeared. Every section the title fallback found -- which is
+// most clinical_studies and warnings_and_precautions sections -- was lost this way.
+console.log('\n-- section row payload --');
+const titleFallback = L.extractSections(`<document>
+  <component><section><title>16 CLINICAL STUDIES</title><text>Doses of 20, 40 and 60 mg/day were studied in adults in controlled trials.</text></section></component>
+</document>`);
+ok('title fallback still tags provenance in memory', titleFallback.some(s => s.by === 'title'));
+const row = L.sectionRow('SETID-1', titleFallback[0]);
+ok('row carries exactly the real columns',
+   JSON.stringify(Object.keys(row).sort()) === JSON.stringify(L.SECTION_COLUMNS.slice().sort()));
+ok('row drops the non-column tag', !('by' in row));
+ok('row keeps setid and text', row.setid === 'SETID-1' && /60 mg\/day/.test(row.text));
+const loincRow = L.sectionRow('S2', { loinc_code: '34073-7', section_name: 'drug_interactions',
+                                      text: 'x', ord: 3, extra: 'nope' });
+ok('an unknown key can never reach the insert', !('extra' in loincRow) && loincRow.ord === 3);
+
 console.log(fails ? '\n' + fails + ' FAILED' : '\nall passed');
 process.exit(fails ? 1 : 0);
