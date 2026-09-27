@@ -134,7 +134,9 @@ Attention kept moving, but you were no longer directing it.
 
 And then, eventually: there. You realized you had drifted.
 
-Now another layer had appeared. You were not only attending to something. You noticed what your attention had been doing.
+That realization is awareness. More specifically, it is awareness of what your own attention has been doing.
+
+Now another layer has appeared. You are not only attending to something. You are noticing your own attention.
 
 That is the attentional part of mindfulness that I care about clinically: noticing where attention has gone while you are still inside the experience, and being able to widen it, hold it, or move it deliberately.
 
