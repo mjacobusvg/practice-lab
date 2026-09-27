@@ -124,10 +124,17 @@ detection and identity. That is not "medication grounding validated."**
 
 ## The live harness, `/practice?dev=1`
 
+Open the console and run, in the DEFAULT `top` context (no frame switching needed):
+
 ```
 await tbpCoverageA()     all 42: identity -> RxNorm -> SPL -> sections. No model calls.
 await tbpCoverageB()     14 difficult cases through full Discern reasoning.
 ```
+
+The Scribe runs inside the desk's iframe, so its own location carries `?slot=` rather than the
+`?dev=1` typed on the desk. The desk now passes the flag through to the frame, and the Scribe
+publishes both handles onto the top window, so the first attempt reported
+`tbpCoverageA is not defined`.
 
 **Pass A** reports PASS / FAIL / AMBIGUOUS per drug with the resolved identity, label title,
 Set ID, SPL version, sections with character counts, and the exact failure stage (`3 RxNorm`,

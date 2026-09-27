@@ -395,11 +395,11 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/rx-vocabulary.js?v=ambient-163-sub"></script>
-<script src="/rx-detect.js?v=ambient-163-sub"></script>
-<script src="/rx-grounding.js?v=ambient-163-sub"></script>
-<script src="/rx-clinical-reference.js?v=ambient-163-sub"></script>
-<script src="/note-engine-practice.js?v=ambient-163-sub"></script>
+<script src="/rx-vocabulary.js?v=ambient-164-sub"></script>
+<script src="/rx-detect.js?v=ambient-164-sub"></script>
+<script src="/rx-grounding.js?v=ambient-164-sub"></script>
+<script src="/rx-clinical-reference.js?v=ambient-164-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-164-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -761,7 +761,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-163-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-164-sub</span></div>
 </div>
 </div>
 
@@ -4852,13 +4852,27 @@ async function tbpCoverageB(){
   return out;
 }
 
+// Is dev mode on? The Scribe usually runs INSIDE the desk's iframe, so its own location carries
+// ?slot= and not the ?dev=1 the clinician typed on the desk. Check both, and publish the dev
+// handles up to the top window as well, so they are callable from the console's default `top`
+// context instead of only after switching frames.
+function tbpDevOn(){
+  try { if(/[?&]dev=1\b/.test(location.search)) return true; } catch(e){}
+  try { if(window.parent !== window && /[?&]dev=1\b/.test(window.parent.location.search)) return true; } catch(e){}
+  try { if(window.top !== window && /[?&]dev=1\b/.test(window.top.location.search)) return true; } catch(e){}
+  return false;
+}
+function tbpDevExpose(name, fn){
+  window[name] = fn;
+  // Same-origin only; a cross-origin parent throws and is simply skipped.
+  try { if(window.top && window.top !== window) window.top[name] = fn; } catch(e){}
+}
+
 (function(){
-  var dev = false;
-  try { dev = /[?&]dev=1\b/.test(location.search); } catch(e){}
-  if(!dev) return;
-  window.tbpCoverageA = tbpCoverageA;
-  window.tbpCoverageB = tbpCoverageB;
-  try { console.info('[dev] await tbpCoverageA()  |  await tbpCoverageB()'); } catch(e){}
+  if(!tbpDevOn()) return;
+  tbpDevExpose('tbpCoverageA', tbpCoverageA);
+  tbpDevExpose('tbpCoverageB', tbpCoverageB);
+  try { console.info('[dev] await tbpCoverageA()  |  await tbpCoverageB()  (also on window.top)'); } catch(e){}
 })();
 
 // ── the card itself ───────────────────────────────────────────────────────────────────────
@@ -4997,10 +5011,8 @@ function tbpMedEnsure(purpose, go){
 // answer to why no one should ever click it.
 //   /practice?dev=1  ->  window.tbpDevMeds()
 (function(){
-  var dev = false;
-  try { dev = /[?&]dev=1\b/.test(location.search); } catch(e){}
-  if(!dev) return;
-  window.tbpDevMeds = function(){ tbpShowMeds('dev', 'never-confirmed', null); };
+  if(!tbpDevOn()) return;
+  tbpDevExpose('tbpDevMeds', function(){ tbpShowMeds('dev', 'never-confirmed', null); });
   try { console.info('[dev] tbpDevMeds() opens the medication confirmation card directly.'); } catch(e){}
 })();
 
