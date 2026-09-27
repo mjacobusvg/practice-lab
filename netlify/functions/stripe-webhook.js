@@ -45,6 +45,24 @@ async function sbGet(path) {
   const r = await sb(path, {});
   return r.ok ? r.json() : [];
 }
+// A write (POST/PATCH) that THROWS on failure instead of silently succeeding.
+// The subscription/tier writes below used to ignore the response, so a failed
+// insert or patch looked identical to success and the event was still ack'd —
+// which is how a paid re-subscribe could strand a member at free with no trace
+// in our DB at all (the Kristen case, 2026-09-27). Throwing here lets the
+// handler surface the failure and return a non-200 so Stripe RETRIES the event
+// until the write actually lands. Every write guarded this way is idempotent on
+// retry (subscription upsert keys on stripe_subscription_id; tier recompute and
+// the account patch are level-set, not deltas).
+async function sbWrite(path, init) {
+  const r = await sb(path, init);
+  if (!r.ok) {
+    let detail = '';
+    try { detail = await r.text(); } catch (e) {}
+    throw new Error('Supabase write failed ' + r.status + ' on ' + path + (detail ? ': ' + detail.slice(0, 300) : ''));
+  }
+  return r;
+}
 
 exports.handler = async function (event) {
   const headers = { 'Content-Type': 'application/json' };
@@ -103,9 +121,16 @@ exports.handler = async function (event) {
     return { statusCode: 200, headers, body: JSON.stringify({ received: true }) };
   } catch (err) {
     console.error('stripe-webhook error on', stripeEvent && stripeEvent.type, err.message);
-    // 200 so Stripe does not hammer retries on a transient DB blip; the next
-    // event (or the backfill) reconciles. Signature failures already returned 400.
-    return { statusCode: 200, headers, body: JSON.stringify({ received: true, error: err.message }) };
+    // Return 500 so Stripe RETRIES this event (its built-in retry runs for ~3
+    // days). The old code returned 200 here on the theory that "the next event
+    // or the backfill reconciles" — but a re-subscribe can be a member's ONLY
+    // event, and if it failed once it was ack'd and dropped forever, silently
+    // stranding a paying member at free (Kristen, 2026-09-27). A transient DB
+    // blip is exactly when we want the retry, and the handler is idempotent, so
+    // retrying is safe. A genuinely un-retryable event (e.g. no matching
+    // account) returns 200 on its own path above and never reaches here.
+    // Signature failures already returned 400.
+    return { statusCode: 500, headers, body: JSON.stringify({ received: false, error: err.message }) };
   }
 };
 
@@ -305,9 +330,9 @@ async function handleSubscriptionEvent(sub, stripe) {
   };
 
   if (existing) {
-    await sb('subscriptions?id=eq.' + existing.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(row) });
+    await sbWrite('subscriptions?id=eq.' + existing.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(row) });
   } else {
-    await sb('subscriptions', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(row) });
+    await sbWrite('subscriptions', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(row) });
     // First time we've seen this subscription = a paid conversion. If the buyer
     // arrived via a member's ?ref= invite link, record the referral now (a
     // referral is a PAID event). Dedup, referrer resolution, and the notify email
@@ -404,7 +429,7 @@ async function recomputeAccountTier(accountId) {
   }
 
   if (target && target !== acct.tier) {
-    await sb('accounts?id=eq.' + accountId, {
+    await sbWrite('accounts?id=eq.' + accountId, {
       method: 'PATCH', headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({ tier: target, updated_at: new Date().toISOString() })
     });
