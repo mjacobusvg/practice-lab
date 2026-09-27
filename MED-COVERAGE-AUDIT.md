@@ -226,3 +226,92 @@ studied dose range, and it has never once been retrieved.
 
 Identity, granularity, the Tier 1/Tier 2 split, LAI product preservation and the staleness
 contract all held. Nothing here reopens the ontology.
+
+
+---
+
+# Pass A rerun, `ambient-165-sub`: 34 pass, 1 fail, 7 ambiguous
+
+Up from 3 pass. Causes 1 and 2 did what they were meant to. **But the headline hides one result
+that matters more than the count: a wrong label PASSED.**
+
+## RED, new: `lithium` resolved to a homeopathic product
+
+```
+lithium 900 mg nightly  ->  PASS
+label: ENERGY CATALYST (ADENOSINUM CYCLOPHOSPHORICUM ...) [Set ID e15fd50b]
+sections: dosage_and_administration(159)
+```
+
+That is not lithium. It is a homeopathic combination whose ingredient list happens to contain a
+lithium salt, and it was handed back as the authoritative label with a 159-character dosage
+section.
+
+Reproduced offline. Its product name is `energy catalyst liquid`, but scoring tests whether the
+query words appear anywhere in the **title**, and "lithium" appears in the ingredient
+parenthetical. Full-title match, 100 points, recent date, and the ingredient-granularity
+loosening from this round removed the tie check that would have caught it.
+
+**A wrong label that passes is worse than a failure**, because nothing downstream can tell. This
+is the same class as the original defect and it was introduced by my own fix for cause 1.
+
+The guard needed: the query has to match the **product name**, not merely appear somewhere in the
+title. `energy catalyst liquid` does not contain "lithium" and should never have scored.
+
+## CONFIRMED: cause 3 was the section writes
+
+The `wrote` column settles it. On nearly every label:
+
+```
+boxed_warning indications_and_usage dosage_and_administration contraindications
+drug_interactions use_in_specific_populations warnings_and_precautions! clinical_studies!
+```
+
+`!` marks a failed write. **`warnings_and_precautions` and `clinical_studies` fail to store on
+almost every drug**, and they are consistently the two largest sections. Everything else stores.
+
+That is why `clinical_studies` has never once been retrieved, on any label, in any run: it has
+been failing to write the whole time and the old code could not tell.
+
+Outstanding: the actual HTTP status and body. `TBP_COVERAGE_A[0].writes` carries it.
+
+## The 7 remaining ambiguities: form tokens left in product names
+
+Reproduced offline:
+
+| title | product name |
+|---|---|
+| `EFFEXOR XR (VENLAFAXINE) CAPSULE, EXTENDED-RELEASE` | `effexor xr extended` |
+| `EFFEXOR XR- venlafaxine hydrochloride capsule, extended release` | `effexor xr` |
+| `BUPROPION HYDROCHLORIDE SR TABLET, ... EXTENDED RELEASE` | `bupropion sr` |
+| `BUPROPION HYDROCHLORIDE TABLET, EXTENDED RELEASE` | `bupropion` |
+
+Two causes: the dose-form pattern matches `extended release` with a space but not
+`extended-release` with a hyphen, and a bare `SR` in a title survives as part of the product name.
+So two labels for the same product compare as different products and the lookup refuses.
+
+The fix is not to strip form tokens from the product name outright: `adderall xr` must stay
+distinct from `adderall`. The comparison should use a form-stripped **core** while `isER`
+continues to carry the release distinction separately.
+
+`Adderall 10 mg bid` ambiguous is **correct** and should stay: both an IR and an XR label exist
+and the note said neither, which is exactly what the confirmation card is for.
+
+## YELLOW: a query stating no preference landing on a modified-release or specialty label
+
+| written | resolved to |
+|---|---|
+| `fluvoxamine` | FLUVOXAMINE MALEATE CAPSULE, **EXTENDED RELEASE** |
+| `oxcarbazepine` | **OXTELLAR XR** |
+| `clozapine` | **VERSACLOZ** oral suspension |
+
+Not wrong labels for that ingredient, but the dosing differs from what a clinician writing the
+bare name almost certainly means. With no preference stated, a plain immediate-release label
+should be **preferred** as a tiebreak, not required: Concerta must still resolve when the only
+label on file is extended release.
+
+## Remaining FAIL: Symbyax
+
+`no SPL found by drug name or by RXCUI 405343`. The ingredient fallback did not fire because
+`Symbyax` contains no form token to strip, so the fallback name equalled the original. It may
+simply have no current SPL on DailyMed, which would be a true negative rather than a defect.
