@@ -148,3 +148,81 @@ indication-specific maximum, an LAI, a combination product, a boxed-warning ques
 interaction pairs. Answers and their trails land in `window.TBP_COVERAGE_B_RESULTS`.
 
 Run A first. Do not fix anything during it; the point is the completed map.
+
+
+---
+
+# Pass A result, 27 Sept 2026: 3 pass, 13 fail, 26 ambiguous
+
+**Not 39 problems. Three root causes, none of them architecture.** Nothing was fixed during the
+run, as instructed.
+
+## First, what worked
+
+**Identity resolution is sound.** 38 of 42 resolved an RxNorm concept, and where a label was
+found it was the RIGHT label every single time:
+
+| written | resolved to |
+|---|---|
+| `Abilify Maintena 400 mg IM monthly` | ABILIFY MAINTENA (ARIPIPRAZOLE) KIT, Otsuka |
+| `Invega Sustenna 156 mg IM monthly` | INVEGA SUSTENNA (PALIPERIDONE PALMITATE) |
+| `divalproex ER 1000 mg nightly` | DIVALPROEX SODIUM ER, and it passed end to end |
+| `cariprazine 3 mg daily` | VRAYLAR, resolved from the generic name |
+| `Seroquel XR 300 mg nightly` | SEROQUEL XR, not plain Seroquel |
+| `Adderall 10 mg bid` | ADDERALL, not Adderall XR |
+
+All three round-1 findings are confirmed fixed at the identity stage. No LAI collapsed to its
+oral parent. Adderall IR and Adderall XR resolved to different labels.
+
+## Cause 1: the ambiguity rule is far too strict — 26 cases
+
+Two sub-causes, both reproduced offline.
+
+**A query with no release-form token demands a NON-extended-release label.** `Concerta` has no
+`XR` in it, so `wantER` is false, so the real Concerta label (which is extended release by
+definition) scores `RELEASE FORM MISMATCH` and the lookup refuses. Absence of a form token in the
+query means *no preference*, not *must not be extended release*.
+
+**A brand and its generic count as materially different products.** `lithium` against
+`LITHIUM CARBONATE CAPSULE` and `LITHOBID (LITHIUM CARBONATE) TABLET` gives product names
+`lithium` and `lithobid`, which differ, so it refuses. That is most of the 26: fluvoxamine,
+mirtazapine, trazodone, clonazepam, doxepin, Vyvanse, aripiprazole, quetiapine, Suboxone all
+report exactly **1** materially different label.
+
+## Cause 2: no SPL found at all — 4 cases
+
+`venlafaxine XR` (RXCUI 2610943), `clonidine ER` (885790), `carbamazepine XR` (852896),
+`Symbyax` (405343). RxNorm resolves the form-suffixed string to a specific product concept that
+DailyMed does not index, and the `drug_name` search fails because no title contains
+"venlafaxine XR" as written. Needs an ingredient-name fallback: try `venlafaxine` when
+`venlafaxine XR` finds nothing.
+
+## Cause 3: the right label, and zero sections stored — 9 cases
+
+fluoxetine, sertraline, escitalopram, Wellbutrin XL, Adderall IR, Seroquel XR, Vraylar,
+Abilify Maintena, Invega Sustenna. Every one found the correct label with a Set ID and version,
+and came back with nothing.
+
+**The section insert response is never checked.** `await sb('tbp_drug_label_section', {POST})`
+resolves on a 400 or a 413 exactly as it does on success, so a failed write is indistinguishable
+from a successful ingest. That fits the shape: the three passes are comparatively small labels,
+and the failures are large ones.
+
+That is a hypothesis, not a diagnosis. It cannot be settled from a session container. The fix is
+to make `sb()` check its response and carry the error into the trail, then re-run: the same
+method that found the previous nine defects.
+
+Also visible: **`clinical_studies` came back for none of the three passes**, only
+`dosage_and_administration` and `use_in_specific_populations`. That is the section holding the
+studied dose range, and it has never once been retrieved.
+
+## The shape
+
+| cause | cases | kind |
+|---|---|---|
+| ambiguity rule too strict | 26 | scoring logic, two small changes |
+| no SPL for a form-suffixed name | 4 | needs an ingredient fallback |
+| sections not stored | 9 | write failure, unverified; needs instrumentation |
+
+Identity, granularity, the Tier 1/Tier 2 split, LAI product preservation and the staleness
+contract all held. Nothing here reopens the ontology.
