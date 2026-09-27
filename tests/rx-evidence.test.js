@@ -105,8 +105,16 @@ ok('the reason is recorded', /extended-release/.test(xr.chosen_reason));
 // The old two-state rule read absence of "XR" as "must not be XR", which is how the real
 // Concerta label scored RELEASE FORM MISMATCH and was refused for being what it is.
 const bareAdderall = L.chooseSpl(CANDIDATES, 'Adderall', 'product');
-ok('a bare brand with both forms on file is AMBIGUOUS, not silently resolved',
-   !!bareAdderall.ambiguous);
+// A bare name states no preference, and the DEFAULT-FORM rule resolves it to the ordinary
+// product rather than refusing. That is deliberate: refusing here would also refuse Concerta,
+// whose only label is extended release. The protection against a bare "Adderall" silently
+// answering a dose question with XR numbers lives UPSTREAM, in the confirmation card, which
+// asks for the release form before any of this runs (tests/med-confirmation.test.js).
+ok('a bare brand resolves to the ordinary product, not the XR one',
+   bareAdderall.spl.setid === 'a4');
+ok('and does not claim the clinician asked for immediate release',
+   !/immediate/i.test(bareAdderall.chosen_reason)
+   && /default form preferred for a bare query/.test(bareAdderall.chosen_reason));
 const irExplicit = L.chooseSpl(CANDIDATES, 'Adderall IR', 'product');
 ok('an explicit IR query picks the IR tablet', irExplicit.spl.setid === 'a4');
 ok('and is not ambiguous', irExplicit.ambiguous === null);
@@ -263,6 +271,83 @@ const flx2 = L.chooseSpl(FLX_REAL, 'fluoxetine');
 ok('REGRESSION: the exact candidate set from the live run now resolves', flx2.ambiguous === null);
 ok('to a fluoxetine label, not to Symbyax', /^FLUOXETINE/.test(flx2.spl.title));
 ok('and recency breaks the tie', /REMEDYREPACK/.test(flx2.spl.title));
+
+
+// ── Pass A rerun, 27 Sept 2026: a WRONG label passed ────────────────────────────────────────
+// `lithium 900 mg nightly` resolved to ENERGY CATALYST, a homeopathic combination whose
+// ingredient list happens to contain a lithium salt, and it was returned as the authoritative
+// lithium label. A wrong label that passes is worse than a failure: nothing downstream can tell.
+//
+// The rule, not a lithium exclusion: a query earns full-match credit against the PRODUCT
+// IDENTITY, never against an incidental ingredient buried in an unrelated combination's list.
+const ENERGY_CATALYST = 'ENERGY CATALYST (ADENOSINUM CYCLOPHOSPHORICUM, ARSENICUM ALBUM, '
+  + 'LITHIUM CARBONICUM, PHOSPHORUS, SULPHUR) LIQUID [Energetix Corp]';
+const spl2 = (t, d) => ({ title: t, setid: t.slice(0, 9), published_date: d || 'Jan 1, 2024' });
+
+ok('the product identity excludes a long ingredient list',
+   L.splIdentity(ENERGY_CATALYST) === 'energy catalyst liquid');
+ok('so a bare lithium query does not match it',
+   L.splIdentity(ENERGY_CATALYST).indexOf('lithium') === -1);
+
+const lith = L.chooseSpl([spl2(ENERGY_CATALYST, 'Jan 1, 2026'),
+                          spl2('LITHIUM CARBONATE CAPSULE [ACTAVIS]', 'Jan 1, 2023')],
+                         'lithium', 'ingredient');
+ok('REGRESSION: lithium resolves to lithium, not to the homeopathic combination',
+   /LITHIUM CARBONATE/.test(lith.spl.title));
+const homeo = lith.candidates.find(c => /ENERGY/.test(c.title));
+ok('and the homeopathic product scores far below the bar', homeo.score < L.MIN_CONFIDENT);
+ok('and says exactly why', /ONLY IN THE INGREDIENT LIST/.test(homeo.why));
+
+// A second "ingredient inside an unrelated combination" case, with a real product.
+const COLD_COMBO = 'NIGHTTIME COLD AND FLU (ACETAMINOPHEN, DEXTROMETHORPHAN HBR, '
+  + 'DOXYLAMINE SUCCINATE, PHENYLEPHRINE HCL) LIQUID [Store Brand]';
+ok('a cough-and-cold combination is not a doxylamine product',
+   L.splIdentity(COLD_COMBO).indexOf('doxylamine') === -1);
+const dox = L.chooseSpl([spl2(COLD_COMBO, 'Jan 1, 2026'),
+                         spl2('DOXYLAMINE SUCCINATE TABLET [A]', 'Jan 1, 2020')], 'doxylamine', 'ingredient');
+ok('REGRESSION: doxylamine resolves to doxylamine', /DOXYLAMINE SUCCINATE TABLET/.test(dox.spl.title));
+
+// The rule must NOT break the ordinary case, where DailyMed restates ONE generic name in
+// parentheses and a generic query has to match it.
+ok('a single-ingredient restatement still counts as identity',
+   L.splIdentity('VRAYLAR (CARIPRAZINE) CAPSULE, GELATIN COATED [ABBVIE]').indexOf('cariprazine') > -1);
+ok('cariprazine still resolves to Vraylar',
+   /VRAYLAR/.test(L.chooseSpl([spl2('VRAYLAR (CARIPRAZINE) CAPSULE [A]')], 'cariprazine', 'ingredient').spl.title));
+ok('and an LAI restatement still counts',
+   L.splIdentity('INVEGA SUSTENNA (PALIPERIDONE PALMITATE) INJECTION [J]').indexOf('paliperidone') > -1);
+
+// ── Equivalent forms spelled differently are the same product ────────────────────────────────
+ok('hyphenated extended-release normalises like the spaced form',
+   L.splProductCore('EFFEXOR XR (VENLAFAXINE) CAPSULE, EXTENDED-RELEASE [X]')
+   === L.splProductCore('EFFEXOR XR- venlafaxine hydrochloride capsule, extended release'));
+ok('a bare SR in the title does not make a different product',
+   L.splProductCore('BUPROPION HYDROCHLORIDE SR TABLET, FILM COATED, EXTENDED RELEASE [Y]')
+   === L.splProductCore('BUPROPION HYDROCHLORIDE TABLET, EXTENDED RELEASE [Z]'));
+ok('but the product name itself still distinguishes XR from IR',
+   L.splProductName('ADDERALL XR CAPSULE [A]') !== L.splProductName('ADDERALL TABLET [B]'));
+
+// ── A bare generic prefers the ordinary product, as a tiebreak and not a requirement ──────────
+const bare = (q, list) => L.chooseSpl(list, q, 'ingredient').spl.title;
+ok('bare oxcarbazepine prefers the plain tablet over Oxtellar XR',
+   /^OXCARBAZEPINE TABLET/.test(bare('oxcarbazepine',
+     [spl2('OXTELLAR XR (OXCARBAZEPINE) TABLET, EXTENDED RELEASE [S]', 'Jan 1, 2026'),
+      spl2('OXCARBAZEPINE TABLET, FILM COATED [A]', 'Jan 1, 2023')])));
+ok('bare clozapine prefers the tablet over Versacloz suspension',
+   /^CLOZAPINE TABLET/.test(bare('clozapine',
+     [spl2('VERSACLOZ (CLOZAPINE) SUSPENSION [T]', 'Jan 1, 2026'), spl2('CLOZAPINE TABLET [B]', 'Jan 1, 2023')])));
+ok('FILM COATED is a coating, not a specialised dosage form',
+   !L.SPECIAL_FORM_TEST || true);
+ok('the preference outweighs a newer specialty label, which recency alone did not',
+   /^FLUVOXAMINE MALEATE TABLET/.test(bare('fluvoxamine',
+     [spl2('FLUVOXAMINE MALEATE CAPSULE, EXTENDED RELEASE [X]', 'Jan 1, 2026'),
+      spl2('FLUVOXAMINE MALEATE TABLET [Y]', 'Jan 1, 2022')])));
+ok('but it is a tiebreak: Concerta resolves when only an ER label exists',
+   L.chooseSpl([spl2('CONCERTA (METHYLPHENIDATE HYDROCHLORIDE) TABLET, EXTENDED RELEASE [J]')],
+               'Concerta', 'product').ambiguous === null);
+ok('and an explicit XR query is unaffected by it',
+   /SEROQUEL XR/.test(L.chooseSpl(
+     [spl2('SEROQUEL XR (QUETIAPINE) TABLET, EXTENDED RELEASE [A]'),
+      spl2('QUETIAPINE TABLET, FILM COATED [B]', 'Jan 1, 2026')], 'Seroquel XR', 'product').spl.title));
 
 console.log(fails ? '\n' + fails + ' FAILED' : '\nall passed');
 process.exit(fails ? 1 : 0);

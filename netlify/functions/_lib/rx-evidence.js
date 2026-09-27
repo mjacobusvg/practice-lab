@@ -132,7 +132,21 @@ const MIN_CONFIDENT = 100;
 // An earlier version split on "-" and treated everything before it as the product, which is the
 // format DailyMed uses elsewhere but NOT here: the whole title survived, so forty-six repackager
 // labels for one generic all looked like materially different products and the lookup refused.
-const DOSE_FORMS = /\b(capsules?|tablets?|film coated|sugar coated|enteric coated|coated|delayed release|extended release|immediate release|release|oral solution|solution|suspension|syrup|elixir|injections?|injectable|powder|granules?|kit|patch|films?|spray|aerosol|inhalation|cream|ointment|gel|lotion|suppository|chewable|disintegrating|for oral use|for suspension|concentrate|pellets?|sprinkle|orally|oral|metered|usp)\b/gi;
+// "extended release" and "extended-release" are the same thing. Matching only the spaced form
+// left "extended" glued to the product name, so EFFEXOR XR normalised two different ways from
+// two different labels and the lookup refused a product against itself.
+const DOSE_FORMS = /\b(capsules?|tablets?|film[- ]?coated|sugar[- ]?coated|enteric[- ]?coated|coated|delayed[- ]?release|extended[- ]?release|sustained[- ]?release|immediate[- ]?release|controlled[- ]?release|release|oral solution|solution|suspension|syrup|elixir|injections?|injectable|powder|granules?|kit|patch|films?|spray|aerosol|inhalation|cream|ointment|gel|lotion|suppository|chewable|disintegrating|for oral use|for suspension|concentrate|pellets?|sprinkle|orally|oral|metered|usp)\b/gi;
+
+// Release-form abbreviations. Stripped for the SAMENESS comparison only: "adderall xr" must stay
+// distinct from "adderall" in the product name, and isER carries that distinction separately.
+const FORM_ABBR = /\b(xr|er|sr|xl|la|cd|dr|ir|odt|ec|xt)\b/gi;
+
+// A form a clinician does not mean when they write a bare generic name.
+// A form a clinician does not mean when they write a bare generic name. "film" needs the
+// lookahead: nearly every ordinary tablet is FILM COATED, and matching that marked the plainest
+// product on the list as specialised, so OXTELLAR XR outranked a film-coated oxcarbazepine
+// tablet. A coating is not a dosage form.
+const SPECIAL_FORM = /\b(suspension|oral solution|syrup|elixir|injections?|injectable|patch|films?(?![- ]?coated)|kit|concentrate|chewable|disintegrating|granules?|spray|aerosol|cream|ointment|gel|suppository|powder|implant|pellets?)\b/i;
 
 // The salt is not the drug. DailyMed titles one generic six ways -- "FLUOXETINE",
 // "FLUOXETINE HYDROCHLORIDE", "FLUOXETINE HYDROCHLORIDE ... COATED" -- and without this every
@@ -176,6 +190,34 @@ function splProductName(title) {
 // Kept under the old name so nothing that imported it breaks.
 function splBaseName(title) { return splProductName(title); }
 
+// The product name with release-form abbreviations removed. Used ONLY to decide whether two
+// candidates are the same product: "bupropion sr" and "bupropion" are, and isER keeps them
+// apart where that matters.
+function splProductCore(title) {
+  return splProductName(title).replace(FORM_ABBR, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// WHAT A QUERY HAS TO MATCH. Previously a candidate earned full-match credit if the query words
+// appeared anywhere in the DailyMed title, including inside the active-ingredient parenthetical.
+// That is how a bare `lithium` query resolved to ENERGY CATALYST (ADENOSINUM CYCLOPHOSPHORICUM,
+// ... LITHIUM CARBONICUM ...), a homeopathic combination, and handed it back as the
+// authoritative lithium label with a 159-character dosage section.
+//
+// The identity is the PRODUCT NAME, plus the ingredient restatement only when that restatement
+// names one or two ingredients. DailyMed writes "VRAYLAR (CARIPRAZINE) CAPSULE", and a query for
+// cariprazine must still match that. It also writes a twenty-ingredient homeopathic list in the
+// same position, and an incidental ingredient inside an unrelated combination must never make
+// that product eligible.
+function splIdentity(title) {
+  const raw = String(title || '');
+  const name = splProductName(raw);
+  const paren = raw.match(/\(([^)]*)\)/);
+  if (!paren) return name;
+  const parts = paren[1].split(/,|\band\b/).map(x => x.trim()).filter(Boolean);
+  if (parts.length > 2) return name;   // a combination's ingredient list is not this product's identity
+  return (name + ' ' + paren[1]).replace(DOSE_FORMS, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
 // "OLANZAPINE AND FLUOXETINE" matched a query for "fluoxetine" with a full-title score, because
 // every word asked for really does appear in it. It is a different drug (Symbyax), and putting
 // its label in front of a model asked about fluoxetine is precisely the identity collapse this
@@ -207,15 +249,32 @@ function chooseSpl(list, queryName, granularity) {
   const pref = formPreference(q);
   const scored = list.map(s => {
     const title = String(s.title || '').toLowerCase();
+    const identity = splIdentity(s.title);
     let score = 0, why = [], full = false, mismatch = false;
-    // Every word of what was asked for appears in the title: the strongest signal that this is
-    // the same product, and what separates "Adderall XR" from immediate-release mixed salts.
-    if (words.length && words.every(w => title.indexOf(w) !== -1)) { score += 100; full = true; why.push('title matches full query'); }
-    else if (words.some(w => title.indexOf(w) !== -1)) { score += 20; why.push('title matches part of query'); }
+    // Matched against the product IDENTITY, not anywhere in the title. An ingredient buried in
+    // an unrelated combination's list is not this product.
+    if (words.length && words.every(w => identity.indexOf(w) !== -1)) { score += 100; full = true; why.push('product identity matches full query'); }
+    else if (words.some(w => identity.indexOf(w) !== -1)) { score += 20; why.push('product identity matches part of query'); }
+    else if (words.length && words.every(w => title.indexOf(w) !== -1)) {
+      // Present in the title but NOT in the product identity: an incidental ingredient. Named,
+      // scored low, and left far below the confidence bar rather than silently discarded.
+      score += 5; why.push('QUERY APPEARS ONLY IN THE INGREDIENT LIST, NOT THE PRODUCT');
+    }
     // Extended-release asked for must not resolve to an immediate-release label, or vice versa.
     // With no preference stated, neither is rewarded and neither is punished.
     const isER = /extended[- ]release|sustained[- ]release|\bxr\b|\ber\b|\bxl\b|\bsr\b/.test(title);
-    if (pref === null) { why.push('no release form requested'); }
+    if (pref === null) {
+      // No form stated. Prefer the ORDINARY product over a specialised one, as a tiebreak and
+      // never as a requirement: a clinician writing bare "oxcarbazepine" does not mean Oxtellar
+      // XR, and bare "clozapine" does not mean Versacloz oral suspension. Concerta still
+      // resolves, because when the only label on file is extended release there is nothing to
+      // prefer over it.
+      const special = SPECIAL_FORM.test(title);
+      // Worth more than the recency bonus can swing (max 10), or a newer specialty label simply
+      // outranks the ordinary product: OXTELLAR XR 2026 beat a 2023 oxcarbazepine tablet at +8.
+      if (!isER && !special) { score += 15; why.push('default form preferred for a bare query'); }
+      else why.push('no release form requested');
+    }
     else if ((pref === 'er') === isER) { score += 25; why.push(pref === 'er' ? 'both extended-release' : 'both immediate-release'); }
     else { score -= 60; mismatch = true; why.push('RELEASE FORM MISMATCH'); }
     // An extra active ingredient makes this a different product, whatever the title match says.
@@ -228,7 +287,7 @@ function chooseSpl(list, queryName, granularity) {
     const year = splYear(s.published_date);
     if (year) score += Math.min(10, Math.max(0, year - 2015));
     return { spl: s, score: score, why: why.join('; '), full: full, isER: isER,
-             mismatch: mismatch, product: product, extra: extra };
+             mismatch: mismatch, product: product, core: splProductCore(s.title), extra: extra };
   }).sort((a, b) => b.score - a.score);
 
   const top = scored[0];
@@ -247,7 +306,10 @@ function chooseSpl(list, queryName, granularity) {
     // manufacturers of the same generic are not an ambiguity worth refusing over; an
     // immediate-release and an extended-release label at the same score are.
     const near = scored.slice(1).filter(s => (top.score - s.score) <= 10);
-    let different = near.filter(s => s.isER !== top.isER || s.product !== top.product);
+    // Compared on the form-stripped core, because the release distinction is already carried by
+    // isER. Without this "bupropion sr" and "bupropion" read as different products and
+    // forty-seven equivalent labels made the lookup refuse.
+    let different = near.filter(s => s.isER !== top.isER || s.core !== top.core);
     // AT INGREDIENT GRANULARITY the claim is about the ingredient, and every label for that
     // ingredient answers it. A brand beside its own generic is not an ambiguity: `lithium`
     // against LITHIUM CARBONATE and LITHOBID refused on exactly that, and nine of Pass A's
@@ -260,7 +322,7 @@ function chooseSpl(list, queryName, granularity) {
     if (granularity === 'ingredient') different = [];
     if (different.length) {
       ambiguous = different.length + ' materially different label(s) scored as well as the best match: '
-        + different.slice(0, 3).map(s => s.product).join('; ');
+        + different.slice(0, 3).map(s => s.core || s.product).join('; ');
     }
   }
 
@@ -638,5 +700,5 @@ async function getEvidence(drugNames, classes, opts) {
 }
 
 module.exports = { getEvidence, ingestDrug, extractSections, chooseSpl, splBaseName,
-                   splProductName, isCombinationOf, splYear, formPreference,
+                   splProductName, splProductCore, splIdentity, isCombinationOf, splYear, formPreference,
                    resolveRxcui, SECTIONS, CLASS_SECTIONS, CLASS_PRIMARY, MIN_CONFIDENT };
