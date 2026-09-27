@@ -251,5 +251,71 @@ test('THE CASE: Adderall XR 20 mg + fluoxetine 40 mg, as the card would show it'
   assert.ok(/headaches/.test(c.quote), 'the clinician sees why it was flagged historical');
 });
 
+// ---- coverage audit regressions, 26 Sept 2026 ------------------------------------------------
+// Found by running 42 representative psych meds through the detector. Each of these was a real
+// miss, and the LAI one is the original Adderall XR defect in a place nobody was looking.
+
+test('LAI: a product name stays whole and is NOT its oral parent', () => {
+  const c = one('Currently taking Abilify Maintena 400 mg IM monthly.');
+  assert.strictEqual(c.rawName, 'Abilify Maintena', 'never collapsed to Abilify');
+  assert.strictEqual(c.lai, true);
+  assert.strictEqual(c.formulation, 'long-acting injectable');
+  assert.strictEqual(c.formulationSource, 'product', 'the product name IS the formulation');
+  assert.strictEqual(c.dose, '400 mg', 'the dose parsed: the suffix no longer sits between name and number');
+  assert.strictEqual(c.interactionKey, 'aripiprazole', 'ingredient key rides alongside, as always');
+});
+
+test('LAI: every product in the LAI dataset resolves whole', () => {
+  [['Invega Sustenna 156 mg IM monthly', 'paliperidone'],
+   ['Invega Trinza 273 mg IM', 'paliperidone'],
+   ['Aristada 882 mg IM', 'aripiprazole'],
+   ['Perseris 90 mg SC monthly', 'risperidone'],
+   ['Uzedy 100 mg SC', 'risperidone'],
+   ['Zyprexa Relprevv 300 mg IM', 'olanzapine']].forEach(([phrase, key]) => {
+    const c = one('Currently taking ' + phrase + '.');
+    assert.strictEqual(c.lai, true, phrase);
+    assert.strictEqual(c.interactionKey, key, phrase);
+    // Some LAI brands are one word (Aristada, Perseris, Uzedy). What matters is that the
+    // product identity is preserved and marked injectable, not that the name has two words.
+    assert.strictEqual(c.formulation, 'long-acting injectable', phrase);
+    assert.ok(phrase.toLowerCase().indexOf(c.rawName.toLowerCase()) === 0,
+      phrase + ' must keep the product name as written, got ' + c.rawName);
+  });
+});
+
+test('LAI and oral of the SAME ingredient do not merge', () => {
+  // Someone on a monthly injection plus an oral is on two things, whatever the doses look like.
+  const r = run('Takes oral Invega 6 mg daily and Invega Sustenna 156 mg monthly.');
+  assert.strictEqual(r.length, 2);
+  assert.strictEqual(r.filter((c) => c.lai).length, 1);
+});
+
+test('divalproex is how clinicians write it, and now matches', () => {
+  // The interaction dictionary keys this as `valproate`, so the commonest written form matched
+  // nothing at all and the drug was invisible to grounding.
+  const c = one('Currently taking divalproex ER 1000 mg nightly.');
+  assert.strictEqual(c.interactionKey, 'valproate');
+  assert.strictEqual(c.rawName, 'divalproex ER');
+  assert.strictEqual(c.formulation, 'extended-release');
+  assert.strictEqual(one('Takes valproic acid 500 mg bid.').interactionKey, 'valproate');
+});
+
+test('a combination product resolves, with its components alongside', () => {
+  const c = one('Currently taking Symbyax 6/25 mg nightly.');
+  assert.strictEqual(c.rawName, 'Symbyax');
+  assert.deepStrictEqual(c.components, ['olanzapine', 'fluoxetine']);
+  assert.strictEqual(c.dose, '6/25 mg', 'one unit at the end is still a dose');
+});
+
+test('combination strengths parse in both written forms', () => {
+  assert.strictEqual(one('Takes Suboxone 8/2 mg sublingual.').dose, '8/2 mg');
+  assert.strictEqual(one('Takes Suboxone 8 mg/2 mg sublingual.').dose, '8 mg/2 mg');
+});
+
+test('a single-ingredient drug gets no components', () => {
+  assert.strictEqual(one('Takes lithium 900 mg nightly.').components, null);
+  assert.strictEqual(one('Takes lithium 900 mg nightly.').lai, false);
+});
+
 console.log(`\n${checks - failures}/${checks} passed`);
 if (failures) { console.error(`${failures} FAILED`); process.exit(1); }

@@ -28,6 +28,38 @@ test('every entry has at least one searchable term', () => {
   assert.deepStrictEqual(dead, [], 'an entry nothing can match is invisible to detection');
 });
 
+test('LAI product identities come from the LAI dataset, not a second handwritten list', () => {
+  const ari = VOCAB.entries.find((e) => e.key === 'aripiprazole');
+  assert.ok(ari.lai && ari.lai.indexOf('Abilify Maintena') > -1,
+    'Abilify Maintena must be a product in its own right, not a suffix on Abilify');
+  assert.ok(ari.brands.indexOf('Abilify') > -1, 'and the oral brand is still there');
+  const pal = VOCAB.entries.find((e) => e.key === 'paliperidone');
+  assert.ok(pal.lai.indexOf('Invega Sustenna') > -1 && pal.lai.indexOf('Invega Trinza') > -1);
+  // Sourced from pm-lai.html, so it cannot drift from the LAI tool's own product list.
+  const lai = VOCAB.entries.filter((e) => e.lai);
+  assert.ok(lai.length >= 6, 'every ingredient with LAI products carries them');
+});
+
+test('a combination product names its components', () => {
+  const olz = VOCAB.entries.find((e) => e.key === 'olanzapine');
+  const sym = (olz.combinations || []).find((c) => c.name === 'Symbyax');
+  assert.ok(sym, 'Symbyax was missing entirely until the coverage audit');
+  assert.deepStrictEqual(sym.components, ['olanzapine', 'fluoxetine']);
+});
+
+test('divalproex is searchable, not just valproate', () => {
+  const v = VOCAB.entries.find((e) => e.key === 'valproate');
+  assert.ok(v.generics.indexOf('divalproex') > -1, 'the commonest written form must match');
+  assert.ok(v.generics.indexOf('valproic acid') > -1);
+});
+
+test('no term is listed twice', () => {
+  VOCAB.entries.forEach((e) => {
+    const all = e.generics.concat(e.brands);
+    assert.strictEqual(new Set(all).size, all.length, e.key + ' has a duplicate term');
+  });
+});
+
 test('IDENTITY: sibling brands are kept apart', () => {
   const mph = VOCAB.entries.find((e) => e.key === 'methylphenidate');
   assert.ok(mph.brands.indexOf('Ritalin') > -1 && mph.brands.indexOf('Concerta') > -1,
@@ -60,7 +92,11 @@ test('non-medications are flagged so they never reach a medication list', () => 
 test('the vocabulary is a vocabulary, not a pharmacology dump', () => {
   const extra = new Set();
   VOCAB.entries.forEach((e) => Object.keys(e).forEach((k) => extra.add(k)));
-  assert.deepStrictEqual([...extra].sort(), ['brands', 'cls', 'generics', 'key', 'substance'].sort(),
+  // `lai` and `combinations` are IDENTITY, not pharmacology: which product names must stay
+  // whole, and which product is more than one ingredient. How a drug BEHAVES stays in the
+  // checker, which is what this assertion guards.
+  assert.deepStrictEqual([...extra].sort(),
+    ['brands', 'cls', 'combinations', 'generics', 'key', 'lai', 'substance'].sort(),
     'the checker owns CYP/QT/etc; shipping them into the Scribe is not this file’s job');
   assert.ok(fs.statSync('rx-vocabulary.js').size < 80 * 1024, 'stays small enough to ship to the Scribe');
 });

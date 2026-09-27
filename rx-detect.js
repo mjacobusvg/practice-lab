@@ -32,6 +32,10 @@
   var FORM_RE = new RegExp('^[\\s-]*(' + Object.keys(FORMS).join('|') + ')\\b', 'i');
 
   var DOSE_RE = /^[\s:-]*(\d+(?:\.\d+)?)\s*(mg|mcg|g|ml|units?|iu)\b(?:\s*\/\s*(\d+(?:\.\d+)?)\s*(mg|mcg|ml))?/i;
+  // Combination strengths are also written with ONE unit at the end: "Symbyax 6/25 mg",
+  // "Suboxone 8/2 mg". Without this the dose is dropped entirely, which the coverage audit
+  // showed as a blank next to a drug the clinician had clearly dosed.
+  var COMBO_DOSE_RE = /^[\s:-]*(\d+(?:\.\d+)?)\s*\/\s*(\d+(?:\.\d+)?)\s*(mg|mcg)\b/i;
 
   var ROUTES = [
     [/\b(?:po|by mouth|orally|oral)\b/i, 'oral'],
@@ -137,6 +141,10 @@
       var dose = null;
       var dm = rest.match(DOSE_RE);
       if (dm) dose = dm[3] ? (dm[1] + ' ' + dm[2] + '/' + dm[3] + ' ' + dm[4]) : (dm[1] + ' ' + dm[2].toLowerCase());
+      if (!dm) {
+        var cm = rest.match(COMBO_DOSE_RE);
+        if (cm) { dm = cm; dose = cm[1] + '/' + cm[2] + ' ' + cm[3].toLowerCase(); }
+      }
 
       var sent = sentenceAround(text, at);
       var route = null;
@@ -157,10 +165,20 @@
       else if (firstMatch(PRESENT, cueZone)) { status = 'current'; why = 'current-use language nearby'; }
       else { why = 'no clear indication whether this is current or historical'; }
 
+      // A long-acting injectable is its own product with its own label, not a release form of
+      // the oral drug. Marked explicitly so nothing downstream has to infer it from the name:
+      // "Abilify Maintena 400 mg IM monthly" answered from the ORAL aripiprazole label is not
+      // just the wrong number, it is the wrong units.
+      var isLai = !!(hit.entry.lai && hit.entry.lai.indexOf(matched) > -1);
+      var combo = (hit.entry.combinations || []).find(function(c){ return c.name === matched; });
+
       out.push({
         // Exactly as written, form modifier included. The most specific identity available, and
         // the one the clinician recognises.
         rawName: (matched + (formWord ? ' ' + formWord.toUpperCase() : '')).trim(),
+        // One prescribing identity, components alongside (CLINICAL-ONTOLOGY.md 3.1).
+        components: combo ? combo.components.slice() : null,
+        lai: isLai,
         matchedTerm: matched,
         matchedAs: hit.kind,                 // 'brand' or 'generic'
         brand: hit.kind === 'brand' ? (matched + (formWord ? ' ' + formWord.toUpperCase() : '')) : null,
@@ -168,8 +186,10 @@
         ingredient: hit.entry.key.replace(/_/g, ' '),
         drugClass: hit.entry.cls || '',
         substance: !!hit.entry.substance,
-        formulation: formHint,               // from the TEXT; never inferred from the ingredient
-        formulationSource: formHint ? 'text' : null,
+        // The LAI product name IS the formulation statement, so it counts as written rather than
+        // inferred: the clinician named a product that only exists as an injection.
+        formulation: isLai ? 'long-acting injectable' : formHint,
+        formulationSource: isLai ? 'product' : (formHint ? 'text' : null),
         dose: dose,
         route: route,
         frequency: fq ? fq[0].toLowerCase() : null,
@@ -200,6 +220,9 @@
   function sameMedication(a, b) {
     if (a.interactionKey !== b.interactionKey) return false;
     if (a.proposedStatus !== b.proposedStatus) return false;
+    // An injectable and an oral of the same ingredient are different products, always, whatever
+    // the doses look like. Someone on Invega Sustenna monthly and oral Invega is on two things.
+    if (!!a.lai !== !!b.lai) return false;
     if (!compatibleForm(a, b)) return false;
     if (a.dose && b.dose) return a.dose === b.dose;
     return true;

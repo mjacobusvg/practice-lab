@@ -1,6 +1,8 @@
 // GENERATED FILE - do not edit by hand.
 //   node tools/gen-rx-vocabulary.js
-// Source: pm-interaction-checker.html, var MEDICATIONS (210 entries).
+// Sources: pm-interaction-checker.html var MEDICATIONS (210 entries), and pm-lai.html var LAI for
+// long-acting injectable PRODUCT identities, which must stay whole: "Abilify Maintena" is not
+// "Abilify", any more than "Adderall XR" is "Adderall".
 //
 // A CANDIDATE-DETECTION vocabulary and interaction-engine key map. NOT medication identity.
 // The dictionary works at the ingredient level because CYP and serotonergic relationships do,
@@ -270,9 +272,23 @@
       "olanzapine"
      ],
      "brands": [
-      "Zyprexa"
+      "Zyprexa",
+      "Zyprexa Relprevv",
+      "Symbyax"
      ],
-     "cls": "Second-Generation Antipsychotic"
+     "cls": "Second-Generation Antipsychotic",
+     "lai": [
+      "Zyprexa Relprevv"
+     ],
+     "combinations": [
+      {
+       "name": "Symbyax",
+       "components": [
+        "olanzapine",
+        "fluoxetine"
+       ]
+      }
+     ]
     },
     {
      "key": "risperidone",
@@ -280,9 +296,19 @@
       "risperidone"
      ],
      "brands": [
-      "Risperdal"
+      "Risperdal",
+      "Risperdal Consta",
+      "Perseris",
+      "Uzedy",
+      "Rykindo"
      ],
-     "cls": "Second-Generation Antipsychotic"
+     "cls": "Second-Generation Antipsychotic",
+     "lai": [
+      "Risperdal Consta",
+      "Perseris",
+      "Uzedy",
+      "Rykindo"
+     ]
     },
     {
      "key": "aripiprazole",
@@ -290,9 +316,17 @@
       "aripiprazole"
      ],
      "brands": [
-      "Abilify"
+      "Abilify",
+      "Abilify Maintena",
+      "Aristada",
+      "Abilify Asimtufii"
      ],
-     "cls": "Second-Generation Antipsychotic (partial D2 agonist)"
+     "cls": "Second-Generation Antipsychotic (partial D2 agonist)",
+     "lai": [
+      "Abilify Maintena",
+      "Aristada",
+      "Abilify Asimtufii"
+     ]
     },
     {
      "key": "cariprazine",
@@ -340,9 +374,17 @@
       "paliperidone"
      ],
      "brands": [
-      "Invega"
+      "Invega",
+      "Invega Sustenna",
+      "Invega Trinza",
+      "Invega Hafyera"
      ],
-     "cls": "Second-Generation Antipsychotic"
+     "cls": "Second-Generation Antipsychotic",
+     "lai": [
+      "Invega Sustenna",
+      "Invega Trinza",
+      "Invega Hafyera"
+     ]
     },
     {
      "key": "brexpiprazole",
@@ -370,9 +412,13 @@
       "haloperidol"
      ],
      "brands": [
-      "Haldol"
+      "Haldol",
+      "Haloperidol decanoate"
      ],
-     "cls": "First-Generation Antipsychotic"
+     "cls": "First-Generation Antipsychotic",
+     "lai": [
+      "Haloperidol decanoate"
+     ]
     },
     {
      "key": "lithium",
@@ -388,7 +434,11 @@
     {
      "key": "valproate",
      "generics": [
-      "valproate"
+      "valproate",
+      "divalproex",
+      "divalproex sodium",
+      "valproic acid",
+      "valproate sodium"
      ],
      "brands": [
       "Depakote"
@@ -551,9 +601,26 @@
      ],
      "brands": [
       "Suboxone",
-      "Sublocade"
+      "Sublocade",
+      "Zubsolv"
      ],
-     "cls": "Opioid Partial Agonist"
+     "cls": "Opioid Partial Agonist",
+     "combinations": [
+      {
+       "name": "Suboxone",
+       "components": [
+        "buprenorphine",
+        "naloxone"
+       ]
+      },
+      {
+       "name": "Zubsolv",
+       "components": [
+        "buprenorphine",
+        "naloxone"
+       ]
+      }
+     ]
     },
     {
      "key": "naltrexone",
@@ -673,9 +740,13 @@
       "fluphenazine"
      ],
      "brands": [
-      "Prolixin"
+      "Prolixin",
+      "Fluphenazine decanoate"
      ],
-     "cls": "First-Generation Antipsychotic"
+     "cls": "First-Generation Antipsychotic",
+     "lai": [
+      "Fluphenazine decanoate"
+     ]
     },
     {
      "key": "thiothixene",
