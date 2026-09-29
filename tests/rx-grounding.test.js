@@ -568,5 +568,35 @@ test('a non-dosing section gets no index', () => {
   assert.ok(!/DOSE FIGURES ABOVE/.test(block));
 });
 
+// ---- a practice number still needs a source ------------------------------------------------
+// Pass B, after the population tagging stopped Concerta borrowing the pediatric 54: one run in
+// five answered "some clinical practice pushes to 108 mg/day in adults off-label". 108 mg/day
+// is in no label and in no Tier 2 row. Rule 2 permits supplying PRACTICE from own knowledge, and
+// the model took that literally and supplied a number. Describing the practice is the synthesis
+// that rule protects; naming its figure is the invention it exists to stop.
+const RULES = G.groundingRules(['dosing'], []);
+
+test('a dose figure may not come from recall, however it is labelled', () => {
+  assert.ok(/A NUMBER IS NOT SYNTHESIS/.test(RULES));
+  assert.ok(/appears neither in the/.test(RULES) && /retrieved label nor in the clinical reference block/.test(RULES));
+});
+
+test('and saying off-label does not license one', () => {
+  assert.ok(/does not license it/.test(RULES));
+});
+
+// The carve-out this must NOT undo. "Grounding exists to prevent invention. It does not exist
+// to prevent synthesis" is the standing instruction, and a rule that silenced practice entirely
+// would walk the answers back to the grounded uselessness that was already rejected once.
+test('describing practice in words is still explicitly allowed', () => {
+  assert.ok(/It does not exist to stop you/.test(RULES) && /SYNTHESIZING an answer/.test(RULES));
+  assert.ok(/You may describe practice in words from your own/.test(RULES));
+  assert.ok(/Describing the practice is useful/.test(RULES));
+});
+
+test('and the model is told what to say instead of a number it cannot source', () => {
+  assert.ok(/some clinicians do exceed the/.test(RULES) && /no sourced figure for how far/.test(RULES));
+});
+
 console.log(`\n${checks - failures}/${checks} passed`);
 if (failures) { console.error(`${failures} FAILED`); process.exit(1); }

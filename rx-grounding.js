@@ -505,6 +505,16 @@
     lines.push('     SYNTHESIZING an answer. Say plainly when a figure is common clinical practice rather');
     lines.push('     than a labeled one, and do not dress practice up as labeling or labeling as practice.');
     lines.push('');
+    lines.push('     BUT A NUMBER IS NOT SYNTHESIS. You may describe practice in words from your own');
+    lines.push('     knowledge. You may NOT state a specific dose figure that appears neither in the');
+    lines.push('     retrieved label nor in the clinical reference block above. Marking it "off-label"');
+    lines.push('     or "in common practice" does not license it: a recalled number is exactly the');
+    lines.push('     thing that put a wrong maximum in front of a clinician, and a reader cannot tell');
+    lines.push('     a remembered figure from a sourced one. So say "some clinicians do exceed the');
+    lines.push('     labeled ceiling, and I have no sourced figure for how far" rather than naming a');
+    lines.push('     number you cannot point at. Describing the practice is useful. Inventing its');
+    lines.push('     number is the defect.');
+    lines.push('');
     lines.push('NAME THE CATEGORY OF EVERY NUMBER YOU GIVE. These are different facts and presenting one');
     lines.push('as another is the specific error this evidence exists to prevent:');
     lines.push('  - the FDA recommended or usual ADULT dose');

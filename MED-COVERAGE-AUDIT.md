@@ -554,3 +554,51 @@ Case 12 (lamotrigine plus divalproex) was stable across all five runs. Every oth
 least one figure, though most of that movement is incidental numbers appearing in some runs and
 not others rather than a contested ceiling. The per-figure counts now make the difference
 readable at a glance.
+
+## Pass B after the figure index: two fixed, one new
+
+### Fixed
+
+**Symbyax.** Now reads "That figure comes from the generic combination labeling (Par Health
+USA), which is being used here because there is no current Symbyax label." Correct attribution,
+the substitution named, and it held on the cached path.
+
+**Concerta no longer leads with 54.** 72 mg/day in 4 of 5 runs, and 54 has dropped to an
+incidental mention rather than the answer. The per-figure population index did what the heading
+split could not.
+
+### New: the model reached for an unsourced number instead
+
+One run in five: *"some clinical practice pushes to 108 mg/day in adults off-label."* 108 mg/day
+is in no retrieved label and no Tier 2 row.
+
+This is not the model disobeying. Rule 2 says established clinical practice "you may supply from
+your own knowledge, clearly marked as such," and it supplied a practice figure and marked it.
+Blocked from borrowing the pediatric 54, it reached for a remembered number instead. The
+carve-out was written to stop grounded uselessness and it worked exactly as written.
+
+**The line now drawn:** describing practice in words is synthesis and stays. Naming its figure is
+invention and does not. A number that appears in neither the label nor the clinical reference
+block may not be stated, and "off-label" or "in common practice" does not license it, because a
+reader cannot tell a remembered figure from a sourced one. The model is told what to say instead:
+that clinicians do exceed the labeled ceiling and there is no sourced figure for how far.
+
+The carve-out itself is intact and has its own test, so a later change cannot quietly walk the
+answers back to refusing to synthesize.
+
+### The check that should have caught it
+
+108 mg/day was found by reading prose. That does not scale past fourteen cases, and every defect
+in this audit was invisible in the answer and visible in the data.
+
+Pass B now compares every dose figure in an answer against the retrieved evidence AND the
+clinician's note, and reports any figure found in neither. A figure that is in neither came from
+the model's memory, which is the entire defect class stated as one test. The evidence text is
+captured on a dev-only side channel rather than on the persisted log entry, since it runs to tens
+of thousands of characters and has no business in saved encounter state.
+
+### Note on the variance metric
+
+"14 of 14 varied" is not the alarming number it looks like. Flagging any figure absent from any
+run will fire on almost any prose. The useful column is now the unsourced one: variance says the
+wording moved, unsourced says a number had no origin.
