@@ -146,19 +146,19 @@ They are aware. Their attention is still being driven.
 
 Active attention is where some agency comes back.
 
-And when what becomes visible is your own attention, thought, urge or reaction, we are getting into something else: meta-awareness.
+And when what becomes visible is not just the object of attention but the process of attending, interpreting and reacting itself, we are getting into something else: meta-awareness.
 
 # Awareness within awareness
 
 The phrase I find myself using is awareness within awareness. Meta-awareness is the more technical term, but it does not convey the experience as well.
 
-You are not only having the thought. You recognize that you are having the thought.
+Simply noticing a thought is still awareness. I can notice: I am thinking they are angry with me. I can notice: I feel anxious. I can notice: I want reassurance.
 
-You are not only feeling the urge. You notice: there is the urge.
+Awareness within awareness is a layer deeper. The process itself becomes visible. You can catch your mind taking an event, giving it meaning, narrowing attention around that meaning, and beginning to organize a response around it.
+
+You are not only aware of the contents of your experience. The machinery of your own experiencing becomes part of what you can notice: where attention went, what meaning your mind is making, what urge is forming, and how those pieces are beginning to pull you toward a response.
 
 It is a little like Inception, except instead of dreams within dreams, it is awareness within awareness.
-
-You are aware that you are the one being aware.
 
 It can almost feel like stepping outside the ego. Not the Freudian ego. I mean the way we become identified with our own interpretation of what just happened, particularly the part of that interpretation that is about us.
 
@@ -168,7 +168,7 @@ Somebody says something dismissive, and within a second it is: they disrespected
 
 The important part is that while we are inside it, none of that feels like interpretation. It feels like what happened.
 
-Meta-awareness adds the second layer. I can see that I am taking this as a slight. I can feel the part of me that wants to defend itself.
+Meta-awareness adds the second layer. I can see my mind taking this as a slight. I can feel my attention narrowing around what it means about me, and I can feel the urge to defend myself beginning to form.
 
 And notice what that layer is not. It is not deciding the slight was imaginary. Maybe it was a slight. It is seeing that I am the one doing the interpreting.
 
@@ -184,17 +184,17 @@ Awareness: I am anxious.
 
 Insight: When I am anxious and uncertain, I ask for reassurance, because it makes the uncertainty go away for a while.
 
-And the one we are actually after: I am anxious, and right now I can feel myself wanting to ask for reassurance. I know what this is.
+And the one we are actually after: I am anxious, and right now I can feel my mind trying to get rid of the uncertainty by reaching for reassurance. I can see the urge forming. I know what this is.
 
 Read that last one again and notice the tense.
 
 **The behavior has not happened yet.**
 
-In this example, that is where the difference becomes clinically useful. Not an easy moment, and not some magical freedom from the anxiety. The person may desperately want the reassurance. But for a moment they are two things at once. The person having the urge, and the person watching themselves have it.
+In this example, that is where the difference becomes clinically useful. Not an easy moment, and not some magical freedom from the anxiety. The person may desperately want the reassurance. But for a moment the process itself is visible from inside it. The anxiety, the uncertainty, the urge and the mind's attempt to solve the uncertainty with reassurance are all happening, and the person can see that machinery while it is running.
 
 And in that moment there is a choice point that did not exist a second earlier.
 
-That is a hard thing to describe to somebody who has never caught one of those moments. The words start going in circles. You are aware that you are aware. You are inside the thing and somehow also watching yourself be inside it.
+That is a hard thing to describe to somebody who has never caught one of those moments. The words start going in circles. You are aware that you are aware. You are inside the thing and somehow the way your own mind is processing it has become visible too.
 
 But if you have ever had a lucid dream, you may already know exactly what I am describing.
 
@@ -218,9 +218,9 @@ You are still anxious. You still have the thought. You still feel the urge to ch
 
 But now another layer comes online.
 
-Wait. I am anxious right now.
+Wait. I am anxious, and I can see my attention narrowing around the possibility that something is wrong.
 
-Or: there is the urge to check.
+Or: there is the urge to check, and I can feel my mind trying to turn uncertainty into certainty.
 
 Or: I am starting to do the thing I always do when I feel uncertain.
 
@@ -266,7 +266,7 @@ Which gives you the actual practice, and it is almost a paradox:
 
 Because the moment you recognize that you have been completely caught up in something for the last ten minutes, you are already back. And with practice, ten minutes becomes five. Five becomes thirty seconds. Eventually, sometimes, you catch the urge as it is forming.
 
-Which is what that third line was trying to get at: awareness and insight meeting in the present moment while you can still see yourself inside the process. Not because you have escaped the experience, but because for a moment you are not completely fused with it.
+Which is what that third line was trying to get at: awareness and insight meeting in the present moment while the process by which you are attending, interpreting and reacting is itself visible. Not because you have escaped the experience, but because for a moment you are not completely fused with it.
 
 Which brings me back to a word I used about the dream, and that I want to be careful with.
 
@@ -344,7 +344,7 @@ The catching is the rep. Not the staring.
 
 You notice that your attention wandered. That is awareness of your own attention. Then you deliberately put it somewhere again. That is the active part.
 
-You learn what it feels like to notice a thought as a thought. A sensation as a sensation. An urge as an urge. You learn the difference between having an experience and immediately responding to it.
+You learn what it feels like to notice a thought as a thought. A sensation as a sensation. An urge as an urge. And eventually you begin to notice what your mind starts doing with the thought, sensation or urge. You learn the difference between having an experience and immediately responding to it.
 
 And then, hopefully, it starts to generalize, and it shows up earlier in the sequence.
 
@@ -378,7 +378,7 @@ Different theories. Different language. Different interventions. But something h
 
 That does not mean awareness produces change on its own. It does not. Insight does not either. Someone can understand themselves extremely well and stay completely stuck, and someone can be exquisitely aware of their suffering and have no idea what is keeping it going.
 
-But when awareness and insight are present in real time, and the person can notice what their own attention is doing, something shifts. The patient is not only living inside the pattern. They are starting to see it while it is happening.
+But when awareness and insight are present in real time, and the process by which the person is attending, interpreting and reacting becomes visible too, something shifts. The patient is not only living inside the pattern. They are starting to see the pattern operating while it is happening.
 
 And now there is somewhere for the two of us to intervene.
 
