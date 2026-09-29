@@ -61,6 +61,36 @@
 // per window, which is the point; it is not a mutex. It also leaves an audit trail in
 // public.function_run_log, a table that already existed but nothing wrote to.
 
+// DO NOT "STOP LOGGING IDLE RUNS". Read this before you try.
+// The obvious cleanup, when you notice send-scheduled-broadcasts and
+// membership-billing-notices writing ~140 rows a day between them: skip the row when the
+// job finds nothing to do. It breaks two things.
+//
+//   1. THE ROW IS THE LOCK, and claimRun INSERTS it before the work runs — so at insert
+//      time nobody knows yet whether the run will turn out idle. Skip it, or delete it
+//      afterwards once you know, and mutual exclusion is gone from phi-purge-expired,
+//      membership-billing-notices and every other job here.
+//   2. phi-drift-check CARRIES STATE in the most recent ok=true row's summary, so an
+//      unchanged alert can stay quiet (see its previousState()). Drop recent rows and it
+//      re-alerts.
+//
+// The volume is handled in the database instead, where it costs nothing:
+//   * public.prune_function_run_log() — pg_cron 'prune-function-run-log', 04:00 UTC daily.
+//     Keeps the newest 2000 rows per function and anything inside 180 days, and ALWAYS
+//     keeps the newest ok=true row per function. The caps are derived from row count, not
+//     a hardcoded list of chatty names, so a future high-frequency job bounds itself.
+//     Verified under "keep 0 rows, age out everything": all ten functions still kept
+//     exactly one survivor. Both caps sit far outside the 12 h maximum lock window below.
+//   * public.function_run_status — query THIS, not the raw table. One row per function:
+//     last run, last success, last failure, latest summary, hours since. The raw table is
+//     for forensics; the view is for "is everything still running?".
+//
+// Lock windows currently in use, for anyone sizing a retention change:
+//   5 min  send-scheduled-broadcasts
+//   10 min membership-billing-notices
+//   6 h    reconcile-subscriptions, reconcile-subscriptions-heal
+//   12 h   compliance-reminders, digest-weekly, phi-drift-check, phi-purge-expired
+
 var crypto = require('crypto');
 
 function timingSafeEqual(a, b) {
