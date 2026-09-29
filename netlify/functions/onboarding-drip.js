@@ -126,6 +126,25 @@ function firstName(name) {
   return n ? n.split(/\s+/)[0] : 'there';
 }
 
+// Role / shared-inbox local-parts to skip. These are often shared boxes or AI
+// helpdesks (e.g. admin@northform.health, a Zendesk agent) where a nurture drip is
+// noise and can bounce off an auto-responder. A skipped signup keeps their account
+// and full platform access; they just do not receive the automated welcome sequence.
+// Exact local-part match only (before any +tag), so "adminjones@" is NOT skipped.
+const SHARED_INBOX_LOCALPARTS = new Set([
+  'admin', 'administrator', 'info', 'information', 'support', 'help', 'helpdesk',
+  'contact', 'hello', 'office', 'reception', 'frontdesk', 'front-desk', 'billing',
+  'accounts', 'accounting', 'sales', 'team', 'staff', 'hr', 'careers', 'jobs',
+  'scheduling', 'schedule', 'intake', 'appointments', 'referrals', 'records', 'fax',
+  'mail', 'email', 'postmaster', 'webmaster', 'noreply', 'no-reply', 'donotreply',
+  'do-not-reply', 'notifications', 'notify'
+]);
+function isSharedInbox(email) {
+  let local = String(email || '').toLowerCase().split('@')[0].trim();
+  local = local.split('+')[0]; // normalize sub-addressing (admin+tag@)
+  return !!local && SHARED_INBOX_LOCALPARTS.has(local);
+}
+
 // Build a Supabase REST caller and an SES client from env. Returns { sb, ses };
 // ses is null if SES isn't configured (callers should no-op the send).
 function makeClients() {
@@ -158,6 +177,9 @@ function makeClients() {
 async function sendOneStep(sb, ses, account, step) {
   const email = String(account.email || '').toLowerCase();
   if (!email || email.indexOf('@') === -1) return false;
+  // Do not nurture role / shared inboxes (admin@, info@, support@, ...). Covers
+  // every path, since both the instant welcome and the cron send through here.
+  if (isSharedInbox(email)) { console.log('onboarding-drip: skipping shared/role inbox', email); return false; }
   const body = step.html().replace(/\{first_name\}/g, firstName(account.name));
   const html = oneClickify(body, email) + prefsFooter(email);
   await ses.client.send(new ses.SendEmailCommand({
