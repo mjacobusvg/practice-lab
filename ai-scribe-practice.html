@@ -395,11 +395,11 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/rx-vocabulary.js?v=ambient-169-sub"></script>
-<script src="/rx-detect.js?v=ambient-169-sub"></script>
-<script src="/rx-grounding.js?v=ambient-169-sub"></script>
-<script src="/rx-clinical-reference.js?v=ambient-169-sub"></script>
-<script src="/note-engine-practice.js?v=ambient-169-sub"></script>
+<script src="/rx-vocabulary.js?v=ambient-170-sub"></script>
+<script src="/rx-detect.js?v=ambient-170-sub"></script>
+<script src="/rx-grounding.js?v=ambient-170-sub"></script>
+<script src="/rx-clinical-reference.js?v=ambient-170-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-170-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -761,7 +761,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-169-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-170-sub</span></div>
 </div>
 </div>
 
@@ -4848,7 +4848,13 @@ var TBP_COVERAGE_B = [
 
 // Runs the REAL Discern path, one case at a time, and reports the trail alongside the answer so
 // "correct evidence, bad reasoning" stays distinguishable from "wrong evidence".
-async function tbpCoverageB(){
+// mode 'ask' (default) dismisses the card and records WHAT was asked, testing that the system
+// asks when it should. mode 'confirm' accepts the list as shown and records the answer that
+// follows, testing the answer itself. The two measure different things and both matter:
+// tbpCoverageB() then tbpCoverageB({ mode: 'confirm' }).
+async function tbpCoverageB(opts){
+  opts = opts || {};
+  var mode = opts.mode || 'ask';
   var raw = document.getElementById('raw');
   var keep = raw ? raw.value : '';
   var out = [];
@@ -4857,17 +4863,30 @@ async function tbpCoverageB(){
     if(raw) raw.value = c.note;
     try { tbpEncounterReset(); } catch(e){}
     rsnLog = []; rsnLast = null;
-    var before = Date.now();
-    try { await tbpRunReason(c.q); } catch(e){}
+    var before = Date.now(), asked = null;
+    try {
+      var run = tbpRunReason(c.q);
+      // The card, if this question needed one, is already open: tbpRunReason opens it before it
+      // yields. Answering it here is what makes an ambiguity case measurable at all.
+      var modal = document.getElementById('meds-modal');
+      if(modal && modal.classList.contains('open')){
+        asked = (tbpReasonAsks || []).map(function(a){ return a.drug + ' (' + a.need + ')'; }).join('; ')
+              || 'medication confirmation';
+        if(mode === 'confirm'){ var cb = document.getElementById('meds-confirm'); if(cb) cb.click(); }
+        else { tbpHideMeds(); }
+      }
+      await run;
+    } catch(e){}
     var last = rsnLog[rsnLog.length - 1] || {};
-    out.push({ note: c.note, q: c.q, answer: last.a || '(none)',
+    var shown = (asked && mode !== 'confirm') ? '(asked first: ' + asked + ')' : (last.a || '(none)');
+    out.push({ note: c.note, q: c.q, asked: asked, mode: mode, answer: last.a || null, outcome: shown,
                trail: last.trail || null, gaps: last.gaps || null, refs: last.refs || null,
                ms: Date.now() - before });
-    console.log((i+1) + '/' + TBP_COVERAGE_B.length + '  ' + c.q + '\n    ' + String(last.a || '(none)').slice(0, 220));
+    console.log((i+1) + '/' + TBP_COVERAGE_B.length + '  ' + c.q + '\n    ' + String(shown).slice(0, 220));
   }
   if(raw) raw.value = keep;
   tbpDevExpose('TBP_COVERAGE_B_RESULTS', out);
-  console.log('\nPASS B done. window.TBP_COVERAGE_B_RESULTS holds answers + trails.');
+  console.log('\nPASS B (' + mode + ') done. window.TBP_COVERAGE_B_RESULTS holds answers + trails.');
   return out;
 }
 
@@ -5017,6 +5036,12 @@ function tbpShowMeds(purpose, reason, onDone, asks){
 function tbpHideMeds(){
   document.getElementById('meds-modal').classList.remove('open');
   tbpMedOnDone = null;
+  // Dismissing without confirming still ENDS the interaction, so a caller awaiting it must be
+  // released. When the close is on the way to running the continuation, the continuation settles
+  // it instead, after an answer exists.
+  if(tbpReasonProceeding) return;
+  var pend = tbpReasonPending; tbpReasonPending = null;
+  if(pend) pend({ asked: tbpReasonAsks, answered: false });
 }
 
 // Open the card only if something actually needs it, then continue. When nothing needs it the
@@ -5083,7 +5108,9 @@ function tbpMedEnsure(purpose, go){
     }
     tbpMedApplyConfirmation(tbpMedDraftRows, 'clinician');
     var done = tbpMedOnDone;
+    tbpReasonProceeding = true;
     tbpHideMeds();
+    tbpReasonProceeding = false;
     if(done) done();
   });
 })();
@@ -6347,6 +6374,10 @@ function tbpRsnTrailHtml(trail, gaps, refs){
     + '</div></details>';
 }
 
+// Set while a question is waiting on the medication card. Closing the card settles the wait, so
+// a caller that awaits a medication question can never hang on a dismissal.
+var tbpReasonPending = null, tbpReasonAsks = null, tbpReasonProceeding = false;
+
 async function tbpRunReason(question){
   // A medication question needs confirmed medication identity BEFORE it can be answered. The
   // clinician asks their question; the system works out what it needs. They are never sent off
@@ -6366,11 +6397,33 @@ async function tbpRunReason(question){
   });
   if(scope.asks.length){
     // Ask ONLY for the distinction that changes the evidence, and say which one it is.
+    //
+    // The promise settles when the INTERACTION ends, not when the card opens. It used to return
+    // here, so anything awaiting a medication question got control back before an answer
+    // existed. A clinician never noticed, because the callback resumes them. Nothing could
+    // observe the run, though, and the coverage harness scored every ambiguity case as "(none)":
+    // the cases it was built to test were the only ones it could not see.
     var ask = scope.asks[0];
-    tbpShowMeds(ask.need === 'formulation' ? 'dose' : 'conflict', null,
-                function(){ tbpRunReasonNow(question, cls, null); }, scope.asks);
-    return;
+    tbpReasonAsks = scope.asks.slice();
+    return new Promise(function(resolve){
+      tbpReasonPending = resolve;
+      tbpShowMeds(ask.need === 'formulation' ? 'dose' : 'conflict', null, function(){
+        tbpReasonPending = null;
+        Promise.resolve(tbpRunReasonNow(question, cls, null))
+               .then(function(){ resolve({ asked: tbpReasonAsks, answered: true }); });
+      }, scope.asks);
+      // If the card is not actually on screen, nothing will ever answer it, and a caller that
+      // awaits this would wait forever. Settle now instead. The test suite found this by
+      // hanging: node drained its event loop with the promise still pending and exited 0,
+      // reporting nothing at all, which is a worse failure than a red test.
+      var m = document.getElementById('meds-modal');
+      if(!m || !m.classList.contains('open')){
+        tbpReasonPending = null;
+        resolve({ asked: tbpReasonAsks, answered: false, shown: false });
+      }
+    });
   }
+  tbpReasonAsks = null;
   return tbpRunReasonNow(question, cls, scope);
 }
 
