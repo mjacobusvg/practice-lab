@@ -415,3 +415,25 @@ the same set of ingredients.
 
 The substitution is recorded on the stored `chosen_reason`, not only on the fresh response, so
 it survives the cache and the trail never implies a brand label was found where there is none.
+
+### Symbyax verified, and Pass A closed
+
+```
+title:    OLANZAPINE AND FLUOXETINE (OLANZAPINE AND FUOXETINE) CAPSULE [PAR HEALTH USA, LLC]
+note:     no current Symbyax label; using the generic combination labeling for
+          fluoxetine and olanzapine
+why:      ... preferred for a bare query (score 125 of 3 candidates)
+sections: 3
+```
+
+Both ingredients are in the title, the match is a full identity match, and the trail states
+what was read and why. The label's own parenthetical carries a typo ("FUOXETINE"), which did
+not affect identity because the product name governs.
+
+It matched on `fluoxetine and olanzapine`, the REVERSE of the order in the label's title:
+RxNorm returns the ingredients alphabetically, DailyMed titles the product the other way. The
+both-orders retry is load-bearing, not defensive padding. Without it this drug still fails.
+
+**Pass A final: 41 of 42 resolve correctly.** The one remaining row, `carbamazepine XR`, is a
+recorded true positive: Carbatrol and Tegretol-XR are different products, the query does not
+say which, and naming both instead of picking one is the designed behavior.
