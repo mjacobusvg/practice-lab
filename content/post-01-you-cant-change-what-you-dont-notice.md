@@ -176,6 +176,12 @@ The slight may still sting, and the urge may still be there. But for a moment yo
 
 You are still having the experience. You can also see yourself having it.
 
+There is another piece to this: the noticing has to contain some degree of nonjudgment. If I catch myself getting anxious and immediately move to *I should not be anxious, this is ridiculous, why am I doing this again?*, I have not created much perspective. I have added another layer of reaction. Now there is the anxiety, and there is my judgment about being anxious.
+
+Mindfulness is closer to: *There is the anxiety. There is what my mind is doing with it. There is the urge that is forming.* Not good. Not bad. Not evidence that I am succeeding or failing. Just visible.
+
+Judgment can create its own kind of layering, except instead of giving us more perspective, each layer pulls us further into the experience. Nonjudgment helps preserve the perspective.
+
 And that is not dissociation. You have not gone numb, and you have not left the room. You are entirely in it. You are simply not only in it.
 
 Put the three next to each other and the difference is easier to see.
