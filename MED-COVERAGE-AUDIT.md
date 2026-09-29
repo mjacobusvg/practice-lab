@@ -358,3 +358,35 @@ the dosage-form list, which is the `suboxone soluble` case.
 **Still open going into run 4:** `Symbyax` found no SPL by name or by RXCUI 405343, and the
 ingredient fallback did not fire because there is no form token to strip. It may genuinely
 have no current label; run 4 with `fresh: true` will say.
+
+## Pass A run 4: 40 pass, 1 fail, 1 ambiguous, of 42
+
+Run with `tbpCoverageA({ fresh: true })`, so every label was re-fetched from DailyMed rather
+than served from the thirty-day cache. All three run-3 fixes are confirmed against live data.
+
+**lithium resolves to `LITHIUM SOLUTION [ADVAGEN PHARMA LTD]`.** In run 3 it resolved to
+`ENERGY CATALYST`, a homeopathic combination product, and the trail presented it as
+authoritative lithium labeling. That was the single most dangerous result in the audit, and it
+is fixed by the identity-scoring rule rather than by excluding one product.
+
+**oxcarbazepine resolves to `OXCARBAZEPINE TABLET, FILM COATED`**, not OXTELLAR XR: a bare
+generic query gets the ordinary product, not a specialty extended-release one.
+
+**Sections are stored.** `clinical_studies` appears on nearly every row with a real character
+count. It was being extracted and then silently dropped on write for as long as the title
+fallback has existed.
+
+Five of the six run-3 ambiguities were the doubled-core artifact and are gone.
+
+### The two remaining rows
+
+**Row 31, `carbamazepine XR` -> AMBIGUOUS, "2 materially different: carbatrol; tegretol".**
+This is the system working. Carbatrol is carbamazepine ER capsules, Tegretol-XR is carbamazepine
+ER tablets, and a bare "carbamazepine XR" does not say which. They are genuinely different
+products, so refusing to pick one and saying why is the correct outcome under fail-closed. It
+is recorded as a TRUE POSITIVE, not a defect to fix.
+
+**Row 39, `Symbyax` -> FAIL, "no SPL found by drug name or by RXCUI 405343".** The brand appears
+to have no current SPL. Whether a generic olanzapine/fluoxetine label exists is an open
+question; `tbpRxProbe('olanzapine and fluoxetine')` answers it. Failing closed on a product with
+no label is correct behavior in the meantime: no label, no evidence, and the trail says so.
