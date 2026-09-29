@@ -7,7 +7,7 @@ from memory or re-argue a decision that was already made. When an idea changes, 
 Mechanics of posting (Markdown that actually renders, schema, cadence, checksum discipline) live
 in `FORUM-POSTS.md`. This file is only about **content**.
 
-Last updated: 26 Sept 2026.
+Last updated: 28 Sept 2026.
 
 ---
 
@@ -39,7 +39,7 @@ treatment target is. It lets you and the patient see the target while it is happ
 | # | Post | The one thing it argues | Status |
 |---|---|---|---|
 | 1 | **You Can't Change What You Don't Notice: What Mindfulness Actually Is** | What this capacity is, what it feels like, and how you build it. Awareness, insight, active attention, meta-awareness, agency. | **Drafted**, `content/post-01-*.md` |
-| 2 | *(untitled)* | Where it shows up in the room, across presentations. Rumination caught mid-run, the craving and the ten seconds after, the slight and the urge to fire back, the obsession before the ritual, ambivalence heard in a patient's own voice. | Not started |
+| 2 | **What Mindfulness Lets You See: From Awareness to a Treatment Target** | What the meta-aware moment makes visible inside CBT, ERP, ACT, DBT and MI, and what each modality does next with what becomes workable. | **Drafted**, `content/post-02-*.md` |
 
 **Michael's split, not ChatGPT's:** "how to foster it" belongs in Post 1, which already carries the
 practice section and the exercise. Post 2 is purely clinical application.
