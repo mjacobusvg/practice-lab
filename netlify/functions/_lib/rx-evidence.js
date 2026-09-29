@@ -118,6 +118,39 @@ async function resolveRxcui(name) {
   return null;
 }
 
+// The ingredients RxNorm says a concept contains. Used only to recognise a COMBINATION whose
+// brand has no label of its own.
+async function rxIngredients(rxcui) {
+  const j = await getJson(RXNAV + '/rxcui/' + encodeURIComponent(rxcui) + '/related.json?tty=IN');
+  const groups = (j && j.relatedGroup && j.relatedGroup.conceptGroup) || [];
+  const out = [];
+  groups.forEach(g => {
+    if (g.tty !== 'IN') return;
+    (g.conceptProperties || []).forEach(c => {
+      const n = String(c.name || '').trim();
+      if (n && out.indexOf(n) === -1) out.push(n);
+    });
+  });
+  return out;
+}
+
+// The names to try for a combination product, and the guard that makes the fallback safe.
+//
+// Fewer than two ingredients returns NOTHING, deliberately. Letting one ingredient stand in for
+// a brand is the Adderall defect wearing a different hat: olanzapine monotherapy labeling is
+// not Symbyax's labeling, and its dosing is not this product's dosing. A combination may only
+// be answered from labeling for the SAME SET of ingredients.
+//
+// DailyMed names a combination by joining its ingredients, and RxNorm does not promise the same
+// order, so a two-ingredient set is tried both ways.
+function comboQueries(ings) {
+  const names = (ings || []).map(x => String(x || '').trim()).filter(Boolean);
+  if (names.length < 2) return [];
+  const out = [names.join(' and ')];
+  if (names.length === 2) out.push(names[1] + ' and ' + names[0]);
+  return out;
+}
+
 // ── 2. RXCUI -> the RIGHT SPL ───────────────────────────────────────────────────────────────
 // An RXCUI maps to many SPLs: every manufacturer of a generic has its own label. Taking the
 // first is how "Adderall XR" quietly becomes some other amphetamine product. The ranking is
@@ -509,7 +542,32 @@ async function ingestDrug(queryName, wantedSections, granularity) {
     ingHits.forEach(x => { const k = x.setid || x.set_id; if (!seen[k]) { seen[k] = true; list.push(x); } });
   }
 
-  const pick = list.length ? chooseSpl(list, queryName, granularity) : null;
+  // COMBINATION FALLBACK. A combination brand with no current label of its own is invisible to
+  // both lookups AND to the bare-strip fallback above, which only removes a release-form token:
+  // "Symbyax" has none, so nothing fired and it failed as "no SPL found" while the generic
+  // olanzapine and fluoxetine labeling sat in DailyMed the whole time.
+  //
+  // What is substituted is labeling for the same set of ingredients, never a single ingredient
+  // standing in for a combination -- see comboQueries for why that distinction is the whole
+  // point. chooseSpl is then scored against the GENERIC COMBINATION NAME rather than the brand,
+  // because that is what the label is actually called, and the trail says which happened so a
+  // clinician is never left thinking a brand label was found.
+  let identityQuery = queryName, identityNote = null;
+  if (!list.length) {
+    const combos = comboQueries(await rxIngredients(res.rxcui));
+    for (const combo of combos) {
+      const byCombo = await getJson(DAILYMED + '/spls.json?drug_name=' + encodeURIComponent(combo) + '&pagesize=50');
+      const comboHits = (byCombo && byCombo.data) || [];
+      tried.push({ by: 'combination:' + combo, found: comboHits.length });
+      if (!comboHits.length) continue;
+      comboHits.forEach(x => { const k = x.setid || x.set_id; if (!seen[k]) { seen[k] = true; list.push(x); } });
+      identityQuery = combo;
+      identityNote = 'no current ' + queryName + ' label; using the generic combination labeling for ' + combo;
+      break;
+    }
+  }
+
+  const pick = list.length ? chooseSpl(list, identityQuery, granularity) : null;
   if (!pick) return { ok: false, kind: 'label_not_found', query: queryName, rxcui: res.rxcui,
                       lookups: tried,
                       error: 'no SPL found by drug name or by RXCUI ' + res.rxcui };
@@ -577,7 +635,11 @@ async function ingestDrug(queryName, wantedSections, granularity) {
       spl_version: chosen.spl_version ? parseInt(chosen.spl_version, 10) : null,
       published_date: chosen.published_date || null,
       source_url: 'https://dailymed.nlm.nih.gov/dailymed/drugInfo.cfm?setid=' + setid,
-      candidate_count: pick.candidate_count, chosen_reason: pick.chosen_reason,
+      candidate_count: pick.candidate_count,
+      // The note rides on the STORED reason, not only on the fresh response, or it would vanish
+      // the moment the label came back from cache and the trail would quietly start implying a
+      // brand label was found.
+      chosen_reason: (identityNote ? identityNote + '. ' : '') + pick.chosen_reason,
       fetched_at: new Date().toISOString()
     })
   });
@@ -605,6 +667,7 @@ async function ingestDrug(queryName, wantedSections, granularity) {
   }
   return {
     ok: true, query: queryName, rxcui: res.rxcui, setid: setid,
+    identity_note: identityNote,
     resolved_by: res.resolved_by, candidate_count: pick.candidate_count,
     writes: writes,
     chosen_reason: pick.chosen_reason + (attempts.length > 1
@@ -704,6 +767,7 @@ async function getEvidence(drugNames, classes, opts) {
       granularity: granByDrug[name] || 'product',
       rxcui: row.rxcui || null,
       sections: (secs || []).map(s => ({ section: s.section_name, loinc: s.loinc_code, text: s.text })),
+      identity_note: (ingested && ingested.identity_note) || null,
       unmapped_codes: (ingested && ingested.unmapped_codes) || null,
       attempts: (ingested && ingested.attempts) || null,
       // Per-section write outcome, so "the label had no sections" and "the sections would not
@@ -725,6 +789,7 @@ async function getEvidence(drugNames, classes, opts) {
 }
 
 module.exports = {
-  SECTION_COLUMNS: SECTION_COLUMNS, sectionRow: sectionRow, getEvidence, ingestDrug, extractSections, chooseSpl, splBaseName,
+  SECTION_COLUMNS: SECTION_COLUMNS, sectionRow: sectionRow,
+  comboQueries: comboQueries, getEvidence, ingestDrug, extractSections, chooseSpl, splBaseName,
                    splProductName, splProductCore, splIdentity, isCombinationOf, splYear, formPreference,
                    resolveRxcui, SECTIONS, CLASS_SECTIONS, CLASS_PRIMARY, MIN_CONFIDENT };

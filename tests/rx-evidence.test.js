@@ -368,5 +368,31 @@ const loincRow = L.sectionRow('S2', { loinc_code: '34073-7', section_name: 'drug
                                       text: 'x', ord: 3, extra: 'nope' });
 ok('an unknown key can never reach the insert', !('extra' in loincRow) && loincRow.ord === 3);
 
+// ---- combination fallback ------------------------------------------------------------------
+// Symbyax has no current SPL of its own. Both lookups came back empty and the bare-strip
+// fallback could not fire, because that only removes a release-form token and Symbyax has none.
+// The generic olanzapine and fluoxetine labeling was in DailyMed the whole time.
+console.log('\n-- combination fallback --');
+ok('a two-ingredient set is tried in both orders, since RxNorm does not promise DailyMed order',
+   JSON.stringify(L.comboQueries(['olanzapine', 'fluoxetine']))
+     === JSON.stringify(['olanzapine and fluoxetine', 'fluoxetine and olanzapine']));
+// THE GUARD. One ingredient standing in for a combination brand is the Adderall defect in
+// different clothes: olanzapine monotherapy dosing is not this product's dosing.
+ok('ONE ingredient never stands in for a combination', L.comboQueries(['olanzapine']).length === 0);
+ok('and neither does none of them', L.comboQueries([]).length === 0 && L.comboQueries(null).length === 0);
+ok('blank entries do not pad a set up to two', L.comboQueries(['olanzapine', '  ']).length === 0);
+ok('three ingredients join, and are not permuted',
+   JSON.stringify(L.comboQueries(['a', 'b', 'c'])) === JSON.stringify(['a and b and c']));
+
+// Scored against the GENERIC COMBINATION NAME, which is what the label is called.
+const COMBO_LIST = [
+  spl2('OLANZAPINE AND FLUOXETINE (OLANZAPINE AND FLUOXETINE) CAPSULE [PAR HEALTH USA, LLC]', 'Jan 1, 2025'),
+  spl2('OLANZAPINE TABLET, FILM COATED [CARDINAL HEALTH]', 'Jan 1, 2026'),
+  spl2('FLUOXETINE (FLUOXETINE HYDROCHLORIDE) CAPSULE [REMEDYREPACK INC.]', 'Jan 1, 2026')
+];
+const comboPick = L.chooseSpl(COMBO_LIST, 'olanzapine and fluoxetine', 'product');
+ok('the combination label wins over either single-ingredient label',
+   !comboPick.ambiguous && /^OLANZAPINE AND FLUOXETINE/.test(comboPick.spl.title));
+
 console.log(fails ? '\n' + fails + ' FAILED' : '\nall passed');
 process.exit(fails ? 1 : 0);

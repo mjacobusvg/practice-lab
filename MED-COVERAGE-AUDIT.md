@@ -386,7 +386,32 @@ ER tablets, and a bare "carbamazepine XR" does not say which. They are genuinely
 products, so refusing to pick one and saying why is the correct outcome under fail-closed. It
 is recorded as a TRUE POSITIVE, not a defect to fix.
 
-**Row 39, `Symbyax` -> FAIL, "no SPL found by drug name or by RXCUI 405343".** The brand appears
-to have no current SPL. Whether a generic olanzapine/fluoxetine label exists is an open
-question; `tbpRxProbe('olanzapine and fluoxetine')` answers it. Failing closed on a product with
-no label is correct behavior in the meantime: no label, no evidence, and the trail says so.
+**Row 39, `Symbyax` -> FAIL, "no SPL found by drug name or by RXCUI 405343".** RESOLVED, see
+below. The probe confirmed a generic olanzapine and fluoxetine label exists (rxcui 611247), so
+this was a retrieval gap rather than a product without labeling.
+
+### Zero failed section writes
+
+`TBP_COVERAGE_A.flatMap(r => (r.writes||[]).filter(w => !w.stored))` returned `[]` across all
+42 rows. Section persistence is confirmed working, not inferred from the section counts.
+
+### The combination fallback
+
+Symbyax has no current SPL of its own. Both DailyMed lookups came back empty, and the
+bare-strip fallback could not fire because it only removes a release-form token and Symbyax has
+none. So a product whose generic labeling was in DailyMed the whole time failed as "no SPL
+found".
+
+`ingestDrug` now asks RxNorm what the concept contains, and when it contains two or more
+ingredients it searches DailyMed for labeling of that ingredient SET (both orders, since RxNorm
+does not promise DailyMed's ordering). `chooseSpl` is then scored against the generic
+combination name, because that is what the label is called.
+
+**The guard is the point.** `comboQueries` returns nothing for fewer than two ingredients, so a
+single ingredient can never stand in for a combination brand. Answering a Symbyax question from
+olanzapine monotherapy labeling would be the Adderall defect in different clothes: the dosing in
+that label is not this product's dosing. A combination may only be answered from labeling for
+the same set of ingredients.
+
+The substitution is recorded on the stored `chosen_reason`, not only on the fresh response, so
+it survives the cache and the trail never implies a brand label was found where there is none.
