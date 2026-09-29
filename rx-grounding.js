@@ -215,6 +215,67 @@
 
   var SECTION_CAP = 9000;   // per section; a full DOSAGE section on some labels is enormous
 
+
+  // ── POPULATION SPLIT ──────────────────────────────────────────────────────────────────────
+  // A dosing section states several populations' figures in one run of prose, and three times
+  // now the model has answered an ADULT question with a PEDIATRIC number: Adderall 30 mg (the
+  // original defect), Concerta 54 mg (Pass B run 1, where 72 is the adult figure), and the
+  // lithium range given as one range when the label gives an acute one and a maintenance one.
+  // Retrieval was correct every time. The figures were simply adjacent, and adjacency is enough.
+  //
+  // So the separation is made BEFORE the model sees the text, and every dose figure arrives
+  // carrying the population it belongs to.
+  //
+  // THE INVARIANT: nothing may be lost. The segments must reassemble into the source exactly,
+  // or the split is judged wrong and the section is presented whole. A parser that silently
+  // drops the paragraph holding the real maximum is worse than no parser, and "specificity
+  // present in the source is never destroyed" holds for a fix as much as for anything else.
+  var POP_PATTERNS = [
+    ['pediatric', /\b(p(?:a)?ediatric|children|child|adolescen|infant|neonat)\b/i],
+    ['geriatric', /\b(geriatric|elderly|older adults|65 years)\b/i],
+    ['adult',     /\badults?\b/i]
+  ];
+
+  function populationOf(heading) {
+    var hits = [];
+    POP_PATTERNS.forEach(function (p) {
+      if (p[1].test(heading) && hits.indexOf(p[0]) === -1) hits.push(p[0]);
+    });
+    if (!hits.length) return 'unspecified';
+    // A heading naming more than one population is reported as naming more than one. Picking
+    // the first would be inventing a precision the heading does not have.
+    return hits.sort().join(' and ');
+  }
+
+  function splitByPopulation(text) {
+    var src = String(text || '');
+    var marks = [], re = /(^|\s)(\d{1,2}\.\d{1,2})\s+(?=[A-Z])/g, m;
+    while ((m = re.exec(src)) !== null) marks.push(m.index + m[1].length);
+    if (marks.length < 2) return { segments: null, why: 'no numbered subsection structure' };
+
+    var segs = [];
+    if (marks[0] > 0) {
+      segs.push({ population: 'unspecified', heading: '(text before the first numbered subsection)',
+                  text: src.slice(0, marks[0]) });
+    }
+    for (var i = 0; i < marks.length; i++) {
+      var body = src.slice(marks[i], (i + 1 < marks.length) ? marks[i + 1] : src.length);
+      // The heading is only used to classify. The body is kept whole either way.
+      var head = body.slice(0, 90).split(/[:\n]/)[0];
+      segs.push({ population: populationOf(head), heading: head.trim(), text: body });
+    }
+    var rejoined = segs.map(function (x) { return x.text; }).join('');
+    if (rejoined !== src) return { segments: null, why: 'segments did not reassemble to the source' };
+    if (!segs.some(function (x) { return x.population !== 'unspecified'; })) {
+      return { segments: null, why: 'no subsection names a population' };
+    }
+    return { segments: segs, why: null };
+  }
+
+  // Only sections whose whole job is to state figures per population. Splitting prose that
+  // merely mentions children would add noise without removing a confusion.
+  var POPULATION_SPLIT_SECTIONS = { dosage_and_administration: true };
+
   function buildEvidenceBlock(evidence, opts) {
     opts = opts || {};
     var items = (evidence || []).filter(function (e) { return e && e.sections && e.sections.length; });
@@ -261,7 +322,23 @@
         parts.push('');
         parts.push('  ── ' + (SECTION_TITLES[sec.section] || sec.section.toUpperCase())
           + (sec.loinc ? ' (LOINC ' + sec.loinc + ')' : '') + ' ──');
-        parts.push(clipped ? text.slice(0, SECTION_CAP) : text);
+        var shown = clipped ? text.slice(0, SECTION_CAP) : text;
+        var split = POPULATION_SPLIT_SECTIONS[sec.section] ? splitByPopulation(shown)
+                                                           : { segments: null };
+        if (split.segments) {
+          parts.push('  This section is separated below by the population each part applies to.');
+          parts.push('  A figure in one block is NOT a figure for another population. State the');
+          parts.push('  population alongside every dose you give, and never give a figure from a');
+          parts.push('  block whose population does not match the patient being asked about.');
+          split.segments.forEach(function (g) {
+            parts.push('');
+            parts.push('  [POPULATION: ' + g.population + ']'
+              + (g.heading ? '  ' + g.heading : ''));
+            parts.push(g.text);
+          });
+        } else {
+          parts.push(shown);
+        }
         // Same protection the outside-record renderer uses: absence from an excerpt is not
         // absence from the label, and a model told otherwise will answer "the label does not say".
         if (clipped) parts.push('  [TRUNCATED at ' + SECTION_CAP + ' of ' + text.length
@@ -463,7 +540,9 @@
   var API = { classifyQuestion: classifyQuestion, purposeFor: purposeFor,
               resolveQueryScope: resolveQueryScope, FORM_SENSITIVE: FORM_SENSITIVE,
               granularityFor: granularityFor,
-              buildEvidenceBlock: buildEvidenceBlock, buildReferenceBlock: buildReferenceBlock,
+              buildEvidenceBlock: buildEvidenceBlock,
+    splitByPopulation: splitByPopulation,
+    populationOf: populationOf, buildReferenceBlock: buildReferenceBlock,
               groundingRules: groundingRules,
               summarizeTrail: summarizeTrail, evidenceGaps: evidenceGaps,
               SECTION_CAP: SECTION_CAP };

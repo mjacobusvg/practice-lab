@@ -703,3 +703,43 @@ with its wrong model, then build.
 
 Re-tag **INFERRED** entries as they are confirmed or corrected. An inference left sitting long
 enough starts to read like a rule, which is the failure this document exists to prevent.
+
+## Dose figures carry the population they apply to
+
+**Identity:** a dose figure is not "the maximum". It is the maximum *for a population*, stated
+by a label section that usually gives several populations' figures in one run of prose.
+
+**State / source / authority:** unchanged. The label remains the source; this concerns how the
+label is PRESENTED to a model, not what it establishes.
+
+**ENFORCED** (`rx-grounding.js`, `splitByPopulation` / `buildEvidenceBlock`; tests in
+`tests/rx-grounding.test.js` under "population split"): a `dosage_and_administration` section is
+separated by population before it reaches the model, each block labelled `[POPULATION: ...]`,
+with the instruction to state the population alongside every dose and never to give a figure
+from a block whose population does not match the patient asked about.
+
+**Why this is an invariant and not a prompt preference.** The same confusion has now produced a
+wrong clinical number three times, with correct evidence every time:
+
+| case | answered | correct for the question | what the wrong figure actually was |
+|---|---|---|---|
+| Adderall, adult max | 30 mg/day | 20 mg/day recommended, 60 mg/day studied | the pediatric ceiling |
+| Concerta, adult max (Pass B run 1) | 54 mg/day | 72 mg/day | the 6-to-12 ceiling |
+| lithium range | 0.8 to 1.2 mEq/L alone | acute 1.0 to 1.5, maintenance 0.8 to 1.2 | the maintenance range only |
+
+Retrieval was right in all three. The figures were adjacent in one section and adjacency was
+enough. An instruction not to confuse them is the same class of control that had already failed
+twice, so the separation is made in the data instead.
+
+**ENFORCED: the split may not destroy anything.** The segments must reassemble into the source
+byte for byte, or the split is judged wrong and the section is presented whole
+(`tests/rx-grounding.test.js`, "nothing is lost"). It also declines to split when there is no
+numbered subsection structure, when only one subsection exists, and when no subsection names a
+population. A parser that silently drops the paragraph holding the real maximum is worse than
+no parser, and "specificity present in the source is never destroyed" binds a fix as much as
+anything else.
+
+**OPEN: the lithium case is NOT fixed by this.** Acute versus maintenance is a phase-of-treatment
+distinction, not a population one, and `splitByPopulation` does not address it. Whether
+phase-of-treatment and indication-scoped figures need the same structural separation is an open
+fork. Do not assume the population split covers it; it does not.

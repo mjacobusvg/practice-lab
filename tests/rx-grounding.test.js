@@ -379,5 +379,107 @@ const plainBlock = G.buildEvidenceBlock(PLAIN);
 test('a normal label carries no substitution line', () => assert.ok(!/IDENTITY SUBSTITUTION/.test(plainBlock)));
 test('and no header warning', () => assert.ok(!/NOT EVERY ITEM BELOW/.test(plainBlock)));
 
+// ---- population split ----------------------------------------------------------------------
+// Three separate times the model answered an ADULT dosing question with a PEDIATRIC figure:
+// Adderall 30 mg (the original defect), and Concerta 54 mg in Pass B run 1, where 72 is the
+// adult number and 54 is the childrens'. Retrieval was correct in every case. The two figures
+// were simply adjacent in one dosing section, and adjacency was enough.
+
+const ADDERALL_DOSE =
+  '2.1 Adults: The recommended dose is 20 mg/day. 2.2 Pediatric Patients 6 to 12 years: '
+  + 'doses above 30 mg/day have not been studied.';
+
+test('the adult and pediatric figures land in separate blocks', () => {
+  const r = G.splitByPopulation(ADDERALL_DOSE);
+  assert.ok(r.segments, r.why);
+  assert.deepStrictEqual(r.segments.map((s) => s.population), ['adult', 'pediatric']);
+  assert.ok(/20 mg\/day/.test(r.segments[0].text) && !/30 mg\/day/.test(r.segments[0].text),
+    'the pediatric ceiling must not sit inside the adult block');
+});
+
+// THE INVARIANT. A parser that silently drops the paragraph holding the real maximum is worse
+// than no parser at all.
+[ADDERALL_DOSE,
+ '2.1 Adults 72 mg/day.  2.2 Children 6 to 12 years 54 mg/day.  2.3 Geriatric Use: start low.',
+ 'Preamble text here. 1.1 Adults: 10 mg. 1.2 Pediatric: 5 mg.',
+ '10.1 Adults A. 10.2 Pediatric B.'
+].forEach((src, i) => {
+  test(`nothing is lost, case ${i + 1}`, () => {
+    const r = G.splitByPopulation(src);
+    assert.ok(r.segments, r.why);
+    assert.strictEqual(r.segments.map((s) => s.text).join(''), src,
+      'the segments must reassemble into the source exactly');
+  });
+});
+
+test('text before the first subsection is kept, not dropped', () => {
+  const r = G.splitByPopulation('Important preamble. 1.1 Adults: 10 mg. 1.2 Pediatric: 5 mg.');
+  assert.ok(r.segments);
+  assert.ok(/Important preamble/.test(r.segments[0].text));
+});
+
+// FAIL CLOSED. Every case it cannot read confidently goes to the model whole.
+test('one subsection is not a structure, so nothing is split', () => {
+  assert.strictEqual(G.splitByPopulation('2.1 Adults: 20 mg/day.').segments, null);
+});
+test('prose with no numbering is not split', () => {
+  assert.strictEqual(G.splitByPopulation('Give 20 mg daily to adults and 10 mg to children.').segments, null);
+});
+test('subsections that name no population are not split, since that separates nothing', () => {
+  assert.strictEqual(G.splitByPopulation('2.1 Dosing: 20 mg. 2.2 Administration: with food.').segments, null);
+});
+test('empty input does not throw', () => {
+  assert.strictEqual(G.splitByPopulation('').segments, null);
+  assert.strictEqual(G.splitByPopulation(null).segments, null);
+});
+
+// A heading naming two populations is reported as naming two. Picking one would invent a
+// precision the label does not have.
+test('a combined heading is labelled as combined, not resolved to one', () => {
+  assert.strictEqual(G.populationOf('2.1 Adults and Pediatric Patients 13 years and older'),
+    'adult and pediatric');
+});
+test('geriatric is its own population', () => {
+  assert.strictEqual(G.populationOf('8.5 Geriatric Use'), 'geriatric');
+});
+test('a heading naming nobody is unspecified, not guessed as adult', () => {
+  assert.strictEqual(G.populationOf('2.3 Switching from another product'), 'unspecified');
+});
+
+// THE CONCERTA CASE, as it actually failed.
+test('the Concerta adult ceiling cannot be read out of the pediatric block', () => {
+  const r = G.splitByPopulation(
+    '2.1 Adults: may be increased to a maximum of 72 mg/day. '
+    + '2.2 Children 6 to 12 years: daily dosage above 54 mg/day is not recommended.');
+  assert.ok(r.segments);
+  const adult = r.segments.find((s) => s.population === 'adult');
+  const kids  = r.segments.find((s) => s.population === 'pediatric');
+  assert.ok(/72 mg/.test(adult.text) && !/54 mg/.test(adult.text));
+  assert.ok(/54 mg/.test(kids.text) && !/72 mg/.test(kids.text));
+});
+
+// And in the block the model actually receives.
+test('the prompt carries the population labels and the rule for using them', () => {
+  const block = G.buildEvidenceBlock([{
+    requested: 'Concerta', drug: 'Concerta',
+    sections: [{ section: 'dosage_and_administration', loinc: '34068-7', text: ADDERALL_DOSE }],
+    source: { label_title: 'CONCERTA TABLET', setid: 'c1' }
+  }]);
+  assert.ok(/\[POPULATION: adult\]/.test(block));
+  assert.ok(/\[POPULATION: pediatric\]/.test(block));
+  assert.ok(/never give a figure from a/.test(block));
+  assert.ok(/State the/.test(block) && /population alongside every dose/.test(block));
+});
+
+test('a non-dosing section is left exactly as it was', () => {
+  const block = G.buildEvidenceBlock([{
+    requested: 'Concerta', drug: 'Concerta',
+    sections: [{ section: 'clinical_studies', loinc: '34092-8', text: ADDERALL_DOSE }],
+    source: { label_title: 'CONCERTA TABLET', setid: 'c1' }
+  }]);
+  assert.ok(!/\[POPULATION:/.test(block), 'splitting prose that merely mentions children adds noise');
+  assert.ok(block.indexOf(ADDERALL_DOSE) !== -1, 'and the text is untouched');
+});
+
 console.log(`\n${checks - failures}/${checks} passed`);
 if (failures) { console.error(`${failures} FAILED`); process.exit(1); }

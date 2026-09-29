@@ -395,11 +395,11 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/rx-vocabulary.js?v=ambient-171-sub"></script>
-<script src="/rx-detect.js?v=ambient-171-sub"></script>
-<script src="/rx-grounding.js?v=ambient-171-sub"></script>
-<script src="/rx-clinical-reference.js?v=ambient-171-sub"></script>
-<script src="/note-engine-practice.js?v=ambient-171-sub"></script>
+<script src="/rx-vocabulary.js?v=ambient-172-sub"></script>
+<script src="/rx-detect.js?v=ambient-172-sub"></script>
+<script src="/rx-grounding.js?v=ambient-172-sub"></script>
+<script src="/rx-clinical-reference.js?v=ambient-172-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-172-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -761,7 +761,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-171-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-172-sub</span></div>
 </div>
 </div>
 
@@ -4852,41 +4852,71 @@ var TBP_COVERAGE_B = [
 // asks when it should. mode 'confirm' accepts the list as shown and records the answer that
 // follows, testing the answer itself. The two measure different things and both matter:
 // tbpCoverageB() then tbpCoverageB({ mode: 'confirm' }).
+// The dose figures an answer states. Comparing these across repeats is how a number that moves
+// between runs becomes visible: the Concerta case answered 54 mg/day once and 72 mg/day twice,
+// and a single pass had no way to show that. 54 is the pediatric figure and the question was
+// about an adult, so the answer was wrong exactly once and looked authoritative every time.
+function tbpDoseFigures(s){
+  var out = {}, re = /\b\d[\d.,]*\s*(?:mg|mcg|g|mEq)\b(?:\s*\/\s*(?:day|kg\/day|kg|m2))?/gi, m;
+  while((m = re.exec(String(s || ''))) !== null) out[m[0].replace(/\s+/g, ' ').toLowerCase()] = true;
+  return Object.keys(out).sort();
+}
+
+// repeat: run each case N times and report whether the dose figures changed between runs. One
+// pass shows that an answer was right once, which is not the same as showing it is right.
 async function tbpCoverageB(opts){
   opts = opts || {};
   var mode = opts.mode || 'ask';
+  var reps = Math.max(1, opts.repeat || 1);
   var raw = document.getElementById('raw');
   var keep = raw ? raw.value : '';
   var out = [];
   for(var i=0;i<TBP_COVERAGE_B.length;i++){
-    var c = TBP_COVERAGE_B[i];
-    if(raw) raw.value = c.note;
-    try { tbpEncounterReset(); } catch(e){}
-    rsnLog = []; rsnLast = null;
-    var before = Date.now(), asked = null;
-    try {
-      var run = tbpRunReason(c.q);
-      // The card, if this question needed one, is already open: tbpRunReason opens it before it
-      // yields. Answering it here is what makes an ambiguity case measurable at all.
-      var modal = document.getElementById('meds-modal');
-      if(modal && modal.classList.contains('open')){
-        asked = (tbpReasonAsks || []).map(function(a){ return a.drug + ' (' + a.need + ')'; }).join('; ')
-              || 'medication confirmation';
-        if(mode === 'confirm'){ var cb = document.getElementById('meds-confirm'); if(cb) cb.click(); }
-        else { tbpHideMeds(); }
-      }
-      await run;
-    } catch(e){}
-    var last = rsnLog[rsnLog.length - 1] || {};
-    var shown = (asked && mode !== 'confirm') ? '(asked first: ' + asked + ')' : (last.a || '(none)');
-    out.push({ note: c.note, q: c.q, asked: asked, mode: mode, answer: last.a || null, outcome: shown,
-               trail: last.trail || null, gaps: last.gaps || null, refs: last.refs || null,
-               ms: Date.now() - before });
-    console.log((i+1) + '/' + TBP_COVERAGE_B.length + '  ' + c.q + '\n    ' + String(shown).slice(0, 220));
+    var c = TBP_COVERAGE_B[i], runs = [];
+    for(var k=0;k<reps;k++){
+      if(raw) raw.value = c.note;
+      try { tbpEncounterReset(); } catch(e){}
+      rsnLog = []; rsnLast = null;
+      var before = Date.now(), asked = null;
+      try {
+        var run = tbpRunReason(c.q);
+        // The card, if this question needed one, is already open: tbpRunReason opens it before it
+        // yields. Answering it here is what makes an ambiguity case measurable at all.
+        var modal = document.getElementById('meds-modal');
+        if(modal && modal.classList.contains('open')){
+          asked = (tbpReasonAsks || []).map(function(a){ return a.drug + ' (' + a.need + ')'; }).join('; ')
+                || 'medication confirmation';
+          if(mode === 'confirm'){ var cb = document.getElementById('meds-confirm'); if(cb) cb.click(); }
+          else { tbpHideMeds(); }
+        }
+        await run;
+      } catch(e){}
+      var last = rsnLog[rsnLog.length - 1] || {};
+      runs.push({ asked: asked, answer: last.a || null,
+                  outcome: (asked && mode !== 'confirm') ? '(asked first: ' + asked + ')' : (last.a || '(none)'),
+                  figures: tbpDoseFigures(last.a), trail: last.trail || null,
+                  gaps: last.gaps || null, refs: last.refs || null, ms: Date.now() - before });
+    }
+    var sets = {};
+    runs.forEach(function(r){ sets[r.figures.join(' | ') || '(no figures)'] = true; });
+    var distinct = Object.keys(sets), varied = distinct.length > 1;
+    var first = runs[0];
+    out.push({ note: c.note, q: c.q, mode: mode, repeat: reps, runs: runs,
+               figureSets: distinct, varied: varied,
+               asked: first.asked, answer: first.answer, outcome: first.outcome,
+               trail: first.trail, gaps: first.gaps, refs: first.refs, ms: first.ms });
+    console.log((i+1) + '/' + TBP_COVERAGE_B.length + '  ' + c.q
+      + (reps > 1 ? (varied ? '\n    *** VARIED across ' + reps + ' runs: ' + distinct.join('   VS   ')
+                            : '\n    stable across ' + reps + ' runs') : '')
+      + '\n    ' + String(first.outcome).slice(0, 220));
   }
   if(raw) raw.value = keep;
   tbpDevExpose('TBP_COVERAGE_B_RESULTS', out);
-  console.log('\nPASS B (' + mode + ') done. window.TBP_COVERAGE_B_RESULTS holds answers + trails.');
+  var unstable = out.filter(function(r){ return r.varied; });
+  console.log('\nPASS B (' + mode + ', ' + reps + 'x) done. '
+    + (reps > 1 ? (unstable.length + ' of ' + out.length + ' cases gave different dose figures between runs. ')
+                : '')
+    + 'window.TBP_COVERAGE_B_RESULTS holds every run, with trails.');
   return out;
 }
 
