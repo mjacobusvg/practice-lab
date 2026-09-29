@@ -232,7 +232,10 @@
   // present in the source is never destroyed" holds for a fix as much as for anything else.
   var POP_PATTERNS = [
     ['pediatric', /\b(p(?:a)?ediatric|children|child|adolescen|infant|neonat)\b/i],
-    ['geriatric', /\b(geriatric|elderly|older adults|65 years)\b/i],
+    // NOT a bare "65 years": "Adults 18 to 65 years" is an age RANGE whose end happens to be 65,
+    // and matching it tagged Concerta's adult row as geriatric, taking the adult 72 mg/day figure
+    // with it. Geriatric has to be said, not inferred from a boundary.
+    ['geriatric', /\b(geriatric|elderly|older adults?|65 years (?:and|or) (?:older|above|over)|over 65)\b/i],
     ['adult',     /\badults?\b/i]
   ];
 
@@ -270,6 +273,57 @@
       return { segments: null, why: 'no subsection names a population' };
     }
     return { segments: segs, why: null };
+  }
+
+
+  // ── POPULATION-TAGGED FIGURE INDEX ────────────────────────────────────────────────────────
+  // splitByPopulation only works when the label puts populations in SUBSECTION HEADINGS, which
+  // Adderall XR does ("2.1 Adults", "2.2 Pediatric Patients") and Concerta does not. Concerta's
+  // subsections are named for clinical situation, and the age bands live inside a dosing TABLE:
+  // "Children 6-12 years ... 54 mg/day ... Adults ... 72 mg/day". The split saw no population in
+  // any heading, correctly declined rather than guessing, and did nothing at all -- and Concerta
+  // then answered 54 mg/day to an adult question in one run of five.
+  //
+  // So the association is made per FIGURE instead of per section: for each dose figure, the
+  // nearest population term BEFORE it, which is how both a table row and an ordinary sentence
+  // read. A figure with no population term near it is reported as unclear, never guessed.
+  //
+  // This is a DERIVED ARTIFACT, not label text, and is labelled as such where it is rendered. It
+  // is additive: the section is still presented in full, unchanged, above it.
+  var FIGURE_RE = /\b\d[\d.,]*\s*(?:mg|mcg|g|mEq)(?:\s*\/\s*(?:day|kg\/day|kg|m2|dose))?/gi;
+  var POP_NEAR = 260;      // how far back a population term still governs a figure
+  var MAX_FIGURES = 40;
+
+  function populationTaggedFigures(text) {
+    var src = String(text || '');
+    if (!src) return [];
+    var seen = {}, out = [], m;
+    FIGURE_RE.lastIndex = 0;
+    while ((m = FIGURE_RE.exec(src)) !== null && out.length < MAX_FIGURES) {
+      var figure = m[0].replace(/\s+/g, ' ').toLowerCase();
+      var from = Math.max(0, m.index - POP_NEAR);
+      var before = src.slice(from, m.index);
+      // The LAST population term before the figure governs it. In a table that is the row's own
+      // label; in a sentence it is the subject. An earlier one has been superseded.
+      var best = null, bestAt = -1;
+      POP_PATTERNS.forEach(function (pp) {
+        var re = new RegExp(pp[1].source, 'gi'), mm, at = -1;
+        while ((mm = re.exec(before)) !== null) at = mm.index;
+        if (at > bestAt) { bestAt = at; best = pp[0]; }
+      });
+      var population = (bestAt === -1) ? 'unclear' : best;
+      var key = figure + '|' + population;
+      if (seen[key]) continue;
+      seen[key] = true;
+      out.push({
+        figure: figure,
+        population: population,
+        // The basis, so a wrong association is visible rather than authoritative.
+        context: src.slice(Math.max(0, m.index - 90), m.index + m[0].length + 30)
+                    .replace(/\s+/g, ' ').trim()
+      });
+    }
+    return out;
   }
 
   // Only sections whose whole job is to state figures per population. Splitting prose that
@@ -338,6 +392,25 @@
           });
         } else {
           parts.push(shown);
+        }
+        // Always, whether or not the section split: the figures are indexed with the population
+        // nearest each one. A heading-based split cannot see a dosing table, and a dosing table
+        // is where the confusable numbers usually live.
+        if (POPULATION_SPLIT_SECTIONS[sec.section]) {
+          var tagged = populationTaggedFigures(shown);
+          if (tagged.length) {
+            parts.push('');
+            parts.push('  ── DOSE FIGURES ABOVE, EACH WITH THE POPULATION NEAREST IT ──');
+            parts.push('  DERIVED, not label text: built by locating the nearest population term');
+            parts.push('  before each figure. It exists because these figures sit next to each other');
+            parts.push('  and have been confused before. Do not present a figure listed under one');
+            parts.push('  population as a figure for another. Where a figure says unclear, the section');
+            parts.push('  did not state a population near it, so do not assign it one. If this index');
+            parts.push('  and the section text above disagree, THE SECTION TEXT WINS.');
+            tagged.forEach(function (f) {
+              parts.push('    ' + f.figure + '  ->  ' + f.population + '   ...' + f.context + '...');
+            });
+          }
         }
         // Same protection the outside-record renderer uses: absence from an excerpt is not
         // absence from the label, and a model told otherwise will answer "the label does not say".
@@ -542,6 +615,7 @@
               granularityFor: granularityFor,
               buildEvidenceBlock: buildEvidenceBlock,
     splitByPopulation: splitByPopulation,
+    populationTaggedFigures: populationTaggedFigures,
     populationOf: populationOf, buildReferenceBlock: buildReferenceBlock,
               groundingRules: groundingRules,
               summarizeTrail: summarizeTrail, evidenceGaps: evidenceGaps,

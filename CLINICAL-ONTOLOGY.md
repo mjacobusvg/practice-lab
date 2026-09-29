@@ -739,6 +739,30 @@ population. A parser that silently drops the paragraph holding the real maximum 
 no parser, and "specificity present in the source is never destroyed" binds a fix as much as
 anything else.
 
+**The heading split alone was not enough, and the real Concerta label proved it.**
+`tbpSplitCheck('Concerta')` returned `split: false, why: 'no subsection names a population'`.
+Concerta's dosing subsections are named for clinical situation ("Dosage in Patients New to
+Methylphenidate"), and the age bands live in a TABLE inside them: `Children 6 to 12 years ...
+54 mg/day ... Adults ... 72 mg/day`. A heading-based split cannot see that. It declined rather
+than guessing, which is correct, and did nothing at all, which is why Concerta still answered
+54 mg/day to an adult question in one run of five.
+
+**ENFORCED** (`rx-grounding.js`, `populationTaggedFigures`; tests under "population-tagged figure
+index"): every dose figure in a dosing section is additionally indexed with the nearest
+population term BEFORE it, which is how both a table row and an ordinary sentence read. A figure
+with no population term near it is reported as `unclear` and never assigned one. The index is a
+DERIVED ARTIFACT, is labelled as such in the prompt, states that the section text wins if the
+two disagree, and is additive: the section is still presented in full and unedited above it.
+
+A figure genuinely belonging to two populations is listed under both. Concerta's 72 mg/day is
+the ceiling for adolescents and for adults, and naming only one would be a new wrong answer
+rather than a fix.
+
+**Recorded because it nearly shipped:** the first geriatric pattern matched a bare "65 years",
+so "Adults 18 to 65 years" tagged as geriatric and carried the adult 72 mg/day figure with it.
+An age range's endpoint is not a population. Geriatric must be stated, not inferred from a
+boundary (`tests/rx-grounding.test.js`, "an age range ending at 65 is not geriatric").
+
 **OPEN: the lithium case is NOT fixed by this.** Acute versus maintenance is a phase-of-treatment
 distinction, not a population one, and `splitByPopulation` does not address it. Whether
 phase-of-treatment and indication-scoped figures need the same structural separation is an open

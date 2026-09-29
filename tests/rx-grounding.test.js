@@ -481,5 +481,92 @@ test('a non-dosing section is left exactly as it was', () => {
   assert.ok(block.indexOf(ADDERALL_DOSE) !== -1, 'and the text is untouched');
 });
 
+// ---- population-tagged figure index --------------------------------------------------------
+// splitByPopulation declined on the real Concerta label: "no subsection names a population".
+// Its subsections are named for clinical situation, and the age bands are in a dosing TABLE. The
+// split did nothing, and Concerta answered 54 mg/day to an adult question in one run of five.
+const CONCERTA_TABLE =
+  '2.1 Dosage in Patients New to Methylphenidate. The recommended starting dose is 18 mg/day. '
+  + 'Patient Population Starting Dose Maximum Dose  Children 6 to 12 years 18 mg/day 54 mg/day  '
+  + 'Adolescents 13 to 17 years 18 mg/day 72 mg/day  Adults 18 to 65 years 18 or 36 mg/day 72 mg/day';
+
+test('the pediatric ceiling is tagged pediatric and nothing else', () => {
+  const tags = G.populationTaggedFigures(CONCERTA_TABLE);
+  const fifty4 = tags.filter((f) => f.figure === '54 mg/day');
+  assert.strictEqual(fifty4.length, 1);
+  assert.strictEqual(fifty4[0].population, 'pediatric',
+    '54 mg/day presented as an adult figure is the defect this exists to stop');
+});
+
+test('a figure that belongs to two populations is listed under both', () => {
+  const pops = G.populationTaggedFigures(CONCERTA_TABLE)
+    .filter((f) => f.figure === '72 mg/day').map((f) => f.population).sort();
+  assert.deepStrictEqual(pops, ['adult', 'pediatric'],
+    '72 mg/day is the ceiling for adolescents and for adults, and saying only one would be wrong');
+});
+
+// THE BUG THIS TEST EXISTS FOR. A bare "65 years" matched the END OF AN AGE RANGE, so
+// "Adults 18 to 65 years" tagged geriatric and took the adult 72 mg/day with it. Geriatric has
+// to be stated, not inferred from a boundary.
+test('an age range ending at 65 is not geriatric', () => {
+  assert.strictEqual(G.populationOf('Adults 18 to 65 years'), 'adult');
+});
+test('but geriatric is still found when the label says it', () => {
+  assert.strictEqual(G.populationOf('8.5 Geriatric Use'), 'geriatric');
+  assert.strictEqual(G.populationOf('in patients 65 years and older'), 'geriatric');
+});
+
+test('a figure with no population near it is unclear, never guessed', () => {
+  const tags = G.populationTaggedFigures('The recommended starting dose is 18 mg/day.');
+  assert.strictEqual(tags.length, 1);
+  assert.strictEqual(tags[0].population, 'unclear');
+});
+
+test('each tag carries the text it was derived from, so a wrong one is visible', () => {
+  const t54 = G.populationTaggedFigures(CONCERTA_TABLE).find((f) => f.figure === '54 mg/day');
+  assert.ok(/Children 6 to 12 years/.test(t54.context));
+});
+
+test('nothing at all does not throw', () => {
+  assert.deepStrictEqual(G.populationTaggedFigures(''), []);
+  assert.deepStrictEqual(G.populationTaggedFigures(null), []);
+});
+
+test('a section with no figures produces no index', () => {
+  assert.deepStrictEqual(G.populationTaggedFigures('Take one tablet by mouth each morning.'), []);
+});
+
+// In the block the model receives: additive, and the section is still there whole.
+const CONCERTA_BLOCK = G.buildEvidenceBlock([{
+  requested: 'Concerta', drug: 'Concerta',
+  sections: [{ section: 'dosage_and_administration', loinc: '34068-7', text: CONCERTA_TABLE }],
+  source: { label_title: 'CONCERTA TABLET', setid: 'c1' }
+}]);
+
+test('the index reaches the prompt even though the heading split declined', () => {
+  assert.strictEqual(G.splitByPopulation(CONCERTA_TABLE).segments, null, 'the split cannot see a table');
+  assert.ok(/DOSE FIGURES ABOVE, EACH WITH THE POPULATION NEAREST IT/.test(CONCERTA_BLOCK));
+  assert.ok(/54 mg\/day {2}-> {2}pediatric/.test(CONCERTA_BLOCK));
+});
+
+test('it is marked derived, and the label text is declared to win over it', () => {
+  assert.ok(/DERIVED, not label text/.test(CONCERTA_BLOCK));
+  assert.ok(/THE SECTION TEXT WINS/.test(CONCERTA_BLOCK));
+});
+
+test('the section itself is still present in full, unchanged', () => {
+  assert.ok(CONCERTA_BLOCK.indexOf(CONCERTA_TABLE) !== -1,
+    'the index is additive; it may not replace or edit what the label says');
+});
+
+test('a non-dosing section gets no index', () => {
+  const block = G.buildEvidenceBlock([{
+    requested: 'Concerta', drug: 'Concerta',
+    sections: [{ section: 'clinical_studies', loinc: '34092-8', text: CONCERTA_TABLE }],
+    source: { label_title: 'CONCERTA TABLET', setid: 'c1' }
+  }]);
+  assert.ok(!/DOSE FIGURES ABOVE/.test(block));
+});
+
 console.log(`\n${checks - failures}/${checks} passed`);
 if (failures) { console.error(`${failures} FAILED`); process.exit(1); }
