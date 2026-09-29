@@ -679,6 +679,15 @@ async function ingestDrug(queryName, wantedSections, granularity) {
 }
 
 // ── 5. THE INTERFACE. The only function Discern's path calls. ───────────────────────────────
+// ingestDrug stores the substitution as the first sentence of chosen_reason. It contains no
+// period of its own, so the first ". " ends it.
+function identityNoteOf(chosenReason) {
+  const r = String(chosenReason || '');
+  if (!/^no current .+ label; using /.test(r)) return null;
+  const cut = r.indexOf('. ');
+  return (cut === -1 ? r : r.slice(0, cut)).trim() || null;
+}
+
 async function getEvidence(drugNames, classes, opts) {
   const want = {};
   (classes && classes.length ? classes : ['dosing']).forEach(c => {
@@ -767,7 +776,11 @@ async function getEvidence(drugNames, classes, opts) {
       granularity: granByDrug[name] || 'product',
       rxcui: row.rxcui || null,
       sections: (secs || []).map(s => ({ section: s.section_name, loinc: s.loinc_code, text: s.text })),
-      identity_note: (ingested && ingested.identity_note) || null,
+      // A CACHE HIT HAS NO `ingested`, so reading the note only from there meant it survived
+      // exactly one request. Symbyax was cached by an earlier probe and every later answer went
+      // back to claiming "the current Symbyax label" for a product that has none. The note is
+      // stored as the prefix of chosen_reason precisely so it outlives the fetch; read it.
+      identity_note: (ingested && ingested.identity_note) || identityNoteOf(row.chosen_reason),
       unmapped_codes: (ingested && ingested.unmapped_codes) || null,
       attempts: (ingested && ingested.attempts) || null,
       // Per-section write outcome, so "the label had no sections" and "the sections would not
@@ -790,6 +803,6 @@ async function getEvidence(drugNames, classes, opts) {
 
 module.exports = {
   SECTION_COLUMNS: SECTION_COLUMNS, sectionRow: sectionRow,
-  comboQueries: comboQueries, getEvidence, ingestDrug, extractSections, chooseSpl, splBaseName,
+  comboQueries: comboQueries, identityNoteOf: identityNoteOf, getEvidence, ingestDrug, extractSections, chooseSpl, splBaseName,
                    splProductName, splProductCore, splIdentity, isCombinationOf, splYear, formPreference,
                    resolveRxcui, SECTIONS, CLASS_SECTIONS, CLASS_PRIMARY, MIN_CONFIDENT };

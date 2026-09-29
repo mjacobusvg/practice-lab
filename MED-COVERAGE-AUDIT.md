@@ -505,3 +505,52 @@ answer, and the lithium range noted below are all the same confusion.
 - Sertraline in pregnancy leaned on practice knowledge ("one of the better-characterized
   antidepressants in pregnancy"). Defensible as synthesis rather than invention, but it should
   be attributed as practice rather than sitting beside labeled statements unmarked.
+
+## Pass B, 5x repeat: two fixes did not work
+
+`tbpCoverageB({mode:'confirm', repeat:5})`, 70 runs. Reported 13 of 14 cases as varied, which
+**overstates it**: the metric compared whole figure sets, so a run writing "60 mg" and another
+writing "60 mg/day" counted as disagreement. That is now per-figure run counts, which separates
+punctuation noise from a number that actually moved.
+
+Two findings, and both are fixes from the previous round failing rather than new defects.
+
+### The population split did not stop the Concerta error
+
+Across five runs the figures were `36 mg | 72 mg/day`, `36 mg | 54 mg | 54 mg/day`, and
+`36 mg | 54 mg | 54 mg/day | 72 mg/day`. **One run gave 54 mg/day with no 72 anywhere.** 54 is
+the 6-to-12 ceiling, the patient is an adult, and this is the fourth appearance of the same
+confusion.
+
+The split fails closed by design: no numbered subsections means the section goes to the model
+whole and the separation does nothing. Whether that is what happened to the Concerta label is
+not yet established. `tbpSplitCheck('Concerta')` answers it directly, reporting whether the
+split fired, the reason it declined, and the head of the section text.
+
+Do not assume the answer. If the split declined, the fix is in the segmentation. If it fired and
+the model still said 54, the fix is not segmentation at all and the structural approach needs
+rethinking rather than tuning.
+
+### The identity substitution survived exactly one request
+
+Symbyax again answered "the explicit figure in the current label", after the fix that was
+supposed to prevent exactly that sentence.
+
+`identity_note` was read only from the fresh ingest: `(ingested && ingested.identity_note)`.
+`ingested` is null on a cache hit. Symbyax had been cached by the verification probe, so the
+note was null from the next request onward and the prompt went back to presenting a generic
+label as the Symbyax label. The note was already being stored as the prefix of `chosen_reason`
+so that it would outlive the fetch; the evidence block simply never read it from there.
+`identityNoteOf` now recovers it, with tests.
+
+This is the second time a fix in this area was validated against a fresh fetch and then quietly
+stopped working on the cached path. The lesson is specific: **anything that must appear in an
+answer has to be proven on the CACHED path, because that is the path almost every real request
+takes.**
+
+### What the repeat run does establish
+
+Case 12 (lamotrigine plus divalproex) was stable across all five runs. Every other case moved at
+least one figure, though most of that movement is incidental numbers appearing in some runs and
+not others rather than a contested ceiling. The per-figure counts now make the difference
+readable at a glance.

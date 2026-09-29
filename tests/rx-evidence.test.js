@@ -394,5 +394,20 @@ const comboPick = L.chooseSpl(COMBO_LIST, 'olanzapine and fluoxetine', 'product'
 ok('the combination label wins over either single-ingredient label',
    !comboPick.ambiguous && /^OLANZAPINE AND FLUOXETINE/.test(comboPick.spl.title));
 
+// ---- the substitution must outlive the fetch -----------------------------------------------
+// It was read only from the fresh ingest, so it survived exactly one request. Symbyax was
+// cached by an earlier probe and every answer after that went back to citing "the current
+// Symbyax label" for a product with no label.
+console.log('\n-- identity note from cache --');
+const STORED = 'no current Symbyax label; using the generic combination labeling for '
+             + 'fluoxetine and olanzapine. preferred for a bare query (score 125 of 3 candidates)';
+ok('the note is recovered from the stored reason',
+   L.identityNoteOf(STORED) === 'no current Symbyax label; using the generic combination labeling for fluoxetine and olanzapine');
+ok('an ordinary reason yields no note',
+   L.identityNoteOf('full identity match (score 125 of 3 candidates)') === null);
+ok('empty and missing are safe', L.identityNoteOf('') === null && L.identityNoteOf(null) === null);
+ok('a note with no trailing reason still parses',
+   L.identityNoteOf('no current Symbyax label; using X') === 'no current Symbyax label; using X');
+
 console.log(fails ? '\n' + fails + ' FAILED' : '\nall passed');
 process.exit(fails ? 1 : 0);

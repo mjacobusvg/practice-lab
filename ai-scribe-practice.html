@@ -395,11 +395,11 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/rx-vocabulary.js?v=ambient-172-sub"></script>
-<script src="/rx-detect.js?v=ambient-172-sub"></script>
-<script src="/rx-grounding.js?v=ambient-172-sub"></script>
-<script src="/rx-clinical-reference.js?v=ambient-172-sub"></script>
-<script src="/note-engine-practice.js?v=ambient-172-sub"></script>
+<script src="/rx-vocabulary.js?v=ambient-173-sub"></script>
+<script src="/rx-detect.js?v=ambient-173-sub"></script>
+<script src="/rx-grounding.js?v=ambient-173-sub"></script>
+<script src="/rx-clinical-reference.js?v=ambient-173-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-173-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -761,7 +761,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-172-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-173-sub</span></div>
 </div>
 </div>
 
@@ -4897,17 +4897,24 @@ async function tbpCoverageB(opts){
                   figures: tbpDoseFigures(last.a), trail: last.trail || null,
                   gaps: last.gaps || null, refs: last.refs || null, ms: Date.now() - before });
     }
-    var sets = {};
-    runs.forEach(function(r){ sets[r.figures.join(' | ') || '(no figures)'] = true; });
-    var distinct = Object.keys(sets), varied = distinct.length > 1;
-    var first = runs[0];
+    // Per-figure run counts, not whole sets. Comparing sets called a case unstable when one run
+    // wrote "60 mg" and another "60 mg/day", which buried the case that mattered: Concerta
+    // stated 72 mg/day in three runs of five and 54 mg/day in three, and the set view showed
+    // that as no more alarming than the punctuation noise.
+    var counts = {};
+    runs.forEach(function(r){ r.figures.forEach(function(f){ counts[f] = (counts[f] || 0) + 1; }); });
+    var moved = Object.keys(counts).filter(function(f){ return counts[f] < reps; }).sort(function(a, b){
+      return counts[b] - counts[a] || a.localeCompare(b);
+    });
+    var varied = moved.length > 0, first = runs[0];
     out.push({ note: c.note, q: c.q, mode: mode, repeat: reps, runs: runs,
-               figureSets: distinct, varied: varied,
+               figureCounts: counts, movedFigures: moved, varied: varied,
                asked: first.asked, answer: first.answer, outcome: first.outcome,
                trail: first.trail, gaps: first.gaps, refs: first.refs, ms: first.ms });
     console.log((i+1) + '/' + TBP_COVERAGE_B.length + '  ' + c.q
-      + (reps > 1 ? (varied ? '\n    *** VARIED across ' + reps + ' runs: ' + distinct.join('   VS   ')
-                            : '\n    stable across ' + reps + ' runs') : '')
+      + (reps > 1 ? (varied
+          ? '\n    not in every run: ' + moved.map(function(f){ return f + ' ' + counts[f] + '/' + reps; }).join(', ')
+          : '\n    stable across ' + reps + ' runs') : '')
       + '\n    ' + String(first.outcome).slice(0, 220));
   }
   if(raw) raw.value = keep;
@@ -4951,6 +4958,18 @@ function tbpDevExpose(name, fn){
     });
     var j = await res.json().catch(function(){ return { error: 'non-JSON response ' + res.status }; });
     return (j && j.evidence && j.evidence[0]) || j;
+  });
+  // Did the population split actually fire for this drug's dosing section, and if not, why?
+  // The split fails closed, so a label whose dosing section carries no numbered subsections is
+  // handed to the model whole and the separation silently does nothing.
+  tbpDevExpose('tbpSplitCheck', async function(name){
+    var ev = await window.tbpRxProbe(name);
+    var d = ((ev && ev.sections) || []).filter(function(x){ return x.section === 'dosage_and_administration'; })[0];
+    if(!d) return { drug: name, error: 'no dosage_and_administration section retrieved', evidence: ev };
+    var r = window.TBP_RX_GROUNDING.splitByPopulation(d.text);
+    return { drug: name, chars: d.text.length, split: !!r.segments, why: r.why,
+             populations: (r.segments || []).map(function(g){ return g.population + ': ' + g.heading; }),
+             head: d.text.slice(0, 400) };
   });
   tbpDevExpose('tbpCoverageA', tbpCoverageA);
   tbpDevExpose('tbpCoverageB', tbpCoverageB);
