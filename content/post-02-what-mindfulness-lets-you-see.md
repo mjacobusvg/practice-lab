@@ -24,9 +24,13 @@ You can see your own mind interpreting what is happening, notice where your atte
 
 That is the meta-aware moment from the last post.
 
-It gives you perspective from inside the experience. You are still having the emotion, but you are no longer only inside the emotion. You are still having the thought, but you can also see what your mind is doing with it. You are still feeling the urge, but the urge has become something you can notice rather than simply obey.
+Some descriptions of this use language like taking a third-person perspective on your own experience. I understand what that is trying to capture, but I do not think you actually leave the first-person experience. You are still the one feeling the anxiety, anger or uncertainty. The shift is that you have enough perspective within the experience to see yourself having it.
+
+You are still having the emotion, but you are no longer only inside the emotion. You are still having the thought, but you can also see what your mind is doing with it. You are still feeling the urge, but the urge has become something you can notice rather than simply obey.
 
 **There is enough perspective inside the experience for the experience to become workable.**
+
+And the nonjudgment from the last post matters here. If that new perspective immediately becomes *I should not feel this. This is ridiculous. Why am I doing this again?*, we have mostly added another layer of reaction. The point is not to approve of the experience. It is to see it clearly enough, without immediately judging or suppressing it, that it remains available to work with.
 
 That is the moment I want to carry through everything that follows.
 
@@ -160,6 +164,22 @@ Mindfulness does not select the skill.
 
 It creates the perspective from which a skill can be selected.
 
+# Humanistic therapy: staying with what becomes visible
+
+A humanistic or person-centered approach gives us a useful contrast, because the meta-aware moment does not always have to lead immediately to a technique.
+
+Sometimes the work is staying with an experience long enough to know it more fully.
+
+A patient may feel sadness and almost immediately begin moving away from it: *This is stupid. I should be over this. I need to pull myself together.* The sadness is there, but so is the judgment of the sadness and the impulse to make it something else.
+
+The meta-aware moment may sound more like: *I am sad, and I can see how quickly I start telling myself I should not be. I can feel myself trying to move away from it.*
+
+Nothing has been challenged. No behavior has been prescribed. The experience has simply become more available without the person being completely swallowed by it or immediately trying to correct it.
+
+In a person-centered frame, the therapist may not supply the next maneuver at all. Empathy, congruence and unconditional positive regard create conditions in which the patient can stay with what is present, recognize it more fully and integrate parts of their experience that may usually be defended against, minimized or pushed away.
+
+Mindfulness makes the experience available. A humanistic approach may use that availability not to change the experience immediately, but to help the person encounter it more fully and more congruently.
+
 # Motivational interviewing: hearing your own ambivalence
 
 Motivational interviewing looks somewhat different because the thing becoming visible is often not a single thought or urge. It is ambivalence.
@@ -194,7 +214,7 @@ The formulation tells us what we are looking at.
 
 The therapy tells us what to do next.
 
-CBT may use that perspective to examine the relationship between thought, emotion and behavior. ERP may use it to identify the moment a compulsion is about to occur and create an opportunity for response prevention. ACT may use it to recognize fusion and create room for values-guided action. DBT may use it to identify the emotion and action urge early enough to choose a skill. Motivational interviewing may use it to help the patient hear the competing parts of their own ambivalence.
+CBT may use that perspective to examine the relationship between thought, emotion and behavior. ERP may use it to identify the moment a compulsion is about to occur and create an opportunity for response prevention. ACT may use it to recognize fusion and create room for values-guided action. DBT may use it to identify the emotion and action urge early enough to choose a skill. A humanistic approach may use it to stay with and integrate an experience rather than immediately trying to change it. Motivational interviewing may use it to help the patient hear the competing parts of their own ambivalence.
 
 That is why I do not think mindfulness is the treatment underneath all of these therapies.
 
@@ -226,10 +246,24 @@ The conflict between two things the patient wants?
 
 Those are different clinical problems, and they do not call for the same intervention.
 
-But they all require the same thing first.
+There is also an important limit to this argument. Not every therapeutic change requires meta-awareness first. We can change behavior directly. We can structure an exposure, alter a contingency, practice a different response or simply do something different and let the consequences teach us. A person does not have to understand every process in real time for behavior change to matter.
 
-Enough perspective inside the experience for the experience to become workable.
+But when the work asks the patient to recognize an internal process and do something different with it while it is happening, there is a more basic question worth asking:
 
-That is what mindfulness gives us.
+**Can they catch enough of what is happening while it is happening for the intervention to be usable?**
+
+If they cannot, that does not necessarily mean the modality is wrong or that they do not understand it. They may understand it perfectly well afterward. They may be able to explain the pattern, the skill or the rationale back to us. The problem may simply be that they have not yet reached the first usable step of that work: recognizing the process in the moment where the intervention belongs.
+
+That gives us somewhere to start.
+
+Help them notice the thought. Help them notice the emotion. Help them notice where attention goes. Help them recognize the urge. And eventually, help them catch the moment when their own mind is interpreting, narrowing, reacting and beginning to organize behavior around the experience.
+
+**That meta-aware moment is not the treatment. It is often the point at which the treatment becomes usable in real time.**
+
+Once there is enough perspective inside the experience for the experience to become workable, CBT can challenge, ERP can prevent the response, ACT can defuse and orient toward values, DBT can bring in a skill, a humanistic approach can help the person stay with and integrate what is present, and MI can work with ambivalence.
+
+That is what I was trying to get at when I said mindfulness seems to sit underneath all of them. Not that mindfulness is the treatment for everything, and not that every kind of therapeutic change requires it first. It is that when therapy asks someone to recognize a process from inside it and choose what happens next, this capacity may be what allows them to actually use the treatment while the thing we are trying to change is happening.
+
+Mindfulness does not tell you what the treatment target is. It lets you and the patient see the target while it is happening.
 
 What we do next is therapy.
