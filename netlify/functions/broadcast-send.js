@@ -20,6 +20,7 @@
 
 const { authorizeAdmin } = require('./_lib/admin-auth');
 const { toRichHtml, esc } = require('./_lib/richtext');
+const { loadSuppressedSet } = require('./_lib/suppression');
 const { mintPrefsToken } = require('./_lib/prefs-token');
 const { mintSigninToken } = require('./_lib/signin-token');
 
@@ -335,6 +336,13 @@ exports.handler = async function (event) {
       const res = await fetch(URL + '/rest/v1/contacts?' + qs.join('&'), { headers: Object.assign({ 'Content-Type': 'application/json' }, auth) });
       const rows = res.ok ? await res.json() : [];
       recipients = (rows || []).filter(function (r) { return r.email && r.email.indexOf('@') !== -1 && !isDisposable(r.email); });
+    }
+
+    // Drop addresses SES told us hard-bounced or complained about, to protect sender
+    // reputation. Skipped for a test_email preview (the admin chose that address).
+    if (!p.test_email && recipients.length) {
+      const supp = await loadSuppressedSet();
+      if (supp.size) recipients = recipients.filter(function (r) { return !supp.has(String(r.email || '').toLowerCase()); });
     }
 
     if (p.dry_run) {

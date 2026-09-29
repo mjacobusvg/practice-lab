@@ -23,6 +23,7 @@
 
 const { prefsFooter } = require('./_lib/notify');
 const { mintSigninToken } = require('./_lib/signin-token');
+const { isSuppressed } = require('./_lib/suppression');
 
 // Only free accounts created on/after this instant are eligible — this is the
 // line between the 300-ish pre-created contacts (May 24 + Jul 19 batches) and
@@ -180,6 +181,8 @@ async function sendOneStep(sb, ses, account, step) {
   // Do not nurture role / shared inboxes (admin@, info@, support@, ...). Covers
   // every path, since both the instant welcome and the cron send through here.
   if (isSharedInbox(email)) { console.log('onboarding-drip: skipping shared/role inbox', email); return false; }
+  // Never email an address SES told us hard-bounced or complained about.
+  if (await isSuppressed(email)) { console.log('onboarding-drip: skipping suppressed address', email); return false; }
   const body = step.html().replace(/\{first_name\}/g, firstName(account.name));
   const html = oneClickify(body, email) + prefsFooter(email);
   await ses.client.send(new ses.SendEmailCommand({
