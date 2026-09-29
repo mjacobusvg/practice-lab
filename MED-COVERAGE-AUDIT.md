@@ -437,3 +437,71 @@ both-orders retry is load-bearing, not defensive padding. Without it this drug s
 **Pass A final: 41 of 42 resolve correctly.** The one remaining row, `carbamazepine XR`, is a
 recorded true positive: Carbatrol and Tegretol-XR are different products, the query does not
 say which, and naming both instead of picking one is the designed behavior.
+
+## Pass B, both modes
+
+`tbpCoverageB()` dismisses the card and records what was asked. `tbpCoverageB({mode:'confirm'})`
+accepts the list and records the answer. 14 cases each.
+
+The gate behaves. Two cases asked before answering and neither guessed: `Adderall 10 mg bid`
+(formulation, and IR and XR have different labeled maximums) and `quetiapine 100 mg nightly`
+(formulation). The other twelve answered directly, which is the point of the earlier carve-out:
+a note that already states the product is not sent back for ratification.
+
+### Finding 1: an identity substitution reached the clinician as a label claim
+
+Symbyax answered: *"The labeled adult maximum for Symbyax is 12 mg olanzapine / 50 mg fluoxetine
+once daily. That is the explicit figure in the current label."*
+
+**Symbyax has no current label.** That is established, by this audit, two sections up. The
+combination fallback had correctly read the generic olanzapine and fluoxetine labeling and
+correctly recorded the substitution in the trail. The prompt never carried it:
+`buildEvidenceBlock` announced the block as labeling "for the specific products confirmed for
+this patient" and headed the item `EVIDENCE FOR: Symbyax`. So the model was told a generic
+label was the Symbyax label, and wrote a true sentence about the wrong document.
+
+This defect was introduced by the fix two sections up. Making retrieval succeed is not the same
+as making the answer honest about what succeeded, and the trail carrying the truth does not help
+a clinician reading the prose.
+
+`buildEvidenceBlock` now states the substitution beside the label it applies to and instructs
+that anything taken from it be attributed to that labeling by name. An ordinary retrieval
+carries no such line, so the warning does not become noise the model learns to skip.
+
+### Finding 2: the same dosing question answered 54 mg/day once and 72 mg/day twice
+
+`Concerta 36 mg daily` / "How high can I go on this?"
+
+- run 1: "The labeled maximum for methylphenidate extended-release (Concerta/OROS formulation)
+  is **54 mg/day** for adults."
+- run 2 and run 3: "**72 mg/day**."
+
+72 mg/day is the adult figure. 54 mg/day is the pediatric one. This is the ORIGINAL DEFECT'S
+EXACT SHAPE: the Adderall failure was also an adult question answered with a pediatric ceiling.
+
+Retrieval was not the variable. The same case resolved the same label in every run. The
+variation is in what the model did with the same evidence.
+
+**What this means for the audit method.** A single pass cannot establish that a dosing answer is
+correct; it establishes that it was correct once. Every clean result recorded above has the same
+limit. Pass A's 41/42 is about retrieval and is stable, because retrieval is deterministic given
+a label. Pass B's answers are not, and a per-case repeat count is needed before any of them can
+be called reliable.
+
+**OPEN, and not to be resolved by picking whichever reading is convenient:** whether
+pediatric-vs-adult dose separation should be enforced structurally (the prompt is handed the
+adult figure and the pediatric one as distinct, labeled facts) rather than left to the model to
+keep apart while reading a full dosing section. The original Adderall defect, the run-1 Concerta
+answer, and the lithium range noted below are all the same confusion.
+
+### Smaller observations
+
+- Lithium: "the therapeutic range the label cites is 0.8 to 1.2 mEq/L" states the MAINTENANCE
+  range without the acute-mania range (1.0 to 1.5) or the distinction between them. Specificity
+  present in the source was lost, which the ontology forbids.
+- Adderall plus fluoxetine: "Both labels name this combination." Needs checking against the
+  trail. The fluoxetine label names sympathomimetics; whether the Adderall label names
+  fluoxetine is a different claim.
+- Sertraline in pregnancy leaned on practice knowledge ("one of the better-characterized
+  antidepressants in pregnancy"). Defensible as synthesis rather than invention, but it should
+  be attributed as practice rather than sitting beside labeled statements unmarked.

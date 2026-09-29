@@ -219,6 +219,7 @@
     opts = opts || {};
     var items = (evidence || []).filter(function (e) { return e && e.sections && e.sections.length; });
     if (!items.length) return '';
+    var substituted = items.filter(function (e) { return e && e.identity_note; });
     var parts = [
       'RETRIEVED AUTHORITATIVE MEDICATION EVIDENCE',
       '',
@@ -227,11 +228,27 @@
       'patient material and NOT your own knowledge. It is the source of record for medication',
       'facts in this answer.'
     ];
+    if (substituted.length) {
+      parts.push('');
+      parts.push('NOT EVERY ITEM BELOW IS THE LABEL FOR THE PRODUCT THAT WAS ASKED ABOUT. Where an');
+      parts.push('item carries an IDENTITY SUBSTITUTION line, the product named has no current label');
+      parts.push('of its own and what follows is labeling for an equivalent product. Say so in your');
+      parts.push('answer. Do not write "the <asked-about product> label states" about text that did');
+      parts.push('not come from that product\'s label.');
+    }
     items.forEach(function (e, i) {
       var s = e.source || {};
       parts.push('');
       parts.push('─────────────────────────────────────────────────────────');
       parts.push('EVIDENCE ' + (i + 1) + ' FOR: ' + (e.requested || e.drug));
+      // The substitution is stated HERE, next to the label it applies to, because a clinician
+      // reading "the current label says 12/50" has no way to know the product has no current
+      // label. Retrieval succeeding is not the same as the answer being about what was asked.
+      if (e.identity_note) {
+        parts.push('  IDENTITY SUBSTITUTION: ' + e.identity_note);
+        parts.push('  Attribute anything you take from this item to that labeling, by name, not to '
+          + (e.requested || e.drug) + '.');
+      }
       parts.push('  product label: ' + (s.label_title || '(title unavailable)'));
       if (e.rxcui)          parts.push('  RxCUI: ' + e.rxcui);
       if (s.setid)          parts.push('  SPL Set ID: ' + s.setid);

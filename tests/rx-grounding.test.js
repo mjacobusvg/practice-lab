@@ -350,5 +350,34 @@ test('no medications at all is not sufficient, and not an ask either', () => {
   assert.strictEqual(s.asks.length, 0, 'there is nothing to ask ABOUT');
 });
 
+// ---- identity substitution must reach the prompt ------------------------------------------
+// Pass B: Symbyax answered "the labeled adult maximum ... is explicitly stated in the label
+// for both indications". Symbyax has no current label. The combination fallback had read the
+// generic olanzapine and fluoxetine labeling and recorded that in the trail, but the evidence
+// block still announced itself as labeling "for the specific products confirmed for this
+// patient", so the model was told a generic label WAS the Symbyax label and wrote accordingly.
+const SUBBED = [{
+  requested: 'Symbyax', drug: 'Symbyax', rxcui: '405343',
+  identity_note: 'no current Symbyax label; using the generic combination labeling for fluoxetine and olanzapine',
+  sections: [{ section: 'dosage_and_administration', loinc: '34068-7', text: 'Maximum 12 mg/50 mg once daily.' }],
+  source: { label_title: 'OLANZAPINE AND FLUOXETINE CAPSULE [PAR HEALTH USA, LLC]', setid: 'x1' }
+}];
+const subBlock = G.buildEvidenceBlock(SUBBED);
+test('the substitution appears beside the label it applies to', () => assert.ok(/IDENTITY SUBSTITUTION: no current Symbyax label/.test(subBlock)));
+test('and names the labeling that was actually read', () => assert.ok(/generic combination labeling for fluoxetine and olanzapine/.test(subBlock)));
+test('the header warns that not every item is the product asked about', () => assert.ok(/NOT EVERY ITEM BELOW IS THE LABEL FOR THE PRODUCT THAT WAS ASKED ABOUT/.test(subBlock)));
+test('and forbids attributing it to the product asked about', () => assert.ok(/Do not write "the <asked-about product> label states"/.test(subBlock)));
+
+// An ordinary retrieval must not pick up the warning, or it becomes noise the model learns to
+// ignore in exactly the case that matters.
+const PLAIN = [{
+  requested: 'Adderall XR', drug: 'Adderall XR', rxcui: '352398',
+  sections: [{ section: 'dosage_and_administration', loinc: '34068-7', text: '20 mg/day.' }],
+  source: { label_title: 'ADDERALL XR CAPSULE', setid: 'x2' }
+}];
+const plainBlock = G.buildEvidenceBlock(PLAIN);
+test('a normal label carries no substitution line', () => assert.ok(!/IDENTITY SUBSTITUTION/.test(plainBlock)));
+test('and no header warning', () => assert.ok(!/NOT EVERY ITEM BELOW/.test(plainBlock)));
+
 console.log(`\n${checks - failures}/${checks} passed`);
 if (failures) { console.error(`${failures} FAILED`); process.exit(1); }
