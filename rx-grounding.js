@@ -28,8 +28,16 @@
     ['dosing', [
       /\b(max(imum)?|highest|ceiling|top|upper limit)\b[\s\S]{0,40}\b(dose|dosage|dosing|mg)\b/i,
       /\b(dose|dosage|dosing)\b[\s\S]{0,40}\b(max\w*|limit\w*|range|increas\w*|titrat\w*|go (up|higher)|rais\w*)/i,
-      /\b(how (much|high)|go(ing)? higher|push (it |the dose )?(up|higher)|increas\w*|titrat\w*|taper\w*|reduc\w*|lower)\b[\s\S]{0,40}\b(dose|dosing|mg|on (the|her|his|their)\b)/i,
-      /\bhow much\b[\s\S]{0,30}\bcan (i|we|she|he|they)\b/i,
+      /\b(how (much|high|far)|go(ing)? higher|push (it |the dose )?(up|higher)|increas\w*|titrat\w*|taper\w*|reduc\w*|lower)\b[\s\S]{0,40}\b(dose|dosing|mg|on (the|her|his|their|this|that|it)\b)/i,
+      /\bhow (much|high|far)\b[\s\S]{0,30}\bcan (i|we|she|he|they|you)\b/i,
+      // "How high can I go on this?" is how the question is actually asked, and it matched
+      // nothing: the pattern above wanted "on the/her/his/their" and the clinician wrote "on
+      // this". No class matched, so no retrieval ran, so every answer to it came from memory
+      // while the trail reported no gap because nothing had been asked for.
+      /\b(can|could|should) (i|we|you)\b[\s\S]{0,20}\b(go|push|move|take|bump)\b[\s\S]{0,20}\b(up|higher|further|above|beyond|more)/i,
+      /\b(room|headroom|space) (to|for)\b[\s\S]{0,20}\b(go|increas\w*|titrat\w*|push|move)/i,
+      /\bhow (high|far|much)\b[\s\S]{0,40}\b(go|push|take|increas\w*)\b/i,
+      /\bgo (up|higher|above|beyond)\b/i,
       /\b\d+\s?mg\b[\s\S]{0,30}\b(safe|ok|okay|too (much|high)|allowed|reasonable)\b/i,
       /\b(starting|target|usual|recommended|studied|initial|max\w*)\s+dos\w*/i,
       // Titration and tapering are always about a dose, with or without the word nearby.

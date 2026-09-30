@@ -736,3 +736,51 @@ question, and the two need different fixes:
 
 `tbpLastPopulationIndex()` returns exactly what the model was handed. Do not guess which of the
 three it is.
+
+## ROOT CAUSE: the question was never classified as a medication question
+
+```
+classifyQuestion('How high can I go on this?')  ->  needsMedicationFacts: false, classes: []
+```
+
+`evidenceChars: 1`, which is the single newline between an empty evidence block and an empty
+reference block. **No retrieval ran. No labeling was ever requested.** Every Concerta answer in
+this entire audit was the model answering a dose ceiling from memory.
+
+The pattern required `how much|how high` followed within 40 characters by
+`dose|dosing|mg|on (the|her|his|their)`. The clinician wrote "on **this**". That one word is the
+whole defect.
+
+"What is the maximum dose?" matched and retrieved correctly, which is why Pass A and the other
+thirteen Pass B cases looked fine, and why this took nine rounds to find: the case that failed
+was the one phrased the way a clinician actually speaks.
+
+### Why it stayed invisible
+
+**The classifier fails OPEN.** On a miss, `grounded` is false, so no evidence is fetched AND no
+gap is recorded. The trail showed `gaps: null`, which reads as "nothing was missing" and actually
+meant "nothing was asked for". A wrong number arrived looking exactly like a checked one.
+
+Every instrument pointed elsewhere. Pass A said Concerta resolved, because it did, when asked.
+`tbpEvidenceFigures` showed the section holds 54 and 72, because it does. Both were true and
+neither was reached by the question being asked.
+
+### Both halves fixed
+
+1. The dosing patterns now cover how the question is actually asked: "how high can I go on
+   this", "can I go up", "room to increase", "how far can I push", "bump it up". Tests pin the
+   other direction too, since widening a phrase list until everything is a medication question
+   is its own failure.
+
+2. **A miss can no longer pass silently.** After an answer comes back with no evidence block, any
+   dose figure in it that is not in the clinician's own note is reported as a gap:
+   *"this answer states dose figures that were NOT checked against product labeling."* A phrase
+   list will always miss some phrasing. What it must not do is fail open. The check is after the
+   fact on purpose: adding a disclaimer to every question in an encounter that has medications
+   would be noise on the ones that never mention a dose.
+
+### What this invalidates
+
+Every conclusion in this document about Concerta answers. The population split, the figure
+index, and the practice-figure rule were all evaluated against a case that was never grounded
+in the first place. They may work. This audit has not shown it.

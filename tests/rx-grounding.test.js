@@ -598,5 +598,42 @@ test('and the model is told what to say instead of a number it cannot source', (
   assert.ok(/some clinicians do exceed the/.test(RULES) && /no sourced figure for how far/.test(RULES));
 });
 
+// ---- the classifier missed how clinicians actually ask -------------------------------------
+// "How high can I go on this?" returned needsMedicationFacts: false. No class matched, so no
+// retrieval ran, so every Concerta answer in the whole audit came from the model's memory. The
+// trail reported no gap, because nothing had ever been asked for. The pattern wanted "on the",
+// "on her", "on his" or "on their"; the clinician wrote "on this".
+[
+  'How high can I go on this?',
+  'how high can i go?',
+  'Can I go up on this?',
+  'Is there room to increase?',
+  'How far can I push this?',
+  'Should I go higher?',
+  'How much can I give?',
+  'Can we bump it up?',
+  'Any headroom to titrate?'
+].forEach((q) => {
+  test(`a dosing question phrased as a clinician phrases it: ${q}`, () => {
+    const c = G.classifyQuestion(q);
+    assert.ok(c.needsMedicationFacts, 'no class means no retrieval and no gap reported');
+    assert.ok(c.classes.indexOf('dosing') > -1);
+  });
+});
+
+// The other half. Widening a phrase list is how everything becomes a medication question, and
+// then every answer carries labeling it did not need.
+[
+  'What should I document for this visit?',
+  'How is the patient doing?',
+  'Can I go home now?',
+  'What did today establish?',
+  'Who else should I loop in?'
+].forEach((q) => {
+  test(`still not a medication question: ${q}`, () => {
+    assert.ok(!G.classifyQuestion(q).needsMedicationFacts);
+  });
+});
+
 console.log(`\n${checks - failures}/${checks} passed`);
 if (failures) { console.error(`${failures} FAILED`); process.exit(1); }
