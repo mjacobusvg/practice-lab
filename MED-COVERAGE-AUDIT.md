@@ -645,3 +645,44 @@ regardless of how confident the trail looks.
 an assumed weight. Both are arithmetic on figures that WERE present, not recall. Figures that are
 small integer multiples of a number in the note are now reported as `computed` rather than
 `unsourced`, because flagging them buries the ones that really did come from nowhere.
+
+## CORRECTION: the Concerta evidence does contain the figures
+
+`tbpEvidenceFigures('Concerta')` on the real retrieval:
+
+```
+dosage_and_administration   4141 | 10 mg, 15 mg, 18 mg, 2 mg/kg/day, 20 mg, 27 mg, 36 mg,
+                                   5 mg, 54 mg, 54 mg/day, 60 mg/day, 72 mg, 72 mg/day
+use_in_specific_populations 7768 | ... 54 mg/day, 60 mg/kg/day, 72 mg/day
+clinical_studies            4907 | ... 36 mg/day, 45 mg, 54 mg, 72 mg, 72 mg/day, 108 mg/day
+```
+
+**The section above this one is wrong and stays here so it is not repeated.** 54 mg/day and
+72 mg/day are both in the retrieved dosing section. 108 mg/day is in clinical_studies. So
+"every Concerta answer came from memory" was wrong, and "108 mg/day was invented" was wrong.
+
+The mistake was trusting a new check over a direct look at the data, which is precisely the
+failure this audit keeps finding in the product. The check is lenient by construction, so a flag
+looked conclusive. It was not.
+
+### What actually remains, and it is two separate things
+
+**1. The check flagged figures that were present, and only in SOME runs.** 54 mg/day was flagged
+in 4 of 5 runs and 72 mg/day in 2 of 5. If the check were simply broken it would flag every run
+equally. A per-run split points at the evidence sometimes not reaching the prompt at all, which
+would be an intermittent retrieval failure and a genuine defect. It could also be a bug in how
+the evidence is captured. **Not diagnosed. Do not pick the more convenient one.**
+
+Pass B now records `evidenceFigures` per run, so a rerun separates these: a run with figures
+recorded and a flag anyway means the check is wrong, and a run with no figures recorded means
+the evidence never arrived.
+
+**2. 108 mg/day was mis-categorised, not invented.** It is in `clinical_studies`, which makes it
+a STUDIED dose. The answer called it "some clinical practice extends to 108 mg/day off-label",
+which turns a studied dose into a practice claim. The existing rules already forbid the same
+move in the other direction ("do NOT present the highest studied dose as though it were" a
+maximum). This is that error wearing different clothes, and it is a category confusion rather
+than a fabrication.
+
+The rule added in the previous round (a dose figure must appear in the label or the clinical
+reference block) is still sound and stays. It simply did not fire on what was assumed.
