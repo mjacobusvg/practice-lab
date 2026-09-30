@@ -395,11 +395,11 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/rx-vocabulary.js?v=ambient-175-sub"></script>
-<script src="/rx-detect.js?v=ambient-175-sub"></script>
-<script src="/rx-grounding.js?v=ambient-175-sub"></script>
-<script src="/rx-clinical-reference.js?v=ambient-175-sub"></script>
-<script src="/note-engine-practice.js?v=ambient-175-sub"></script>
+<script src="/rx-vocabulary.js?v=ambient-176-sub"></script>
+<script src="/rx-detect.js?v=ambient-176-sub"></script>
+<script src="/rx-grounding.js?v=ambient-176-sub"></script>
+<script src="/rx-clinical-reference.js?v=ambient-176-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-176-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -761,7 +761,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-175-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-176-sub</span></div>
 </div>
 </div>
 
@@ -4896,11 +4896,29 @@ async function tbpCoverageB(opts){
       // own note came from the model's memory. That is the whole defect class in one check.
       var sourced = String(window.TBP_LAST_EVIDENCE || '') + '\n' + c.note;
       var sourcedFlat = sourced.replace(/,/g, '');
-      var unsourced = tbpDoseFigures(last.a).filter(function(f){
+      // Figures the clinician's note implies by arithmetic. "60 mg bid" makes 120 mg/day a
+      // COMPUTED total, not a recalled one, and flagging it buries the figures that really did
+      // come from nowhere. Small integer multiples only: that is what bid, tid and qid produce.
+      var noteNums = (c.note.replace(/,/g, '').match(/\d+(?:\.\d+)?/g) || []).map(Number);
+      function computable(v){
+        return noteNums.some(function(n){
+          if(!n) return false;
+          for(var mult = 2; mult <= 4; mult++) if(Math.abs(n * mult - v) < 0.001) return true;
+          return false;
+        });
+      }
+      var unsourced = [], computed = [];
+      tbpDoseFigures(last.a).forEach(function(f){
         var num = f.replace(/,/g, '').match(/^[\d.]+/);
-        return num && sourcedFlat.indexOf(num[0]) === -1;
+        if(!num || sourcedFlat.indexOf(num[0]) !== -1) return;
+        (computable(parseFloat(num[0])) ? computed : unsourced).push(f);
       });
-      runs.push({ asked: asked, answer: last.a || null, unsourced: unsourced,
+      runs.push({ asked: asked, answer: last.a || null, unsourced: unsourced, computed: computed,
+                  // What the evidence ACTUALLY contained. The Concerta dosing section turned out
+                  // to hold neither 54 nor 72, so every answer about its ceiling came from memory
+                  // while Pass A reported the drug as resolved. A label being retrieved is not
+                  // the same as the facts being retrieved, and only this column shows that.
+                  evidenceFigures: tbpDoseFigures(window.TBP_LAST_EVIDENCE),
                   outcome: (asked && mode !== 'confirm') ? '(asked first: ' + asked + ')' : (last.a || '(none)'),
                   figures: tbpDoseFigures(last.a), trail: last.trail || null,
                   gaps: last.gaps || null, refs: last.refs || null, ms: Date.now() - before });
@@ -4918,13 +4936,16 @@ async function tbpCoverageB(opts){
     var unsourcedAll = {};
     runs.forEach(function(r){ (r.unsourced || []).forEach(function(f){ unsourcedAll[f] = (unsourcedAll[f] || 0) + 1; }); });
     var unsourcedList = Object.keys(unsourcedAll).sort();
+    var computedAll = {};
+    runs.forEach(function(r){ (r.computed || []).forEach(function(f){ computedAll[f] = (computedAll[f] || 0) + 1; }); });
     out.push({ note: c.note, q: c.q, mode: mode, repeat: reps, runs: runs,
                figureCounts: counts, movedFigures: moved, varied: varied,
-               unsourcedFigures: unsourcedAll,
+               unsourcedFigures: unsourcedAll, computedFigures: computedAll,
+               evidenceFigures: first.evidenceFigures,
                asked: first.asked, answer: first.answer, outcome: first.outcome,
                trail: first.trail, gaps: first.gaps, refs: first.refs, ms: first.ms });
     console.log((i+1) + '/' + TBP_COVERAGE_B.length + '  ' + c.q
-      + (unsourcedList.length ? '\n    *** NOT IN THE EVIDENCE OR THE NOTE: '
+      + (unsourcedList.length ? '\n    *** FROM MEMORY, in neither the evidence nor the note: '
           + unsourcedList.map(function(f){ return f + ' ' + unsourcedAll[f] + '/' + reps; }).join(', ') : '')
       + (reps > 1 ? (varied
           ? '\n    not in every run: ' + moved.map(function(f){ return f + ' ' + counts[f] + '/' + reps; }).join(', ')

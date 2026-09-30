@@ -602,3 +602,46 @@ of thousands of characters and has no business in saved encounter state.
 "14 of 14 varied" is not the alarming number it looks like. Flagging any figure absent from any
 run will fire on almost any prose. The useful column is now the unsourced one: variance says the
 wording moved, unsourced says a number had no origin.
+
+## The unsourced check found what the whole audit missed
+
+3 of 14 cases stated a dose figure present in neither the retrieved evidence nor the note. Two
+were arithmetic. The third inverts a conclusion this document reached twice.
+
+### Concerta has been answered from memory the entire time
+
+Flagged on case 3: `54 mg/day 4/5`, `72 mg/day 2/5`, `108 mg/day 1/5`.
+
+72 mg/day is not a stray mention. It is THE ANSWER, given as "the labeled maximum for
+methylphenidate in adults". The check matches the bare digits anywhere in the evidence or the
+note, so it is lenient by construction, and a miss means the characters "54" and "72" appear
+**nowhere in the retrieved Concerta evidence.**
+
+So every Concerta answer in this audit came from the model's memory. Including the one this
+document recorded as evidence that the population index worked: 72 mg/day in 4 of 5 runs looked
+like a fix and was a coincidence of recall.
+
+**Pass A called Concerta PASS.** It checked that a label resolved and that sections stored. It
+never checked whether the stored section contained the facts the question needs. Those are
+different claims, and only one of them was ever measured.
+
+This is the same failure shape as every other defect here, one level up: the trail said
+`dosage_and_administration(4141)` and looked like success. A section being retrieved is not the
+same as the facts being retrieved.
+
+**Not yet diagnosed, and not to be guessed at.** The Concerta dosing section is 4141 characters
+and the ceilings are not in it. The figures live in a dosing TABLE, and whether that table
+survives `stripTags`, or sits in a subsection the extractor never reaches, is an open question
+with different fixes. `tbpSplitCheck('Concerta')` already showed the section text; what is needed
+is which figures the retrieved evidence actually contains.
+
+Pass B now records `evidenceFigures` per case: every dose figure present in the evidence that was
+sent. A case whose answer figures do not appear in its evidence figures is answering from memory
+regardless of how confident the trail looks.
+
+### The two false positives, now separated
+
+`120 mg/day` (ziprasidone) is "60 mg bid" doubled. `4,500 mg/day` (divalproex) is 60 mg/kg times
+an assumed weight. Both are arithmetic on figures that WERE present, not recall. Figures that are
+small integer multiples of a number in the note are now reported as `computed` rather than
+`unsourced`, because flagging them buries the ones that really did come from nowhere.
