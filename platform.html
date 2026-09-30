@@ -2504,6 +2504,13 @@ async function sendMagicLink(mode) {
   if (_btn && !_btn.dataset.origLabel) _btn.dataset.origLabel = _btn.innerHTML;
   if (_btn) { _btn.disabled = true; _btn.style.opacity = '0.6'; _btn.style.cursor = 'default'; }
   statusEl.textContent = 'Sending\u2026';
+  // Watchdog: on a slow or dropped connection the await below can hang with no
+  // feedback (the silent "frozen second screen"). If nothing resolves in 20s,
+  // re-enable the button and tell them to retry. Cleared the moment the call returns.
+  var _wd = setTimeout(function () {
+    if (_btn) { _btn.disabled = false; _btn.style.opacity = ''; _btn.style.cursor = ''; _btn.innerHTML = _btn.dataset.origLabel || 'Try again'; }
+    statusEl.innerHTML = 'This is taking longer than usual, which usually means a slow or dropped connection. Check your connection and tap to try again. If a sign-in email does arrive, you can still use that link.';
+  }, 20000);
   var meta = {};
   if (mode === 'signup') {
     meta.name = document.getElementById('gate-name').value.trim();
@@ -2532,6 +2539,7 @@ async function sendMagicLink(mode) {
     // Enriched redirect rejected (allow list) — retry with the bare redirect.
     res = await SB.auth.signInWithOtp({ email: email, options: { emailRedirectTo: REDIRECT_TO, data: meta } });
   }
+  clearTimeout(_wd);
   if (res.error) {
     statusEl.textContent = res.error.message;
     if (_btn) { _btn.disabled = false; _btn.style.opacity = ''; _btn.style.cursor = ''; _btn.innerHTML = _btn.dataset.origLabel || 'Try again'; }
@@ -2626,8 +2634,14 @@ async function signUpWithPassword(name, email, pw) {
   var creds = (document.getElementById('gate-creds') || {}).value;
   if (creds) meta.creds = creds;
   statusEl.textContent = 'Creating your account…';
+  // Watchdog for a hung request on a slow/dropped connection, so the screen does
+  // not silently freeze on "Creating your account…". Cleared as soon as it returns.
+  var _wd = setTimeout(function () {
+    statusEl.innerHTML = 'This is taking longer than usual, which usually means a slow or dropped connection. Check your connection and try again.';
+  }, 20000);
   try {
     var res = await SB.auth.signUp({ email: email, password: pw, options: { data: meta, emailRedirectTo: REDIRECT_TO } });
+    clearTimeout(_wd);
     if (res.error) {
       statusEl.innerHTML = /already|exists|registered/i.test(res.error.message || '')
         ? 'That email already has an account. Use the <a href="#" style="color:var(--teal)" onclick="gateMode(\'login\');return false">Sign in</a> tab to log in.'
@@ -2642,6 +2656,7 @@ async function signUpWithPassword(name, email, pw) {
       statusEl.innerHTML = '<div style="background:#fff3bf;border:1px solid #e6c200;border-radius:8px;padding:12px 14px;color:#4a3b00;font-size:0.92rem;line-height:1.5;margin-top:6px;text-align:left"><strong>Account created.</strong> Check your email to confirm it, then sign in with your email and password. If it is not there in a minute, look in spam.</div>';
     }
   } catch (e) {
+    clearTimeout(_wd);
     statusEl.textContent = 'Could not create the account. Please try again, or leave the password blank for an email link.';
   }
 }
