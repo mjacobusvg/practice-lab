@@ -784,3 +784,57 @@ neither was reached by the question being asked.
 Every conclusion in this document about Concerta answers. The population split, the figure
 index, and the practice-figure rule were all evaluated against a case that was never grounded
 in the first place. They may work. This audit has not shown it.
+
+## The case is closed, and the fixes are validated for the first time
+
+With the classifier fixed, `tbpProbeCase` on the real Concerta label:
+
+**The index, on real label text.** Correct on every entry:
+
+```
+  54 mg  ->  pediatric   "...6 to 12 years: 54 mg once daily..."
+  72 mg  ->  pediatric   "...13 to 17 years: 72 mg once daily..."
+  72 mg  ->  adult       "...increased weekly in 18 mg increments, up to 72 mg once daily..."
+  18 mg  ->  adult       "...in adults (up to 65 years of age) ... 18 mg or 36 mg once daily..."
+  36 mg  ->  adult
+  2 mg/kg/day -> pediatric
+  60 mg/day   -> unclear
+```
+
+54 is tagged pediatric and nothing else. 72 is tagged under BOTH populations, which is correct:
+it is the ceiling for 13-to-17-year-olds and for adults. The `unclear` entries are figures with
+no population term near them, reported as such rather than assigned one.
+
+**The answer, five runs:** 72 mg/day, adults 18 to 65, population named explicitly every time,
+with the 18 mg titration increments. **5 of 5.** No run gave 54 as an adult ceiling.
+
+This is the first evidence that the population index works. Every earlier claim about it in this
+document was measured against a question that never retrieved anything.
+
+### One error that survives, and would not be caught by any grounding check
+
+Run 1: *"72 mg/day ... is one 18 mg increment above the current 36 mg dose, so there is one step
+left within the label."* 36 to 54 to 72 is TWO increments. The ceiling is right; the arithmetic
+about reaching it is wrong.
+
+This is a DERIVED claim, not a label claim. No evidence check catches it, because the figures it
+reasons over are all correctly retrieved. The same class as computing 120 mg/day from "60 mg
+bid": correct inputs, wrong arithmetic, stated with the same confidence as the sourced figure.
+
+Recorded as OPEN. Whether arithmetic over retrieved figures needs its own verification is a
+separate question from grounding, and it is not answered by anything built here.
+
+## What the audit actually established
+
+The defect was never in retrieval, ranking, extraction, storage, population handling or the
+prompt. Nine rounds of work went into those because each instrument reported truthfully about
+the layer it measured, and none of them measured whether the question reached retrieval at all.
+
+The list of things that were true and irrelevant:
+
+- Pass A: Concerta resolves to the right label. True. Only when asked.
+- `tbpEvidenceFigures`: the section contains 54 and 72. True. Never requested.
+- `gaps: null`: nothing was missing. True, and it meant nothing was asked for.
+
+**A gate that fails open is invisible to every instrument downstream of it.** That is the
+finding worth keeping.
