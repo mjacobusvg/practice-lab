@@ -2324,6 +2324,28 @@ function applyScribeTrialFraming() {
   } catch (e) {}
 }
 
+// Reframe the free-signup card for someone who clicked a PAID plan (e.g. "Join Full
+// -- $119/mo") on the marketing site and arrives at /platform?plan=<key>. The account
+// is still created first, but handlePendingPlan() then drops them straight into Stripe
+// checkout for that plan -- so tell them account creation is step one toward the paid
+// plan, not a generic "browse for free" gate that loses their intent.
+function applyPaidPlanFraming(plan) {
+  try {
+    var LABEL = {
+      full_monthly_119: 'Full membership ($119/month)',
+      full_annual_1190: 'Full membership ($1,190/year)',
+      forum_monthly_50: 'Forum membership ($50/month)',
+      forum_annual_525: 'Forum membership ($525/year)'
+    };
+    var label = LABEL[plan]; if (!label) return;
+    var g = document.getElementById('gate-signup'); if (!g) return;
+    var h = g.querySelector('h2'); if (h) h.textContent = 'Create your account to join';
+    var p = g.querySelector('p'); if (p) p.textContent = 'Step one is a quick free account. As soon as it is created, we take you straight to secure checkout for ' + label + '. You are not charged until you confirm on that screen.';
+    var b = g.querySelector('button.btn-primary'); if (b) b.innerHTML = 'Create account and continue &rarr;';
+    var s = document.getElementById('signup-status'); if (s) s.textContent = 'Next: secure checkout for ' + label + '. No charge until you confirm.';
+  } catch (e) {}
+}
+
 var REDIRECT_TO = window.location.origin + '/platform';
 
 // After a sign-in link is requested, hold the button on a visible 60s countdown so
@@ -2929,6 +2951,7 @@ async function checkAuth() {
       // A visitor arriving via the /start-scribe trial route gets trial-specific
       // gate copy instead of the generic "browse for free" framing.
       if (_q.get('trial') === 'ai-scribe') applyScribeTrialFraming();
+      else if (_q.get('plan')) applyPaidPlanFraming(_q.get('plan'));
       // Carry an email typed on the marketing site straight into the signup form,
       // so the visitor only has to add their name and hit the button.
       var _pe = (_q.get('email') || '').trim();
