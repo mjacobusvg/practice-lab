@@ -395,11 +395,11 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/rx-vocabulary.js?v=ambient-180-sub"></script>
-<script src="/rx-detect.js?v=ambient-180-sub"></script>
-<script src="/rx-grounding.js?v=ambient-180-sub"></script>
-<script src="/rx-clinical-reference.js?v=ambient-180-sub"></script>
-<script src="/note-engine-practice.js?v=ambient-180-sub"></script>
+<script src="/rx-vocabulary.js?v=ambient-181-sub"></script>
+<script src="/rx-detect.js?v=ambient-181-sub"></script>
+<script src="/rx-grounding.js?v=ambient-181-sub"></script>
+<script src="/rx-clinical-reference.js?v=ambient-181-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-181-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -761,7 +761,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-180-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-181-sub</span></div>
 </div>
 </div>
 
@@ -4877,7 +4877,7 @@ async function tbpCoverageB(opts){
       if(raw) raw.value = c.note;
       try { tbpEncounterReset(); } catch(e){}
       rsnLog = []; rsnLast = null;
-      var before = Date.now(), asked = null;
+      var before = Date.now(), asked = null, runError = null;
       try {
         var run = tbpRunReason(c.q);
         // The card, if this question needed one, is already open: tbpRunReason opens it before it
@@ -4890,8 +4890,12 @@ async function tbpCoverageB(opts){
           else { tbpHideMeds(); }
         }
         await run;
-      } catch(e){}
+      } catch(e){ runError = String(e && e.message || e); }
       var last = rsnLog[rsnLog.length - 1] || {};
+      // A RUN THAT NEVER REACHED THE MODEL IS NOT AN EMPTY ANSWER. A laptop sleeping mid-audit
+      // gave ERR_NETWORK_IO_SUSPENDED on six of fourteen cases, all recorded as "(none)", which
+      // reads identically to the model returning nothing. Those are opposite findings.
+      if(!last.a && !asked) runError = runError || 'no answer returned (the request may not have completed)';
       // A figure in the answer that appears in neither the retrieved evidence nor the clinician's
       // own note came from the model's memory. That is the whole defect class in one check.
       var sourced = String(tbpLastEvidence || '') + '\n' + c.note;
@@ -4913,13 +4917,15 @@ async function tbpCoverageB(opts){
         if(!num || sourcedFlat.indexOf(num[0]) !== -1) return;
         (computable(parseFloat(num[0])) ? computed : unsourced).push(f);
       });
-      runs.push({ asked: asked, answer: last.a || null, unsourced: unsourced, computed: computed,
+      runs.push({ asked: asked, answer: last.a || null, error: runError,
+                  unsourced: unsourced, computed: computed,
                   // What the evidence ACTUALLY contained. The Concerta dosing section turned out
                   // to hold neither 54 nor 72, so every answer about its ceiling came from memory
                   // while Pass A reported the drug as resolved. A label being retrieved is not
                   // the same as the facts being retrieved, and only this column shows that.
                   evidenceFigures: tbpDoseFigures(tbpLastEvidence),
-                  outcome: (asked && mode !== 'confirm') ? '(asked first: ' + asked + ')' : (last.a || '(none)'),
+                  outcome: (asked && mode !== 'confirm') ? '(asked first: ' + asked + ')'
+                         : (last.a || ('(NO ANSWER: ' + runError + ')')),
                   figures: tbpDoseFigures(last.a), trail: last.trail || null,
                   gaps: last.gaps || null, refs: last.refs || null, ms: Date.now() - before });
     }
@@ -4959,9 +4965,12 @@ async function tbpCoverageB(opts){
   }
   if(raw) raw.value = keep;
   tbpDevExpose('TBP_COVERAGE_B_RESULTS', out);
+  var broken = out.filter(function(r){ return (r.runs || []).some(function(x){ return x.error; }); });
   var invented = out.filter(function(r){ return Object.keys(r.unsourcedFigures || {}).length; });
   var unstable = out.filter(function(r){ return r.varied; });
   console.log('\nPASS B (' + mode + ', ' + reps + 'x) done. '
+    + (broken.length ? '*** ' + broken.length + ' of ' + out.length + ' cases had a run that did '
+        + 'not complete (network or sleep). THIS RUN IS NOT VALID for those cases. *** ' : '')
     + invented.length + ' of ' + out.length + ' cases stated a dose figure found in neither the '
     + 'evidence nor the note. '
     + (reps > 1 ? (unstable.length + ' of ' + out.length + ' cases gave different dose figures between runs. ')
