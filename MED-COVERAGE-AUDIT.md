@@ -686,3 +686,53 @@ than a fabrication.
 
 The rule added in the previous round (a dose figure must appear in the label or the clinical
 reference block) is still sound and stays. It simply did not fire on what was assumed.
+
+## The Concerta answer is now wrong in the dangerous direction
+
+Leading answer, `mode: 'confirm'`, run at ambient-177:
+
+> "The labeled maximum for Concerta (methylphenidate extended-release) in adults is **54 mg/day**
+> for ADHD. Some clinicians prescribe above that, off-label doses up to **72 mg/day** are not
+> uncommon in practice, but 54 mg is where the label stops."
+
+**54 mg/day is the ceiling for children 6 to 12. 72 mg/day is the adult labeled maximum.** The
+answer has them inverted and additionally calls the real adult figure off-label. Both numbers are
+in the retrieved dosing section. This is the original Adderall defect, on a different drug, after
+two structural fixes aimed squarely at it, and stated with more confidence than before.
+
+An earlier entry in this file recorded "Concerta no longer leads with 54" as evidence the
+population index worked. That was one sampling of a non-deterministic answer, and the index had
+not fixed anything.
+
+### The audit instrument was broken while reporting on it
+
+`evidenceFigures: 0` on all five runs, with `gaps: null`, while the model was plainly receiving
+the evidence: the same run's Symbyax answer names the Par Health labeling and the absence of a
+Symbyax label, which is information only the evidence block carries.
+
+So the unsourced check has been comparing answers against the clinician's NOTE ALONE. Every
+finding it produced is void, including the "1 of 14" that looked like an improvement.
+
+The capture assigned `window.TBP_LAST_EVIDENCE` in the Scribe and read it in the harness. Rather
+than reason about which window a function published to the top frame sees, it is now a module
+variable in the same scope as both, which removes the question instead of answering it.
+
+**The masking was worse than the bug.** Figures that are small integer multiples of a note figure
+were reported as `computed` and hidden. Concerta's 72 is 36 x 2. Symbyax's 12 and 50 are 6 and 25
+doubled. So the two most important cases were silenced by a heuristic added to reduce noise, and
+the report looked cleaner each round while measuring less. Computed figures are now shown, not
+suppressed.
+
+### What has to be established next, and not assumed
+
+The evidence block reaches the model. Whether the POPULATION INDEX is inside it is a different
+question, and the two need different fixes:
+
+- index present and it tagged 54 as pediatric -> the index is not being used, and prompting is
+  the wrong instrument for this
+- index present and it tagged 54 as adult -> the nearest-population heuristic is wrong on this
+  label's table
+- index absent -> it is not being generated for this section at all
+
+`tbpLastPopulationIndex()` returns exactly what the model was handed. Do not guess which of the
+three it is.

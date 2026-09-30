@@ -395,11 +395,11 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/rx-vocabulary.js?v=ambient-177-sub"></script>
-<script src="/rx-detect.js?v=ambient-177-sub"></script>
-<script src="/rx-grounding.js?v=ambient-177-sub"></script>
-<script src="/rx-clinical-reference.js?v=ambient-177-sub"></script>
-<script src="/note-engine-practice.js?v=ambient-177-sub"></script>
+<script src="/rx-vocabulary.js?v=ambient-178-sub"></script>
+<script src="/rx-detect.js?v=ambient-178-sub"></script>
+<script src="/rx-grounding.js?v=ambient-178-sub"></script>
+<script src="/rx-clinical-reference.js?v=ambient-178-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-178-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -761,7 +761,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-177-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-178-sub</span></div>
 </div>
 </div>
 
@@ -4894,7 +4894,7 @@ async function tbpCoverageB(opts){
       var last = rsnLog[rsnLog.length - 1] || {};
       // A figure in the answer that appears in neither the retrieved evidence nor the clinician's
       // own note came from the model's memory. That is the whole defect class in one check.
-      var sourced = String(window.TBP_LAST_EVIDENCE || '') + '\n' + c.note;
+      var sourced = String(tbpLastEvidence || '') + '\n' + c.note;
       var sourcedFlat = sourced.replace(/,/g, '');
       // Figures the clinician's note implies by arithmetic. "60 mg bid" makes 120 mg/day a
       // COMPUTED total, not a recalled one, and flagging it buries the figures that really did
@@ -4918,7 +4918,7 @@ async function tbpCoverageB(opts){
                   // to hold neither 54 nor 72, so every answer about its ceiling came from memory
                   // while Pass A reported the drug as resolved. A label being retrieved is not
                   // the same as the facts being retrieved, and only this column shows that.
-                  evidenceFigures: tbpDoseFigures(window.TBP_LAST_EVIDENCE),
+                  evidenceFigures: tbpDoseFigures(tbpLastEvidence),
                   outcome: (asked && mode !== 'confirm') ? '(asked first: ' + asked + ')' : (last.a || '(none)'),
                   figures: tbpDoseFigures(last.a), trail: last.trail || null,
                   gaps: last.gaps || null, refs: last.refs || null, ms: Date.now() - before });
@@ -4947,6 +4947,11 @@ async function tbpCoverageB(opts){
     console.log((i+1) + '/' + TBP_COVERAGE_B.length + '  ' + c.q
       + (unsourcedList.length ? '\n    *** FROM MEMORY, in neither the evidence nor the note: '
           + unsourcedList.map(function(f){ return f + ' ' + unsourcedAll[f] + '/' + reps; }).join(', ') : '')
+      // Shown, not suppressed. Treating a small multiple of a note figure as explained hid that
+      // Concerta's 72 is 36 x 2 and Symbyax's 12/50 is 6/25 x 2, so the masking quietly removed
+      // real findings from the report while looking like noise reduction.
+      + (Object.keys(computedAll).length ? '\n    (arithmetic on the note, not in the evidence: '
+          + Object.keys(computedAll).sort().map(function(f){ return f + ' ' + computedAll[f] + '/' + reps; }).join(', ') + ')' : '')
       + (reps > 1 ? (varied
           ? '\n    not in every run: ' + moved.map(function(f){ return f + ' ' + counts[f] + '/' + reps; }).join(', ')
           : '\n    stable across ' + reps + ' runs') : '')
@@ -5021,6 +5026,15 @@ function tbpDevExpose(name, fn){
                return { section: x.section, chars: String(x.text || '').length,
                         figures: tbpDoseFigures(x.text) };
              }) };
+  });
+  // What the model ACTUALLY received last: the evidence block verbatim, including the
+  // population index. Reading it is the only way to tell "the index was wrong" from "the index
+  // was never there", and those need different fixes.
+  tbpDevExpose('tbpLastEvidence', function(){ return tbpLastEvidence; });
+  tbpDevExpose('tbpLastPopulationIndex', function(){
+    var i = tbpLastEvidence.indexOf('DOSE FIGURES ABOVE');
+    return i === -1 ? '(no population index was in the block)'
+                    : tbpLastEvidence.slice(i, i + 2500);
   });
   tbpDevExpose('tbpCoverageA', tbpCoverageA);
   tbpDevExpose('tbpCoverageB', tbpCoverageB);
@@ -6478,6 +6492,11 @@ function tbpRsnTrailHtml(trail, gaps, refs){
 // a caller that awaits a medication question can never hang on a dismissal.
 var tbpReasonPending = null, tbpReasonAsks = null, tbpReasonProceeding = false;
 
+// The evidence block as the model last received it. Deliberately NOT on rsnLast, which is
+// persisted: this runs to tens of thousands of characters and does not belong in saved
+// encounter state.
+var tbpLastEvidence = '';
+
 async function tbpRunReason(question){
   // A medication question needs confirmed medication identity BEFORE it can be answered. The
   // clinician asks their question; the system works out what it needs. They are never sent off
@@ -6605,7 +6624,11 @@ async function tbpRunReasonNow(question, cls, scope){
     // reads it to check every figure in the answer against something that was actually retrieved.
     // Reading the answers by eye is how "108 mg/day off-label" was caught, and by eye does not
     // scale past fourteen cases.
-    try { if(tbpDevOn()) window.TBP_LAST_EVIDENCE = (evidenceBlock || '') + '\n' + (referenceBlock || ''); } catch(e){}
+    // A MODULE VARIABLE, not window. The first version assigned window.TBP_LAST_EVIDENCE here and
+    // read it in the harness, and it came back empty on every run while the model was plainly
+    // receiving the block. Rather than theorise about which window a published function sees,
+    // this removes the question: same scope, same variable, nothing to resolve at runtime.
+    tbpLastEvidence = (evidenceBlock || '') + '\n' + (referenceBlock || '');
 
     // NOTE: callAPI's onDelta is handed the ACCUMULATED text so far, not an increment.
     acc = await callAPI(
