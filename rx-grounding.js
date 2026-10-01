@@ -553,14 +553,20 @@
         lines.push('ceiling to a daily dose using it, and when you do, state the weight you used in');
         lines.push('the same sentence so the clinician can see which number the answer rests on.');
       } else {
-        lines.push('THIS ENCOUNTER DOCUMENTS NO WEIGHT. So if the labeled ceiling is given per');
-        lines.push('kilogram, give it per kilogram and say the weight is not documented. Do NOT');
-        lines.push('multiply it by a weight you assumed, and do NOT offer a range for "a typical');
-        lines.push('adult": both present a patient-specific ceiling derived from a number nobody');
-        lines.push('recorded, and a reader cannot tell it from a documented one. 60 mg/kg/day is');
-        lines.push('4,200 mg/day at 70 kg and 3,000 mg/day at 50 kg, and being wrong in the');
-        lines.push('permissive direction is how a dose ceiling causes harm. Naming the weight as');
-        lines.push('the missing input is the useful answer here: it is one thing to go look up.');
+        lines.push('THIS ENCOUNTER DOCUMENTS NO WEIGHT. Give the ceiling per kilogram and say the');
+        lines.push('weight is not documented.');
+        lines.push('');
+        lines.push('You MAY work it out at a weight you name explicitly: "at 70 kg that is');
+        lines.push('4,200 mg/day, at 50 kg it is 3,000" shows the clinician how much the missing');
+        lines.push('number matters, and nothing in it claims to be THIS patient\'s ceiling. That is');
+        lines.push('often the most useful answer: it names the one thing to go look up and says why');
+        lines.push('the trip is worth it.');
+        lines.push('');
+        lines.push('What you may NOT do is present any figure as this patient\'s. "Works out to about');
+        lines.push('3,000 to 4,000 mg/day for most adults" reads as careful and is not conditional at');
+        lines.push('all: it asserts a range for this patient from a weight nobody recorded, and the');
+        lines.push('reader cannot tell it from a documented one. The test is whether the weight the');
+        lines.push('figure rests on is stated beside it. If it is not, do not give the figure.');
       }
       lines.push('');
     }

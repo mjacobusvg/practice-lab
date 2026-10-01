@@ -395,11 +395,11 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/rx-vocabulary.js?v=ambient-182-sub"></script>
-<script src="/rx-detect.js?v=ambient-182-sub"></script>
-<script src="/rx-grounding.js?v=ambient-182-sub"></script>
-<script src="/rx-clinical-reference.js?v=ambient-182-sub"></script>
-<script src="/note-engine-practice.js?v=ambient-182-sub"></script>
+<script src="/rx-vocabulary.js?v=ambient-184-sub"></script>
+<script src="/rx-detect.js?v=ambient-184-sub"></script>
+<script src="/rx-grounding.js?v=ambient-184-sub"></script>
+<script src="/rx-clinical-reference.js?v=ambient-184-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-184-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -761,7 +761,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-182-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-184-sub</span></div>
 </div>
 </div>
 
@@ -6694,6 +6694,37 @@ async function tbpRunReasonNow(question, cls, scope){
       // noise on the ones that never mention a dose. So this checks what the answer ACTUALLY
       // did: a dose figure that is in neither the retrieved labeling nor the clinician's own
       // note was not checked against anything, and the clinician is owed that fact.
+      // A FIGURE THAT DEPENDS ON A WEIGHT THIS ENCOUNTER DOES NOT HAVE.
+      //
+      // Note what this does NOT claim. "At 70 kg that would be 4,200 mg/day; at 60 kg, 3,600" is
+      // good clinical communication: it names the weight each figure rests on, asserts nothing
+      // about this patient, and shows why the missing number is worth going to get. The defect
+      // was the uncoditional form, "works out to about 3,000 to 4,000 mg/day for most adults",
+      // which reads as careful while quietly asserting a range for this patient.
+      //
+      // A detector cannot reliably tell those apart, and should not try: the note it leaves is
+      // true of both. Any mg/day figure here rests on a weight that is not in this encounter,
+      // and that is worth saying plainly whether the model framed it conditionally or not.
+      try {
+        if(evidenceBlock && !encWeight && /\d[\d.,]*\s*mg\s*\/\s*kg/i.test(evidenceBlock)){
+          var noteNums2 = String((c && c.text) || '').replace(/,/g, '');
+          var derived = tbpDoseFigures(acc).filter(function(f){
+            if(!/\/\s*day/.test(f) || /\/\s*kg/.test(f)) return false;
+            var n = f.replace(/,/g, '').match(/^[\d.]+/);
+            // Only figures big enough to be a weight multiplication, and not something the
+            // clinician or the label already stated.
+            return n && parseFloat(n[0]) > 1500
+                   && noteNums2.indexOf(n[0]) === -1
+                   && evidenceBlock.replace(/,/g, '').indexOf(n[0]) === -1;
+          });
+          if(derived.length){
+            gaps = gaps.concat([{ drug: derived.join(', '), kind: 'assumed_weight',
+              why: 'the labeled ceiling is per kilogram and no weight is documented in this '
+                 + 'encounter, so this figure depends on a weight that is not recorded here. '
+                 + 'Check it against the patient\'s actual weight before acting on it.' }]);
+          }
+        }
+      } catch(e){}
       try {
         if(!evidenceBlock){
           var noteFlat = String((c && c.text) || '').replace(/,/g, '');

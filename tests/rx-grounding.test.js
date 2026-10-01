@@ -664,21 +664,30 @@ test('a weight the clinician wrote down is found, in either unit', () => {
 const NO_WEIGHT = G.groundingRules(['dosing'], [], {});
 const WITH_WEIGHT = G.groundingRules(['dosing'], [], { weight: '82 kg' });
 
-test('with no weight documented, the model may not multiply one in', () => {
+test('with no weight documented, the gap is named', () => {
   assert.ok(/THIS ENCOUNTER DOCUMENTS NO WEIGHT/.test(NO_WEIGHT));
-  assert.ok(/Do NOT/.test(NO_WEIGHT) && /multiply it by a weight you assumed/.test(NO_WEIGHT));
+  assert.ok(/say the/.test(NO_WEIGHT) && /weight is not documented/.test(NO_WEIGHT));
 });
 
-// The specific escape hatch that produced the finding: the answer hedged as "for a typical
-// adult", which is still a patient-specific ceiling built from an invented number.
-test('and may not offer a typical-adult range instead', () => {
-  assert.ok(/typical/.test(NO_WEIGHT));
+// But conditional illustration is ALLOWED, and the first version of this rule wrongly banned it.
+// "At 70 kg that would be 4,200 mg/day; at 60 kg, 3,600" names the weight each figure rests on,
+// claims nothing about this patient, and shows why the missing number is worth going to get.
+test('working it out at an explicitly named weight is permitted', () => {
+  assert.ok(/You MAY work it out at a weight you name explicitly/.test(NO_WEIGHT));
+  assert.ok(/nothing in it claims to be THIS patient/.test(NO_WEIGHT));
+});
+
+// The real line: whether the weight the figure rests on is stated beside it.
+test('an unconditional range for "most adults" is still forbidden', () => {
+  assert.ok(/for most adults/.test(NO_WEIGHT));
+  assert.ok(/is not conditional at/.test(NO_WEIGHT));
+  assert.ok(/whether the weight the/.test(NO_WEIGHT) && /figure rests on is stated beside it/.test(NO_WEIGHT));
 });
 
 test('it is told to name the weight as the missing input, not to refuse the question', () => {
-  assert.ok(/give it per kilogram/.test(NO_WEIGHT));
-  assert.ok(/one thing to go look up/.test(NO_WEIGHT),
-    'the useful answer names what is missing; it does not stop at cannot say');
+  assert.ok(/Give the ceiling per kilogram/.test(NO_WEIGHT));
+  assert.ok(/names the one thing to go look up/.test(NO_WEIGHT),
+    'refusing to give any figure is the weaker answer, not the safer one');
 });
 
 test('with a weight documented, the conversion is allowed and must be shown', () => {

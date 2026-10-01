@@ -784,15 +784,28 @@ converted and the weight used must be stated in the same sentence. When none is 
 ceiling is given per kilogram, the missing weight is named, and the model may not multiply in an
 assumed weight **or** offer a range "for a typical adult" instead.
 
-**Why the hedge is also forbidden.** Pass B's answer said "works out to about 3,000 to 4,000
-mg/day for most adults", which reads as careful and is still a patient-specific ceiling built
-from a number nobody recorded. A reader cannot tell it from a documented one. 60 mg/kg/day is
-4,200 mg/day at 70 kg and 3,000 mg/day at 50 kg, and the error runs in the permissive direction,
-which is the direction in which a dose ceiling causes harm.
+**The line is NOT "no mg/day figure without a weight". It is "no figure presented as this
+patient's".** The first version of this rule got that wrong and banned both.
 
-**This does not make the answer useless.** Naming the weight as the one missing input is the
-useful answer: it is a single thing to go look up, which is the attention test this product is
-judged against. Refusing the question would not be.
+ALLOWED: *"at 70 kg that is 4,200 mg/day, at 50 kg it is 3,000"*. Each figure names the weight it
+rests on, none claims to be this patient's, and the spread tells the clinician how much the
+missing number matters. That is often the BEST answer available: it names the one thing to go
+look up and shows why the trip is worth it.
+
+FORBIDDEN: *"works out to about 3,000 to 4,000 mg/day for most adults"*. It reads as careful and
+is not conditional at all. It asserts a range for this patient from a weight nobody recorded, and
+a reader cannot tell it from a documented one. The error runs in the permissive direction, which
+is the direction in which a dose ceiling causes harm.
+
+**The test is whether the weight a figure rests on is stated beside it.** Refusing to give any
+figure is the weaker answer, not the safer one.
+
+**The detector does not try to tell those apart, and should not.** A gap is recorded whenever the
+labeled ceiling is per kilogram, this encounter documents no weight, and the answer contains an
+absolute mg/day figure. Its wording is true of the conditional form too: the figure depends on a
+weight that is not recorded here, check it against the patient's actual weight. Conditional
+phrasing is a judgement about intent, and a detector that guessed at intent would be wrong in
+both directions.
 
 **ENFORCED: a calculated figure must show its inputs.** The evidence block contains a
 computation's inputs, never its result, so no grounding check can reach it. One answer called
