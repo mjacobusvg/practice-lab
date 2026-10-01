@@ -2341,7 +2341,7 @@ function applyPaidPlanFraming(plan) {
     var g = document.getElementById('gate-signup'); if (!g) return;
     var h = g.querySelector('h2'); if (h) h.textContent = 'Create your account to join';
     var p = g.querySelector('p');
-    if (p) p.innerHTML = 'Create your account and go straight to secure checkout for ' + label + '. <strong>Set a password below and you go right through, in this tab.</strong> Leave it blank and we will email you a sign-in link first. No charge until you confirm.';
+    if (p) p.innerHTML = 'Create your account and go straight to secure checkout for ' + label + '. <strong>Set a password below to sign in instantly.</strong> Leave it blank and we will email you a sign-in link first. No charge until you confirm.';
     // Password-first for a paying customer: a password means instant sign-in and
     // same-tab checkout (no email round-trip, no second tab). Make it the expected
     // step, not an afterthought.
@@ -2676,6 +2676,15 @@ async function signUpWithPassword(name, email, pw) {
       statusEl.innerHTML = /already|exists|registered/i.test(res.error.message || '')
         ? 'That email already has an account. Use the <a href="#" style="color:var(--teal)" onclick="gateMode(\'login\');return false">Sign in</a> tab to log in.'
         : (res.error.message || 'Could not create the account. Please try again.');
+      return;
+    }
+    // Supabase obfuscates an email that already has an account: signUp returns no
+    // error and a user whose identities array is EMPTY (no new identity created).
+    // Catch that and send them to sign in, instead of a misleading "account created,
+    // confirm your email" they will never receive.
+    var _u = res.data && res.data.user;
+    if (_u && Array.isArray(_u.identities) && _u.identities.length === 0) {
+      statusEl.innerHTML = '<div style="background:var(--navy-light,#1a2d47);border:1px solid var(--teal);border-radius:8px;padding:12px 14px;font-size:0.92rem;line-height:1.5;margin-top:6px;text-align:left">You already have an account with this email. Switch to <a href="#" style="color:var(--teal);font-weight:600" onclick="gateMode(\'login\');return false">Sign in</a> to log in, then your membership will pick up from there.</div>';
       return;
     }
     if (res.data && res.data.session) {
