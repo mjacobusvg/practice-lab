@@ -2199,8 +2199,26 @@ existed. The behaviour that survives is conditional: no picker at one interview,
 at two or more.
 
 **Applied as a test, before adding a control:** does this decision change what the clinician
-does next? If yes, show it. If no, decide it and stay quiet. And before adding an explanation:
-is the reader going to need this every time, or only once?
+does next? If yes, show it. If no, decide it and stay quiet.
+
+### The same rule for explanations, which have two levels and not one
+
+An explanation can be load-bearing without being load-bearing EVERY TIME. Collapsing those is how
+a product ends up making people reread its internal contract forever.
+
+| | |
+|---|---|
+| **Persistent** | One line, the reassurance itself. "Questions only. Unanswered items never become part of the clinical record." |
+| **On first encounter, and on create or import** | The full explanation, once the question is actually live in their head. "This is interview scaffolding, not patient documentation. Only answers you enter become encounter material; unanswered questions are excluded from Draft, Audit, and Framework." |
+
+**Trigger it on first use of the feature, not only on "new".** A clinician may well meet the
+interview editor by editing the supplied one rather than creating their own, and the question
+"if I paste my whole evaluation in here, will this treat all of it as something I assessed?"
+arrives at first contact either way.
+
+**And keep implementation language out of the persistent copy.** "The whole structure is removed
+when you Draft" describes machinery the clinician should not have to hold in order to trust the
+thing. The one-line version states the guarantee; the fuller version states the mechanism, once.
 
 ## 33. This document is intentionally incomplete
 

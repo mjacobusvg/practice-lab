@@ -395,12 +395,12 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
   });
 })();
 </script>
-<script src="/interview-library.js?v=ambient-189-sub"></script>
-<script src="/rx-vocabulary.js?v=ambient-189-sub"></script>
-<script src="/rx-detect.js?v=ambient-189-sub"></script>
-<script src="/rx-grounding.js?v=ambient-189-sub"></script>
-<script src="/rx-clinical-reference.js?v=ambient-189-sub"></script>
-<script src="/note-engine-practice.js?v=ambient-189-sub"></script>
+<script src="/interview-library.js?v=ambient-190-sub"></script>
+<script src="/rx-vocabulary.js?v=ambient-190-sub"></script>
+<script src="/rx-detect.js?v=ambient-190-sub"></script>
+<script src="/rx-grounding.js?v=ambient-190-sub"></script>
+<script src="/rx-clinical-reference.js?v=ambient-190-sub"></script>
+<script src="/note-engine-practice.js?v=ambient-190-sub"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -568,7 +568,8 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
           <label style="display:block;text-transform:none;font-weight:400;letter-spacing:0;color:var(--cream-dim);font-size:.82rem;margin-bottom:4px">What do you want to call this interview?</label>
           <input type="text" id="interview-name" maxlength="80" placeholder="Adult ADHD evaluation" style="width:100%;max-width:380px;margin-bottom:9px">
           <textarea id="interview-text" style="min-height:220px;width:100%" placeholder="Paste the evaluation you already use, or write one here. One question per line. Blank lines and short ALL-CAPS or Title-Case headings (Developmental history, Current symptoms, Impairment and settings, Differential and context, Collateral) keep it readable in the working note — it loads exactly as you write it."></textarea>
-          <div class="hint" style="margin-top:5px;line-height:1.45">These are questions to ask, not a record of asking them. Nothing here reaches the note, the audit or the Framework until you type an answer under it, and the whole structure is removed when you Draft.</div>
+          <div class="hint" id="interview-contract" style="display:none;margin-top:7px;line-height:1.5;padding:9px 11px;border-left:2px solid #6ea8fe;background:rgba(110,168,254,.07);border-radius:0 6px 6px 0">This is interview scaffolding, not patient documentation. Only answers you enter become encounter material; unanswered questions are excluded from Draft, Audit, and Framework.</div>
+          <div class="hint" style="margin-top:5px;line-height:1.45">Questions only. Unanswered items never become part of the clinical record.</div>
           <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
             <button class="btn-mini" type="button" id="interview-save">Save my interview</button>
             <button class="btn-mini" type="button" id="interview-cancel">Cancel</button>
@@ -768,7 +769,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-189-sub</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-190-sub</span></div>
 </div>
 </div>
 
@@ -9190,6 +9191,9 @@ function tbpVlWatchSources(){
 // clutter, a choice between three is the clinician's to make. Removing a meaningful decision is
 // not a simplification, it is the product guessing.
 var TBP_IV_SEL_KEY = 'tbp_interview_selected';
+// Whether this clinician has met the interview editor before. Drives how much of the scaffolding
+// contract is spelled out; see tbpIvOpenEditor.
+var TBP_IV_SEEN_KEY = 'tbp_interview_editor_seen';
 function tbpIvRestoreSelection(){
   var L = tbpIvLib(); if(!L) return;
   var want = null;
@@ -9242,6 +9246,22 @@ function tbpIvOpenEditor(key){
   // theirs to delete.
   if(del) del.style.display = e ? '' : 'none';
   if(msg) msg.innerHTML = '';
+  // THE CONTRACT, explained when they are likely to wonder about it and not after.
+  //
+  // "If I paste my whole evaluation in here, is this going to treat all of it as something I
+  // assessed?" is the question a clinician asks the first time they meet this editor and when
+  // they bring their own questions in. It is not a question they ask on the ninth edit, and the
+  // paragraph becomes visual tax once the model is understood. The compact line below stays.
+  //
+  // Not tied to "new interview" alone: the first encounter with this feature may well be editing
+  // the supplied Think Beyond interview rather than creating one.
+  var contract = document.getElementById('interview-contract');
+  if(contract){
+    var firstEver = false;
+    try { firstEver = !localStorage.getItem(TBP_IV_SEEN_KEY); } catch(e){ firstEver = true; }
+    contract.style.display = (firstEver || key === null) ? '' : 'none';
+    try { localStorage.setItem(TBP_IV_SEEN_KEY, '1'); } catch(e){}
+  }
   ed.style.display = '';
   nm.focus();
 }
