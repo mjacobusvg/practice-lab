@@ -740,5 +740,33 @@ test('the rules still build with no opts at all', () => {
   assert.ok(G.groundingRules(['interaction'], []).length > 0);
 });
 
+// ---- an undocumented patient characteristic is not supplied either -------------------------
+// The weight rule's sibling, found in the same live run. The note stated no sex. The answer
+// called the patient "he" throughout, then quoted a thrombocytopenia threshold of 110 mcg/mL in
+// females and 135 in males. A wrong guess puts the practical ceiling 25 mcg/mL too high.
+['dosing', 'interaction', 'warnings'].forEach((cls) => {
+  test(`characteristics are not supplied for a ${cls} question either`, () => {
+    const r = G.groundingRules([cls], []);
+    assert.ok(/DO NOT SUPPLY A PATIENT CHARACTERISTIC THE ENCOUNTER DOES NOT DOCUMENT/.test(r));
+  });
+});
+
+test('it names the characteristics that gate labeled figures', () => {
+  const r = G.groundingRules(['dosing'], []);
+  assert.ok(/Sex, age, pregnancy/.test(r));
+  assert.ok(/renal and hepatic function/.test(r));
+});
+
+test('a two-sided threshold must be given on both sides, with what decides it', () => {
+  const r = G.groundingRules(['dosing'], []);
+  assert.ok(/give BOTH sides/.test(r));
+  assert.ok(/name which characteristic decides it/.test(r));
+});
+
+// Same posture as the weight rule: name the gap, do not refuse the question.
+test('and naming the missing input is still the useful answer', () => {
+  assert.ok(/Naming the missing input is useful/.test(G.groundingRules(['dosing'], [])));
+});
+
 console.log(`\n${checks - failures}/${checks} passed`);
 if (failures) { console.error(`${failures} FAILED`); process.exit(1); }

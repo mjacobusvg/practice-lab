@@ -594,6 +594,21 @@
       }
       lines.push('');
     }
+    lines.push('DO NOT SUPPLY A PATIENT CHARACTERISTIC THE ENCOUNTER DOES NOT DOCUMENT. Weight is');
+    lines.push('the one with arithmetic attached, and it is not the only one. Sex, age, pregnancy');
+    lines.push('status, renal and hepatic function all gate labeled figures, and a label threshold');
+    lines.push('that differs between two groups is not resolved by guessing which group this');
+    lines.push('patient is in.');
+    lines.push('');
+    lines.push('Observed: an answer referred to a patient as "he" throughout a note that never');
+    lines.push('stated a sex, then cited a thrombocytopenia threshold of 110 mcg/mL in females and');
+    lines.push('135 in males. Had the guess been wrong, the practical ceiling handed to the');
+    lines.push('clinician was 25 mcg/mL too high.');
+    lines.push('');
+    lines.push('So: write "the patient" or "they" when the encounter does not say, give BOTH sides');
+    lines.push('of a characteristic-dependent threshold, and name which characteristic decides it.');
+    lines.push('Naming the missing input is useful. Guessing it and carrying on is not.');
+    lines.push('');
     lines.push('SHOW THE INPUTS FOR ANY FIGURE YOU CALCULATE. A computed number is not covered by');
     lines.push('the evidence above, because the evidence contains its inputs and not the result.');
     lines.push('One answer called 72 mg/day "one 18 mg increment above the current 36 mg", which is');

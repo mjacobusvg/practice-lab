@@ -822,3 +822,25 @@ arithmetic is what makes an error like that visible rather than authoritative. C
 120 mg/day from a documented "60 mg bid" is the same mechanism working correctly, and the three
 cases are indistinguishable from the outside, which is why the rule covers all of them rather
 than naming the bad ones.
+
+## Weight is not the only patient characteristic the model will supply for you
+
+**ENFORCED** (`rx-grounding.js`, `groundingRules`; tests under "an undocumented patient
+characteristic is not supplied either"): a characteristic the encounter does not document is not
+supplied, and a labeled threshold that differs between two groups is given on BOTH sides with the
+characteristic that decides it named.
+
+**Observed, in the run that validated the weight fix.** The note stated no sex. The answer
+referred to the patient as "he" throughout, then cited the divalproex thrombocytopenia threshold
+as 110 mcg/mL in females and 135 in males. The arithmetic and the weight handling were both
+correct; the sex was invented, and that figure is the practical ceiling on titration well before
+the mg/kg maximum is reached. A wrong guess puts it 25 mcg/mL too high.
+
+**Why this generalises past weight.** Weight is simply the characteristic with visible arithmetic
+attached, which is what made it easy to catch. Sex, age, pregnancy status, renal and hepatic
+function all gate labeled figures the same way and leave no arithmetic behind, so the same
+failure in those is harder to see and no less wrong.
+
+**Same posture as everywhere else here:** name the missing input, do not refuse the question.
+"The patient" or "they" where the encounter does not say, both sides of the threshold, and which
+characteristic decides which side applies.
