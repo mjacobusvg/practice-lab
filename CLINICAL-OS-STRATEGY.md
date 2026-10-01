@@ -2096,10 +2096,19 @@ first.
 **The model should not be doing the arithmetic at all.**
 
 A prompt rule saying "do not assume a weight, and show your arithmetic" is a useful backstop and
-nothing more. Oct 2026 measured its reliability directly: the rule held in roughly two runs of
-three, and in the run where it did not, the answer was fluent and confident. One answer called
-72 mg/day "one 18 mg increment above the current 36 mg", which is two increments. Another
-multiplied in a weight nobody recorded.
+nothing more.
+
+In live testing the prompt-only rule failed in 1 of 3 observed runs, including a fluent,
+confident answer that invented the missing patient parameter. **That is sufficient evidence that
+prompt compliance cannot serve as the enforcement layer for deterministic clinical
+calculations.** It is deliberately NOT stated as a reliability rate: n=3, and "2 of 3" would read
+as a measurement nobody made. The architectural claim does not need one. One observed silent
+failure establishes that the model cannot be the enforcement mechanism, and whether the true rate
+is 67 percent or 99 percent does not change what has to be built.
+
+Other failures of the same class in the same session: an answer called 72 mg/day "one 18 mg
+increment above the current 36 mg", which is two increments; another chose which side of a
+sex-dependent lab threshold to quote by guessing a sex the note never stated.
 
 When the rule is deterministic instead, documented weight -> normalise units -> compute the
 labeled weight-based ceiling, there is nothing left to comply with. The model receives:
@@ -2114,6 +2123,27 @@ and explains it. Same approach eventually for renal dosing, age cutoffs, QTc thr
 ceilings and CrCl/eGFR rules. **Deterministic where deterministic. Reasoning where reasoning is
 actually required.** The model explains a result; it does not invent the inputs and does not
 perform the safety-critical calculation from scratch.
+
+### What the Oct 2026 prompt guardrail did and did not do
+
+`ambient-186-sub` added a prompt rule: do not supply a patient characteristic the encounter does
+not document, and give both sides of a threshold that differs between groups. That is worth
+having and it is **not** the architectural solution. It did not solve sex, age, pregnancy, renal
+function or hepatic function in the sense this section means. It made the model more likely to
+notice.
+
+The eventual mechanism, per characteristic, is the one described above and not model vigilance:
+
+| characteristic | eventual mechanism |
+|---|---|
+| age cutoffs | determined from documented age or DOB |
+| renal adjustment | consumes a documented renal value when the claim requires one |
+| pregnancy-specific guidance | depends on documented pregnancy context, or says explicitly that it is unknown |
+| sex-specific thresholds | carries BOTH values until sex is actually documented |
+| weight-based dosing | deterministic unit conversion and calculation in code |
+
+**The prompt rule stays as a backstop. It is not the future engine.** A future session reading
+the guardrail should not conclude this lane is already handled.
 
 ### What Oct 2026 established that led here
 
@@ -2132,6 +2162,11 @@ intelligence. It is the thing that makes integrated intelligence safe to build.
 **NOT BUILT. Recorded as direction only.** Nothing here is authorised by being written down. The
 next session should not read this as a build order, and should not start by structuring a
 patient record.
+
+The question that opens this lane is not "what fields does a patient need?" It is **"what does
+THIS clinical question require, what do we already know, and what actually needs to become
+structured or deterministic to answer it safely and usefully?"** Answering the first question
+builds a mediocre EHR by accident. Answering the second builds the thing.
 
 ## 33. This document is intentionally incomplete
 
