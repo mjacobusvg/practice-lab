@@ -838,3 +838,45 @@ The list of things that were true and irrelevant:
 
 **A gate that fails open is invisible to every instrument downstream of it.** That is the
 finding worth keeping.
+
+## Pass B, clean run: 1 of 14
+
+First uncontaminated 5x run with the classifier fixed, the evidence capture working and
+incomplete runs reported rather than scored. No network failures.
+
+**Concerta:** 72 mg/day in 4 of 5, correct population, citing Study 5 from the clinical trials
+section. **Symbyax:** stable across all 5, attributed to the PAR Health generic labeling with
+the absence of a Symbyax label stated. Effexor XR, Abilify Maintena, quetiapine, clozapine,
+lamotrigine/valproate, sertraline and ziprasidone all consistent and correctly sourced.
+
+### The one finding: a weight-based ceiling multiplied by an invented weight
+
+Case 6 stated `4,200 mg/day` and `4,800 mg/day` as divalproex ceilings. The label gives
+60 mg/kg/day. 4,200 is 70 kg and 4,800 is 80 kg. **No weight appears anywhere in the note.**
+
+This is NOT the same as the ziprasidone case, which the harness correctly classified as
+arithmetic rather than recall: 60 mg bid to 120 mg/day uses a number the clinician documented.
+Here the model supplied the missing input itself. If the patient is 50 kg the ceiling is 3,000
+and the answer overstates available headroom by 40 percent.
+
+The answer did frame it as a rough scale ("works out to about 3,000 to 4,000 mg/day for most
+adults"), which is better than asserting a single figure. It is still a patient-specific number
+derived from a patient parameter nobody recorded.
+
+### The category this belongs to, now seen three times
+
+A DERIVED claim over correctly retrieved evidence, with no verification of its own:
+
+| case | retrieved correctly | derived | wrong because |
+|---|---|---|---|
+| Concerta increments | 36 mg current, 72 mg ceiling | "one 18 mg increment above" | 36 to 54 to 72 is two |
+| ziprasidone daily total | 60 mg bid, 160 mg ceiling | 120 mg/day | nothing, the input was documented |
+| divalproex ceiling | 60 mg/kg/day | 4,200 mg/day | the weight was never documented |
+
+Grounding does not touch any of these, because everything they reason over was retrieved
+correctly. The second one is fine. The first and third are not, and they look identical to it.
+
+**OPEN.** Whether arithmetic over retrieved figures needs its own verification, and whether a
+weight-based ceiling must refuse to resolve to an absolute number without a documented weight,
+are separate questions from grounding. Nothing built in this audit addresses them. Do not assume
+the next clean Pass B run covers it.
