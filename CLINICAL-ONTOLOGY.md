@@ -767,3 +767,37 @@ boundary (`tests/rx-grounding.test.js`, "an age range ending at 65 is not geriat
 distinction, not a population one, and `splitByPopulation` does not address it. Whether
 phase-of-treatment and indication-scoped figures need the same structural separation is an open
 fork. Do not assume the population split covers it; it does not.
+
+## A weight-based ceiling is not a number until someone supplies a weight
+
+**Identity:** `60 mg/kg/day` is a complete labeled ceiling. `4,200 mg/day` is a different kind
+of claim: a patient-specific dose derived from a patient parameter. The two are not
+interchangeable, and the second one is only as good as its input.
+
+**Source / authority:** the mg/kg figure's source is the label. The weight's source is the
+clinician. Where the clinician supplied no weight, the derived number has no source at all.
+
+**ENFORCED** (`rx-grounding.js`, `documentedWeight` / `groundingRules`; tests in
+`tests/rx-grounding.test.js` under "a weight-based ceiling needs a documented weight"): the
+weight is read from this encounter's material. When one is documented, a mg/kg ceiling may be
+converted and the weight used must be stated in the same sentence. When none is documented, the
+ceiling is given per kilogram, the missing weight is named, and the model may not multiply in an
+assumed weight **or** offer a range "for a typical adult" instead.
+
+**Why the hedge is also forbidden.** Pass B's answer said "works out to about 3,000 to 4,000
+mg/day for most adults", which reads as careful and is still a patient-specific ceiling built
+from a number nobody recorded. A reader cannot tell it from a documented one. 60 mg/kg/day is
+4,200 mg/day at 70 kg and 3,000 mg/day at 50 kg, and the error runs in the permissive direction,
+which is the direction in which a dose ceiling causes harm.
+
+**This does not make the answer useless.** Naming the weight as the one missing input is the
+useful answer: it is a single thing to go look up, which is the attention test this product is
+judged against. Refusing the question would not be.
+
+**ENFORCED: a calculated figure must show its inputs.** The evidence block contains a
+computation's inputs, never its result, so no grounding check can reach it. One answer called
+72 mg/day "one 18 mg increment above the current 36 mg", which is two increments. Requiring the
+arithmetic is what makes an error like that visible rather than authoritative. Computing
+120 mg/day from a documented "60 mg bid" is the same mechanism working correctly, and the three
+cases are indistinguishable from the outside, which is why the rule covers all of them rather
+than naming the bad ones.

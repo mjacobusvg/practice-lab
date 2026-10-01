@@ -473,7 +473,28 @@
   // Two halves, and the second is the one that matters. Telling a model to use the evidence is
   // easy. Telling it what to do when the evidence is MISSING is what stops it quietly answering
   // from memory instead, which is the original defect.
-  function groundingRules(classes, gaps) {
+
+  // ── DOCUMENTED WEIGHT ─────────────────────────────────────────────────────────────────────
+  // A weight-based ceiling is not a number until someone supplies a weight. Pass B answered
+  // "4,200 mg/day" and "4,800 mg/day" as divalproex ceilings, which are 60 mg/kg/day times 70 kg
+  // and 80 kg. No weight appeared anywhere in the note. At 50 kg the real ceiling is 3,000, so
+  // the answer overstated available headroom by forty percent using a patient parameter nobody
+  // recorded.
+  //
+  // This is not the same as computing 120 mg/day from a documented "60 mg bid". That input was
+  // written down. The difference is whether the clinician supplied the number or the model did.
+  function documentedWeight(text) {
+    // Strip mg/kg expressions FIRST. "60 mg/kg/day" contains "kg" and would otherwise read as a
+    // documented weight, which would defeat the entire check on exactly the answers it is for.
+    var t = String(text || '').replace(/\d[\d.,]*\s*(?:mg|mcg|g)\s*\/\s*kg/gi, ' ');
+    var m = t.match(/\b(\d{2,3}(?:\.\d)?)\s*(kg|kgs|kilo|kilos|kilogram|kilograms)\b/i);
+    if (m) return m[1] + ' kg';
+    m = t.match(/\b(\d{2,3}(?:\.\d)?)\s*(lb|lbs|pound|pounds)\b/i);
+    if (m) return m[1] + ' lb';
+    return null;
+  }
+
+  function groundingRules(classes, gaps, opts) {
     var lines = [];
     lines.push('=== MEDICATION FACTS: ANSWER THE CLINICIAN, USING THE EVIDENCE ===');
     lines.push('');
@@ -522,6 +543,32 @@
     lines.push('     labeled ceiling, and I have no sourced figure for how far" rather than naming a');
     lines.push('     number you cannot point at. Describing the practice is useful. Inventing its');
     lines.push('     number is the defect.');
+    lines.push('');
+    // ── weight-based ceilings ──
+    var weight = (opts && opts.weight) || null;
+    if (!classes || classes.indexOf('dosing') > -1) {
+      lines.push('A WEIGHT-BASED CEILING IS NOT A NUMBER UNTIL SOMEONE SUPPLIES A WEIGHT.');
+      if (weight) {
+        lines.push('This encounter documents a weight of ' + weight + '. You may convert a mg/kg');
+        lines.push('ceiling to a daily dose using it, and when you do, state the weight you used in');
+        lines.push('the same sentence so the clinician can see which number the answer rests on.');
+      } else {
+        lines.push('THIS ENCOUNTER DOCUMENTS NO WEIGHT. So if the labeled ceiling is given per');
+        lines.push('kilogram, give it per kilogram and say the weight is not documented. Do NOT');
+        lines.push('multiply it by a weight you assumed, and do NOT offer a range for "a typical');
+        lines.push('adult": both present a patient-specific ceiling derived from a number nobody');
+        lines.push('recorded, and a reader cannot tell it from a documented one. 60 mg/kg/day is');
+        lines.push('4,200 mg/day at 70 kg and 3,000 mg/day at 50 kg, and being wrong in the');
+        lines.push('permissive direction is how a dose ceiling causes harm. Naming the weight as');
+        lines.push('the missing input is the useful answer here: it is one thing to go look up.');
+      }
+      lines.push('');
+    }
+    lines.push('SHOW THE INPUTS FOR ANY FIGURE YOU CALCULATE. A computed number is not covered by');
+    lines.push('the evidence above, because the evidence contains its inputs and not the result.');
+    lines.push('One answer called 72 mg/day "one 18 mg increment above the current 36 mg", which is');
+    lines.push('two increments, not one. Stating the arithmetic is what makes that visible instead');
+    lines.push('of authoritative.');
     lines.push('');
     lines.push('NAME THE CATEGORY OF EVERY NUMBER YOU GIVE. These are different facts and presenting one');
     lines.push('as another is the specific error this evidence exists to prevent:');
@@ -636,6 +683,7 @@
     populationTaggedFigures: populationTaggedFigures,
     populationOf: populationOf, buildReferenceBlock: buildReferenceBlock,
               groundingRules: groundingRules,
+    documentedWeight: documentedWeight,
               summarizeTrail: summarizeTrail, evidenceGaps: evidenceGaps,
               SECTION_CAP: SECTION_CAP };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;

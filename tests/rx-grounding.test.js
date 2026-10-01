@@ -635,5 +635,70 @@ test('and the model is told what to say instead of a number it cannot source', (
   });
 });
 
+// ---- a weight-based ceiling needs a documented weight --------------------------------------
+// Pass B answered "4,200 mg/day" and "4,800 mg/day" as divalproex ceilings. The label gives
+// 60 mg/kg/day; those are 70 kg and 80 kg. No weight appeared in the note. At 50 kg the ceiling
+// is 3,000, so the answer overstated headroom by forty percent from a parameter nobody recorded.
+
+test('no weight in the note means no weight', () => {
+  assert.strictEqual(G.documentedWeight('Currently taking divalproex ER 1000 mg nightly.'), null);
+  assert.strictEqual(G.documentedWeight('Taking 20 mg daily.'), null);
+  assert.strictEqual(G.documentedWeight(''), null);
+  assert.strictEqual(G.documentedWeight(null), null);
+});
+
+// THE TRAP. "60 mg/kg/day" contains "kg". Reading that as a documented weight would defeat the
+// check on precisely the answers it exists for.
+test('a mg/kg ceiling is not a documented weight', () => {
+  assert.strictEqual(G.documentedWeight('The labeled maximum is 60 mg/kg/day.'), null);
+  assert.strictEqual(G.documentedWeight('up to 2 mg/kg/day, not to exceed 100 mg'), null);
+});
+
+test('a weight the clinician wrote down is found, in either unit', () => {
+  assert.strictEqual(G.documentedWeight('Weight 82 kg. divalproex ER 1000 mg nightly.'), '82 kg');
+  assert.strictEqual(G.documentedWeight('Wt 154 lbs, stable.'), '154 lb');
+  assert.strictEqual(G.documentedWeight('Max 60 mg/kg/day; weight 70 kg today.'), '70 kg',
+    'a mg/kg figure in the same note must not hide a real weight');
+});
+
+const NO_WEIGHT = G.groundingRules(['dosing'], [], {});
+const WITH_WEIGHT = G.groundingRules(['dosing'], [], { weight: '82 kg' });
+
+test('with no weight documented, the model may not multiply one in', () => {
+  assert.ok(/THIS ENCOUNTER DOCUMENTS NO WEIGHT/.test(NO_WEIGHT));
+  assert.ok(/Do NOT/.test(NO_WEIGHT) && /multiply it by a weight you assumed/.test(NO_WEIGHT));
+});
+
+// The specific escape hatch that produced the finding: the answer hedged as "for a typical
+// adult", which is still a patient-specific ceiling built from an invented number.
+test('and may not offer a typical-adult range instead', () => {
+  assert.ok(/typical/.test(NO_WEIGHT));
+});
+
+test('it is told to name the weight as the missing input, not to refuse the question', () => {
+  assert.ok(/give it per kilogram/.test(NO_WEIGHT));
+  assert.ok(/one thing to go look up/.test(NO_WEIGHT),
+    'the useful answer names what is missing; it does not stop at cannot say');
+});
+
+test('with a weight documented, the conversion is allowed and must be shown', () => {
+  assert.ok(/documents a weight of 82 kg/.test(WITH_WEIGHT));
+  assert.ok(!/DOCUMENTS NO WEIGHT/.test(WITH_WEIGHT));
+  assert.ok(/state the weight you used/.test(WITH_WEIGHT));
+});
+
+// Same category, caught by the same rule: 72 mg/day called "one 18 mg increment above 36 mg".
+test('any calculated figure must show its inputs', () => {
+  [NO_WEIGHT, WITH_WEIGHT].forEach((r) => {
+    assert.ok(/SHOW THE INPUTS FOR ANY FIGURE YOU CALCULATE/.test(r));
+    assert.ok(/the evidence contains its inputs and not the result/.test(r));
+  });
+});
+
+test('the rules still build with no opts at all', () => {
+  assert.ok(G.groundingRules(['dosing'], []).length > 0);
+  assert.ok(G.groundingRules(['interaction'], []).length > 0);
+});
+
 console.log(`\n${checks - failures}/${checks} passed`);
 if (failures) { console.error(`${failures} FAILED`); process.exit(1); }
