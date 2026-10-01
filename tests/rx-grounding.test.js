@@ -684,8 +684,9 @@ test('the rules state the weight in pounds first', () => {
   assert.ok(/documents a weight of 181 lb \(82 kg\)/.test(r));
   assert.ok(/GIVE THE WEIGHT IN POUNDS FIRST/.test(r));
 });
-test('and the no-weight illustration is in pounds first too', () => {
-  assert.ok(/at 155 lb \(70 kg\)/.test(G.groundingRules(['dosing'], [], {})));
+test('pounds-first still governs any weight the answer does state', () => {
+  const r = G.groundingRules(['dosing'], [], { weight: G.documentedWeight('Wt 154 lbs.') });
+  assert.ok(/documents a weight of 154 lb \(69.9 kg\)/.test(r));
 });
 // An older caller passing a bare string must not break.
 test('a plain string weight still works', () => {
@@ -700,25 +701,28 @@ test('with no weight documented, the gap is named', () => {
   assert.ok(/say the/.test(NO_WEIGHT) && /weight is not documented/.test(NO_WEIGHT));
 });
 
-// But conditional illustration is ALLOWED, and the first version of this rule wrongly banned it.
-// "At 70 kg that would be 4,200 mg/day; at 60 kg, 3,600" names the weight each figure rests on,
-// claims nothing about this patient, and shows why the missing number is worth going to get.
-test('working it out at an explicitly named weight is permitted', () => {
-  assert.ok(/You MAY work it out at a weight you name explicitly/.test(NO_WEIGHT));
-  assert.ok(/nothing in it claims to be THIS patient/.test(NO_WEIGHT));
+// Hypothetical weights are not OFFERED. Two separate judgements got collapsed once already:
+// "at 70 kg that would be 4,200" is not a safety violation, and the detector must not accuse it
+// of being one -- but a patient-specific question does not want figures belonging to imaginary
+// patients either. Not wrong, not wanted. Examples only when asked for.
+test('the answer stops at naming the missing weight', () => {
+  assert.ok(/Say that, and stop/.test(NO_WEIGHT));
+  assert.ok(/cannot convert that/.test(NO_WEIGHT));
+});
+test('hypothetical weights are not volunteered', () => {
+  assert.ok(/Do NOT work it out at weights you pick/.test(NO_WEIGHT));
+  assert.ok(/imaginary patients/.test(NO_WEIGHT));
+  assert.ok(/only if the clinician asks for them/.test(NO_WEIGHT));
 });
 
-// The real line: whether the weight the figure rests on is stated beside it.
-test('an unconditional range for "most adults" is still forbidden', () => {
+test('and an unconditional range for "most adults" is still forbidden', () => {
   assert.ok(/for most adults/.test(NO_WEIGHT));
-  assert.ok(/is not conditional at/.test(NO_WEIGHT));
-  assert.ok(/whether the weight the/.test(NO_WEIGHT) && /figure rests on is stated beside it/.test(NO_WEIGHT));
+  assert.ok(/is not conditional at all/.test(NO_WEIGHT));
 });
 
-test('it is told to name the weight as the missing input, not to refuse the question', () => {
+test('the per-kilogram ceiling is still given, so the answer is not a refusal', () => {
   assert.ok(/Give the ceiling per kilogram/.test(NO_WEIGHT));
-  assert.ok(/names the one thing to go look up/.test(NO_WEIGHT),
-    'refusing to give any figure is the weaker answer, not the safer one');
+  assert.ok(/60 mg\/kg\/day/.test(NO_WEIGHT), 'the labeled figure is the answer; only the conversion is blocked');
 });
 
 test('with a weight documented, the conversion is allowed and must be shown', () => {

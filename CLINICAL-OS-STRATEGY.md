@@ -2024,6 +2024,115 @@ record-extraction path. None of these is blocked; none should be skipped.
 
 ---
 
+## 39. The question determines what context matters (designed Oct 2026, NOT built)
+
+The direction, in one sentence: **when a clinician asks Discern something, it works out which
+parts of the patient's context could materially affect the answer, pulls those facts from the
+encounter or record, says what is known and what is missing, retrieves the relevant clinical
+evidence, runs the deterministic parts as code, and reasons across the rest.**
+
+### What this is NOT
+
+It is NOT "first structure sex, age, pregnancy, renal function, hepatic function, weight, labs,
+conditions, allergies, every symptom and every vital, and only then can Discern be intelligent."
+That is a six-week ontology project standing between here and any improvement, and it is the
+wrong shape besides.
+
+The medication work already taught the better pattern. A note that says in plain words
+"Adderall XR 20 mg every morning" has answered the identity question a dose lookup asks. Making
+the clinician ratify a medication list first was exposing an internal state requirement as
+though it were a clinical one. The same holds for everything else.
+
+`Wt 198 lb` is enough to calculate with for this question. It does not need a modal saying
+"please confirm patient weight: 198 lb." `Creatinine 1.7, eGFR 42` can be used. `Pregnant, 14
+weeks` can be used. `History of cirrhosis` can be used. The system has to preserve where each one
+came from and not invent what is absent. That is the whole requirement.
+
+### Three categories, and they are the medication lesson generalised
+
+1. **Canonical clinical fact.** Entered or confirmed into structured state. Persisted, reused,
+   acted on later.
+2. **Query-scoped documented fact.** Explicit in today's note or records, sufficient to reason
+   from for THIS question, not promoted into canonical state. Reading is not confirming.
+3. **Missing or ambiguous required fact.** Something the answer materially depends on that is
+   absent or in conflict. Named, never filled in.
+
+### The clinical question generates requirements
+
+This is the part today's session actually clarified, and it is the piece the strategy did not
+have. The existing doc says to use deterministic tools where possible and call reasoning only
+where ambiguity requires it. That was written about CAPABILITY ROUTING. It applies equally to
+PATIENT CONTEXT REQUIREMENTS, and that is the missing half.
+
+```
+Question:  "What is the max divalproex dose?"
+
+Claim:     maximum divalproex dose
+Requires:  exact product / formulation
+           indication
+           weight, if the relevant labeled maximum is weight-based
+           age / population, if dosing differs
+
+Resolve:   Divalproex ER  -> documented
+           Bipolar I      -> documented
+           Weight         -> 198 lb, deterministically converted to 89.8 kg
+           Age            -> documented
+
+Derive:    60 mg/kg/day x 89.8 kg = 5,388 mg/day      [computed in code]
+```
+
+The requirements are question-dependent, not a fixed list. "Can I increase the divalproex?"
+makes current dose and formulation, indication, response, adverse effects, weight, level,
+CBC and platelets, LFTs, pregnancy considerations, other medications, relevant conditions, renal
+and hepatic context, age and prior dose history material. "Can I increase the Adderall?" makes a
+different set material: formulation, current dose, other stimulants, CYP2D6 inhibitors, BP and
+HR, sleep and appetite, cardiac history, substance use where relevant, adverse effects, response,
+age. A stimulant question, a lithium question, a pregnancy question and an antipsychotic question
+need different context, which is why a universal structured record is the wrong thing to build
+first.
+
+### Deterministic calculations are not left to model compliance
+
+**The model should not be doing the arithmetic at all.**
+
+A prompt rule saying "do not assume a weight, and show your arithmetic" is a useful backstop and
+nothing more. Oct 2026 measured its reliability directly: the rule held in roughly two runs of
+three, and in the run where it did not, the answer was fluent and confident. One answer called
+72 mg/day "one 18 mg increment above the current 36 mg", which is two increments. Another
+multiplied in a weight nobody recorded.
+
+When the rule is deterministic instead, documented weight -> normalise units -> compute the
+labeled weight-based ceiling, there is nothing left to comply with. The model receives:
+
+```
+DOCUMENTED WEIGHT     198 lb (89.8 kg)
+LABEL RULE            Maximum: 60 mg/kg/day
+DERIVED CALCULATION   60 x 89.8 = 5,388 mg/day
+```
+
+and explains it. Same approach eventually for renal dosing, age cutoffs, QTc thresholds, lab
+ceilings and CrCl/eGFR rules. **Deterministic where deterministic. Reasoning where reasoning is
+actually required.** The model explains a result; it does not invent the inputs and does not
+perform the safety-critical calculation from scratch.
+
+### What Oct 2026 established that led here
+
+Every defect found in the medication audit was the system filling a gap silently rather than
+naming it. A dosing question was not recognised as one, so nothing was retrieved and no gap was
+reported. A weight nobody documented became a patient-specific ceiling. A sex nobody documented
+decided which side of a two-sided lab threshold to quote.
+
+The lesson for this lane: **a system that reasons over more context while silently filling its
+gaps is more dangerous than one that reasons over less.** The inventions get buried deeper and
+the answer reads as better informed. Gap-naming is not a detour on the way to integrated
+intelligence. It is the thing that makes integrated intelligence safe to build.
+
+### Status
+
+**NOT BUILT. Recorded as direction only.** Nothing here is authorised by being written down. The
+next session should not read this as a build order, and should not start by structuring a
+patient record.
+
 ## 33. This document is intentionally incomplete
 
 This is a starting point.

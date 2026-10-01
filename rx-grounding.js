@@ -579,18 +579,19 @@
         lines.push('THIS ENCOUNTER DOCUMENTS NO WEIGHT. Give the ceiling per kilogram and say the');
         lines.push('weight is not documented.');
         lines.push('');
-        lines.push('You MAY work it out at a weight you name explicitly, in POUNDS first with the');
-        lines.push('kilograms in parentheses: "at 155 lb (70 kg) that is 4,200 mg/day, at 110 lb');
-        lines.push('(50 kg) it is 3,000" shows the clinician how much the missing');
-        lines.push('number matters, and nothing in it claims to be THIS patient\'s ceiling. That is');
-        lines.push('often the most useful answer: it names the one thing to go look up and says why');
-        lines.push('the trip is worth it.');
+        lines.push('Say that, and stop. The whole answer is: "the labeled maximum for acute mania is');
+        lines.push('60 mg/kg/day; no weight is documented for this patient, so I cannot convert that');
+        lines.push('into a patient-specific mg/day ceiling."');
         lines.push('');
-        lines.push('What you may NOT do is present any figure as this patient\'s. "Works out to about');
-        lines.push('3,000 to 4,000 mg/day for most adults" reads as careful and is not conditional at');
-        lines.push('all: it asserts a range for this patient from a weight nobody recorded, and the');
-        lines.push('reader cannot tell it from a documented one. The test is whether the weight the');
-        lines.push('figure rests on is stated beside it. If it is not, do not give the figure.');
+        lines.push('Do NOT work it out at weights you pick. A patient-specific question does not want');
+        lines.push('figures belonging to imaginary patients, and "at 70 kg it would be 4,200, at 50 kg');
+        lines.push('3,000" clutters the answer with two numbers that are not about anyone in the');
+        lines.push('room. Give examples only if the clinician asks for them.');
+        lines.push('');
+        lines.push('And never present a figure as this patient\'s. "Works out to about 3,000 to 4,000');
+        lines.push('mg/day for most adults" reads as careful and is not conditional at all: it asserts');
+        lines.push('a range for this patient from a weight nobody recorded, and a reader cannot tell');
+        lines.push('it from a documented one.');
       }
       lines.push('');
     }
