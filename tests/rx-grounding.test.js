@@ -655,10 +655,41 @@ test('a mg/kg ceiling is not a documented weight', () => {
 });
 
 test('a weight the clinician wrote down is found, in either unit', () => {
-  assert.strictEqual(G.documentedWeight('Weight 82 kg. divalproex ER 1000 mg nightly.'), '82 kg');
-  assert.strictEqual(G.documentedWeight('Wt 154 lbs, stable.'), '154 lb');
-  assert.strictEqual(G.documentedWeight('Max 60 mg/kg/day; weight 70 kg today.'), '70 kg',
+  assert.strictEqual(G.documentedWeight('Weight 82 kg. divalproex ER 1000 mg nightly.').kg, 82);
+  assert.strictEqual(G.documentedWeight('Wt 154 lbs, stable.').lb, 154);
+  assert.strictEqual(G.documentedWeight('Max 60 mg/kg/day; weight 70 kg today.').kg, 70,
     'a mg/kg figure in the same note must not hide a real weight');
+});
+
+// BOTH units, whichever was written. Labels dose per kilogram and every scale in the building
+// reads pounds, so handing a clinician only the kilogram figure makes them convert it mid-visit.
+test('a weight in kg comes back with its pounds, and pounds first', () => {
+  const w = G.documentedWeight('Weight 82 kg.');
+  assert.strictEqual(w.lb, 181);
+  assert.strictEqual(w.text, '181 lb (82 kg)');
+});
+test('a weight in pounds comes back with its kilograms, for the mg/kg arithmetic', () => {
+  const w = G.documentedWeight('Wt 154 lbs, stable.');
+  assert.strictEqual(w.kg, 69.9);
+  assert.strictEqual(w.text, '154 lb (69.9 kg)');
+});
+test('the conversions round-trip', () => {
+  assert.strictEqual(G.kgToLb(70), 154);
+  assert.strictEqual(G.lbToKg(154), 69.9);
+  assert.strictEqual(G.kgToLb(50), 110);
+});
+
+test('the rules state the weight in pounds first', () => {
+  const r = G.groundingRules(['dosing'], [], { weight: G.documentedWeight('Weight 82 kg.') });
+  assert.ok(/documents a weight of 181 lb \(82 kg\)/.test(r));
+  assert.ok(/GIVE THE WEIGHT IN POUNDS FIRST/.test(r));
+});
+test('and the no-weight illustration is in pounds first too', () => {
+  assert.ok(/at 155 lb \(70 kg\)/.test(G.groundingRules(['dosing'], [], {})));
+});
+// An older caller passing a bare string must not break.
+test('a plain string weight still works', () => {
+  assert.ok(/documents a weight of 82 kg/.test(G.groundingRules(['dosing'], [], { weight: '82 kg' })));
 });
 
 const NO_WEIGHT = G.groundingRules(['dosing'], [], {});
@@ -691,9 +722,9 @@ test('it is told to name the weight as the missing input, not to refuse the ques
 });
 
 test('with a weight documented, the conversion is allowed and must be shown', () => {
-  assert.ok(/documents a weight of 82 kg/.test(WITH_WEIGHT));
+  assert.ok(/documents a weight of/.test(WITH_WEIGHT));
   assert.ok(!/DOCUMENTS NO WEIGHT/.test(WITH_WEIGHT));
-  assert.ok(/state the weight you used/.test(WITH_WEIGHT));
+  assert.ok(/state the weight you/.test(WITH_WEIGHT) && /used in the same sentence/.test(WITH_WEIGHT));
 });
 
 // Same category, caught by the same rule: 72 mg/day called "one 18 mg increment above 36 mg".

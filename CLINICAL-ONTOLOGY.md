@@ -800,6 +800,14 @@ is the direction in which a dose ceiling causes harm.
 **The test is whether the weight a figure rests on is stated beside it.** Refusing to give any
 figure is the weaker answer, not the safer one.
 
+**POUNDS FIRST, kilograms in parentheses, every time.** Labels dose per kilogram and every scale
+in the building reads pounds, so a clinician handed only the kilogram figure converts it
+themselves, mid-visit, while trying to think about a patient. `documentedWeight` returns both
+units whichever one was written down, so "Wt 154 lbs" yields 69.9 kg for the arithmetic and
+"Weight 82 kg" yields 181 lb for the clinician. A conversion the product can do and does not is
+attention taken rather than given back, which is the thesis every surface here is judged
+against.
+
 **The detector does not try to tell those apart, and should not.** A gap is recorded whenever the
 labeled ceiling is per kilogram, this encounter documents no weight, and the answer contains an
 absolute mg/day figure. Its wording is true of the conditional form too: the figure depends on a

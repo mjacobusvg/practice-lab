@@ -483,14 +483,30 @@
   //
   // This is not the same as computing 120 mg/day from a documented "60 mg bid". That input was
   // written down. The difference is whether the clinician supplied the number or the model did.
+  var LB_PER_KG = 2.20462;
+  function kgToLb(kg) { return Math.round(kg * LB_PER_KG); }
+  function lbToKg(lb) { return Math.round((lb / LB_PER_KG) * 10) / 10; }
+
+  // Returns null, or { kg, lb, text, unit }. BOTH units, always, whichever one was written down.
+  // Labels dose in mg/kg and every scale in the building reads pounds, so a clinician handed
+  // only the kilogram figure has to do the conversion themselves, mid-visit, which is the exact
+  // tax this is supposed to remove.
   function documentedWeight(text) {
     // Strip mg/kg expressions FIRST. "60 mg/kg/day" contains "kg" and would otherwise read as a
     // documented weight, which would defeat the entire check on exactly the answers it is for.
     var t = String(text || '').replace(/\d[\d.,]*\s*(?:mg|mcg|g)\s*\/\s*kg/gi, ' ');
     var m = t.match(/\b(\d{2,3}(?:\.\d)?)\s*(kg|kgs|kilo|kilos|kilogram|kilograms)\b/i);
-    if (m) return m[1] + ' kg';
+    if (m) {
+      var kg = parseFloat(m[1]);
+      return { kg: kg, lb: kgToLb(kg), unit: 'kg',
+               text: kgToLb(kg) + ' lb (' + kg + ' kg)' };
+    }
     m = t.match(/\b(\d{2,3}(?:\.\d)?)\s*(lb|lbs|pound|pounds)\b/i);
-    if (m) return m[1] + ' lb';
+    if (m) {
+      var lb = parseFloat(m[1]);
+      return { kg: lbToKg(lb), lb: lb, unit: 'lb',
+               text: lb + ' lb (' + lbToKg(lb) + ' kg)' };
+    }
     return null;
   }
 
@@ -545,19 +561,27 @@
     lines.push('     number is the defect.');
     lines.push('');
     // ── weight-based ceilings ──
-    var weight = (opts && opts.weight) || null;
+    var w = (opts && opts.weight) || null;
+    // Accepts the object documentedWeight returns, or a plain string from an older caller.
+    var weight = w ? (typeof w === 'string' ? { text: w, kg: null, lb: null } : w) : null;
     if (!classes || classes.indexOf('dosing') > -1) {
       lines.push('A WEIGHT-BASED CEILING IS NOT A NUMBER UNTIL SOMEONE SUPPLIES A WEIGHT.');
       if (weight) {
-        lines.push('This encounter documents a weight of ' + weight + '. You may convert a mg/kg');
-        lines.push('ceiling to a daily dose using it, and when you do, state the weight you used in');
-        lines.push('the same sentence so the clinician can see which number the answer rests on.');
+        lines.push('This encounter documents a weight of ' + weight.text + '. You may convert a');
+        lines.push('mg/kg ceiling to a daily dose using it, and when you do, state the weight you');
+        lines.push('used in the same sentence so the clinician can see which number the answer');
+        lines.push('rests on.');
+        lines.push('GIVE THE WEIGHT IN POUNDS FIRST, with the kilograms in parentheses, every time.');
+        lines.push('Labels dose per kilogram and every scale in the building reads pounds, so a');
+        lines.push('clinician handed only the kilogram figure has to convert it themselves while');
+        lines.push('they are trying to think about the patient.');
       } else {
         lines.push('THIS ENCOUNTER DOCUMENTS NO WEIGHT. Give the ceiling per kilogram and say the');
         lines.push('weight is not documented.');
         lines.push('');
-        lines.push('You MAY work it out at a weight you name explicitly: "at 70 kg that is');
-        lines.push('4,200 mg/day, at 50 kg it is 3,000" shows the clinician how much the missing');
+        lines.push('You MAY work it out at a weight you name explicitly, in POUNDS first with the');
+        lines.push('kilograms in parentheses: "at 155 lb (70 kg) that is 4,200 mg/day, at 110 lb');
+        lines.push('(50 kg) it is 3,000" shows the clinician how much the missing');
         lines.push('number matters, and nothing in it claims to be THIS patient\'s ceiling. That is');
         lines.push('often the most useful answer: it names the one thing to go look up and says why');
         lines.push('the trip is worth it.');
@@ -690,6 +714,7 @@
     populationOf: populationOf, buildReferenceBlock: buildReferenceBlock,
               groundingRules: groundingRules,
     documentedWeight: documentedWeight,
+    kgToLb: kgToLb, lbToKg: lbToKg,
               summarizeTrail: summarizeTrail, evidenceGaps: evidenceGaps,
               SECTION_CAP: SECTION_CAP };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
