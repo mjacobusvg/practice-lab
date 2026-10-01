@@ -21,11 +21,14 @@ domain, and there is no test-account session here).
 - [ ] **Forum-preview on a real phone:** does the restored community window below
       the hero fit and scroll on iOS and Android? (Sandbox could not load the
       backend iframe.)
-- [ ] **Join → Stripe click-through:** from a logged-out phone and desktop, click
-      "Join Full — $119/mo", create/att a test account (Rae Linden or John Dexit),
-      and confirm you land on the correct Stripe checkout for `full_monthly_119`.
-      Stop before paying. Repeat for `?join&plan=forum_monthly_50` and the
-      `/start-scribe` trial. (Handoff verified in code, not end-to-end.)
+- [x] **Join → Stripe click-through:** VERIFIED 2026-09-30 in a real browser. "Join
+      Full — $119/mo" reaches the correct Stripe checkout (`Subscribe to TBP
+      Membership: Full, $119/month`) after create-account + one-time email confirm.
+      Email confirmation is on by design (security). Fixes landed during this test:
+      the onboarding tour no longer pre-empts checkout, the install-app slide is now
+      iOS-accurate, and an existing email is routed to Sign in instead of a
+      misleading "account created". Still worth a one-off check of the
+      `forum_monthly_50` and `/start-scribe` variants.
 - [ ] Final human read of each of the six pages at desktop and phone width.
 
 ## 1. Backup (do first, before any overwrite)
