@@ -129,9 +129,12 @@
     return l[0].key;
   }
 
-  // The picker is shown only when there is something to choose between. The original code
-  // carries a deliberate decision not to ask a clinician to pick before they have made anything,
-  // and one saved interview is still not a choice.
+  // Shown only when there is something to choose between.
+  //
+  // Minimise unnecessary clutter, not natural clinical decisions. Asking "which interview?" when
+  // there is one is clutter: no decision exists. Asking it when there are three is a real choice
+  // that changes the visit, and hiding it does not remove the decision, it just moves it to the
+  // product and makes it a guess.
   function needsPicker(list) { return (list || []).length > 1; }
 
   var API = { LEGACY_KEY: LEGACY_KEY, LEGACY_NAME: LEGACY_NAME,

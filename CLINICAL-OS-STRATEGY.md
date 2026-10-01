@@ -2168,6 +2168,40 @@ THIS clinical question require, what do we already know, and what actually needs
 structured or deterministic to answer it safely and usefully?"** Answering the first question
 builds a mediocre EHR by accident. Answering the second builds the thing.
 
+## 40. Minimise unnecessary clutter, not natural clinical decisions
+
+A design rule, written down because the product nearly got it backwards.
+
+The attention thesis says this product should reduce what a clinician has to spend attention on.
+That is easy to misread as "fewer controls are always better", and the misreading is expensive:
+it ends with the product making clinical decisions silently because asking was deemed friction.
+
+**The distinction:**
+
+| | |
+|---|---|
+| **Unnecessary choice** | "Which interview?" when they have one. No decision exists. |
+| **Natural choice** | "Which interview?" when they have ADHD, bipolar, and their own intake. A real decision that changes the visit. |
+| **Clutter** | Extra explanation, redundant controls, a separate "import mode" when one editor already handles paste and create. |
+| **Useful control** | A compact picker that appears only when the selection actually matters. |
+
+**Hiding a meaningful decision does not remove it. It moves it to the product and makes it a
+guess.** That is the same failure as every defect in the Oct 2026 medication audit, in a
+different register: a weight nobody documented, a sex nobody stated, a question never recognised
+as a medication question. Each one was the system deciding something quietly rather than naming
+it.
+
+**The worked example this came from.** The interview code originally carried a deliberate
+decision: no picker anywhere, because "choosing between mine and yours is a decision handed to
+someone before they have done anything". That reasoning was correct and the conclusion was drawn
+too wide. It was right for a clinician with nothing saved. It was wrong the moment a library
+existed. The behaviour that survives is conditional: no picker at one interview, a compact picker
+at two or more.
+
+**Applied as a test, before adding a control:** does this decision change what the clinician
+does next? If yes, show it. If no, decide it and stay quiet. And before adding an explanation:
+is the reader going to need this every time, or only once?
+
 ## 33. This document is intentionally incomplete
 
 This is a starting point.
