@@ -210,3 +210,112 @@ fixed version. Cosmetic-only items may still wait.
 | G.1 (second bug) | `save()` deleted the draft whenever the fields were empty, and it is bound to `beforeunload`. A failed recovery therefore destroyed the only copy on the next reload: restore blanked, clinician reloads to retry, beforeunload fires against an empty note, key removed. The first attempt looked survivable; the second was already too late. Fixed in ambient-147-sub -- `save()` writes or does nothing, never removes; `clearVisit` calls an explicit `tbpPurgeDraft()`. Missed on the first pass: the destructive line was on the same screen as the code being fixed. |
 | E.7 (accuracy) | It stated 30 mg/day as the labeled adult maximum for Adderall XR. Unverified. This is the first number produced under the new rule and checking it is the test of whether the rule is safe as written. |
 | MSE (style) | `Thought content is notable for no overt delusional ideation or perceptual disturbances documented today.` Clunky double negative, correctly scoped. Cosmetic. |
+
+---
+
+# RE-BASELINE against ambient-187-sub (Oct 2026)
+
+**Analysis only. No gate item was re-run to produce this section.** It establishes which recorded
+results still stand, which are void, and the smallest set that genuinely needs clicking.
+
+## The timeline that decides everything
+
+`ambient-147-sub` is the LAST build before the encounter-context refactor. `ambient-148-sub` is
+the refactor itself. **Every PASS recorded above ran at or below 147-sub**, so all 44 commits of
+the medication and encounter-context work postdate the entire gate.
+
+That sounds worse than it is.
+
+## What did NOT change, and why most results stand
+
+**The interview and Framework code is untouched.** Of the 44 commits since the gate was written:
+
+- **0** mention interview, ADHD or Framework
+- **0** touched `note-engine-practice.js` at all
+
+So the Draft and assessment path that Blocks C and F were written against is byte-identical to
+what they were written against. All 44 commits were medication grounding, Discern, encounter
+context and the coverage harness.
+
+**The one shared dependency that did change is covered by the strongest evidence in the repo.**
+`tbpCaseContext` became a one-line wrapper over `renderCaseContext(getEncounterContext())`, and
+the Framework consumes it (`tbpAdhdRun`, line 6119). That refactor is pinned by **4,052
+byte-identical assertions** in `tests/encounter-context.test.js`. A manual re-run of Block D
+would be weaker evidence than the test already provides.
+
+## What IS new since the gate, and never had a test written for it
+
+1. **The medication confirmation card can now interrupt mid-visit.** A new interaction surface
+   the gate never saw, inside the same workspace as the interview.
+2. **Discern now retrieves label evidence before answering.** Block E.7's entire subject matter
+   was rewritten.
+3. **`tbpRecordPreflight` hooks `pf-generate`** before `generateNote`.
+4. **Encounter state persists and restores** (`tbpEncounterRestore(d.enc)`), which is new state
+   inside G.1's reload path.
+
+## E.7 is void, and its open question is now ANSWERED
+
+The gate recorded: *"Open question: is 30 mg/day correct for Adderall XR in adults? Michael to
+verify."*
+
+**It is not.** 30 mg/day is the PEDIATRIC ceiling. Adult recommended is 20 mg/day, with trials
+studying 20, 40 and 60 mg/day. That single unverified number is what started the entire
+medication coverage audit, and the grounding layer now being ported is the fix for it.
+
+So E.7's PASS is void: it passed while stating a wrong clinical number, which is exactly the
+failure the test exists to catch. **E.7 must be re-run, and it is now the highest-value item in
+the gate**, because it is the one place where the ADHD release and the Discern release touch.
+
+## Coverage gap worth naming
+
+**Zero automated tests cover Blocks B, C, F or G.** The 11 suites cover medication grounding,
+encounter context, encounter state and the result contract. `tests/encounter-context.test.js`
+contains **0** references to the interview, so the 4,052 assertions pin the context READER and
+not the interview SERIALIZER. Everything about interview behaviour, leakage into the draft,
+information preservation and persistence is manual, and always has been.
+
+## Status of every block after re-baseline
+
+| block | recorded | re-baseline verdict |
+|---|---|---|
+| 0 Smoke | passed | **Re-run.** Cheap, and 44 commits landed since. |
+| A Setup paths | not recorded | **Run.** `tbpRecordPreflight` now hooks `pf-generate`. |
+| B Interview stack | all blank | **Run.** Never tested. Code unchanged, so this is first-run, not re-run. |
+| C Leakage | C.1/C.2/C.4 pass | **C.1/C.2/C.4 STAND** (draft path untouched). **Run C.3, C.5, C.6, C.7.** |
+| D Framework | D.1-D.9 pass | **STAND.** Covered by the 4,052-assertion regression. **Run D.10** (never exercised). |
+| E Case battery | E.1-E.8 pass | **E.1-E.6, E.8 STAND.** **E.7 VOID, re-run.** |
+| F Preservation | all blank | **Run.** Never tested. Code unchanged. |
+| G Persistence | G.1 pass | **G.1 stands** (save/restore unchanged). **Run G.2-G.5**, plus encounter state across a reload. |
+
+## The smallest manual list, grouped so the setup is done once
+
+**Sitting 1 — one new ADHD eval with records and interview (covers 15 items)**
+Block 0 smoke; A.1, A.2, A.7; B.1-B.9 in a single pass through one interview; D.10.
+
+**Sitting 2 — same visit, continue into leakage (4 items)**
+C.3 (Framework check with nothing answered), C.5 (answer then delete), C.6 (freeform paragraph
+under a heading), C.7 (interview plus transcript).
+
+**Sitting 3 — follow-up paths (8 items)**
+F.1-F.8. Needs a prior note, an empty prior-note box, and a prior note under a different
+template.
+
+**Sitting 4 — persistence (5 items)**
+G.2-G.5, plus: confirm medications, reload, check the confirmation and any Discern result return.
+
+**Sitting 5 — the one that matters most (2 items)**
+E.7 re-run against the grounded Discern. And the interaction nobody has ever tested: **ask
+Discern a medication question during an ADHD visit with an interview loaded**, and confirm the
+medication card does not disturb the interview or its answers.
+
+**39 gate items. 34 need clicking. 5 stand on existing evidence** (C.1, C.2, C.4, D.1-D.9 as a
+block, E.1-E.6/E.8 as a block, G.1).
+
+## Release blockers
+
+**None known.** The only recorded blocker, G.1, was fixed in `ambient-147-sub` and confirmed.
+E.7 is not a blocker so much as a test whose subject was rebuilt; the number it flagged is now
+correct by construction rather than by compliance.
+
+**The honest risk is not in this table.** It is that Blocks B and F have never been run at all,
+on any build, and they are not small.
