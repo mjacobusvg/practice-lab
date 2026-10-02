@@ -109,7 +109,7 @@ async function sendBuyerConfirmation(data) {
   const ics = buildIcs({
     uid: 'mp-' + (data.bookingId || icsStamp(data.startIso)) + '@thinkbeyondpractice.com',
     start: data.startIso, end: data.endIso,
-    summary: 'Mentoring with ' + (data.sellerName || 'your mentor'),
+    summary: 'Consultation with ' + (data.sellerName || 'your expert'),
     description: (data.meetingUrl ? ('Join: ' + data.meetingUrl + '\\n\\n') : '') +
       'Booked through Think Beyond Practice.',
     organizerEmail: 'support@thinkbeyondpractice.com',
@@ -141,7 +141,7 @@ async function sendSellerNotification(data) {
     '<h2 style="font-size:20px;margin:0 0 10px">New booking</h2>' +
     '<p style="font-size:15px;line-height:1.6"><strong>' + esc(when) + '</strong><br>' +
     'Buyer: ' + esc(data.buyerEmail) + '<br>' +
-    'Type: ' + (data.toolkitIncluded ? 'Practice Launch (session + toolkit)' : 'Mentoring session') + '</p>' +
+    'Type: ' + (data.toolkitIncluded ? 'Practice Launch (consultation + toolkit)' : 'Consultation session') + '</p>' +
     (data.topic ? '<p style="font-size:15px;line-height:1.6"><strong>What they want help with:</strong><br>' + esc(data.topic) + '</p>' : '') +
     '<p style="font-size:13px;color:#8a94a0">Think Beyond Practice</p></div>';
   const text = 'New booking\n' + when + '\nBuyer: ' + data.buyerEmail +
