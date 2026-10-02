@@ -1,11 +1,11 @@
-# TBP Member Marketplace — Design of Record (Denis mentorship pilot)
+# TBP Member Marketplace — Design of Record (Denis consultation pilot)
 
 Status: **build in progress.** Branch `claude/think-beyond-member-sales-girogz`. Nothing live until pushed to `main` + the Supabase migration is applied with Michael's sign-off.
 
 ## What this is (and is NOT)
 
 TBP's business is **membership**, not transaction commission. This feature lets **members sell**
-(mentorship first; courses/templates/workshops later); **anyone can buy**; every purchase runs
+(1:1 consultation first; structured mentorship, courses/templates/workshops later); **anyone can buy**; every purchase runs
 **through TBP**; and every **nonmember buyer is offered a free month of TBP** that auto-converts —
 so sellers marketing their own offering also funnel members into TBP. The Denis pilot is the first
 small instance of that flywheel. Do NOT reduce this to "a booking calendar for Denis."
@@ -16,7 +16,7 @@ looking at").
 
 ## Who can sell — archetypes, seating, and the money principle
 
-The "only members sell" rule above was written for **Denis** (a member-mentor) and is correct
+The "only members sell" rule above was written for **Denis** (a member-expert) and is correct
 for peer clinical depth. It is **too narrow** for operational vendors. Generalize it as
 follows — this changes **no** locked Denis economics, it only widens *who* can sell beyond him.
 
@@ -37,7 +37,7 @@ product; it does not tax members or tax the experts' time. That is the concrete 
 ### Three lanes
 
 1. **Member-experts (peer/clinical depth — the Denis lane).** Must be members. Here the
-   membership requirement is a *feature*: it keeps clinical mentorship as community peers
+   membership requirement is a *feature*: it keeps consultation and mentorship as community peers
    helping peers (not outside vultures) and makes selling a membership privilege.
 2. **Vetted operational vendors (credentialing, EHR setup, billing, VAs).** External pros,
    often not clinicians. Do **not** force a clinical membership. Vet by track record +
@@ -86,7 +86,7 @@ feeds the expert-routing match later. Low-lift, do when convenient.
 
 | Decision | Value |
 |---|---|
-| Pilot seller | Denis Grigorov (2–4 sessions/mo initially) |
+| Pilot seller | Denis Grigorov (2–4 consultation sessions/mo initially) |
 | Session length | 60 min |
 | Session price | **$200 nonmember / $180 member** |
 | Toolkit | existing `template_library` row `723c2236-4d83-452c-972f-952b4810abbe`, **$699 / $399 member** |
