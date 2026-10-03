@@ -13,8 +13,10 @@ Last updated: 2026-09-09.
 
 Auth is **Supabase Auth (GoTrue)**. Members can get in three ways, in order of preference:
 1. **Password** — set once, then instant sign-in, **sends no email** (immune to any email limit).
-2. **Magic link / email OTP** — the original method; emails a one-time link. Still the default
-   and the fallback.
+   **The sign-in screen now defaults to this** (email + password), since every activated member
+   already has a password (2026-10 change — see §3).
+2. **Magic link / email OTP** — the original method; emails a one-time link. Now the **fallback**,
+   one click away ("Use a one-time email link instead") for anyone who forgot their password.
 3. **Admin one-click link** — we generate a link and paste it into an email to rescue anyone
    who can't get in (no dependency on their inbox for the *login itself*).
 
@@ -49,11 +51,15 @@ which is proof the email path works. Do not "re-fix SMTP" reflexively; it is not
 ## 3. How each method works (files + functions, all in `platform.html` unless noted)
 
 ### Password (the no-email path)
-- **Sign-in gate:** the login screen defaults to the email-link flow everyone knows. Password is
-  **strictly opt-in**: the field + button stay hidden until the member clicks *"Have a password?
-  Sign in with it"* (`togglePasswordLogin()`). This keeps members who never set a password from
-  being confronted with a password box they'll fumble. `signInWithPassword()` calls
-  `SB.auth.signInWithPassword`; a blank password falls back to the email link.
+- **Sign-in gate (2026-10, password-first):** the login screen now **defaults to email + password**.
+  We flipped it because the data showed **every activated member already has a password** (0 of 50
+  paid members were passwordless), so the old "hide the password box" rationale was obsolete and it
+  was funneling everyone onto the flaky email path (the recurring Outlook/magic-link lockouts). The
+  one-time email link is the **fallback**, one click away via *"Use a one-time email link instead"*
+  (`togglePasswordLogin()`, which reads live state so it flips both ways). `signInWithPassword()`
+  calls `SB.auth.signInWithPassword`; **a blank password quietly falls back to the email link**, so
+  the "Sign in" button is safe even for the rare member with no password, and for anyone who forgot
+  theirs (get in via the link, then set a new one).
 - **Setting a password:** account menu → **"Set a password"** → `openSetPassword()` /
   `saveNewPassword()` → `SB.auth.updateUser({ password })`. Requires only the session the member
   already has (no email round-trip). This is how existing passwordless members adopt a password.
