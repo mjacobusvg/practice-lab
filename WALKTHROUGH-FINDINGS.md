@@ -88,6 +88,34 @@ referral letter, an outside note, a medication list"). The button does not. The 
 non-blocking log already flagged the related asymmetry: two doors add source material and they
 do not match.
 
+## F7. The Framework has TWO entry points on one screen, and they look like one decision
+
+```
+  ☐ Add ADHD Evaluation Framework — if ADHD is part of what you are evaluating
+  ...
+  Only need the ADHD Framework, without prepping a visit?  Open it on its own →
+```
+
+Both say "I want the Framework". The difference is real and is carried entirely by the clause
+*without prepping a visit*:
+
+- the **checkbox** (`ep-adhd`) adds the Framework to a visit being prepped. It does nothing until
+  `Start this visit` is pressed.
+- the **link** (`adhd-open-setup-link` -> `tbpAdhdEnter('framework')`) opens the Framework alone.
+  No visit, no note.
+
+A clinician who wants the Framework sees two ways to get it and no statement of what differs.
+
+**This screen has already produced this exact defect once.** The comment above
+`tbpEpSyncQuestionCopy` records it, about the Framework checkbox versus the questions checkbox:
+
+> The two options overlapped ... Both true separately, contradictory together. So the second
+> option renames itself to what it actually adds once ADHD support is on ... **Nobody should
+> have to work out whether ticking one makes the other redundant.**
+
+That fix was correct and local. The same class of overlap then reappeared between the checkbox
+and the link, which is the argument for fixing the model rather than the next pair.
+
 ---
 
 ## The model the screen should communicate
@@ -120,6 +148,9 @@ Candidate phrasing, to be settled when the screen is reworked:
   conflicts, and what still needs clarification. Works with or without an interview.*
 - `Suggest follow-up questions from these records`, shown with the records
 - `+ Paste records`
+- the Framework's two doors resolved: either the standalone link states what it does NOT do
+  ("opens the Framework by itself, with no visit note"), or the distinction becomes a property of
+  one control rather than two separate ones
 
 ### A product point that falls out of this
 
