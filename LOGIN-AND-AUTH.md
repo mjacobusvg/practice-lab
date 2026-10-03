@@ -60,6 +60,11 @@ which is proof the email path works. Do not "re-fix SMTP" reflexively; it is not
   calls `SB.auth.signInWithPassword`; **a blank password quietly falls back to the email link**, so
   the "Sign in" button is safe even for the rare member with no password, and for anyone who forgot
   theirs (get in via the link, then set a new one).
+- **Post-login nudge (2026-10):** `maybeShowPasswordNudge()` (called from `checkAuth`) shows a
+  one-time, dismissible "Set a password, skip the email" banner to a signed-in member who hasn't
+  shown a known password on this browser. It converts the magic-link crowd to email-free sign-in —
+  the thing that actually drains the lockout treadmill. Gated by `tbp_haspw` (set on password
+  sign-in and on setting a password) and `tbp_pwnudge` (shown/dismissed/done); shows once per browser.
 - **Setting a password:** account menu → **"Set a password"** → `openSetPassword()` /
   `saveNewPassword()` → `SB.auth.updateUser({ password })`. Requires only the session the member
   already has (no email round-trip). This is how existing passwordless members adopt a password.

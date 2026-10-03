@@ -2460,6 +2460,9 @@ async function signInWithPassword() {
       return;
     }
     // Success: onAuthStateChange('SIGNED_IN') fires and checkAuth() takes over.
+    // Remember (per browser) that this member has a known password, so the
+    // "set a password" nudge never bothers them.
+    try { localStorage.setItem('tbp_haspw', '1'); } catch (e) {}
     statusEl.textContent = 'Signed in. One moment…';
   } catch (e) {
     statusEl.textContent = 'Sign-in failed. Please try again, or use the email link.';
@@ -2507,6 +2510,9 @@ async function saveNewPassword() {
     if (res.error) { st.textContent = res.error.message || 'Could not set password. Please try again.'; return; }
     st.style.color = 'var(--teal)';
     st.textContent = 'Password set. You can sign in with it from now on.';
+    // They now have a known password — never nudge again, and clear any live nudge.
+    try { localStorage.setItem('tbp_haspw', '1'); localStorage.setItem('tbp_pwnudge', 'done'); } catch (e) {}
+    var _pn = document.getElementById('pw-nudge'); if (_pn) _pn.remove();
     setTimeout(function () { var o = document.getElementById('setpw-overlay'); if (o) o.remove(); }, 1500);
   } catch (e) {
     st.textContent = 'Could not set password. Please try again.';
@@ -2949,6 +2955,7 @@ async function checkAuth() {
     handlePendingPlan();
     handlePendingBuy();
     maybeShowPushNudge();
+    maybeShowPasswordNudge();
     reconcilePushSubscription();
   } else {
     // Logged-out visitors are non-paying, so surface the founding-rate bar to them
@@ -10831,6 +10838,54 @@ function dismissPushNudge(days) {
 function _openSettingsFromNudge() {
   dismissPushNudge(14);
   try { openProfileEdit(); } catch (e) {}
+}
+
+// "Set a password" nudge — the piece that actually drains the magic-link treadmill.
+// Shown once per browser to a signed-in member who hasn't demonstrated a known password
+// here, so the magic-link crowd converts to instant, email-free sign-in. Skipped forever
+// on this browser once they sign in with, or set, a password (tbp_haspw flag).
+function _pwNudgeHandled() {
+  try { return localStorage.getItem('tbp_haspw') === '1' || !!localStorage.getItem('tbp_pwnudge'); } catch (e) { return false; }
+}
+function dismissPasswordNudge() {
+  var n = document.getElementById('pw-nudge'); if (n) n.remove();
+  try { localStorage.setItem('tbp_pwnudge', 'dismissed'); } catch (e) {}
+}
+function startSetPasswordFromNudge() {
+  var n = document.getElementById('pw-nudge'); if (n) n.remove();
+  openSetPassword();
+}
+var _pwNudgeTries = 0;
+function maybeShowPasswordNudge() {
+  try {
+    if (!S.user) return;
+    if (_pwNudgeHandled()) return;
+    if (document.getElementById('pw-nudge')) return;
+    // Don't stack on the welcome tour or the push nudge; wait briefly, then give up.
+    var w = document.getElementById('welcome-overlay');
+    if ((w && w.classList.contains('open')) || document.getElementById('push-nudge')) {
+      if (_pwNudgeTries++ < 3) setTimeout(maybeShowPasswordNudge, 8000);
+      return;
+    }
+    var wrap = document.createElement('div');
+    wrap.id = 'pw-nudge';
+    wrap.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:9500;width:calc(100% - 32px);max-width:440px;background:var(--bg-card,#fff);color:var(--text-primary,#111);border:1px solid var(--border,rgba(0,0,0,0.12));border-radius:12px;box-shadow:0 10px 34px rgba(0,0,0,0.28);padding:16px 18px;font-size:14px;line-height:1.5;';
+    wrap.innerHTML =
+      '<div style="display:flex;gap:12px;align-items:flex-start">' +
+        '<div style="font-size:22px;line-height:1">&#128273;</div>' +
+        '<div style="flex:1">' +
+          '<div style="font-weight:700;margin-bottom:3px">Set a password, skip the email</div>' +
+          '<div style="color:var(--text-secondary,#555);margin-bottom:12px">Set a password and you can sign in instantly from now on, without ever waiting on a sign-in email. Takes a few seconds.</div>' +
+          '<div style="display:flex;gap:8px;justify-content:flex-end;align-items:center">' +
+            '<button class="btn-ghost" onclick="dismissPasswordNudge()">Not now</button>' +
+            '<button class="btn-primary" onclick="startSetPasswordFromNudge()">Set a password</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(wrap);
+    // One fair prompt per browser; it lives in the account menu ("Set a password") after this.
+    try { localStorage.setItem('tbp_pwnudge', 'shown'); } catch (e) {}
+  } catch (e) {}
 }
 
 async function maybeShowPushNudge() {
