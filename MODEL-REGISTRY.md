@@ -34,7 +34,6 @@
 | fact-checker.html, archive-diagnostics.html, practice-lab-clinical-harness.html | anthropic-proxy | claude-sonnet-4-6 / claude-haiku-4-5-20251001 | Non-PHI tools and admin diagnostics. |
 | practice-lab-demo.html | anthropic-proxy-demo | (proxy default) | Public Practice Lab demo. |
 | note-deidentifier.html, chart-coder-trial.html, note-builder-trial.html | Bedrock Lambda | claude-sonnet-4-6 / claude-haiku-4-5-20251001 | PHI-capable tools and trial copies. |
-| deidentify-note.js, chart-coder-background.js, inngest-serve.mjs `chartCoderPipeline` | api.anthropic direct | claude-sonnet-4-6 | **OFF-BAA and unused**: no page calls them. Do not route PHI here. |
 
 ## Proxies
 
@@ -176,8 +175,7 @@ The clinical proxies log token COUNTS only, never message content. Cost prices
 live in `MODEL_COST_PER_MTOK` in `_lib/usage.js` (and are duplicated inline in
 `clinical-proxy-stream.mjs` and `inngest-serve.mjs`); keep the three in sync.
 Page views are logged to `public.page_views` by `log-view.js` (email + tier +
-path from the signed token). Instrumented AI paths: the four proxies above,
-`chart-coder-background.js` (3 Sonnet passes, summed), and `inngest-serve.mjs`
+path from the signed token). Instrumented AI paths: the proxies above and `inngest-serve.mjs`
 (Ask the Archive: query expansion + synthesis + source descriptions).
 
 ## Embeddings (separate lifecycle — not affected by Anthropic chat-model retirements)

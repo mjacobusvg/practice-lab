@@ -13,13 +13,13 @@ Status legend: [DONE] / [DO TONIGHT] / [DECISION NEEDED]
 
 | Where | PHI? | Fix |
 |---|---|---|
-| `tool_jobs` (chart-audit result cache, Supabase) | transient | **[DONE]** `chart-coder-poll.js` already deletes the row on fetch |
+| `tool_jobs` (chart-audit result cache, Supabase) | transient | **[DONE]** its only writers (the chart-coder functions) were deleted 2026-10-03; the table is unused |
 | `certified_mail_jobs.letter_text` (Supabase) | at rest | Feature is a **stub** (PostGrid adapter throws; won't transmit). Low real exposure. When you build the live vendor, store letter text on AWS, not Supabase. Purge any existing rows. |
 | `assessments.patient_name` + `assessment_results.responses` (Supabase) | **at rest, LIVE** | **[DECISION NEEDED]** — see §3 |
 | `assessment_score_series` (Supabase) | pseudonymized | Acceptable (one-way key, no name/responses); keep or move with §3 |
 | Clinical proxies (`clinical-proxy-stream.mjs`, `clinical-proxy.js`) on Netlify | in transit | **[DO TONIGHT]** move to AWS Lambda — §2 |
 | `azure-transcribe.mjs`, `azure-transcribe-fast-background.mjs` on Netlify | in transit | **[DO TONIGHT]** move to AWS Lambda — §2 |
-| `chart-coder-background.js` on Netlify | in transit | **[DO TONIGHT]** move to AWS Lambda — §2 |
+| `chart-coder-background.js` on Netlify | in transit | **[DONE]** deleted 2026-10-03 with its trigger and poll; the front end never called it |
 
 Everything else in Netlify functions (auth, billing, forum, broadcasts, consent records)
 touches **member/business data, not patient PHI**, and can stay on Netlify.

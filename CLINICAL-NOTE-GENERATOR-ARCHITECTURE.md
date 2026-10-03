@@ -511,8 +511,8 @@ Load-bearing facts the redesign must respect:
   are net-new.
 - **No ambient/audio anywhere.** Typed/pasted text only. AWS Transcribe is the
   intended future route.
-- **Dead code:** `chart-coder-trigger/background/poll.js` is a dormant, stale-prompt
-  async trio the live frontend never calls. `MODEL-REGISTRY.md` coder/note-builder
+- **Dead code (deleted 2026-10-03):** `chart-coder-trigger/background/poll.js`, a
+  dormant, stale-prompt async trio the live frontend never called. `MODEL-REGISTRY.md` coder/note-builder
   rows were stale (fixed in this branch).
 
 ---

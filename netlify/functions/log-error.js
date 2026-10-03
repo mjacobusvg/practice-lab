@@ -21,9 +21,8 @@ function clip(v, n) { return v == null ? null : String(v).slice(0, n); }
 // noteText)` or a JSON.parse failure quoting its input — so neither field may be
 // stored raw. Audit finding M3.
 
-// Replace identifier-SHAPED substrings. Same deterministic patterns as the second
-// pass in deidentify-note.js, kept narrow: this is a safety net over machine-written
-// error text, not a de-identifier for prose.
+// Replace identifier-SHAPED substrings, kept narrow: this is a safety net over
+// machine-written error text, not a de-identifier for prose.
 function scrubIdentifiers(s) {
   return String(s == null ? '' : s)
     .replace(/\b\d{3}-\d{2}-\d{4}\b/g, '[SSN]')

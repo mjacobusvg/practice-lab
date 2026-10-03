@@ -153,8 +153,9 @@ login and `tbp_maint_bypass='1'` (or `?maintbypass=1` once) bypass it for testin
 ## 6. Open items (compliance follow-through)
 
 - **Decommission the Netlify clinical functions.** `clinical-proxy-stream.mjs`, `clinical-proxy.js`,
-  `azure-transcribe*.mjs`, and the unused `chart-coder-background/trigger/poll` are still deployed on
-  Netlify but no longer called by the front end. Leave dormant briefly for rollback, then remove so
+  and `azure-transcribe*.mjs` are still deployed on Netlify but no longer called by the front end.
+  (The never-called `chart-coder-background/trigger/poll`, `deidentify-note.js` and the Inngest
+  `chartCoderPipeline` were deleted on 2026-10-03.) Leave dormant briefly for rollback, then remove so
   PHI cannot route through Netlify at all. (`tbp_force_netlify` in `pm-ai-scribe.html` still points the
   Scribe back to them as a rollback — retire that flag when the Netlify functions are deleted.)
 - **PHI at rest in Supabase — see `PHI-STORAGE-STATE.md` (verified 2026-09-09).** That file is the
