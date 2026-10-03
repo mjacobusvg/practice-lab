@@ -177,6 +177,25 @@ exports.handler = async function (event) {
   // cold even if ?setpw=1 were rejected. Worst case they miss the forced set-password
   // step but are still signed in, and the nudge fires.
   if (!link) link = await genLink(SITE + '/platform');
+
+  // Still nothing almost always means the member has NO auth user yet — they have never
+  // signed in (common for accounts imported from Circle who were never activated).
+  // generate_link can't make a magic link for a user that does not exist. Create the
+  // user with a pre-confirmed email; the on_auth_user_created trigger links it to their
+  // existing account BY EMAIL, preserving their tier (or creates a free account if none).
+  // Then the link generates normally. This is what makes the rescue bulletproof for a
+  // first-ever sign-in. Admin-gated + signed token, so creating the user here is safe.
+  if (!link) {
+    try {
+      await fetch(URL + '/auth/v1/admin/users', {
+        method: 'POST',
+        headers: { apikey: KEY, Authorization: 'Bearer ' + KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: v.email, email_confirm: true })
+      });
+    } catch (e) { /* non-fatal; fall through */ }
+    link = await genLink(SITE + '/platform?setpw=1');
+    if (!link) link = await genLink(SITE + '/platform');
+  }
   if (!link) return gate;
   return { statusCode: 302, headers: { Location: link, 'Cache-Control': 'no-store' }, body: '' };
 };

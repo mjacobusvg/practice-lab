@@ -2586,6 +2586,11 @@ async function sendMagicLink(mode) {
   var redirect = REDIRECT_TO;
   try {
     var _p = [];
+    // Flag the landing so the "set a password" nudge fires ONLY for people who just
+    // used the email link (i.e. are not using a password). This keeps it off restored
+    // sessions and password sign-ins, which is what was nagging members who already
+    // have a password. Rides the allow-list the same way the other params do.
+    _p.push('pwprompt=1');
     var _rt = localStorage.getItem('tbp_return_to'); if (_rt) _p.push('returnTo=' + encodeURIComponent(_rt));
     var _pp = localStorage.getItem('tbp_pending_post'); if (_pp) _p.push('post=' + encodeURIComponent(_pp));
     var _pl = localStorage.getItem('tbp_pending_plan'); if (_pl) _p.push('plan=' + encodeURIComponent(_pl));
@@ -2980,13 +2985,17 @@ async function checkAuth() {
     // Arrived via a one-click sign-in link (?setpw=1): they had no usable password,
     // so force the "set your password now" step instead of hoping they find the menu.
     // This is the fix for the Facebook-browser trap: set it here, use it anywhere.
-    var _forceSetPw = false;
-    try { _forceSetPw = !!new URLSearchParams(location.search).get('setpw'); } catch (e) {}
+    var _forceSetPw = false, _pwPrompt = false;
+    try { var _qs = new URLSearchParams(location.search); _forceSetPw = !!_qs.get('setpw'); _pwPrompt = !!_qs.get('pwprompt'); } catch (e) {}
     if (_forceSetPw) {
+      // Arrived via a one-click rescue link: they had no usable password. Force it.
       setTimeout(function () { try { openSetPassword(true); } catch (e) {} }, 500);
     } else {
       maybeShowPushNudge();
-      maybeShowPasswordNudge();
+      // Only nudge people who just signed in via the EMAIL LINK (pwprompt=1). Restored
+      // sessions and password sign-ins are not nagged, so members who already have a
+      // password are left alone.
+      if (_pwPrompt) maybeShowPasswordNudge();
     }
     reconcilePushSubscription();
   } else {
