@@ -116,6 +116,62 @@ A clinician who wants the Framework sees two ways to get it and no statement of 
 That fix was correct and local. The same class of overlap then reappeared between the checkbox
 and the link, which is the argument for fixing the model rather than the next pair.
 
+## F8. Visit setup has become template management. **Persistent choices belong in the Vault.**
+
+Clicking `new` while starting a patient evaluation produces, inside the visit launcher:
+
+- "What do you want to call this interview?"
+- a full editor holding the whole question set
+- `Save my interview`, `Delete this interview`
+- the scaffolding-contract explanation
+
+That is a different task from starting a visit. Creating, naming, editing, renaming, deleting and
+importing reusable question sets is **persistent clinician configuration**. This screen is about
+**this encounter**.
+
+It also explains a conceptual smell in F1: `ADHD interview  edit  new` sits beside
+`Add ADHD Evaluation Framework`, so `edit` and `new` read as competing options for today's
+evaluation. They are not clinical decisions at all. They are account configuration wearing the
+same visual weight as a clinical one.
+
+### The rule
+
+> **Persistent choices live in the Vault. Encounter choices live in the encounter.**
+
+An interview is persistent. Its authoring belongs in the Vault.
+
+### How this happened, precisely
+
+The inline editor PREDATES the library work. `tbpRenderInterviewBlock` carries the comment
+"Deliberately NOT shown: the launcher owns this now", describing the editor being relocated out
+of its own block and into the launcher.
+
+What `ambient-188-sub` added was `new`, a name field and a delete button. That turned "edit my
+one interview" into full template management inside visit setup. **The misplacement was
+inherited; the amplification made it visible.** Which is the argument for the walkthrough: the
+defect was latent until something made it big enough to notice.
+
+### What moves, and what does not
+
+**Moves:** create, name, edit, rename, delete, import. Into the Vault surface that already
+exists for this kind of work: the `#wizard` modal, "Set up your note templates", reached from
+"Set up my templates".
+
+**Stays in the launcher:** selection only.
+
+```
+  Interview questions:  [ None  v ]        Manage interviews
+```
+
+`None` means do not load one. Anything else means load that one. One quiet link to the Vault
+surface. **No editor inline.** For a clinician with nothing saved, `Create one` may be offered,
+but it opens the Vault surface rather than expanding an editor in the launcher.
+
+**Unchanged:** `interview-library.js`, its migration, its 21 tests, `tbpInterviewSplit`, the
+storage shape, the legacy mirror, and the safety contract. This is a relocation of the authoring
+UI, not a redesign of the interview engine. The library architecture was right; its address was
+wrong.
+
 ---
 
 ## The model the screen should communicate
