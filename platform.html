@@ -3693,12 +3693,12 @@ async function searchForum(q) {
     + '<p class="space-tagline">Results for “' + esc(q) + '”</p></div>'
     + '<div class="post-list" id="search-results"><div class="skel skel-row"></div><div class="skel skel-row"></div></div>';
   try {
-    var like = '%' + q.replace(/[%,()]/g, ' ') + '%';
-    var { data, error } = await SB.from('forum_posts')
-      .select('id, title, comment_count, reaction_count, created_at, spaces(name, slug), accounts(name, avatar_url)')
-      .or('title.ilike.' + like + ',body_plain.ilike.' + like)
-      .order('created_at', { ascending: false })
-      .limit(40);
+    // Search runs through the search_forum_posts() SECURITY DEFINER function, not a
+    // direct forum_posts select. body_html/body_plain have no column SELECT grant for
+    // anon/authenticated (paywall hardening), so filtering on body_plain from the client
+    // throws "permission denied for table forum_posts". The function searches title+body
+    // server-side and returns only the safe projection (never a body).
+    var { data, error } = await SB.rpc('search_forum_posts', { q: q });
     if (error) throw error;
     if (S.view !== 'search') return; // user navigated away mid-search
     var el = document.getElementById('search-results'); if (!el) return;
@@ -3709,13 +3709,13 @@ async function searchForum(q) {
     el.innerHTML = data.map(function(p) {
       return postRow({
         id: p.id, title: p.title,
-        author: p.accounts ? p.accounts.name : 'Unknown',
-        avatar: p.accounts ? p.accounts.avatar_url : null,
+        author: p.author_name || 'Unknown',
+        avatar: p.author_avatar || null,
         created_at: p.created_at,
-        space: p.spaces ? p.spaces.name : '',
-        dot: SPACE_DOTS[p.spaces ? p.spaces.slug : ''] || '#60a5fa',
+        space: p.space_name || '',
+        dot: SPACE_DOTS[p.space_slug || ''] || '#60a5fa',
         comments: p.comment_count || 0, likes: p.reaction_count || 0,
-        age: formatDate(p.created_at), slug: p.spaces ? p.spaces.slug : ''
+        age: formatDate(p.created_at), slug: p.space_slug || ''
       });
     }).join('');
   } catch (e) {
