@@ -3,10 +3,11 @@
 **Purpose:** One place to see which tool calls AI, through which endpoint, on which model. When Anthropic (or OpenAI) retires a model, this is a lookup, not a hunt.
 
 **How the system works (read this once):**
-- Tools do not talk to AWS. There is no Bedrock in the path. Every AI call goes to `api.anthropic.com` (or `api.openai.com` for embeddings) directly.
-- Each tool's model is a **text string in that tool's own code** (the `model:` field in its fetch body). The proxy passes it straight through.
-- Both proxies **default** to `claude-haiku-4-5-20251001` if a tool sends no model. So a tool that omits `model:` is automatically current.
-- **To change a model:** find the string, change it, redeploy the file. No dashboard, no settings, no infrastructure.
+- There are two paths, and which one a tool uses is decided by PHI (see `BAA-AND-PHI-ROUTING.md`):
+  - **Clinical (PHI) tools** call the AWS Lambda Function URLs (`aws-lambda/clinical-proxy-stream-bedrock.mjs`, `aws-lambda/clinical-proxy-bedrock.mjs`), which invoke Claude on **Amazon Bedrock** under the AWS BAA. The tool sends a logical model name (`claude-sonnet-4-6` / `claude-haiku-4-5-20251001`); the Lambda maps it to a Bedrock inference-profile ID held in its `BEDROCK_MODEL_SONNET` / `BEDROCK_MODEL_HAIKU` env vars. Any name not in the Lambda's `ALLOWED_MODELS` silently runs on Haiku.
+  - **Non-PHI tools** (Practice Lab, Ask the Archive, admin batch jobs) call `api.anthropic.com` directly or through the Netlify `anthropic-proxy*.js` functions (and `api.openai.com` for embeddings).
+- Each tool's model is a **text string in that tool's own code** (the `model:` field in its fetch body).
+- Both Lambdas and both Netlify proxies **default** to `claude-haiku-4-5-20251001` if a tool sends no model.
 
 **Last full audit:** 2026-06 (Sonnet 4 retirement). Current Anthropic models in use: `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`.
 
@@ -28,6 +29,12 @@
 | pm-termination-workflow.html | clinical-proxy | claude-haiku-4-5-20251001 | Termination package (Haiku is intentional — stays under Netlify 26s timeout) |
 | inngest-serve.mjs | api.anthropic direct | claude-sonnet-4-6 (synthesis), claude-haiku-4-5-20251001 (query expansion) | Ask the Archive RAG pipeline |
 | extract-templates-background.js | api.anthropic direct | claude-sonnet-4-6 | Admin batch: extracts the reusable template from each source post into template_library.preview + a downloadable PDF. Constrained to reuse only post content (no fabrication). |
+| ingest-cms-doc-upload-background.js | api.anthropic direct | claude-sonnet-4-6 | Admin: extracts text from an uploaded public CMS PDF into the "CMS Reference" space. Not PHI. |
+| template-analyze.js | api.anthropic direct | claude-haiku-4-5-20251001 | Template analysis. |
+| fact-checker.html, archive-diagnostics.html, practice-lab-clinical-harness.html | anthropic-proxy | claude-sonnet-4-6 / claude-haiku-4-5-20251001 | Non-PHI tools and admin diagnostics. |
+| practice-lab-demo.html | anthropic-proxy-demo | (proxy default) | Public Practice Lab demo. |
+| note-deidentifier.html, chart-coder-trial.html, note-builder-trial.html | Bedrock Lambda | claude-sonnet-4-6 / claude-haiku-4-5-20251001 | PHI-capable tools and trial copies. |
+| deidentify-note.js, chart-coder-background.js, inngest-serve.mjs `chartCoderPipeline` | api.anthropic direct | claude-sonnet-4-6 | **OFF-BAA and unused**: no page calls them. Do not route PHI here. |
 
 ## Proxies
 
@@ -35,8 +42,10 @@
 |---|---|---|
 | anthropic-proxy.js | claude-haiku-4-5-20251001 | Non-PHI (Practice Lab, chat tools). Logs usage to `tool_usage` with account_email + tier (from the signed token), model, real token counts, and est cost. |
 | anthropic-proxy-demo.js | claude-haiku-4-5-20251001 | Public Practice Lab demo (unauthenticated). Logs anonymous usage rows with token counts + cost. |
-| clinical-proxy.js | claude-haiku-4-5-20251001 | PHI tools (Letter Gen, Note Builder, Termination, Monitoring). Streams from Anthropic; logs USAGE METADATA ONLY (counts + cost + email/tier), never content. Covered by Anthropic API BAA. |
-| clinical-proxy-stream.mjs | claude-haiku-4-5-20251001 | Streaming PHI proxy. Tees the passthrough stream to read token counts; logs usage metadata only (counts + cost + email/tier), never content. Wraps large (>~4096-char) system prompts in a **1-hour prompt-cache** block (`cache_control` ephemeral, ttl 1h) — chosen from real traffic (notes cluster ~26 min apart, ~75% within an hour). `est_cost_usd` is cache-aware (writes 2x, reads 0.1x); `input_tokens` logs total input incl. cache tokens. Verify caching via `cache_read_input_tokens` in the Anthropic usage. |
+| aws-lambda/clinical-proxy-bedrock.mjs (`tbp-clinical-proxy`) | claude-haiku-4-5-20251001 | **Live PHI path** (Bedrock, AWS BAA). Non-streaming clinical tools. Pasted into its Lambda by hand. |
+| aws-lambda/clinical-proxy-stream-bedrock.mjs (`tbp-clinical-proxy-stream`) | claude-haiku-4-5-20251001 | **Live PHI path** (Bedrock, AWS BAA). Streaming clinical tools; 1-hour prompt cache (see below). Pasted into its Lambda by hand. |
+| clinical-proxy.js | claude-haiku-4-5-20251001 | **OFF-BAA, rollback only.** Netlify predecessor of the Bedrock Lambda; calls `api.anthropic.com`. Do not route PHI here. |
+| clinical-proxy-stream.mjs | claude-haiku-4-5-20251001 | **OFF-BAA, rollback only.** Netlify predecessor of the streaming Lambda. Streaming PHI proxy. Tees the passthrough stream to read token counts; logs usage metadata only (counts + cost + email/tier), never content. Wraps large (>~4096-char) system prompts in a **1-hour prompt-cache** block (`cache_control` ephemeral, ttl 1h) — chosen from real traffic (notes cluster ~26 min apart, ~75% within an hour). `est_cost_usd` is cache-aware (writes 2x, reads 0.1x); `input_tokens` logs total input incl. cache tokens. Verify caching via `cache_read_input_tokens` in the Anthropic usage. |
 
 ## Prompt caching on Bedrock (AWS case 178934455100974, Sept 2026)
 
@@ -188,7 +197,6 @@ pm-lai.html (deterministic), pm-crisis-safety-plan.html (crisis-resources lookup
 1. Note the retired model string (e.g. `claude-sonnet-4-20250514`).
 2. Search the repo for that exact string across all `.html` and `.mjs`/`.js` files.
 3. Replace with the recommended successor (same-price drop-in when offered).
-4. Redeploy each changed file. Re-test any tool whose model changed.
-5. Update this registry.
-
-**There is nothing to change in AWS or any console — the model is always just a string in the code.**
+4. If the model is used by a clinical tool, also update the Bedrock side, or the tool silently runs on Haiku: add the new name to `ALLOWED_MODELS` and `BEDROCK_ID` in BOTH `aws-lambda/*-bedrock.mjs` files (and their price and cache-minimum tables), paste each into its Lambda, and set `BEDROCK_MODEL_SONNET` / `BEDROCK_MODEL_HAIKU` in the Lambda console to a **US** inference-profile ID (never `global.`). `node test/bedrock-usage-checks.mjs` catches the two copies drifting.
+5. Redeploy each changed file. Re-test any tool whose model changed.
+6. Update this registry.

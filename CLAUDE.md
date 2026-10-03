@@ -110,15 +110,17 @@ delete it; just leave it in place and only advance it when a deploy is worth int
   the current strategic priority is *improve/integrate/prove/market what already exists*, not
   add breadth. Ideas that are not current work live in `FUTURE-OPPORTUNITIES.md` (preserved,
   not approved for build) — add good ideas there rather than starting them.
-- **PHI now flows through AWS (Bedrock/Lambda/SES) under the AWS BAA and Azure under the Microsoft
+- **PHI flows through AWS (Bedrock/Lambda/SES) under the AWS BAA and Azure under the Microsoft
   BAA — NOT through Netlify or a direct Anthropic API.** Clinical text tools call AWS Lambda Function
   URLs (`tbp-clinical-proxy-stream` / `tbp-clinical-proxy`) which invoke Claude via **Amazon Bedrock**
   (`us.anthropic.claude-sonnet-4-6`, `us.anthropic.claude-haiku-4-5-20251001-v1:0`); transcription
   goes to Azure AI Speech via `tbp-azure-transcribe`. **Read `BAA-AND-PHI-ROUTING.md` before touching
   any clinical data path, BAA, subprocessor page, or privacy policy** — it is the source of truth for
-  which BAA covers what and how every kind of PHI is routed. The Netlify `clinical-proxy*.mjs` /
-  `azure-transcribe*.mjs` files are OFF-BAA rollback-only; do not point traffic at them or at
-  `api.anthropic.com`. See `MODEL-REGISTRY.md` for the per-tool model list.
+  which BAA covers what and how every kind of PHI is routed. These Netlify functions send clinical
+  text to `api.anthropic.com` and are OFF-BAA: `clinical-proxy.js`, `clinical-proxy-stream.mjs`,
+  `azure-transcribe*.mjs` (rollback-only), and `deidentify-note.js`, `chart-coder-background.js`
+  and the `chartCoderPipeline` in `inngest-serve.mjs` (no page calls them). Do not point traffic at
+  any of them or at `api.anthropic.com`. See `MODEL-REGISTRY.md` for the per-tool model list.
 - **`CLINICAL-ONTOLOGY.md` defines what the Scribe's clinical state MEANS and who may establish
   it. Read it before implementing any clinical capability, and implement AGAINST it.** It is the
   fix for a specific recurring failure: an implementation that invents its own ontology as it
@@ -150,9 +152,8 @@ delete it; just leave it in place and only advance it when a deploy is worth int
   reinventing the pitch. It holds the master narrative, the channel cuts, the landing-page
   headline and the ready-to-fire reply variants. House style: **no em-dashes**; do not claim
   "no other scribe audits notes" as an absolute.
-  **What to lead with is channel-dependent, and this changed in Sept 2026** — the old blanket
-  "lead with the audit differentiator" rule is superseded, and applying it everywhere now walks
-  the site back to a smaller claim than the product makes:
+  **What to lead with is channel-dependent.** Leading with audit everywhere makes a smaller claim
+  than the product makes (older pages that still lead audit-first predate this rule):
   - **Owned channels** (homepage, demo page, launch posts, email): lead with the whole-workflow,
     clinical-assistant positioning, before/during/after the visit. Audit is the strongest single
     capability inside that, not the frame.
