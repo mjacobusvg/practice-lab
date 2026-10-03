@@ -3,10 +3,11 @@
 // Sends email reminders via Amazon SES (HTTPS API) at 90, 60, 30, 14, 7, and 1 day(s) before due date
 // Also flags overdue items and auto-advances stale recurring items
 //
-// Schedule: daily at 8am ET (configure in netlify.toml)
-// [[scheduled_functions]]
-//   name = "compliance-reminders"
-//   schedule = "0 12 * * *"
+// Schedule: daily at 09:00 UTC. Configured in netlify.toml as:
+//   [functions."compliance-reminders"]
+//     schedule = "0 9 * * *"
+// (Use this [functions."name"] form, NOT [[scheduled_functions]] — the latter is
+//  silently ignored by Netlify, so the schedule would never register.)
 //
 // Environment variables:
 //   SUPABASE_URL, SUPABASE_SERVICE_KEY
