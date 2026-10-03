@@ -173,6 +173,10 @@ exports.handler = async function (event) {
   // fall back to the always-allowlisted /platform so they STILL land signed in, never cold.
   let link = await genLink(redirectTo);
   if (!link && redirectTo !== SITE + '/platform?setpw=1') link = await genLink(SITE + '/platform?setpw=1');
+  // Ultimate fallback: plain /platform is always allowlisted, so the rescue NEVER lands
+  // cold even if ?setpw=1 were rejected. Worst case they miss the forced set-password
+  // step but are still signed in, and the nudge fires.
+  if (!link) link = await genLink(SITE + '/platform');
   if (!link) return gate;
   return { statusCode: 302, headers: { Location: link, 'Cache-Control': 'no-store' }, body: '' };
 };
