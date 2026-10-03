@@ -206,6 +206,12 @@
   .answer-text p { margin-bottom: 12px; }
   .answer-text p:last-of-type { margin-bottom: 0; }
 
+  /* Streaming cursor shown while the answer is still being written. */
+  .stream-cursor { display: inline-block; width: 7px; height: 1.05em; margin-left: 2px;
+    vertical-align: text-bottom; background: var(--teal, #2aabb8); border-radius: 1px;
+    animation: streamBlink 1s steps(2, start) infinite; }
+  @keyframes streamBlink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
+
   .sources { margin-top: 20px; }
 
   .sources h3, .templates-section h3, .related-topics h3, .followup-section h3 {
@@ -744,6 +750,23 @@
           body: JSON.stringify({ job_id: job_id, token: sessTok })
         });
         var pollData = await pollResp.json();
+        // Mid-generation: render the answer-so-far growing in place. Keep the sources,
+        // templates, feedback and follow-up sections hidden until the final 'complete'
+        // arrives and the full render below runs.
+        if (pollData.status === 'streaming' && pollData.partial) {
+          loading.style.display = 'none';
+          answerBox.style.display = 'block';
+          var _h = answerBox.querySelector('h2');
+          if (_h) _h.innerHTML = thisIsFollowUp
+            ? 'What the Forum Consistently Shows<span class="followup-badge">Follow-up</span>'
+            : 'What the Forum Consistently Shows';
+          var _sb = document.getElementById('sources-box'); if (_sb) _sb.style.display = 'none';
+          var _tb = document.getElementById('templates-box'); if (_tb) _tb.style.display = 'none';
+          var _fr = document.getElementById('feedback-row'); if (_fr) _fr.style.display = 'none';
+          var _fs = document.getElementById('followup-section'); if (_fs) _fs.style.display = 'none';
+          document.getElementById('answer-text').innerHTML = renderMarkdown(pollData.partial) + '<span class="stream-cursor" aria-hidden="true"></span>';
+          continue;
+        }
         if (pollData.status === 'complete') {
           var candidate = pollData.result;
           if (candidate && (candidate.answer || candidate.browse || candidate.unanswered === true || candidate.error)) {

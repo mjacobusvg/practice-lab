@@ -360,6 +360,45 @@ const inngest = new Inngest({
 
 // ── FUNCTION 1: ASK THE ARCHIVE PIPELINE ─────────────────────────────────────
 
+// Pull the partial value of the top-level "answer" field out of a GROWING JSON string.
+// The synthesis streams a JSON object ({"status":...,"answer":"...prose...","template_sources":[...]}),
+// but we want just the answer prose as it arrives so the page can show it being written.
+// Returns the decoded answer-so-far, or '' if the field hasn't started yet. Tolerates a
+// buffer that cuts off mid-escape (it just stops there and waits for the next chunk).
+function extractAnswerSoFar(raw) {
+  if (!raw) return '';
+  const k = raw.indexOf('"answer"');
+  if (k === -1) return '';
+  let i = raw.indexOf('"', k + 8); // opening quote of the value (after the key + colon)
+  if (i === -1) return '';
+  i += 1;
+  let out = '';
+  while (i < raw.length) {
+    const c = raw[i];
+    if (c === '\\') {
+      const n = raw[i + 1];
+      if (n === undefined) break; // incomplete escape at buffer edge
+      if (n === 'n') out += '\n';
+      else if (n === 't') out += '\t';
+      else if (n === 'r') out += '\r';
+      else if (n === '"') out += '"';
+      else if (n === '\\') out += '\\';
+      else if (n === '/') out += '/';
+      else if (n === 'u') {
+        const hex = raw.substr(i + 2, 4);
+        if (hex.length < 4) break; // incomplete \u escape
+        out += String.fromCharCode(parseInt(hex, 16));
+        i += 6; continue;
+      } else out += n;
+      i += 2; continue;
+    }
+    if (c === '"') break; // unescaped closing quote => the answer field is finished
+    out += c;
+    i += 1;
+  }
+  return out;
+}
+
 const askArchivePipeline = inngest.createFunction(
   {
     id: 'ask-archive-pipeline',
@@ -398,6 +437,22 @@ const askArchivePipeline = inngest.createFunction(
       } else {
         console.log('saveResult OK for job:', job_id);
       }
+    }
+
+    // Publish the answer-so-far mid-generation. The poll returns this partial and the
+    // page renders it growing. Best-effort: a failed partial write must never break the
+    // run, and the final saveResult() overwrites status back to 'complete' with the real result.
+    async function savePartial(answerText) {
+      await fetch(`${supabaseUrl}/rest/v1/archive_jobs?job_id=eq.${encodeURIComponent(job_id)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Prefer': 'return=minimal'
+        },
+        body: JSON.stringify({ status: 'streaming', result: JSON.stringify({ streaming: true, answer: answerText }) })
+      });
     }
 
     try {
@@ -642,17 +697,69 @@ Return ONLY the JSON object. Nothing before or after it.`;
 
       const messages = [...conversationHistory, { role: 'user', content: `Forum sources:\n\n${contextBlocks}\n\n---\n\nQuestion: ${question}` }];
 
+      // Stream the synthesis so the member watches the answer get written instead of
+      // staring at a spinner for ~15s then getting a wall of text. We accumulate the raw
+      // model output (a JSON object) and, every ~700ms, pull the partial `answer` prose
+      // out of the growing JSON and publish it via savePartial(status:'streaming'). The
+      // final parse and result assembly below are unchanged.
       const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 4000, system: systemPrompt + followUpInstruction, messages: messages })
+        body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 4000, system: systemPrompt + followUpInstruction, messages: messages, stream: true })
       });
 
       if (!claudeRes.ok) throw new Error('Claude synthesis failed');
 
+      let synthText = '';
+      const synthUsage = { input_tokens: 0, output_tokens: 0 };
+      let lastPartialAt = 0;
+      let lastPartialLen = 0;
+      {
+        const reader = claudeRes.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let idx;
+          while ((idx = buffer.indexOf('\n\n')) !== -1) {
+            const rawEvent = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 2);
+            for (const line of rawEvent.split('\n')) {
+              if (!line.startsWith('data:')) continue;
+              const dataStr = line.slice(5).trim();
+              if (!dataStr || dataStr === '[DONE]') continue;
+              try {
+                const evt = JSON.parse(dataStr);
+                if (evt.type === 'content_block_delta' && evt.delta && typeof evt.delta.text === 'string') {
+                  synthText += evt.delta.text;
+                } else if (evt.type === 'message_start' && evt.message && evt.message.usage) {
+                  synthUsage.input_tokens = evt.message.usage.input_tokens || 0;
+                } else if (evt.type === 'message_delta' && evt.usage && typeof evt.usage.output_tokens === 'number') {
+                  synthUsage.output_tokens = evt.usage.output_tokens;
+                } else if (evt.type === 'error') {
+                  throw new Error('Anthropic stream error: ' + (evt.error ? (evt.error.message || JSON.stringify(evt.error)) : 'unknown'));
+                }
+              } catch (e) { /* ignore keep-alive / non-JSON lines */ }
+            }
+          }
+          // Throttled partial publish: only when enough new answer text has accrued.
+          const now = Date.now();
+          if (now - lastPartialAt > 700) {
+            const partial = extractAnswerSoFar(synthText);
+            if (partial && partial.length > lastPartialLen + 12) {
+              lastPartialAt = now;
+              lastPartialLen = partial.length;
+              try { await savePartial(partial); } catch (e) { /* best-effort */ }
+            }
+          }
+        }
+      }
+
       console.log('Claude synthesis complete, saving result...');
 
-      const claudeData = await claudeRes.json();
+      const claudeData = { content: [{ type: 'text', text: synthText }], usage: synthUsage };
       // Synthesis is the actual answer — count it as the interaction. Token counts only.
       if (claudeData.usage) {
         logUsage({ tool: 'Ask the Archive', mode: 'synthesis', event: 'interaction', email: usageEmail, tier: usageTier, model: 'claude-sonnet-4-6', inputTokens: claudeData.usage.input_tokens, outputTokens: claudeData.usage.output_tokens });

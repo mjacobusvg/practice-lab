@@ -70,6 +70,13 @@ exports.handler = async function(event, context) {
     if (!ownerMatches(row, event, body)) {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ status: 'pending' }) };
     }
+    // Mid-generation: the worker publishes the answer-so-far with status 'streaming'.
+    // Hand the partial text back so the page can render it growing. Do NOT delete the
+    // row here -- the job is still running and will be delivered (and deleted) on 'complete'.
+    if (row.status === 'streaming') {
+      var partial = typeof row.result === 'string' ? JSON.parse(row.result) : row.result;
+      return { statusCode: 200, headers: CORS, body: JSON.stringify({ status: 'streaming', partial: (partial && partial.answer) || '' }) };
+    }
     if (row.status !== 'complete') {
       return { statusCode: 200, headers: CORS, body: JSON.stringify({ status: 'pending' }) };
     }
