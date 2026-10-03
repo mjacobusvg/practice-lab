@@ -137,7 +137,7 @@ delete it; just leave it in place and only advance it when a deploy is worth int
   If implementation needs something the doc forbids, the ontology is incomplete: decide it,
   record it, then build. `tests/ontology-invariants.test.js` makes the ENFORCED tags executable
   so the doc cannot rot into fiction.
-- `CLINICAL-NOTE-GENERATOR-ARCHITECTURE.md` is the living design doc for the HPI Generator /
+- `CLINICAL-NOTE-GENERATOR-ARCHITECTURE.md` is the living design doc for the HPI /
   Note Builder / coder pipeline. §0.3 / §0.3.1 hold the governing rule on what may be
   hardcoded vs. what must come from the clinician's Vault template — read it before changing
   any assessment or HPI prompt.

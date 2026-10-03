@@ -65,7 +65,7 @@ Browser → **AWS Lambda Function URL** → **Amazon Bedrock** (Anthropic Claude
 streamed/returned to browser. Under the **AWS BAA**. Content is processed transiently; the proxy
 logs token-count metadata only (never message content), to Supabase `tool_usage`.
 
-- Streaming tools (Scribe draft/review/preflight, Chart Coder, note builders, HPI generator,
+- Streaming tools (Scribe draft/review/preflight, Chart Coder, note builders,
   de-identifier): **`tbp-clinical-proxy-stream`** (Function URL Invoke mode = RESPONSE_STREAM).
   URL: `https://6jzvscd4oakgtlfjgsq5enbph40czool.lambda-url.us-east-1.on.aws/`
 - Non-stream tools (Letter Generator, Monitoring Protocol, Termination Workflow, note-builder
@@ -154,8 +154,9 @@ login and `tbp_maint_bypass='1'` (or `?maintbypass=1` once) bypass it for testin
 
 - **[DONE 2026-10-03] Decommissioned the Netlify clinical functions.** `clinical-proxy-stream.mjs`,
   `clinical-proxy.js` and `azure-transcribe*.mjs` were deleted, the Scribe's `tbp_force_netlify`
-  rollback flag and the `tbp_fast_tx` fast-transcription spike were removed, and HPI Generator
-  recording (which was still calling the Netlify `azure-transcribe`) now uses `tbp-azure-transcribe`.
+  rollback flag and the `tbp_fast_tx` fast-transcription spike were removed, and the HPI Generator
+  (whose recording was still calling the Netlify `azure-transcribe`) was retired into the AI Scribe.
+  The temporary `recover-transcripts.mjs` admin tool (Netlify, returned PHI) was deleted too.
   (The never-called `chart-coder-background/trigger/poll`, `deidentify-note.js` and the Inngest
   `chartCoderPipeline` were deleted on 2026-10-03.)
 - **PHI at rest in Supabase — see `PHI-STORAGE-STATE.md` (verified 2026-09-09).** That file is the
