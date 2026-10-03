@@ -83,7 +83,7 @@ exports.handler = async function(event, context) {
     // Model, ceiling and tools are all fixed server-side. Previously the caller chose
     // the model with no allowlist, set max_tokens with no ceiling, and could pass
     // arbitrary tools — so a single request could be pointed at the most expensive
-    // model and asked for a 200k-token completion. Same shape as clinical-proxy.js:93.
+    // model and asked for a 200k-token completion. Same shape as the model allowlist in aws-lambda/clinical-proxy-bedrock.mjs.
     //
     // Model ids are the two this proxy's callers already use (MODEL-REGISTRY.md).
     // An unrecognised model silently falls back to the default rather than erroring,

@@ -17,8 +17,8 @@ Status legend: [DONE] / [DO TONIGHT] / [DECISION NEEDED]
 | `certified_mail_jobs.letter_text` (Supabase) | at rest | Feature is a **stub** (PostGrid adapter throws; won't transmit). Low real exposure. When you build the live vendor, store letter text on AWS, not Supabase. Purge any existing rows. |
 | `assessments.patient_name` + `assessment_results.responses` (Supabase) | **at rest, LIVE** | **[DECISION NEEDED]** — see §3 |
 | `assessment_score_series` (Supabase) | pseudonymized | Acceptable (one-way key, no name/responses); keep or move with §3 |
-| Clinical proxies (`clinical-proxy-stream.mjs`, `clinical-proxy.js`) on Netlify | in transit | **[DO TONIGHT]** move to AWS Lambda — §2 |
-| `azure-transcribe.mjs`, `azure-transcribe-fast-background.mjs` on Netlify | in transit | **[DO TONIGHT]** move to AWS Lambda — §2 |
+| Clinical proxies (`clinical-proxy-stream.mjs`, `clinical-proxy.js`) on Netlify | in transit | **[DONE]** moved to AWS Lambda; Netlify copies deleted 2026-10-03 |
+| `azure-transcribe.mjs`, `azure-transcribe-fast-background.mjs` on Netlify | in transit | **[DONE]** batch path on AWS Lambda; Netlify copies and the fast spike deleted 2026-10-03 |
 | `chart-coder-background.js` on Netlify | in transit | **[DONE]** deleted 2026-10-03 with its trigger and poll; the front end never called it |
 
 Everything else in Netlify functions (auth, billing, forum, broadcasts, consent records)

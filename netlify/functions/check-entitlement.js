@@ -4,7 +4,7 @@
 // Lets a tool's client-side gate (auth-gate.js protect({feature})) show a forum
 // member the tool + a trial banner when they hold a hand-granted pass, instead of
 // the upgrade wall. This is a UX convenience only — the real enforcement is the
-// server gate in clinical-proxy.js, which re-checks the same table and fails closed.
+// server gate in aws-lambda/clinical-proxy-bedrock.mjs, which re-checks the same table and fails closed.
 //
 // GET/POST { token } (or Bearer) -> { ok, entitlements: [{ feature, expires_at }] }
 //   optional ?feature=letter_generator narrows to one; adds { active, expires_at }.

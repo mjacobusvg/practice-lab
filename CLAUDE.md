@@ -116,10 +116,10 @@ delete it; just leave it in place and only advance it when a deploy is worth int
   (`us.anthropic.claude-sonnet-4-6`, `us.anthropic.claude-haiku-4-5-20251001-v1:0`); transcription
   goes to Azure AI Speech via `tbp-azure-transcribe`. **Read `BAA-AND-PHI-ROUTING.md` before touching
   any clinical data path, BAA, subprocessor page, or privacy policy** — it is the source of truth for
-  which BAA covers what and how every kind of PHI is routed. These Netlify functions send clinical
-  text to `api.anthropic.com` and are OFF-BAA, kept only for rollback: `clinical-proxy.js`,
-  `clinical-proxy-stream.mjs`, `azure-transcribe*.mjs`. Do not point traffic at any of them or at
-  `api.anthropic.com`. See `MODEL-REGISTRY.md` for the per-tool model list.
+  which BAA covers what and how every kind of PHI is routed. There is deliberately no Netlify
+  fallback for clinical traffic: the off-BAA Netlify clinical proxies and transcription functions
+  were deleted (2026-10-03). Do not recreate one, and do not point clinical traffic at Netlify or
+  at `api.anthropic.com`. See `MODEL-REGISTRY.md` for the per-tool model list.
 - **`CLINICAL-ONTOLOGY.md` defines what the Scribe's clinical state MEANS and who may establish
   it. Read it before implementing any clinical capability, and implement AGAINST it.** It is the
   fix for a specific recurring failure: an implementation that invents its own ontology as it

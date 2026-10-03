@@ -152,12 +152,12 @@ login and `tbp_maint_bypass='1'` (or `?maintbypass=1` once) bypass it for testin
 
 ## 6. Open items (compliance follow-through)
 
-- **Decommission the Netlify clinical functions.** `clinical-proxy-stream.mjs`, `clinical-proxy.js`,
-  and `azure-transcribe*.mjs` are still deployed on Netlify but no longer called by the front end.
+- **[DONE 2026-10-03] Decommissioned the Netlify clinical functions.** `clinical-proxy-stream.mjs`,
+  `clinical-proxy.js` and `azure-transcribe*.mjs` were deleted, the Scribe's `tbp_force_netlify`
+  rollback flag and the `tbp_fast_tx` fast-transcription spike were removed, and HPI Generator
+  recording (which was still calling the Netlify `azure-transcribe`) now uses `tbp-azure-transcribe`.
   (The never-called `chart-coder-background/trigger/poll`, `deidentify-note.js` and the Inngest
-  `chartCoderPipeline` were deleted on 2026-10-03.) Leave dormant briefly for rollback, then remove so
-  PHI cannot route through Netlify at all. (`tbp_force_netlify` in `pm-ai-scribe.html` still points the
-  Scribe back to them as a rollback — retire that flag when the Netlify functions are deleted.)
+  `chartCoderPipeline` were deleted on 2026-10-03.)
 - **PHI at rest in Supabase — see `PHI-STORAGE-STATE.md` (verified 2026-09-09).** That file is the
   ground-truth inventory; keep it current. Summary:
   - **Letters (RESOLVED 2026-09-09).** Letter PDFs now store in **AWS S3** (`tbp-letters`,

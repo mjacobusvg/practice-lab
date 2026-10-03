@@ -185,7 +185,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="/auth-gate.js"></script>
-<script src="/note-engine.js?v=ambient-115"></script>
+<script src="/note-engine.js?v=ambient-116"></script>
 <script src="/scales-data.js"></script>
 <style id="tbp-theme-css">
 [data-theme="light"]{--navy:#f4f1ea;--navy-mid:#ffffff;--navy-card:#ffffff;--navy-light:#e7e1d6;--cream:#1b2330;--cream-dim:#5c6472;--rule:rgba(27,35,48,0.12);--teal-glow:rgba(42,171,184,0.10);--bg:#f4f1ea;--surface:#ffffff;--surface2:#efeae0;--text:#1b2330;--text2:#5c6472;--text3:#7a8290;--border:rgba(27,35,48,0.14);--border2:rgba(27,35,48,0.08);--white:#1b2330;--teal:#1a8a94;--teal-dim:#15717a;--amber:#a06800;--red:#c0392b;--green:#0d7a4f;--purple:#6a4fb5;--blue:#2563a8;color-scheme:light;}
@@ -472,7 +472,7 @@ html.rsn-open #tool-container{padding-right:calc(var(--rsn-w) + 20px);transition
 
   <div id="results"></div>
 
-  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-115</span></div>
+  <div class="scope">Part of <strong>Practice Manager</strong> &mdash; Think Beyond Practice. Generated documentation must be reviewed and signed by the clinician. No patient data is retained: notes are processed transiently and recordings are deleted after transcription. Need help or have a question? Email <a href="mailto:michael@thinkbeyondpractice.com?subject=AI%20Scribe%20help" style="color:var(--teal)">michael@thinkbeyondpractice.com</a>. <span style="opacity:.5">build ambient-116</span></div>
 </div>
 </div>
 
@@ -1102,17 +1102,9 @@ async function callAPI(systemPrompt, messages, maxTokens, onDelta, model, mode){
   // can leave the browser through any code path.
   if(TBP_DEMO){ tbpShowJoin(); throw new Error('__demo_locked__'); }
   var response;
-  // Clinical streaming endpoint. Default: Netlify. Opt into the AWS Lambda (BAA-covered)
-  // endpoint for testing by setting localStorage tbp_aws_stream='1' (or ?awsstream=1 on the
-  // frame src). Once verified end-to-end, flip TBP_STREAM_URL's default to the Lambda URL.
-  // Clinical streaming now runs on AWS Lambda (BAA-covered). Escape hatch: set
-  // localStorage tbp_force_netlify='1' to fall back to the Netlify proxy if needed.
+  // Clinical streaming runs on AWS Lambda -> Bedrock (AWS BAA). There is deliberately no
+  // fallback: the Netlify proxy it replaced had no BAA and has been deleted.
   var TBP_STREAM_URL = 'https://6jzvscd4oakgtlfjgsq5enbph40czool.lambda-url.us-east-1.on.aws/';
-  try {
-    if (window.localStorage && localStorage.getItem('tbp_force_netlify') === '1') {
-      TBP_STREAM_URL = '/.netlify/functions/clinical-proxy-stream';
-    }
-  } catch(e){}
   try {
     response = await fetch(TBP_STREAM_URL, {
       method:'POST',
@@ -7120,14 +7112,8 @@ function loadVaultTemplates(){
     try { if(typeof tbpAutoDraftAmbient==='function') tbpAutoDraftAmbient(); } catch(e){}
   }
   // Transcription runs on AWS Lambda (Azure Speech under the Microsoft BAA, orchestrated
-  // under the AWS BAA) instead of Netlify (no BAA). The same tbp_force_netlify rollback flag
-  // the draft stream uses also reverts transcription, so one localStorage flip rolls both back.
+  // under the AWS BAA). There is deliberately no Netlify fallback: it had no BAA.
   var TBP_TRANSCRIBE_URL = 'https://ya7sgrdvsscltth3vwbegc6j5i0xnlvi.lambda-url.us-east-1.on.aws/';
-  try {
-    if (window.localStorage && localStorage.getItem('tbp_force_netlify') === '1') {
-      TBP_TRANSCRIBE_URL = '/.netlify/functions/azure-transcribe';
-    }
-  } catch(e){}
   function azureCall(payload){
     payload.token = authToken;
     return fetch(TBP_TRANSCRIBE_URL,{
@@ -7217,31 +7203,15 @@ function loadVaultTemplates(){
       if(!put.ok) throw new Error('Storage rejected the upload ('+put.status+').');
       setStatus('Transcribing the visit…');
       var transcript;
-      // Spike gate: the fast path is OFF by default, so the live site is unchanged for everyone.
-      // Enable it per-browser to measure a real eval: localStorage.setItem('tbp_fast_tx','on').
-      var fastOn = false; try { fastOn = (localStorage.getItem('tbp_fast_tx') === 'on'); } catch(e){}
-      if(fastOn && visitType === 'new_eval'){
-        // FAST path (spike): new-patient evals are the long visits where the batch queue hurt, so
-        // route them to synchronous fast transcription (run in a background function). Follow-ups
-        // and everyone without the flag fall through to the unchanged batch path below.
-        var jobId = tbpNewJobId();
-        try{ if(window.tbpTxSave) window.tbpTxSave({ fast:true, jobId: jobId, blobName: up.blobName }); }catch(e){}
-        var kick = await fetch('/.netlify/functions/azure-transcribe-fast-background', {
-          method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+authToken},
-          body: JSON.stringify({ token: authToken, blobName: up.blobName, jobId: jobId })
-        });
-        if(!(kick.status===202 || kick.ok)) throw new Error('Could not start fast transcription ('+kick.status+').');
-        transcript = await pollFast(jobId);
-        try{ if(window.tbpTxClear) window.tbpTxClear(); }catch(e){}
-      } else {
-        var st = await azureCall({ action:'start', blobName: up.blobName });
-        if(!st.jobUrl) throw new Error(st.error || 'Could not start transcription.');
-        // Persist the in-flight job so a tab close/reload DURING the (multi-minute) transcription can
-        // RESUME instead of losing the visit — the poll handle otherwise lives only in tab memory.
-        try{ if(window.tbpTxSave) window.tbpTxSave({ jobUrl: st.jobUrl, blobName: up.blobName }); }catch(e){}
-        transcript = await pollTranscript(st.jobUrl, up.blobName);
-        try{ if(window.tbpTxClear) window.tbpTxClear(); }catch(e){}
-      }
+      // Batch transcription only. The experimental "fast" path ran in a Netlify background
+      // function with no BAA and has been removed.
+      var st = await azureCall({ action:'start', blobName: up.blobName });
+      if(!st.jobUrl) throw new Error(st.error || 'Could not start transcription.');
+      // Persist the in-flight job so a tab close/reload DURING the (multi-minute) transcription can
+      // RESUME instead of losing the visit — the poll handle otherwise lives only in tab memory.
+      try{ if(window.tbpTxSave) window.tbpTxSave({ jobUrl: st.jobUrl, blobName: up.blobName }); }catch(e){}
+      transcript = await pollTranscript(st.jobUrl, up.blobName);
+      try{ if(window.tbpTxClear) window.tbpTxClear(); }catch(e){}
       if(!transcript){ setStatus('No speech was recognized in the recording.', true); tbpNotifyDesk('idle'); resetBtn(); return; }
       tbpNotifyDesk('done');   // background tab shows the steady "ready to review" dot
       // appendTranscript is the single place the auto-draft fires (covers both this live path and the
@@ -7506,7 +7476,7 @@ function maybeOnboard(){
 // (spaceId 2152658 — free tier is still blocked server-side); after it, full
 // membership is required so forum gets a clean door-wall instead of a draft-time
 // error. Keep this date in sync with SCRIBE_FORUM_BETA_UNTIL in
-// clinical-proxy-stream.mjs. End of Aug 16, 2026 (Pacific).
+// aws-lambda/clinical-proxy-stream-bedrock.mjs. End of Aug 16, 2026 (Pacific).
 var SCRIBE_FORUM_BETA_UNTIL = Date.parse('2026-08-17T07:00:00Z');
 var scribeBetaOpen = Date.now() < SCRIBE_FORUM_BETA_UNTIL;
 // Read the tier claim off the stored token (display/gating only; the server re-verifies).

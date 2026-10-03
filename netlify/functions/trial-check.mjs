@@ -70,7 +70,7 @@ function verifyToken(token) {
 // clones run 7 days; the self-serve AI Scribe trial (version 'ai-scribe-v1', started
 // when a free/forum member first opens the Scribe) runs 14. Keyed off the version so
 // one endpoint serves all trials. Keep the Scribe length in sync with SCRIBE_TRIAL_DAYS
-// in clinical-proxy-stream.mjs.
+// in aws-lambda/clinical-proxy-stream-bedrock.mjs.
 const TRIAL_DAYS_DEFAULT = 7;
 function trialDaysFor(version) {
   return /^ai-scribe/i.test(String(version || '')) ? 14 : TRIAL_DAYS_DEFAULT;

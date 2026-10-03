@@ -1,7 +1,7 @@
 const { verifyToken } = require('./_lib/session');
 
 // Does this member hold an unexpired pass for a named feature? Mirrors
-// clinical-proxy.js hasActiveEntitlement so a forum-tier member with a hand-granted
+// aws-lambda/clinical-proxy-bedrock.mjs hasActiveEntitlement so a forum-tier member with a hand-granted
 // 'letter_generator' trial reads the standards their tool is allowed to use. SELECT
 // only; grants expire at expires_at on their own. Fails CLOSED on any error.
 async function hasActiveEntitlement(email, feature) {
@@ -82,7 +82,7 @@ exports.handler = async (event) => {
   // The tool's own gate is requireFull PLUS feature 'letter_generator', because a
   // forum-tier member can hold a hand-granted trial pass. Checking tier === 'full'
   // alone would lock those members out of a tool they are entitled to, so this mirrors
-  // the gate exactly, the same way clinical-proxy.js re-checks it.
+  // the gate exactly, the same way aws-lambda/clinical-proxy-bedrock.mjs re-checks it.
   let email = '';
   let isFull = false;
   let bodyObj = {};

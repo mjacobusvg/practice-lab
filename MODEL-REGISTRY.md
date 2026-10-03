@@ -43,8 +43,6 @@
 | anthropic-proxy-demo.js | claude-haiku-4-5-20251001 | Public Practice Lab demo (unauthenticated). Logs anonymous usage rows with token counts + cost. |
 | aws-lambda/clinical-proxy-bedrock.mjs (`tbp-clinical-proxy`) | claude-haiku-4-5-20251001 | **Live PHI path** (Bedrock, AWS BAA). Non-streaming clinical tools. Pasted into its Lambda by hand. |
 | aws-lambda/clinical-proxy-stream-bedrock.mjs (`tbp-clinical-proxy-stream`) | claude-haiku-4-5-20251001 | **Live PHI path** (Bedrock, AWS BAA). Streaming clinical tools; 1-hour prompt cache (see below). Pasted into its Lambda by hand. |
-| clinical-proxy.js | claude-haiku-4-5-20251001 | **OFF-BAA, rollback only.** Netlify predecessor of the Bedrock Lambda; calls `api.anthropic.com`. Do not route PHI here. |
-| clinical-proxy-stream.mjs | claude-haiku-4-5-20251001 | **OFF-BAA, rollback only.** Netlify predecessor of the streaming Lambda. Streaming PHI proxy. Tees the passthrough stream to read token counts; logs usage metadata only (counts + cost + email/tier), never content. Wraps large (>~4096-char) system prompts in a **1-hour prompt-cache** block (`cache_control` ephemeral, ttl 1h) — chosen from real traffic (notes cluster ~26 min apart, ~75% within an hour). `est_cost_usd` is cache-aware (writes 2x, reads 0.1x); `input_tokens` logs total input incl. cache tokens. Verify caching via `cache_read_input_tokens` in the Anthropic usage. |
 
 ## Prompt caching on Bedrock (AWS case 178934455100974, Sept 2026)
 
@@ -173,7 +171,7 @@ session, when present), `model`, `input_tokens`, `output_tokens`, and
 `est_cost_usd` (computed from a per-model price table in `_lib/usage.js`).
 The clinical proxies log token COUNTS only, never message content. Cost prices
 live in `MODEL_COST_PER_MTOK` in `_lib/usage.js` (and are duplicated inline in
-`clinical-proxy-stream.mjs` and `inngest-serve.mjs`); keep the three in sync.
+`aws-lambda/*-bedrock.mjs` and `inngest-serve.mjs`); keep them in sync.
 Page views are logged to `public.page_views` by `log-view.js` (email + tier +
 path from the signed token). Instrumented AI paths: the proxies above and `inngest-serve.mjs`
 (Ask the Archive: query expansion + synthesis + source descriptions).
