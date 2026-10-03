@@ -144,7 +144,11 @@ exports.handler = async function (event) {
   let dest = '';
   const rParam = String(posted.r || q.r || '');
   if (/^\/(?!\/)/.test(rParam)) dest = rParam;
-  let redirectTo = SITE + '/platform';
+  // Default lands on /platform with ?setpw=1 so the app forces a "set your password now"
+  // step. One-click links are the rescue path for people who could NOT sign in with a
+  // password (usually their old Circle password, which does not carry over), so getting
+  // them a real password immediately is what stops the repeat lockouts.
+  let redirectTo = SITE + '/platform?setpw=1';
   if (dest) {
     redirectTo = (dest === '/platform' || /^\/platform[?#]/.test(dest))
       ? SITE + dest
@@ -168,7 +172,7 @@ exports.handler = async function (event) {
   // Try the deep-link redirect; if Supabase rejects that redirect_to (not allowlisted),
   // fall back to the always-allowlisted /platform so they STILL land signed in, never cold.
   let link = await genLink(redirectTo);
-  if (!link && redirectTo !== SITE + '/platform') link = await genLink(SITE + '/platform');
+  if (!link && redirectTo !== SITE + '/platform?setpw=1') link = await genLink(SITE + '/platform?setpw=1');
   if (!link) return gate;
   return { statusCode: 302, headers: { Location: link, 'Cache-Control': 'no-store' }, body: '' };
 };

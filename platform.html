@@ -1963,6 +1963,7 @@ body.show-promo .platform-promo{display:flex}
       <input type="password" id="login-password" placeholder="Your password" autocomplete="current-password" onkeydown="if(event.key==='Enter'){signInWithPassword();return false;}">
       <button class="btn-primary" id="login-pw-btn" onclick="signInWithPassword()">Sign in</button>
       <button class="btn-primary" id="login-link-btn" onclick="forgotPassword()" style="background:transparent;border:1px solid var(--teal);color:var(--teal);box-shadow:none">No password, or forgot it? Email me a sign-in link</button>
+      <div class="gate-note" style="margin-top:10px;font-size:0.78rem;color:var(--text-secondary)">Signed up on our old (Circle) site? That password does <b>not</b> carry over. Use <b>Email me a sign-in link</b> above, then set a new password once you are in.</div>
       <div class="gate-note" id="login-status"></div>
       <div class="gate-note" style="margin-top:8px"><a href="#" onclick="openEmailRecovery();return false" style="color:var(--teal)">Forgot which email you used?</a> &middot; <a href="mailto:support@thinkbeyondpractice.com?subject=Trouble%20signing%20in%20to%20Think%20Beyond%20Practice" style="color:var(--teal)">Still stuck? Contact us</a></div>
     </div>
@@ -2451,10 +2452,11 @@ async function signInWithPassword() {
   try {
     var res = await SB.auth.signInWithPassword({ email: email, password: pw });
     if (res.error) {
-      // Wrong password, or this account has no password on file yet.
-      statusEl.innerHTML = 'That did not work. If you have not set a password yet, ' +
-        '<a href="#" style="color:var(--teal)" onclick="sendMagicLink(\'login\');return false">email me a one-time link</a>, ' +
-        'then set a password from your account menu once you are in.';
+      // Wrong password, OR (very common) they're typing their old Circle password,
+      // which does not exist in this system. Say that plainly and point at the link.
+      statusEl.innerHTML = 'That password did not work. If you signed up on our old (Circle) site, your old password does not carry over. ' +
+        'Tap <b>No password, or forgot it? Email me a sign-in link</b> below, ' +
+        'then set a new password once you are in.';
       if (btn) { btn.disabled = false; btn.style.opacity = ''; }
       return;
     }
@@ -2489,17 +2491,23 @@ function forgotPassword() {
 // email link entirely. Uses Supabase updateUser, which requires the active session
 // they already have — no email round-trip. Lightweight self-contained modal so it
 // works from the account menu without new markup.
-function openSetPassword() {
+function openSetPassword(firstTime) {
   var existing = document.getElementById('setpw-overlay');
   if (existing) existing.remove();
   var ov = document.createElement('div');
   ov.id = 'setpw-overlay';
   ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9000;display:flex;align-items:center;justify-content:center;padding:20px';
   ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+  // firstTime = arrived via a one-click sign-in link (they had no usable password).
+  // Explain plainly that their old password is gone and this is the fix.
+  var head = firstTime ? 'Set your password' : 'Set a password';
+  var intro = firstTime
+    ? "You're in. One last step: set a password now so you can sign in anywhere, anytime. Your old Circle password does not work on this platform, which is why you needed the link. At least 8 characters."
+    : 'Set a password so you can sign in instantly next time, without waiting for an email link. At least 8 characters.';
   ov.innerHTML =
     '<div style="background:var(--bg-card);color:var(--text-primary);border:1px solid var(--border);border-radius:12px;max-width:380px;width:100%;padding:24px;box-shadow:0 12px 40px rgba(0,0,0,0.35)">' +
-    '<h3 style="margin:0 0 6px;font-size:1.1rem">Set a password</h3>' +
-    '<p style="margin:0 0 14px;font-size:0.84rem;color:var(--text-secondary)">Set a password so you can sign in instantly next time, without waiting for an email link. At least 8 characters.</p>' +
+    '<h3 style="margin:0 0 6px;font-size:1.1rem">' + head + '</h3>' +
+    '<p style="margin:0 0 14px;font-size:0.84rem;color:var(--text-secondary)">' + intro + '</p>' +
     '<input type="password" id="setpw-input" placeholder="New password" autocomplete="new-password" style="width:100%;padding:11px;border:1px solid var(--border);border-radius:8px;margin-bottom:10px;box-sizing:border-box;background:var(--bg-page);color:var(--text-primary)">' +
     '<input type="password" id="setpw-confirm" placeholder="Confirm password" autocomplete="new-password" onkeydown="if(event.key===\'Enter\'){saveNewPassword();return false;}" style="width:100%;padding:11px;border:1px solid var(--border);border-radius:8px;margin-bottom:10px;box-sizing:border-box;background:var(--bg-page);color:var(--text-primary)">' +
     '<div id="setpw-status" style="font-size:0.82rem;color:var(--text-secondary);min-height:18px;margin-bottom:12px"></div>' +
@@ -2969,8 +2977,17 @@ async function checkAuth() {
     handleCEDeepLink();
     handlePendingPlan();
     handlePendingBuy();
-    maybeShowPushNudge();
-    maybeShowPasswordNudge();
+    // Arrived via a one-click sign-in link (?setpw=1): they had no usable password,
+    // so force the "set your password now" step instead of hoping they find the menu.
+    // This is the fix for the Facebook-browser trap: set it here, use it anywhere.
+    var _forceSetPw = false;
+    try { _forceSetPw = !!new URLSearchParams(location.search).get('setpw'); } catch (e) {}
+    if (_forceSetPw) {
+      setTimeout(function () { try { openSetPassword(true); } catch (e) {} }, 500);
+    } else {
+      maybeShowPushNudge();
+      maybeShowPasswordNudge();
+    }
     reconcilePushSubscription();
   } else {
     // Logged-out visitors are non-paying, so surface the founding-rate bar to them
