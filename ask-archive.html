@@ -731,10 +731,17 @@
       while (attempts < 120) {
         await new Promise(function(r) { setTimeout(r, 1000); });
         attempts++;
+        // Send the SAME signed session token the trigger used. The job is bound to its
+        // creator (owner_email), and the poll only returns an owned job's result to a
+        // request that proves that ownership. Without the token a signed-in member's poll
+        // always reads 'pending' and the answer (ready in seconds) never gets delivered.
         var pollResp = await fetch('/.netlify/functions/ask-archive-poll', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ job_id: job_id })
+          headers: Object.assign(
+            { 'Content-Type': 'application/json' },
+            sessTok ? { 'Authorization': 'Bearer ' + sessTok } : {}
+          ),
+          body: JSON.stringify({ job_id: job_id, token: sessTok })
         });
         var pollData = await pollResp.json();
         if (pollData.status === 'complete') {
